@@ -150,7 +150,10 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
     let rules = &s.scene.rules;
     let sim = &mut s.scene.sim;
     let owner = sim.substrate.entities.get(refinery).unwrap().owner();
-    sim.houses.get_mut(&owner).unwrap().side_index = input["side"].as_u64().unwrap() as u8;
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_side_index_for_test(input["side"].as_i64().unwrap() as i32);
     let building = sim.substrate.entities.get_mut(refinery).unwrap();
     building
         .has_been_captured
@@ -387,8 +390,8 @@ fn sale_refund_matches_the_original() {
         .unwrap();
         let owner = crate::sim::intern::test_intern("Americans");
         let mut house = HouseState::new(owner, 0, None, true, 0, 10);
-        house.is_human = input["human"].as_bool().unwrap();
-        house.player_control = input["player_control"] == true;
+        house.set_is_human_for_test(input["human"].as_bool().unwrap());
+        house.set_player_control_for_test(input["player_control"] == true);
         let game_mode_nonzero = input["game_mode"].as_u64().unwrap() != 0;
         assert_eq!(
             i64::from(production::type_refund(
@@ -450,7 +453,7 @@ fn sales_through_the_frame_visit_on_the_original_frames() {
         };
         let sale_order = crate::sim::command::CommandEnvelope::new(
             s.sim.substrate.entities.get(building).unwrap().owner(),
-            s.sim.session.tick + 1,
+            s.sim.session.tick() + 1,
             crate::sim::command::Command::SellBuilding {
                 entity_id: building,
             },
@@ -573,12 +576,16 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
             RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&text), &art).unwrap();
         rules.set_buildup_control_for_test("YAREFN", [0, 25, 2]);
         let mut sim = crate::sim::world::Simulation::new();
-        sim.session.game_mode_nonzero = int("game_mode") != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                int("game_mode") != 0,
+            ),
+        );
         let owner = sim.interner.intern("AI");
         let mut house = HouseState::new(owner, 0, None, false, int("balance"), int("tech_level"));
-        house.current_iq = int("current_iq");
-        house.authored_iq = int("authored_iq");
-        sim.houses.insert(owner, house);
+        house.set_current_iq_for_test(int("current_iq"));
+        house.set_authored_iq_for_test(int("authored_iq"));
+        sim.houses.register(house);
         let kind = sim.interner.intern("YAREFN");
         let mut building = GameEntity::new_at_frame_zero_for_test(
             1,
@@ -606,9 +613,9 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
             building.install_building_up(
                 crate::sim::components::BuildingUp::completing_in_ticks(
                     2,
-                    sim.session.binary_frame as i32,
+                    sim.session.binary_frame() as i32,
                 ),
-                sim.session.binary_frame as i32,
+                sim.session.binary_frame() as i32,
             );
         }
         building.mission.apply_test_fixture(MissionTestFixture {

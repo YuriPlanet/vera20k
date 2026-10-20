@@ -47,14 +47,15 @@ fn superweapon_money_two_stage_settles_source_once_not_destination() {
         let (mut sim, owner) = world(&rules, 1000, true);
         let source = ready(&mut sim, &rules, owner, "Sphere", false);
         assert!(fire(&mut sim, &rules, owner, source, (10, 10)));
-        assert_eq!(sim.houses[&owner].economy.credits(), 1000);
+        assert_eq!(sim.houses[&owner].economy().credits(), 1000);
         let ticket = sim.paid_super_weapon_selection(owner).unwrap();
-        sim.session.binary_frame += 1;
+        sim.session
+            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
         superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner);
         assert!(complete(&mut sim, &rules, owner, ticket, (15, 15)));
-        assert_eq!(sim.houses[&owner].economy.credits(), 1000 + amount);
+        assert_eq!(sim.houses[&owner].economy().credits(), 1000 + amount);
         assert_eq!(
-            sim.houses[&owner].economy.spent_credits(),
+            sim.houses[&owner].economy().spent_credits(),
             if amount < 0 { 500 } else { 0 }
         );
         assert!(sim.paid_super_weapon_selection(owner).is_none());
@@ -66,7 +67,7 @@ fn superweapon_money_two_stage_settles_source_once_not_destination() {
         assert!(!sim.super_weapons[&owner][&source].is_ready);
         assert_eq!(
             sim.super_weapons[&owner][&source].charge_start_tick,
-            sim.session.binary_frame as i32
+            sim.session.binary_frame() as i32
         );
     }
 }
@@ -79,7 +80,7 @@ fn superweapon_money_two_stage_cancel_reselect_and_old_commands_cannot_replay() 
     assert!(fire(&mut sim, &rules, owner, source, (10, 10)));
     let old = sim.paid_super_weapon_selection(owner).unwrap();
     assert!(cancel(&mut sim, &rules, owner, old));
-    assert_eq!(sim.houses[&owner].economy.credits(), 1000);
+    assert_eq!(sim.houses[&owner].economy().credits(), 1000);
     assert!(!complete(&mut sim, &rules, owner, old, (15, 15)));
     assert!(fire(&mut sim, &rules, owner, source, (11, 11)));
     let new = sim.paid_super_weapon_selection(owner).unwrap();
@@ -88,7 +89,7 @@ fn superweapon_money_two_stage_cancel_reselect_and_old_commands_cannot_replay() 
     assert!(!complete(&mut sim, &rules, owner, old, (15, 15)));
     assert_eq!(sim.paid_super_weapon_selection(owner), Some(new));
     assert!(complete(&mut sim, &rules, owner, new, (15, 15)));
-    assert_eq!(sim.houses[&owner].economy.credits(), 1500);
+    assert_eq!(sim.houses[&owner].economy().credits(), 1500);
 }
 
 #[test]
@@ -103,14 +104,14 @@ fn superweapon_money_two_stage_unaffordable_final_is_atomic_and_retryable() {
     let hash = sim.state_hash();
     assert!(!complete(&mut sim, &rules, owner, ticket, (15, 15)));
     assert_eq!(sim.state_hash(), hash);
-    assert_eq!(sim.houses[&owner].economy.credits(), 499);
-    assert_eq!(sim.houses[&owner].economy.spent_credits(), 1);
+    assert_eq!(sim.houses[&owner].economy().credits(), 499);
+    assert_eq!(sim.houses[&owner].economy().spent_credits(), 1);
     assert!(matches!(sim.sound_events.as_slice(),
         [SimSoundEvent::SuperWeaponInsufficientFunds { owner: actual, sw_type }]
         if *actual == owner && *sw_type == source));
     crate::sim::credit_income::add_credits(&mut sim, owner, 1);
     assert!(complete(&mut sim, &rules, owner, ticket, (15, 15)));
-    assert_eq!(sim.houses[&owner].economy.credits(), 0);
+    assert_eq!(sim.houses[&owner].economy().credits(), 0);
     assert!(!complete(&mut sim, &rules, owner, ticket, (15, 15)));
 }
 
@@ -122,7 +123,7 @@ fn superweapon_money_two_stage_postclick_fee_uses_even_zero_source_settings() {
     assert!(fire(&mut sim, &rules, owner, source, (10, 10)));
     let ticket = sim.paid_super_weapon_selection(owner).unwrap();
     assert!(complete(&mut sim, &rules, owner, ticket, (15, 15)));
-    assert_eq!(sim.houses[&owner].economy.credits(), 1000);
+    assert_eq!(sim.houses[&owner].economy().credits(), 1000);
     assert!(!complete(&mut sim, &rules, owner, ticket, (15, 15)));
 }
 
@@ -135,7 +136,7 @@ fn superweapon_money_two_stage_wrong_owner_target_type_and_old_ticket_are_inert(
     let ticket = sim.paid_super_weapon_selection(owner).unwrap();
     let other = sim.interner.intern("Russians");
     sim.houses
-        .insert(other, HouseState::new(other, 1, None, true, 2000, 10));
+        .register(HouseState::new(other, 1, None, true, 2000, 10));
     superweapon::construct_house_supers(&mut sim, &rules, other, false);
     let hash = sim.state_hash();
     assert!(!complete(&mut sim, &rules, other, ticket, (15, 15)));
@@ -168,7 +169,7 @@ fn superweapon_money_two_stage_one_time_consumption_waits_for_final_activation()
     let ticket = sim.paid_super_weapon_selection(owner).unwrap();
     assert!(complete(&mut sim, &rules, owner, ticket, (15, 15)));
     assert!(!sim.super_weapons[&owner][&source].is_active);
-    assert_eq!(sim.houses[&owner].economy.credits(), 500);
+    assert_eq!(sim.houses[&owner].economy().credits(), 500);
 }
 
 #[test]
@@ -180,14 +181,17 @@ fn superweapon_money_two_stage_reset_and_defeat_invalidate_pending_selection() {
         assert!(fire(&mut sim, &rules, owner, source, (10, 10)));
         let ticket = sim.paid_super_weapon_selection(owner).unwrap();
         if defeat {
-            sim.houses.get_mut(&owner).unwrap().is_defeated = true;
+            sim.houses
+                .get_mut(&owner)
+                .unwrap()
+                .set_is_defeated_for_test(true);
             superweapon::update_owned_supers(&mut sim, &rules, owner);
         } else {
             superweapon::reset_super(&mut sim, &rules, owner, "Sphere");
         }
         assert!(sim.paid_super_weapon_selection(owner).is_none());
         assert!(!complete(&mut sim, &rules, owner, ticket, (15, 15)));
-        assert_eq!(sim.houses[&owner].economy.credits(), 1000);
+        assert_eq!(sim.houses[&owner].economy().credits(), 1000);
     }
 }
 
@@ -220,8 +224,8 @@ fn superweapon_money_two_stage_save_pending_consumed_and_cancelled_keep_identity
             save_codec::serialize(&sim.super_weapons).unwrap()
         );
         assert_eq!(
-            save_codec::serialize(&loaded.houses[&owner].economy).unwrap(),
-            save_codec::serialize(&sim.houses[&owner].economy).unwrap()
+            save_codec::serialize(&loaded.houses[&owner].economy()).unwrap(),
+            save_codec::serialize(&sim.houses[&owner].economy()).unwrap()
         );
         assert_eq!(loaded.paid_super_weapon_selection(owner), Some(ticket));
         assert!(complete(&mut loaded, &rules, owner, ticket, (15, 15)));
@@ -231,11 +235,11 @@ fn superweapon_money_two_stage_save_pending_consumed_and_cancelled_keep_identity
             save_codec::serialize(&loaded.super_weapons).unwrap()
         );
         assert_eq!(
-            save_codec::serialize(&consumed.houses[&owner].economy).unwrap(),
-            save_codec::serialize(&loaded.houses[&owner].economy).unwrap()
+            save_codec::serialize(&consumed.houses[&owner].economy()).unwrap(),
+            save_codec::serialize(&loaded.houses[&owner].economy()).unwrap()
         );
         assert!(!complete(&mut consumed, &rules, owner, ticket, (15, 15)));
-        assert_eq!(consumed.houses[&owner].economy.credits(), 1000 + amount);
+        assert_eq!(consumed.houses[&owner].economy().credits(), 1000 + amount);
         assert!(cancel(&mut sim, &rules, owner, ticket));
         let mut cancelled = restore(&sim, &rules);
         assert!(!complete(&mut cancelled, &rules, owner, ticket, (15, 15)));
@@ -271,7 +275,10 @@ fn superweapon_money_two_stage_provider_loss_and_power_hold_retire_ticket() {
         assert!(fire(&mut sim, &rules, owner, source, (10, 10)));
         let ticket = sim.paid_super_weapon_selection(owner).unwrap();
         if held {
-            sim.power_states.entry(owner).or_default().is_low_power = true;
+            sim.power_states
+                .entry(owner)
+                .or_default()
+                .set_is_low_power_for_test(true);
         } else {
             sim.substrate.entities.remove(provider);
         }
@@ -279,10 +286,13 @@ fn superweapon_money_two_stage_provider_loss_and_power_hold_retire_ticket() {
         assert!(!complete(&mut sim, &rules, owner, ticket, (15, 15)));
         superweapon::update_owned_supers(&mut sim, &rules, owner);
         assert!(sim.paid_super_weapon_selection(owner).is_none());
-        sim.power_states.entry(owner).or_default().is_low_power = false;
+        sim.power_states
+            .entry(owner)
+            .or_default()
+            .set_is_low_power_for_test(false);
         ready(&mut sim, &rules, owner, "Sphere", false);
         assert!(!complete(&mut sim, &rules, owner, ticket, (15, 15)));
-        assert_eq!(sim.houses[&owner].economy.credits(), 1000);
+        assert_eq!(sim.houses[&owner].economy().credits(), 1000);
     }
 }
 
@@ -305,7 +315,7 @@ fn superweapon_money_two_stage_general_prepost_and_new_source_replace_pending() 
     assert_eq!(new.source, other);
     assert!(!complete(&mut sim, &rules, owner, old, (15, 15)));
     assert!(complete(&mut sim, &rules, owner, new, (15, 15)));
-    assert_eq!(sim.houses[&owner].economy.credits(), 1300);
+    assert_eq!(sim.houses[&owner].economy().credits(), 1300);
 }
 
 #[test]
@@ -359,7 +369,7 @@ fn superweapon_money_two_stage_begin_cancel_reselect_in_one_saved_command_batch(
             index != 4
         );
     }
-    assert_eq!(loaded.houses[&owner].economy.credits(), 1000);
+    assert_eq!(loaded.houses[&owner].economy().credits(), 1000);
     assert!(!complete(&mut loaded, &rules, owner, first, (15, 15)));
     assert!(!complete(&mut loaded, &rules, owner, second, (15, 15)));
     let hash = loaded.state_hash();
@@ -390,7 +400,7 @@ fn superweapon_money_two_stage_retail_tank_warp_uses_existing_payload_once() {
         .unwrap();
     let source = ready(&mut sim, &rules, owner, "ChronoSphereSpecial", false);
     assert!(fire(&mut sim, &rules, owner, source, (21, 21)));
-    assert_eq!(sim.houses[&owner].economy.credits(), 1000);
+    assert_eq!(sim.houses[&owner].economy().credits(), 1000);
     assert_eq!(sim.super_placement_anims().len(), 1);
     let ticket = sim.paid_super_weapon_selection(owner).unwrap();
     assert!(complete(&mut sim, &rules, owner, ticket, (40, 40)));
@@ -400,7 +410,7 @@ fn superweapon_money_two_stage_retail_tank_warp_uses_existing_payload_once() {
         unit.locomotor.as_ref().unwrap().active_kind(),
         crate::rules::locomotor_type::LocomotorKind::Teleport
     );
-    assert_eq!(sim.houses[&owner].economy.credits(), 500);
+    assert_eq!(sim.houses[&owner].economy().credits(), 500);
     assert!(sim.super_placement_anims().is_empty());
     let hash = sim.state_hash();
     assert!(!complete(&mut sim, &rules, owner, ticket, (41, 41)));
@@ -427,7 +437,7 @@ fn superweapon_money_two_stage_other_power_and_sequence_exhaustion_cannot_reuse_
     let hash = sim.state_hash();
     assert!(!fire(&mut sim, &rules, owner, source, (10, 10)));
     assert_eq!(sim.state_hash(), hash);
-    assert_eq!(sim.houses[&owner].economy.credits(), 1000);
+    assert_eq!(sim.houses[&owner].economy().credits(), 1000);
 }
 
 #[test]
@@ -452,7 +462,7 @@ fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
     ));
     assert!(sim.paid_super_weapon_selection(owner).is_none());
     assert!(sim.super_weapons[&owner][&source].is_ready);
-    assert_eq!(sim.houses[&owner].economy.credits(), 499);
+    assert_eq!(sim.houses[&owner].economy().credits(), 499);
     let mut sim = restore(&sim, &rules);
     crate::sim::credit_income::add_credits(&mut sim, owner, 1);
     let new = sim
@@ -474,7 +484,7 @@ fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
     assert!(!cancel(&mut sim, &rules, owner, old));
     assert!(!complete(&mut sim, &rules, owner, old, (15, 15)));
     assert!(complete(&mut sim, &rules, owner, new, (15, 15)));
-    assert_eq!(sim.houses[&owner].economy.credits(), 0);
+    assert_eq!(sim.houses[&owner].economy().credits(), 0);
 }
 
 #[test]
@@ -533,7 +543,7 @@ fn superweapon_money_two_stage_restore_rejects_corrupt_lifecycle_records() {
                 });
             }
             4 => {
-                sim.houses.remove(&owner);
+                sim.houses.remove_for_test(&owner);
             }
             _ => unreachable!(),
         }

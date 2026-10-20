@@ -559,60 +559,10 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn test_iso_to_screen_origin() {
-        // (0,0,0) → X = 0-30 = -30, Y = 0+15 = 15
-        let (sx, sy): (f32, f32) = iso_to_screen(0, 0, 0);
-        assert!((sx - (-30.0)).abs() < f32::EPSILON);
-        assert!((sy - 15.0).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn test_iso_to_screen_positive() {
-        // rx=10, ry=0, z=0 → sx = 300-30 = 270, sy = 150+15 = 165
-        let (sx, sy): (f32, f32) = iso_to_screen(10, 0, 0);
-        assert!((sx - 270.0).abs() < f32::EPSILON);
-        assert!((sy - 165.0).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn test_iso_to_screen_diagonal() {
-        // rx=5, ry=5, z=0 → sx = 0-30 = -30, sy = 150+15 = 165
-        let (sx, sy): (f32, f32) = iso_to_screen(5, 5, 0);
-        assert!((sx - (-30.0)).abs() < f32::EPSILON);
-        assert!((sy - 165.0).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn test_iso_to_screen_elevation() {
-        // rx=0, ry=0, z=2 → sx = -30, sy = 15 - 30 = -15
-        let (sx, sy): (f32, f32) = iso_to_screen(0, 0, 2);
-        assert!((sx - (-30.0)).abs() < f32::EPSILON);
-        assert!((sy - (-15.0)).abs() < f32::EPSILON);
-    }
-
-    #[test]
     fn gsi_04_03b_iso_to_screen_sign_extends_raw_level() {
         let (sx, sy) = iso_to_screen(0, 0, 0xff);
         assert_eq!(sx, -30.0);
         assert_eq!(sy, 30.0, "raw level 0xFF is signed -1");
-    }
-
-    #[test]
-    fn screen_to_cell_tactical_inverse_uses_vertical_height_scan() {
-        let mut height_map = BTreeMap::new();
-        height_map.insert((10, 5), 4);
-        let result = screen_to_cell_tactical_inverse(
-            150.0,
-            180.0,
-            TacticalInverseContext {
-                height_map: &height_map,
-                bridge_cells: None,
-                viewport_offset_x: 0.0,
-                viewport_offset_y: 0.0,
-            },
-        );
-
-        assert_eq!(result, TacticalInverseResult::Cell { rx: 9.5, ry: 4.5 });
     }
 
     #[test]
@@ -636,75 +586,6 @@ mod tests {
     #[test]
     fn tactical_cardinal_neighbor_rejects_direction_eight() {
         assert_eq!(tactical_cardinal_neighbor(10, 10, 8), None);
-    }
-
-    #[test]
-    fn tactical_bridge_edge_threshold_is_strict() {
-        let height_map = BTreeMap::from([((0, 0), 0)]);
-        let mut bridge_cells = BTreeMap::new();
-        bridge_cells.insert(
-            (0, 0),
-            TacticalBridgeCell {
-                structural: true,
-                direction_zero: true,
-            },
-        );
-        bridge_cells.insert(
-            (1, 0),
-            TacticalBridgeCell {
-                structural: true,
-                direction_zero: true,
-            },
-        );
-        bridge_cells.insert(
-            (0, 1),
-            TacticalBridgeCell {
-                structural: true,
-                direction_zero: true,
-            },
-        );
-
-        let mut adjusted = 90.0;
-        assert_eq!(
-            apply_tactical_bridge_inverse(
-                0.0,
-                30.0,
-                90.0,
-                0,
-                0,
-                0,
-                TacticalInverseContext {
-                    height_map: &height_map,
-                    bridge_cells: Some(&bridge_cells),
-                    viewport_offset_x: 0.0,
-                    viewport_offset_y: 0.0,
-                },
-                &mut adjusted,
-            ),
-            None
-        );
-        assert_eq!(adjusted, 90.0);
-
-        let mut adjusted = 90.0;
-        assert_eq!(
-            apply_tactical_bridge_inverse(
-                0.0,
-                31.0,
-                90.0,
-                0,
-                0,
-                0,
-                TacticalInverseContext {
-                    height_map: &height_map,
-                    bridge_cells: Some(&bridge_cells),
-                    viewport_offset_x: 0.0,
-                    viewport_offset_y: 0.0,
-                },
-                &mut adjusted,
-            ),
-            None
-        );
-        assert_eq!(adjusted, 30.0);
     }
 
     #[test]

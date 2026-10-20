@@ -49,6 +49,7 @@ pub fn battle_session(
 
     SkirmishLaunchSession {
         mode: SkirmishLaunchMode {
+            class: crate::skirmish_modes::MpModeClass::Battle,
             id: 1,
             ui_name_key: "GUI:Battle".to_string(),
             tooltip_key: "STT:ModeBattle".to_string(),
@@ -59,19 +60,26 @@ pub fn battle_session(
             must_ally: false,
         },
         selected_map_file: Some(selected_map_file.to_string()),
-        player_name: "Player".to_string(),
-        local: SkirmishLocalSlot {
-            country: LaunchCountry::America,
-            country_random: false,
-            color_index: 0,
-            color_random: false,
-            start_position: LaunchStartPosition::Auto,
-            team: LaunchTeam::None,
-        },
+        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+            raw_slot_index: Some(0),
+            name: "Player".to_string(),
+            slot: SkirmishLocalSlot {
+                country: LaunchCountry::America,
+                country_random: false,
+                color_index: 0,
+                color_random: false,
+                start_position: LaunchStartPosition::Auto,
+                team: LaunchTeam::None,
+            },
+            role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+        }],
+        local_player_index: 0,
+        ai_player_count: opponents.len() as i32,
         opponents: opponents
             .iter()
             .enumerate()
             .map(|(slot, &(country, difficulty))| SkirmishAiSlot {
+                raw_slot_index: (slot + 1) as u8,
                 country,
                 country_random: false,
                 color_index: slot as u8 + 1,
@@ -112,6 +120,8 @@ impl HeadlessScenario {
             start_position: crate::skirmish_launch::LaunchStartPosition::Auto,
             team: crate::skirmish_launch::LaunchTeam::None,
             is_human: true,
+            observer: false,
+            source_human_index: None,
             difficulty: crate::sim::house_state::HouseDifficulty::Normal,
         };
         let runtime = &mut self.runtime;
@@ -214,8 +224,9 @@ pub fn load_with_launch(
         )
         .map_err(|error| format!("load native noncampaign rules: {error}"))?
         .into_parts();
-    let bound_scenario_prefix =
-        scenario_prefix_plan.bind_native_rules_receipt(native_rules_receipt);
+    let bound_scenario_prefix = scenario_prefix_plan
+        .bind_native_rules_receipt(native_rules_receipt, &launch, &rules)
+        .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?;
     let team_ai_registry =
         crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, true)?;
     let theater = theater::load_theater(&mut assets, &map.header.theater)
@@ -419,7 +430,7 @@ pub fn load_with_launch(
     if sim.path_grid().is_none() {
         return Err("headless post-map navigation is unavailable".to_string());
     }
-    sim.session.set_started(true);
+    sim.session.publish_started();
     Ok(HeadlessScenario {
         runtime: crate::sim::runtime::SimRuntime {
             simulation: sim,
@@ -578,20 +589,17 @@ mod retail_construction_tests {
                         descriptor,
                         |sim| {
                             let americans = sim.interner.intern("Americans");
-                            sim.houses.insert(
-                                americans,
-                                crate::sim::house_state::HouseState::new(
+                            sim.houses
+                                .register(crate::sim::house_state::HouseState::new(
                                     americans, 0, None, true, 0, 10,
-                                ),
-                            );
-                            sim.session.house_order.push(americans);
+                                ));
                         },
                     );
                     Ok::<_, ()>(sim)
                 },
             )
             .unwrap();
-            assert_eq!(playback.state.session.free_radar, expected);
+            assert_eq!(playback.state.session.free_radar(), expected);
             // House 0x00508DF0 reads Scenario FreeRadar when the House's
             // first update rechecks radar.
             let mut sim = playback.state;
@@ -600,7 +608,7 @@ mod retail_construction_tests {
                 crate::sim::radar::has_radar_for_owner(&sim, &rules, "Americans"),
                 expected
             );
-            assert_eq!(sim.session.map_name, "radar.map");
+            assert_eq!(sim.session.map_name(), "radar.map");
         }
     }
 
@@ -616,7 +624,7 @@ mod retail_construction_tests {
         assert_eq!(session.mode.override_file, "MPBattleMD.ini");
         assert_eq!(session.selected_map_file.as_deref(), Some("TEST.MAP"));
         assert!(session.opponents.is_empty());
-        assert_eq!(session.local.color_index, 0);
+        assert_eq!(session.local_slot().color_index, 0);
     }
 
     #[test]
@@ -769,13 +777,13 @@ mod retail_construction_tests {
             );
         }
 
-        // The same pair on the multiplayer Queue_AI route: both instances
-        // store an identical retail sync checksum every frame.
+        // The same pair as a LAN session, whose GameMode takes the multiplayer
+        // Queue_AI route: both instances store an identical retail sync
+        // checksum every frame.
         for scenario in [&mut a, &mut b] {
-            scenario
-                .runtime
-                .simulation
-                .set_command_queue_route(crate::sim::world::CommandQueueRoute::Multiplayer);
+            let session = &mut scenario.runtime.simulation.session;
+            session.set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+            session.install_network_timing(10);
         }
         for tick in 0..60u32 {
             let [checksum_a, checksum_b] = [&mut a, &mut b].map(|scenario| {
@@ -808,22 +816,23 @@ mod retail_construction_tests {
         for (id, anim) in scenario
             .sim()
             .anims()
-            .filter(|(_, anim)| anim.terrain_attached)
+            .filter(|(_, anim)| anim.terrain_attached())
         {
             terrain_anims += 1;
-            let name = scenario.sim().interner.resolve(anim.type_id);
+            let name = scenario.sim().interner.resolve(anim.type_id());
             let config = rules
                 .art()
                 .anim_runtime_config(name)
                 .expect("bound terrain type");
             assert!(rules.art().scheduler_anim_types().contains(name));
             assert!(config.art_body_read && config.raw_shp_frame_count.is_some());
-            assert_eq!(anim.effective_end, config.end, "{name} final bound End");
+            assert_eq!(anim.effective_end(), config.end, "{name} final bound End");
             assert_eq!(
-                anim.effective_loop_end, config.loop_end,
+                anim.effective_loop_end(),
+                config.loop_end,
                 "{name} final bound LoopEnd"
             );
-            assert!(anim.use_cell_drawer);
+            assert!(anim.use_cell_drawer());
             assert!(
                 scenario
                     .sim()
@@ -877,7 +886,7 @@ mod retail_construction_tests {
             .sim()
             .houses
             .iter()
-            .filter(|(_, house)| !house.is_controlled_by_human(true) && !house.multiplay_passive)
+            .filter(|(_, house)| !house.is_controlled_by_human(true) && !house.multiplay_passive())
             .map(|(&id, _)| id)
             .collect();
         assert_eq!(computers.len(), opponents.len());
@@ -948,7 +957,7 @@ mod retail_construction_tests {
                     "frame {frame} {}: {buildings} buildings, {foot} foot, {teams} live teams \
                      ({members} members), choices {:?}",
                     sim.interner.resolve(owner),
-                    house.ai_unit_choices,
+                    house.ai_unit_choices(),
                 );
             }
             for team in sim.team_script_vm.teams_in_order() {
@@ -983,7 +992,7 @@ mod retail_construction_tests {
     ) -> (crate::sim::intern::InternedId, Vec<u64>) {
         let house = house_of(sim, country);
         let (bx, by) = sim.houses[&house]
-            .base_center
+            .base_center()
             .expect("the base has a centre");
         let cells = (0..900).map(|n| (i32::from(bx) + n % 30 - 15, i32::from(by) + n / 30 - 15));
         let spawned = spawn_on_free_cells(sim, rules, house, cells, types);
@@ -995,7 +1004,7 @@ mod retail_construction_tests {
         let country_id = sim.interner.get(country).expect("retail country interned");
         sim.houses
             .iter()
-            .find(|(_, house)| house.country == Some(country_id))
+            .find(|(_, house)| house.country() == Some(country_id))
             .map(|(&id, _)| id)
             .expect("a house of the country")
     }
@@ -1235,7 +1244,7 @@ mod retail_construction_tests {
         ] {
             let (mut scenario, _) = retail_battle(
                 |session| {
-                    session.local.country = local;
+                    session.local_slot_mut().country = local;
                     session.options.unit_count = 0;
                 },
                 &[(opponent, AiDifficulty::Hard)],
@@ -1256,7 +1265,7 @@ mod retail_construction_tests {
                 .expect("the local MCV");
             let deploy = CommandEnvelope::new(
                 human,
-                sim.session.tick + 1,
+                sim.session.tick() + 1,
                 Command::DeployMcv { entity_id: mcv },
             );
             scenario
@@ -1440,7 +1449,7 @@ mod retail_construction_tests {
         for lone in [true, false] {
             let (mut scenario, _) = retail_battle(
                 |session| {
-                    session.local.country = LaunchCountry::America;
+                    session.local_slot_mut().country = LaunchCountry::America;
                     session.options.unit_count = 0;
                 },
                 &[(LaunchCountry::Russia, AiDifficulty::Hard)],
@@ -1461,7 +1470,7 @@ mod retail_construction_tests {
                 .expect("the local MCV");
             let deploy = CommandEnvelope::new(
                 human,
-                sim.session.tick + 1,
+                sim.session.tick() + 1,
                 Command::DeployMcv { entity_id: mcv },
             );
             scenario
@@ -1611,7 +1620,7 @@ mod retail_construction_tests {
         let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
         let yuri = house_of(sim, "YuriCountry");
         let (bx, by) = sim.houses[&yuri]
-            .base_center
+            .base_center()
             .expect("the base has a centre");
         // A 2x2 foundation inside a free 4x4 square, so a tank can reach it.
         let open = |sim: &Simulation, rx: i32, ry: i32| {
@@ -2087,7 +2096,7 @@ mod retail_construction_tests {
         // Deploy's (-1, -1), and a cell of drift.
         let yard = resources.rules.object("NACNST").expect("retail NACNST");
         let (bx, by) = sim.houses[&soviet]
-            .base_center
+            .base_center()
             .expect("the base has a centre");
         let mut around: Vec<(i32, i32)> = (0..1681).map(|n| (n % 41 - 20, n / 41 - 20)).collect();
         around.sort_by_key(|&(dx, dy)| (dx * dx + dy * dy, dy, dx));
@@ -2238,7 +2247,7 @@ mod retail_construction_tests {
             cells_nearest((i32::from(start.0), i32::from(start.1))),
             &["E1"],
         )[0];
-        let tick = sim.session.tick;
+        let tick = sim.session.tick();
         sim.queue_command(CommandEnvelope::new(
             america,
             tick + 1,
@@ -2349,7 +2358,7 @@ mod retail_construction_tests {
             crate::sim::world::FrameEffects::default(),
         )
         .expect("the Rhino takes the GI as its target");
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         sim.mission_assign_exact(rhino, MissionId::from_known(MissionType::Attack), now)
             .expect("the Rhino takes Attack");
         let _ = sim.mission_commence_exact(rhino, now);
@@ -2438,7 +2447,7 @@ mod retail_construction_tests {
             .into_iter()
             .filter(|&(rx, ry)| (rx - at.0).abs().max((ry - at.1).abs()) >= 3);
         let spy = spawn_on_free_cells(sim, rules, america, cells, &["SPY"])[0];
-        let tick = sim.session.tick;
+        let tick = sim.session.tick();
         sim.queue_command(CommandEnvelope::new(
             america,
             tick + 1,
@@ -2470,7 +2479,7 @@ mod retail_construction_tests {
             "the spy never went in"
         );
         assert!(sim.entities().get(spy).is_none(), "the spy stayed");
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         assert!(sim.power_states[&soviet].blackout_remaining(frame) > 0);
     }
 
@@ -2498,7 +2507,7 @@ mod retail_construction_tests {
 
         let (mut scenario, _) = retail_battle(
             |session| {
-                session.local.country = LaunchCountry::Russia;
+                session.local_slot_mut().country = LaunchCountry::Russia;
                 session.options.unit_count = 0;
             },
             &[(LaunchCountry::America, AiDifficulty::Normal)],
@@ -2608,7 +2617,7 @@ mod retail_construction_tests {
             "the spy never went in"
         );
         let sim = scenario.sim();
-        assert!(sim.power_states[&soviet].blackout_remaining(sim.session.binary_frame) > 0);
+        assert!(sim.power_states[&soviet].blackout_remaining(sim.session.binary_frame()) > 0);
     }
 
     /// A Normal American house's Tanya (retail `[TANY]`: `C4=yes`,
@@ -2627,7 +2636,7 @@ mod retail_construction_tests {
 
         let (mut scenario, _) = retail_battle(
             |session| {
-                session.local.country = LaunchCountry::Russia;
+                session.local_slot_mut().country = LaunchCountry::Russia;
                 session.options.unit_count = 0;
             },
             &[(LaunchCountry::America, AiDifficulty::Normal)],
@@ -2669,7 +2678,7 @@ mod retail_construction_tests {
             .into_iter()
             .filter(|&(x, y)| (x - rx).abs().max((y - ry).abs()) >= 6);
         let tanya = spawn_on_free_cells(sim, rules, america, cells, &["TANY"])[0];
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         sim.mission_assign_exact(tanya, MissionId::from_known(MissionType::Attack), now)
             .unwrap();
         sim.assign_target_represented(
@@ -2778,7 +2787,7 @@ mod retail_construction_tests {
             .into_iter()
             .filter(|&(rx, ry)| (rx - at.0).abs().max((ry - at.1).abs()) >= 2);
         let tank = spawn_on_free_cells(sim, rules, america, cells, &["MTNK"])[0];
-        let tick = sim.session.tick;
+        let tick = sim.session.tick();
         sim.queue_command(CommandEnvelope::new(
             america,
             tick + 1,
@@ -2886,7 +2895,7 @@ mod retail_construction_tests {
             sim.houses
                 .get_mut(&soviet)
                 .unwrap()
-                .economy
+                .economy_mut()
                 .set_credits_for_test(credits);
             assert_eq!(
                 crate::sim::ai_build_need::check_build_need(sim, rules, soviet),
@@ -2920,7 +2929,7 @@ mod retail_construction_tests {
             }
             if chosen.is_none()
                 && managed.is_some()
-                && sim.houses[&soviet].ai_production.building_choice() == refinery
+                && sim.houses[&soviet].ai_production().building_choice() == refinery
             {
                 chosen = Some(frame);
             }
@@ -2942,7 +2951,7 @@ mod retail_construction_tests {
         }
         let calls = MANAGE_CALLS.take().unwrap_or(0);
         let sim = scenario.sim();
-        let hunting = sim.houses[&soviet].strategy_emergency.all_to_hunt_bias;
+        let hunting = sim.houses[&soviet].strategy_emergency().all_to_hunt_bias();
         let yards = of_type(sim, "NACNST", false).len();
         eprintln!(
             "base standing at {standing:?}; Manage_Build_Queue first at {managed:?} ({calls} \
@@ -2991,7 +3000,7 @@ mod launch_special_flags_tests {
         let scene = load_session(&root, "XMP03T4.MAP", 0x1234_5678, truce)
             .expect("launch with Harvester Truce on");
         assert!(
-            scene.sim().session.harvester_immune,
+            scene.sim().session.harvester_immune(),
             "the session's truce byte replaces the map's bit"
         );
 
@@ -3009,7 +3018,7 @@ mod launch_special_flags_tests {
         )
         .expect("launch with the default options");
         assert!(
-            !plain.sim().session.harvester_immune,
+            !plain.sim().session.harvester_immune(),
             "the default skirmish session leaves the bit clear"
         );
     }

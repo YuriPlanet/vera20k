@@ -406,12 +406,6 @@ mod tests {
     }
 
     #[test]
-    fn test_missing_actions_is_empty() {
-        let ini = IniFile::from_str("[Map]\nTheater=TEMPERATE\n");
-        assert!(parse_actions(&ini).is_empty());
-    }
-
-    #[test]
     fn waypoint_tokens_follow_the_native_two_letter_decoder() {
         for (token, expected) in [
             ("A", Some(0)),

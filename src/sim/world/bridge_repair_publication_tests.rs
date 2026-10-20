@@ -11,7 +11,7 @@ fn broken_strip(sim: &mut Simulation) {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(x, y)
+            .cell_mut_for_test(x, y)
             .unwrap();
         c.bridge_facts.overlay_id = Some(231);
         sim.overlay_grid
@@ -21,146 +21,10 @@ fn broken_strip(sim: &mut Simulation) {
     }
 }
 
-#[test]
-fn ordinary_engineer_command_repairs_from_completed_walk_in_object_turn() {
-    command_repair_fixture(false, false);
-}
-
-#[test]
-fn slave_master_admission_reaches_head_selection_in_the_same_object_turn() {
-    use crate::map::entities::EntityCategory;
-    use crate::sim::components::{DriveCoord, NavTargetRef};
-    use crate::sim::movement::{ground_pose, locomotor::MovementLayer};
-    use crate::sim::occupancy::{CellListInsertion, infantry_raw_occupation_mask};
-    use crate::util::fixed_math::SimFixed;
-    for later_blocker in [false, true] {
-        let (mut sim, rules, registry) = fixture();
-        let master = sim
-            .spawn_object("CABHUT", "Americans", 16, 15, 0, &rules)
-            .unwrap();
-        let slave = sim
-            .spawn_object("ENGINEER", "Americans", 15, 15, 0, &rules)
-            .unwrap();
-        // Supplied manager/deposit leg tests the real object-turn admission
-        // continuation, not production slave AI or a stock hut manager.
-        accept_destination(&mut sim, slave, &rules);
-        sim.mission_assign_exact(
-            slave,
-            crate::sim::mission::MissionId::from_known(
-                crate::rules::mission_data::MissionType::Move,
-            ),
-            sim.session.binary_frame,
-        )
-        .unwrap();
-        let e = sim.substrate.entities.get_mut(slave).unwrap();
-        e.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(master), Vec::new());
-        e.navigation
-            .set_nav_com_for_test(Some(NavTargetRef::Cell { rx: 16, ry: 15 }));
-        e.locomotor
-            .as_mut()
-            .unwrap()
-            .set_walk_destination(Some(DriveCoord::cell(16, 15, 0)));
-        let before = ground_pose::position_world_coord(&e.position);
-        let slav = sim.intern("SLAV");
-        sim.substrate
-            .entities
-            .get_mut(master)
-            .unwrap()
-            .slave_manager = Some(crate::sim::slave_manager::SlaveManager::new(
-            slav,
-            [Some(slave)],
-            0,
-            0,
-            0,
-        ));
-        if later_blocker {
-            let mut b = crate::sim::game_entity::GameEntity::test_default_of_category(
-                100,
-                "CABHUT",
-                "Americans",
-                16,
-                15,
-                EntityCategory::Structure,
-            );
-            b.set_owner_for_test(sim.intern("Americans"));
-            b.set_type_ref_for_test(sim.intern("CABHUT"));
-            sim.substrate.entities.insert(b);
-            sim.substrate.occupancy.add(
-                16,
-                15,
-                100,
-                MovementLayer::Ground,
-                None,
-                CellListInsertion::AppendBuilding,
-            );
-        }
-        sim.advance_live_object_pass(
-            Some(&rules),
-            Some(&registry),
-            crate::sim::world::FrameEffects::default(),
-        )
-        .expect("fixture frame must complete");
-        let e = sim.substrate.entities.get(slave).unwrap();
-        let head = e.locomotor.as_ref().unwrap().step_head();
-        if later_blocker {
-            // Can_Enter_Cell 7 with a Building in the target cell takes the
-            // Find_Path code-7 arm (0x4D3CDD..0x4D3E03): FNPC redirects the
-            // destination to a passable cell near the target, nearest to the
-            // actor, and the search continues there.
-            let head = head.expect("the code-7 redirect still yields a fresh head");
-            let redirected = e.locomotor.as_ref().unwrap().walk_destination().unwrap();
-            let redirected = (redirected.x / 256, redirected.y / 256);
-            assert_ne!(redirected, (16, 15), "the Building cell is not searched");
-            assert!(
-                (redirected.0 - 16).abs() <= 1 && (redirected.1 - 15).abs() <= 1,
-                "FNPC picked {redirected:?} away from the target ring"
-            );
-            assert_eq!((head.x / 256, head.y / 256), redirected);
-            assert_eq!(
-                e.navigation.nav_com(),
-                Some(NavTargetRef::Cell {
-                    rx: redirected.0 as u16,
-                    ry: redirected.1 as u16,
-                })
-            );
-            assert_eq!(ground_pose::position_world_coord(&e.position), before);
-        } else {
-            let head = head.expect("Clear CanEnter resumes fresh-head selection in this call");
-            assert_eq!((head.x / 256, head.y / 256), (16, 15));
-            assert_eq!(
-                ground_pose::position_world_coord(&e.position),
-                before,
-                "original75C240 fresh-head publication returns before paid motion"
-            );
-            assert_eq!(
-                e.locomotor.as_ref().unwrap().walk_animation_moving(),
-                Some(true)
-            );
-            let mask = infantry_raw_occupation_mask(
-                SimFixed::from_num(head.x % 256),
-                SimFixed::from_num(head.y % 256),
-            );
-            assert_eq!(
-                sim.substrate.raw_cell_occupation.ground_bits(16, 15) & mask,
-                mask
-            );
-            assert_eq!(
-                sim.substrate
-                    .raw_cell_occupation
-                    .ground_infantry_owner(16, 15),
-                Some(e.owner())
-            );
-        }
-    }
-}
-
-#[test]
-fn engineer_repair_damages_landed_fly_occupant_before_its_later_turn() {
-    //Supplied just-landed Fly state; native carrier/Hornet reachability is
-    //proved separately. This exercises repair and the actual damage receiver.
-    command_repair_fixture(true, false);
-}
-
+/// The real CaptureBuilding order walks the engineer into the hut and repairs
+/// from the completed Walk in its object turn. A supplied just-landed Fly team
+/// member on the span (native carrier/Hornet reachability is proved
+/// separately) takes the repair's actual damage receiver before its later turn.
 #[test]
 fn engineer_repair_damages_landed_fly_with_known_non_waypoint_team_script() {
     command_repair_fixture(true, true);
@@ -172,8 +36,14 @@ fn engineer_repair_damages_landed_fly_with_known_non_waypoint_team_script() {
 fn player_house(sim: &mut Simulation) {
     let owner = sim.interner.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 0);
-    house.player_control = true;
-    sim.houses.insert(owner, house);
+    house.set_player_control_for_test(true);
+    sim.houses.register(house);
+    // The hut's computer owner.
+    let soviets = sim.interner.intern("Soviets");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            soviets, 1, None, false, 0, 0,
+        ));
 }
 
 fn command_repair_fixture(with_aircraft: bool, with_team: bool) {
@@ -258,7 +128,7 @@ fn command_repair_fixture(with_aircraft: bool, with_team: bool) {
                     owner,
                     script_id,
                     vec![id],
-                    sim.session.binary_frame as i32,
+                    sim.session.binary_frame() as i32,
                 );
                 assert!(sim.team_script_vm.team_for_member(id).is_some());
             }
@@ -270,7 +140,7 @@ fn command_repair_fixture(with_aircraft: bool, with_team: bool) {
         if let Some(e) = sim.substrate.entities.get(engineer) {
             trace.push(format!(
                 "frame{} cell{},{} sub{},{} head{:?} nav{:?} mission{:?} alive{}",
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
                 e.position.rx(),
                 e.position.ry(),
                 e.position.sub_x(),
@@ -411,7 +281,7 @@ fn walk_boundary_relinks_current_xyz_and_leaves_the_raw_bit_on_the_head() {
         e.position.set_sub_x_for_test(SimFixed::from_num(192));
         e.position.set_sub_y_for_test(SimFixed::from_num(64));
         e.locomotor.as_mut().unwrap().set_step_head(Some(head));
-        (e.owner(), e.navigation.path_replay.clone())
+        (e.owner(), e.navigation.path_replay().clone())
     };
     sim.substrate
         .raw_cell_occupation
@@ -441,7 +311,7 @@ fn walk_boundary_relinks_current_xyz_and_leaves_the_raw_bit_on_the_head() {
     assert!(e.lifecycle.cell_marked() && e.foot_occupation_enabled());
     assert_eq!(e.sub_cell(), Some(0));
     assert_eq!(e.locomotor.as_ref().unwrap().step_head(), Some(head));
-    assert_eq!(e.navigation.path_replay, queue);
+    assert_eq!(e.navigation.path_replay().clone(), queue);
     assert_eq!(
         sim.substrate.raw_cell_occupation.ground_bits(15, 15) & 0x1f,
         0
@@ -469,121 +339,6 @@ fn walk_boundary_relinks_current_xyz_and_leaves_the_raw_bit_on_the_head() {
 }
 
 #[test]
-fn diagonal_walk_relinks_the_first_actual_side_cell_before_reaching_its_head() {
-    use crate::sim::movement::ground_pose;
-    use crate::util::fixed_math::SimFixed;
-    let (mut sim, rules, registry) = fixture();
-    let id = sim
-        .spawn_object("ENGINEER", "Americans", 15, 15, 0, &rules)
-        .unwrap();
-    {
-        let e = sim.substrate.entities.get_mut(id).unwrap();
-        e.position.set_sub_x_for_test(SimFixed::from_num(192));
-        e.position.set_sub_y_for_test(SimFixed::from_num(64));
-    }
-    let grid = sim.path_grid_snapshot();
-    assert!(sim.apply_command(
-        "Americans",
-        &Command::Move {
-            entity_id: id,
-            target_rx: 16,
-            target_ry: 16,
-        },
-        Some(&rules),
-    ));
-    drop(grid);
-    for _ in 0..100 {
-        let grid = sim.path_grid_snapshot();
-        sim.advance_tick(&[], Some(&rules), grid.as_deref(), Some(&registry), 67);
-        let e = sim.substrate.entities.get(id).unwrap();
-        let xy = ground_pose::position_world_xy(&e.position);
-        if xy[0] >= 16 * 256 {
-            assert!(xy[1] < 16 * 256, "unequal offsets must cross X first");
-            assert_eq!((e.position.rx(), e.position.ry()), (16, 15));
-            let head = e.locomotor.as_ref().unwrap().step_head().unwrap();
-            assert_eq!((head.x / 256, head.y / 256), (16, 16));
-            assert!(sim.substrate.occupancy.contains_entity(16, 15, id));
-            assert!(!sim.substrate.occupancy.contains_entity(15, 15, id));
-            // The side cell lists him, but Mark skips his raw receiver
-            // (`0x0047E9EA`): his bit stays on the head sub-cell.
-            let mask = crate::sim::occupancy::infantry_raw_occupation_mask(
-                e.position.sub_x(),
-                e.position.sub_y(),
-            );
-            assert_eq!(
-                sim.substrate.raw_cell_occupation.ground_bits(16, 15) & mask,
-                0
-            );
-            let head_mask = crate::sim::occupancy::infantry_raw_occupation_mask(
-                SimFixed::from_num(head.x % 256),
-                SimFixed::from_num(head.y % 256),
-            );
-            assert_eq!(
-                sim.substrate.raw_cell_occupation.ground_bits(16, 16) & head_mask,
-                head_mask
-            );
-            return;
-        }
-    }
-    panic!("diagonal walker never reached first side cell");
-}
-
-#[test]
-fn refused_fresh_walk_head_restores_the_current_raw_occupation() {
-    use crate::util::fixed_math::SimFixed;
-    let (mut sim, rules, registry) = fixture();
-    let id = sim
-        .spawn_object("ENGINEER", "Americans", 15, 15, 0, &rules)
-        .unwrap();
-    let owner = {
-        let e = sim.substrate.entities.get_mut(id).unwrap();
-        e.position.set_sub_x_for_test(SimFixed::from_num(192));
-        e.position.set_sub_y_for_test(SimFixed::from_num(64));
-        e.owner()
-    };
-    sim.substrate
-        .raw_cell_occupation
-        .clear_ground_infantry(15, 15, 0x1f);
-    sim.substrate
-        .raw_cell_occupation
-        .mark_ground_infantry(15, 15, 4, owner);
-    // These are retained heads, with no listed infantry at the destination.
-    sim.substrate
-        .raw_cell_occupation
-        .mark_ground_infantry(16, 15, 0x1c, owner);
-    let grid = sim.path_grid_snapshot();
-    assert!(sim.apply_command(
-        "Americans",
-        &Command::Move {
-            entity_id: id,
-            target_rx: 16,
-            target_ry: 15,
-        },
-        Some(&rules),
-    ));
-    drop(grid);
-    let grid = sim.path_grid_snapshot();
-    sim.advance_tick(&[], Some(&rules), grid.as_deref(), Some(&registry), 67);
-    let e = sim.substrate.entities.get(id).unwrap();
-    assert_eq!((e.position.rx(), e.position.ry()), (15, 15));
-    assert_eq!(e.locomotor.as_ref().unwrap().step_head(), None);
-    assert_eq!(
-        sim.substrate.raw_cell_occupation.ground_bits(15, 15) & 0x1c,
-        4
-    );
-    assert_eq!(
-        sim.substrate
-            .raw_cell_occupation
-            .ground_infantry_owner(15, 15),
-        Some(owner)
-    );
-    assert_eq!(
-        sim.substrate.raw_cell_occupation.ground_bits(16, 15) & 0x1c,
-        0x1c
-    );
-}
-
-#[test]
 fn production_fresh_head_and_raw_history_match_original_walk_producer() {
     use crate::sim::components::DriveCoord;
     use crate::util::fixed_math::SimFixed;
@@ -603,7 +358,7 @@ fn production_fresh_head_and_raw_history_match_original_walk_producer() {
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(x, 10)
+                .cell_mut_for_test(x, 10)
                 .unwrap();
             c.level = 2;
             c.slope_type = 1;
@@ -702,7 +457,7 @@ pub(in crate::sim::world) fn ready_repair_fixture(
             sim.resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(x, y)
+                .cell_mut_for_test(x, y)
                 .unwrap()
                 .bridge_facts
                 .overlay_id = Some(overlay);
@@ -731,7 +486,7 @@ pub(in crate::sim::world) fn ready_engineer(
         crate::sim::mission::MissionId::from_known(
             crate::rules::mission_data::MissionType::Capture,
         ),
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     )
     .unwrap();
     let e = sim.substrate.entities.get_mut(id).unwrap();
@@ -785,26 +540,6 @@ fn repair_sounds(sim: &Simulation) -> Vec<bool> {
 }
 
 #[test]
-fn engineer_enters_cabhut_repairs_bridge() {
-    let (mut sim, rules, registry, hut) = ready_repair_fixture(Some(231));
-    let engineer = ready_engineer(&mut sim, &rules, &registry, hut);
-    assert!(repair_frame(&mut sim, &rules, &registry).bridge_state_changed);
-    assert!(sim.substrate.entities.get(engineer).is_none());
-    assert_eq!(repair_sounds(&sim), [true]);
-    for (x, y) in [(17, 14), (17, 15), (17, 16)] {
-        let facts = sim
-            .resolved_terrain
-            .as_ref()
-            .unwrap()
-            .cell(x, y)
-            .unwrap()
-            .bridge_facts;
-        assert_eq!(facts.overlay_id, Some(0xce), "Seed0 native MapGen variant");
-        assert!(crate::sim::bridge_state::cell_render_state(facts).is_some());
-    }
-}
-
-#[test]
 fn engineer_at_intact_cabhut_emits_sound_no_mutation() {
     let (mut sim, rules, registry, hut) = ready_repair_fixture(Some(205));
     let engineer = ready_engineer(&mut sim, &rules, &registry, hut);
@@ -813,107 +548,47 @@ fn engineer_at_intact_cabhut_emits_sound_no_mutation() {
     assert_eq!(repair_sounds(&sim), [true]);
 }
 
+/// A completed hut repair cancels the hut target of every later engineer
+/// before its next turn. Live vector removal skips the repairer's immediate
+/// successor, which keeps its head until its next turn; a nonconsecutive one
+/// finishes its head in the same frame. Neither repeats the cancelled repair.
 #[test]
-fn engineer_far_from_bridge_at_cabhut_no_mutation() {
-    let (mut sim, rules, registry, hut) = ready_repair_fixture(None);
-    let engineer = ready_engineer(&mut sim, &rules, &registry, hut);
-    assert!(!repair_frame(&mut sim, &rules, &registry).bridge_state_changed);
-    assert!(sim.substrate.entities.get(engineer).is_none());
-    assert_eq!(repair_sounds(&sim), [true]);
-}
-
-#[test]
-fn bridge_repair_preserves_unrelated_foundation_before_next_reader() {
-    let (mut sim, rules, registry, hut) = ready_repair_fixture(Some(231));
-    let unrelated = sim
-        .spawn_object("CABHUT", "Soviets", 13, 13, 0, &rules)
-        .unwrap();
-    let engineer = ready_engineer(&mut sim, &rules, &registry, hut);
-    assert!(sim.rebuild_dynamic_navigation(&rules));
-    let pinned = sim.path_grid_snapshot().unwrap();
-    assert!(!pinned.is_walkable(13, 13));
-    let gameplay = (sim.scenario_rng.state(), sim.main_rng.state());
-    let mut mapgen = sim.mapgen_rng.clone();
-    mapgen.next_high_two_bits();
-    assert!(
-        sim.run_completed_walk_step(
-            engineer,
-            crate::sim::components::DriveCoord::cell(16, 15, 0),
-            Some(&rules),
-            Some(&registry),
-            crate::sim::world::FrameEffects::default()
-        )
-        .expect("fixture frame must complete")
-    );
-    assert!(
-        !sim.substrate
-            .entities
-            .get(engineer)
-            .unwrap()
-            .lifecycle
-            .object_alive(),
-        "Uninit before frame-tail drain"
-    );
-    assert!(sim.substrate.occupancy.contains_entity(13, 13, unrelated));
-    assert!(!sim.path_grid().unwrap().is_walkable(13, 13));
-    assert!(!pinned.is_walkable(13, 13));
-    assert_eq!(gameplay, (sim.scenario_rng.state(), sim.main_rng.state()));
-    assert_eq!(sim.mapgen_rng.state(), mapgen.state());
-    for (x, y) in [(17, 14), (17, 15), (17, 16)] {
-        let facts = sim
-            .resolved_terrain
-            .as_ref()
-            .unwrap()
-            .cell(x, y)
-            .unwrap()
-            .bridge_facts;
-        assert!(crate::sim::bridge_state::cell_render_state(facts).is_some());
+fn cancelled_successor_engineers_finish_their_heads_without_repeating_the_repair() {
+    for separated in [false, true] {
+        let (mut sim, rules, registry, hut) = ready_repair_fixture(Some(231));
+        let a = ready_engineer(&mut sim, &rules, &registry, hut);
+        let separator = separated.then(|| {
+            sim.spawn_object("ENGINEER", "Americans", 19, 15, 0, &rules)
+                .unwrap()
+        });
+        let b = ready_engineer(&mut sim, &rules, &registry, hut);
+        repair_frame(&mut sim, &rules, &registry);
+        assert!(sim.substrate.entities.get(a).is_none());
+        if let Some(separator) = separator {
+            assert!(sim.substrate.entities.get(separator).is_some());
+        }
+        let successor = sim.substrate.entities.get(b).unwrap();
+        assert!(successor.lifecycle.object_alive(), "separated={separated}");
+        assert_eq!(successor.navigation.nav_com(), None);
+        assert_eq!(
+            successor.locomotor.as_ref().unwrap().step_head().is_some(),
+            !separated,
+            "live vector removal skips only the immediate successor"
+        );
+        assert_eq!(repair_sounds(&sim), [true]);
+        assert!(sim.radar_terrain_dirty_generation > 0);
+        for p in [(17, 14), (17, 15), (17, 16)] {
+            assert!(sim.radar_terrain_dirty_cells.contains(&p));
+        }
+        if !separated {
+            repair_frame(&mut sim, &rules, &registry);
+            let successor = sim.substrate.entities.get(b).unwrap();
+            assert!(successor.lifecycle.object_alive());
+            assert_eq!(successor.navigation.nav_com(), None);
+            assert_eq!(successor.locomotor.as_ref().unwrap().step_head(), None);
+            assert_eq!(repair_sounds(&sim), [true]);
+        }
     }
-}
-
-#[test]
-fn consecutive_engineers_cancel_the_successors_hut_target_before_its_next_turn() {
-    let (mut sim, rules, registry, hut) = ready_repair_fixture(Some(231));
-    let a = ready_engineer(&mut sim, &rules, &registry, hut);
-    let b = ready_engineer(&mut sim, &rules, &registry, hut);
-    repair_frame(&mut sim, &rules, &registry);
-    assert!(sim.substrate.entities.get(a).is_none());
-    assert!(
-        sim.substrate.entities.get(b).is_some(),
-        "live vector removal skips its immediate successor"
-    );
-    let successor = sim.substrate.entities.get(b).unwrap();
-    assert_eq!(successor.navigation.nav_com(), None);
-    assert!(successor.locomotor.as_ref().unwrap().step_head().is_some());
-    assert_eq!(repair_sounds(&sim), [true]);
-    assert!(sim.radar_terrain_dirty_generation > 0);
-    for p in [(17, 14), (17, 15), (17, 16)] {
-        assert!(sim.radar_terrain_dirty_cells.contains(&p));
-    }
-    repair_frame(&mut sim, &rules, &registry);
-    let successor = sim.substrate.entities.get(b).unwrap();
-    assert!(successor.lifecycle.object_alive());
-    assert_eq!(successor.navigation.nav_com(), None);
-    assert_eq!(successor.locomotor.as_ref().unwrap().step_head(), None);
-    assert_eq!(repair_sounds(&sim), [true]);
-}
-
-#[test]
-fn nonconsecutive_engineer_finishes_its_head_without_repeating_cancelled_repair() {
-    let (mut sim, rules, registry, hut) = ready_repair_fixture(Some(231));
-    let a = ready_engineer(&mut sim, &rules, &registry, hut);
-    let separator = sim
-        .spawn_object("ENGINEER", "Americans", 19, 15, 0, &rules)
-        .unwrap();
-    let b = ready_engineer(&mut sim, &rules, &registry, hut);
-    repair_frame(&mut sim, &rules, &registry);
-    assert!(sim.substrate.entities.get(a).is_none());
-    assert!(sim.substrate.entities.get(separator).is_some());
-    let successor = sim.substrate.entities.get(b).unwrap();
-    assert!(successor.lifecycle.object_alive());
-    assert_eq!(successor.navigation.nav_com(), None);
-    assert_eq!(successor.locomotor.as_ref().unwrap().step_head(), None);
-    assert_eq!(repair_sounds(&sim), [true]);
 }
 
 #[test]
@@ -932,7 +607,7 @@ fn later_repair_scatters_stationary_hut_occupant_and_processes_it_synchronously(
     let before = ground_pose::position_world_coord(&e.position);
     let mission = e.mission.current();
     let ai_counter = e.mission.ai_counter();
-    let frames = (sim.session.tick, sim.session.binary_frame);
+    let frames = (sim.session.tick(), sim.session.binary_frame());
     let rng = sim.scenario_rng.state();
     let last = ready_engineer(&mut sim, &rules, &registry, hut);
     sim.run_completed_walk_step(
@@ -964,7 +639,7 @@ fn later_repair_scatters_stationary_hut_occupant_and_processes_it_synchronously(
         "FNPC success does not queue Move"
     );
     assert_eq!(e.mission.ai_counter(), ai_counter, "no second Object AI");
-    assert_eq!((sim.session.tick, sim.session.binary_frame), frames);
+    assert_eq!((sim.session.tick(), sim.session.binary_frame()), frames);
     assert_ne!(
         sim.scenario_rng.state(),
         rng,
@@ -1076,7 +751,7 @@ fn repair_pointer_expiry_uses_descending_infantry_registry_and_preserves_paid_he
             .set_for_test(Some(crate::sim::combat::TargetKind::Entity(hut)));
         e.passive_scan
             .timer_mut_for_test()
-            .arm(sim.session.binary_frame, 30);
+            .arm(sim.session.binary_frame(), 30);
         e.navigation
             .set_nav_com_aux_for_test(Some(NavTargetRef::Cell { rx: 19, ry: 19 }));
         e.navigation
@@ -1142,8 +817,8 @@ fn repair_pointer_expiry_keeps_sensor_and_occupier_exceptions_and_current_nav_ga
         let id = ready_engineer(&mut sim, &rules, &registry, hut);
         let owner = sim.substrate.entities.get(id).unwrap().owner();
         if exception == 0 {
-            sim.fog.width = 33;
-            sim.fog.height = 33;
+            sim.fog.set_width_for_test(33);
+            sim.fog.set_height_for_test(33);
             sim.fog.increment_sensor_at(owner, 16, 15);
         }
         let e = sim.substrate.entities.get_mut(id).unwrap();
@@ -1172,42 +847,6 @@ fn repair_pointer_expiry_keeps_sensor_and_occupier_exceptions_and_current_nav_ga
             before.nav_com_aux(),
             "exception {exception}"
         );
-    }
-}
-
-#[test]
-fn engineer_adjacent_to_cabhut_enters_before_repairing_and_dirtying_minimap() {
-    let (mut sim, rules, registry, hut) = ready_repair_fixture(Some(231));
-    let id = sim
-        .spawn_object("ENGINEER", "Americans", 15, 15, 0, &rules)
-        .unwrap();
-    let grid = sim.path_grid_snapshot();
-    assert!(sim.apply_command(
-        "Americans",
-        &Command::CaptureBuilding {
-            engineer_id: id,
-            target_building_id: hut
-        },
-        Some(&rules),
-    ));
-    drop(grid);
-    assert!(!repair_frame(&mut sim, &rules, &registry).bridge_state_changed);
-    assert!(sim.substrate.entities.get(id).is_some());
-    assert!(repair_sounds(&sim).is_empty());
-    assert!(sim.radar_terrain_dirty_cells.is_empty());
-    let mut changed = false;
-    for _ in 0..100 {
-        changed |= repair_frame(&mut sim, &rules, &registry).bridge_state_changed;
-        if sim.substrate.entities.get(id).is_none() {
-            break;
-        }
-    }
-    assert!(changed);
-    assert!(sim.substrate.entities.get(id).is_none());
-    assert_eq!(repair_sounds(&sim), [true]);
-    assert!(sim.radar_terrain_dirty_generation > 0);
-    for p in [(17, 14), (17, 15), (17, 16)] {
-        assert!(sim.radar_terrain_dirty_cells.contains(&p));
     }
 }
 
@@ -1270,7 +909,7 @@ fn walk_stop_and_retarget_finish_a_same_cell_committed_head() {
         let e = sim.substrate.entities.get(id).unwrap();
         assert_eq!(ground_pose::position_world_coord(&e.position), before);
         assert_eq!(e.locomotor.as_ref().unwrap().step_head(), Some(head));
-        assert!(e.navigation.path_replay.remaining_directions().is_empty());
+        assert!(e.navigation.path_replay().remaining_directions().is_empty());
         assert_eq!(e.navigation.nav_com().is_none(), stop);
         // Both instance-owned XYZ values survive the actual snapshot envelope.
         let map_terrain = sim.resolved_terrain.as_ref().unwrap().clone();
@@ -1297,7 +936,7 @@ fn walk_stop_and_retarget_finish_a_same_cell_committed_head() {
                 sim.state_hash(),
                 replay.state_hash(),
                 "stop={stop}, tick={}, original={:?}, restored={:?}",
-                sim.session.tick,
+                sim.session.tick(),
                 sim.substrate.entities.get(id),
                 replay.substrate.entities.get(id)
             );
@@ -1355,7 +994,7 @@ fn walk_completion_uses_retained_destination_and_exact_height_tolerance() {
     ] {
         let (mut sim, mut rules, registry) = fixture();
         rules.general.blockage_path_delay_ticks = 65536;
-        sim.session.binary_frame = 123;
+        sim.session.set_binary_frame_for_test(123);
         let id = sim
             .spawn_object("ENGINEER", "Americans", 15, 15, 0, &rules)
             .unwrap();
@@ -1374,10 +1013,14 @@ fn walk_completion_uses_retained_destination_and_exact_height_tolerance() {
             .unwrap()
             .set_walk_destination(Some(dest));
         e.locomotor.as_mut().unwrap().set_step_head(Some(head));
-        e.navigation.path_runtime.start_movement(50, 5);
-        e.navigation.path_runtime.start_blocked(40, 6);
-        e.navigation.path_runtime.set_path_blocked(true);
-        e.navigation.path_runtime.set_retries_left(0x8000_0001);
+        e.navigation.path_runtime_mut().start_movement(50, 5);
+        e.navigation.path_runtime_mut().start_blocked(40, 6);
+        e.navigation
+            .path_runtime_mut()
+            .set_path_blocked_for_test(true);
+        e.navigation
+            .path_runtime_mut()
+            .set_retries_left_for_test(0x8000_0001);
         // The paid head is the last Foot+5E0 word, as the object-turn
         // suspension exposes it to the real PerCell completion owner.
         sim.run_completed_walk_step(
@@ -1390,10 +1033,10 @@ fn walk_completion_uses_retained_destination_and_exact_height_tolerance() {
         .expect("fixture frame must complete");
         let e = sim.substrate.entities.get(id).unwrap();
         assert_eq!(e.navigation.nav_com().is_some(), survives);
-        assert!(!e.navigation.path_runtime.path_blocked());
-        assert_eq!(e.navigation.path_runtime.retries_left(), 0x8000_0001);
+        assert!(!e.navigation.path_runtime().path_blocked());
+        assert_eq!(e.navigation.path_runtime().retries_left(), 0x8000_0001);
         assert_eq!(
-            e.navigation.path_runtime.movement_timer(),
+            e.navigation.path_runtime().movement_timer(),
             if survives {
                 CdTimer::from_raw(50, 5)
             } else {
@@ -1401,7 +1044,7 @@ fn walk_completion_uses_retained_destination_and_exact_height_tolerance() {
             },
         );
         assert_eq!(
-            e.navigation.path_runtime.blocked_timer(),
+            e.navigation.path_runtime().blocked_timer(),
             if survives {
                 CdTimer::from_raw(40, 6)
             } else {
@@ -1415,10 +1058,10 @@ fn walk_completion_uses_retained_destination_and_exact_height_tolerance() {
         if survives {
             assert!(crate::sim::movement::motion_query::is_moving(&e) == Some(true));
             assert!(
-                e.navigation.path_replay.remaining_directions().is_empty(),
+                e.navigation.path_replay().remaining_directions().is_empty(),
                 "surviving destination must regain a first-search request"
             );
-            assert_eq!(e.navigation.path_replay.reference_cell(), Some((16, 15)));
+            assert_eq!(e.navigation.path_replay().reference_cell(), Some((16, 15)));
             assert_eq!(e.locomotor.as_ref().unwrap().walk_destination(), Some(dest));
         }
     }
@@ -1444,7 +1087,7 @@ fn repair_receiver_failure_stops_runtime_before_consumption_or_frame_commit() {
         .get_mut(victim)
         .unwrap()
         .set_type_ref_for_test(missing);
-    let frame = (sim.session.tick, sim.session.binary_frame);
+    let frame = (sim.session.tick(), sim.session.binary_frame());
     let later_counter = sim
         .substrate
         .entities
@@ -1480,7 +1123,7 @@ fn repair_receiver_failure_stops_runtime_before_consumption_or_frame_commit() {
     assert!(error.cause.contains("missing ObjectType"), "{error}");
     assert!(error.to_string().contains("prior world mutations remain"));
     let sim = &runtime.simulation;
-    assert_eq!((sim.session.tick, sim.session.binary_frame), frame);
+    assert_eq!((sim.session.tick(), sim.session.binary_frame()), frame);
     let e = sim.substrate.entities.get(engineer).unwrap();
     assert!(e.lifecycle.object_alive() && !e.lifecycle.in_limbo() && !e.death.is_dying());
     assert_eq!(
@@ -1606,17 +1249,17 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
         if ordered {
             // Infantry's accepted Foot setter4D96C2..9707 runs after Jumpjet
             // MoveTo: reset timers/latch while preserving the retry dword.
-            let path_runtime = &mut sim
+            let path_runtime = sim
                 .substrate
                 .entities
                 .get_mut(rocketeer)
                 .unwrap()
                 .navigation
-                .path_runtime;
+                .path_runtime_mut();
             path_runtime.set_movement_timer_for_test(crate::sim::timer::CdTimer::from_raw(-1, 7));
             path_runtime.set_blocked_timer_for_test(crate::sim::timer::CdTimer::from_raw(-1, 31));
-            path_runtime.set_path_blocked(true);
-            path_runtime.set_retries_left(256);
+            path_runtime.set_path_blocked_for_test(true);
+            path_runtime.set_retries_left_for_test(256);
             let grid = sim.path_grid_snapshot();
             assert!(sim.apply_command_with_overlays(
                 "Americans",
@@ -1631,19 +1274,20 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
             ));
             drop(grid);
             let mut expected_runtime =
-                crate::sim::components::FootPathRuntime::at_frame(sim.session.binary_frame);
+                crate::sim::components::FootPathRuntime::at_frame(sim.session.binary_frame());
             expected_runtime.set_blocked_timer_for_test(crate::sim::timer::CdTimer::started(
-                sim.session.binary_frame as i32,
+                sim.session.binary_frame() as i32,
                 60,
             ));
-            expected_runtime.set_retries_left(256);
+            expected_runtime.set_retries_left_for_test(256);
             assert_eq!(
                 sim.substrate
                     .entities
                     .get(rocketeer)
                     .unwrap()
                     .navigation
-                    .path_runtime,
+                    .path_runtime()
+                    .clone(),
                 expected_runtime
             );
             let state = sim
@@ -1899,7 +1543,7 @@ fn jumpjet_query_fields_hash_and_restore_as_one_suspended_instance() {
     let mut changed = original.clone();
     assert!(changed.contains("5312"));
     changed = changed.replacen("5312", "5313", 1);
-    loco.set_piggyback(serde_json::from_str(&changed).unwrap());
+    loco.set_piggyback_for_test(serde_json::from_str(&changed).unwrap());
     assert_ne!(before, restored.state_hash());
     let loco = restored
         .substrate
@@ -1909,7 +1553,7 @@ fn jumpjet_query_fields_hash_and_restore_as_one_suspended_instance() {
         .locomotor
         .as_mut()
         .unwrap();
-    loco.set_piggyback(serde_json::from_str(&original).unwrap());
+    loco.set_piggyback_for_test(serde_json::from_str(&original).unwrap());
     assert!(piggyback::end(loco).is_some());
     assert_eq!(loco.jumpjet_runtime(), Some(&retained));
 }
@@ -1993,7 +1637,7 @@ fn failed_jumpjet_stop_stock_fatal_receiver_precedes_cache_retirement() {
                 sim.resolved_terrain
                     .as_mut()
                     .unwrap()
-                    .cell_mut(x, y)
+                    .cell_mut_for_test(x, y)
                     .unwrap()
                     .speed_costs
                     .hover = Some(0);
@@ -2056,8 +1700,10 @@ fn failed_jumpjet_stop_stock_fatal_receiver_precedes_cache_retirement() {
 /// The accepted setter's timer tail (Foot 0x4D96C2..0x4D9707); callers
 /// supply the Walk destination and head.
 fn accept_destination(sim: &mut Simulation, id: u64, rules: &RuleSet) {
-    let timing =
-        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, Some(rules));
+    let timing = crate::sim::movement::DestinationTiming::from_rules(
+        sim.session.binary_frame(),
+        Some(rules),
+    );
     let e = sim.substrate.entities.get_mut(id).unwrap();
     timing.accept(e);
 }

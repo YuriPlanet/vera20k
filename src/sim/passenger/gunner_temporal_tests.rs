@@ -37,7 +37,7 @@ fn retail_unload_and_snapshot_resume_preserve_the_gunners_rearm() {
     }
     let mut histories = Vec::new();
     for mut sim in [sim, restored] {
-        let commanded = sim.session.binary_frame as i32;
+        let commanded = sim.session.binary_frame() as i32;
         assert!(sim.apply_command(
             OWNER,
             &Command::UnloadPassengers { transport_id: ifv },
@@ -60,7 +60,7 @@ fn retail_unload_and_snapshot_resume_preserve_the_gunners_rearm() {
         assert!(!entity(&sim, target).temporal.is_warped());
         let rearm = gunner.rearm_timer;
         assert!(rearm.start_frame() >= commanded);
-        assert!(rearm.remaining(sim.session.binary_frame as i32) > 0);
+        assert!(rearm.remaining(sim.session.binary_frame() as i32) > 0);
         assert!(sim.apply_command(
             OWNER,
             &Command::Attack {
@@ -71,7 +71,7 @@ fn retail_unload_and_snapshot_resume_preserve_the_gunners_rearm() {
         ));
         let mut first_shot = None;
         for _ in 0..240 {
-            let frame = sim.session.binary_frame as i32;
+            let frame = sim.session.binary_frame() as i32;
             let waiting = entity(&sim, passenger).rearm_timer.remaining(frame);
             sim.fire_events.clear();
             sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);

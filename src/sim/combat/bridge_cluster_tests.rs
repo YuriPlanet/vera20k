@@ -49,8 +49,11 @@ fn world(rules: &RuleSet, input: &Value) -> Simulation {
         .collect();
     let mut terrain = ResolvedTerrainGrid::from_cells(64, 64, cells);
     let anchor = terrain.native_cell_identity((9, 20));
-    terrain.cell_mut(9, 20).unwrap().bridge_facts.overlay_id =
-        Some(input["anchor_overlay"].as_u64().unwrap() as u8);
+    terrain
+        .cell_mut_for_test(9, 20)
+        .unwrap()
+        .bridge_facts
+        .overlay_id = Some(input["anchor_overlay"].as_u64().unwrap() as u8);
     // The oracle supplies false at the bridge driver boundary. Use the live
     // driver's no-transition state here, without a test hook or bridge mutation.
     // The wooden fallback has no anchor span and likewise returns no change.
@@ -60,7 +63,7 @@ fn world(rules: &RuleSet, input: &Value) -> Simulation {
         for x in 7..14 {
             if (x, y) == (10, 20) || (input["bridge_patch"].as_bool().unwrap() && (x, y) != (9, 20))
             {
-                let cell = terrain.cell_mut(x, y).unwrap();
+                let cell = terrain.cell_mut_for_test(x, y).unwrap();
                 cell.bridge_facts.raw_flags = input["flags"].as_u64().unwrap() as u32;
                 cell.bridge_facts.native_anchor = Some(anchor);
             }
@@ -76,7 +79,8 @@ fn world(rules: &RuleSet, input: &Value) -> Simulation {
     sim.resolve_type_handles(rules);
     sim.install_resolved_terrain_for_new_map(terrain);
     sim.bridge_state = Some(bridges);
-    sim.session.no_damage = input["no_damage"].as_bool().unwrap();
+    sim.session
+        .set_no_damage_for_test(input["no_damage"].as_bool().unwrap());
     sim
 }
 

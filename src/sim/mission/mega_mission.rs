@@ -391,7 +391,7 @@ impl Simulation {
     /// when the object is ready ([`Self::mission_queue_exact`]).
     fn foot_queue_mission_now(&mut self, id: u64, mission: MissionType, rules: Option<&RuleSet>) {
         let mission = MissionId::from_known(mission);
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let _ = match rules {
             Some(rules) => {
                 self.mission_queue_exact(id, mission, 1, now, &LiveReadyInputProvider { rules })

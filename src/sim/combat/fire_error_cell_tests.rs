@@ -138,7 +138,9 @@ fn original_object_cell_queries_keep_physical_aliases_and_dummy_fields() {
                 y - i32::from(entity.position.ry()) * 256,
             ));
             entity.position.set_exact_z_leptons_for_test(Some(z));
-            entity.lifecycle.set_cell_marked(row.input.marked != 0);
+            entity
+                .lifecycle
+                .set_cell_marked_for_test(row.input.marked != 0);
         }
         let subject = FireSubject {
             world: &sim,

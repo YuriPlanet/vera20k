@@ -348,11 +348,11 @@ fn fixture(rules: &RuleSet, ini: &IniFile) -> Fixture {
         off_104: 256,
         off_108: 256,
     });
-    sim.session.map_width = 128;
-    sim.session.map_height = 128;
+    sim.session.set_map_width_for_test(128);
+    sim.session.set_map_height_for_test(128);
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 50_000, 10));
+        .register(HouseState::new(owner, 0, None, true, 50_000, 10));
     let product = sim
         .construct_object_limbo_at_height(
             "MTNK",
@@ -393,7 +393,9 @@ fn actor_input(actor: &mut GameEntity, native: &Value) {
         .lifecycle
         .set_object_alive_for_test(native["alive"] == 1);
     actor.lifecycle.set_in_limbo_for_test(native["limbo"] == 1);
-    actor.lifecycle.set_cell_marked(native["marked"] == 1);
+    actor
+        .lifecycle
+        .set_cell_marked_for_test(native["marked"] == 1);
     actor
         .in_logic_vector
         .set_for_test(native["logic_registered"] == 1);
@@ -444,7 +446,8 @@ fn fixture_input(fixture: &mut Fixture, rules: &RuleSet, native: &Value) {
         product,
         producer,
     } = fixture;
-    sim.session.binary_frame = native["product"]["frame"].as_u64().unwrap() as u32;
+    sim.session
+        .set_binary_frame_for_test(native["product"]["frame"].as_u64().unwrap() as u32);
     actor_input(
         sim.substrate.entities.get_mut(*product).unwrap(),
         &native["product"],
@@ -706,7 +709,7 @@ fn retail_factory_unload_leaves_match_original_door_track_and_cadence() {
         match operation {
             "producer_commence_queued_unload" => {
                 commence += 1;
-                let now = fixture.sim.session.binary_frame;
+                let now = fixture.sim.session.binary_frame();
                 let result = fixture
                     .sim
                     .mission_commence_exact(fixture.producer, now)
@@ -730,7 +733,7 @@ fn retail_factory_unload_leaves_match_original_door_track_and_cadence() {
             }
             "original_techno_door_caller" => {
                 door_calls += 1;
-                let now = fixture.sim.session.binary_frame;
+                let now = fixture.sim.session.binary_frame();
                 fixture
                     .sim
                     .substrate
@@ -861,7 +864,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
         for slot in expected["slots"].as_array().unwrap() {
             let index = int(&slot["slot"]) as usize;
             let actual = entity.building_art.anim_slots()[index]
-                .map(|id| sim.interner.resolve(sim.anim(id).unwrap().type_id));
+                .map(|id| sim.interner.resolve(sim.anim(id).unwrap().type_id()));
             assert_eq!(json!(actual), slot["type"], "native slot{index}");
             if let Some(id) = entity.building_art.anim_slots()[index] {
                 let anim = sim.anim(id).unwrap();
@@ -871,7 +874,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
                     .iter()
                     .find(|anim| anim["pointer"] == slot["pointer"])
                     .unwrap();
-                let mut runtime = serde_json::to_value(&anim.runtime).unwrap();
+                let mut runtime = serde_json::to_value(&anim.runtime()).unwrap();
                 for flag in [
                     "first_ai_guard",
                     "constructor_reverse",
@@ -881,8 +884,8 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
                     runtime[flag] = json!(u8::from(runtime[flag].as_bool().unwrap()));
                 }
                 runtime["frame_timer"] = json!([
-                    anim.runtime.frame_timer.start_frame(),
-                    anim.runtime.frame_timer.duration(),
+                    anim.runtime().frame_timer.start_frame(),
+                    anim.runtime().frame_timer.duration(),
                 ]);
                 assert_eq!(runtime, native_anim["runtime"], "native slot{index} clock");
             }
@@ -900,14 +903,14 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
         // consume the value actually read at this native boundary.
         assert!(
             sim.session
-                .game_options
+                .game_options_mut_for_test()
                 .apply_in_game_speed(int(&before["game_speed"]) as u8)
         );
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         let owner = sim.interner.intern("Americans");
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, true, 50_000, 10));
+            .register(HouseState::new(owner, 0, None, true, 50_000, 10));
         // Both receivers come from their real retail constructors. The DEST
         // starts held in Limbo; this leaf imports its measured post-Exit prior
         // rather than substituting a land tank or claiming to replay Exit.
@@ -943,7 +946,9 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
                 .lifecycle
                 .set_object_alive_for_test(actor["alive"] == 1);
             entity.lifecycle.set_in_limbo_for_test(actor["limbo"] == 1);
-            entity.lifecycle.set_cell_marked(actor["marked"] == 1);
+            entity
+                .lifecycle
+                .set_cell_marked_for_test(actor["marked"] == 1);
             entity.in_logic_vector.set_for_test(actor["logic"] == 1);
             entity.set_in_playfield(actor["in_playfield"] == 1);
             assert_eq!(actor["contacts"], json!([0]));
@@ -1004,7 +1009,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
             let id = sim
                 .set_building_anim_slot(yard, int(&slot["slot"]) as u8, false, false, 0, &rules)
                 .unwrap();
-            assert_eq!(sim.interner.resolve(sim.anim(id).unwrap().type_id), name);
+            assert_eq!(sim.interner.resolve(sim.anim(id).unwrap().type_id()), name);
             let prior = before["selected_anims"]
                 .as_array()
                 .unwrap()
@@ -1013,21 +1018,21 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
                 .unwrap();
             let runtime = &prior["runtime"];
             let anim = sim.substrate.anims.get_mut(id).unwrap();
-            anim.runtime.current_frame = int(&runtime["current_frame"]);
-            anim.runtime.frame_step = int(&runtime["frame_step"]);
-            anim.runtime.delay_remaining = int(&runtime["delay_remaining"]) as u16;
-            anim.runtime.rate_reload = int(&runtime["rate_reload"]) as u16;
-            anim.runtime.frame_timer = CdTimer::from_raw(
+            anim.runtime_mut_for_test().current_frame = int(&runtime["current_frame"]);
+            anim.runtime_mut_for_test().frame_step = int(&runtime["frame_step"]);
+            anim.runtime_mut_for_test().delay_remaining = int(&runtime["delay_remaining"]) as u16;
+            anim.runtime_mut_for_test().rate_reload = int(&runtime["rate_reload"]) as u16;
+            anim.runtime_mut_for_test().frame_timer = CdTimer::from_raw(
                 int(&runtime["frame_timer"][0]),
                 int(&runtime["frame_timer"][1]),
             );
-            anim.runtime.loop_remaining = int(&runtime["loop_remaining"]) as u8;
-            anim.runtime.first_ai_guard = runtime["first_ai_guard"] == 1;
-            anim.runtime.constructor_reverse = runtime["constructor_reverse"] == 1;
-            anim.runtime.inactive = runtime["inactive"] == 1;
-            anim.runtime.paused = runtime["paused"] == 1;
+            anim.runtime_mut_for_test().loop_remaining = int(&runtime["loop_remaining"]) as u8;
+            anim.runtime_mut_for_test().first_ai_guard = runtime["first_ai_guard"] == 1;
+            anim.runtime_mut_for_test().constructor_reverse = runtime["constructor_reverse"] == 1;
+            anim.runtime_mut_for_test().inactive = runtime["inactive"] == 1;
+            anim.runtime_mut_for_test().paused = runtime["paused"] == 1;
         }
-        sim.session.binary_frame = now;
+        sim.session.set_binary_frame_for_test(now);
         sim.main_rng =
             SimRng::from_native_state_hex_for_test(before["rng"]["main"].as_str().unwrap()).into();
         sim.scenario_rng =
@@ -1043,7 +1048,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
             .building_art
             .anim_slots();
         let production_before =
-            slots_before[8].map(|id| (id, sim.anim(id).unwrap().runtime.clone()));
+            slots_before[8].map(|id| (id, sim.anim(id).unwrap().runtime().clone()));
         let delay = mission_unload(&mut sim, yard, &rules, ObjectAiCtx::default()).unwrap();
         assert_eq!(
             json!(delay),
@@ -1079,7 +1084,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
                 Some(id)
             );
             assert_eq!(
-                sim.anim(id).unwrap().runtime,
+                *sim.anim(id).unwrap().runtime(),
                 runtime,
                 "state4 retains the actual running Production8"
             );
@@ -1184,80 +1189,6 @@ fn original_harvester_and_weeder_primary_controls_use_shared_mission_authority()
 }
 
 #[test]
-fn unit_move_deployment_guard_preserves_door_navigation_and_rng() {
-    // Unit740A93..740AB6 returns1 after QueueMission(Guard,0) when any
-    // of its existing +6E0/+6E1/+6E2 deployment bytes is set. It never
-    // reaches Door Close or the Foot Move cadence/arrival owner.
-    for flags in [
-        (true, false, false),
-        (false, true, false),
-        (false, false, true),
-        (true, true, true),
-    ] {
-        for navigation in [None, Some(NavTargetRef::cell(11, 10))] {
-            let ini = IniFile::from_str(
-                "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=6\n\
-                 SpeedType=Track\nMovementZone=Normal\nDeployTime=.044\n\
-                 Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
-                 [Clear]\nBuildable=yes\n",
-            );
-            let rules = parsed_rules(&ini, &IniFile::from_str(""), None);
-            let mut sim = Simulation::with_seed(0);
-            crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-            let id = sim
-                .spawn_object("MTNK", "Americans", 10, 10, 64, &rules)
-                .unwrap();
-            sim.session.binary_frame = 200;
-            sim.mission_assign_exact(
-                id,
-                MissionId::from_known(crate::sim::mission::MissionType::Move),
-                200,
-            )
-            .unwrap();
-            sim.mission_queue_exact(
-                id,
-                MissionId::from_known(crate::sim::mission::MissionType::Attack),
-                0,
-                200,
-                &crate::sim::mission::authority::EntityReadyInputProvider,
-            )
-            .unwrap();
-            let entity = sim.substrate.entities.get_mut(id).unwrap();
-            entity.set_unit_simple_deploy_for_test(flags.0, flags.1, flags.2);
-            entity.navigation.set_nav_com_for_test(navigation);
-            entity.open_door(40, 190);
-            let door_before = (entity.door_phase(), entity.door_timer_fields());
-            let rng_before = sim.rng_state();
-
-            super::super::dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default());
-
-            let entity = sim.substrate.entities.get(id).unwrap();
-            assert_eq!(
-                (entity.door_phase(), entity.door_timer_fields()),
-                door_before,
-                "{flags:?} {navigation:?}: deployment guard skips Door"
-            );
-            assert_eq!(entity.navigation.nav_com(), navigation);
-            assert_eq!(
-                entity.mission.current().known(),
-                Some(crate::sim::mission::MissionType::Move)
-            );
-            assert_eq!(
-                entity.mission.queued().known(),
-                Some(crate::sim::mission::MissionType::Guard)
-            );
-            assert_eq!(entity.mission.dispatch_timer().start_frame(), 200);
-            assert_eq!(entity.mission.dispatch_timer().delay(), 1);
-            assert_eq!(
-                sim.rng_state(),
-                rng_before,
-                "deployment guard has no jitter"
-            );
-        }
-    }
-}
-
-#[test]
 fn original_unit_move_deployment_guards_match_mission_dispatch() {
     let data = corpus();
     let rows = data["unit_move_guard_rows"].as_array().unwrap();
@@ -1277,7 +1208,7 @@ fn original_unit_move_deployment_guards_match_mission_dispatch() {
         let id = sim
             .spawn_object("MTNK", "Americans", 10, 10, 64, &rules)
             .unwrap();
-        sim.session.binary_frame = now;
+        sim.session.set_binary_frame_for_test(now);
         let nav = |value: &Value| {
             value.as_array().map(|pair| {
                 NavTargetRef::cell(

@@ -180,7 +180,7 @@ pub(super) fn source_available(
     else {
         return false;
     };
-    if house.is_defeated
+    if house.is_defeated()
         || !instance.is_active
         || instance.is_suspended
         || !super::building_requirements_met(sim, rules, owner, sw)
@@ -191,7 +191,7 @@ pub(super) fn source_available(
         return true;
     }
     let (provided, online) = super::provider_supers(sim, rules, owner);
-    (sim.session.game_options.super_weapons || !sw.disableable_from_shell)
+    (sim.session.game_options().super_weapons || !sw.disableable_from_shell)
         && provided.contains(&source)
         && (!sw.is_powered
             || (online.contains(&source)

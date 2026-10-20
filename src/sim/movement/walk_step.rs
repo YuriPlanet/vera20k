@@ -28,7 +28,7 @@ pub(super) fn finish_idle(entity: &mut GameEntity) {
     if entity.foot_speed.applied_fraction() > SIM_ZERO {
         entity.foot_speed.set_speed_fraction(SIM_ZERO);
     }
-    entity.navigation.path_runtime.clear_scold_latch();
+    entity.navigation.path_runtime_mut().clear_scold_latch();
 }
 
 /// Publish Foot speed/facing and the provisional numeric step. The caller owns
@@ -55,7 +55,7 @@ pub(super) fn advance(
     let speed = prone_crawls.map_or(speed, |crawls| {
         crate::sim::infantry::apply_prone_speed(SimFixed::from_num(speed), crawls).to_num::<i32>()
     });
-    entity.navigation.path_runtime.set_path_blocked(false); //75BFD1; retain grace timer.
+    entity.navigation.path_runtime_mut().clear_blockage(); //75BFD1; retain grace timer.
     let current = super::ground_pose::position_world_xy(&entity.position);
     let desired = crate::util::direction_tables::facing16_from_delta(
         head.x.wrapping_sub(current[0]),
@@ -83,7 +83,7 @@ pub(super) fn advance(
         entity.position.set_height(on_bridge, 0, terrain, grid);
         //75C22F follows the same-cell SetCoords/SetHeight callbacks. A
         //boundary step retains the byte until its world placement completes.
-        entity.navigation.path_runtime.clear_scold_latch();
+        entity.navigation.path_runtime_mut().clear_scold_latch();
     }
 }
 

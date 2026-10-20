@@ -94,7 +94,7 @@ fn anims_of<'a>(sim: &'a Simulation, name: &str) -> Vec<&'a crate::sim::anim_cla
         .anims
         .iter()
         .map(|(_, anim)| anim)
-        .filter(|anim| anim.type_id == type_id)
+        .filter(|anim| anim.type_id() == type_id)
         .collect()
 }
 
@@ -167,7 +167,7 @@ fn the_launch_matches_native() {
             let (x, y) = at(bridge);
             let terrain = sim.resolved_terrain.as_mut().unwrap();
             let index = terrain.index(x as u16, y as u16).unwrap();
-            terrain.cells[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+            terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
         }
         // Prepended in reverse, each list ends in the row's order.
         let mut ids = vec![None; objects.len()];
@@ -216,11 +216,11 @@ fn the_launch_matches_native() {
         let native_anims: Vec<&Value> = events(row, "anim").collect();
         assert_eq!(rings.len(), native_anims.len(), "{row}");
         if let (Some(anim), Some(native)) = (rings.first(), native_anims.first()) {
-            let world = anim.world_coord;
+            let world = anim.world_coord();
             assert_eq!([world.x, world.y, world.z], coord(&native[2]), "{row}");
             // (delay, loopCount, drawFlags, zAdjust, reverse).
             assert_eq!(native[3], serde_json::json!([0, 1, 0x600, 0, 0]));
-            assert_eq!((anim.draw_flags, anim.z_adjust), (0x600, 0), "{row}");
+            assert_eq!((anim.draw_flags(), anim.z_adjust()), (0x600, 0), "{row}");
         }
 
         // PlayEVA and PlayAtCoord (one launch event), then
@@ -386,7 +386,7 @@ fn the_mutation_arm_matches_native() {
             let terrain = sim.resolved_terrain.as_mut().unwrap();
             let index = terrain.index(cell.0, cell.1).unwrap();
             let foot = row["foot_cost"].as_f64().unwrap();
-            terrain.cells[index].speed_costs.foot = Some((foot * 100.0) as u8);
+            terrain.cells_mut_for_test()[index].speed_costs.foot = Some((foot * 100.0) as u8);
         }
         let victim = sim
             .construct_object_limbo_at_height(
@@ -481,8 +481,8 @@ fn the_mutation_arm_matches_native() {
             let [anim] = mutants[..] else {
                 panic!("one InfantryMutate anim: {row}");
             };
-            assert_eq!(anim.world_coord, AnimWorldCoord { x, y, z }, "{row}");
-            assert_eq!((anim.draw_flags, anim.z_adjust), (0x600, 0), "{row}");
+            assert_eq!(anim.world_coord(), AnimWorldCoord { x, y, z }, "{row}");
+            assert_eq!((anim.draw_flags(), anim.z_adjust()), (0x600, 0), "{row}");
             let owner = match row["anim_owner"].as_str() {
                 Some("source") => Some(russians),
                 Some("house") => Some(americans),
@@ -584,8 +584,7 @@ fn the_make_infantry_end_matches_native() {
 
         let cell = ((x.max(0) / 256) as u16, (y / 256) as u16);
         let (rules, mut sim, _) = world_with(rules, 64, &[(cell, 2)]);
-        sim.houses.clear();
-        sim.session.house_order.clear();
+        sim.houses.clear_for_test();
         let houses: Vec<InternedId> = rows(row, "houses")
             .iter()
             .enumerate()
@@ -596,16 +595,15 @@ fn the_make_infantry_end_matches_native() {
                     ["Americans", "Russians", "YuriCountry", "Neutral"][usize::from(side)];
                 let country = sim.interner.intern(country);
                 let mut state = HouseState::new(id, side, Some(country), house[2] == true, 0, 10);
-                state.is_defeated = house[1] == true;
-                sim.houses.insert(id, state);
-                sim.session.house_order.push(id);
+                state.set_is_defeated_for_test(house[1] == true);
+                sim.houses.register(state);
                 id
             })
             .collect();
         if row["bridge"] == true {
             let terrain = sim.resolved_terrain.as_mut().unwrap();
             let index = terrain.index(cell.0, cell.1).unwrap();
-            terrain.cells[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+            terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
         }
         if row["unlimbo"] == false {
             sim.substrate.raw_cell_occupation.mark_ground(
@@ -623,7 +621,7 @@ fn the_make_infantry_end_matches_native() {
             .anims
             .get_mut(anim)
             .unwrap()
-            .runtime
+            .runtime_mut_for_test()
             .current_frame = int(&row["stage"]);
         let before: BTreeSet<u64> = sim.substrate.entities.keys_sorted().into_iter().collect();
 
@@ -638,7 +636,7 @@ fn the_make_infantry_end_matches_native() {
         assert_eq!(ends, row["end"] == "uninit", "{row}");
         if !ends {
             assert_eq!(
-                sim.anim(anim).unwrap().runtime.current_frame,
+                sim.anim(anim).unwrap().runtime().current_frame,
                 int(&row["stage_after"]),
                 "{row}"
             );
@@ -840,7 +838,10 @@ fn retail_computer_mutator_leaves_hunting_brutes() {
     };
     let (rules, mut sim, americans) = world_with(rules, 64, &[]);
     let russians = sim.interner.intern("Russians");
-    sim.houses.get_mut(&russians).unwrap().enemy_house = Some(americans);
+    sim.houses
+        .get_mut(&russians)
+        .unwrap()
+        .set_enemy_house_for_test(Some(americans));
     for (x, y) in [(30, 30), (31, 30), (30, 31), (31, 31)] {
         sim.spawn_object_at_height("E1", "Americans", x, y, 0, 0, &rules)
             .unwrap();

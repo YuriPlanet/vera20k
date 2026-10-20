@@ -118,7 +118,7 @@ impl Simulation {
             Some((rules, &self.interner)),
         ) || crate::sim::superweapon::invulnerability::is_invulnerable(
             actor.invulnerability.as_ref(),
-            self.session.binary_frame,
+            self.session.binary_frame(),
         ) || actor.chrono_warp_latch()
             || actor.is_warped_out()
             || actor.is_warping_in()
@@ -185,7 +185,7 @@ impl Simulation {
             self.assign_destination_represented(id, None, Some(rules), registry, effects)
                 .map_err(|error| error.to_string())?;
         }
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let Some(loco) = self
             .substrate
             .entities
@@ -268,7 +268,7 @@ impl Simulation {
         else {
             return Ok(bridge_state_changed);
         };
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         // Original719304..719342 precedes both the ordinary movement and
         // Chronosphere arms. Reinforcement's pending3 transfers on one visit;
         // the next visit runs state3. WarpingIn alone instead runs TimerCheck.
@@ -597,7 +597,7 @@ impl Simulation {
             *blocked = true;
             return;
         };
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let Some(entity) = self.substrate.entities.get(other) else {
             return;
         };
@@ -759,7 +759,7 @@ impl Simulation {
         let land = cells.land_type(cell);
         let water_tile = terrain.native_cell_is_water_tile(cell);
         if matches!(cell, crate::map::cell_index::NativeCellIdentity::Real(_)) {
-            let frame = self.session.binary_frame;
+            let frame = self.session.binary_frame();
             let mut next = self
                 .cell_objects((cx as u16, cy as u16), MovementLayer::Ground)
                 .next();

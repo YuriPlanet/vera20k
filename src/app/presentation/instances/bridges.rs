@@ -190,7 +190,7 @@ pub(crate) fn build_bridge_body_instances(
     else {
         return;
     };
-    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+    let Some(terrain) = sim.resolved_terrain() else {
         return;
     };
     let Some(atlas) = state.match_state.match_presentation.bridge_atlas.as_ref() else {
@@ -386,7 +386,7 @@ pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<Spri
     else {
         return;
     };
-    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+    let Some(terrain) = sim.resolved_terrain() else {
         return;
     };
     let Some(atlas) = state.match_state.match_presentation.bridge_atlas.as_ref() else {
@@ -410,9 +410,9 @@ pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<Spri
         atlas,
         &state.match_state.match_presentation.overlay_names,
         state.match_state.match_presentation.overlays.as_slice(),
-        sim.overlay_grid.as_ref(),
+        sim.overlay_grid(),
         state.overlay_registry(),
-        state.rules().map(|rules| (rules, &sim.interner)),
+        state.rules().map(|rules| (rules, sim.interner())),
         origin_y,
         world_height,
         cam_x,
@@ -476,7 +476,7 @@ mod tests {
         let entries: Vec<_> = [(4, 4), (4, 5)]
             .into_iter()
             .map(|(rx, ry)| {
-                grid.cell_mut(rx, ry).overlay_id = Some(0);
+                grid.cell_mut_for_test(rx, ry).overlay_id = Some(0);
                 OverlayEntry {
                     rx,
                     ry,
@@ -485,7 +485,7 @@ mod tests {
                 }
             })
             .collect();
-        grid.cell_mut(4, 4).rubble_building_type = Some(building);
+        grid.cell_mut_for_test(4, 4).rubble_building_type = Some(building);
         let atlas = Atlas {
             proxy: OverlaySpriteEntry {
                 uv_origin: [0.0; 2],
@@ -531,18 +531,18 @@ mod tests {
             1,
             "the destroyed building's origin owns its shadow"
         );
-        grid.cell_mut(4, 4).rubble_building_type = None;
+        grid.cell_mut_for_test(4, 4).rubble_building_type = None;
         assert!(emit(&grid, viewport).is_empty(), "cleared origin type");
-        grid.cell_mut(4, 4).rubble_building_type = Some(building);
-        grid.cell_mut(4, 4).overlay_id = None;
+        grid.cell_mut_for_test(4, 4).rubble_building_type = Some(building);
+        grid.cell_mut_for_test(4, 4).overlay_id = None;
         assert!(emit(&grid, viewport).is_empty(), "erased live overlay");
-        grid.cell_mut(4, 4).overlay_id = Some(0);
-        grid.cell_mut(4, 4).overlay_data = 255;
+        grid.cell_mut_for_test(4, 4).overlay_id = Some(0);
+        grid.cell_mut_for_test(4, 4).overlay_data = 255;
         assert!(
             emit(&grid, viewport).is_empty(),
             "retained data misses the proxy frame"
         );
-        grid.cell_mut(4, 4).overlay_data = 0;
+        grid.cell_mut_for_test(4, 4).overlay_data = 0;
         let cell = terrain.cell(4, 4).unwrap();
         let point = crate::map::terrain::iso_to_screen(4, 4, cell.level);
         let outside_proxy = [point.0 + 30.0 - 45.0, point.1 + 15.0 - 10.0, 10.0, 100.0];
@@ -576,7 +576,7 @@ mod tests {
             8,
             crate::map::resolved_terrain::test_flat_cell,
         );
-        let high = terrain.cell_mut(5, 5).unwrap();
+        let high = terrain.cell_mut_for_test(5, 5).unwrap();
         high.bridge_facts.overlay_id = Some(0x18);
         high.bridge_facts.state_byte = 9;
         let mut grid = crate::sim::overlay_grid::OverlayGrid::new(8, 8);
@@ -593,7 +593,7 @@ mod tests {
                 overlay_id: 0,
                 frame: 5,
             });
-            let cell = grid.cell_mut(rx, ry);
+            let cell = grid.cell_mut_for_test(rx, ry);
             cell.overlay_id = live_id;
             cell.overlay_data = frame;
         }
@@ -662,7 +662,7 @@ mod tests {
             let ry = input["coords"][1].as_u64().unwrap() as u16;
             let mut terrain =
                 test_bridge_grid(&[((rx, ry), 0x18, input["state"].as_u64().unwrap() as u8)]);
-            let cell = terrain.cell_mut(rx, ry).unwrap();
+            let cell = terrain.cell_mut_for_test(rx, ry).unwrap();
             cell.level = input["level"].as_i64().unwrap() as u8;
             cell.bridge_facts.raw_flags = flags;
             // Deliberately stale derived deck height must never own body geometry.
@@ -718,7 +718,7 @@ mod tests {
             crate::map::resolved_terrain::test_flat_cell,
         );
         for &((x, y), overlay, state) in cells {
-            let cell = terrain.cell_mut(x, y).unwrap();
+            let cell = terrain.cell_mut_for_test(x, y).unwrap();
             cell.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
                 | crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF;
             cell.bridge_facts.overlay_id = Some(overlay);

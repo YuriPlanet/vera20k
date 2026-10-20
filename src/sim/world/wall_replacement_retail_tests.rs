@@ -28,11 +28,14 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
+    // Periodic frame hashes feed replay and sync checks, which nothing here
+    // reads; an interval no tick reaches skips them (11-12% of each frame in
+    // this unoptimized test build).
     scene
         .runtime
         .simulation
-        .hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
-    let owner = scene.sim().session.current_house.unwrap();
+        .hash_state_every(std::num::NonZeroU64::MAX);
+    let owner = scene.sim().session.current_house().unwrap();
     let owner_name = scene.sim().resolve(owner).to_owned();
     let wall_type = scene.sim().interner.get("GAWALL").unwrap();
     let orders: Vec<_> = profile["commands"]
@@ -75,7 +78,7 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
     let registry = &scene.runtime.resources.overlay_registry;
     let sim = &mut scene.runtime.simulation;
     let overlay = registry.id_for_name("GAWALL").unwrap();
-    assert!(sim.houses[&owner].is_human);
+    assert!(sim.houses[&owner].is_human());
     assert_eq!(
         sim.overlay_grid
             .as_ref()
@@ -99,7 +102,7 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
             .expect("normal charging must finish the second paid wall");
     let held = sim.entities().get(product).unwrap();
     assert!(held.lifecycle.object_alive() && held.lifecycle.in_limbo());
-    let credits = sim.houses[&owner].economy.credits();
+    let credits = sim.houses[&owner].economy().credits();
     assert!(sim.substrate.pending_delete.is_empty());
     assert!(crate::sim::production::place_production_with_overlays(
         sim,
@@ -153,7 +156,7 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
             (Some(overlay), Some(owner))
         );
     }
-    assert_eq!(sim.houses[&owner].economy.credits(), credits);
+    assert_eq!(sim.houses[&owner].economy().credits(), credits);
     assert!(
         crate::sim::production::ready_building_entity_for_owner(sim, rules, owner, wall_type)
             .is_none()
@@ -189,14 +192,17 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
+    // Periodic frame hashes feed replay and sync checks, which nothing here
+    // reads; an interval no tick reaches skips them (11-12% of each frame in
+    // this unoptimized test build).
     scene
         .runtime
         .simulation
-        .hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
-    let owner = scene.sim().session.current_house.unwrap();
+        .hash_state_every(std::num::NonZeroU64::MAX);
+    let owner = scene.sim().session.current_house().unwrap();
     let owner_name = scene.sim().resolve(owner).to_owned();
     assert_eq!(owner_name, "VERA-OBSERVER");
-    assert!(scene.sim().houses[&owner].is_human);
+    assert!(scene.sim().houses[&owner].is_human());
     let wall_type = scene.sim().interner.get("GAWALL").unwrap();
     let rules = &scene.runtime.resources.rules;
     let object = rules.object("GAWALL").unwrap();
@@ -281,7 +287,7 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
         if step == 2210 {
             due.push(CommandEnvelope::new(
                 owner,
-                scene.sim().session.tick,
+                scene.sim().session.tick(),
                 Command::QueueProduction { type_id: wall_type },
             ));
         }
@@ -319,8 +325,8 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
             assert!(held.lifecycle.object_alive() && held.lifecycle.in_limbo());
             replacement = Some((
                 product,
-                sim.houses[&owner].economy.credits(),
-                sim.houses[&owner].economy.spent_credits(),
+                sim.houses[&owner].economy().credits(),
+                sim.houses[&owner].economy().spent_credits(),
             ));
             eprintln!(
                 "ordinary owned replacement step{step} data{:x} target{target:?} paidproduct{product}",
@@ -328,7 +334,7 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
             );
             due.push(CommandEnvelope::new(
                 owner,
-                sim.session.tick,
+                sim.session.tick(),
                 Command::PlaceReadyBuilding {
                     type_id: wall_type,
                     rx: source.0,
@@ -351,8 +357,8 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
                 "ordinary PLACE must replace damage"
             );
             assert!(sim.entities().get(product).is_none());
-            assert_eq!(sim.houses[&owner].economy.credits(), credits, "no refund");
-            assert_eq!(sim.houses[&owner].economy.spent_credits(), spent);
+            assert_eq!(sim.houses[&owner].economy().credits(), credits, "no refund");
+            assert_eq!(sim.houses[&owner].economy().spent_credits(), spent);
             assert!(
                 !output.sound_events.iter().any(|event| matches!(
                     event,
@@ -399,7 +405,7 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
             assert_eq!(wall_after_wait.overlay_data >> 4, 0);
             let attack = CommandEnvelope::new(
                 owner,
-                scene.sim().session.tick,
+                scene.sim().session.tick(),
                 Command::ForceAttackCell {
                     attacker_id: attacker,
                     target_rx: source.0,
@@ -430,10 +436,10 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
                 fired_again,
                 "new wall must remain targetable by a new ordinary attack"
             );
-            let before_sell = scene.sim().houses[&owner].economy.credits();
+            let before_sell = scene.sim().houses[&owner].economy().credits();
             let sell = CommandEnvelope::new(
                 owner,
-                scene.sim().session.tick,
+                scene.sim().session.tick(),
                 Command::SellWallAtCell {
                     x: source.0 as i16,
                     y: source.1 as i16,
@@ -454,7 +460,7 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
                     .is_none()
             );
             assert_eq!(
-                scene.sim().houses[&owner].economy.credits(),
+                scene.sim().houses[&owner].economy().credits(),
                 before_sell,
                 "ordinary SELL also refunds no wall money"
             );

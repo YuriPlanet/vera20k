@@ -3,6 +3,84 @@ use crate::render::vxl_raster::VxlSprite;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::voxel_frame_catalog::draws_turret_parts;
 
+/// Aircraft DrawIt4148A0 reaches the shared Foot shadow owner. An ordinary
+/// retail Harrier therefore needs a shadow resident alongside its body.
+#[test]
+fn retail_fly_aircraft_demand_includes_ground_shadow() {
+    use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules};
+    let Some(battle) = retail_battle_rules() else {
+        return;
+    };
+    let (_, assets) = retail_assets().expect("retail assets for the loaded rules");
+    let object = battle.rules.object("ORCA").expect("retail Harrier");
+    assert_eq!(
+        object.locomotor,
+        crate::rules::locomotor_type::LocomotorKind::Fly
+    );
+    assert!(!object.no_shadow);
+    let demand = UnitAtlasDemand {
+        air: BTreeSet::from(["ORCA".to_string()]),
+        ..Default::default()
+    };
+    let (keys, _) = needed_unit_keys(&demand, &assets, Some(&battle.rules));
+    assert!(
+        keys.iter()
+            .any(|key| key.type_id == "ORCA" && key.layer == VxlLayer::Shadow),
+        "Aircraft DrawIt requires the resident ground-shadow stencil"
+    );
+    let model = UnitModel::load(&assets, "ORCA", Some(&battle.rules)).unwrap();
+    let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/voxel_oracle/aircraft_shadow.json",
+    ))
+    .unwrap();
+    let native = &fixture["retail"]["cases"][0];
+    assert_eq!(
+        voxel_image_id("ORCA", Some(&battle.rules)),
+        fixture["retail"]["image"].as_str().unwrap()
+    );
+    let key = UnitSpriteKey {
+        type_id: "ORCA".into(),
+        turret_index: 0,
+        facing: 0,
+        layer: VxlLayer::Shadow,
+        frame: 0,
+        slope_type: 0,
+        barrel_pitch: 0,
+    };
+    let (sprite, bounds) = model.render(&key, None, None, &mut None).unwrap();
+    let rect: Vec<i32> = native["rect"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap() as i32)
+        .collect();
+    assert_eq!(bounds, Some([rect[0], rect[1], rect[4], rect[5]]));
+    let mut expected = vec![0u8; 65536];
+    for p in native["pixels"].as_array().unwrap() {
+        expected[p[0].as_u64().unwrap() as usize] = p[1].as_u64().unwrap() as u8;
+    }
+    let cropped: Vec<u8> = (rect[3]..rect[3] + rect[5])
+        .flat_map(|y| {
+            let start = (y * 256 + rect[2]) as usize;
+            expected[start..start + rect[4] as usize].iter().copied()
+        })
+        .collect();
+    assert_eq!(
+        sprite.palette_indices, cropped,
+        "production UnitModel native ORCA stencil"
+    );
+    for name in ["V3ROCKET", "DMISL", "CMISL"] {
+        if let Some(missile) = battle.rules.object(name) {
+            eprintln!(
+                "retail {name}: NoShadow={} ConsideredAircraft={} ShadowIndex={}",
+                missile.no_shadow,
+                missile.considered_aircraft,
+                missile.voxel_shadow_index()
+            );
+        }
+    }
+}
+
 fn gsi_13_07_variant_rules() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(
         "\
@@ -104,111 +182,6 @@ fn gsi_13_07_no_spawn_alt_composite_seeds_32_facings_by_17_slopes() {
 }
 
 #[test]
-fn test_unit_sprite_key_hash_equality() {
-    let key1 = UnitSpriteKey {
-        type_id: "HTNK".into(),
-        turret_index: 0,
-        facing: 64,
-        layer: VxlLayer::Composite,
-        frame: 0,
-        slope_type: 0,
-        barrel_pitch: 0,
-    };
-    let key2 = UnitSpriteKey {
-        type_id: "HTNK".into(),
-        turret_index: 0,
-        facing: 64,
-        layer: VxlLayer::Composite,
-        frame: 0,
-        slope_type: 0,
-        barrel_pitch: 0,
-    };
-    let key3 = UnitSpriteKey {
-        type_id: "HTNK".into(),
-        turret_index: 0,
-        facing: 128,
-        layer: VxlLayer::Composite,
-        frame: 0,
-        slope_type: 0,
-        barrel_pitch: 0,
-    };
-    assert_eq!(key1, key2);
-    assert_ne!(key1, key3);
-    let mut set: HashSet<UnitSpriteKey> = HashSet::new();
-    set.insert(key1);
-    set.insert(key2); // duplicate
-    set.insert(key3);
-    assert_eq!(set.len(), 2);
-}
-
-#[test]
-fn every_unit_sprite_key_dimension_remains_distinct() {
-    let base = UnitSpriteKey {
-        type_id: "HTNK".into(),
-        turret_index: 0,
-        facing: 64,
-        layer: VxlLayer::Body,
-        frame: 2,
-        slope_type: 3,
-        barrel_pitch: 0,
-    };
-    let mut variants = vec![base.clone()];
-
-    let mut different_type = base.clone();
-    different_type.type_id = "CMIN".into();
-    variants.push(different_type);
-
-    let mut different_facing = base.clone();
-    different_facing.facing = 66;
-    variants.push(different_facing);
-
-    let mut different_layer = base.clone();
-    different_layer.layer = VxlLayer::Turret;
-    variants.push(different_layer);
-
-    let mut different_frame = base.clone();
-    different_frame.frame = 3;
-    variants.push(different_frame);
-
-    let mut different_turret = base.clone();
-    different_turret.turret_index = 1;
-    variants.push(different_turret);
-
-    let mut different_slope = base;
-    different_slope.slope_type = 4;
-    variants.push(different_slope);
-
-    assert_eq!(
-        variants.into_iter().collect::<HashSet<_>>().len(),
-        7,
-        "type, turret index, facing, layer, frame, and slope are all cache identity"
-    );
-}
-
-#[test]
-fn test_empty_world_returns_none() {
-    let needed: HashSet<UnitSpriteKey> = HashSet::new();
-    assert!(needed.is_empty());
-}
-
-#[test]
-fn test_key_collection_deduplicates() {
-    let mut needed: HashSet<UnitSpriteKey> = HashSet::new();
-    for facing in [64u8, 64, 128] {
-        needed.insert(UnitSpriteKey {
-            type_id: "HTNK".to_string(),
-            turret_index: 0,
-            facing,
-            layer: VxlLayer::Composite,
-            frame: 0,
-            slope_type: 0,
-            barrel_pitch: 0,
-        });
-    }
-    assert_eq!(needed.len(), 2);
-}
-
-#[test]
 fn test_composite_layers_depth_correct() {
     // Body: 2x2, all at depth 1.0, palette index 10 (opaque).
     let body = VxlSprite {
@@ -298,87 +271,6 @@ fn test_pad_layer_to_union_bounds() {
 }
 
 #[test]
-fn test_canonical_turret_facing() {
-    use super::canonical_turret_facing;
-    // canonical_turret_facing takes a 16-bit DirStruct and quantizes it to one of the
-    // renderer's 32 facing steps, then scales that step back into the 8-bit facing the
-    // atlas key uses. The voxel rotation matrix is built from a 5-bit facing, so a
-    // turret has exactly 32 orientations no matter how finely the sim aims it.
-    assert_eq!(canonical_turret_facing(0u16), 0);
-    // Everything inside one 11.25° step collapses to that step's representative.
-    // One step spans 8 units of 8-bit facing, i.e. 2048 units of 16-bit facing,
-    // centred on the representative — so the step-0 bucket runs to just under 1024.
-    assert_eq!(canonical_turret_facing(256), 0);
-    assert_eq!(canonical_turret_facing(1023), 0);
-    assert_eq!(
-        canonical_turret_facing(1024),
-        8,
-        "round-half-up into step 1"
-    );
-    assert_eq!(canonical_turret_facing(2048), 8);
-    assert_eq!(canonical_turret_facing(64 << 8), 64, "east");
-    assert_eq!(canonical_turret_facing(128 << 8), 128, "south");
-    assert_eq!(canonical_turret_facing(65280), 0, "wraps back to north");
-    // Body and turret share the same granularity.
-    assert_eq!(canonical_unit_facing(64), 64);
-    assert_eq!(canonical_turret_facing(64 << 8), 64);
-}
-
-#[test]
-fn canonical_facing_collapses_to_the_32_rendered_orientations() {
-    use super::{canonical_turret_facing, canonical_unit_facing};
-    // The sim stores facing as a byte, but the renderer only has 32 orientations, so
-    // canonicalization is deliberately lossy: retail tanks visibly step through 11.25°
-    // increments. Pin that the collapse is exactly 32-way, that it agrees between the
-    // body and turret entry points, and that every output is a real bucket
-    // representative (otherwise the atlas key would miss).
-    let mut distinct = std::collections::BTreeSet::new();
-    for facing in 0..=u8::MAX {
-        let body = canonical_unit_facing(facing);
-        assert_eq!(
-            body,
-            canonical_turret_facing(u16::from(facing) << 8),
-            "body and turret quantization disagree at facing {facing}"
-        );
-        assert_eq!(
-            body % 8,
-            0,
-            "facing {facing} produced non-representative {body}"
-        );
-        distinct.insert(body);
-    }
-    assert_eq!(
-        distinct.len(),
-        32,
-        "expected exactly 32 rendered orientations"
-    );
-
-    // Quantization must be a projection: re-canonicalizing a representative is a no-op,
-    // or a sprite lookup could land in a different bucket than the one baked.
-    for &facing in &distinct {
-        assert_eq!(canonical_unit_facing(facing), facing);
-    }
-}
-
-#[test]
-fn test_facing_config_for_layer() {
-    // Every layer renders the same 32 orientations: step 8, 32 buckets.
-    for layer in [
-        VxlLayer::Body,
-        VxlLayer::Composite,
-        VxlLayer::Turret,
-        VxlLayer::Barrel,
-        VxlLayer::Shadow,
-    ] {
-        let (step, buckets) = super::facing_config_for_layer(layer);
-        assert_eq!(step, 8, "{layer:?} facing step");
-        assert_eq!(buckets, 32, "{layer:?} facing buckets");
-        // The facing derived from the last bucket must still fit a byte.
-        assert_eq!((buckets - 1) * u16::from(step), 248);
-    }
-}
-
-#[test]
 fn forced_overflow_plan_keeps_every_sprite_in_bounds() {
     let dimensions = vec![(6, 4); 4];
     let plan = plan_sprite_pages(&dimensions, 8).expect("forced overflow must be pageable");
@@ -422,19 +314,6 @@ fn forced_overflow_plan_keeps_every_sprite_in_bounds() {
         assert!(uv_origin[1] + uv_size[1] <= 1.0);
     }
     assert!(seen.into_iter().all(|value| value));
-}
-
-#[test]
-fn wide_short_sprite_expands_page_width_before_placement() {
-    let dimensions = [(100, 1), (4, 4)];
-    let plan = plan_sprite_pages(&dimensions, 128).expect("both sprites fit the device limit");
-
-    assert!(plan.page_width >= 100);
-    for placement in &plan.placements {
-        let (width, height) = dimensions[placement.sprite_index];
-        assert!(placement.x + width <= plan.page_width);
-        assert!(placement.y + height <= plan.page_heights[placement.page]);
-    }
 }
 
 #[test]

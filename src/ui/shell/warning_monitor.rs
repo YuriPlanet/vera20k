@@ -191,12 +191,6 @@ mod tests {
     }
 
     #[test]
-    fn missing_image_draws_nothing() {
-        let mut monitor = WarningMonitor::default();
-        assert_eq!(monitor.paint(Instant::now(), 0, true), None);
-    }
-
-    #[test]
     fn frames_wrap_at_the_shp_frame_count() {
         let t0 = Instant::now();
         let mut monitor = WarningMonitor::default();

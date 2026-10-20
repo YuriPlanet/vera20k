@@ -26,7 +26,8 @@ use crate::rules::native_processing::{
     NativeRulesRegistryState, NativeTypeConstructionEvent, NativeTypeConstructionTrace,
     ProcessedRulesLayers, RulesLayerKind, RulesLayerStack, RulesProcessContext,
     process_native_campaign_rules_prepass, process_native_noncampaign_rules_prepass,
-    process_native_rules_cold_start,
+    process_native_rules_cold_start, read_native_multiplayer_country,
+    refresh_native_multiplayer_country_bodies,
 };
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
@@ -54,9 +55,9 @@ struct NativeRulesSourceSnapshot {
 
 #[derive(Debug)]
 enum NativeRulesRegistryOwner {
-    /// Cold constructors predate the next numeric-ID reset. Their events must
-    /// be drained, while their registry identities feed the E prepass.
-    ColdStartup(NativeTypeConstructionTrace),
+    /// Cold startup and shell constructors predate the next numeric-ID reset.
+    /// Retain their chronology until that reset, while identities feed E_multi.
+    BeforeReset(NativeTypeConstructionTrace),
     /// Later P/P_preview events have transferred to their numeric-ID consumer;
     /// only the continuing registry identity remains process-resident.
     Live(NativeRulesRegistryState),
@@ -66,12 +67,30 @@ enum NativeRulesRegistryOwner {
 }
 
 impl NativeRulesRegistryOwner {
+    fn registry_state(&self) -> &NativeRulesRegistryState {
+        match self {
+            Self::BeforeReset(trace) => trace.registry_state(),
+            Self::Live(state) => state,
+            Self::Scenario(processed) => processed.native_registry_state(),
+        }
+    }
+
+    fn into_shell_state(self) -> (Vec<NativeTypeConstructionEvent>, NativeRulesRegistryState) {
+        match self {
+            Self::BeforeReset(trace) => {
+                let (events, _, state) = trace.into_parts();
+                (events, state)
+            }
+            owner => (Vec::new(), owner.into_registry_state()),
+        }
+    }
+
     /// Retire the old scenario envelope while keeping its sole live Type
     /// authority for a pre-reset Rules prefix. Constructor events predate the
     /// next Scenario cursor and are deliberately discarded at this boundary.
     fn into_registry_state(self) -> NativeRulesRegistryState {
         match self {
-            Self::ColdStartup(trace) => trace.into_registry_state_discarding_events(),
+            Self::BeforeReset(trace) => trace.into_registry_state_discarding_events(),
             Self::Live(state) => state,
             Self::Scenario(processed) => (*processed)
                 .into_ini_and_native_type_construction_trace()
@@ -192,8 +211,69 @@ impl NativeRulesProcessOwner {
                 fixed_sounds,
                 fixed_eva,
             },
-            registry: Some(NativeRulesRegistryOwner::ColdStartup(cold_trace)),
+            registry: Some(NativeRulesRegistryOwner::BeforeReset(cold_trace)),
         })
+    }
+
+    /// Session6980C0/475540 against the retained process INI. This mutates the
+    /// one live registry before PrepareSession's separate Country body pass.
+    pub fn read_multiplayer_country(&mut self, settings: &IniFile, current: i32) -> i32 {
+        let (events, state) = self
+            .registry
+            .take()
+            .expect("Rules transition reentered")
+            .into_shell_state();
+        let (index, mut trace) = read_native_multiplayer_country(
+            state,
+            &self.sources.selected_rules_root,
+            settings,
+            current,
+        );
+        trace.prepend_events(events);
+        self.registry = Some(NativeRulesRegistryOwner::BeforeReset(trace));
+        index
+    }
+
+    /// PrepareSession52E123; intentionally separate from D7's6980C0 call.
+    pub fn refresh_multiplayer_country_bodies(&mut self) {
+        let (events, state) = self
+            .registry
+            .take()
+            .expect("Rules transition reentered")
+            .into_shell_state();
+        let mut trace =
+            refresh_native_multiplayer_country_bodies(state, &self.sources.selected_rules_root);
+        trace.prepend_events(events);
+        self.registry = Some(NativeRulesRegistryOwner::BeforeReset(trace));
+    }
+
+    pub fn multiplayer_countries(&self) -> impl Iterator<Item = (&str, Option<&str>)> {
+        self.registry
+            .as_ref()
+            .expect("Rules transition reentered")
+            .registry_state()
+            .country_projection()
+            .map(|(id, body, _, _)| (id, body.read_name("Name", 0x31)))
+    }
+
+    pub fn country_name(&self, index: i32) -> Option<&str> {
+        self.multiplayer_countries()
+            .nth(usize::try_from(index).ok()?)
+            .map(|(id, _)| id)
+    }
+
+    /// Refresh derived frontend country/side fields without replaying Process
+    /// or allocating through the compatibility RuleSet.
+    pub fn project_multiplayer_countries(&self, rules: &mut RuleSet) {
+        let registry = self
+            .registry
+            .as_ref()
+            .expect("Rules transition reentered")
+            .registry_state();
+        rules.refresh_country_side_projection(
+            registry.country_projection(),
+            registry.side_projection_names(),
+        );
     }
 
     /// The same immutable catalog used by process playback; never replaced by
@@ -248,7 +328,7 @@ impl NativeRulesProcessOwner {
     pub fn saved_scenario_rules(&self) -> Option<&ProcessedRulesLayers> {
         match self.registry.as_ref()? {
             NativeRulesRegistryOwner::Scenario(processed) => Some(processed.as_ref()),
-            NativeRulesRegistryOwner::ColdStartup(_) | NativeRulesRegistryOwner::Live(_) => None,
+            NativeRulesRegistryOwner::BeforeReset(_) | NativeRulesRegistryOwner::Live(_) => None,
         }
     }
 
@@ -421,3 +501,7 @@ impl NativeRulesProcessOwner {
         layers
     }
 }
+
+#[cfg(test)]
+#[path = "session_country_tests.rs"]
+mod session_country_tests;

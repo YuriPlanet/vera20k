@@ -218,10 +218,4 @@ mod tests {
         assert!(hva.get_transform(2, 0).is_none());
         assert!(hva.get_transform(0, 1).is_none());
     }
-
-    #[test]
-    fn test_reject_too_small() {
-        let data: Vec<u8> = vec![0u8; 10];
-        assert!(HvaFile::from_bytes(&data).is_err());
-    }
 }

@@ -97,24 +97,24 @@ impl Simulation {
             HouseAllianceAdmission::Admitted(alliances) => alliances,
             HouseAllianceAdmission::ScenarioInitialization { roster } => {
                 assert!(
-                    self.entities().is_empty() && self.production.terrain_objects.is_empty(),
+                    self.entities().is_empty() && self.terrain_objects.objects().is_empty(),
                     "ScenarioInit diplomacy precedes map objects"
                 );
                 assert!(
-                    !self.session.game_mode_nonzero,
+                    !self.session.game_mode_nonzero(),
                     "this ScenarioInit admission is the campaign map-read family"
                 );
                 assert_eq!(
                     roster.houses.len(),
-                    self.session.house_order.len(),
+                    self.houses.order().len(),
                     "House ReadScenarioINI follows complete House construction"
                 );
                 roster.alliance_map()
             }
         };
         let changed: Vec<_> = self
-            .session
-            .house_order
+            .houses
+            .order()
             .iter()
             .copied()
             .filter(|owner| {
@@ -153,7 +153,7 @@ impl Simulation {
         &self,
         alliances: &HouseAllianceMap,
     ) -> std::collections::BTreeSet<(InternedId, InternedId)> {
-        let houses = &self.session.house_order;
+        let houses = &self.houses.order();
         houses
             .iter()
             .flat_map(|&owner| houses.iter().map(move |&ally| (owner, ally)))
@@ -186,23 +186,23 @@ impl Simulation {
         if self.session.computer_slot_has_team() {
             return;
         }
-        let game_mode_nonzero = self.session.game_mode_nonzero;
+        let game_mode_nonzero = self.session.game_mode_nonzero();
         // Both walks reload the House count after each call (0x005016DB,
         // 0x00501736).
         let mut index = 0;
-        while index < self.session.house_order.len() {
-            let owner = self.session.house_order[index];
+        while index < self.houses.order().len() {
+            let owner = self.houses.order()[index];
             index += 1;
             if !self.houses.get(&owner).is_some_and(|house| {
-                !house.is_defeated && !house.is_controlled_by_human(game_mode_nonzero)
+                !house.is_defeated() && !house.is_controlled_by_human(game_mode_nonzero)
             }) {
                 continue;
             }
             let mut peer_index = 0;
-            while peer_index < self.session.house_order.len() {
-                let other = self.session.house_order[peer_index];
+            while peer_index < self.houses.order().len() {
+                let other = self.houses.order()[peer_index];
                 peer_index += 1;
-                let Some(peer) = self.houses.get(&other).filter(|peer| !peer.is_defeated) else {
+                let Some(peer) = self.houses.get(&other).filter(|peer| !peer.is_defeated()) else {
                     continue;
                 };
                 // Itself too: CanAlly refuses it.
@@ -237,11 +237,10 @@ impl Simulation {
         let anger = self
             .houses
             .get(&owner)
-            .and_then(|house| house.grudge_scores.get(&other).copied())
+            .and_then(|house| house.grudge_scores().get(&other).copied())
             .unwrap_or(0);
         update_anger_nodes(
             &mut self.houses,
-            &self.session.house_order,
             &self.house_alliances,
             &self.interner,
             owner,
@@ -249,9 +248,9 @@ impl Simulation {
             anger.wrapping_neg(),
         );
         if let Some(house) = self.houses.get_mut(&owner)
-            && house.enemy_house == Some(other)
+            && house.enemy_house() == Some(other)
         {
-            house.enemy_house = None;
+            house.forget_enemy();
         }
         // 0x004F9B9A's release bracket ran while `owner` did not count
         // `other` an ally (CanAlly refuses an existing ally), so it took no
@@ -267,7 +266,7 @@ impl Simulation {
             }
             // 0x004F9C37..0x004F9C7A: a human house allying with a house type
             // that is not MultiplayPassive turns the computers paranoid.
-            let game_mode_nonzero = self.session.game_mode_nonzero;
+            let game_mode_nonzero = self.session.game_mode_nonzero();
             if game_mode_nonzero
                 && rules.general.paranoid
                 && self
@@ -277,7 +276,7 @@ impl Simulation {
                 && self
                     .houses
                     .get(&other)
-                    .is_some_and(|house| !house.multiplay_passive)
+                    .is_some_and(|house| !house.multiplay_passive())
             {
                 self.computer_paranoid(rules, registry, effects);
             }
@@ -327,8 +326,8 @@ impl Simulation {
             return;
         };
         // 0x004F9FA9..0x004F9FC9.
-        if self.session.game_mode_nonzero
-            && (other_house.multiplay_passive || house.multiplay_passive)
+        if self.session.game_mode_nonzero()
+            && (other_house.multiplay_passive() || house.multiplay_passive())
         {
             return;
         }
@@ -346,7 +345,6 @@ impl Simulation {
         // 0x004F9FDD..0x004F9FE2.
         update_anger_nodes(
             &mut self.houses,
-            &self.session.house_order,
             &self.house_alliances,
             &self.interner,
             owner,
@@ -367,7 +365,6 @@ impl Simulation {
             self.rebuild_house_spatial_threat(other, rules);
             update_anger_nodes(
                 &mut self.houses,
-                &self.session.house_order,
                 &self.house_alliances,
                 &self.interner,
                 other,
@@ -388,7 +385,7 @@ impl Simulation {
         };
         // 0x0050157C..0x0050159E: a house type of the `Civilian` side, in a
         // nonzero game mode.
-        if self.session.game_mode_nonzero && self.house_type_is_civilian(other, rules) {
+        if self.session.game_mode_nonzero() && self.house_type_is_civilian(other, rules) {
             return false;
         }
         if self.object_placement_scope_active() {
@@ -396,7 +393,7 @@ impl Simulation {
             return true;
         }
         // 0x005015B1..0x005015BF.
-        if house.is_defeated {
+        if house.is_defeated() {
             return false;
         }
         // 0x005015C2..0x00501638: among the live houses whose type is not
@@ -405,11 +402,11 @@ impl Simulation {
         // ally counts whatever its type (0x0050162F).
         let mut live = 0;
         let mut friends = 1;
-        for &peer in &self.session.house_order {
+        for &peer in self.houses.order() {
             if !self
                 .houses
                 .get(&peer)
-                .is_some_and(|peer| !peer.is_defeated && !peer.multiplay_passive)
+                .is_some_and(|peer| !peer.is_defeated() && !peer.multiplay_passive())
             {
                 continue;
             }

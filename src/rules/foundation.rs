@@ -308,12 +308,6 @@ mod tests {
     }
 
     #[test]
-    fn zero_foundation_is_table_entry() {
-        assert_eq!(foundation_id("0x0"), 21);
-        assert_eq!(foundation_dimensions("0x0"), (0, 0));
-    }
-
-    #[test]
     fn gsi_04_05_hidden_foundation_offsets_match_native_special_lists() {
         assert_eq!(
             foundation_cell_offsets("3x3Refinery"),

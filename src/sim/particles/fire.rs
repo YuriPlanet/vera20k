@@ -104,7 +104,7 @@ pub(super) fn tick_particle(p: &mut Particle, pt: &ParticleType, rng: &mut SimRn
 pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleSet) {
     let pst = rules.particle_system_type(sys.type_id);
     let cap = pst.particle_cap as usize;
-    let tick = u64::from(sim.session.binary_frame);
+    let tick = u64::from(sim.session.binary_frame());
 
     // Phase 1 — tick existing particles.
     for p in &mut sys.particles {

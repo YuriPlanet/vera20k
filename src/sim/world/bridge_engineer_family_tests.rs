@@ -37,7 +37,7 @@ fn engineer_family_selector_matches_original_boundary_and_dummy() {
         for row in input["cells"].as_array().unwrap() {
             let x = row[0].as_u64().unwrap() as usize;
             let y = row[1].as_u64().unwrap() as usize;
-            let c = &mut terrain.cells[y * 16 + x];
+            let c = &mut terrain.cells_mut_for_test()[y * 16 + x];
             c.final_tile_index = row[2].as_i64().unwrap() as i32;
             c.bridge_facts.overlay_id = u8::try_from(row[3].as_i64().unwrap()).ok();
         }

@@ -309,13 +309,143 @@ class CacheTests(unittest.TestCase):
     def test_actual_free_space_shortfall_uses_more_cold_objects_than_dry_plan(self):
         first = self.write('debug/deps/first.rcgu.o', age=10)
         second = self.write('debug/deps/second.rcgu.o', age=20)
-        policy = cache.CachePolicy(1 << 40, 1 << 40, 200)
+        policy = cache.CachePolicy(1 << 40, 1 << 40, 200, 0)
         with patch.object(cache.shutil, 'disk_usage', return_value=SimpleNamespace(free=100)):
             plan = self.trim(policy, dry_run=True)
             result = self.trim(policy)
         self.assertEqual(plan['selected_files'], [str(first)], plan)
         self.assertEqual(result['removed_files'], [str(first), str(second)], result)
         self.assertEqual(set(result['unmet_targets']['free_bytes'].values()), {100})
+
+    def test_short_reserve_is_restored_with_headroom(self):
+        first = self.write('debug/deps/first.rcgu.o', age=10)
+        second = self.write('debug/deps/second.rcgu.o', age=20)
+        allocated = cache._allocated(first.stat())
+        with patch.object(cache.shutil, 'disk_usage', return_value=SimpleNamespace(free=100)):
+            exact = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 200, 0), dry_run=True)
+            roomy = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 200, allocated), dry_run=True)
+        self.assertEqual(exact['selected_files'], [str(first)], exact)
+        self.assertEqual(roomy['selected_files'], [str(first), str(second)], roomy)
+        # Headroom applies once the reserve is short, never to an intact one.
+        with patch.object(cache.shutil, 'disk_usage', return_value=SimpleNamespace(free=200)):
+            intact = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 200, 1 << 40))
+        self.assertEqual(intact['state'], 'under_budget', intact)
+        self.assertTrue(first.exists() and second.exists())
+
+    def test_recent_newest_session_yields_only_to_a_short_reserve(self):
+        now = time.time()
+        older = self.write('debug/incremental/crate-123/s-old/object.o', age=now - 86400)
+        recent = self.write('debug/incremental/crate-123/s-new/object.o', age=now - 60)
+        idle = self.write('debug/incremental/crate-456/s-idle/object.o',
+                          age=now - cache.ACTIVE_SESSION_SECONDS - 60)
+        result = self.trim(cache.CachePolicy(0, 0, 0))
+        self.assertEqual(set(result['removed_files']), {str(older), str(idle)}, result)
+        self.assertTrue(recent.exists())
+        with patch.object(cache.shutil, 'disk_usage', return_value=SimpleNamespace(free=100)):
+            result = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 200, 0))
+        self.assertEqual(result['removed_files'], [str(recent)], result)
+
+    def abandoned(self, name='gone-checkout', *, idle=cache.ABANDONED_SECONDS + 60, namespace=None):
+        """The registered cache of a checkout path that does not exist."""
+        checkout = self.root / name
+        namespace = namespace or hashlib.sha256(os.fsencode(str(checkout))).hexdigest()[:16]
+        target = self.target.parent / namespace
+        target.mkdir()
+        registry = self.store / 'cache-roots.json'
+        data = json.loads(registry.read_text()) if registry.exists() else {'schema': 1, 'roots': {}}
+        data['roots'][str(target)] = {'checkout': str(checkout), 'last_use_unix': time.time() - idle,
+                                      'profiles': ['debug']}
+        registry.parent.mkdir(parents=True, exist_ok=True)
+        registry.write_text(json.dumps(data))
+        return target
+
+    def put(self, cache_root, relative):
+        path = cache_root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b'x' * 8192)
+        return path
+
+    def test_cache_of_a_removed_checkout_is_reclaimed_whatever_the_budgets(self):
+        gone = self.abandoned()
+        outputs = [self.put(gone, relative) for relative in (
+            'debug/deps/libcrate-0123456789abcdef.rlib', 'debug/.fingerprint/crate-0123/lib-crate',
+            'debug/incremental/crate-123/s-new/object.o', 'debug/build/crate-123/out/generated.rs',
+            'debug/vera20k', 'fast/deps/orphan.rcgu.o', 'CACHEDIR.TAG', '.future-incompat-report.json')]
+        cargo_run.publish_binaries(self.store, gone.name, gone, {outputs[4]})
+        live = self.write('debug/deps/live.rcgu.o')
+        result = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 0))
+        self.assertEqual(result['state'], 'trimmed', result)
+        self.assertEqual(result['abandoned_roots'], [str(gone)])
+        self.assertEqual(set(result['removed_files']), set(map(str, outputs)), result)
+        self.assertFalse(gone.exists())
+        self.assertEqual(result['removed_abandoned_roots'], [str(gone)])
+        registry = json.loads((self.store / 'cache-roots.json').read_text())
+        self.assertNotIn(str(gone), registry['roots'])
+        self.assertFalse((self.store / 'latest' / f'{gone.name}.json').exists())
+        self.assertTrue(live.exists())
+
+    def test_abandoned_cache_keeps_what_saved_builds_name_and_foreign_files(self):
+        gone = self.abandoned()
+        required = self.put(gone, 'debug/deps/required.rcgu.o')
+        orphan = self.put(gone, 'debug/deps/orphan.rcgu.o')
+        foreign = self.put(gone, 'research/native-evidence.bin')
+        binary, _ = self.label()
+        result = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 0),
+                           dependencies=lambda executable: {required} if executable == binary else set())
+        self.assertEqual(result['removed_files'], [str(orphan)], result)
+        self.assertTrue(required.exists() and foreign.exists())
+        registry = json.loads((self.store / 'cache-roots.json').read_text())
+        self.assertIn(str(gone), registry['roots'])
+
+    def test_recent_running_live_or_misnamed_cache_is_never_abandoned(self):
+        recent = self.put(self.abandoned('recent', idle=60), 'debug/deps/kept.rcgu.o')
+        running = self.abandoned('running')
+        running_object = self.put(running, 'debug/deps/kept.rcgu.o')
+        live = self.abandoned('live')
+        live_object = self.put(live, 'debug/deps/libkept-0123456789abcdef.rlib')
+        (self.root / 'live').mkdir()
+        misnamed = self.put(self.abandoned('misnamed', namespace='0123456789abcdef'),
+                            'debug/deps/kept.rcgu.o')
+        with cargo_run.file_lock(self.store / 'checkouts' / f'{running.name}.lock', time.monotonic() + 5):
+            result = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 0))
+        self.assertEqual(result['abandoned_roots'], [], result)
+        for path in (recent, running_object, live_object, misnamed):
+            self.assertTrue(path.exists(), path)
+
+    def test_checkout_reappearing_during_inspection_blocks_but_a_newly_abandoned_cache_does_not(self):
+        gone = self.abandoned()
+        orphan = self.put(gone, 'debug/deps/orphan.rcgu.o')
+        binary, _ = self.label()
+        later = self.put(self.abandoned('later', idle=60), 'debug/deps/later.rcgu.o')
+        crossing = patch.object(cache, 'ABANDONED_SECONDS', 30)
+        def idle_threshold_passes(executable):
+            crossing.start()  # The second cache becomes abandoned mid-pass.
+            return set()
+        try:
+            result = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 0), dependencies=idle_threshold_passes)
+        finally:
+            crossing.stop()
+        self.assertEqual(result['removed_files'], [str(orphan)], result)
+        self.assertTrue(later.exists())
+        kept = self.put(self.abandoned('back'), 'debug/deps/kept.rcgu.o')
+        self.label(name='uninspected')  # Its inspection runs the hook below.
+        def recreate(executable):
+            (self.root / 'back').mkdir()
+            return set()
+        self.assert_blocked(self.trim(cache.CachePolicy(1 << 40, 1 << 40, 0), dependencies=recreate), kept)
+
+    def test_a_pass_removes_receipts_older_than_a_week(self):
+        receipts = self.store / 'retention'
+        receipts.mkdir(parents=True)
+        old = receipts / f'{time.time_ns() - (cache.RECEIPT_SECONDS + 60) * 10 ** 9}-00000000.json'
+        recent = receipts / f'{time.time_ns() - 60 * 10 ** 9}-00000001.json'
+        other = receipts / 'notes.txt'
+        for path in (old, recent, other):
+            path.write_text('{}')
+        result = self.trim(dry_run=True)
+        self.assertFalse(old.exists())
+        for path in (recent, other, Path(result['receipt_path'])):
+            self.assertTrue(path.exists(), path)
 
     def test_incremental_budget_keeps_hottest_if_it_fits_after_cold_eviction(self):
         cold = [self.write('debug/incremental/crate-123/s-old/object.o', age=10),
@@ -962,19 +1092,22 @@ class DebugDependencyTests(unittest.TestCase):
 class PolicyTests(unittest.TestCase):
     def test_defaults_keep_a_twelve_gib_reserve(self):
         with patch.dict(os.environ):
-            for key in ('VERA20K_CACHE_GIB', 'VERA20K_INCREMENTAL_GIB', 'VERA20K_MIN_FREE_GIB'):
+            for key in ('VERA20K_CACHE_GIB', 'VERA20K_INCREMENTAL_GIB', 'VERA20K_MIN_FREE_GIB',
+                        'VERA20K_FREE_HEADROOM_GIB'):
                 os.environ.pop(key, None)
             self.assertEqual(cache.CachePolicy.from_env(), cache.CachePolicy())
             self.assertEqual(cache.CachePolicy().min_free_bytes, 12 * cache.GIB)
+            self.assertEqual(cache.CachePolicy().free_headroom_bytes, 8 * cache.GIB)
 
     def test_decimal_environment_and_cli_overrides_have_exact_integer_byte_values(self):
         with patch.dict(os.environ, {'VERA20K_CACHE_GIB': '1.5',
                                      'VERA20K_INCREMENTAL_GIB': '0',
-                                     'VERA20K_MIN_FREE_GIB': '2'}):
+                                     'VERA20K_MIN_FREE_GIB': '2',
+                                     'VERA20K_FREE_HEADROOM_GIB': '0.5'}):
             policy = cache.CachePolicy.from_env()
-            self.assertEqual(policy, cache.CachePolicy(3 * cache.GIB // 2, 0, 2 * cache.GIB))
+            self.assertEqual(policy, cache.CachePolicy(3 * cache.GIB // 2, 0, 2 * cache.GIB, cache.GIB // 2))
             self.assertEqual(cache.CachePolicy.from_env('0.25', free='0'),
-                             cache.CachePolicy(cache.GIB // 4, 0, 0))
+                             cache.CachePolicy(cache.GIB // 4, 0, 0, cache.GIB // 2))
 
     def test_invalid_nonfinite_negative_or_fractional_byte_limits_are_rejected(self):
         for value in ('nan', 'Infinity', '-1', 'not-a-size'):

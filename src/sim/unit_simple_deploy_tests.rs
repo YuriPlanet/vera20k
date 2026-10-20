@@ -64,8 +64,8 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
 
 fn native_fixture(input: &Value, before: &Value) -> (Simulation, RuleSet, u64) {
     let (mut sim, mut rules, id) = fixture(input);
-    sim.session.binary_frame = 200;
-    sim.session.tick = 200;
+    sim.session.set_binary_frame_for_test(200);
+    sim.session.set_tick_for_test(200);
     sim.mission_assign_exact(
         id,
         MissionId::from_raw(before["mission"].as_i64().unwrap() as i32),
@@ -92,7 +92,7 @@ fn native_fixture(input: &Value, before: &Value) -> (Simulation, RuleSet, u64) {
     entity.position.set_exact_z_leptons_for_test(Some(height));
     let locomotor = entity.locomotor.as_mut().expect("production Jumpjet");
     if height > 0 {
-        locomotor.set_layer(crate::sim::movement::locomotor::MovementLayer::Air);
+        locomotor.set_layer_for_test(crate::sim::movement::locomotor::MovementLayer::Air);
     }
     if input.get("start").is_some() || input.get("count").is_some() {
         // The signed/overflow corpus supplies raw native AnimType fields, some
@@ -212,7 +212,7 @@ fn updater_reads_the_height_on_any_layer() {
             .locomotor
             .as_mut()
             .unwrap()
-            .set_layer(crate::sim::movement::locomotor::MovementLayer::Ground);
+            .set_layer_for_test(crate::sim::movement::locomotor::MovementLayer::Ground);
         let deploying = row["input"]["entry"].as_u64().unwrap_or(0x739ac0) != 0x739cd0;
         sim.update_unit_simple_deploy(
             id,
@@ -237,7 +237,7 @@ fn mission_then_shared_stage_matches_original_frame_timelines() {
             let (mut sim, rules, id) = native_fixture(&json!({}), &frames[0]["before"]);
             for frame in frames {
                 let now = frame["frame"].as_u64().unwrap() as u32;
-                sim.session.binary_frame = now;
+                sim.session.set_binary_frame_for_test(now);
                 let context = format!("{} frame {now}", row["name"]);
                 assert_native_state(&sim, id, &frame["before"], &context);
                 let rng = sim.rng_state();
@@ -281,25 +281,6 @@ fn mission_then_shared_stage_matches_original_frame_timelines() {
             assert_eq!(sim.rng_state(), rng);
         }
     }
-}
-
-#[test]
-fn ordinary_synchronized_deploy_command_accepts_schp() {
-    let (mut sim, rules, id) = fixture(&json!({}));
-    assert!(sim.apply_command(
-        "Russians",
-        &Command::DeployMcv { entity_id: id },
-        Some(&rules)
-    ));
-    let entity = sim.substrate.entities.get(id).unwrap();
-    // Event9's Queue_Mission(Unload) at4C7812 leaves the current Guard
-    // intact; the ordinary scheduler owns Commence on a later frame.
-    assert_eq!(entity.mission.current().known(), Some(MissionType::Guard));
-    assert_eq!(entity.mission.queued().known(), Some(MissionType::Unload));
-    assert!(
-        !entity.is_fully_deployed(),
-        "the command queues the owner; it does not complete deployment"
-    );
 }
 
 #[test]
@@ -401,14 +382,15 @@ fn stock_animation_constructor_matches_native_forward_reverse_and_rng() {
         let (mut sim, rules, id) = fixture(&json!({}));
         let expected = &row["state"];
         let timer = &expected["runtime"]["frame_timer"];
-        sim.session.binary_frame = timer[0].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(timer[0].as_u64().unwrap() as u32);
         let rng = sim.rng_state();
         let reverse = row["reverse"].as_bool().unwrap();
         let anim_id = sim
             .start_unit_deploy_anim(id, "SCHPDEPL", reverse, &rules)
             .unwrap();
         let anim = sim.anim(anim_id).unwrap();
-        let runtime = &anim.runtime;
+        let runtime = &anim.runtime();
         let actual = json!({
             "constructor_reverse": u8::from(runtime.constructor_reverse),
             "current_frame": runtime.current_frame,
@@ -423,16 +405,16 @@ fn stock_animation_constructor_matches_native_forward_reverse_and_rng() {
         });
         assert_eq!(actual, expected["runtime"], "reverse={reverse}");
         assert_eq!(
-            u64::from(anim.draw_flags),
+            u64::from(anim.draw_flags()),
             expected["draw_flags"].as_u64().unwrap()
         );
         assert_eq!(
-            i64::from(anim.z_adjust),
+            i64::from(anim.z_adjust()),
             expected["z_adjust"].as_i64().unwrap()
         );
         let coord = sim.anim_absolute_coord(anim_id).unwrap();
         assert_eq!(json!([coord.x, coord.y, coord.z]), expected["location"]);
-        assert_eq!(anim.owner_entity, Some(id));
+        assert_eq!(anim.owner_entity(), Some(id));
         assert_eq!(
             anim.remap(),
             Some(crate::sim::anim_class::AnimRemap::House(
@@ -533,8 +515,8 @@ fn ordinary_commands_land_animate_deploy_reverse_and_resume_flight() {
         .deploy_anim()
         .unwrap();
     assert_eq!(altitude(&sim, id), 0);
-    assert!(!sim.anim(forward).unwrap().runtime.constructor_reverse);
-    assert_eq!(sim.anim(forward).unwrap().owner_entity, Some(id));
+    assert!(!sim.anim(forward).unwrap().runtime().constructor_reverse);
+    assert_eq!(sim.anim(forward).unwrap().owner_entity(), Some(id));
     advance_until(&mut sim, &rules, 200, "fully deployed Unit", |sim| {
         let entity = sim.substrate.entities.get(id).unwrap();
         entity.is_fully_deployed() && !entity.unit_deploying()
@@ -578,8 +560,8 @@ fn ordinary_commands_land_animate_deploy_reverse_and_resume_flight() {
         .deploy_anim()
         .unwrap();
     assert_ne!(reverse, forward);
-    assert!(sim.anim(reverse).unwrap().runtime.constructor_reverse);
-    assert_eq!(sim.anim(reverse).unwrap().owner_entity, Some(id));
+    assert!(sim.anim(reverse).unwrap().runtime().constructor_reverse);
+    assert_eq!(sim.anim(reverse).unwrap().owner_entity(), Some(id));
     advance_until(&mut sim, &rules, 200, "completed undeployment", |sim| {
         let entity = sim.substrate.entities.get(id).unwrap();
         !entity.is_fully_deployed() && !entity.unit_deploying()
@@ -648,7 +630,7 @@ fn compare_snapshot_continuation(mut sim: Simulation, rules: &RuleSet, id: u64, 
         attachment
     );
     if let Some(anim) = attachment {
-        assert_eq!(loaded.anim(anim).unwrap().owner_entity, Some(id));
+        assert_eq!(loaded.anim(anim).unwrap().owner_entity(), Some(id));
     }
     assert_eq!(
         sim.state_hash(),

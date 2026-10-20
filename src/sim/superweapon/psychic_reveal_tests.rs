@@ -60,7 +60,7 @@ fn the_launch_matches_native() {
         if row["bridge"] == true {
             let terrain = sim.resolved_terrain.as_mut().unwrap();
             let index = terrain.index(target.0, target.1).unwrap();
-            terrain.cells[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+            terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
         }
         let sw_type = charge_super(&mut sim, owner, REVEAL);
         let charged = row["charged"] == true;

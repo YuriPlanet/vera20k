@@ -84,7 +84,7 @@ impl Simulation {
     /// immediate helper visit in the caller.
     fn advance_grapple_stage(&mut self, owner: u64, victim: u64) -> bool {
         let facing = self.substrate.entities.get(victim).map_or(0, |entity| {
-            entity.body_facing_current(self.session.binary_frame)
+            entity.body_facing_current(self.session.binary_frame())
         });
         let Some(state) = self
             .substrate
@@ -181,7 +181,7 @@ impl Simulation {
         }) {
             self.parasite_exit_unit(owner, rules, effects);
             if let Some(source) = self.substrate.entities.get_mut(owner) {
-                source.parasite.end_paralysis(self.session.binary_frame);
+                source.parasite.end_paralysis(self.session.binary_frame());
             }
             return;
         }
@@ -190,7 +190,7 @@ impl Simulation {
             .get_mut(victim)
             .unwrap()
             .parasite
-            .paralysis = CdTimer::started(self.session.binary_frame as i32, warhead.paralyzes);
+            .paralysis = CdTimer::started(self.session.binary_frame() as i32, warhead.paralyzes);
         let phase = self
             .substrate
             .entities
@@ -309,7 +309,7 @@ impl Simulation {
         };
         if self
             .anim(anim)
-            .is_some_and(|anim| anim.owner_entity != Some(victim))
+            .is_some_and(|anim| anim.owner_entity() != Some(victim))
         {
             self.set_anim_owner_object(anim, Some(victim), rules);
             if let Some(source) = self.substrate.entities.get(owner) {
@@ -321,12 +321,12 @@ impl Simulation {
                     .as_ref()
                     .and_then(|terrain| terrain.cell(target.position.rx(), target.position.ry()))
             {
-                let frame = self.anim(anim).unwrap().runtime.current_frame;
+                let frame = self.anim(anim).unwrap().runtime().current_frame;
                 self.set_anim_frame_and_z_adjust(
                     anim,
                     frame,
                     crate::map::lighting::cell_ground_z_adjust(
-                        self.session.lighting.normal.into(),
+                        self.session.lighting().normal().into(),
                         cell.level,
                     ),
                 );
@@ -352,7 +352,7 @@ impl Simulation {
             .entities
             .get(victim)
             .unwrap()
-            .body_facing_current(self.session.binary_frame);
+            .body_facing_current(self.session.binary_frame());
         for _ in 0..3 {
             let offset = [
                 self.scenario_rng.next_range_i32_inclusive(-180, 180),
@@ -374,7 +374,7 @@ impl Simulation {
             .entities
             .get(victim)
             .unwrap()
-            .body_facing_current(self.session.binary_frame);
+            .body_facing_current(self.session.binary_frame());
         for index in 0..3 {
             let lateral = if self.scenario_rng.next_range_i32_inclusive(0, 1) == 0 {
                 64
@@ -482,7 +482,7 @@ impl Simulation {
         );
         self.reset_parasite_grapple(owner, Some(rules));
         if let Some(source) = self.substrate.entities.get_mut(owner) {
-            source.parasite.end_paralysis(self.session.binary_frame);
+            source.parasite.end_paralysis(self.session.binary_frame());
         }
     }
 }

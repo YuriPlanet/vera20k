@@ -349,8 +349,8 @@ fn original_state10_rows() {
                 0,
                 1,
             );
-            house.is_human = get("house_1ec").as_i64().unwrap() != 0;
-            house.player_control = get("house_1ed").as_i64().unwrap() != 0;
+            house.set_is_human_for_test(get("house_1ec").as_i64().unwrap() != 0);
+            house.set_player_control_for_test(get("house_1ed").as_i64().unwrap() != 0);
             let facts = ExitFacts {
                 ammo: ammo.current(),
                 target: get("target").as_bool().unwrap(),
@@ -481,10 +481,10 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
         // After `test_default` interned the names.
         sim.interner = crate::sim::intern::test_interner();
         let owner = sim.interner.intern("Americans");
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, human, 0, 1),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, human, 0, 1,
+            ));
         sim.playfield_bounds = Some(bounds);
         if airfield {
             // Find_Docking_Bay walks the house's buildings and its tracked
@@ -520,7 +520,7 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
         // In flight, on the map: a grounded plane takes Enter_Idle_Mode's
         // landed arm, and an unmarked one is not in the air (vt+0x54).
         plane.position.set_exact_z_leptons_for_test(Some(1500));
-        plane.lifecycle.set_cell_marked(true);
+        plane.lifecycle.set_cell_marked_for_test(true);
         sim.substrate.entities.insert(plane);
         sim.set_logic_order_for_test(vec![1]);
         let mut expected_rng = sim.scenario_rng.clone();

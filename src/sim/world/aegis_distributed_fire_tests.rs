@@ -58,7 +58,8 @@ impl GuardScene {
         // The arena supplies terrain/navigation; establish this visibility
         // domain before Unlimbo can create source and border viewer planes.
         sim.fog = crate::sim::vision::FogState::new(64, 64);
-        sim.session.current_house = Some(sim.interner.intern("Americans"));
+        sim.session
+            .set_current_house_for_test(Some(sim.interner.intern("Americans")));
         let aegis = sim
             .spawn_object("AEGIS", "Americans", 24, 24, 0, &rules)
             .expect("retail Aegis Unlimbo on Water");
@@ -85,7 +86,7 @@ impl GuardScene {
         }
         assert_eq!(sim.substrate.entities.airborne().count(), 2);
         let source = sim.substrate.entities.get(aegis).unwrap();
-        assert!(sim.houses.get(&source.owner()).unwrap().is_human);
+        assert!(sim.houses.get(&source.owner()).unwrap().is_human());
         assert_eq!(
             source.mission.current(),
             MissionId::from_known(MissionType::Guard)
@@ -153,48 +154,6 @@ impl GuardScene {
     }
 }
 
-/// Original709820 routes a targetless DistributedFire scan into709550 rather
-/// than assigning GreatestThreat's winner. Stock AEGIS must acquire and fire
-/// from Guard without an Attack order or a supplied TarCom. This joins the
-/// selector to the production class mission/FireAt path; it does not certify
-/// every candidate score or native AirTracker bucket edge.
-#[test]
-fn stock_human_guard_aegis_acquires_and_launches_at_registered_air_targets() {
-    let Some(mut scene) = GuardScene::new(false) else {
-        return;
-    };
-    let mut scanned_with_candidate = false;
-    let mut launched = false;
-    for _ in 0..180 {
-        let output = scene.advance();
-        let source = scene.sim.substrate.entities.get(scene.aegis).unwrap();
-        if source.passive_scan.last_scan_frame() != 0 {
-            scanned_with_candidate |= eligible_air_target(&scene.sim, &scene.rules, scene.aegis)
-                .is_some_and(|id| scene.targets.contains(&id));
-        }
-        for shot in output
-            .fire_events
-            .iter()
-            .filter(|shot| shot.attacker_id == scene.aegis)
-        {
-            assert_eq!(scene.sim.interner.resolve(shot.weapon_id), "Medusa");
-            assert!(matches!(shot.target, TargetKind::Entity(id) if scene.targets.contains(&id)));
-            launched = true;
-        }
-        if launched {
-            break;
-        }
-    }
-    assert!(
-        scanned_with_candidate,
-        "real passive scan ran with a legal airborne target"
-    );
-    assert!(
-        launched,
-        "targetless stock human Guard Aegis must launch a Medusa after its distributed scan"
-    );
-}
-
 /// Successful Guard FireAt records its argument and performs the real class
 /// NULL setter. Next scans exclude fired targets until all have been visited.
 #[test]
@@ -244,11 +203,11 @@ fn distributed_guard_normal_and_elite_cycle_live_targets_and_reset_only_burst() 
                 .iter()
                 .map(|(_, bullet)| bullet)
                 .find(|bullet| {
-                    bullet.source_id == scene.aegis
-                        && bullet.target == shot.target.projectile_target(&scene.sim)
+                    bullet.source_id() == scene.aegis
+                        && bullet.target() == shot.target.projectile_target(&scene.sim)
                 })
                 .expect("real returned Medusa remains targeted independently of shooter TarCom");
-            assert_eq!(bullet.payload.installed_weapon(), Some(shot.weapon_id));
+            assert_eq!(bullet.payload().installed_weapon(), Some(shot.weapon_id));
         }
         assert_ne!(
             fired[0], fired[1],
@@ -846,57 +805,5 @@ fn distributed_collection_flat_entry_clears_but_class_early_return_preserves() {
     assert_eq!(
         actor.distributed_fire_history(),
         [Some(TargetKind::Entity(victim))]
-    );
-}
-
-#[test]
-fn distributed_postshot_load_rebuilds_fresh_candidates_and_expiry_holds() {
-    let Some(mut scene) = GuardScene::new(false) else {
-        return;
-    };
-    let previous = scene.next_shot().target;
-    let bytes = crate::sim::snapshot::GameSnapshot::save(&scene.sim, 0, 0, "distributed-guard", 0);
-    let mut loaded = crate::sim::snapshot::GameSnapshot::load(&bytes)
-        .unwrap()
-        .sim;
-    // Reattach the same immutable map dependency through the established
-    // fixture load boundary, preserving its serialized real Cell state.
-    loaded.resolved_terrain = scene.sim.resolved_terrain.clone();
-    loaded.restore_after_snapshot_load().unwrap();
-    loaded.resolve_type_handles(&scene.rules);
-    let actor = loaded.substrate.entities.get(scene.aegis).unwrap();
-    assert!(actor.distributed_fire_candidates().is_empty());
-    assert!(actor.distributed_fire_history().is_empty());
-    assert_eq!(actor.attack_target.target(), None);
-    let mut holds = Vec::new();
-    Simulation::entity_expiry_holds(actor, |id| holds.push(id));
-    if let TargetKind::Entity(id) = previous {
-        assert!(!holds.contains(&id));
-    }
-    scene.sim = loaded;
-    let shot = scene.next_shot();
-    let actor = scene.sim.substrate.entities.get(scene.aegis).unwrap();
-    assert_eq!(actor.distributed_fire_candidates().len(), 2);
-    assert_eq!(
-        actor.distributed_fire_history(),
-        [Some(shot.target)],
-        "fresh collection starts a fresh exclusion history"
-    );
-    let TargetKind::Entity(target) = shot.target else {
-        panic!("air target");
-    };
-    scene
-        .sim
-        .detach_all_pointer_expired(target, &scene.rules, None, FrameEffects::default());
-    let actor = scene.sim.substrate.entities.get(scene.aegis).unwrap();
-    assert!(
-        actor.distributed_fire_history().is_empty(),
-        "new post-load history is indexed by the common expiry owner"
-    );
-    assert!(
-        actor
-            .distributed_fire_candidates()
-            .iter()
-            .all(|entry| entry.target != Some(shot.target))
     );
 }

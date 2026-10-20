@@ -532,8 +532,10 @@ impl SuppliedFootFixture {
         }];
         let actor = pointers[actor_pointer.as_str().unwrap()];
         let mut sim = Simulation::with_seed(input["scenario_seed"].as_u64().unwrap());
-        sim.session.binary_frame = 1;
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_binary_frame_for_test(1);
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         // Use the persistence owner to adopt the complete supplied original
         // cursor, including pre-fixture Main/MapGen history; no seed fitting.
         sim.scenario_rng =
@@ -548,12 +550,10 @@ impl SuppliedFootFixture {
         let country = sim.interner.intern("Americans");
         // Original fixture supplies House human bytes and country links, then
         // executes4F643B..4F6455. Whole House construction remains excluded.
-        sim.houses.insert(
-            friendly,
-            HouseState::new(friendly, 0, Some(country), true, 0, 10),
-        );
         sim.houses
-            .insert(enemy, HouseState::new(enemy, 0, Some(country), true, 0, 10));
+            .register(HouseState::new(friendly, 0, Some(country), true, 0, 10));
+        sim.houses
+            .register(HouseState::new(enemy, 0, Some(country), true, 0, 10));
         let source_pose = native["greatest_threat_rows"]
             .as_array()
             .unwrap()
@@ -687,7 +687,7 @@ impl SuppliedFootFixture {
                     .lifecycle
                     .set_object_alive_for_test(control["alive"] != 0);
             }
-            entity.lifecycle.set_cell_marked(true);
+            entity.lifecycle.set_cell_marked_for_test(true);
             entity.set_in_playfield(true);
             entity.locomotor = Some(LocomotorState::from_object_type(object, 0));
             if infantry {
@@ -728,7 +728,7 @@ impl SuppliedFootFixture {
                             .map(|pointer| NavTargetRef::from(target(pointer).unwrap()))
                             .collect(),
                     );
-                    entity.navigation.path_replay.set_directions_for_test(
+                    entity.navigation.path_replay_mut().set_directions_for_test(
                         before["path"]
                             .as_array()
                             .unwrap()
@@ -736,11 +736,14 @@ impl SuppliedFootFixture {
                             .map(|direction| signed(direction) as u8)
                             .collect(),
                     );
-                    entity.navigation.path_replay.set_reference_cell(Some((
-                        signed(&before["reference_cell"][0]) as i16,
-                        signed(&before["reference_cell"][1]) as i16,
-                    )));
-                    let path = &mut entity.navigation.path_runtime;
+                    entity
+                        .navigation
+                        .path_replay_mut()
+                        .set_reference_cell_for_test(Some((
+                            signed(&before["reference_cell"][0]) as i16,
+                            signed(&before["reference_cell"][1]) as i16,
+                        )));
+                    let path = entity.navigation.path_runtime_mut();
                     path.set_movement_timer_for_test(crate::sim::timer::CdTimer::from_raw(
                         signed(&before["movement_timer_words"][0]),
                         signed(&before["movement_timer_words"][2]),
@@ -749,8 +752,8 @@ impl SuppliedFootFixture {
                         signed(&before["blocked_timer_words"][0]),
                         signed(&before["blocked_timer_words"][2]),
                     ));
-                    path.set_path_blocked(before["blocked"] != 0);
-                    path.set_retries_left(signed(&before["retry"]) as u32);
+                    path.set_path_blocked_for_test(before["blocked"] != 0);
+                    path.set_retries_left_for_test(signed(&before["retry"]) as u32);
                 }
                 let head = xyz(&before["loco_head"]);
                 if head != [0, 0, 0] {
@@ -1313,8 +1316,14 @@ fn install_recorded_anytown_query_state(
     let source = scene.sim();
     fixture.sim.playfield_bounds = source.playfield_bounds;
     fixture.sim.playfield_size_height = source.playfield_size_height;
-    fixture.sim.session.map_width = source.session.map_width;
-    fixture.sim.session.map_height = source.session.map_height;
+    fixture
+        .sim
+        .session
+        .set_map_width_for_test(source.session.map_width());
+    fixture
+        .sim
+        .session
+        .set_map_height_for_test(source.session.map_height());
     fixture.sim.overlay_grid = source.overlay_grid.clone();
     let mut terrain = source.resolved_terrain.as_ref().unwrap().clone();
     terrain.test_set_native_allocated_cells(&fixture.cells.values().copied().collect::<Vec<_>>());
@@ -1335,7 +1344,7 @@ fn install_recorded_anytown_query_state(
             receipt["cell"],
             "{name}: original Cell constructor identity"
         );
-        let cell = terrain.cell_mut(x, y).unwrap();
+        let cell = terrain.cell_mut_for_test(x, y).unwrap();
         // Physical map/TMP data establishes these independently of Rust's
         // query result. Flags and Land are the retained native crop state,
         // rather than a claim about every production Cell Recalc writer.
@@ -1416,10 +1425,10 @@ fn install_recorded_anytown_query_state(
             )),
             signed(&input["radius"]),
         );
-        house.alternate_base_center = (
+        house.set_alternate_base_center_for_test((
             signed(&input["alternate"][0]) as u16,
             signed(&input["alternate"][1]) as u16,
-        );
+        ));
     }
 }
 
@@ -1554,12 +1563,12 @@ fn assert_destination_projection(fixture: &SuppliedFootFixture, row: &Value) {
         "{name}: Foot NavComAux"
     );
     assert_eq!(
-        actor.navigation.path_replay.cursor(),
+        actor.navigation.path_replay().cursor(),
         0,
         "{name}: unchanged supplied path cursor"
     );
     assert_eq!(
-        actor.navigation.path_replay.directions(),
+        actor.navigation.path_replay().directions(),
         expected["path"]
             .as_array()
             .unwrap()
@@ -1569,7 +1578,7 @@ fn assert_destination_projection(fixture: &SuppliedFootFixture, row: &Value) {
         "{name}: live path head and preserved backing suffix"
     );
     assert_eq!(
-        actor.navigation.path_replay.reference_cell(),
+        actor.navigation.path_replay().reference_cell(),
         Some((
             signed(&expected["reference_cell"][0]) as i16,
             signed(&expected["reference_cell"][1]) as i16,
@@ -1589,7 +1598,7 @@ fn assert_destination_projection(fixture: &SuppliedFootFixture, row: &Value) {
         "{name}: Unit clear versus Infantry preserved navigation vector"
     );
     // Compare live vector entries, not C++ allocator/vtable/backing residues.
-    let path = &actor.navigation.path_runtime;
+    let path = actor.navigation.path_runtime();
     for (actual, key) in [
         (path.movement_timer(), "movement_timer_words"),
         (path.blocked_timer(), "blocked_timer_words"),
@@ -2095,7 +2104,10 @@ fn original_ground_fireup_stage_uses_absolute_native_frames() {
         row["before"]["doing"] = json!(0);
         row["before"]["frame_f8"] = json!(0);
         let mut fixture = SuppliedFootFixture::new(&row, &rules);
-        fixture.sim.session.binary_frame = frames[0]["native_frame"].as_u64().unwrap() as u32;
+        fixture
+            .sim
+            .session
+            .set_binary_frame_for_test(frames[0]["native_frame"].as_u64().unwrap() as u32);
         fixture
             .sim
             .substrate
@@ -2125,7 +2137,10 @@ fn original_ground_fireup_stage_uses_absolute_native_frames() {
                 .unwrap()
         );
         for (index, frame) in frames.iter().enumerate() {
-            fixture.sim.session.binary_frame = frame["native_frame"].as_u64().unwrap() as u32;
+            fixture
+                .sim
+                .session
+                .set_binary_frame_for_test(frame["native_frame"].as_u64().unwrap() as u32);
             if index != 0 {
                 fixture
                     .sim
@@ -2133,14 +2148,14 @@ fn original_ground_fireup_stage_uses_absolute_native_frames() {
                     .entities
                     .get_mut(fixture.actor)
                     .unwrap()
-                    .tick_native_stage(fixture.sim.session.binary_frame as i32);
+                    .tick_native_stage(fixture.sim.session.binary_frame() as i32);
             }
             let actor = fixture.sim.substrate.entities.get(fixture.actor).unwrap();
             assert_eq!(
                 actor.native_stage().value(),
                 signed(&frame["after"]["frame_f8"]),
                 "{name}: native absolute frame {}",
-                fixture.sim.session.binary_frame
+                fixture.sim.session.binary_frame()
             );
         }
         assert_eq!(
@@ -2269,7 +2284,10 @@ fn dying_infantry_visits_shared_native_clock() {
         .unwrap();
     let frame = &clock["frames"][0];
     let mut fixture = SuppliedFootFixture::new(base, &rules);
-    fixture.sim.session.binary_frame = signed(&frame["native_frame"]) as u32;
+    fixture
+        .sim
+        .session
+        .set_binary_frame_for_test(signed(&frame["native_frame"]) as u32);
     fixture.sim.begin_infantry_death_sequence(
         fixture.actor,
         crate::sim::world::InfantryDeathSequence::Die1,
@@ -2328,7 +2346,7 @@ fn saved_native_stage_resumes_original_clock_and_changes_world_hash() {
             let after = native_clock_fixture(&frame["after"]);
             let before_hash = sim.state_hash();
             let bytes = GameSnapshot::save_validated(&sim, 0, 0, &at, 0);
-            sim = GameSnapshot::load_validated(&bytes, 0, 0, &sim.session.map_name)
+            sim = GameSnapshot::load_validated(&bytes, 0, 0, sim.session.map_name())
                 .unwrap()
                 .sim;
             assert_eq!(
@@ -2377,7 +2395,10 @@ fn original_do_action_restart_preserves_independent_stage_fields() {
         let mut row = base.clone();
         row["before"]["doing"] = native["doing_before"].clone();
         let mut fixture = SuppliedFootFixture::new(&row, &rules);
-        fixture.sim.session.binary_frame = signed(&native["input"]["native_frame"]) as u32;
+        fixture
+            .sim
+            .session
+            .set_binary_frame_for_test(signed(&native["input"]["native_frame"]) as u32);
         fixture
             .sim
             .substrate

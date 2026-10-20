@@ -126,11 +126,10 @@ pub fn psychic_sensor_watch_fixture(rules: &RuleSet) -> (Simulation, u64, Intern
     let americans = sim.interner.intern("Americans");
     let russians = sim.interner.intern("Russians");
     for (id, side, human) in [(americans, 0, true), (russians, 1, false)] {
-        sim.houses.insert(
-            id,
-            crate::sim::house_state::HouseState::new(id, side, None, human, 0, 10),
-        );
-        sim.session.house_order.push(id);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                id, side, None, human, 0, 10,
+            ));
     }
     crate::sim::arena_fixture::flat_ground(&mut sim, rules);
     sim.spawn_object_at_height("NAPOWR", "Americans", 10, 10, 0, 0, rules)
@@ -148,7 +147,7 @@ pub fn psychic_sensor_watch_fixture(rules: &RuleSet) -> (Simulation, u64, Intern
         .unwrap()
         .attack_target
         .set_for_test(Some(TargetKind::Cell(18, 18)));
-    sim.session.current_house = Some(americans);
+    sim.session.set_current_house_for_test(Some(americans));
     (sim, tank, americans)
 }
 

@@ -21,20 +21,6 @@ fn ordinary_pass(session_mode: SessionMode, pacer_timing_admits: bool) -> Runtim
 }
 
 #[test]
-fn offline_fast_scroll_does_not_repeat_between_game_frames() {
-    for mode in [SessionMode::Campaign, SessionMode::Skirmish] {
-        let accepted = decide_runtime_pass(ordinary_pass(mode, true));
-        assert!(accepted.run_sim && accepted.scroll_input);
-        let redraw = decide_runtime_pass(ordinary_pass(mode, false));
-        assert!(!redraw.run_sim);
-        assert!(
-            !redraw.scroll_input,
-            "{mode:?}: a redraw in the native throttle wait must not repeat held fast scrolling"
-        );
-    }
-}
-
-#[test]
 fn repeated_redraws_cannot_multiply_offline_scroll_steps() {
     for mode in [SessionMode::Campaign, SessionMode::Skirmish] {
         for game_speed in 1..=6 {

@@ -108,13 +108,13 @@ impl Simulation {
             let owner_spy_sat = self
                 .houses
                 .get(&owner)
-                .is_some_and(|house| house.spy_sat_active);
+                .is_some_and(|house| house.spy_sat_active());
             if !owner_spy_sat {
                 self.reset_shroud_for_owner(owner, rules);
             }
             InfiltrationEffect::Radar { owner_spy_sat }
         } else if object.power > 0 {
-            let frame = self.session.binary_frame;
+            let frame = self.session.binary_frame();
             self.power_states
                 .entry(owner)
                 .or_default()

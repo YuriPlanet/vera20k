@@ -66,7 +66,7 @@ pub fn launch(
     sw_type: InternedId,
 ) -> bool {
     let general = &rules.general;
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
 
     // `0x006CD07D..0x006CD130`: the anim 5 leptons over the deck coordinate.
     super::spawn_cell_anim(

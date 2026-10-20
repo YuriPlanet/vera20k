@@ -24,7 +24,9 @@
 //!   `store_spawned_limbo` resets the CoordStruct to the off-map default —
 //!   so the map view shows them piled at the origin.
 //! - **Measured data only.** No event-history or pathfinding-health counters
-//!   are invented where the current simulation has no observation source.
+//!   are invented where the current simulation has no observation source. The
+//!   `path_batch` block (v24) is the batch's own accounting: it already makes
+//!   those counts to enforce its caps and its budget, so it reports them.
 //! - **Wire stability.** Houses and spots are `Vec`s in store/interned-id
 //!   order — deterministic across peers and runs. New fields arrive as
 //!   `Option` or new sections under a bumped `TELEMETRY_SCHEMA_VERSION`.
@@ -57,7 +59,62 @@ use crate::sim::world::Simulation;
 /// positions).
 /// v22: read-only schema; trainer state is absent and collections are bounded.
 /// v23: optional developer-tools capability and bounded selected-object history.
-pub const TELEMETRY_SCHEMA_VERSION: u32 = 23;
+/// v24: `path_batch` — the path batch pass's own counts and durations.
+/// v25: `history` — 1 Hz match summaries recorded whether or not a dashboard is
+/// attached; sent once, to a client that attached since the last publish.
+/// v26: `report_points` — report-grade samples (5 s) carrying exactly the
+/// fields the dashboard's match report reads, so a past point can render the
+/// full report. Spots, logs, debug and production detail stay out.
+pub const TELEMETRY_SCHEMA_VERSION: u32 = 26;
+
+/// One house row of a [`ReportPoint`]: just what the report's party table and
+/// pie captions read.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ReportHouseRow {
+    pub name: String,
+    pub is_human: bool,
+    pub passive: bool,
+    pub structures: u32,
+    pub credits: i32,
+    pub score: i32,
+}
+
+/// A report-grade sample of a match at one tick.
+///
+/// It carries exactly the readings the dashboard's match report consumes, so
+/// the report renderer can be pointed at a past sample unchanged. `timing`
+/// and `render` are filled by the app (their owners are the render loop).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ReportPoint {
+    pub tick: u64,
+    pub entities_total: u32,
+    pub map_width: u16,
+    pub map_height: u16,
+    pub houses: Vec<ReportHouseRow>,
+    pub timing: Option<TimingSample>,
+    pub profile: Option<crate::sim::frame_profile::FrameProfileReport>,
+    pub render: Option<crate::sim::telemetry::RenderTimingReport>,
+    pub path_batch: Option<crate::sim::movement::PathBatchStats>,
+}
+
+/// One 1 Hz summary of a match, recorded by the app for the whole match.
+///
+/// The dashboard draws these as the match-long timeline; a client that
+/// attaches mid-match receives the ring once so the time before it is not a
+/// hole. Render and phase-ledger fields are deliberately absent: those are
+/// measured only while a client is attached.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct MatchHistorySample {
+    pub tick: u64,
+    /// Mean and slowest simulation-advance wall time over the sample's ticks.
+    pub tick_ms: f32,
+    pub peak_ms: f32,
+    pub entities: u32,
+    pub houses: u32,
+    /// The path batch's own counts at the sample's last tick; `None` while the
+    /// simulation searches serially.
+    pub path_batch: Option<crate::sim::movement::PathBatchStats>,
+}
 
 /// Spot ceiling per snapshot: the project's headline unit scale. Beyond it
 /// the capture keeps the first N in store order (deterministic) and the
@@ -118,7 +175,7 @@ pub struct HousePopulation {
     /// Rules-owned side index: the position in the loaded `[Sides]` section.
     /// Not a fixed enum — retail order differs from test fixtures, so the app
     /// also sends `side_name`, the authoritative spelling.
-    pub side_index: u8,
+    pub side_index: i32,
     /// The `[Sides]` key this house belongs to ("Allied", "ThirdSide",
     /// "Civilian", "Mutant", …), resolved from the loaded rules. `None` when
     /// no rule set is available.
@@ -129,8 +186,7 @@ pub struct HousePopulation {
     pub is_human: bool,
     /// True for the non-contending houses the engine keeps for map objects:
     /// `Neutral` and `Special` own scenery and civilians but never take part
-    /// in the match, so the dashboard filters them out of any lineup. This is
-    /// the same flag `Simulation::contending_house_count` counts.
+    /// in the match, so the dashboard filters them out of any lineup.
     pub passive: bool,
     pub counts: CategoryCounts,
     /// The house's own team colour, RGB, from the rules `[Colors]` scheme the
@@ -534,6 +590,18 @@ pub struct TelemetrySnapshot {
     pub process: Option<ProcessStats>,
     /// Mean cost per simulation tick in the current observation window.
     pub profile: Option<crate::sim::frame_profile::FrameProfileReport>,
+    /// The path batch's own accounting of its latest pass; `None` while the
+    /// simulation searches serially, since then no pass runs.
+    pub path_batch: Option<crate::sim::movement::PathBatchStats>,
+    /// Whole-match 1 Hz summaries; app-filled, and only on the first publish
+    /// after a client attached.
+    pub history: Option<Vec<MatchHistorySample>>,
+    /// Report-grade 5 s samples; app-filled, and only on the first publish
+    /// after a client attached.
+    pub report_points: Option<Vec<ReportPoint>>,
+    /// The newest report-grade sample; app-filled on every snapshot, so a long
+    /// session keeps gaining reportable points after the initial backfill.
+    pub report_point: Option<ReportPoint>,
     /// App-filled per-phase render breakdown; `None` until the app has rendered
     /// a game frame.
     pub render: Option<RenderTimingReport>,
@@ -594,37 +662,37 @@ impl Simulation {
             Vec::with_capacity(self.houses.len().min(TELEMETRY_MAX_HOUSES));
         for (index, (owner, house)) in self.houses.iter().take(TELEMETRY_MAX_HOUSES).enumerate() {
             owner_index.insert(*owner, index);
-            let difficulty = match house.difficulty {
+            let difficulty = match house.difficulty() {
                 crate::sim::house_state::HouseDifficulty::Hard => "hard",
                 crate::sim::house_state::HouseDifficulty::Normal => "normal",
                 crate::sim::house_state::HouseDifficulty::Easy => "easy",
             };
             houses.push(HousePopulation {
-                name: bounded_name(self.interner.resolve(house.name)),
-                side_index: house.side_index,
+                name: bounded_name(self.interner.resolve(house.name())),
+                side_index: house.side_index(),
                 side_name: None,
                 difficulty: difficulty.to_owned(),
-                is_human: house.is_human,
-                passive: house.multiplay_passive,
+                is_human: house.is_human(),
+                passive: house.multiplay_passive(),
                 counts: CategoryCounts::default(),
                 color: None,
-                credits: house.economy.credits(),
+                credits: house.economy().credits(),
                 power_output: self
                     .power_states
                     .get(owner)
-                    .map_or(0, |power| power.total_output),
+                    .map_or(0, |power| power.total_output()),
                 power_drain: self
                     .power_states
                     .get(owner)
-                    .map_or(0, |power| power.total_drain),
+                    .map_or(0, |power| power.total_drain()),
                 low_power: self
                     .power_states
                     .get(owner)
-                    .is_some_and(|power| power.is_low_power),
-                spent: house.economy.spent_credits(),
-                score: house.economy.score(),
-                defeated: house.is_defeated,
-                base_center: house.base_center,
+                    .is_some_and(|power| power.is_low_power()),
+                spent: house.economy().spent_credits(),
+                score: house.economy().score(),
+                defeated: house.is_defeated(),
+                base_center: house.base_center(),
                 roster: Vec::new(),
                 production: Vec::new(),
                 squads: Vec::new(),
@@ -660,8 +728,8 @@ impl Simulation {
             house.roster = type_counts(counts, &self.interner, TELEMETRY_MAX_ROSTER);
         }
 
-        for factory in self.production.factories.iter_insertion_ordered() {
-            let Some(&index) = owner_index.get(&factory.owner) else {
+        for factory in self.production.factories().iter_insertion_ordered() {
+            let Some(&index) = owner_index.get(&factory.owner()) else {
                 continue;
             };
             let rows = &mut houses[index].production;
@@ -669,21 +737,21 @@ impl Simulation {
                 continue;
             }
             let type_name = |id| bounded_name(self.interner.resolve(id));
-            let (active_type, ready_to_place) = match factory.object.as_ref() {
-                Some(object) if factory.progress >= PRODUCTION_STEPS => {
+            let (active_type, ready_to_place) = match factory.object() {
+                Some(object) if factory.progress() >= PRODUCTION_STEPS => {
                     (None, vec![type_name(object.type_id)])
                 }
                 Some(object) => (Some(type_name(object.type_id)), Vec::new()),
                 None => (None, Vec::new()),
             };
             rows.push(ProductionLine {
-                category: factory.category.label().to_owned(),
+                category: factory.category().label().to_owned(),
                 active_type,
-                progress: factory.progress,
-                on_hold: factory.on_hold,
-                suspended: factory.suspended,
+                progress: factory.progress(),
+                on_hold: factory.on_hold(),
+                suspended: factory.suspended(),
                 queue: factory
-                    .queue
+                    .queue()
                     .iter()
                     .take(TELEMETRY_MAX_QUEUE)
                     .map(|entry| type_name(entry.type_id))
@@ -732,8 +800,8 @@ impl Simulation {
         for (owner, index) in &owner_index {
             let source = &self.houses[owner];
             houses[*index].base_plan = source
-                .base_plan
-                .nodes
+                .base_plan()
+                .nodes()
                 .iter()
                 .filter(|node| node.packed_cell != 0)
                 .take(TELEMETRY_MAX_BASE_PLAN)
@@ -748,10 +816,10 @@ impl Simulation {
 
         TelemetrySnapshot {
             version: TELEMETRY_SCHEMA_VERSION,
-            tick: self.session.tick,
-            binary_frame: self.session.binary_frame,
-            map_width: self.session.map_width,
-            map_height: self.session.map_height,
+            tick: self.session.tick(),
+            binary_frame: self.session.binary_frame(),
+            map_width: self.session.map_width(),
+            map_height: self.session.map_height(),
             entities_total,
             houses,
             spots,
@@ -759,6 +827,10 @@ impl Simulation {
             debug: None,
             process: None,
             profile: self.frame_profile().report(),
+            path_batch: self.path_batch_stats(),
+            history: None,
+            report_points: None,
+            report_point: None,
             render: None,
             logs: None,
             #[cfg(feature = "debug-tools")]
@@ -786,6 +858,53 @@ impl Simulation {
                     }),
                 }
             },
+        }
+    }
+
+    /// Build a report-grade sample of the current state. `timing` and `render`
+    /// stay `None`: the render loop owns those readings, and the app fills them
+    /// where it captures the point.
+    pub fn report_point(&self) -> ReportPoint {
+        let rows: Vec<ReportHouseRow> = self
+            .houses
+            .iter()
+            .take(TELEMETRY_MAX_HOUSES)
+            .map(|(_, house)| ReportHouseRow {
+                name: bounded_name(self.interner.resolve(house.name())),
+                is_human: house.is_human(),
+                passive: house.multiplay_passive(),
+                structures: 0,
+                credits: house.economy().credits(),
+                score: house.economy().score(),
+            })
+            .collect();
+        let index: BTreeMap<InternedId, usize> = self
+            .houses
+            .keys()
+            .take(TELEMETRY_MAX_HOUSES)
+            .enumerate()
+            .map(|(row, owner)| (*owner, row))
+            .collect();
+        let mut rows = rows;
+        let mut entities_total = 0u32;
+        for entity in self.entities().values() {
+            entities_total = entities_total.saturating_add(1);
+            if entity.category() == EntityCategory::Structure
+                && let Some(&row) = index.get(&entity.owner())
+            {
+                rows[row].structures = rows[row].structures.saturating_add(1);
+            }
+        }
+        ReportPoint {
+            tick: self.session.tick(),
+            entities_total,
+            map_width: self.session.map_width(),
+            map_height: self.session.map_height(),
+            houses: rows,
+            timing: None,
+            profile: self.frame_profile().report(),
+            render: None,
+            path_batch: self.path_batch_stats(),
         }
     }
 }

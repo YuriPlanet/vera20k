@@ -116,7 +116,7 @@ fn deploys_into_build_const(sim: &Simulation, entity: &GameEntity, rules: &RuleS
 fn owner_builds_its_own_base(sim: &Simulation, entity: &GameEntity) -> bool {
     sim.houses.get(&entity.owner()).is_some_and(|house| {
         house.ai_activation().auto_base_building
-            && !house.is_controlled_by_human(sim.session.game_mode_nonzero)
+            && !house.is_controlled_by_human(sim.session.game_mode_nonzero())
     })
 }
 
@@ -130,11 +130,11 @@ pub(crate) fn ai_queue_hunt(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     };
     let hunts = deploys_into_build_const(sim, entity, rules)
         && owner_builds_its_own_base(sim, entity)
-        && sim.session.game_mode_nonzero
+        && sim.session.game_mode_nonzero()
         && sim
             .houses
             .get(&entity.owner())
-            .is_some_and(|house| house.build_const_order.is_empty())
+            .is_some_and(|house| house.build_const_order().is_empty())
         && !matches!(
             entity.mission.current().known(),
             Some(MissionType::Hunt | MissionType::Unload)
@@ -327,7 +327,7 @@ fn queue(sim: &mut Simulation, id: u64, mission: MissionType) {
         id,
         MissionId::from_known(mission),
         0,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         &EntityReadyInputProvider,
     );
 }
@@ -357,18 +357,12 @@ pub(crate) fn mission_unload(
         );
         if let Some(e) = sim.substrate.entities.get_mut(id) {
             // `Path[0] = -1`, the empty queue (`0x0073DD8E`).
-            e.navigation.path_replay.set_cursor(
-                e.navigation
-                    .path_replay
-                    .directions()
-                    .len()
-                    .min(u16::MAX as usize) as u16,
-            );
+            e.navigation.path_replay_mut().exhaust();
             e.mission.set_handler_state(1);
         }
         // Native state 0 falls through to state 1 in this same invocation.
     }
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     match state {
         Some(0 | 1) => {
             // The locomotor's Is_Moving (vt+0x10 at `0x0073DDBD`).
@@ -433,10 +427,9 @@ pub(crate) fn finish_initial_attempt(sim: &mut Simulation, id: u64) {
                 .mission
                 .set_handler_state(2);
         } else {
-            let hunt =
-                sim.houses.get(&e.owner()).is_some_and(|house| {
-                    !house.is_controlled_by_human(sim.session.game_mode_nonzero)
-                }) && sim.session.game_mode_nonzero;
+            let hunt = sim.houses.get(&e.owner()).is_some_and(|house| {
+                !house.is_controlled_by_human(sim.session.game_mode_nonzero())
+            }) && sim.session.game_mode_nonzero();
             queue(
                 sim,
                 id,

@@ -47,8 +47,8 @@ impl Simulation {
     /// House50D610's reverse full Techno registry. No alive/limbo/class gate.
     /// Repeated calls append duplicates; saved-world restoration never calls it.
     pub(crate) fn retain_initial_house_technos(&mut self) {
-        for house_index in (0..self.session.house_order.len()).rev() {
-            let owner = self.session.house_order[house_index];
+        for house_index in (0..self.houses.order().len()).rev() {
+            let owner = self.houses.order()[house_index];
             for index in (0..self.substrate.entities.techno_registry_len()).rev() {
                 let Some(id) = self.substrate.entities.techno_registry_at(index) else {
                     continue;
@@ -252,8 +252,7 @@ mod tests {
         let foreign = sim.interner.intern("British");
         for (id, name) in [(owner, "Confederation"), (foreign, "British")] {
             sim.houses
-                .insert(id, HouseState::new(id, 0, Some(id), false, 0, 0));
-            sim.session.house_order.push(id);
+                .register(HouseState::new(id, 0, Some(id), false, 0, 0));
             assert_eq!(sim.interner.resolve(id), name);
         }
         for (cell, name) in [

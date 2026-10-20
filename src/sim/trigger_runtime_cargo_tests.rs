@@ -25,12 +25,16 @@ fn fixture() -> (Simulation, RuleSet, OverlayTypeRegistry) {
     let (mut sim, rules, registry) =
         crate::sim::world::entry_test_fixture::fixture_with_rules(CARGO_RULES);
     let owner = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, Some(owner), true, 0, 10),
-    );
-    sim.session.house_order.push(owner);
-    sim.session.game_options.crates = true;
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner,
+            0,
+            Some(owner),
+            true,
+            0,
+            10,
+        ));
+    sim.session.game_options_mut_for_test().crates = true;
     (sim, rules, registry)
 }
 
@@ -102,12 +106,12 @@ fn crate_count(sim: &Simulation) -> usize {
 #[test]
 fn train_toggle_ignores_operands_and_ice_stores_low_byte_without_running_ore() {
     let mut sim = Simulation::with_seed(97);
-    sim.session.binary_frame = 73;
+    sim.session.set_binary_frame_for_test(73);
     let original_hash = sim.state_hash();
     let previous_rng = rng(&sim);
-    let ore = serde_json::to_value(&sim.production.ore_growth_state).unwrap();
-    let grows = sim.production.ore_growth_config.grows;
-    let spreads = sim.production.ore_growth_config.spreads;
+    let ore = serde_json::to_value(&sim.ore_growth_state).unwrap();
+    let grows = sim.ore_growth_config.grows();
+    let spreads = sim.ore_growth_config.spreads();
     for value in [0, -1, 256, i32::MIN] {
         action(&mut sim, 97, value);
         assert!(sim.session.train_crate());
@@ -131,14 +135,11 @@ fn train_toggle_ignores_operands_and_ice_stores_low_byte_without_running_ore() {
             byte
         );
         assert_eq!(sim.session.ice_growth_enabled(), byte != 0);
-        assert_eq!(sim.production.ore_growth_config.grows, grows);
-        assert_eq!(sim.production.ore_growth_config.spreads, spreads);
-        assert_eq!(
-            serde_json::to_value(&sim.production.ore_growth_state).unwrap(),
-            ore
-        );
+        assert_eq!(sim.ore_growth_config.grows(), grows);
+        assert_eq!(sim.ore_growth_config.spreads(), spreads);
+        assert_eq!(serde_json::to_value(&sim.ore_growth_state).unwrap(), ore);
         assert_eq!(rng(&sim), previous_rng);
-        assert_eq!(sim.session.binary_frame, 73);
+        assert_eq!(sim.session.binary_frame(), 73);
     }
     action(&mut sim, 87, 1);
     assert_eq!(sim.state_hash(), original_hash);
@@ -215,7 +216,7 @@ fn live_house_trigger_enables_train_cargo_before_fatal_receiver_and_pickup() {
          [Tags]\nCARGOTAG=0,Cargo,CARGO\n",
     );
     let owner = sim.interner.get("Americans").unwrap();
-    sim.session.binary_frame = 16;
+    sim.session.set_binary_frame_for_test(16);
     let previous_rng = rng(&sim);
     sim.raise_house_tags(
         owner,
@@ -300,7 +301,7 @@ fn train_and_truck_flags_are_independent_and_empty_types_drop_nothing() {
                 map_height: 33,
                 ..Default::default()
             });
-        sim.session.game_options.crates = crates;
+        sim.session.game_options_mut_for_test().crates = crates;
         kill(&mut sim, &rules, &registry, kind);
         assert_eq!(
             crate_count(&sim),

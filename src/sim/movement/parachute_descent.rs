@@ -231,8 +231,8 @@ impl crate::sim::world::Simulation {
             return;
         };
         for anim in self.substrate.anims.values_mut() {
-            if anim.owner_entity == Some(owner_id) && anim.type_id == type_id {
-                anim.runtime.loop_remaining = 0;
+            if anim.owner_entity() == Some(owner_id) && anim.type_id() == type_id {
+                anim.end_loops();
             }
         }
     }
@@ -362,9 +362,9 @@ mod canopy_tests {
         let (mut sim, rules, id) = fixture();
         let anim_id = sim.attach_parachute_anim(&rules, id).expect("canopy");
         let anim = sim.anim(anim_id).unwrap();
-        assert_eq!(sim.interner.resolve(anim.type_id), "PARACH");
-        assert_eq!((anim.draw_flags, anim.z_adjust), (0x600, 0));
-        assert_eq!(anim.owner_entity, Some(id));
+        assert_eq!(sim.interner.resolve(anim.type_id()), "PARACH");
+        assert_eq!((anim.draw_flags(), anim.z_adjust()), (0x600, 0));
+        assert_eq!(anim.owner_entity(), Some(id));
         assert_eq!(
             anim.remap(),
             Some(crate::sim::anim_class::AnimRemap::House(
@@ -373,7 +373,7 @@ mod canopy_tests {
             "Paradrop copies the owner's ConvertClass to Anim+0xD4"
         );
         assert_eq!(
-            anim.world_coord,
+            anim.world_coord(),
             AnimWorldCoord { x: 0, y: 0, z: 75 },
             "stored owner-relative: only the lift"
         );
@@ -408,14 +408,14 @@ mod canopy_tests {
     fn landing_winds_the_canopy_down_instead_of_removing_it() {
         let (mut sim, rules, id) = fixture();
         let anim_id = sim.attach_parachute_anim(&rules, id).expect("canopy");
-        assert_eq!(sim.anim(anim_id).unwrap().runtime.loop_remaining, u8::MAX);
+        assert_eq!(sim.anim(anim_id).unwrap().runtime().loop_remaining, u8::MAX);
 
         sim.wind_down_parachute_anim(&rules, id);
 
         let anim = sim.anim(anim_id).expect("still in the store");
-        assert_eq!(anim.runtime.loop_remaining, 0);
-        assert!(!anim.runtime.inactive);
-        assert_eq!(anim.owner_entity, Some(id));
+        assert_eq!(anim.runtime().loop_remaining, 0);
+        assert!(!anim.runtime().inactive);
+        assert_eq!(anim.owner_entity(), Some(id));
     }
 
     #[test]

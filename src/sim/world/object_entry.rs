@@ -96,7 +96,7 @@ impl<'a> EntryReadContext<'a> {
     /// out.
     fn blocker(&self, id: u64) -> Option<(BlockerFacts, &'a GameEntity)> {
         let (slot, entity) = self.sim.substrate.entities.get_in_slot(id)?;
-        let read = || BlockerFacts::of(entity, self.sim.session.binary_frame);
+        let read = || BlockerFacts::of(entity, self.sim.session.binary_frame());
         let facts = match self.facts {
             Some(facts) => *facts.blocker(slot, read),
             None => read(),
@@ -208,7 +208,7 @@ impl EntryCell {
         let at = (p.0 as u16, p.1 as u16);
         let sim = live.sim;
         let terrain_object = terrain_object
-            .then(|| sim.production.terrain_object_cells.get(&at).copied())
+            .then(|| sim.terrain_objects.cell_index().get(&at).copied())
             .flatten();
         listed
             .then(|| {
@@ -533,7 +533,7 @@ impl Simulation {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return 0;
         };
-        if self.session.game_mode_nonzero
+        if self.session.game_mode_nonzero()
             || !e.discovery.owned_by_current_house()
             || e.is_mission_only()
         {
@@ -548,6 +548,42 @@ impl Simulation {
             (coord.0 as u16, coord.1 as u16),
         );
         if shrouded { 7 } else { 0 }
+    }
+
+    /// The live Building `id`'s own `Can_Enter_Cell` (vtable `+0x1AC`,
+    /// `BuildingClass::Can_Enter_Cell @ 0x00449440`) at `cell`, for input: 0
+    /// or 7. It reads no argument but the cell, as Techno What_Action
+    /// on a Cell asks it (`0x00700B5F..0x00700B7E`).
+    pub(crate) fn building_can_enter(
+        &self,
+        id: u64,
+        cell: (i16, i16),
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ) -> Result<u8, String> {
+        let e = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("Can_Enter_Cell of a retired building")?;
+        let obj = self
+            .interner
+            .object_type(e.type_ref(), rules)
+            .ok_or("Can_Enter_Cell of a building without its type")?;
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("Building entry requires map cells")?;
+        // An input query: its own fallback Cell, never the simulation's.
+        let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+        let cell = cells.lookup(cell);
+        let live = EntryReadContext {
+            sim: self,
+            rules,
+            registry,
+            facts: None,
+        };
+        building_impassable(&live, e, obj, cell, Some(&cells)).map(|hard| if hard { 7 } else { 0 })
     }
 
     /// A mover's own `Can_Enter_Cell` (vtable `+0x1AC`) at a cell, as its
@@ -638,7 +674,7 @@ fn classify_entry(
         .object_type(e.type_ref(), live.rules)
         .ok_or("repair admission missing ObjectType")?;
     if e.category() == EntityCategory::Structure {
-        return building_impassable(live, e, obj, cell).map(|hard| if hard { 7 } else { 0 });
+        return building_impassable(live, e, obj, cell, None).map(|hard| if hard { 7 } else { 0 });
     }
     if e.category() == EntityCategory::Aircraft {
         return aircraft_entry(live, e, cell);
@@ -933,7 +969,7 @@ fn full_foot_entry<'a>(
             return Ok(7);
         };
         let c = &live.terrain().cells()[index];
-        if c.land_type() == crate::rules::terrain_rules::LandType::Tunnel.as_index() {
+        if c.land_type == crate::rules::terrain_rules::LandType::Tunnel.as_index() {
             //73F12E..73F1D9: passing the Tube shape gate bypasses only
             //required-land equality; later list/speed/raw predicates still run.
             let required_subtile =
@@ -945,7 +981,7 @@ fn full_foot_entry<'a>(
             if required_subtile.is_some_and(|sub| c.final_sub_tile != sub) {
                 return Ok(7);
             }
-        } else if c.land_type() != required.as_index()
+        } else if c.land_type != required.as_index()
             && !(matches!(c.bridge_facts.overlay_id, Some(237 | 238))
                 && args.height != i32::from(initial_level))
         {
@@ -1046,7 +1082,7 @@ fn full_foot_entry<'a>(
             .and_then(|r| r.flags(overlay))
             .ok_or("repair overlay receiver lacks registered type")?;
         if flags.crate_type
-            && (infantry || !live.sim.session.game_mode_nonzero)
+            && (infantry || !live.sim.session.game_mode_nonzero())
             && !live.sim.owner_is_human(e.owner())
         {
             return Ok(7);
@@ -1352,7 +1388,7 @@ fn full_foot_entry<'a>(
         } else if !infantry {
             //73F865..8C0: Foot NavCom, body turn, then active IsMoving.
             if b.nav_com || b.rotating || b.moving == Some(true) {
-                if head_on(e, &b, live.sim.session.binary_frame) {
+                if head_on(e, &b, live.sim.session.binary_frame()) {
                     return Ok(7);
                 }
                 if (b.foot_occupation && b.category() != EntityCategory::Infantry)
@@ -1650,13 +1686,13 @@ fn terrain_impassable(
     };
     let terrain = live
         .sim
-        .production
         .terrain_objects
+        .objects()
         .get(&id)
         .ok_or("repair retired Terrain")?;
     let ty = live
         .rules
-        .terrain_object_type_case_insensitive(live.sim.interner.resolve(terrain.type_ref))
+        .terrain_object_type_case_insensitive(live.sim.interner.resolve(terrain.type_ref()))
         .ok_or("repair missing TerrainType")?;
     // TerrainClass::Can_Enter_Cell @ 0x0071C4D0: the first foundation cell
     // that is not clear for a typeless, houseless build refuses (7).
@@ -1687,12 +1723,14 @@ fn terrain_impassable(
 }
 /// BuildingClass::Can_Enter_Cell @ 0x00449440: a marked building that can
 /// undeploy tests the one cell, otherwise its type's CanPlaceAt from the
-/// cell; either for the building's own house.
+/// cell; either for the building's own house. `cells` is the query that
+/// resolved `cell`; `None` is the simulation's own.
 fn building_impassable(
     live: &EntryReadContext<'_>,
     e: &GameEntity,
     obj: &ObjectType,
     cell: Cell,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> Result<bool, String> {
     let admitted = if obj.undeploys_into.is_some() && e.lifecycle.cell_marked() {
         crate::sim::build_site::is_clear_to_build(
@@ -1703,17 +1741,18 @@ fn building_impassable(
             crate::sim::build_site::building_speed_type(obj),
             Some(obj),
             Some(e.owner()),
-            None,
+            cells,
         )
     } else {
+        let origin = cells.map_or_else(|| live.coord(cell), |cells| cells.coord(cell));
         crate::sim::build_site::can_place_building_at(
             live.sim,
             live.rules,
             live.registry,
             obj,
-            live.coord(cell),
+            origin,
             Some(e.owner()),
-            None,
+            cells,
         )
     };
     Ok(!admitted)
@@ -1768,12 +1807,16 @@ mod tests {
                     Cell::Dummy,
                 )
             };
-            sim.session.game_mode_nonzero = false;
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+            );
             assert_eq!(
                 probe(&mut sim),
                 Ok(sim.aircraft_can_enter_cell(id, Cell::Dummy))
             );
-            sim.session.game_mode_nonzero = true;
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+            );
             assert_eq!(probe(&mut sim), Ok(0));
             let script_id = sim.intern("REPAIR_WAYPOINT_EFFECT");
             sim.team_script_vm
@@ -1789,7 +1832,7 @@ mod tests {
                 entity.owner(),
                 script_id,
                 vec![id],
-                sim.session.binary_frame as i32,
+                sim.session.binary_frame() as i32,
             );
             assert!(sim.member_team_is_moving_outside_playfield(id));
             assert_eq!(
@@ -1801,75 +1844,7 @@ mod tests {
     }
 
     #[test]
-    fn aircraft_quotient_requires_one_of_the_four_proved_interfaces() {
-        let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture();
-        sim.session.game_mode_nonzero = true;
-        for kind in [
-            None,
-            Some(LocomotorKind::Walk),
-            Some(LocomotorKind::Drive),
-            Some(LocomotorKind::Ship),
-            Some(LocomotorKind::Hover),
-        ] {
-            let mut entity = GameEntity::test_default(90, "HORNET", "Americans", 17, 15);
-            entity.locomotor = kind.map(|kind| {
-                let mut object = rules.object("HORNET").unwrap().clone();
-                object.locomotor = kind;
-                crate::sim::movement::locomotor::LocomotorState::from_object_type(&object, 0)
-            });
-            let result = aircraft_entry(
-                &EntryReadContext {
-                    sim: &sim,
-                    rules: &rules,
-                    registry: None,
-                    facts: None,
-                },
-                &entity,
-                Cell::Dummy,
-            );
-            assert!(
-                result.unwrap_err().contains("constant-false AtCoord"),
-                "{kind:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn infantry_usable_area_admission_is_independent_of_game_mode() {
-        // Original51BF90 has no A8B238 read. Executed counter0/mode0/1
-        // controls both return7 for this otherwise-clear unusable rim.
-        let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture();
-        let mut mover = GameEntity::test_default(90, "ENGINEER", "Americans", 15, 15);
-        mover.set_owner_for_test(sim.intern("Americans"));
-        mover.set_type_ref_for_test(sim.intern("ENGINEER"));
-        mover.set_category_for_test(EntityCategory::Infantry);
-        mover.set_in_playfield(true);
-        sim.substrate.entities.insert(mover);
-        sim.playfield_bounds = Some(
-            crate::map::playfield::PlayfieldBounds::from_normalized_local_size(16, 0, 0, 1, 1),
-        );
-        let cell = sim
-            .resolved_terrain
-            .as_ref()
-            .unwrap()
-            .native_cell_identity((16, 15));
-        for mode in [false, true] {
-            sim.session.game_mode_nonzero = mode;
-            assert_eq!(
-                sim.foot_entry_receiver(90, &rules, None, None)
-                    .unwrap()
-                    .can_enter(
-                        cell,
-                        crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
-                    ),
-                Ok(7),
-                "mode {mode} cannot bypass Infantry51C13A..51C161",
-            );
-        }
-    }
-
-    #[test]
-    fn nested_escape_priority_restores_the_callers_cell_admission() {
+    fn usable_area_admission_ignores_game_mode_and_nested_escape_restores_it() {
         let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture();
         let mut mover = GameEntity::test_default(90, "ENGINEER", "Americans", 15, 15);
         mover.set_owner_for_test(sim.intern("Americans"));
@@ -1898,7 +1873,20 @@ mod tests {
             sim.main_rng.logical_state(),
             sim.mapgen_rng.logical_state(),
         ];
-        assert_eq!(probe(&sim), Ok(7));
+        // Original51BF90 has no A8B238 read. Executed counter0/mode0/1
+        // controls both return7 for this otherwise-clear unusable rim.
+        let mode = sim.session.game_mode();
+        for nonzero in [false, true] {
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(nonzero),
+            );
+            assert_eq!(
+                probe(&sim),
+                Ok(7),
+                "mode {nonzero} cannot bypass Infantry51C13A..51C161"
+            );
+        }
+        sim.session.set_game_mode(mode);
         sim.with_object_placement_scope(|sim| {
             assert_eq!(probe(sim), Ok(0));
             sim.with_object_placement_scope(|sim| assert_eq!(probe(sim), Ok(0)));
@@ -1966,7 +1954,7 @@ mod tests {
         sim.mission_assign_exact(
             infantry,
             crate::sim::mission::MissionId::from_known(MissionType::Move),
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         )
         .unwrap();
         assert!(!probe(&mut sim));
@@ -1980,7 +1968,7 @@ mod tests {
         sim.mission_assign_exact(
             infantry,
             crate::sim::mission::MissionId::from_known(MissionType::Capture),
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         )
         .unwrap();
         sim.substrate

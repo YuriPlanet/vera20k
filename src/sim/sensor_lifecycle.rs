@@ -559,8 +559,8 @@ mod tests {
 
     fn sim_with_map_authority() -> Simulation {
         let mut sim = Simulation::with_seed(0x5E45_0A00);
-        sim.fog.width = 64;
-        sim.fog.height = 64;
+        sim.fog.set_width_for_test(64);
+        sim.fog.set_height_for_test(64);
         sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
             64, 2, 2, 56, 52,
         ));
@@ -621,9 +621,10 @@ mod tests {
             sim.fog.has_sensor_for_house(soviet, 57, 30),
             "the removal debits the live owner, not the deposit's recorded house"
         );
-        let index = 30 * usize::from(sim.fog.width) + 57;
+        let index = 30 * usize::from(sim.fog.width()) + 57;
         assert_eq!(
-            sim.fog.sensors_by_house[&neutral][index], 0,
+            sim.fog.sensors_by_house()[&neutral][index],
+            0,
             "and the unit remove's positive pre-count gate leaves no negative residue"
         );
     }
@@ -669,8 +670,8 @@ mod tests {
         assert!(sim.fog.has_sensor_for_house(owner, 54, 40));
         assert!(!sim.fog.has_sensor_for_house(owner, 55, 40));
         sim.techno_limbo_with_rules(id, &rules, None);
-        let index = 40 * usize::from(sim.fog.width) + 55;
-        assert_eq!(sim.fog.sensors_by_house[&owner][index], -1);
+        let index = 40 * usize::from(sim.fog.width()) + 55;
+        assert_eq!(sim.fog.sensors_by_house()[&owner][index], -1);
     }
 
     /// Engineer capture of a Psychic Sensor moves NEITHER stamped circle.
@@ -736,13 +737,15 @@ mod tests {
         // already overwritten that pointer (`0x007014A0 param_1[0x87] =
         // param_2`). The builder's credit is therefore never returned.
         sim.techno_limbo_with_rules(id, &rules, None);
-        let index = 40 * usize::from(sim.fog.width) + 54;
+        let index = 40 * usize::from(sim.fog.width()) + 54;
         assert_eq!(
-            sim.fog.disguise_detect_by_house[&soviet][index], 1,
+            sim.fog.disguise_detect_by_house()[&soviet][index],
+            1,
             "the builder's increment is permanent: no +0x500 ever names it again"
         );
         assert_eq!(
-            sim.fog.disguise_detect_by_house[&americans][index], -1,
+            sim.fog.disguise_detect_by_house()[&americans][index],
+            -1,
             "0x00455980 debits the LIVE owner and 0x00487180 decrements unconditionally"
         );
     }
@@ -780,21 +783,24 @@ mod tests {
         sim.change_owner(id, americans);
         sim.techno_limbo_with_rules(id, &rules, None);
 
-        let row = 40 * usize::from(sim.fog.width);
+        let row = 40 * usize::from(sim.fog.width());
         let inside = row + 54; // inside both the 15-cell add and the 20-cell remove
         let fringe = row + 55; // outside the add, inside the sensor remove only
 
         assert_eq!(
-            sim.fog.sensors_by_house[&soviet][inside], 1,
+            sim.fog.sensors_by_house()[&soviet][inside],
+            1,
             "the builder's SensorsSight credit is never returned"
         );
         assert_eq!(
-            sim.fog.sensors_by_house[&americans][inside], -1,
+            sim.fog.sensors_by_house()[&americans][inside],
+            -1,
             "0x004556D0 debits the live owner over CloakRadiusInCells"
         );
-        assert_eq!(sim.fog.sensors_by_house[&soviet][fringe], 0);
+        assert_eq!(sim.fog.sensors_by_house()[&soviet][fringe], 0);
         assert_eq!(
-            sim.fog.sensors_by_house[&americans][fringe], -1,
+            sim.fog.sensors_by_house()[&americans][fringe],
+            -1,
             "the asymmetric remove radius reaches past the add circle too"
         );
         assert!(
@@ -803,9 +809,10 @@ mod tests {
         );
         assert!(!sim.fog.has_sensor_for_house(americans, 54, 40));
 
-        assert_eq!(sim.fog.disguise_detect_by_house[&soviet][inside], 1);
+        assert_eq!(sim.fog.disguise_detect_by_house()[&soviet][inside], 1);
         assert_eq!(
-            sim.fog.disguise_detect_by_house[&americans][inside], -1,
+            sim.fog.disguise_detect_by_house()[&americans][inside],
+            -1,
             "the disguise circle is symmetric in radius but not in house"
         );
         assert!(sim.fog.detects_disguise_for_house(soviet, 54, 40));
@@ -894,9 +901,10 @@ mod tests {
         let building_removed =
             sim.apply_building_sensor_remove(detector, (40, 30), 1, Some(&rules), None);
         assert_eq!(building_removed, vec![newer, older]);
-        let index = 30 * usize::from(sim.fog.width) + 40;
+        let index = 30 * usize::from(sim.fog.width()) + 40;
         assert_eq!(
-            sim.fog.sensors_by_house[&detector][index], -1,
+            sim.fog.sensors_by_house()[&detector][index],
+            -1,
             "BuildingClass removal is unconditional and signed"
         );
     }

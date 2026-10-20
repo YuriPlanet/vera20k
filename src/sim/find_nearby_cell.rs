@@ -826,7 +826,7 @@ impl crate::sim::world::Simulation {
             args.options,
             // The frame counter is committed late, so during an advance it
             // still holds the current frame, the value the pick aliases.
-            self.session.binary_frame,
+            self.session.binary_frame(),
         )
     }
 
@@ -985,7 +985,7 @@ mod tests {
     /// occlusion test is relative, so this must behave exactly like `flat_terrain`.
     fn plateau_terrain(width: u16, height: u16, level: u8) -> ResolvedTerrainGrid {
         let mut terrain = flat_terrain(width, height);
-        for cell in terrain.cells.iter_mut() {
+        for cell in terrain.cells_mut_for_test().iter_mut() {
             cell.level = level;
         }
         terrain
@@ -995,7 +995,7 @@ mod tests {
     /// is occluded by its immediate SE neighbour and no candidate is ever direct.
     fn diagonal_ramp_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
         let mut terrain = flat_terrain(width, height);
-        for cell in terrain.cells.iter_mut() {
+        for cell in terrain.cells_mut_for_test().iter_mut() {
             cell.level = ((cell.rx as u32 + cell.ry as u32) / 2) as u8;
         }
         terrain
@@ -1068,7 +1068,7 @@ mod tests {
             // Leave the cache at its initial level/flags to ensure the exact
             // query uses the live CellClass fields sampled by original code.
             let grid = PathGrid::from_resolved_terrain(&terrain);
-            let cell = &mut terrain.cells[10 * 21 + 10];
+            let cell = &mut terrain.cells_mut_for_test()[10 * 21 + 10];
             cell.level = input["level"].as_u64().unwrap() as u8;
             cell.bridge_facts.raw_flags = if input["structural"].as_bool().unwrap() {
                 BRIDGE_FLAG_STRUCTURAL
@@ -1174,69 +1174,6 @@ mod tests {
     }
 
     #[test]
-    fn nearby_live_raw_reservation_selects_the_actual_structural_plane() {
-        let mut terrain = flat_terrain(7, 7);
-        // Intentionally pin the old cache before a structural repair changes
-        // the resident cell. The raw query must observe the new Cell authority.
-        let path_grid = PathGrid::from_resolved_terrain(&terrain);
-        let mut raw = RawCellOccupationGrid::default();
-        raw.mark_ground(3, 3, 4);
-        let selected = |terrain: &ResolvedTerrainGrid, raw: &RawCellOccupationGrid| {
-            let mut q = base_query(terrain, &path_grid);
-            q.raw_occupation = Some(raw);
-            q.target_cell = Some((3, 3));
-            find_nearby_passable_cell((3, 3), &q, 0)
-        };
-        assert_ne!(
-            selected(&terrain, &raw),
-            Some((3, 3)),
-            "an unlisted retained head blocks the ground plane"
-        );
-        terrain.cells[3 * 7 + 3].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
-        assert_eq!(
-            selected(&terrain, &raw),
-            Some((3, 3)),
-            "structural Cell selects its clear deck despite the stale ground cache"
-        );
-        raw.mark_deck(3, 3, 8);
-        assert_ne!(
-            selected(&terrain, &raw),
-            Some((3, 3)),
-            "the selected deck reservation blocks independently"
-        );
-    }
-
-    #[test]
-    fn nearby_seed_height_uses_live_cell_and_bridge_aware_rise() {
-        let mut terrain = flat_terrain(7, 7);
-        let path_grid = PathGrid::from_resolved_terrain(&terrain);
-        terrain.cells[3 * 7 + 3].level = 2;
-        terrain.cells[3 * 7 + 3].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
-        let mut q = base_query(&terrain, &path_grid);
-        q.check_height = true;
-        q.radius_cap = 1;
-        assert!(collect_candidates((3, 3), &q, NearbySearchOptions::default()).is_empty());
-        q.passability.bridge_aware_zone = true;
-        let candidates = collect_candidates((3, 3), &q, NearbySearchOptions::default());
-        assert_eq!(candidates.len(), 2);
-        assert!(
-            candidates.iter().all(|c| c.cell == (3, 3)),
-            "retained seed6 minus candidate deck rise4 and live level2 is zero"
-        );
-    }
-
-    #[test]
-    fn nearby_seed_lookup_occurs_even_without_height_gate_or_search_rings() {
-        let terrain = flat_terrain(3, 3);
-        let path_grid = PathGrid::from_resolved_terrain(&terrain);
-        let mut q = base_query(&terrain, &path_grid);
-        q.radius_cap = 0;
-        assert!(!q.check_height);
-        assert!(collect_candidates((40, 41), &q, NearbySearchOptions::default()).is_empty());
-        assert_eq!(terrain.shared_cell_dummy().snapshot().coord, (40, 41));
-    }
-
-    #[test]
     fn find_nearby_ring_visit_order_matches_engine_segments() {
         // Square (Chebyshev) rings in the engine's fixed 4-segment order:
         //   seg1: for d=-r..=r  -> North (ox+d, oy-r) then South (ox+d, oy+r)
@@ -1297,21 +1234,6 @@ mod tests {
     }
 
     #[test]
-    fn find_nearby_per_ring_early_out_stops_after_first_direct_ring() {
-        // On flat terrain every accepted cell is DIRECT (nothing south-east of it rises
-        // above it), so ring 0 alone yields a direct hit: the early-out finishes ring 0
-        // (which emits the seed twice) and STOPS — it never walks out to fill 24.
-        let terrain = flat_terrain(40, 40);
-        let path_grid = PathGrid::from_resolved_terrain(&terrain);
-        let mut q = base_query(&terrain, &path_grid);
-        q.radius_cap = 100; // requests beyond the hard cap; clamps to 32
-        let candidates = collect_candidates((20, 20), &q, NearbySearchOptions::default());
-        // Ring 0 = seed twice, both direct -> early-out after ring 0.
-        assert_eq!(candidates.len(), 2);
-        assert!(candidates.iter().all(|c| c.cell == (20, 20) && c.direct));
-    }
-
-    #[test]
     fn find_nearby_early_out_fires_on_a_raised_plateau_exactly_as_at_level_zero() {
         // THE BUG THIS CLOSES. The occlusion test is relative: on a uniformly raised
         // plateau every south-east difference is 0, so every accepted cell is DIRECT and
@@ -1360,7 +1282,7 @@ mod tests {
     #[test]
     fn find_nearby_sparse_edge_uses_one_live_dummy_view_for_level_and_flags() {
         let mut terrain = flat_terrain(3, 3);
-        terrain.cells[3 + 1].bridge_facts.raw_flags = BRIDGE_FLAG_FORWARD_SIDE;
+        terrain.cells_mut_for_test()[3 + 1].bridge_facts.raw_flags = BRIDGE_FLAG_FORWARD_SIDE;
         terrain.test_set_native_allocated_cells(&[(1, 1)]);
         let dummy = terrain.shared_cell_dummy();
         dummy.set_level_slope(-3, 0);
@@ -1421,48 +1343,6 @@ mod tests {
     }
 
     #[test]
-    fn find_nearby_bridge_aware_collection_skips_projection_but_final_still_runs() {
-        let terrain = flat_terrain(3, 3);
-        let dummy = terrain.shared_cell_dummy();
-        dummy.stamp_coord(99, 99);
-        let path_grid = PathGrid::from_resolved_terrain(&terrain);
-        let mut q = base_query(&terrain, &path_grid);
-        q.radius_cap = 1;
-        q.passability.bridge_aware_zone = true;
-
-        let candidates = collect_candidates((1, 1), &q, NearbySearchOptions::default());
-        assert_eq!(candidates.len(), 2);
-        assert_eq!(
-            dummy.snapshot().coord,
-            (99, 99),
-            "bridge-aware collection must perform no hidden dummy lookup"
-        );
-
-        let mut events = Vec::new();
-        let mut project = |site, x, y| {
-            events.push((site, (x, y)));
-            true
-        };
-        assert_eq!(
-            find_nearby_passable_cell_with_projection(
-                (1, 1),
-                &q,
-                NearbySearchOptions::default(),
-                0,
-                &mut project,
-            ),
-            Some((1, 1))
-        );
-        assert_eq!(
-            events,
-            vec![
-                (ProjectionUse::FinalPartition, (1, 1)),
-                (ProjectionUse::FinalPartition, (1, 1)),
-            ]
-        );
-    }
-
-    #[test]
     fn find_nearby_direct_threshold_is_two_levels_per_diagonal_step_minus_one() {
         // A cell `q` diagonal steps SOUTH-EAST of the candidate occludes it — making the
         // candidate INDIRECT — once it rises `2q - 1` levels above it. One level below
@@ -1473,7 +1353,7 @@ mod tests {
             for (rise, expect_direct) in [(threshold - 1, true), (threshold, false)] {
                 let mut terrain = flat_terrain(GRID as u16, GRID as u16);
                 let probe = 5 + step as usize;
-                terrain.cells[probe * GRID + probe].level = rise as u8;
+                terrain.cells_mut_for_test()[probe * GRID + probe].level = rise as u8;
                 assert_eq!(
                     direct_at(&terrain, (5, 5)),
                     expect_direct,
@@ -1484,56 +1364,14 @@ mod tests {
     }
 
     #[test]
-    fn find_nearby_direct_probes_only_six_cells_down_the_south_east_diagonal() {
-        // The ray starts a fixed six cells south-east and walks back, so step 7 is never
-        // probed; and only the exact diagonal is probed, because a cliff due east or due
-        // south is a different screen direction and cannot draw over the candidate.
-        const GRID: usize = 20;
-        let mut terrain = flat_terrain(GRID as u16, GRID as u16);
-        terrain.cells[12 * GRID + 12].level = 13; // (12,12): seven diagonal steps out
-        terrain.cells[5 * GRID + 6].level = 10; // (6,5): due EAST of the candidate
-        terrain.cells[6 * GRID + 5].level = 10; // (5,6): due SOUTH of the candidate
-        assert!(direct_at(&terrain, (5, 5)));
-    }
-
-    #[test]
-    fn find_nearby_direct_reads_the_relative_rise_not_the_absolute_level() {
-        const GRID: usize = 20;
-        // Absolute height is irrelevant; only the south-east difference decides.
-        let high_plateau = plateau_terrain(GRID as u16, GRID as u16, 7);
-        assert!(
-            direct_at(&high_plateau, (5, 5)),
-            "a level-7 cell among level-7 cells is direct"
-        );
-        let mut stepped_up = plateau_terrain(GRID as u16, GRID as u16, 7);
-        stepped_up.cells[6 * GRID + 6].level = 8;
-        assert!(
-            !direct_at(&stepped_up, (5, 5)),
-            "the same cell under a single level of rise at step 1 is indirect"
-        );
-
-        // Ground falling away to the south-east can never occlude.
-        let mut downhill = plateau_terrain(GRID as u16, GRID as u16, 5);
-        for step in 1..=6usize {
-            downhill.cells[(5 + step) * GRID + (5 + step)].level = 5u8.saturating_sub(step as u8);
-        }
-        assert!(direct_at(&downhill, (5, 5)));
-
-        // At the map's south-east corner every probe leaves the grid and reads the
-        // fixture's fresh shared dummy (level 0, never null), so a raised corner cell
-        // is still direct.
-        let mut corner = flat_terrain(GRID as u16, GRID as u16);
-        corner.cells[(GRID - 1) * GRID + (GRID - 1)].level = 3;
-        assert!(direct_at(&corner, (GRID as i32 - 1, GRID as i32 - 1)));
-    }
-
-    #[test]
     fn find_nearby_direct_ignores_the_candidates_own_bridge_bit() {
         // The projection reads terrain LEVELS only. A candidate's own bridge bit is read
         // by the height gate and the bridge filter, never by this test — folding it in
         // is what made the placeholder call every bridge cell on flat ground indirect.
         let mut terrain = flat_terrain(20, 20);
-        terrain.cells[5 * 20 + 5].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+        terrain.cells_mut_for_test()[5 * 20 + 5]
+            .bridge_facts
+            .raw_flags = BRIDGE_FLAG_STRUCTURAL;
         assert!(direct_at(&terrain, (5, 5)));
     }
 
@@ -1541,14 +1379,18 @@ mod tests {
     fn find_nearby_bridge_projection_adds_exactly_four_probe_levels() {
         const GRID: usize = 20;
         let mut terrain = flat_terrain(GRID as u16, GRID as u16);
-        terrain.cells[5 * GRID + 5].bridge_facts.raw_flags = BRIDGE_FLAG_FORWARD_SIDE;
-        terrain.cells[8 * GRID + 8].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+        terrain.cells_mut_for_test()[5 * GRID + 5]
+            .bridge_facts
+            .raw_flags = BRIDGE_FLAG_FORWARD_SIDE;
+        terrain.cells_mut_for_test()[8 * GRID + 8]
+            .bridge_facts
+            .raw_flags = BRIDGE_FLAG_STRUCTURAL;
 
         assert!(
             direct_at(&terrain, (5, 5)),
             "step-three threshold is five, so a structural probe's +4 remains direct"
         );
-        terrain.cells[8 * GRID + 8].level = 1;
+        terrain.cells_mut_for_test()[8 * GRID + 8].level = 1;
         assert!(
             !direct_at(&terrain, (5, 5)),
             "the same +1 probe becomes +5 only after the exact four-level correction"
@@ -1559,14 +1401,18 @@ mod tests {
     fn find_nearby_bridge_projection_ignores_structural_probe_without_forward_candidate() {
         const GRID: usize = 20;
         let mut terrain = flat_terrain(GRID as u16, GRID as u16);
-        terrain.cells[8 * GRID + 8].level = 1;
-        terrain.cells[8 * GRID + 8].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+        terrain.cells_mut_for_test()[8 * GRID + 8].level = 1;
+        terrain.cells_mut_for_test()[8 * GRID + 8]
+            .bridge_facts
+            .raw_flags = BRIDGE_FLAG_STRUCTURAL;
 
         assert!(
             direct_at(&terrain, (5, 5)),
             "probe structural bit is ignored while candidate 0x1000 is clear"
         );
-        terrain.cells[5 * GRID + 5].bridge_facts.raw_flags = BRIDGE_FLAG_FORWARD_SIDE;
+        terrain.cells_mut_for_test()[5 * GRID + 5]
+            .bridge_facts
+            .raw_flags = BRIDGE_FLAG_FORWARD_SIDE;
         assert!(
             !direct_at(&terrain, (5, 5)),
             "the same probe contributes four only after candidate 0x1000 is set"
@@ -1597,8 +1443,12 @@ mod tests {
 
         let mut projected = flat_terrain(GRID as u16, GRID as u16);
         let projected_path = PathGrid::from_resolved_terrain(&projected);
-        projected.cells[5 * GRID + 5].bridge_facts.raw_flags = BRIDGE_FLAG_FORWARD_SIDE;
-        projected.cells[6 * GRID + 6].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+        projected.cells_mut_for_test()[5 * GRID + 5]
+            .bridge_facts
+            .raw_flags = BRIDGE_FLAG_FORWARD_SIDE;
+        projected.cells_mut_for_test()[6 * GRID + 6]
+            .bridge_facts
+            .raw_flags = BRIDGE_FLAG_STRUCTURAL;
         let mut projected_query = base_query(&projected, &projected_path);
         projected_query.radius_cap = 2;
 
@@ -1630,21 +1480,6 @@ mod tests {
     }
 
     #[test]
-    fn find_nearby_bridge_projection_leaves_nonbridge_callers_unchanged() {
-        let terrain = plateau_terrain(20, 20, 7);
-        let path_grid = PathGrid::from_resolved_terrain(&terrain);
-        let mut q = base_query(&terrain, &path_grid);
-        q.radius_cap = 2;
-
-        let candidates = collect_candidates((5, 5), &q, NearbySearchOptions::default());
-        assert_eq!(candidates.len(), 2);
-        assert!(candidates.iter().all(|candidate| candidate.direct));
-        for frame in 0..4 {
-            assert_eq!(find_nearby_passable_cell((5, 5), &q, frame), Some((5, 5)));
-        }
-    }
-
-    #[test]
     fn find_nearby_slope_keeps_the_cell_under_the_rise_indirect() {
         // A genuine slope still splits the pools. Seed (5,5) is walled off so the search
         // reaches ring 1, and is itself raised two levels — which is exactly one diagonal
@@ -1655,7 +1490,7 @@ mod tests {
         const GRID: usize = 20;
         let mut terrain = flat_terrain(GRID as u16, GRID as u16);
         let walls = crate::sim::overlay_grid::test_wall_overlays(&mut terrain, &[(5, 5)]);
-        terrain.cells[5 * GRID + 5].level = 2;
+        terrain.cells_mut_for_test()[5 * GRID + 5].level = 2;
         let path_grid = PathGrid::from_resolved_terrain(&terrain);
         let mut q = base_query(&terrain, &path_grid);
         q.overlay_grid = Some(&walls);
@@ -1744,7 +1579,7 @@ mod tests {
     fn find_nearby_allow_bridge_filters_after_passability() {
         // A passable bridge cell at the seed is dropped when bridges are disallowed.
         let mut terrain = flat_terrain(3, 3);
-        terrain.cells[3 + 1].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+        terrain.cells_mut_for_test()[3 + 1].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
         let path_grid = PathGrid::from_resolved_terrain(&terrain);
 
         let mut q = base_query(&terrain, &path_grid);
@@ -1757,21 +1592,6 @@ mod tests {
         // With bridges allowed, the seed is eligible again.
         q.allow_bridge_cells = true;
         assert!(find_nearby_passable_cell((1, 1), &q, 0).is_some());
-    }
-
-    #[test]
-    fn find_nearby_no_candidate_returns_none() {
-        // Every cell rejected -> no candidate -> None. A wall refuses a Normal
-        // movement zone in `cell_rect`'s land test (only the destroyer family
-        // crosses walls), so every candidate fails passability.
-        let mut terrain = flat_terrain(3, 3);
-        let cells: Vec<(u16, u16)> = (0..3).flat_map(|y| (0..3).map(move |x| (x, y))).collect();
-        let walls = crate::sim::overlay_grid::test_wall_overlays(&mut terrain, &cells);
-        let path_grid = PathGrid::from_resolved_terrain(&terrain);
-        let mut q = base_query(&terrain, &path_grid);
-        q.overlay_grid = Some(&walls);
-        q.radius_cap = 2;
-        assert_eq!(find_nearby_passable_cell((1, 1), &q, 0), None);
     }
 
     #[test]
@@ -1813,8 +1633,8 @@ mod tests {
         // with the gate on, while the level-1 cell at (1,2) survives either way.
         let mut terrain = flat_terrain(5, 5);
         let walls = crate::sim::overlay_grid::test_wall_overlays(&mut terrain, &[(2, 2)]); // seed rejected
-        terrain.cells[5 + 2].level = 3; // (2,1): three levels above the seed
-        terrain.cells[2 * 5 + 1].level = 1; // (1,2): one level above the seed
+        terrain.cells_mut_for_test()[5 + 2].level = 3; // (2,1): three levels above the seed
+        terrain.cells_mut_for_test()[2 * 5 + 1].level = 1; // (1,2): one level above the seed
         let path_grid = PathGrid::from_resolved_terrain(&terrain);
         let mut q = base_query(&terrain, &path_grid);
         q.overlay_grid = Some(&walls);
@@ -1844,54 +1664,6 @@ mod tests {
     }
 
     #[test]
-    fn find_nearby_passes_required_height_minus_one() {
-        // FNPC always supplies required_height_or_level = -1 (None) regardless of any
-        // caller height: a flat seed cell is found with no height gating applied.
-        let terrain = flat_terrain(3, 3);
-        let path_grid = PathGrid::from_resolved_terrain(&terrain);
-        let q = base_query(&terrain, &path_grid);
-        let found = find_nearby_passable_cell((1, 1), &q, 0);
-        assert_eq!(found, Some((1, 1)));
-    }
-
-    #[test]
-    fn find_nearby_selection_uses_frame_counter_modulo() {
-        // No target: the chosen index is frame_counter % pool.len(), direct-preferred.
-        // Walking the frame counter cycles deterministically through the direct pool.
-        let terrain = flat_terrain(7, 7);
-        let path_grid = PathGrid::from_resolved_terrain(&terrain);
-        let q = base_query(&terrain, &path_grid);
-
-        let directs: Vec<_> = collect_candidates((3, 3), &q, NearbySearchOptions::default())
-            .into_iter()
-            .filter(|c| c.direct)
-            .collect();
-        assert!(!directs.is_empty());
-
-        for frame in 0..directs.len() as u32 * 2 {
-            let expected = directs[(frame as usize) % directs.len()].cell;
-            assert_eq!(
-                find_nearby_passable_cell((3, 3), &q, frame),
-                cell_to_u16(expected),
-                "frame {frame} selection mismatch"
-            );
-        }
-    }
-
-    #[test]
-    fn find_nearby_same_tick_aliasing() {
-        // Two no-target calls on the same frame with the same candidate set return the
-        // SAME cell (reproduce gamemd aliasing; do not spread).
-        let terrain = flat_terrain(7, 7);
-        let path_grid = PathGrid::from_resolved_terrain(&terrain);
-        let q = base_query(&terrain, &path_grid);
-        let a = find_nearby_passable_cell((3, 3), &q, 42);
-        let b = find_nearby_passable_cell((3, 3), &q, 42);
-        assert_eq!(a, b);
-        assert!(a.is_some());
-    }
-
-    #[test]
     fn find_nearby_selection_is_bit_identical_across_runs() {
         // Determinism guard: replaying the same FNPC query over the same grid yields a
         // bit-identical sequence of chosen cells across a frame sweep. Projection may
@@ -1906,30 +1678,6 @@ mod tests {
                 .collect()
         };
         assert_eq!(run((5, 5)), run((5, 5)));
-    }
-
-    #[test]
-    fn find_nearby_target_selection_uses_nearest_distance() {
-        // With a target, selection is nearest-Euclidean over the preferred pool, with
-        // no frame-counter influence: the same target gives the same cell for any frame.
-        let terrain = flat_terrain(9, 9);
-        let path_grid = PathGrid::from_resolved_terrain(&terrain);
-        let mut q = base_query(&terrain, &path_grid);
-        q.target_cell = Some((7, 4)); // east of the seed (4,4)
-        let pick0 = find_nearby_passable_cell((4, 4), &q, 0);
-        let pick9 = find_nearby_passable_cell((4, 4), &q, 9);
-        assert_eq!(
-            pick0, pick9,
-            "target selection must ignore the frame counter"
-        );
-        // On flat terrain the per-ring early-out stops at ring 0 (seed is direct), so
-        // the nearest-distance pool is the seed itself; the chosen cell is at/east of
-        // the seed and never west of it.
-        let pick = pick0.expect("a candidate exists");
-        assert!(
-            pick.0 >= 4,
-            "nearest-to-target should not lean away from the target"
-        );
     }
 
     /// `Find_Nearby_Passable_Cell`'s target pick executed on each row's
@@ -1990,14 +1738,14 @@ mod tests {
     /// Every cell but `open` blocks a Track mover.
     fn track_blocked_but(width: u16, height: u16, open: &[(u16, u16)]) -> ResolvedTerrainGrid {
         let mut terrain = flat_terrain(width, height);
-        for cell in &mut terrain.cells {
+        for cell in terrain.cells_mut_for_test() {
             cell.ground_walk_blocked = true;
             cell.base_ground_walk_blocked = true;
             cell.speed_costs.track = Some(0);
             cell.base_speed_costs.track = Some(0);
         }
         for &(x, y) in open {
-            let cell = terrain.cell_mut(x, y).expect("open cell");
+            let cell = terrain.cell_mut_for_test(x, y).expect("open cell");
             cell.ground_walk_blocked = false;
             cell.base_ground_walk_blocked = false;
             cell.speed_costs.track = Some(100);

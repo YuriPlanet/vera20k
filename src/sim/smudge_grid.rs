@@ -771,7 +771,7 @@ pub(crate) mod oracle_fixture {
         for cell in cells {
             let (rx, ry) = (int(&cell["x"]) as u16, int(&cell["y"]) as u16);
             if let Some(id) = cell["overlay"].as_i64() {
-                let slot = overlay.cell_mut(rx, ry);
+                let slot = overlay.cell_mut_for_test(rx, ry);
                 slot.overlay_id = Some(id as u8);
                 slot.overlay_data = int(&cell["overlay_data"]) as u8;
             }

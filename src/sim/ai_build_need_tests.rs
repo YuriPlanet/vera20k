@@ -45,13 +45,13 @@ fn fixture(credits: i32) -> (Simulation, RuleSet, InternedId) {
 fn fixture_with(rules: RuleSet, credits: i32) -> (Simulation, RuleSet, InternedId) {
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let owner = sim.interner.intern("AIHouse");
     let country = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, Some(country), false, credits, 10);
     house.enable_scripted_production();
-    sim.houses.insert(owner, house);
-    sim.session.house_order.push(owner);
+    sim.houses.register(house);
     (sim, rules, owner)
 }
 
@@ -90,7 +90,11 @@ fn plan(
         .iter()
         .map(|&(type_id, (x, y))| node(rules, type_id, (i32::from(x), i32::from(y))))
         .collect();
-    sim.houses.get_mut(&owner).unwrap().base_plan.nodes = nodes;
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .base_plan_mut()
+        .set_nodes_for_test(nodes);
     ids
 }
 
@@ -98,7 +102,7 @@ fn set_credits(sim: &mut Simulation, owner: InternedId, credits: i32) {
     sim.houses
         .get_mut(&owner)
         .unwrap()
-        .economy
+        .economy_mut()
         .set_credits_for_test(credits);
 }
 
@@ -109,13 +113,13 @@ fn selling(sim: &Simulation, id: u64) -> bool {
 }
 
 fn hunting(sim: &Simulation, owner: InternedId) -> bool {
-    sim.houses[&owner].strategy_emergency.all_to_hunt_bias
+    sim.houses[&owner].strategy_emergency().all_to_hunt_bias()
 }
 
 fn plan_types(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Vec<(String, (i16, i16))> {
     sim.houses[&owner]
-        .base_plan
-        .nodes
+        .base_plan()
+        .nodes()
         .iter()
         .map(|node| {
             let name = rules
@@ -133,10 +137,10 @@ fn yard_builds(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, yard: u
     sim.houses
         .get_mut(&owner)
         .unwrap()
-        .ai_production
+        .ai_production_mut()
         .set_for_test(0, choice, true);
     crate::sim::production::factory_ai(sim, rules, yard, None, FrameEffects::default());
-    assert!(sim.production.factories.building_factory(yard).is_some());
+    assert!(sim.production.factories().building_factory(yard).is_some());
 }
 
 #[test]
@@ -144,7 +148,7 @@ fn a_house_with_a_refinery_and_a_miner_needs_nothing() {
     let (mut sim, rules, owner) = fixture(0);
     spawn(&mut sim, &rules, "REFN", "AIHouse", (14, 10));
     spawn(&mut sim, &rules, "HARV", "AIHouse", (20, 20));
-    let tracking = &sim.houses[&owner].tracking;
+    let tracking = sim.houses[&owner].tracking();
     assert_eq!(
         (
             tracking.resource_destinations(),
@@ -166,7 +170,10 @@ fn a_house_must_rebuild_a_refinery_it_cannot_pay_for() {
         set_credits(&mut sim, owner, credits);
         assert_eq!(check_build_need(&sim, &rules, owner), need, "{credits}");
     }
-    sim.houses.get_mut(&owner).unwrap().is_human = true;
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_is_human_for_test(true);
     set_credits(&mut sim, owner, 0);
     assert!(!check_build_need(&sim, &rules, owner), "a human house");
 }
@@ -203,16 +210,16 @@ fn the_need_waits_for_the_refinery_the_yard_is_building() {
     sim.houses
         .get_mut(&owner)
         .unwrap()
-        .ai_production
+        .ai_production_mut()
         .set_for_test(0, refinery, true);
     assert!(check_build_need(&sim, &rules, owner), "no factory holds it");
     yard_builds(&mut sim, &rules, owner, yard, "REFN");
     for (owed, need) in [(1000, false), (1500, false), (1501, true)] {
         sim.production
-            .factories
+            .factories_mut()
             .test_building_factory_mut(yard)
             .unwrap()
-            .balance = owed;
+            .set_balance_for_test(owed);
         assert_eq!(check_build_need(&sim, &rules, owner), need, "{owed}");
     }
 }
@@ -231,16 +238,16 @@ fn the_need_waits_for_the_harvester_the_war_factory_is_building() {
     sim.houses
         .get_mut(&owner)
         .unwrap()
-        .ai_unit_choices
+        .ai_unit_choices_mut()
         .set(UnitChoiceKind::Unit, harvester);
     assert!(check_build_need(&sim, &rules, owner), "no factory holds it");
     crate::sim::production::factory_ai(&mut sim, &rules, factory, None, FrameEffects::default());
     for (owed, need) in [(1000, false), (1001, true)] {
         sim.production
-            .factories
+            .factories_mut()
             .test_building_factory_mut(factory)
             .expect("the war factory builds the harvester")
-            .balance = owed;
+            .set_balance_for_test(owed);
         assert_eq!(check_build_need(&sim, &rules, owner), need, "{owed}");
     }
 }
@@ -257,14 +264,13 @@ fn another_houses_refinery_building_up_first_holds_the_need() {
             sim.interner.intern("Americans"),
         );
         sim.houses
-            .insert(name, HouseState::new(name, 0, Some(country), false, 0, 10));
-        sim.session.house_order.push(name);
+            .register(HouseState::new(name, 0, Some(country), false, 0, 10));
         let other = |sim: &mut Simulation| {
             let id = spawn(sim, &rules, "REFN", "Other", (30, 30));
             sim.mission_assign_exact(
                 id,
                 MissionId::from_known(MissionType::Construction),
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
             )
             .unwrap();
         };
@@ -310,15 +316,15 @@ fn the_rebuild_sells_from_the_last_node_until_it_can_pay() {
     sim.houses
         .get_mut(&owner)
         .unwrap()
-        .base_plan
-        .nodes
+        .base_plan_mut()
+        .nodes_mut_for_test()
         .insert(1, lost);
     yard_builds(&mut sim, &rules, owner, ids[0], "PLAIN");
     let held = sim
         .production
-        .factories
+        .factories()
         .building_factory(ids[0])
-        .and_then(|factory| factory.object.as_ref())
+        .and_then(|factory| factory.object())
         .and_then(|object| object.entity_id)
         .unwrap();
     assert!(check_build_need(&sim, &rules, owner));
@@ -328,19 +334,24 @@ fn the_rebuild_sells_from_the_last_node_until_it_can_pay() {
     // 1000 + 600 is not above 2000; 1000 + 1200 is.
     let sold: Vec<bool> = ids.iter().map(|&id| selling(&sim, id)).collect();
     assert_eq!(sold, [false, false, true, true]);
-    assert!(sim.production.factories.building_factory(ids[0]).is_none());
+    assert!(
+        sim.production
+            .factories()
+            .building_factory(ids[0])
+            .is_none()
+    );
     assert!(
         sim.substrate.entities.get(held).is_none(),
         "the held object goes"
     );
     // Nothing was paid on the build, so its abandon refunds nothing.
-    assert_eq!(sim.houses[&owner].economy.credits(), 1000);
+    assert_eq!(sim.houses[&owner].economy().credits(), 1000);
     let house = &sim.houses[&owner];
     assert_eq!(
-        house.ai_production.building_choice(),
+        house.ai_production().building_choice(),
         rules.building_type_index("REFN").unwrap()
     );
-    assert_eq!(house.ai_production.mode(), 1);
+    assert_eq!(house.ai_production().mode(), 1);
     assert_eq!(
         plan_types(&sim, &rules, owner),
         [
@@ -372,7 +383,7 @@ fn a_house_with_a_refinery_and_a_war_factory_rebuilds_its_harvester() {
             ("PLAIN", (26, 10)),
         ],
     );
-    assert_eq!(sim.houses[&owner].tracking.war_factories(), 1);
+    assert_eq!(sim.houses[&owner].tracking().war_factories(), 1);
     assert!(check_build_need(&sim, &rules, owner));
 
     manage_build_queue(&mut sim, &rules, owner, None, FrameEffects::default());
@@ -382,14 +393,14 @@ fn a_house_with_a_refinery_and_a_war_factory_rebuilds_its_harvester() {
     assert_eq!(sold, [false, false, false, true, true]);
     let house = &sim.houses[&owner];
     assert_eq!(
-        house.ai_unit_choices.get(UnitChoiceKind::Unit),
+        house.ai_unit_choices().get(UnitChoiceKind::Unit),
         rules
             .type_array_index(ObjectCategory::Vehicle, "HARV")
             .unwrap()
     );
-    assert_eq!(house.ai_production.mode(), 2);
-    assert_eq!(house.ai_production.building_choice(), -1);
-    assert_eq!(house.base_plan.nodes.len(), 5, "no node is planned");
+    assert_eq!(house.ai_production().mode(), 2);
+    assert_eq!(house.ai_production().building_choice(), -1);
+    assert_eq!(house.base_plan().nodes().len(), 5, "no node is planned");
     assert!(!hunting(&sim, owner));
 }
 
@@ -405,9 +416,9 @@ fn a_house_that_cannot_pay_keeps_its_production_and_hunts() {
     manage_build_queue(&mut sim, &rules, owner, None, FrameEffects::default());
 
     assert!(selling(&sim, ids[0]));
-    assert!(sim.production.factories.building_factory(yard).is_some());
+    assert!(sim.production.factories().building_factory(yard).is_some());
     assert_eq!(
-        sim.houses[&owner].ai_production.building_choice(),
+        sim.houses[&owner].ai_production().building_choice(),
         rules.building_type_index("PLAIN").unwrap()
     );
     assert!(hunting(&sim, owner));
@@ -438,7 +449,7 @@ fn paying_at_the_first_node_rebuilds_then_hunts() {
     );
     let house = &sim.houses[&owner];
     assert_eq!(
-        house.ai_production.building_choice(),
+        house.ai_production().building_choice(),
         rules.building_type_index("REFN").unwrap()
     );
     assert!(hunting(&sim, owner));
@@ -463,8 +474,8 @@ fn a_house_whose_yard_node_is_open_rebuilds_nothing_and_hunts() {
     sim.houses
         .get_mut(&owner)
         .unwrap()
-        .base_plan
-        .nodes
+        .base_plan_mut()
+        .nodes_mut_for_test()
         .insert(0, lost_yard);
     // A war factory off the plan builds a harvester.
     let factory = spawn(&mut sim, &rules, "WEAP", "AIHouse", (30, 10));
@@ -474,10 +485,15 @@ fn a_house_whose_yard_node_is_open_rebuilds_nothing_and_hunts() {
     sim.houses
         .get_mut(&owner)
         .unwrap()
-        .ai_unit_choices
+        .ai_unit_choices_mut()
         .set(UnitChoiceKind::Unit, harvester);
     crate::sim::production::factory_ai(&mut sim, &rules, factory, None, FrameEffects::default());
-    assert!(sim.production.factories.building_factory(factory).is_some());
+    assert!(
+        sim.production
+            .factories()
+            .building_factory(factory)
+            .is_some()
+    );
     assert!(check_build_need(&sim, &rules, owner));
 
     manage_build_queue(&mut sim, &rules, owner, None, FrameEffects::default());
@@ -485,7 +501,12 @@ fn a_house_whose_yard_node_is_open_rebuilds_nothing_and_hunts() {
     // 1800 and the last plain's 600 pass the refinery's 2000.
     let sold: Vec<bool> = ids.iter().map(|&id| selling(&sim, id)).collect();
     assert_eq!(sold, [false, true]);
-    assert!(sim.production.factories.building_factory(factory).is_none());
+    assert!(
+        sim.production
+            .factories()
+            .building_factory(factory)
+            .is_none()
+    );
     assert_eq!(
         plan_types(&sim, &rules, owner),
         [
@@ -495,9 +516,9 @@ fn a_house_whose_yard_node_is_open_rebuilds_nothing_and_hunts() {
         ]
     );
     let house = &sim.houses[&owner];
-    assert_eq!(house.ai_unit_choices.get(UnitChoiceKind::Unit), -1);
-    assert_eq!(house.ai_production.building_choice(), -1);
-    assert_eq!(house.ai_production.mode(), 0);
+    assert_eq!(house.ai_unit_choices().get(UnitChoiceKind::Unit), -1);
+    assert_eq!(house.ai_production().building_choice(), -1);
+    assert_eq!(house.ai_production().mode(), 0);
     assert!(hunting(&sim, owner));
 }
 
@@ -516,8 +537,8 @@ fn a_sale_that_empties_the_plan_gets_its_last_node_back() {
     assert_eq!(plan_types(&sim, &rules, owner), [("GATE".into(), (14, 10))]);
     let house = &sim.houses[&owner];
     // The gate still stands, so its node is not open and nothing is chosen.
-    assert_eq!(house.ai_production.building_choice(), -1);
-    assert_eq!(house.ai_production.mode(), 1);
+    assert_eq!(house.ai_production().building_choice(), -1);
+    assert_eq!(house.ai_production().mode(), 1);
     assert!(hunting(&sim, owner));
 }
 
@@ -536,7 +557,7 @@ fn the_strategy_rebuilds_after_the_missing_factorys_sell_off() {
     assert!(check_build_need(&sim, &rules, owner));
     // Past the emergency block's 900 frames after the (constructor's) last
     // attack at frame 0, which would hold the house in state three.
-    sim.session.binary_frame = 1000;
+    sim.session.set_binary_frame_for_test(1000);
 
     crate::sim::house_strategy::update_strategy(
         &mut sim,
@@ -547,7 +568,7 @@ fn the_strategy_rebuilds_after_the_missing_factorys_sell_off() {
     );
 
     assert!(ids.iter().all(|&id| selling(&sim, id)));
-    assert!(sim.houses[&owner].base_plan.nodes.is_empty());
+    assert!(sim.houses[&owner].base_plan().nodes().is_empty());
     assert!(hunting(&sim, owner));
 }
 
@@ -573,7 +594,7 @@ fn retail_countries_have_their_economy_types() {
         "YuriCountry",
     ];
     for country in countries {
-        let side = rules.country_side_index(country).unwrap().0;
+        let side = rules.country_side_index_raw(country).unwrap();
         let bit = house_country_bit(&rules, country);
         for super_weapons in [false, true] {
             for list in [&rules.build_refinery_types, &rules.build_weapons_types] {

@@ -96,7 +96,7 @@ impl Scene {
         let terrain = sim.resolved_terrain.as_mut().unwrap();
         terrain.set_land_speed_rules_for_test(&rules.terrain_rules);
         let clear = rules.terrain_rules.semantics_for_land_type(0).unwrap();
-        for cell in &mut terrain.cells {
+        for cell in terrain.cells_mut_for_test() {
             cell.speed_costs = clear.speed_costs;
             cell.base_speed_costs = clear.speed_costs;
         }
@@ -105,22 +105,25 @@ impl Scene {
         terrain.test_set_native_allocated_cells(&allocated);
         let owner = sim.intern("Americans");
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, Some(owner), true, 0, 10));
+            .register(HouseState::new(owner, 0, Some(owner), true, 0, 10));
         sim.power_states.insert(owner, PowerState::default());
-        sim.session.house_order.push(owner);
-        sim.session.current_house = Some(owner);
-        sim.session.game_mode_nonzero = int(&control["input"]["game_mode"]) != 0;
-        sim.fog.width = sim.session.map_width;
-        sim.fog.height = sim.session.map_height;
+        sim.session.set_current_house_for_test(Some(owner));
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                int(&control["input"]["game_mode"]) != 0,
+            ),
+        );
+        sim.fog.set_width_for_test(sim.session.map_width());
+        sim.fog.set_height_for_test(sim.session.map_height());
         // Native repair_target_prior supplies each registered Cell+12C=18
         // and +E4=0. Map5656D0 reads bit8 as visible. Exploration-only
         // reveal_all_for_owner does not publish current sight; this existing
         // fixture adapter publishes18/counter0 without creating a sight source.
-        let mut visibility = OwnerVisibility::new(sim.fog.width, sim.fog.height);
+        let mut visibility = OwnerVisibility::new(sim.fog.width(), sim.fog.height());
         for &(x, y) in &allocated {
             visibility.mark_visible(x, y);
         }
-        sim.fog.by_owner.insert(owner, visibility);
+        sim.fog.by_owner_mut_for_test().insert(owner, visibility);
         sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(3));
         let wall_type = sim.interner.get("GAWALL").unwrap();
         Some(Self {
@@ -415,20 +418,20 @@ impl Scene {
             );
         }
         let house = &self.sim.houses[&self.owner];
-        assert_eq!(house.economy.credits(), int(&state["house"]["credits"]));
+        assert_eq!(house.economy().credits(), int(&state["house"]["credits"]));
         assert_eq!(
-            house.tracking.buildings(),
+            house.tracking().buildings(),
             int(&state["house"]["building_count"])
         );
         assert_eq!(
             house
-                .tracking
+                .tracking()
                 .owned_count(EntityCategory::Structure, self.wall_type),
             0
         );
         assert_eq!(
             house
-                .tracking
+                .tracking()
                 .active_count(EntityCategory::Structure, self.wall_type),
             0
         );
@@ -496,7 +499,7 @@ fn native_whole_wall_autofill_constructs_retires_and_keeps_the_refused_middle() 
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(x, y)
+                .cell_mut_for_test(x, y)
                 .unwrap();
             cell.land_type = land;
             cell.speed_costs = semantics.speed_costs;

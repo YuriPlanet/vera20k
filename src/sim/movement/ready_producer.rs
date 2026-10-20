@@ -133,7 +133,7 @@ fn drive_family(
                 entity,
                 None,
                 1.0,
-                &std::collections::BTreeMap::new(),
+                &crate::sim::houses::Houses::default(),
             ),
         }
     } else {

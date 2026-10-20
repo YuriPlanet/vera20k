@@ -12,8 +12,8 @@ fn insert_house(
 ) -> crate::sim::intern::InternedId {
     let owner = sim.interner.intern(name);
     let mut house = HouseState::new(owner, 0, None, is_human, 0, 10);
-    house.current_iq = current_iq;
-    sim.houses.insert(owner, house);
+    house.set_current_iq_for_test(current_iq);
+    sim.houses.register(house);
     owner
 }
 
@@ -37,26 +37,25 @@ fn advance(sim: &mut Simulation, rules: Option<&RuleSet>, lane: TickLane) {
 fn house_anger_decay_uses_binary_frame_not_rust_tick() {
     fn fixture(tick: u64, binary_frame: u32) -> (Simulation, crate::sim::intern::InternedId) {
         let mut sim = Simulation::new();
-        sim.session.tick = tick;
-        sim.session.binary_frame = binary_frame;
+        sim.session.set_tick_for_test(tick);
+        sim.session.set_binary_frame_for_test(binary_frame);
         let owner = insert_house(&mut sim, "Computer1", false, 5);
         let peer = insert_house(&mut sim, "Computer2", false, 5);
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .tracking
+            .tracking_mut()
             .set_buildings_for_test(1);
         sim.houses
             .get_mut(&peer)
             .unwrap()
-            .tracking
+            .tracking_mut()
             .set_buildings_for_test(1);
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .grudge_scores
+            .grudge_scores_mut_for_test()
             .insert(peer, 2);
-        sim.session.house_order.extend([owner, peer]);
         (sim, owner)
     }
 
@@ -64,7 +63,7 @@ fn house_anger_decay_uses_binary_frame_not_rust_tick() {
     advance(&mut tick_only, None, TickLane::Ordinary);
     assert_eq!(
         tick_only.houses[&tick_only_owner]
-            .grudge_scores
+            .grudge_scores()
             .values()
             .copied()
             .next(),
@@ -76,7 +75,7 @@ fn house_anger_decay_uses_binary_frame_not_rust_tick() {
     advance(&mut native_frame, None, TickLane::Ordinary);
     assert_eq!(
         native_frame.houses[&native_frame_owner]
-            .grudge_scores
+            .grudge_scores()
             .values()
             .copied()
             .next(),
@@ -88,7 +87,7 @@ fn house_anger_decay_uses_binary_frame_not_rust_tick() {
     advance(&mut signed_negative, None, TickLane::Ordinary);
     assert_eq!(
         signed_negative.houses[&signed_negative_owner]
-            .grudge_scores
+            .grudge_scores()
             .values()
             .copied()
             .next(),
@@ -100,7 +99,7 @@ fn house_anger_decay_uses_binary_frame_not_rust_tick() {
     advance(&mut wrapped_zero, None, TickLane::Ordinary);
     assert_eq!(
         wrapped_zero.houses[&wrapped_zero_owner]
-            .grudge_scores
+            .grudge_scores()
             .values()
             .copied()
             .next(),
@@ -110,7 +109,7 @@ fn house_anger_decay_uses_binary_frame_not_rust_tick() {
     advance(&mut wrapped_zero, None, TickLane::Ordinary);
     assert_eq!(
         wrapped_zero.houses[&wrapped_zero_owner]
-            .grudge_scores
+            .grudge_scores()
             .values()
             .copied()
             .next(),

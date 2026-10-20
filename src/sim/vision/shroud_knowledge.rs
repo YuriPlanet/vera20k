@@ -8,13 +8,13 @@ use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct ShroudKnowledge {
-    pub counter: i32,
-    pub gap_counter: i32,
-    pub open: bool,
-    pub pending: bool,
-    pub local_sources: u32,
-    pub allied_sources: u32,
-    pub transient_visible: bool,
+    counter: i32,
+    gap_counter: i32,
+    open: bool,
+    pending: bool,
+    local_sources: u32,
+    allied_sources: u32,
+    transient_visible: bool,
 }
 impl Default for ShroudKnowledge {
     fn default() -> Self {
@@ -30,6 +30,199 @@ impl Default for ShroudKnowledge {
     }
 }
 impl ShroudKnowledge {
+    /// The shroud counter: positive is shrouded, zero or negative mapped.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn counter(&self) -> i32 {
+        self.counter
+    }
+
+    /// Hostile gap generators covering the cell.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn gap_counter(&self) -> i32 {
+        self.gap_counter
+    }
+
+    /// Mapped.
+    pub(crate) fn open(&self) -> bool {
+        self.open
+    }
+
+    /// Waiting for the reshroud sweep to conceal it.
+    pub(crate) fn pending(&self) -> bool {
+        self.pending
+    }
+
+    pub(crate) fn local_sources(&self) -> u32 {
+        self.local_sources
+    }
+
+    pub(crate) fn allied_sources(&self) -> u32 {
+        self.allied_sources
+    }
+
+    /// Sees for this frame only ([`Self::see_this_frame`]).
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn transient_visible(&self) -> bool {
+        self.transient_visible
+    }
+
+    /// The published flags of this cell (the projection's `FLAG_*` bits).
+    pub(super) fn published_flags(&self) -> u8 {
+        use super::{
+            FLAG_EFFECTIVE_GAP_SIGHT, FLAG_GAP_COVERED, FLAG_HOSTILE_GAP_PRESENT,
+            FLAG_PENDING_GAP_CONCEAL, FLAG_REVEALED, FLAG_SUSTAINED_SIGHT, FLAG_VISIBLE,
+        };
+        let mut flags = 0;
+        if self.open {
+            flags |= FLAG_REVEALED;
+        }
+        if self.local_sources > 0 {
+            flags |= FLAG_SUSTAINED_SIGHT;
+        }
+        if self.allied_sources > 0 {
+            flags |= FLAG_EFFECTIVE_GAP_SIGHT;
+        }
+        if self.open
+            && (self.local_sources > 0 || self.allied_sources > 0 || self.transient_visible)
+        {
+            flags |= FLAG_VISIBLE;
+        }
+        if self.pending {
+            flags |= FLAG_PENDING_GAP_CONCEAL;
+        }
+        if self.gap_counter > 0 {
+            flags |= FLAG_HOSTILE_GAP_PRESENT;
+            if !self.open {
+                flags |= FLAG_GAP_COVERED;
+            }
+        }
+        flags
+    }
+
+    /// A sight source's footprint count on this cell: the local one for the
+    /// source owner's own plane, else the allied one. A release takes back
+    /// only what a retained admission added.
+    pub(super) fn count_source(&mut self, local: bool, add: bool) {
+        let count = if local {
+            &mut self.local_sources
+        } else {
+            &mut self.allied_sources
+        };
+        *count = if add {
+            count.wrapping_add(1)
+        } else {
+            count
+                .checked_sub(1)
+                .expect("retained sight admission is balanced")
+        };
+    }
+
+    /// This frame's transient sight, which [`Self::end_frame_sight`] ends.
+    pub(super) fn see_this_frame(&mut self) {
+        self.transient_visible = true;
+    }
+
+    /// The frame clear takes the transient sight off.
+    pub(super) fn end_frame_sight(&mut self) {
+        self.transient_visible = false;
+    }
+
+    /// A map reveal's projection (not a source's): a real cell sees for this
+    /// frame, the shared Dummy does not.
+    pub(super) fn project_reveal(&mut self, real_cell: bool) {
+        self.transient_visible = real_cell;
+    }
+
+    /// Map577C90's receiver577D1F..577D47: the [`Self::leave`] arithmetic,
+    /// then the knowledge clears only when the counter is not negative.
+    /// Returns whether it cleared, for the caller's ground and cache bits.
+    pub(super) fn leave_reshrouded(&mut self) -> bool {
+        self.leave();
+        if self.counter < 0 {
+            return false;
+        }
+        self.open = false;
+        self.transient_visible = false;
+        true
+    }
+
+    /// The bulk577D90/577AB0 store: shrouded (`reset`) or mapped, with no
+    /// gap count. Pending and the sources stay.
+    pub(super) fn store_bulk(&mut self, reset: bool) {
+        self.counter = i32::from(reset);
+        self.gap_counter = 0;
+        self.open = !reset;
+    }
+
+    /// The reshroud sweep's first pass marks a visible, unmapped cell.
+    pub(super) fn mark_pending(&mut self) {
+        self.pending = true;
+    }
+
+    /// The reshroud sweep's second pass (4ACB68) clears the pending byte,
+    /// returning whether it was set.
+    pub(super) fn take_pending(&mut self) -> bool {
+        std::mem::take(&mut self.pending)
+    }
+
+    /// The sweep hides a cell that was visible: it is no longer mapped.
+    pub(super) fn hide(&mut self) {
+        self.open = false;
+    }
+
+    /// Map567F70's receiver: only a counter of exactly zero is concealed,
+    /// back to one. Returns whether it was.
+    pub(super) fn conceal(&mut self) -> bool {
+        if self.counter != 0 {
+            return false;
+        }
+        self.counter = 1;
+        self.open = false;
+        true
+    }
+
+    /// A map cell reveal maps the cell.
+    pub(super) fn open_mapped(&mut self) {
+        self.open = true;
+    }
+
+    /// A fixture's visible, mapped cell.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(super) fn mark_visible_for_test(&mut self) {
+        self.counter = 0;
+        self.open = true;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(super) fn set_open_for_test(&mut self, value: bool) {
+        self.open = value;
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_counter_for_test(&mut self, value: i32) {
+        self.counter = value;
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_gap_counter_for_test(&mut self, value: i32) {
+        self.gap_counter = value;
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_pending_for_test(&mut self, value: bool) {
+        self.pending = value;
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_local_sources_for_test(&mut self, value: u32) {
+        self.local_sources = value;
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_transient_visible_for_test(&mut self, value: bool) {
+        self.transient_visible = value;
+    }
+
     /// This cell's state hash record: the four counters little-endian, then
     /// the flags.
     pub(super) fn hash_record(&self) -> [u8; 17] {

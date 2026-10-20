@@ -45,9 +45,10 @@
 //!   deployed from a Slave Miner comes after the slaves it took over, so the
 //!   sweep kills those first as the defeated house's own, in the same
 //!   TechnoClass::Array order.
-//! - The IsToDie path (`Flag_To_Die @ 0x004FC980`: DESTRUCT, REMOVEPLAYER, a
-//!   last human's EXIT) has no VERA producer; offline skirmish cannot reach
-//!   it.
+//! - Flag_To_Die4FC980 and its early Update4F87C2 consumer share the
+//!   existing Blowup_All receiver and House+298 timer. LAN loading timeout
+//!   reaches this producer through5DA750; wider DESTRUCT/REMOVEPLAYER/EXIT
+//!   producers remain separate caller coverage.
 //! - MPlayer_Defeated's capture-the-flag cleanup (Flag_Remove `0x004FBE40` at
 //!   `0x004FC112..0x004FC15E`, Scenario flag `0x10`) and the Harvester-Truce
 //!   UnInit loop (`0x004FC163`, Scenario flag `0x800`) are not ported; their
@@ -92,6 +93,16 @@ pub(crate) enum HouseBlowupSubset {
 }
 
 impl Simulation {
+    /// HouseClass::Flag_To_Die4FC980, reached at frame zero by LAN
+    /// loading timeout684596 ->5DA750 ->5DA86A. Returns the current latch,
+    /// including repeated requests; destruction waits for the House rung.
+    /// This producer consumes no RNG and does not flag a match outcome.
+    pub fn flag_house_to_die(&mut self, owner: InternedId) -> bool {
+        self.houses
+            .get_mut(&owner)
+            .is_some_and(|house| house.flag_to_die(self.session.binary_frame() as i32))
+    }
+
     /// The house rung with its defeat pass: see [`Self::house_rung`].
     #[cfg(any(test, feature = "test-support"))]
     pub(super) fn check_defeat(
@@ -125,7 +136,7 @@ impl Simulation {
             .get_mut(&owner)
             .is_some_and(|house| house.take_tech_recheck())
         {
-            if self.session.current_house == Some(owner) {
+            if self.session.current_house() == Some(owner) {
                 for type_id in
                     crate::sim::production::construction_options_for_owner(self, rules, owner)
                 {
@@ -167,8 +178,9 @@ impl Simulation {
     ) -> Vec<crate::sim::command::CommandEnvelope> {
         let mut generated = Vec::new();
         // 0x004F8E86..0x004F8EB7: not a campaign, past frame zero.
-        let defeat_gate =
-            defeat_pass && self.session.game_mode_nonzero && (self.session.binary_frame as i32) > 0;
+        let defeat_gate = defeat_pass
+            && self.session.game_mode_nonzero()
+            && (self.session.binary_frame() as i32) > 0;
         // The interner resolves names case-insensitively, as native type
         // lookups do.
         let base_units = rules.map_or([None; 3], |rules| {
@@ -187,8 +199,8 @@ impl Simulation {
         // A House's power/radar and activation must precede its own teams,
         // EVA, defeat and production; no global half-body sweeps intervene.
         let mut index = 0;
-        while index < self.session.house_order.len() {
-            let owner = self.session.house_order[index];
+        while index < self.houses.order().len() {
+            let owner = self.houses.order()[index];
             if let Some(rules) = rules {
                 self.assess_house_derived_state(owner, rules);
             }
@@ -198,8 +210,23 @@ impl Simulation {
             // the sole private +298 CdTimer; use NativeFrame, not Rust tick+1.
             if let Some(house) = self.houses.get_mut(&owner) {
                 house.advance_outcome_savour(
-                    self.session.binary_frame as i32,
-                    self.session.game_mode_nonzero,
+                    self.session.binary_frame() as i32,
+                    self.session.game_mode_nonzero(),
+                );
+            }
+            // Original4F87C2..4F87FA runs even on frame zero and before
+            // team/EVA/defeat work. Clear1F6 before entering ReceiveDamage.
+            let to_die = self
+                .houses
+                .get_mut(&owner)
+                .is_some_and(|house| house.take_due_to_die(self.session.binary_frame() as i32));
+            if to_die && let Some(rules) = rules {
+                self.house_blowup(
+                    owner,
+                    HouseBlowupSubset::All,
+                    rules,
+                    registry,
+                    frame_effects,
                 );
             }
             if let Some(power) = self.power_states.get_mut(&owner) {
@@ -245,66 +272,9 @@ impl Simulation {
                 generated.extend(self.recheck_house_tech_tree(owner, rules));
             }
             if let Some(house) = self.houses.get_mut(&owner) {
-                house.release_repair_latch(self.session.binary_frame);
-                #[cfg(any(test, feature = "test-support"))]
-                if self
-                    .house_update_append_after_test
-                    .is_some_and(|(after, _)| after == owner)
-                {
-                    let (_, appended) = self
-                        .house_update_append_after_test
-                        .take()
-                        .expect("matched append");
-                    self.session.house_order.push(appended);
-                }
+                house.release_repair_latch(self.session.binary_frame());
             }
             index += 1;
-        }
-        if !defeat_pass {
-            return generated;
-        }
-
-        // Check if all remaining alive houses are mutually allied → game over.
-        // The native alive scan counts only houses that are neither defeated nor
-        // passive; the Civilian/JP houses present in every skirmish own map
-        // objects forever, so including them would keep the alive set above one
-        // and the victory screen would never appear.
-        let alive: Vec<InternedId> = self
-            .houses
-            .iter()
-            .filter(|(_, h)| !h.is_defeated && !h.multiplay_passive)
-            .map(|(k, _)| *k)
-            .collect();
-
-        // VERA-internal developer policy, gamemd equivalent UNCHECKED: an
-        // authored solo sandbox must not create a victory state or EVA merely
-        // for being the only contender. Keep accepted explicit outcomes and
-        // their timers below independent of this automatic-creation gate.
-        let automatic_victory_allowed = self.contending_house_count() > 1;
-        if automatic_victory_allowed && alive.len() == 1 {
-            // Last player standing.
-            self.flag_house_to_win(alive[0], rules, false, frame_effects);
-        } else if automatic_victory_allowed && !alive.is_empty() {
-            // O(n^2) mutual-alliance check. Native alliance is directional — each
-            // house owns its own ally bits — and the game-over scan requires BOTH
-            // houses of a pair to name the other, so a one-way alliance must not end
-            // the match.
-            let all_allied = alive.iter().all(|a| {
-                alive.iter().all(|b| {
-                    a == b
-                        || crate::map::houses::are_houses_mutually_allied(
-                            &self.house_alliances,
-                            self.interner.resolve(*a),
-                            self.interner.resolve(*b),
-                        )
-                })
-            });
-
-            if all_allied {
-                for &owner in &alive {
-                    self.flag_house_to_win(owner, rules, false, frame_effects);
-                }
-            }
         }
         generated
     }
@@ -319,13 +289,13 @@ impl Simulation {
         let Some(house) = self.houses.get(&owner) else {
             return false;
         };
-        if house.is_defeated || house.multiplay_passive {
+        if house.is_defeated() || house.multiplay_passive() {
             return false;
         }
-        if self.session.game_options.short_game {
-            !house.tracking.short_game_alive(base_units)
+        if self.session.game_options().short_game {
+            !house.tracking().short_game_alive(base_units)
         } else {
-            !house.tracking.normal_game_alive(build_refinery_2)
+            !house.tracking().normal_game_alive(build_refinery_2)
         }
     }
 
@@ -351,23 +321,23 @@ impl Simulation {
         context: UninitContext<'_>,
     ) -> Option<crate::sim::command::CommandEnvelope> {
         if let Some(house) = self.houses.get_mut(&owner) {
-            house.is_defeated = true;
+            house.mark_defeated();
         }
         // 0x004FC0BC..0x004FC10D: a computer house at the skirmish IQ, defeated
         // under `[AI] Paranoid` in a nonzero game mode, turns the computers
         // left paranoid.
-        let game_mode_nonzero = self.session.game_mode_nonzero;
+        let game_mode_nonzero = self.session.game_mode_nonzero();
         if let Some(rules) = context.rules()
             && game_mode_nonzero
             && rules.general.paranoid
             && self.houses.get(&owner).is_some_and(|house| {
-                house.current_iq == rules.general.max_iq_levels
+                house.current_iq() == rules.general.max_iq_levels
                     && !house.is_controlled_by_human(game_mode_nonzero)
             })
         {
             self.computer_paranoid(rules, context.registry(), context.effects());
         }
-        let planning_commit = if self.session.current_house == Some(owner) {
+        let planning_commit = if self.session.current_house() == Some(owner) {
             // Original1cdd:4FC1EE ->637A10, before Session+300/reveal
             // and the loss announcement. Input owns the exit and2B event;
             // House returns it to MainTick's existing post-Logic dispatcher.
@@ -386,21 +356,114 @@ impl Simulation {
             commit
         } else {
             if let Some(house) = self.houses.get_mut(&owner) {
-                house.map_is_clear = true;
+                house.mark_map_clear();
             }
             None
         };
-        self.sound_events
-            .push(SimSoundEvent::PlayerDefeated { house: owner });
-        self.flag_house_to_lose(owner, context.rules(), false, context.effects());
+        if self.session.observer_house() != Some(owner) {
+            self.sound_events
+                .push(SimSoundEvent::PlayerDefeated { house: owner });
+        }
+        self.complete_multiplayer_after_defeat(context.rules(), context.effects());
         planning_commit
     }
 
-    /// `HouseClass::Flag_To_Win4FC9E0`, common offline campaign/skirmish path.
-    /// +298 is the same timer AllowWin Tags mutate; action67's argument1
-    /// preserves it. Numeric conversion uses the existing native minutes
-    /// reader/conversion owner. Network modes' ten-frame alignment is outside
-    /// this route (the active offline nonzero mode is5).
+    /// MPlayer_Defeated4FC3DE..6B7 completes the match at this House's defeat,
+    /// before later House visits. A defeated human (including an observer)
+    /// continues watching while hostile survivors and a human remain. Only
+    /// this process's PlayerPtr receives the final Win/Lose flags.
+    fn complete_multiplayer_after_defeat(
+        &mut self,
+        rules: Option<&RuleSet>,
+        effects: FrameEffects<'_>,
+    ) {
+        let alive: Vec<_> = self
+            .houses
+            .order()
+            .iter()
+            .copied()
+            .filter(|owner| {
+                self.houses
+                    .get(owner)
+                    .is_some_and(|house| !house.is_defeated() && !house.multiplay_passive())
+            })
+            .collect();
+        let living_humans = alive
+            .iter()
+            .filter(|owner| {
+                self.houses[owner].is_controlled_by_human(self.session.game_mode_nonzero())
+            })
+            .count();
+        let all_allied = alive.iter().all(|left| {
+            alive.iter().all(|right| {
+                left == right
+                    || crate::map::houses::are_houses_mutually_allied(
+                        &self.house_alliances,
+                        self.interner.resolve(*left),
+                        self.interner.resolve(*right),
+                    )
+            })
+        });
+        if !all_allied && alive.len() != 1 && living_humans != 0 {
+            return;
+        }
+        let Some(local) = self
+            .session
+            .current_house()
+            .filter(|owner| self.houses.contains_key(owner))
+        else {
+            return;
+        };
+        //4FC5DD/5EC: both class virtuals are true only for Cooperative
+        //(5C4EE0/5C4EF0); ordinary5C0E40 returns false.4FC62C's final
+        //human scan intentionally does not filter passive Houses.
+        let cooperative_shared_win = self.session.game_mode().is_network()
+            && self.session.multiplayer_mode_class()
+                == Some(crate::skirmish_modes::MpModeClass::Cooperative)
+            && (all_allied || alive.len() == 1)
+            && self
+                .houses
+                .values()
+                .any(|house| !house.is_defeated() && house.is_controlled_by_human(true));
+        if !self.houses[&local].is_defeated() || cooperative_shared_win {
+            self.flag_house_to_win(local, rules, false, effects);
+        } else {
+            self.flag_house_to_lose(local, rules, false, effects);
+        }
+    }
+
+    /// FlagWin4FCA5C..E7 /FlagLose4FCC45..D0 apply MaxAhead and then align
+    /// the signed wrapping absolute expiry to ten frames. CdTimer owns the
+    /// paused-sentinel and negative-duration semantics used by both bodies.
+    fn outcome_savour_frames(&self, rules: Option<&RuleSet>) -> i32 {
+        let duration = crate::rules::ruleset::native_minutes_to_frames(
+            rules.map_or(0.03, |rules| rules.general.savour_delay_minutes),
+        );
+        // Native applies this for any GameMode other than 0 or 5 (4FCA5C..6C).
+        // Only LAN/WOL admit a MaxAhead; the other raw modes are unreachable.
+        if !self.session.game_mode().is_network() {
+            return duration;
+        }
+        let frame = self.session.binary_frame() as i32;
+        let remaining = crate::sim::timer::CdTimer::started(frame, duration).remaining(frame);
+        let ahead = self
+            .session
+            .network_max_ahead_frames()
+            .expect("network mode has admitted timing");
+        let remaining = if remaining <= ahead {
+            crate::sim::timer::CdTimer::started(frame, ahead).remaining(frame)
+        } else {
+            remaining
+        };
+        (frame.wrapping_add(remaining).wrapping_add(9) / 10)
+            .wrapping_mul(10)
+            .wrapping_sub(frame)
+    }
+
+    /// `HouseClass::Flag_To_Win4FC9E0`, shared campaign/multiplayer path.
+    /// +298 is the same timer AllowWin Tags and Flag_To_Die mutate;
+    /// action67's argument1 preserves it. Native minutes conversion and
+    /// network ten-frame alignment stay with outcome_savour_frames.
     pub(crate) fn flag_house_to_win(
         &mut self,
         owner: InternedId,
@@ -408,11 +471,9 @@ impl Simulation {
         skip_timer: bool,
         effects: FrameEffects<'_>,
     ) -> bool {
-        let savour = crate::rules::ruleset::native_minutes_to_frames(
-            rules.map_or(0.03, |rules| rules.general.savour_delay_minutes),
-        );
+        let savour = self.outcome_savour_frames(rules);
         let accepted = self.houses.get_mut(&owner).is_some_and(|house| {
-            house.accept_win_result(self.session.binary_frame as i32, savour, skip_timer)
+            house.accept_win_result(self.session.binary_frame() as i32, savour, skip_timer)
         });
         if accepted {
             self.publish_accepted_house_outcome(
@@ -435,11 +496,9 @@ impl Simulation {
         skip_timer: bool,
         effects: FrameEffects<'_>,
     ) -> bool {
-        let savour = crate::rules::ruleset::native_minutes_to_frames(
-            rules.map_or(0.03, |rules| rules.general.savour_delay_minutes),
-        );
+        let savour = self.outcome_savour_frames(rules);
         let accepted = self.houses.get_mut(&owner).is_some_and(|house| {
-            house.accept_lose_result(self.session.binary_frame as i32, savour, skip_timer)
+            house.accept_lose_result(self.session.binary_frame() as i32, savour, skip_timer)
         });
         if accepted {
             self.publish_accepted_house_outcome(
@@ -464,26 +523,30 @@ impl Simulation {
         rules: Option<&RuleSet>,
         effects: FrameEffects<'_>,
     ) {
-        let campaign = !self.session.game_mode_nonzero;
+        let campaign = !self.session.game_mode_nonzero();
         let announce = if campaign {
             self.houses
                 .get(&owner)
                 .is_some_and(|house| house.is_controlled_by_human(false))
         } else {
-            self.session.current_house == Some(owner)
+            self.session.current_house() == Some(owner)
         };
         if !announce {
             return;
         }
         if campaign {
-            let was_locked = self.session.input_locked();
-            self.session.set_input_locked(true);
+            let was_locked = self.session.lock_input();
             self.publish_trigger_effects(vec![
                 crate::sim::trigger_runtime::TriggerEffect::InputLockChanged {
                     locked: true,
                     was_locked,
                 },
             ]);
+        }
+        if kind == crate::sim::house_state::HouseOutcomeKind::Defeat
+            && self.session.observer_house() == Some(owner)
+        {
+            return;
         }
         self.sound_events
             .push(SimSoundEvent::MatchOutcome { owner, kind });
@@ -503,7 +566,7 @@ impl Simulation {
     ) -> bool {
         let Some(owner) = self
             .session
-            .current_house
+            .current_house()
             .filter(|owner| self.houses.contains_key(owner))
         else {
             return false;
@@ -514,7 +577,7 @@ impl Simulation {
                     return false;
                 };
                 let native_country = self.houses[&owner]
-                    .country
+                    .country()
                     .and_then(|country| rules.country_index(self.interner.resolve(country)))
                     .map(|index| i32::from(index.0));
                 let Some(native_country) = native_country else {
@@ -540,7 +603,7 @@ impl Simulation {
                     self.houses
                         .get_mut(&owner)
                         .unwrap()
-                        .resume_result_timer(self.session.binary_frame as i32);
+                        .resume_result_timer(self.session.binary_frame() as i32);
                 } else {
                     self.flag_house_to_win(owner, rules, false, effects);
                 }
@@ -549,6 +612,14 @@ impl Simulation {
         }
         // Each original TAction arm returns AL1 independently of Flag AL.
         true
+    }
+
+    /// Diagnostic producer for a map's TAction 68 (Lose) on the current
+    /// House, through the same [`Self::trigger_house_outcome`] owner. Only
+    /// the dev chord's capture routes reach it; shipping builds omit it.
+    #[cfg(feature = "dev-overlays")]
+    pub fn dev_trigger_current_house_lose(&mut self, rules: &RuleSet) -> bool {
+        self.trigger_house_outcome(68, -1, Some(rules), FrameEffects::empty())
     }
 
     /// Session `+0x300` (`0x00A8B538`), written when the current house is
@@ -562,9 +633,9 @@ impl Simulation {
     /// and local planning admission (`0x00731A50`).
     pub fn local_player_defeated(&self) -> bool {
         self.session
-            .current_house
+            .current_house()
             .and_then(|house| self.houses.get(&house))
-            .is_some_and(|house| house.is_defeated)
+            .is_some_and(|house| house.is_defeated())
     }
 
     /// HouseClass cleanup4FC6D0/4FC790/4FC820/4FC8D0. Original Steam
@@ -716,8 +787,8 @@ impl Simulation {
     /// MakeInfantry owner (`0x004249A7`), `CheckAutoSellOrCivilian`
     /// (`0x0045823D`) and FreeSlaves (`0x006B0B0B`).
     pub(crate) fn civilian_side_house(&self, rules: &RuleSet) -> Option<InternedId> {
-        self.session
-            .house_order
+        self.houses
+            .order()
             .iter()
             .copied()
             .find(|&owner| self.house_type_is_civilian(owner, rules))

@@ -120,7 +120,7 @@ pub(crate) fn mission_capture(
     if hunts {
         let _ = sim.assign_target_represented(id, None, Some(rules), registry, effects);
         sim.assign_null_destination(id, Some(rules), registry, effects);
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         let _ = sim.mission_queue_exact(
             id,
             MissionId::from_known(MissionType::Hunt),

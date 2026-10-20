@@ -144,9 +144,9 @@ mod tests {
             let output = power[0].as_i64().unwrap() as i32;
             let drain = power[1].as_i64().unwrap() as i32;
             let mut state = crate::sim::power_system::PowerState::default();
-            state.total_output = output;
-            state.total_drain = drain;
-            state.is_low_power = output < drain;
+            state.set_total_output_for_test(output);
+            state.set_total_drain_for_test(drain);
+            state.set_is_low_power_for_test(output < drain);
             state.set_radar_outage_for_test(crate::sim::timer::CdTimer::from_raw(
                 timer[0], timer[1],
             ));
@@ -157,7 +157,7 @@ mod tests {
                 &rules,
                 owner,
                 &sim.interner,
-                sim.session.free_radar,
+                sim.session.free_radar(),
                 timer[2] as u32,
             );
             sim.power_states.insert(owner, state);

@@ -268,8 +268,15 @@ impl JumpjetFlight {
         self.target_height
     }
 
-    /// Store the field.
-    pub(crate) fn set_target_height(&mut self, target_height: i32) {
+    /// Move_To lifts a descent back into the climb at `JumpjetHeight=`
+    /// (`0x0054B455..0x0054B467`).
+    pub(crate) fn lift_to(&mut self, height: i32) {
+        self.target_height = height;
+    }
+
+    /// A fixture's target height.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_target_height_for_test(&mut self, target_height: i32) {
         self.target_height = target_height;
     }
 

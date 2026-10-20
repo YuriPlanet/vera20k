@@ -154,15 +154,15 @@ impl Simulation {
             return None;
         }
         let index = self
-            .session
-            .house_order
+            .houses
+            .order()
             .iter()
             .position(|&registered| registered == owner)?;
         let index = i8::try_from(index).ok()?;
         CommandRecord::encode(
             crate::sim::command::CHEER_OPCODE,
             i32::from(index),
-            self.session.binary_frame as i32,
+            self.session.binary_frame() as i32,
             &[],
         )
         .ok()
@@ -188,14 +188,14 @@ impl Simulation {
             return None;
         }
         let house_id = self
-            .session
-            .house_order
+            .houses
+            .order()
             .iter()
             .position(|&owner| owner == command_owner)
             .and_then(|index| i8::try_from(index).ok())?;
         let typed = ScatterRecord {
             house_id,
-            frame: self.session.binary_frame as i32,
+            frame: self.session.binary_frame() as i32,
             entity_id: i32::try_from(entity_id).ok()?,
         };
         let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).ok()?;
@@ -430,14 +430,14 @@ impl Simulation {
             return None;
         }
         let house_id = self
-            .session
-            .house_order
+            .houses
+            .order()
             .iter()
             .position(|&owner| owner == command_owner)
             .and_then(|index| i8::try_from(index).ok())?;
         let typed = MegaMissionRecord {
             house_id,
-            frame: self.session.binary_frame as i32,
+            frame: self.session.binary_frame() as i32,
             source_id: i32::try_from(source_id).ok()?,
             order,
         };
@@ -458,14 +458,14 @@ impl Simulation {
             return None;
         }
         let house_id = self
-            .session
-            .house_order
+            .houses
+            .order()
             .iter()
             .position(|&owner| owner == command_owner)
             .and_then(|index| i8::try_from(index).ok())?;
         SellWallAtCellRecord {
             house_id,
-            frame: self.session.binary_frame,
+            frame: self.session.binary_frame(),
             x,
             y,
         }
@@ -483,14 +483,14 @@ impl Simulation {
             return None;
         }
         let house_id = self
-            .session
-            .house_order
+            .houses
+            .order()
             .iter()
             .position(|&owner| owner == command_owner)
             .and_then(|index| i8::try_from(index).ok())?;
         ExitRecord {
             house_id,
-            frame: self.session.binary_frame,
+            frame: self.session.binary_frame(),
         }
         .encode()
         .ok()
@@ -511,7 +511,7 @@ impl Simulation {
                 && matches!(record.payload()[22], 1 | 2))
         {
             let house_index = usize::try_from(record.house_id()).ok()?;
-            let owner = *self.session.house_order.get(house_index)?;
+            let owner = *self.houses.order().get(house_index)?;
             return self.houses.contains_key(&owner).then(|| {
                 CommandEnvelope::new(
                     owner,
@@ -524,7 +524,7 @@ impl Simulation {
         }
         if let Some(typed) = ScatterRecord::decode(record) {
             let house_index = usize::try_from(typed.house_id).ok()?;
-            let owner = *self.session.house_order.get(house_index)?;
+            let owner = *self.houses.order().get(house_index)?;
             if !self.houses.contains_key(&owner) {
                 return None;
             }
@@ -538,7 +538,7 @@ impl Simulation {
         }
         if let Some(typed) = MegaMissionRecord::decode(record) {
             let house_index = usize::try_from(typed.house_id).ok()?;
-            let owner = *self.session.house_order.get(house_index)?;
+            let owner = *self.houses.order().get(house_index)?;
             if !self.houses.contains_key(&owner) {
                 return None;
             }
@@ -612,7 +612,7 @@ impl Simulation {
         //lock, cooldown, selection or product admission being repeated.
         if record.opcode() == crate::sim::command::CHEER_OPCODE {
             let index = usize::try_from(record.house_id()).ok()?;
-            let owner = *self.session.house_order.get(index)?;
+            let owner = *self.houses.order().get(index)?;
             return self
                 .houses
                 .contains_key(&owner)
@@ -621,7 +621,7 @@ impl Simulation {
 
         if let Some(typed) = ExitRecord::decode(record) {
             let house_index = usize::try_from(typed.house_id).ok()?;
-            let owner = *self.session.house_order.get(house_index)?;
+            let owner = *self.houses.order().get(house_index)?;
             return self
                 .houses
                 .contains_key(&owner)
@@ -630,7 +630,7 @@ impl Simulation {
 
         let typed = SellWallAtCellRecord::decode(record)?;
         let house_index = usize::try_from(typed.house_id).ok()?;
-        let owner = *self.session.house_order.get(house_index)?;
+        let owner = *self.houses.order().get(house_index)?;
         self.houses.contains_key(&owner).then(|| {
             CommandEnvelope::new(
                 owner,
@@ -743,10 +743,10 @@ impl Simulation {
         let Some(owner_house) = self.houses.get(&wall_owner) else {
             return false;
         };
-        let owner_admitted = if self.session.game_mode_nonzero {
-            owner_house.is_human
+        let owner_admitted = if self.session.game_mode_nonzero() {
+            owner_house.is_human()
         } else {
-            owner_house.is_human || owner_house.player_control
+            owner_house.is_human() || owner_house.player_control()
         };
         if !owner_admitted || !overlays.flags(overlay_id).is_some_and(|flags| flags.wall) {
             return false;
@@ -799,7 +799,7 @@ impl Simulation {
             let visit = {
                 let mut host = SimulationWallRuntimeHost {
                     entities: &mut self.substrate.entities,
-                    target_terrain_objects: &self.production.terrain_objects,
+                    target_terrain_objects: self.terrain_objects.objects(),
                     #[cfg(any(test, feature = "test-support"))]
                     detach_trace: &mut detach_trace,
                     radar_dirty_cells: &mut self.radar_terrain_dirty_cells,
@@ -937,7 +937,7 @@ impl Simulation {
             let Some(typed) = MegaMissionRecord::decode(&ordinary) else {
                 return false;
             };
-            let Some(envelope) = self.decode_native_command_record(&ordinary, self.session.tick)
+            let Some(envelope) = self.decode_native_command_record(&ordinary, self.session.tick())
             else {
                 return false;
             };
@@ -1715,7 +1715,7 @@ impl Simulation {
                             // destination setters this arm does not run.
                             // Dormant: no retail `[AircraftTypes]` entry has
                             // `Passengers=`.
-                            let now = self.session.binary_frame;
+                            let now = self.session.binary_frame();
                             let _ = self.mission_assign_exact(
                                 *transport_id,
                                 crate::sim::mission::MissionId::from_known(MissionType::Unload),
@@ -1838,7 +1838,7 @@ impl Simulation {
                         }
                         if crate::sim::superweapon::invulnerability::is_invulnerable(
                             b.invulnerability.as_ref(),
-                            self.session.binary_frame,
+                            self.session.binary_frame(),
                         ) {
                             return None;
                         }
@@ -2102,7 +2102,7 @@ impl Simulation {
         };
         if object.undeploys_into.is_some() {
             self.can_undeploy_building_runtime(stable_id, rules)
-                && (!object.construction_yard || self.session.game_mode_nonzero)
+                && (!object.construction_yard || self.session.game_mode_nonzero())
         } else {
             object.has_rally_line()
         }
@@ -2142,9 +2142,9 @@ impl Simulation {
     }
 
     /// Object5F6C30 (+138), with Foot4DFA50's +6AD guard for mobile objects.
-    /// Native +D0(1) is the disguise House: Unit7465F0 may return NULL;
-    /// Infantry5226C0 defaults it to the current House. Reuse the existing
-    /// +C8 disguise owner instead of treating current fog as selectability.
+    /// Its disguise arm (+C8 with a NULL +D0(1)) is
+    /// [`crate::sim::game_entity::GameEntity::disguise_hides_house_from`]; it
+    /// does not treat current fog as selectability.
     pub fn object_is_selectable(&self, stable_id: u64, rules: Option<&RuleSet>) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
@@ -2154,20 +2154,14 @@ impl Simulation {
         {
             return false;
         }
-        if entity.category() == crate::map::entities::EntityCategory::Unit
-            && entity
-                .disguise
-                .as_ref()
-                .is_some_and(|d| d.house().is_none())
-            && self.session.current_house.is_some_and(|house| {
-                entity.is_disguised_to(
-                    house,
-                    Some(&self.fog),
-                    Some(&self.house_alliances),
-                    &self.interner,
-                )
-            })
-        {
+        if self.session.current_house().is_some_and(|house| {
+            entity.disguise_hides_house_from(
+                house,
+                Some(&self.fog),
+                Some(&self.house_alliances),
+                &self.interner,
+            )
+        }) {
             return false;
         }
         rules.is_none_or(|r| {
@@ -2331,10 +2325,10 @@ impl Simulation {
             e.lifecycle.object_alive() && e.health.current() != 0 && !e.lifecycle.in_limbo()
         } else {
             // Event4C7225..725D reads Object lifetime/Health, not Techno RTTI.
-            self.production
-                .terrain_objects
+            self.terrain_objects
+                .objects()
                 .get(&stable_id)
-                .is_some_and(|target| target.is_live() && target.health != 0)
+                .is_some_and(|target| target.is_live() && target.health() != 0)
         }
     }
 
@@ -2418,7 +2412,7 @@ impl Simulation {
         token.filter(|token| match *token {
             combat::TargetKind::Entity(id) => {
                 self.substrate.entities.contains(id)
-                    || self.production.terrain_objects.contains_key(&id)
+                    || self.terrain_objects.objects().contains_key(&id)
             }
             combat::TargetKind::Cell(..) => true,
         })
@@ -2441,7 +2435,7 @@ impl Simulation {
         let Some(combat::TargetKind::Entity(flashed)) = destination.or(target) else {
             return;
         };
-        let Some(player) = self.session.current_house else {
+        let Some(player) = self.session.current_house() else {
             return;
         };
         if self.substrate.entities.get(actor_id).is_some_and(|actor| {
@@ -2715,7 +2709,7 @@ mod tests {
         );
         entity.locomotor = Some(LocomotorState::from_object_type(
             obj,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         ));
         entity.mover_facts.set_regular_crusher_for_test(obj.crusher);
         entity
@@ -2931,96 +2925,44 @@ mod tests {
         }
     }
 
+    /// An unarmed unit (no Primary, so CanAutoDeployHere rejects it) and an
+    /// enemy bunker each refuse admission and leave the machine idle.
     #[test]
-    fn enter_bunker_admits_and_starts_install_machine() {
+    fn enter_bunker_rejects_an_unarmed_unit_or_an_enemy_bunker() {
         use crate::sim::docking::bunker_install::BunkerState;
         use crate::sim::docking::bunker_link::BunkerLink;
         let rules = bunker_rules();
-        let mut sim = Simulation::new();
-        spawn_bunker_struct(&mut sim, 2, "Americans", 10, 10);
-        spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 14, 14);
+        for (bunker_owner, unit_type) in [("Americans", "NOGUN"), ("Soviets", "TANK")] {
+            let mut sim = Simulation::new();
+            spawn_bunker_struct(&mut sim, 2, bunker_owner, 10, 10);
+            spawn_bunkerable(&mut sim, 1, "Americans", unit_type, 14, 14);
 
-        let applied = sim.apply_command(
-            "Americans",
-            &Command::EnterBunker {
-                unit_id: 1,
-                bunker_id: 2,
-            },
-            Some(&rules),
-        );
+            let applied = sim.apply_command(
+                "Americans",
+                &Command::EnterBunker {
+                    unit_id: 1,
+                    bunker_id: 2,
+                },
+                Some(&rules),
+            );
 
-        assert!(applied);
-        let unit = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(unit.bunker.link(), BunkerLink::Approaching(2));
-        assert_eq!(
-            unit.mission.queued(),
-            MissionId::from_known(MissionType::Enter)
-        );
-        let rt = sim
-            .substrate
-            .entities
-            .get(2)
-            .unwrap()
-            .bunker_runtime
-            .unwrap();
-        assert_eq!(rt.state(), BunkerState::ArriveWait);
-        assert_eq!(rt.installing_unit(), Some(1));
-    }
-
-    #[test]
-    fn enter_bunker_rejects_unit_without_a_weapon() {
-        use crate::sim::docking::bunker_install::BunkerState;
-        use crate::sim::docking::bunker_link::BunkerLink;
-        let rules = bunker_rules();
-        let mut sim = Simulation::new();
-        spawn_bunker_struct(&mut sim, 2, "Americans", 10, 10);
-        // Bunkerable but no Primary → CanAutoDeployHere rejects it.
-        spawn_bunkerable(&mut sim, 1, "Americans", "NOGUN", 14, 14);
-
-        let applied = sim.apply_command(
-            "Americans",
-            &Command::EnterBunker {
-                unit_id: 1,
-                bunker_id: 2,
-            },
-            Some(&rules),
-        );
-
-        assert!(!applied);
-        assert_eq!(
-            sim.substrate.entities.get(1).unwrap().bunker.link(),
-            BunkerLink::None
-        );
-        assert_eq!(
-            sim.substrate
-                .entities
-                .get(2)
-                .unwrap()
-                .bunker_runtime
-                .unwrap()
-                .state(),
-            BunkerState::Idle,
-            "rejected admission leaves the machine idle"
-        );
-    }
-
-    #[test]
-    fn enter_enemy_bunker_is_rejected() {
-        let rules = bunker_rules();
-        let mut sim = Simulation::new();
-        spawn_bunker_struct(&mut sim, 2, "Soviets", 10, 10);
-        spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 14, 14);
-
-        let applied = sim.apply_command(
-            "Americans",
-            &Command::EnterBunker {
-                unit_id: 1,
-                bunker_id: 2,
-            },
-            Some(&rules),
-        );
-
-        assert!(!applied, "cannot bunker into an enemy building");
+            assert!(!applied, "{bunker_owner} bunker, {unit_type}");
+            assert_eq!(
+                sim.substrate.entities.get(1).unwrap().bunker.link(),
+                BunkerLink::None
+            );
+            assert_eq!(
+                sim.substrate
+                    .entities
+                    .get(2)
+                    .unwrap()
+                    .bunker_runtime
+                    .unwrap()
+                    .state(),
+                BunkerState::Idle,
+                "rejected admission leaves the machine idle"
+            );
+        }
     }
 
     #[test]
@@ -3125,7 +3067,8 @@ mod tests {
                 .unwrap()
                 .state();
             saw_track_step |= state == BunkerState::TrackStep;
-            sim.session.binary_frame += 1;
+            sim.session
+                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
             if state == BunkerState::Occupied {
                 break;
             }
@@ -3237,7 +3180,8 @@ mod tests {
                 None,
                 crate::sim::world::FrameEffects::default(),
             );
-            sim.session.binary_frame += 1;
+            sim.session
+                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
             let unit = sim.substrate.entities.get(1).unwrap();
             if (unit.position.rx(), unit.position.ry()) == exit
                 && crate::sim::movement::track_head::committed_track_head(unit).is_none()

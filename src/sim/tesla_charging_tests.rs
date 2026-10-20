@@ -103,12 +103,12 @@ impl Fixture {
     fn set_power(&mut self, output: i32, drain: i32) {
         let owner = self.sim.substrate.entities.get(self.coil).unwrap().owner();
         let power = self.sim.power_states.get_mut(&owner).unwrap();
-        power.total_output = output;
-        power.total_drain = drain;
+        power.set_total_output_for_test(output);
+        power.set_total_drain_for_test(drain);
     }
 
     fn dispatch(&mut self, source: u64, mission: MissionType) {
-        let now = self.sim.session.binary_frame;
+        let now = self.sim.session.binary_frame();
         self.sim
             .substrate
             .entities
@@ -292,7 +292,7 @@ fn operational_power_and_overpowered_weapon_use_different_thresholds() {
         );
         let owner = f.sim.substrate.entities.get(f.coil).unwrap().owner();
         let power = &f.sim.power_states[&owner];
-        assert_eq!((power.total_output, power.total_drain), (output, drain));
+        assert_eq!((power.total_output(), power.total_drain()), (output, drain));
     }
 }
 
@@ -604,7 +604,7 @@ fn guard_and_area_guard_queue_charging_before_their_normal_cadence() {
     for mission in [MissionType::Guard, MissionType::AreaGuard] {
         let Some(mut f) = Fixture::new() else { return };
         let source = f.troopers[0];
-        let now = f.sim.session.binary_frame;
+        let now = f.sim.session.binary_frame();
         f.sim
             .substrate
             .entities

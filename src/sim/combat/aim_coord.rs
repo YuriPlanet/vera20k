@@ -111,7 +111,7 @@ pub fn led_target_coordinate(
         });
     lead_aim(
         target_coord,
-        target.body_facing_current(world.session.binary_frame),
+        target.body_facing_current(world.session.binary_frame()),
         distance,
         weapon_launch_speed(
             current_weapon.speed,
@@ -141,7 +141,7 @@ mod tests {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(10, 10)
+            .cell_mut_for_test(10, 10)
             .unwrap()
             .level = 2;
         assert_eq!(
@@ -157,8 +157,8 @@ mod tests {
             ),
             1
         );
-        let tree = world.production.terrain_object_cells[&(10, 10)];
-        let retained = world.production.terrain_objects[&tree].world_coord();
+        let tree = world.terrain_objects.cell_index()[&(10, 10)];
+        let retained = world.terrain_objects.objects()[&tree].world_coord();
         let target = Some(TargetKind::Entity(tree));
         assert_eq!(
             led_target_coordinate(&world, rules, firer, target),
@@ -171,7 +171,7 @@ mod tests {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(10, 10)
+            .cell_mut_for_test(10, 10)
             .unwrap()
             .level = 7;
         let before_hash = world.state_hash();

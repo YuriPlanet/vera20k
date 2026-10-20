@@ -444,7 +444,7 @@ mod tests {
             .collect();
         terrain.test_set_native_allocated_cells(&mapped);
         for &(x, y) in &mapped {
-            terrain.cell_mut(x, y).unwrap().level = 6;
+            terrain.cell_mut_for_test(x, y).unwrap().level = 6;
         }
         let rows = corpus["rows"].as_array().unwrap();
         assert_eq!(rows.len(), 31);
@@ -584,7 +584,7 @@ mod tests {
                 .collect();
             terrain.test_set_native_allocated_cells(&mapped);
             for &(x, y) in &mapped {
-                terrain.cell_mut(x, y).unwrap().level = 6;
+                terrain.cell_mut_for_test(x, y).unwrap().level = 6;
             }
             let bridges: Vec<(u16, u16)> = if let Some(band) = input["bridge_band"].as_array() {
                 band.iter()
@@ -596,7 +596,11 @@ mod tests {
                 Vec::new()
             };
             for &(x, y) in &bridges {
-                terrain.cell_mut(x, y).unwrap().bridge_facts.raw_flags = 0x100;
+                terrain
+                    .cell_mut_for_test(x, y)
+                    .unwrap()
+                    .bridge_facts
+                    .raw_flags = 0x100;
             }
             let mut shot = super::super::tests::spawn(ProjectileTarget::Cell { rx: 16, ry: 20 });
             shot.native_unique_id = native["unique_id"].as_i64().unwrap() as i32;
@@ -630,12 +634,15 @@ mod tests {
                 for change in input["between_frame_flag_changes"].as_array().unwrap() {
                     if change["frame"].as_u64().unwrap() as u32 == frame {
                         for &(x, y) in &bridges {
-                            terrain.cell_mut(x, y).unwrap().bridge_facts.raw_flags =
-                                if change["live"].as_bool().unwrap() {
-                                    0x100
-                                } else {
-                                    0
-                                };
+                            terrain
+                                .cell_mut_for_test(x, y)
+                                .unwrap()
+                                .bridge_facts
+                                .raw_flags = if change["live"].as_bool().unwrap() {
+                                0x100
+                            } else {
+                                0
+                            };
                         }
                     }
                 }
@@ -789,7 +796,7 @@ mod tests {
             let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
             for y in 16..25 {
                 for x in 6..25 {
-                    let cell = terrain.cell_mut(x, y).unwrap();
+                    let cell = terrain.cell_mut_for_test(x, y).unwrap();
                     cell.level = 6;
                     cell.bridge_facts.raw_flags = if bridge(i32::from(x) * 256, i32::from(y) * 256)
                     {

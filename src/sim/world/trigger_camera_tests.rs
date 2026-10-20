@@ -43,7 +43,10 @@ fn waypoint_ground_bridge_and_dummy_coordinates_match_original_actions48_and112(
             terrain.shared_cell_dummy().set_level_slope(level, slope);
         } else {
             terrain.test_set_native_allocated_cells(&[(x as u16, y as u16)]);
-            terrain.cell_mut(x as u16, y as u16).unwrap().slope_type = slope;
+            terrain
+                .cell_mut_for_test(x as u16, y as u16)
+                .unwrap()
+                .slope_type = slope;
         }
         let identity = if missing {
             NativeCellIdentity::Dummy
@@ -64,7 +67,7 @@ fn waypoint_ground_bridge_and_dummy_coordinates_match_original_actions48_and112(
             },
         )]));
         let before_rng = sim.scenario_rng.logical_state();
-        let before_frame = sim.session.binary_frame;
+        let before_frame = sim.session.binary_frame();
         let calls = row["calls"].as_array().unwrap();
         let sink = calls.last().unwrap();
         let kind = row["read"]["kind"].as_i64().unwrap();
@@ -72,7 +75,7 @@ fn waypoint_ground_bridge_and_dummy_coordinates_match_original_actions48_and112(
         let actual = sim.trigger_waypoint_coord(index as i32).unwrap();
         assert_eq!(json!(actual), sink["coord"], "{input} action{kind}");
         assert_eq!(sim.scenario_rng.logical_state(), before_rng);
-        assert_eq!(sim.session.binary_frame, before_frame);
+        assert_eq!(sim.session.binary_frame(), before_frame);
         if missing {
             // Ground's world lookup and the later packed lookup stamp the
             // same retained Dummy. Compare the final native observation,
@@ -129,7 +132,7 @@ fn eleven_original_waypoint_location_controls_keep_receiver_identity_and_signed_
         let mut terrain = crate::map::resolved_terrain::test_grid(32, 32, test_flat_cell);
         terrain.test_set_native_allocated_cells(&real.into_iter().collect::<Vec<_>>());
         let identity = if let Some((x, y)) = real {
-            terrain.cell_mut(x, y).unwrap().slope_type = slope;
+            terrain.cell_mut_for_test(x, y).unwrap().slope_type = slope;
             terrain.native_cell_identity((x as i16, y as i16))
         } else {
             terrain.shared_cell_dummy().set_level_slope(level, slope);

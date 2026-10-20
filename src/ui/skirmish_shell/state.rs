@@ -14,10 +14,10 @@ use self::combos::{combo_dropdown_max_top_index, top_index_from_scrollbar_track_
 use self::combos::{handle_combo_mouse_down, set_open_combo_top_index, top_index_from_thumb_y};
 
 pub use combos::{
-    combo_dropdown_content_rect, combo_dropdown_needs_scrollbar, combo_dropdown_rect,
-    combo_dropdown_scroll_thumb_rect, combo_dropdown_scrollbar_rect,
-    combo_dropdown_visible_row_count, combo_enabled, combo_items, combo_rect, selected_combo_item,
-    selected_combo_item_index,
+    available_color_choices, available_start_choices, combo_dropdown_content_rect,
+    combo_dropdown_needs_scrollbar, combo_dropdown_rect, combo_dropdown_scroll_thumb_rect,
+    combo_dropdown_scrollbar_rect, combo_dropdown_visible_row_count, combo_enabled, combo_items,
+    combo_rect, country_choices, selected_combo_item, selected_combo_item_index, team_choices,
 };
 pub use hit_test::{
     action_for_owner_draw_button, apply_action, hit_test, hit_test_owner_draw_button,
@@ -27,8 +27,8 @@ pub use hit_test::{
 pub use launch::{launch_session, pack_launch_session_without_start_validation};
 
 pub use choose_map::{
-    ChooseMapListPress, ChooseMapModalState, ChooseMapSelection, EjectPrompt, EjectPromptButton,
-    ai_rows_beyond_limit_occupied,
+    ChooseMapContext, ChooseMapListPress, ChooseMapModalState, ChooseMapSelection, EjectPrompt,
+    EjectPromptButton, ai_rows_beyond_limit_occupied,
 };
 pub use player_name::{
     PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT, PLAYER_NAME_EDIT_LIMIT_BYTES,

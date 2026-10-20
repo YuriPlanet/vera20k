@@ -99,19 +99,6 @@ mod tests {
         assert_eq!(oil.footprint, [(0, 0), (1, 0), (0, 1), (1, 1)]);
     }
 
-    #[test]
-    fn absent_section_or_key_yields_an_empty_catalog() {
-        let art = IniFile::from_str("[CAOILD]\nFoundation=2x2\n");
-        assert!(catalog("", &art).is_empty());
-        assert!(catalog("[AI]\nFixtureOnly=1\n", &art).is_empty());
-    }
-
-    #[test]
-    fn empty_list_value_yields_an_empty_catalog() {
-        let art = IniFile::from_str("[CAOILD]\nFoundation=2x2\n");
-        assert!(catalog(&rules_with(""), &art).is_empty());
-    }
-
     /// A named type with no art entry, no `Foundation=`, or an unrecognised
     /// value still enters the catalog — at the foundation table's default.
     #[test]

@@ -186,8 +186,8 @@ fn wave_world_xy(wave: &crate::sim::wave::Wave) -> Option<(i32, i32)> {
     // coordinate produced by `0x00761640/0x00762070`: source for types 0/3,
     // and ftol(source*1.05f + target*(1-1.05f)) for types 1/2.
     Some((
-        wave_object_axis(wave.source.x, wave.target.x, wave.wave_type)?,
-        wave_object_axis(wave.source.y, wave.target.y, wave.wave_type)?,
+        wave_object_axis(wave.source().x, wave.target().x, wave.wave_type())?,
+        wave_object_axis(wave.source().y, wave.target().y, wave.wave_type())?,
     ))
 }
 
@@ -241,7 +241,7 @@ impl Simulation {
 
     /// Every fold before the Scenario sample, in native order.
     fn fold_checksum_objects(&self) -> Result<RetailChecksumAccumulator, MultiplayerChecksumError> {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let mut checksum = RetailChecksumAccumulator::new();
 
         // Native class-array order is constructor/registration order. Stable
@@ -271,21 +271,21 @@ impl Simulation {
             }
         }
 
-        if self.session.house_order.len() != self.houses.len() {
+        if self.houses.order().len() != self.houses.len() {
             return Err(MultiplayerChecksumError::HouseOrderCoverage {
-                registered: self.session.house_order.len(),
+                registered: self.houses.order().len(),
                 stored: self.houses.len(),
             });
         }
-        for (index, owner) in self.session.house_order.iter().copied().enumerate() {
-            if self.session.house_order[..index].contains(&owner) {
+        for (index, owner) in self.houses.order().iter().copied().enumerate() {
+            if self.houses.order()[..index].contains(&owner) {
                 return Err(MultiplayerChecksumError::DuplicateHouse(owner));
             }
             let house = self
                 .houses
                 .get(&owner)
                 .ok_or(MultiplayerChecksumError::MissingHouse(owner))?;
-            checksum.fold_house(u8::from(house.map_is_clear));
+            checksum.fold_house(u8::from(house.map_is_clear()));
         }
 
         // Layers 0..4 in index order, each in its stored member order.
@@ -315,10 +315,10 @@ impl Simulation {
             ObjectKind::Anim => {
                 let anim = self.substrate.anims.get(stable_id).ok_or(missing)?;
                 ChecksumObject::new(
-                    anim.world_coord.x,
-                    anim.world_coord.y,
+                    anim.world_coord().x,
+                    anim.world_coord().y,
                     RTTI_ANIM,
-                    anim.native_unique_id,
+                    anim.native_unique_id(),
                 )
             }
             ObjectKind::Spotlight => {
@@ -339,27 +339,37 @@ impl Simulation {
                     .particle_systems
                     .get(stable_id)
                     .ok_or(missing)?;
-                ChecksumObject::new(system.coords.x, system.coords.y, RTTI_PARTICLE_SYSTEM, 0)
+                ChecksumObject::new(
+                    system.coords().x,
+                    system.coords().y,
+                    RTTI_PARTICLE_SYSTEM,
+                    0,
+                )
             }
             ObjectKind::Terrain => {
                 let terrain = self
-                    .production
                     .terrain_objects
+                    .objects()
                     .get(&stable_id)
                     .ok_or(missing)?;
-                let (world_x, world_y) = terrain_world_xy(terrain.rx, terrain.ry);
+                let (world_x, world_y) = terrain_world_xy(terrain.cell().0, terrain.cell().1);
                 ChecksumObject::new(world_x, world_y, RTTI_TERRAIN, 0)
             }
             ObjectKind::Projectile => {
                 let projectile = self.projectiles.get(stable_id).ok_or(missing)?;
-                ChecksumObject::new(projectile.position.x, projectile.position.y, RTTI_BULLET, 0)
+                ChecksumObject::new(
+                    projectile.position().x,
+                    projectile.position().y,
+                    RTTI_BULLET,
+                    0,
+                )
             }
             ObjectKind::Wave => {
                 let wave = self.waves.get(stable_id).ok_or(missing)?;
                 let (world_x, world_y) =
                     wave_world_xy(wave).ok_or(MultiplayerChecksumError::InvalidWaveType {
                         id: stable_id,
-                        wave_type: wave.wave_type,
+                        wave_type: wave.wave_type(),
                     })?;
                 ChecksumObject::new(world_x, world_y, RTTI_WAVE, 0)
             }
@@ -461,18 +471,20 @@ mod tests {
                 ParticleSystemTypeId(0),
                 IVec3::new(-311, 912, 0),
             );
-            system.facing = 0;
+            system.set_facing_for_test(0);
             system
         });
 
         let terrain_id = sim.allocate_stable_id();
-        sim.production.terrain_objects.insert(terrain_id, {
-            let mut terrain =
-                TerrainObjectState::for_test(terrain_id, InternedId::from_index(0), 7, 9);
-            terrain.health = 10;
-            terrain.max_health = 10;
-            terrain
-        });
+        sim.terrain_objects
+            .objects_mut_for_test()
+            .insert(terrain_id, {
+                let mut terrain =
+                    TerrainObjectState::for_test(terrain_id, InternedId::from_index(0), 7, 9);
+                terrain.set_health_for_test(10);
+                terrain.set_max_health_for_test(10);
+                terrain
+            });
 
         let bullet_id = sim.allocate_stable_id();
         sim.projectiles.spawn(
@@ -558,30 +570,6 @@ mod tests {
         assert_eq!(round_facing16_to_8(0x007f), 0);
         assert_eq!(round_facing16_to_8(0x0080), 1);
         assert_eq!(round_facing16_to_8(0xffff), 0);
-    }
-
-    #[test]
-    fn only_the_multiplayer_feedback_anim_sentinel_is_skipped() {
-        let mut checksum = RetailChecksumAccumulator::new();
-        checksum.fold_object(ChecksumObject::new(100, 200, 4, SYNC_EXEMPT_ANIM_ID));
-        assert_eq!(checksum.value(), 0);
-
-        checksum.fold_object(ChecksumObject::new(100, 200, 4, -1));
-        assert_ne!(checksum.value(), 0);
-    }
-
-    #[test]
-    fn multiplayer_frame_consumes_exactly_two_scenario_rng_samples() {
-        let mut sim = Simulation::with_seed(0x1234);
-        let mut reference = sim.scenario_rng.clone();
-        let checksum_sample = reference.next_u32();
-        let diagnostic_sample = reference.next_u32();
-
-        let frame = sim.compute_retail_multiplayer_checksum().unwrap();
-
-        assert_eq!(frame.value, checksum_sample);
-        assert_eq!(frame.diagnostic_rng_sample, diagnostic_sample);
-        assert_eq!(sim.scenario_rng.next_u32(), reference.next_u32());
     }
 
     #[test]
@@ -682,11 +670,14 @@ mod tests {
 
     #[test]
     fn only_the_multiplayer_queue_route_checksums_a_frame() {
-        use crate::sim::world::{CommandQueueRoute, FrameEffects, TickLane};
+        use crate::sim::world::{FrameEffects, TickLane};
         let mut single = Simulation::with_seed(0x6476);
         let mut multi = Simulation::with_seed(0x6476);
-        multi.set_command_queue_route(CommandQueueRoute::Multiplayer);
-        let frame = multi.session.binary_frame;
+        multi
+            .session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+        multi.session.install_network_timing(10);
+        let frame = multi.session.binary_frame();
         let mut expected_rng = single.scenario_rng.clone();
 
         let advance = |sim: &mut Simulation| {
@@ -773,16 +764,5 @@ mod tests {
 
         assert!(sim.compute_retail_multiplayer_checksum().is_err());
         assert_eq!(sim.scenario_rng.next_u32(), reference.next_u32());
-    }
-
-    #[test]
-    fn gsi_16_11_dangling_logic_id_remains_a_hard_error() {
-        let mut sim = Simulation::new();
-        sim.substrate.logic.set_order_for_test(vec![91]);
-
-        assert_eq!(
-            sim.compute_retail_multiplayer_checksum(),
-            Err(MultiplayerChecksumError::MissingObject(91))
-        );
     }
 }

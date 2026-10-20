@@ -349,7 +349,7 @@ fn effective_projectile_art_changes_configuration_hash_and_rejects_old_restore()
                     &bytes,
                     11,
                     changed.simulation_config_hash(),
-                    &sim.session.map_name
+                    &sim.session.map_name()
                 ),
                 Err(SnapshotError::RulesMismatch { .. })
             ),

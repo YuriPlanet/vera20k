@@ -32,7 +32,7 @@ impl Simulation {
         if air_movement::current_fly_height(e, self.resolved_terrain.as_ref()) == 0 {
             e.body_facing.snap(
                 e.barrel_facing.unwrap().destination(),
-                self.session.binary_frame,
+                self.session.binary_frame(),
             );
         }
         let sound = rules
@@ -107,7 +107,7 @@ impl Simulation {
             .unwrap()
             .fly_runtime_mut()
             .unwrap()
-            .set_target_speed(SIM_ZERO);
+            .request_stop();
         let entity = self.substrate.entities.get(id).unwrap();
         let base = crate::sim::aircraft::landing_base::landing_base(
             entity,
@@ -236,8 +236,7 @@ impl Simulation {
             .fly_runtime_mut()
             .unwrap();
         fly.finish_landing();
-        fly.set_target_speed(SIM_ZERO);
-        fly.set_current_speed(SIM_ZERO);
+        fly.halt();
         entity.foot_speed.set_speed_fraction(SIM_ZERO);
         self.foot_neighbors_after_fly_landing(id);
         let entity = self.substrate.entities.get(id).unwrap();
@@ -543,8 +542,8 @@ mod tests {
         let mut rules = rules;
         rules.general.blockage_path_delay_ticks = 11;
         let mut sim = Simulation::with_seed(31);
-        sim.session.map_width = 128;
-        sim.session.map_height = 128;
+        sim.session.set_map_width_for_test(128);
+        sim.session.set_map_height_for_test(128);
         sim.playfield_bounds = Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(64, 0, 0, 64, 64),
         );
@@ -563,7 +562,7 @@ mod tests {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(64, 64)
+            .cell_mut_for_test(64, 64)
             .unwrap();
         cell.level = input["level"].as_u64().unwrap_or(0) as u8;
         cell.slope_type = input["slope"].as_u64().unwrap_or(0) as u8;
@@ -596,13 +595,14 @@ mod tests {
         let l = e.locomotor.as_mut().unwrap();
         *l.fly_runtime_mut().unwrap()=serde_json::from_value::<FlyRuntime>(serde_json::json!({"target_height":0,"taking_off":false,"landing":before["phase"][1]==1,"landing_effect_latched":before["phase"][2]==1,"airport_bound":input["airport_bound"].as_bool().unwrap_or(false),"moving":true,"destination":before["destination"]})).unwrap();
         let fly = l.fly_runtime_mut().unwrap();
-        fly.set_target_speed(SimFixed::lit("0.75"));
-        fly.set_current_speed(SimFixed::lit("0.5"));
+        fly.set_target_speed_for_test(SimFixed::lit("0.75"));
+        fly.set_current_speed_for_test(SimFixed::lit("0.5"));
         e.flight_attitude=serde_json::from_value::<FlightAttitude>(serde_json::json!({"pitch":SimFixed::from_num(input["owner_float_2e8"].as_f64().unwrap_or(0.0))})).unwrap();
-        e.navigation.neighbor_state =
-            serde_json::from_value(serde_json::json!({"cell": before["neighbor_cell"]})).unwrap();
+        e.navigation.set_neighbor_state_for_test(
+            serde_json::from_value(serde_json::json!({"cell": before["neighbor_cell"]})).unwrap(),
+        );
         e.navigation
-            .path_runtime
+            .path_runtime_mut()
             .set_blocked_timer_for_test(crate::sim::timer::CdTimer::from_raw(0, 0));
         if input["air_registered"].as_bool().unwrap_or(true) {
             sim.aircraft_tracker_add(id);
@@ -640,7 +640,7 @@ mod tests {
                 sim.add_entity_occupancy(id);
             }
         }
-        sim.session.binary_frame = 100;
+        sim.session.set_binary_frame_for_test(100);
         (sim, rules)
     }
 
@@ -763,7 +763,11 @@ mod tests {
             let input = &row["input"];
             let supplied = serde_json::json!({"input":input,"before":base[1]["before"]});
             let (mut sim, _) = fixture(&supplied);
-            sim.session.game_mode_nonzero = input["game_mode"].as_u64().unwrap_or(0) != 0;
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                    input["game_mode"].as_u64().unwrap_or(0) != 0,
+                ),
+            );
             let e = sim.substrate.entities.get_mut(1).unwrap();
             e.discovery
                 .set_owned_by_current_house_for_test(input["owned"].as_bool().unwrap_or(true));
@@ -775,7 +779,7 @@ mod tests {
             let x = row["exposed"][0].as_u64().unwrap() as usize;
             let y = row["exposed"][1].as_u64().unwrap() as usize;
             sim.fog
-                .by_owner
+                .by_owner_mut_for_test()
                 .insert(owner, serde_json::from_value(visibility).unwrap());
             sim.fog.set_ground_bits_for_test(
                 owner,
@@ -847,7 +851,7 @@ mod tests {
                 .speed_costs;
             let terrain = sim.resolved_terrain.as_mut().unwrap();
             terrain.set_land_speed_rules_for_test(&rules.terrain_rules);
-            for cell in &mut terrain.cells {
+            for cell in terrain.cells_mut_for_test() {
                 cell.speed_costs = clear;
                 cell.base_speed_costs = clear;
             }
@@ -1040,7 +1044,7 @@ mod tests {
                 "{}",
                 row["input"]
             );
-            let timer = e.navigation.path_runtime.blocked_timer();
+            let timer = e.navigation.path_runtime().blocked_timer();
             assert_eq!(
                 serde_json::json!([timer.start_frame(), timer.duration()]),
                 after["path_timer"],
@@ -1117,7 +1121,7 @@ mod tests {
         assert_eq!(sim.state_hash(), restored.state_hash());
         for frame in 101..126 {
             for s in [&mut sim, &mut restored] {
-                s.session.binary_frame = frame;
+                s.session.set_binary_frame_for_test(frame);
                 s.tick_air_movement_with_cell_lists_one(
                     1,
                     Some(&rules),

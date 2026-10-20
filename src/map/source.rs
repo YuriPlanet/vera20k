@@ -3,6 +3,7 @@
 //! Owns source selection and the identity of the exact bytes consumed by the
 //! parser. Frontend discovery and tools use the same resolution path.
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -73,28 +74,108 @@ pub fn read_map_ini_for_metadata(path: &Path) -> Option<IniFile> {
     map_file::ini_from_file_bytes(std::fs::read(path).ok()?).ok()
 }
 
-pub(crate) fn load_map_by_name_or_path(ra2_dir: &Path, map_name: &str) -> Result<LoadedMap> {
-    let direct: PathBuf = PathBuf::from(map_name);
+/// Physical INI plus the exact source bytes used by shell map verification.
+/// Unlike full MapFile parsing, native6951F0 admits an INI without requiring
+/// a playable map header before comparing its [Digest] text.
+pub struct LoadedMapIni {
+    pub ini: IniFile,
+    pub source: LoadedMapSource,
+}
+
+struct MapInput<'a> {
+    bytes: Cow<'a, [u8]>,
+    source: LoadedMapSource,
+}
+
+fn local_map_path(ra2_dir: &Path, map_name: &str) -> Result<PathBuf> {
+    let direct = PathBuf::from(map_name);
     if direct.is_absolute() && direct.exists() {
-        return load_map_from_path_with_source(&direct);
+        return Ok(direct);
     }
-
-    let in_ra2: PathBuf = ra2_dir.join(map_name);
+    let in_ra2 = ra2_dir.join(map_name);
     if in_ra2.exists() {
-        return load_map_from_path_with_source(&in_ra2);
+        return Ok(in_ra2);
     }
-
     for ext in MAP_EXTENSIONS {
-        let candidate = ra2_dir.join(format!("{}.{}", map_name, ext));
+        let candidate = ra2_dir.join(format!("{map_name}.{ext}"));
         if candidate.exists() {
-            return load_map_from_path_with_source(&candidate);
+            return Ok(candidate);
         }
     }
-
     Err(anyhow::anyhow!(
         "Map '{}' not found (checked the retail root and .mmx/.yro/.map/.mpr/.yrm variants)",
         map_name
     ))
+}
+
+fn read_loose_map_input(path: &Path) -> Result<MapInput<'static>> {
+    let bytes = std::fs::read(path)?;
+    let source = LoadedMapSource::Loose {
+        path: path.to_path_buf(),
+        payload_len: bytes.len(),
+        source_sha256: sha256_hex(&bytes),
+    };
+    Ok(MapInput {
+        bytes: Cow::Owned(bytes),
+        source,
+    })
+}
+
+fn decode_map(input: MapInput<'_>) -> Result<LoadedMap> {
+    let map = if matches!(input.source, LoadedMapSource::Loose { .. }) {
+        map_file::load_from_bytes(input.bytes.into_owned())?
+    } else {
+        MapFile::from_bytes(&input.bytes)?
+    };
+    Ok(LoadedMap {
+        map,
+        source: input.source,
+    })
+}
+
+fn decode_metadata(input: MapInput<'_>) -> Result<LoadedMapIni> {
+    Ok(LoadedMapIni {
+        //695349 ignores INI.Load's boolean before ReadString. A malformed
+        // physical file still supplies the reader default; it must not cause
+        // a fallback to a different MIX payload.
+        ini: map_file::ini_from_file_bytes(input.bytes.into_owned())
+            .unwrap_or_else(|_| IniFile::empty()),
+        source: input.source,
+    })
+}
+
+/// Both gameplay and shell metadata use this one loose-before-MIX resolution
+/// policy. Preserve the existing fallback on a failed loose parse.
+fn load_map_input_with_assets<T>(
+    ra2_dir: &Path,
+    map_name: &str,
+    assets: &AssetManager,
+    decode: impl Fn(MapInput<'_>) -> Result<T>,
+) -> Result<T> {
+    let local = local_map_path(ra2_dir, map_name)
+        .and_then(|path| read_loose_map_input(&path))
+        .and_then(&decode);
+    match local {
+        Ok(value) => Ok(value),
+        Err(local_err) => {
+            for candidate in asset_map_candidates(map_name) {
+                if let Some(resolved) = assets.resolve_ref(&candidate) {
+                    let source = LoadedMapSource::Mix {
+                        logical_name: candidate,
+                        source_archive: resolved.source_archive.to_string(),
+                        entry_id: resolved.entry_id,
+                        payload_len: resolved.bytes.len(),
+                        source_sha256: sha256_hex(resolved.bytes),
+                    };
+                    return decode(MapInput {
+                        bytes: Cow::Borrowed(resolved.bytes),
+                        source,
+                    });
+                }
+            }
+            Err(local_err)
+        }
+    }
 }
 
 pub fn load_map_by_name_or_path_with_assets(
@@ -102,28 +183,15 @@ pub fn load_map_by_name_or_path_with_assets(
     map_name: &str,
     assets: &AssetManager,
 ) -> Result<LoadedMap> {
-    match load_map_by_name_or_path(ra2_dir, map_name) {
-        Ok(map) => Ok(map),
-        Err(local_err) => {
-            for candidate in asset_map_candidates(map_name) {
-                if let Some(resolved) = assets.resolve_ref(&candidate) {
-                    log::info!("Loaded map {candidate} from MIX assets");
-                    let map = MapFile::from_bytes(resolved.bytes)?;
-                    return Ok(LoadedMap {
-                        map,
-                        source: LoadedMapSource::Mix {
-                            logical_name: candidate,
-                            source_archive: resolved.source_archive.to_string(),
-                            entry_id: resolved.entry_id,
-                            payload_len: resolved.bytes.len(),
-                            source_sha256: sha256_hex(resolved.bytes),
-                        },
-                    });
-                }
-            }
-            Err(local_err)
-        }
-    }
+    load_map_input_with_assets(ra2_dir, map_name, assets, decode_map)
+}
+
+pub fn load_map_ini_by_name_or_path_with_assets(
+    ra2_dir: &Path,
+    map_name: &str,
+    assets: &AssetManager,
+) -> Result<LoadedMapIni> {
+    load_map_input_with_assets(ra2_dir, map_name, assets, decode_metadata)
 }
 
 pub fn asset_map_candidates(map_name: &str) -> Vec<String> {
@@ -139,18 +207,7 @@ pub fn asset_map_candidates(map_name: &str) -> Vec<String> {
 }
 
 fn load_map_from_path_with_source(path: &Path) -> Result<LoadedMap> {
-    let bytes = std::fs::read(path)?;
-    let payload_len = bytes.len();
-    let source_sha256 = sha256_hex(&bytes);
-    let map = map_file::load_from_bytes(bytes)?;
-    Ok(LoadedMap {
-        map,
-        source: LoadedMapSource::Loose {
-            path: path.to_path_buf(),
-            payload_len,
-            source_sha256,
-        },
-    })
+    decode_map(read_loose_map_input(path)?)
 }
 
 /// Try loading .mmx map files from a list of candidates.
@@ -295,7 +352,9 @@ mod tests {
     fn loose_map_source_retains_consumed_bytes_after_file_changes() {
         let directory = TestDirectory::new("loose-source");
         directory.write("Arena.map", SOURCE_TEST_MAP);
-        let loaded = load_map_by_name_or_path(directory.path(), "Arena")
+        let loaded = local_map_path(directory.path(), "Arena")
+            .and_then(|path| read_loose_map_input(&path))
+            .and_then(decode_map)
             .expect("resolve extension and load loose map");
         directory.write("Arena.map", b"file replaced after map load");
 

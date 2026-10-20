@@ -30,6 +30,8 @@ pub const MY_INFORMATION: u16 = 0x06E4;
 /// in a browser (`0x0077DC90`); without the key nothing happens.
 pub const COMMUNITY: u16 = 0x055F;
 pub const MAIN_MENU: u16 = 0x0686;
+/// The custom lobby `0x113`'s heading `0x694` (`GUI:CustomMatch`).
+pub const WOL_LOBBY_TITLE_KEY: &str = "GUI:CustomMatch";
 
 const fn button(
     id: u16,
@@ -102,13 +104,43 @@ pub const WOL_BUTTON_Z_ORDER: [u16; 7] = [
     COMMUNITY,
 ];
 
-/// What a `0x10E` button leads to on a machine without WOLAPI.
+/// The WOL mode `[0xA8B244]` a `0x10E` button writes (`0x007988C0`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WolMode {
+    QuickMatch,
+    QuickCoop,
+    CustomMatch,
+    PlayBuddy,
+    MyInformation,
+}
+
+impl WolMode {
+    /// The native value of `[0xA8B244]`.
+    pub fn native(self) -> i32 {
+        match self {
+            Self::QuickMatch => 1,
+            Self::QuickCoop => 2,
+            Self::CustomMatch => 4,
+            Self::PlayBuddy => 5,
+            Self::MyInformation => 6,
+        }
+    }
+
+    /// `WOL_RunMain`'s login category for the mode (`0x0077B3AA..0x0077B3C8`):
+    /// 0 for My Information (it ensures the API itself), 1 otherwise here
+    /// (2 belongs to mode 3, which `0x10E` does not offer).
+    pub fn needs_login(self) -> bool {
+        self != Self::MyInformation
+    }
+}
+
+/// What a `0x10E` button does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WolWelcomeAction {
     /// Quick Match, Quick Co-op, Custom Match, Buddy List and My Information
-    /// (modes 1, 2, 4, 5, 6; `0x00798C39`): `0x10E` closes, the WOLAPI object
-    /// cannot be created and `TXT_APIMISSING` shows (`0x00785711`).
-    ApiMissing,
+    /// (`0x00798C39`): the mode is written and `0x10E` closes; the WOL flow
+    /// then first creates the WOLAPI object (`0x00786390`).
+    Mode(WolMode),
     /// Community: no registry URL, nothing happens and the page stays.
     Community,
     /// Main Menu (result 0): `0x10E` closes and `0xE2` is recreated.
@@ -116,14 +148,16 @@ pub enum WolWelcomeAction {
 }
 
 pub fn action_for_control(id: u16) -> Option<WolWelcomeAction> {
-    match id {
-        QUICK_MATCH | QUICK_COOP | CUSTOM_MATCH | PLAY_BUDDY | MY_INFORMATION => {
-            Some(WolWelcomeAction::ApiMissing)
-        }
-        COMMUNITY => Some(WolWelcomeAction::Community),
-        MAIN_MENU => Some(WolWelcomeAction::MainMenu),
-        _ => None,
-    }
+    Some(match id {
+        QUICK_MATCH => WolWelcomeAction::Mode(WolMode::QuickMatch),
+        QUICK_COOP => WolWelcomeAction::Mode(WolMode::QuickCoop),
+        CUSTOM_MATCH => WolWelcomeAction::Mode(WolMode::CustomMatch),
+        PLAY_BUDDY => WolWelcomeAction::Mode(WolMode::PlayBuddy),
+        MY_INFORMATION => WolWelcomeAction::Mode(WolMode::MyInformation),
+        COMMUNITY => WolWelcomeAction::Community,
+        MAIN_MENU => WolWelcomeAction::MainMenu,
+        _ => return None,
+    })
 }
 
 /// Text alignment of a kind-0 static (`SS_LEFT` / `SS_CENTER` / `SS_RIGHT`).
@@ -456,31 +490,68 @@ impl WolWelcomeLayout {
     }
 }
 
-/// The `TXT_APIMISSING` message box `0xD0`: one OK button, created modal
-/// (mode 2, no slide) over the empty shell backdrop.
+/// A WOL message box from `0x005E2CD0`, modal (mode 2, no slide) over the
+/// empty shell backdrop: style 0 is `0xD0` with OK (id 1); style 4 is
+/// `0x126` with Yes (6) and No (7). Its loop (`0x007759E0`) dispatches
+/// without `IsDialogMessage`, so it takes no keys.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ApiMissingBox {
+pub struct WolMessageBox {
     pub body: String,
-    pub ok: String,
+    pub buttons: WolBoxButtons,
 }
 
-/// One visit to Westwood Online: the shuffle flag `WOL_Main` saved on entry
-/// (`0x0077B30C`), the status help the last hit test wrote, and the message
-/// box once a WOL action has failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WolWelcomeState {
-    pub saved_shuffle: bool,
-    pub status_help: Option<&'static str>,
-    pub api_missing: Option<ApiMissingBox>,
+pub enum WolBoxButtons {
+    Ok(String),
+    YesNo { yes: String, no: String },
 }
 
-impl WolWelcomeState {
-    pub fn open(saved_shuffle: bool) -> Self {
-        Self {
-            saved_shuffle,
-            status_help: None,
-            api_missing: None,
+impl WolMessageBox {
+    pub fn dialog(&self) -> DialogId {
+        DialogId(match self.buttons {
+            WolBoxButtons::Ok(_) => 0x00D0,
+            WolBoxButtons::YesNo { .. } => 0x0126,
+        })
+    }
+}
+
+/// `0xC4` OK button id 1, `0x126` Yes 6 / No 7.
+pub const BOX_OK: u16 = 1;
+pub const BOX_YES: u16 = 6;
+pub const BOX_NO: u16 = 7;
+/// The wait box `0xC4`'s Disconnect and WOL Check Status.
+pub const WAIT_DISCONNECT: u16 = 0x058D;
+pub const WAIT_CHECK_STATUS: u16 = 0x058E;
+pub const WAIT_DIALOG: DialogId = DialogId(0x00C4);
+
+/// The wait box `0xC4` (`0x00792BE0`, proc `0x00792CF0`): created hidden
+/// (fShow 0); its init arms timer `0x45` for `[0x84A248]` = 7000 ms, whose
+/// tick shows it and kills the timer. A result before then never shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WolWaitBox {
+    /// `0x5B2`'s text, set by `0x4B2` after creation.
+    pub text: String,
+    pub disconnect: String,
+    pub check_status: String,
+    pub opened_at: std::time::Instant,
+    pub shown: bool,
+}
+
+/// `[0x84A248]`, read only at `0x00792D93`.
+pub const WAIT_REVEAL: std::time::Duration = std::time::Duration::from_millis(7000);
+
+impl WolWaitBox {
+    pub fn reveal_at(&self) -> std::time::Instant {
+        self.opened_at + WAIT_REVEAL
+    }
+
+    /// The timer tick: true when this call showed the box.
+    pub fn poll(&mut self, now: std::time::Instant) -> bool {
+        if !self.shown && now >= self.reveal_at() {
+            self.shown = true;
+            return true;
         }
+        false
     }
 }
 
@@ -488,6 +559,50 @@ impl WolWelcomeState {
 mod tests {
     use super::*;
     use crate::ui::shell::geom::centred_in_window;
+
+    #[test]
+    fn welcome_buttons_write_the_native_modes() {
+        let modes: Vec<i32> = [
+            QUICK_MATCH,
+            QUICK_COOP,
+            CUSTOM_MATCH,
+            PLAY_BUDDY,
+            MY_INFORMATION,
+        ]
+        .into_iter()
+        .map(|id| match action_for_control(id) {
+            Some(WolWelcomeAction::Mode(mode)) => mode.native(),
+            other => panic!("{id:#x}: {other:?}"),
+        })
+        .collect();
+        assert_eq!(modes, [1, 2, 4, 5, 6]);
+        assert!(!WolMode::MyInformation.needs_login());
+        assert!(WolMode::CustomMatch.needs_login());
+        assert_eq!(
+            action_for_control(COMMUNITY),
+            Some(WolWelcomeAction::Community)
+        );
+        assert_eq!(
+            action_for_control(MAIN_MENU),
+            Some(WolWelcomeAction::MainMenu)
+        );
+    }
+
+    #[test]
+    fn wait_box_shows_once_its_timer_fires() {
+        let opened_at = std::time::Instant::now();
+        let mut wait = WolWaitBox {
+            text: String::new(),
+            disconnect: String::new(),
+            check_status: String::new(),
+            opened_at,
+            shown: false,
+        };
+        assert!(!wait.poll(opened_at + WAIT_REVEAL - std::time::Duration::from_millis(1)));
+        assert!(wait.poll(opened_at + WAIT_REVEAL));
+        assert!(wait.shown);
+        assert!(!wait.poll(opened_at + WAIT_REVEAL * 2));
+    }
 
     #[test]
     fn right_panel_matches_the_executed_relayout() {

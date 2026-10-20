@@ -259,7 +259,7 @@ impl Simulation {
         } else {
             terrain.or(self.resolved_terrain.as_ref()).map(|terrain| {
                 terrain.native_cell_coord(
-                    terrain.native_cell_identity(actor.navigation.neighbor_state.cell()),
+                    terrain.native_cell_identity(actor.navigation.neighbor_state().cell()),
                 )
             })
         };
@@ -280,7 +280,7 @@ impl Simulation {
         } else {
             self.resolved_terrain.as_ref().map(|terrain| {
                 terrain.native_cell_coord(
-                    terrain.native_cell_identity(actor.navigation.neighbor_state.cell()),
+                    terrain.native_cell_identity(actor.navigation.neighbor_state().cell()),
                 )
             })
         }?;
@@ -310,7 +310,7 @@ impl Simulation {
         if actor.category() == EntityCategory::Structure {
             return;
         }
-        let old = actor.navigation.neighbor_state.cell();
+        let old = actor.navigation.neighbor_state().cell();
         if old == (0, 0) {
             return;
         }
@@ -347,7 +347,7 @@ impl Simulation {
         let Some(house) = self.houses.get(&owner) else {
             return;
         };
-        let controlled = house.is_controlled_by_human(self.session.game_mode_nonzero);
+        let controlled = house.is_controlled_by_human(self.session.game_mode_nonzero());
         let contributions = self.spatial_threat_contributions(owner, controlled, rules);
         let house = self.houses.get_mut(&owner).unwrap();
         house.clear_spatial_threat();
@@ -384,7 +384,7 @@ impl Simulation {
                 // Native non-Foot arm intentionally has no house/ally filter.
                 self.spatial_threat_current_cell(id, None)?
             } else {
-                let cell = actor.navigation.neighbor_state.cell();
+                let cell = actor.navigation.neighbor_state().cell();
                 if cell == (0, 0)
                     || actor.owner() == owner
                     || (controlled

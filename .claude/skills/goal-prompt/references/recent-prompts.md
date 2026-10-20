@@ -78,4 +78,6 @@ DONE WHEN a whole-bridge audit finds no unresolved required behavior across brid
 What to carry forward: extra length earns its place by preventing lost scope. A
 shorter rendition must still cover affected consumers and the whole mechanism.
 The explicit critic sentence is appropriate when requested; its presence here does
-not require repeating the full review procedure in every future prompt.
+not require repeating the full review procedure in every future prompt. Its
+"substantial changes" predates the current rule: critics cover gameplay changes only,
+as [review.md](../../_shared/review.md) says.

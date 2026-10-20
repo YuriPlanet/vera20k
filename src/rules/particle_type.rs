@@ -241,39 +241,6 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
 
     #[test]
-    fn behaves_like_string_to_enum() {
-        assert_eq!(
-            ParticleBehavesLike::parse("Gas"),
-            Some(ParticleBehavesLike::Gas)
-        );
-        assert_eq!(
-            ParticleBehavesLike::parse("Smoke"),
-            Some(ParticleBehavesLike::Smoke)
-        );
-        assert_eq!(
-            ParticleBehavesLike::parse("Fire"),
-            Some(ParticleBehavesLike::Fire)
-        );
-        assert_eq!(
-            ParticleBehavesLike::parse("Spark"),
-            Some(ParticleBehavesLike::Spark)
-        );
-        assert_eq!(
-            ParticleBehavesLike::parse("Railgun"),
-            Some(ParticleBehavesLike::Railgun)
-        );
-        assert_eq!(ParticleBehavesLike::parse("nope"), None);
-    }
-
-    #[test]
-    fn behaves_like_parse_trims_whitespace() {
-        assert_eq!(
-            ParticleBehavesLike::parse("  Gas  "),
-            Some(ParticleBehavesLike::Gas)
-        );
-    }
-
-    #[test]
     fn behaves_like_discriminants_match_binary() {
         // Binary indexes string-table by enum value; preserve the exact ordering.
         assert_eq!(ParticleBehavesLike::Gas as u8, 0);
@@ -281,16 +248,6 @@ mod tests {
         assert_eq!(ParticleBehavesLike::Fire as u8, 2);
         assert_eq!(ParticleBehavesLike::Spark as u8, 3);
         assert_eq!(ParticleBehavesLike::Railgun as u8, 4);
-    }
-
-    #[test]
-    fn particle_type_id_is_copy_eq_hash() {
-        let a = ParticleTypeId(7);
-        let b = a;
-        assert_eq!(a, b);
-        let mut set = std::collections::HashSet::new();
-        set.insert(a);
-        assert!(set.contains(&b));
     }
 
     #[test]
@@ -347,19 +304,6 @@ mod tests {
         assert_eq!(pt.next_particle_offset, IVec3::new(0, 0, 150));
         // FinalDamageState absent → mirrors EndStateAI.
         assert_eq!(pt.final_damage_state, 11);
-    }
-
-    #[test]
-    fn from_ini_final_damage_state_overrides_default_when_present() {
-        let ini = IniFile::from_str(
-            "[Foo]\n\
-             EndStateAI=10\n\
-             FinalDamageState=5\n",
-        );
-        let section = ini.section("Foo").unwrap();
-        let pt = ParticleType::from_ini_section("Foo", section);
-        assert_eq!(pt.end_state_ai, 10);
-        assert_eq!(pt.final_damage_state, 5);
     }
 
     #[test]

@@ -82,7 +82,7 @@ impl OrdinaryDamageHost for Observed<'_, '_> {
 
 fn spawn(scene: &mut HeadlessScenario, point: (u16, u16)) -> u64 {
     let runtime = &mut scene.runtime;
-    let owner = runtime.simulation.session.current_house.unwrap();
+    let owner = runtime.simulation.session.current_house().unwrap();
     let owner_name = runtime.simulation.resolve(owner).to_owned();
     runtime
         .simulation
@@ -190,8 +190,12 @@ fn prime(scene: &mut HeadlessScenario, input: &Value, initial: &Value, rng: &Val
     }
     // The joined native constructors receive frame 1000 and GameSpeed 4 at
     // their supplied boundary (0x00A8EB60); normalized Anim rates depend on it.
-    sim.session.binary_frame = 1000;
-    assert!(sim.session.game_options.apply_in_game_speed(4));
+    sim.session.set_binary_frame_for_test(1000);
+    assert!(
+        sim.session
+            .game_options_mut_for_test()
+            .apply_in_game_speed(4)
+    );
     sim.main_rng = serde_json::from_value(rng.clone()).unwrap();
     sim.scenario_rng = serde_json::from_value(rng.clone()).unwrap();
     sim.mapgen_rng = serde_json::from_value(rng.clone()).unwrap();
@@ -248,10 +252,10 @@ fn snapshot(
         "ground_head":object_name(sim.cell_objects(current,MovementLayer::Ground).next(),actors),
         "object_next":object_name(sim.next_cell_object(CellObjectMember::Entity(actors[0])),actors),
         "deferred_count":actors.iter().filter(|id| sim.substrate.pending_delete.contains_object(id)).count(),
-        "owner_losses":sim.houses[&owner].stats.units_lost()-initial_losses,
+        "owner_losses":sim.houses[&owner].stats().units_lost()-initial_losses,
         // Native House+5574 counts on-map units. EntityStore's type index
         // counts stored objects, including these retained dead receivers.
-        "owner_active_units":sim.houses[&owner].tracking.active_for_test().0-other_active_units,
+        "owner_active_units":sim.houses[&owner].tracking().active_for_test().0-other_active_units,
         "current_land":terrain.cell(current.0,current.1).unwrap().land_type,
         "impact_land":terrain.cell(115,59).unwrap().land_type,
         "target":target_name(actor.attack_target.target().as_ref()),
@@ -378,13 +382,13 @@ impl EffectBoundary {
             "{context}: admitted Anims {boundary}"
         );
         for (&(id, anim), expected) in anims.iter().zip(native) {
-            let runtime = &anim.runtime;
+            let runtime = &anim.runtime();
             let actual = json!({
-                "object":names[id], "anim_type":sim.resolve(anim.type_id),
-                "location":[anim.world_coord.x,anim.world_coord.y,anim.world_coord.z],
-                "native_id_offset":(anim.native_unique_id as u32).wrapping_sub(self.native_id_cursor) as i32,
-                "draw_flags":anim.draw_flags, "z_adjust":anim.z_adjust,
-                "is_bouncing":u8::from(anim.bounce.is_some()),
+                "object":names[id], "anim_type":sim.resolve(anim.type_id()),
+                "location":[anim.world_coord().x,anim.world_coord().y,anim.world_coord().z],
+                "native_id_offset":(anim.native_unique_id() as u32).wrapping_sub(self.native_id_cursor) as i32,
+                "draw_flags":anim.draw_flags(), "z_adjust":anim.z_adjust(),
+                "is_bouncing":u8::from(anim.bounce().is_some()),
                 "runtime":{
                     "current_frame":runtime.current_frame,"frame_step":runtime.frame_step,
                     "delay_remaining":runtime.delay_remaining,"rate_reload":runtime.rate_reload,
@@ -401,14 +405,14 @@ impl EffectBoundary {
                     names[id]
                 );
             }
-            if let Some(bounce) = &anim.bounce {
+            if let Some(bounce) = &anim.bounce() {
                 let actual = json!({
-                    "elasticity_bits":bounce.elasticity.bits(),"gravity_bits":bounce.gravity.bits(),
-                    "clamp_bits":bounce.angular_velocity_magnitude.bits(),
-                    "position_bits":bounce.position.map(|v| v.bits()),
-                    "velocity_bits":bounce.velocity.map(|v| v.bits()),
-                    "orientation_bits":bounce.orientation.map(|v| v.bits()),
-                    "rotation_bits":bounce.rotation.map(|v| v.bits())
+                    "elasticity_bits":bounce.elasticity().bits(),"gravity_bits":bounce.gravity().bits(),
+                    "clamp_bits":bounce.angular_velocity_magnitude().bits(),
+                    "position_bits":bounce.position().map(|v| v.bits()),
+                    "velocity_bits":bounce.velocity().map(|v| v.bits()),
+                    "orientation_bits":bounce.orientation().map(|v| v.bits()),
+                    "rotation_bits":bounce.rotation().map(|v| v.bits())
                 });
                 for (key, value) in actual.as_object().unwrap() {
                     assert_eq!(
@@ -483,9 +487,9 @@ fn retail_wood_occupants_match_native_list_lifetime_detach_and_rng() {
         );
         let sim = scene.sim();
         let actor = sim.substrate.entities.get(actors[0]).unwrap();
-        let initial_losses = sim.houses[&actor.owner()].stats.units_lost();
+        let initial_losses = sim.houses[&actor.owner()].stats().units_lost();
         let other_active_units =
-            sim.houses[&actor.owner()].tracking.active_for_test().0 - actors.len() as i32;
+            sim.houses[&actor.owner()].tracking().active_for_test().0 - actors.len() as i32;
         let effects = EffectBoundary::capture(sim);
         for stage in case["stages"].as_array().unwrap() {
             let context = format!("{name}/{}", stage["stage"].as_str().unwrap());
@@ -603,8 +607,8 @@ fn retail_wood_hut_collapse_matches_native_live_occupants_and_animation_order() 
         );
         let sim = scene.sim();
         let owner = sim.substrate.entities.get(actors[0]).unwrap().owner();
-        let initial_losses = sim.houses[&owner].stats.units_lost();
-        let other_units = sim.houses[&owner].tracking.active_for_test().0 - actors.len() as i32;
+        let initial_losses = sim.houses[&owner].stats().units_lost();
+        let other_units = sim.houses[&owner].tracking().active_for_test().0 - actors.len() as i32;
         let effects = EffectBoundary::capture(sim);
         assert_state(
             sim,

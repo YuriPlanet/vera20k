@@ -77,7 +77,7 @@ pub(super) fn mission_missile(sim: &mut Simulation, id: u64, rules: &RuleSet) ->
         // `0x0044D584`: the mission rate.
         return rules.mission_control.rate_frames(MissionType::Missile);
     }
-    let now = sim.session.binary_frame as i32;
+    let now = sim.session.binary_frame() as i32;
     let mut warning = None;
     if status == 0 {
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
@@ -109,7 +109,7 @@ pub(super) fn mission_missile(sim: &mut Simulation, id: u64, rules: &RuleSet) ->
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.begin_building_body(BuildingBodyMode::Idle, now);
             }
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             let _ = sim.mission_queue_exact(
                 id,
                 MissionId::from_known(MissionType::Guard),
@@ -336,8 +336,7 @@ mod tests {
         sim.resolve_type_handles(rules);
         let owner = sim.interner.intern("Russians");
         sim.houses
-            .insert(owner, HouseState::new(owner, 1, None, true, 0, 10));
-        sim.session.house_order.push(owner);
+            .register(HouseState::new(owner, 1, None, true, 0, 10));
         sim.resolved_terrain = Some(test_grid(80, 220, |x, y| ResolvedTerrainCell {
             level: if (x, y) == target { target_level } else { 0 },
             ..test_flat_cell(x, y)
@@ -442,7 +441,7 @@ mod tests {
             let bullets: Vec<_> = sim
                 .projectiles
                 .iter()
-                .filter(|(_, bullet)| bullet.source_id == silo)
+                .filter(|(_, bullet)| bullet.source_id() == silo)
                 .collect();
             let fire = events.iter().find(|event| event[0] == "fire");
             assert_eq!(bullets.len(), usize::from(fire.is_some()), "{row}");
@@ -454,15 +453,15 @@ mod tests {
                 .iter()
                 .map(|bits| bits.as_u64().unwrap())
                 .collect();
-            assert_eq!(velocity_bits(bullet.velocity), native_velocity, "{row}");
+            assert_eq!(velocity_bits(bullet.velocity()), native_velocity, "{row}");
             // Construct's damage and speed; the carrier's BulletType.
             let construct = events
                 .iter()
                 .find(|event| event[0] == "create_bullet")
                 .unwrap();
-            assert_eq!(bullet.payload.base_damage, int(&construct[2]), "{row}");
+            assert_eq!(bullet.payload().base_damage, int(&construct[2]), "{row}");
             assert_eq!(
-                bullet.trajectory,
+                bullet.trajectory(),
                 ProjectileTrajectory::Vertical {
                     detonation_altitude: 20000,
                     acceleration: 1,
@@ -471,14 +470,14 @@ mod tests {
                 "{row}"
             );
             assert_eq!(
-                bullet.target,
+                bullet.target(),
                 crate::sim::projectile::ProjectileTarget::Cell {
                     rx: target.0,
                     ry: target.1
                 }
             );
             for (&(&id, anim), native) in new_anims.iter().zip(&native_anims) {
-                let name = sim.interner.resolve(anim.type_id);
+                let name = sim.interner.resolve(anim.type_id());
                 let coord = sim.anim_absolute_coord(id).unwrap();
                 match native[1].as_str().unwrap() {
                     "PSIWARN" => {
@@ -486,7 +485,7 @@ mod tests {
                         let native_coord: Vec<i32> =
                             native[2].as_array().unwrap().iter().map(int).collect();
                         assert_eq!(vec![coord.x, coord.y, coord.z], native_coord, "{row}");
-                        assert!(anim.draw_runtime.hidden, "{row}");
+                        assert!(anim.draw_runtime().hidden, "{row}");
                         assert_eq!(anim.owner_house(), Some(owner));
                         assert_eq!(anim.attached_bullet(), Some(bullet_id));
                     }
@@ -498,17 +497,17 @@ mod tests {
                         assert_eq!(
                             [coord.x, coord.y, coord.z],
                             [
-                                bullet.launch_origin.x,
-                                bullet.launch_origin.y,
-                                bullet.launch_origin.z
+                                bullet.launch_origin().x,
+                                bullet.launch_origin().y,
+                                bullet.launch_origin().z
                             ],
                             "{row}"
                         );
-                        assert_eq!(anim.z_adjust, int(&row["take_off_z_adjust"]));
+                        assert_eq!(anim.z_adjust(), int(&row["take_off_z_adjust"]));
                     }
                     other => panic!("anim {other}"),
                 }
-                assert_eq!(anim.draw_flags, u32::try_from(int(&native[5])).unwrap());
+                assert_eq!(anim.draw_flags(), u32::try_from(int(&native[5])).unwrap());
             }
         }
     }
@@ -548,7 +547,7 @@ mod tests {
         let target = (50, 60);
         let (mut sim, silo) = world(&rules, "NAMISL", target, 0);
         let grid = sim.resolved_terrain.as_mut().unwrap();
-        grid.cell_mut(target.0, target.1)
+        grid.cell_mut_for_test(target.0, target.1)
             .unwrap()
             .bridge_facts
             .raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
@@ -563,9 +562,9 @@ mod tests {
         let ground = cell_ground_coord(sim.resolved_terrain.as_ref(), target.0, target.1);
         assert_eq!(
             [
-                bullet.launch_target.x,
-                bullet.launch_target.y,
-                bullet.launch_target.z
+                bullet.launch_target().x,
+                bullet.launch_target().y,
+                bullet.launch_target().z
             ],
             [ground.x, ground.y, ground.z + 416]
         );

@@ -420,17 +420,17 @@ impl App {
         }
         let skirmish_defaults =
             crate::app::frontend::skirmish_session::skirmish_global_defaults(&skirmish_shell_state);
-        let offline_skirmish_runtime =
-            crate::app::frontend::skirmish_session::OfflineSkirmishRuntime::initialize(
+        let multiplayer_shell_runtime =
+            crate::app::frontend::skirmish_session::MultiplayerShellRuntime::initialize(
                 frontend_seed.value,
                 game_config
                     .as_ref()
                     .map(|config| config.paths.settings_dir()),
                 startup_asset_manager.as_ref(),
-                startup_rules_projection.as_ref(),
+                startup_rules.as_ref(),
                 skirmish_defaults,
             );
-        offline_skirmish_runtime.hydrate_shell(
+        multiplayer_shell_runtime.hydrate_shell(
             &mut skirmish_shell_state,
             scenario_catalog.shell_maps(),
             &skirmish_modes,
@@ -544,10 +544,12 @@ impl App {
                     ),
                     message_clock: crate::ui::messages::PauseAwareClock::default(),
                     in_game_menu: crate::ui::pause_menu::InGameMenuState::default(),
+                    modal_latch: true,
                     pause_menu_has_saves: false,
                     pause_menu_interaction: Default::default(),
                     sound_dialog: None,
                     abort_buttons: Default::default(),
+                    diplomacy: Default::default(),
                     saved_game_browser: None,
                     in_game_options: startup_in_game_options,
                     in_game_options_anchor: None,
@@ -600,6 +602,10 @@ impl App {
                 #[cfg(feature = "telemetry-dashboard")]
                 telemetry_timing: Default::default(),
                 #[cfg(feature = "telemetry-dashboard")]
+                telemetry_history: Default::default(),
+                #[cfg(feature = "telemetry-dashboard")]
+                report_history: Default::default(),
+                #[cfg(feature = "telemetry-dashboard")]
                 telemetry_tick_rate: Default::default(),
                 map_basic: BasicSection::default(),
                 map_ranking: crate::map::ranking::RankingSection::default(),
@@ -607,6 +613,7 @@ impl App {
                 loaded_map_hash: None,
                 scenario_outcome: None,
                 scenario_exit: None,
+                scenario_restart_requested: false,
                 scenario_elapsed_clock:
                     crate::app::match_runtime::frame_pacer::ScenarioElapsedClock::new(),
                 configured_input_delay_ticks: input_delay_ticks,
@@ -630,6 +637,7 @@ impl App {
                 skirmish_modes,
                 loading_session: None,
                 frontend_main_rng: crate::sim::rng::MainRng::new(u64::from(frontend_seed.value)),
+                startup_rng_seed: frontend_seed.value,
                 legacy_crt_rng: crate::util::legacy_crt_rng::LegacyCrtRng::default(),
                 next_match_correlation: 1,
                 random_map_generation: None,
@@ -642,7 +650,7 @@ impl App {
                 shell_preview_overlay_registry: None,
                 skirmish_shell_state,
                 choose_map_last_mode_row: None,
-                offline_skirmish_runtime,
+                multiplayer_shell_runtime,
                 skirmish_shell_last_painted_pressed_button: None,
                 skirmish_shell_chrome,
                 main_menu_shell_state: crate::ui::main_menu_shell::MainMenuShellState::default(),
@@ -669,7 +677,7 @@ impl App {
                 shell_exit: None,
                 quit_cascade: None,
                 startup_splash,
-                exit_confirm_modal: None,
+                shell_message_box: None,
                 options_dialog: None,
                 keyboard_dialog: None,
                 movie_list: None,
@@ -679,9 +687,16 @@ impl App {
                 campaign: None,
                 campaign_art: None,
                 load_saved_game: None,
-                wol_welcome: None,
+                wol: None,
+                wol_account: Default::default(),
                 network_options: None,
+                lan: None,
+                multiplayer_setup: None,
+                network_setup_protocol: None,
                 wol_welcome_art: None,
+                wol_login_art: None,
+                wol_lobby_art: None,
+                wol_lobby_globals: Default::default(),
                 score_page: None,
                 campaign_score_page: None,
                 score_art: None,
@@ -760,6 +775,7 @@ fn quickplay_launch_session(selected_map: String) -> crate::skirmish_launch::Ski
     };
     SkirmishLaunchSession {
         mode: SkirmishLaunchMode {
+            class: crate::skirmish_modes::MpModeClass::Battle,
             id: 1,
             ui_name_key: "GUI:Battle".to_string(),
             tooltip_key: "STT:ModeBattle".to_string(),
@@ -772,19 +788,25 @@ fn quickplay_launch_session(selected_map: String) -> crate::skirmish_launch::Ski
         selected_map_file: Some(selected_map),
         // The local House takes the player name, so naming it after the
         // country lets a fixture map's `Americans`-owned objects spawn.
-        player_name: "Americans".to_string(),
-        local: SkirmishLocalSlot {
-            country: LaunchCountry::America,
-            country_random: false,
-            // Stock colour slot 2 (DarkBlue), the colour the fixture campaign
-            // maps give their Allied objects, so retail captures compare cleanly.
-            color_index: 2,
-            color_random: false,
-            start_position: LaunchStartPosition::Position(0),
-            team: LaunchTeam::None,
-        },
+        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+            raw_slot_index: Some(0),
+            name: "Americans".to_string(),
+            slot: SkirmishLocalSlot {
+                country: LaunchCountry::America,
+                country_random: false,
+                // Stock colour slot 2 (DarkBlue), the colour the fixture campaign
+                // maps give their Allied objects, so retail captures compare cleanly.
+                color_index: 2,
+                color_random: false,
+                start_position: LaunchStartPosition::Position(0),
+                team: LaunchTeam::None,
+            },
+            role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+        }],
+        local_player_index: 0,
         // An empty AI house is still a contender: its automatic defeat would
         // award victory to the fixture owner and end the comparison session.
+        ai_player_count: 0,
         opponents: Vec::new(),
         pre_fill_house_roster: crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(0),
         options: SkirmishLaunchOptions {
@@ -843,7 +865,7 @@ mod tests {
         );
         assert_eq!(session.options.unit_count, 0);
         assert!(session.opponents.is_empty());
-        assert_eq!(session.pre_fill_house_roster.required_start_count(), 1);
+        assert_eq!(session.required_start_count(), 1);
         assert!(
             session
                 .pre_fill_house_roster
@@ -876,6 +898,7 @@ mod tests {
                 // Its empty second contender must still exercise ordinary
                 // automatic defeat/victory, rather than globally disabling it.
                 session.opponents.push(SkirmishAiSlot {
+                    raw_slot_index: 1,
                     country: LaunchCountry::Russia,
                     country_random: false,
                     color_index: 1,
@@ -892,7 +915,7 @@ mod tests {
                     .unwrap();
             assert_eq!(loaded.map.entities.len(), 19);
             assert_eq!(loaded.sim().entities().len(), 19, "no generated forces");
-            let owner = loaded.sim().interner.get("Americans").unwrap();
+            let owner = loaded.sim().interner().get("Americans").unwrap();
             let authored: Vec<_> = loaded
                 .sim()
                 .entities()
@@ -901,7 +924,12 @@ mod tests {
                 .collect();
             assert!(loaded.sim().entities().values().all(|e| e.owner() == owner));
             assert_eq!(
-                loaded.sim().contending_house_count(),
+                loaded
+                    .sim()
+                    .houses()
+                    .values()
+                    .filter(|house| !house.multiplay_passive())
+                    .count(),
                 if previous_empty_opponent { 2 } else { 1 }
             );
             assert!(
@@ -942,8 +970,8 @@ mod tests {
                     );
                     assert!(!output.tick.terminal_score_finalized);
                     assert!(loaded.sim().ready_outcome_for_owner(owner).is_none());
-                    let house = &loaded.sim().houses[&owner];
-                    assert!(!house.has_won() && !house.has_lost() && !house.is_defeated);
+                    let house = &loaded.sim().houses()[&owner];
+                    assert!(!house.has_won() && !house.has_lost() && !house.is_defeated());
                     assert!(
                         house.outcome().is_none(),
                         "no hidden false outcome on frame {frame}"
@@ -971,7 +999,7 @@ mod tests {
                     "Previous empty-opponent control: victory on production frame {frame}; 19 authored entities retained"
                 );
             } else {
-                assert_eq!(loaded.sim().session.tick, 300);
+                assert_eq!(loaded.sim().session().tick(), 300);
                 assert_eq!(victory_edges, 0, "no phantom victory EVA");
                 let exit = crate::sim::command::CommandEnvelope::new(
                     owner,
@@ -990,7 +1018,7 @@ mod tests {
                 assert_eq!(output.tick.executed_commands, 1);
                 assert!(!output.tick.frame_committed);
                 assert!(
-                    loaded.sim().quit_requested,
+                    loaded.sim().quit_requested(),
                     "the sandbox still accepts explicit exit"
                 );
                 assert!(loaded.sim().ready_outcome_for_owner(owner).is_none());

@@ -101,7 +101,7 @@ fn map_wall(sim: &mut Simulation, overlay: u8, data: u8) {
     sim.resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(16, 15)
+        .cell_mut_for_test(16, 15)
         .unwrap()
         .bridge_facts
         .overlay_id = Some(overlay);
@@ -244,7 +244,7 @@ fn the_land_row_refuses_after_the_wall_arm() {
     sim.resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(16, 15)
+        .cell_mut_for_test(16, 15)
         .unwrap()
         .speed_costs
         .foot = Some(0);
@@ -311,14 +311,15 @@ fn assert_retail_wall_fire_profile(
     // first Logic turn. Headless load deliberately defaults to serial mode.
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
-    // Normal play's frame loop hashes every PLAY_HASH_INTERVAL frames; a
-    // headless launch would hash every frame, which nothing here reads.
+    // Periodic frame hashes feed replay and sync checks, which nothing here
+    // reads; an interval no tick reaches skips them (11-12% of each frame in
+    // this unoptimized test build).
     scene
         .runtime
         .simulation
-        .hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
+        .hash_state_every(std::num::NonZeroU64::MAX);
     let initial_hash = scene.sim().state_hash();
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let mut orders: Vec<_> = profile["commands"]
         .as_array()
         .unwrap()
@@ -454,13 +455,12 @@ fn assert_retail_wall_fire_profile(
         })
         .collect();
     // Wall damage (Cell480CB0) and that jitter draw the Scenario RNG, so other
-    // Houses' play moves the removal by whole shots. Observe at least the
-    // profile's frames, and one full rearm past the removal.
+    // Houses' play moves the removal by whole shots. Run one full rearm past
+    // the removal, where a further shot at the expired Cell would land; four
+    // profiles' frames bound a run that never removes the wall.
     let profile_ticks = profile["ticks"].as_u64().unwrap();
     let mut step = 0;
-    while step < 4 * profile_ticks
-        && (step < profile_ticks || removed_at.is_none_or(|at| step < at + rearm))
-    {
+    while step < 4 * profile_ticks && removed_at.is_none_or(|at| step < at + rearm) {
         step += 1;
         let before: Vec<_> = patch
             .iter()
@@ -573,8 +573,8 @@ fn assert_retail_wall_fire_profile(
             "ordinary AP reaches stage two beside a pristine same-type child"
         );
         let house = scene.sim().houses.get(&owner).unwrap();
-        assert_eq!(house.economy.credits(), 8500);
-        assert_eq!(house.economy.spent_credits(), 1500);
+        assert_eq!(house.economy().credits(), 8500);
+        assert_eq!(house.economy().spent_credits(), 1500);
     }
     assert!(shots >= 2, "the real weapon reaches repeated impacts");
     assert_eq!(
@@ -979,7 +979,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
             .entities
             .values()
             .filter_map(|entity| {
-                let source = entity.navigation.neighbor_state.cell();
+                let source = entity.navigation.neighbor_state().cell();
                 ((45..=47).contains(&source.0)
                     && (79..=81).contains(&source.1)
                     && source != (46, 80))
@@ -1268,11 +1268,14 @@ fn retail_mtnk_move_crushes_fences_through_per_cell_with_body_rocking() {
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
+    // Periodic frame hashes feed replay and sync checks, which nothing here
+    // reads; an interval no tick reaches skips them (11-12% of each frame in
+    // this unoptimized test build).
     scene
         .runtime
         .simulation
-        .hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
-    let owner = scene.sim().session.current_house.unwrap();
+        .hash_state_every(std::num::NonZeroU64::MAX);
+    let owner = scene.sim().session.current_house().unwrap();
     let command: Command =
         serde_json::from_value(profile["commands"][0]["payload"].clone()).unwrap();
     let order = CommandEnvelope::new(owner, 0, command);

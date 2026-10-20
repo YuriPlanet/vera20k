@@ -195,8 +195,7 @@ fn sim(seed: u64) -> Simulation {
     ] {
         let id = sim.interner.intern(name);
         sim.houses
-            .insert(id, HouseState::new(id, side, None, human, 0, 10));
-        sim.session.house_order.push(id);
+            .register(HouseState::new(id, side, None, human, 0, 10));
     }
     sim
 }
@@ -288,7 +287,7 @@ fn veterancy(sim: &Simulation, id: u64) -> f32 {
 }
 
 fn put_on_attack(sim: &mut Simulation, id: u64) {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_assign_exact(id, MissionId::from_known(MissionType::Attack), now);
 }
 
@@ -296,9 +295,9 @@ fn warp_away_anims(sim: &Simulation) -> Vec<AnimWorldCoord> {
     sim.substrate
         .anims
         .iter()
-        .filter(|(_, anim)| sim.interner.resolve(anim.type_id) == "WARPAWAY")
+        .filter(|(_, anim)| sim.interner.resolve(anim.type_id()) == "WARPAWAY")
         .map(|(&id, anim)| {
-            assert_eq!(anim.draw_flags, TEMPORAL_ANIM_DRAW_FLAGS);
+            assert_eq!(anim.draw_flags(), TEMPORAL_ANIM_DRAW_FLAGS);
             sim.anim_absolute_coord(id).unwrap()
         })
         .collect()
@@ -313,7 +312,7 @@ fn unit_lost_events(sim: &Simulation) -> usize {
 
 fn house_stats(sim: &Simulation, house: &str) -> crate::sim::house_state::MatchStatistics {
     let id = sim.interner.get(house).unwrap();
-    sim.houses.get(&id).unwrap().stats
+    *sim.houses.get(&id).unwrap().stats()
 }
 
 /// Init_Managers reads weapon 0 only, at rookie rank.
@@ -719,7 +718,7 @@ fn erase_awards_price_each_cost_by_its_house() {
         f32::from_bits(expected.veterancy.raw().bits())
     );
     let russians = sim.interner.get("Russians").unwrap();
-    assert_eq!(sim.houses[&russians].economy.score(), 450);
+    assert_eq!(sim.houses[&russians].economy().score(), 450);
 }
 
 /// A warp's start makes a victim that was itself warping let go
@@ -887,7 +886,7 @@ fn a_warped_building_goes_offline() {
     let mut sim = sim(9);
     let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 12, 10);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_assign_exact(plant, MissionId::from_known(MissionType::Guard), now);
     let americans = sim.interner.get("Americans").unwrap();
     let output = |sim: &mut Simulation| {
@@ -896,11 +895,11 @@ fn a_warped_building_goes_offline() {
             &mut sim.substrate.entities,
             &rules,
             &sim.interner,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         );
         sim.power_states
             .get(&americans)
-            .map_or(0, |state| state.total_output)
+            .map_or(0, |state| state.total_output())
     };
     assert_eq!(output(&mut sim), 100);
     assert_eq!(sim.building_operational_state(plant, &rules), Some(true));
@@ -991,10 +990,10 @@ fn a_warped_superweapon_building_holds_its_super() {
     let state = |sim: &Simulation| {
         let inst = &sim.super_weapons[&americans][&nuke];
         (
-            inst.is_active,
-            inst.is_suspended,
-            inst.charge_start_tick,
-            inst.charge_duration,
+            inst.is_active(),
+            inst.is_suspended(),
+            inst.charge_start_tick(),
+            inst.charge_duration(),
         )
     };
     step(&mut sim);
@@ -1048,7 +1047,7 @@ fn a_super_holds_only_while_no_provider_is_online() {
     let [nuke, spy_plane] =
         ["NukeSpecial", "SpyPlaneSpecial"].map(|sw| sim.interner.get(sw).unwrap());
     let step = |sim: &mut Simulation| sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33);
-    let held = |sim: &Simulation, sw| sim.super_weapons[&americans][&sw].is_suspended;
+    let held = |sim: &Simulation, sw| sim.super_weapons[&americans][&sw].is_suspended();
     step(&mut sim);
     assert!(!held(&sim, nuke) && !held(&sim, spy_plane), "both charging");
 
@@ -1099,7 +1098,7 @@ fn erasing_a_superweapon_building_revokes_its_super() {
     let owner = sim.interner.intern("Russians");
     sim.queue_command(CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Attack {
             attacker_id: cleg,
             target_id: silo,
@@ -1115,12 +1114,12 @@ fn erasing_a_superweapon_building_revokes_its_super() {
             erased_at = Some(frame);
             break;
         }
-        held |=
-            head_of(&sim, silo) == Some(cleg) && sim.super_weapons[&americans][&nuke].is_suspended;
+        held |= head_of(&sim, silo) == Some(cleg)
+            && sim.super_weapons[&americans][&nuke].is_suspended();
     }
     assert!(held, "held while warped");
     assert!(erased_at.is_some(), "the silo is erased");
-    assert!(!sim.super_weapons[&americans][&nuke].is_active, "revoked");
+    assert!(!sim.super_weapons[&americans][&nuke].is_active(), "revoked");
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
         SimSoundEvent::SuperWeaponStatusChanged { owner, sw_type }
@@ -1152,7 +1151,7 @@ fn a_warped_object_is_frozen_and_immune() {
         crate::sim::world::FrameEffects::default(),
     );
 
-    sim.session.binary_frame = 48;
+    sim.session.set_binary_frame_for_test(48);
     assert!(
         sim.temporal_ai_prologue(
             tank,
@@ -1171,7 +1170,7 @@ fn a_warped_object_is_frozen_and_immune() {
         .substrate
         .anims
         .iter()
-        .filter(|(_, anim)| sim.interner.resolve(anim.type_id) == "CHRONOSK")
+        .filter(|(_, anim)| sim.interner.resolve(anim.type_id()) == "CHRONOSK")
         .map(|(&id, _)| sim.anim_absolute_coord(id).unwrap())
         .collect();
     let location = location_coord(entity(&sim, tank));
@@ -1180,7 +1179,7 @@ fn a_warped_object_is_frozen_and_immune() {
         (sparkles[0].x, sparkles[0].y, sparkles[0].z),
         (location.x + 0x78, location.y + 0x78, location.z)
     );
-    sim.session.binary_frame = 49;
+    sim.session.set_binary_frame_for_test(49);
     assert!(sim.temporal_ai_prologue(
         tank,
         &rules,
@@ -1191,7 +1190,7 @@ fn a_warped_object_is_frozen_and_immune() {
         sim.substrate
             .anims
             .iter()
-            .filter(|(_, anim)| sim.interner.resolve(anim.type_id) == "CHRONOSK")
+            .filter(|(_, anim)| sim.interner.resolve(anim.type_id()) == "CHRONOSK")
             .count(),
         1,
         "frame 49 does not"
@@ -1259,7 +1258,7 @@ fn a_chrono_legionnaire_erases_a_tank() {
     let owner = sim.interner.intern("Russians");
     sim.queue_command(CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Attack {
             attacker_id: cleg,
             target_id: tank,
@@ -1329,7 +1328,7 @@ fn a_legionnaires_inviso_bullet_warps_after_existing_object_turns() {
         let owner = sim.interner.intern("Russians");
         sim.queue_command(CommandEnvelope::new(
             owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::Attack {
                 attacker_id: cleg,
                 target_id: tank,
@@ -1381,7 +1380,7 @@ fn only_temporal_fire_reaches_a_warped_target() {
     let owner = sim.interner.intern("Russians");
     sim.queue_command(CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Attack {
             attacker_id: gi,
             target_id: tank,
@@ -1414,7 +1413,7 @@ fn moving_releases_the_target() {
     let owner = sim.interner.intern("Russians");
     sim.queue_command(CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Attack {
             attacker_id: cleg,
             target_id: tank,
@@ -1437,7 +1436,7 @@ fn moving_releases_the_target() {
     }
     sim.queue_command(CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Move {
             entity_id: cleg,
             target_rx: 4,
@@ -1573,9 +1572,9 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
     sim.houses
         .get_mut(&americans)
         .unwrap()
-        .economy
+        .economy_mut()
         .set_credits_for_test(5000);
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_assign_exact(gi, MissionId::from_known(MissionType::Guard), now);
     assert!(
         sim.infantry_do_action(
@@ -1620,20 +1619,21 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
         crate::sim::world::FrameEffects::default(),
     );
     let credits_before = sim.houses[&sim.interner.get("Americans").unwrap()]
-        .economy
+        .economy()
         .credits();
     assert!(
         !idle_turn(&mut sim, now.wrapping_add(200_000)),
         "no idle draw while warped"
     );
     // A frame the repair period (14) divides.
-    sim.session.binary_frame = sim.session.binary_frame.next_multiple_of(14);
+    sim.session
+        .set_binary_frame_for_test(sim.session.binary_frame().next_multiple_of(14));
     let ctx = crate::sim::world::ObjectAiCtx::default();
     sim.object_ai_visit_one(plant, Some(&rules), ctx);
     assert_eq!(entity(&sim, plant).health.current(), 300, "no repair");
     assert_eq!(
         sim.houses[&sim.interner.get("Americans").unwrap()]
-            .economy
+            .economy()
             .credits(),
         credits_before,
         "no bill"
@@ -1712,7 +1712,7 @@ fn stop_retains_the_legionnaires_victim_until_attack_dispatch() {
     };
     sim.queue_command(CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Attack {
             attacker_id: cleg,
             target_id: tank,
@@ -1727,7 +1727,7 @@ fn stop_retains_the_legionnaires_victim_until_attack_dispatch() {
     assert_eq!(head_of(&sim, tank), Some(cleg));
     let dispatch = entity(&sim, cleg).mission.dispatch_timer();
     let pending = dispatch
-        .remaining_if_pending(sim.session.binary_frame)
+        .remaining_if_pending(sim.session.binary_frame())
         .expect("the first shot precedes the next Attack dispatch");
     assert!(sim.apply_command_with_overlays(
         "Russians",
@@ -1748,7 +1748,7 @@ fn stop_retains_the_legionnaires_victim_until_attack_dispatch() {
         "Event6 does not release the beam"
     );
     for _ in 0..pending {
-        assert!(!dispatch.due(sim.session.binary_frame));
+        assert!(!dispatch.due(sim.session.binary_frame()));
         step(&mut sim);
         assert_eq!(
             head_of(&sim, tank),
@@ -1756,7 +1756,7 @@ fn stop_retains_the_legionnaires_victim_until_attack_dispatch() {
             "retained until due dispatch"
         );
     }
-    assert!(dispatch.due(sim.session.binary_frame));
+    assert!(dispatch.due(sim.session.binary_frame()));
     step(&mut sim);
     assert_eq!(head_of(&sim, tank), None, "released");
     assert!(!entity(&sim, cleg).temporal.is_warping_someone());
@@ -1779,7 +1779,7 @@ fn a_released_mover_does_not_resume_its_order() {
     };
     sim.queue_command(CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Move {
             entity_id: tank,
             target_rx: 28,
@@ -1946,7 +1946,7 @@ fn a_warped_building_cannot_be_captured() {
         sim.mission_assign_exact(
             engineer,
             MissionId::from_known(MissionType::Capture),
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         )
         .unwrap();
         assert_eq!(
@@ -2196,7 +2196,7 @@ fn native_initiate_warp_corpus() {
             assert_eq!(contacts.slot(slot), Some(factory_id));
         }
         if flag("iron_curtain") {
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             crate::sim::superweapon::invulnerability::apply_invulnerability(
                 sim.substrate.entities.get_mut(target).unwrap(),
                 frame,
@@ -2441,16 +2441,22 @@ fn native_first_head_building_warning_and_release_corpus() {
         } else {
             remote
         };
-        sim.session.current_house = Some(local);
-        sim.session.game_mode_nonzero = input["game_mode"].as_i64().unwrap() != 0;
+        sim.session.set_current_house_for_test(Some(local));
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["game_mode"].as_i64().unwrap() != 0,
+            ),
+        );
         if input["allied"].as_bool() == Some(true) {
             sim.house_alliances
                 .entry("ALLIES2".into())
                 .or_default()
                 .insert("AMERICANS".into());
         }
-        sim.houses.get_mut(&owner).unwrap().multiplay_passive =
-            input["passive"].as_bool() == Some(true);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_multiplay_passive_for_test(input["passive"].as_bool() == Some(true));
         let owner_name = sim.interner.resolve(owner).to_owned();
         // Native Location5248,5248 is cell20's centre; a 2x2 Building's
         // original GetCoords adds its centre and requests radar at21,21.
@@ -2488,7 +2494,8 @@ fn native_first_head_building_warning_and_release_corpus() {
         sim.scenario_rng = SimRng::new(seed);
         sim.main_rng = SimRng::new(seed).into();
         sim.mapgen_rng = SimRng::new(seed);
-        sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         sim.sound_events.clear();
 
         for phase in case["phases"].as_array().unwrap() {
@@ -2627,7 +2634,7 @@ fn arena(seed: u64, rules: &RuleSet) -> (Simulation, crate::sim::pathfinding::Pa
     let mut sim = sim(seed);
     // Native Houses construct all stock Supers before object placement; these
     // synthetic arenas do not run the production scenario bootstrap.
-    for owner in sim.session.house_order.clone() {
+    for owner in sim.houses.order().to_vec() {
         for name in &rules.super_weapon_order {
             let id = sim.interner.intern(name);
             sim.super_weapons.entry(owner).or_default().insert(
@@ -2635,7 +2642,7 @@ fn arena(seed: u64, rules: &RuleSet) -> (Simulation, crate::sim::pathfinding::Pa
                 crate::sim::superweapon::SuperWeaponInstance::new(
                     id,
                     owner,
-                    sim.session.binary_frame as i32,
+                    sim.session.binary_frame() as i32,
                 ),
             );
         }

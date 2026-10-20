@@ -133,19 +133,20 @@ fn selector_fixture(row: &Value) -> SelectorFixture {
     rules.general.total_ai_team_cap = dwords(&row["cap"]);
     rules.general.maximum_ai_defensive_teams = dwords(&row["max_defense"]);
     let mut sim = Simulation::new();
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let owner = sim.interner.intern("H0");
     let enemy = sim.interner.intern("H1");
     for name in [owner, enemy] {
         sim.houses
-            .insert(name, HouseState::new(name, 0, None, false, 0, 10));
+            .register(HouseState::new(name, 0, None, false, 0, 10));
     }
-    sim.session.house_order = vec![owner, enemy];
+    sim.houses.reorder_for_test(&[owner, enemy]);
     let house = sim.houses.get_mut(&owner).unwrap();
-    house.difficulty = HouseDifficulty::from_native(dword(&row["difficulty"])).unwrap();
-    house.team_creation.ratio = dword(&row["ratio"]);
+    house.set_difficulty_for_test(HouseDifficulty::from_native(dword(&row["difficulty"])).unwrap());
+    house.team_creation_mut().ratio = dword(&row["ratio"]);
     house.set_ai_triggers_active(flag(&row["active"]));
-    house.enemy_house = flag(&row["enemy"]).then_some(enemy);
+    house.set_enemy_house_for_test(flag(&row["enemy"]).then_some(enemy));
     let script = sim.interner.intern("SCRIPT");
     let task_force = sim.interner.intern("TASKFORCE");
     sim.team_script_vm.register_script(TeamScriptDefinition {
@@ -361,17 +362,23 @@ fn the_team_block_matches_the_original() {
         let mut rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
         rules.general.team_delays = dwords(&row["delays"]);
         let mut sim = Simulation::new();
-        sim.session.game_mode_nonzero = dword(&row["game_mode"]) != 0;
-        sim.session.binary_frame = dword(&row["frame"]) as u32;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                dword(&row["game_mode"]) != 0,
+            ),
+        );
+        sim.session
+            .set_binary_frame_for_test(dword(&row["frame"]) as u32);
         let owner = sim.interner.intern("H0");
         let mut house = HouseState::new(owner, 0, None, flag(&row["human"]), 0, 10);
-        house.player_control = flag(&row["control"]);
-        house.multiplay_passive = flag(&row["passive"]);
-        house.difficulty = HouseDifficulty::from_native(dword(&row["difficulty"])).unwrap();
-        house.team_creation.timer =
+        house.set_player_control_for_test(flag(&row["control"]));
+        house.set_multiplay_passive_for_test(flag(&row["passive"]));
+        house.set_difficulty_for_test(
+            HouseDifficulty::from_native(dword(&row["difficulty"])).unwrap(),
+        );
+        house.team_creation_mut().timer =
             CdTimer::from_raw(dword(&row["start"]), dword(&row["duration"]));
-        sim.houses.insert(owner, house);
-        sim.session.house_order = vec![owner];
+        sim.houses.register(house);
         let before = rng_digest(&sim.scenario_rng);
         update_team_creation(
             &mut sim,
@@ -379,7 +386,7 @@ fn the_team_block_matches_the_original() {
             owner,
             crate::sim::world::FrameEffects::default(),
         );
-        let timer = sim.houses[&owner].team_creation.timer;
+        let timer = sim.houses[&owner].team_creation().timer;
         assert_eq!(
             vec![timer.start_frame(), timer.duration()],
             dwords(&row["timer"]),

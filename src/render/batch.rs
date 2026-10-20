@@ -1601,7 +1601,8 @@ impl BatchRenderer {
     /// Returns both the raw `wgpu::Texture` (needed for write_texture) and the
     /// `BatchTexture` (needed for draw calls). The texture is created with
     /// `TEXTURE_BINDING | COPY_DST` usage so it can be updated each frame
-    /// without recreating the bind group.
+    /// without recreating the bind group. `filter` samples it when a draw
+    /// scales it: `Nearest` for pixel art, `Linear` for scaled video.
     pub fn create_updatable_texture(
         &self,
         device: &wgpu::Device,
@@ -1609,6 +1610,7 @@ impl BatchRenderer {
         rgba_data: &[u8],
         width: u32,
         height: u32,
+        filter: wgpu::FilterMode,
     ) -> (wgpu::Texture, BatchTexture) {
         let texture: wgpu::Texture = device.create_texture_with_data(
             queue,
@@ -1633,8 +1635,8 @@ impl BatchRenderer {
         let view: wgpu::TextureView = texture.create_view(&Default::default());
         let sampler: wgpu::Sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Updatable Batch Sampler"),
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
+            mag_filter: filter,
+            min_filter: filter,
             ..Default::default()
         });
 

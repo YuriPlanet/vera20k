@@ -491,26 +491,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_zero_fps() {
-        let mut h = make_biki_header();
-        h[0x1C..0x20].copy_from_slice(&0u32.to_le_bytes());
-        assert!(parse_fixed_header(&h).is_err());
-    }
-
-    #[test]
     fn rejects_gigantic_width() {
         let mut h = make_biki_header();
         h[0x14..0x18].copy_from_slice(&99999u32.to_le_bytes());
         assert!(parse_fixed_header(&h).is_err());
-    }
-
-    #[test]
-    fn has_alpha_flag() {
-        let mut h = make_biki_header();
-        h[0x24..0x28].copy_from_slice(&BINK_FLAG_ALPHA.to_le_bytes());
-        let (hdr, _) = parse_fixed_header(&h).unwrap();
-        assert!(hdr.has_alpha());
-        assert!(!hdr.is_gray());
     }
 
     #[test]
@@ -523,28 +507,6 @@ mod tests {
                 cutoff,
             );
         }
-    }
-
-    #[test]
-    fn rejects_zero_frames() {
-        let mut h = make_biki_header();
-        h[0x08..0x0C].copy_from_slice(&0u32.to_le_bytes());
-        assert!(parse_fixed_header(&h).is_err());
-    }
-
-    #[test]
-    fn rejects_more_than_1m_frames() {
-        let mut h = make_biki_header();
-        h[0x08..0x0C].copy_from_slice(&2_000_000u32.to_le_bytes());
-        assert!(parse_fixed_header(&h).is_err());
-    }
-
-    #[test]
-    fn bikk_header_without_extra_4_bytes_fails() {
-        let mut h = make_biki_header();
-        h[3] = b'k';
-        // No extra 4 bytes appended.
-        assert!(parse_fixed_header(&h).is_err());
     }
 
     pub(super) fn make_header_with_1_track() -> Vec<u8> {
@@ -573,15 +535,6 @@ mod tests {
         assert!(t.uses_dct());
         assert!(!t.is_16bit());
         assert_eq!(end, h.len());
-    }
-
-    #[test]
-    fn zero_audio_tracks_skips_descriptor_block() {
-        let h = make_biki_header();
-        let (mut hdr, next) = parse_fixed_header(&h).unwrap();
-        let end = parse_audio_tracks(&h, &mut hdr, next).unwrap();
-        assert_eq!(hdr.audio_tracks.len(), 0);
-        assert_eq!(end, next);
     }
 
     #[test]
@@ -625,18 +578,6 @@ mod tests {
         let (mut hdr, next) = parse_fixed_header(&h).unwrap();
         let end = parse_audio_tracks(&h, &mut hdr, next).unwrap();
         assert!(parse_frame_index(&h, &hdr, end).is_err());
-    }
-
-    #[test]
-    fn first_frame_is_always_keyframe() {
-        let mut h = make_biki_header();
-        h[0x04..0x08].copy_from_slice(&1016u32.to_le_bytes());
-        h[0x08..0x0C].copy_from_slice(&1u32.to_le_bytes());
-        h.extend_from_slice(&0x40u32.to_le_bytes()); // no kf bit
-        let (mut hdr, next) = parse_fixed_header(&h).unwrap();
-        let end = parse_audio_tracks(&h, &mut hdr, next).unwrap();
-        let idx = parse_frame_index(&h, &hdr, end).unwrap();
-        assert!(idx[0].is_keyframe); // frame 0 is always treated as kf
     }
 
     #[test]

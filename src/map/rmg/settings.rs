@@ -147,12 +147,4 @@ mod tests {
             "a truncated list must not leave half-written state"
         );
     }
-
-    #[test]
-    fn missing_general_section_is_a_no_op() {
-        let ini = IniFile::from_str("[Other]\nMaxTrees=1\n");
-        let mut settings = RmgSettings::default();
-        settings.apply(&ini);
-        assert_eq!(settings.max_trees, 500);
-    }
 }

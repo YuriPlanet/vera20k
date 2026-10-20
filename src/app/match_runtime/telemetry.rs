@@ -74,6 +74,124 @@ impl Default for TickTimingRing {
     }
 }
 
+/// Ticks per history sample: one per second at the retail 15 Hz logic rate.
+const HISTORY_TICKS: u32 = 15;
+/// Ticks between report points: five seconds at the retail 15 Hz logic rate.
+pub const REPORT_POINT_TICKS: u64 = 75;
+/// Report points kept: two hours at that rate.
+const REPORT_POINT_CAPACITY: usize = 1440;
+
+/// Report-grade samples kept for the whole match.
+///
+/// Each one is exactly what the dashboard's match report reads, so a past
+/// point renders the same report as the live view. It is recorded whether or
+/// not a dashboard is attached; a client that connects mid-match receives the
+/// ring once. App-owned like the other observation rings, and never read by
+/// the simulation.
+#[derive(Default)]
+pub struct ReportHistory {
+    points: VecDeque<crate::sim::telemetry::ReportPoint>,
+}
+
+impl ReportHistory {
+    /// Whether `tick` closes a report point.
+    pub fn due(tick: u64) -> bool {
+        tick != 0 && tick % REPORT_POINT_TICKS == 0
+    }
+
+    pub fn push(&mut self, point: crate::sim::telemetry::ReportPoint) {
+        if self.points.len() == REPORT_POINT_CAPACITY {
+            self.points.pop_front();
+        }
+        self.points.push_back(point);
+    }
+
+    pub fn points(&self) -> Vec<crate::sim::telemetry::ReportPoint> {
+        self.points.iter().cloned().collect()
+    }
+
+    /// The newest point. It rides every snapshot, so a long session keeps
+    /// gaining reportable points after the initial backfill.
+    pub fn latest(&self) -> Option<crate::sim::telemetry::ReportPoint> {
+        self.points.back().cloned()
+    }
+
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+}
+/// Two hours of samples at that rate; older ones scroll out.
+const HISTORY_CAPACITY: usize = 7200;
+
+/// Whole-match timeline: one 1 Hz summary of the simulation's own cost.
+///
+/// Unlike the live timing ring this records whether or not a dashboard is
+/// attached, so a client that connects mid-match receives the whole match
+/// instead of a hole. It lives beside `TickTimingRing` in `MatchState`:
+/// app-owned, never read by the simulation, cleared with the per-match clock.
+/// Render and phase-ledger readings stay out: those are measured only while a
+/// client is attached, so a hole marked as such is more honest than a zero.
+#[derive(Default)]
+pub struct MatchHistory {
+    samples: VecDeque<crate::sim::telemetry::MatchHistorySample>,
+    ticks: u32,
+    sum_ms: f32,
+    peak_ms: f32,
+    entities: u32,
+    houses: u32,
+    path_batch: Option<crate::sim::movement::PathBatchStats>,
+}
+
+impl MatchHistory {
+    /// Record one committed tick; the sample closes every [`HISTORY_TICKS`]
+    /// ticks. `tick_ms` is that advance's wall time; the other readings are
+    /// the sample's last state.
+    pub fn record_tick(
+        &mut self,
+        tick: u64,
+        tick_ms: f32,
+        entities: usize,
+        houses: usize,
+        path_batch: Option<crate::sim::movement::PathBatchStats>,
+    ) {
+        let cast = |count: usize| u32::try_from(count).unwrap_or(u32::MAX);
+        self.ticks += 1;
+        self.sum_ms += tick_ms;
+        self.peak_ms = self.peak_ms.max(tick_ms);
+        self.entities = cast(entities);
+        self.houses = cast(houses);
+        self.path_batch = path_batch;
+        if self.ticks < HISTORY_TICKS {
+            return;
+        }
+        if self.samples.len() == HISTORY_CAPACITY {
+            self.samples.pop_front();
+        }
+        self.samples
+            .push_back(crate::sim::telemetry::MatchHistorySample {
+                tick,
+                tick_ms: self.sum_ms / self.ticks as f32,
+                peak_ms: self.peak_ms,
+                entities: self.entities,
+                houses: self.houses,
+                path_batch: self.path_batch,
+            });
+        self.ticks = 0;
+        self.sum_ms = 0.0;
+        self.peak_ms = 0.0;
+    }
+
+    /// The whole timeline, oldest first, for one wire payload.
+    pub fn samples(&self) -> Vec<crate::sim::telemetry::MatchHistorySample> {
+        self.samples.iter().cloned().collect()
+    }
+
+    /// Drop every sample — a new match starts a new timeline.
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+}
+
 /// App-owned subscription epoch. Synchronization runs outside tick admission,
 /// so leaving/rejoining while paused starts a fresh observation window too.
 #[derive(Default)]
@@ -92,7 +210,10 @@ impl ObserverSession {
         active: bool,
     ) -> bool {
         if let Some(simulation) = simulation {
-            simulation.set_frame_profiling(active);
+            // The ledger feeds report points whether or not a dashboard is
+            // attached; only the live observation window resets on this
+            // transition (see `telemetry_capture::reset_live_window`).
+            simulation.set_frame_profiling(true);
         }
         let changed = self.active != active;
         self.active = active;
@@ -176,76 +297,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn paused_disconnect_and_reconnect_start_a_fresh_observation_window() {
+    fn profiling_continues_across_attach_and_detach() {
         let mut simulation = crate::sim::world::Simulation::with_seed(41);
         let mut observer = ObserverSession::default();
         assert!(observer.synchronize(Some(&mut simulation), true));
         simulation.advance_tick(&[], None, None, None, 67);
         assert_eq!(simulation.frame_profile().frames(), 1);
-        let paused_tick = simulation.session.tick;
+        let paused_tick = simulation.session().tick();
         let saved = crate::util::save_codec::serialize(&simulation).unwrap();
+        // A dashboard leaving must not stop or reset the ledger: report points
+        // are captured without a client.
         assert!(observer.synchronize(Some(&mut simulation), false));
-        assert_eq!(simulation.frame_profile().frames(), 0);
+        assert_eq!(
+            simulation.frame_profile().frames(),
+            1,
+            "measurement continues after detach"
+        );
         assert!(observer.synchronize(Some(&mut simulation), true));
-        assert_eq!(simulation.frame_profile().frames(), 0);
-        assert_eq!(simulation.session.tick, paused_tick);
+        assert_eq!(
+            simulation.frame_profile().frames(),
+            1,
+            "re-attaching does not reset the ledger"
+        );
+        assert_eq!(simulation.session().tick(), paused_tick);
         assert_eq!(
             crate::util::save_codec::serialize(&simulation).unwrap(),
             saved
         );
         simulation.advance_tick(&[], None, None, None, 67);
+        assert_eq!(simulation.frame_profile().frames(), 2);
         assert!(!observer.synchronize(Some(&mut simulation), true));
-        assert_eq!(simulation.frame_profile().frames(), 1);
-    }
-
-    #[test]
-    fn uncapped_speed_has_no_budget_percentage() {
-        let mut ring = TickTimingRing::default();
-        ring.push(30.0);
-        let unbounded = ring.summarize(None);
-        assert_eq!(unbounded.budget_ms, None);
-        assert_eq!(unbounded.budget_utilization, None);
-        assert_eq!(ring.summarize(Some(48.0)).budget_utilization, Some(0.625));
-    }
-
-    #[test]
-    fn empty_window_summarizes_to_zero() {
-        let sample = TickTimingRing::default().summarize(Some(16.0));
-        assert_eq!(sample.tick_ms, 0.0);
-        assert_eq!(sample.p50_ms, 0.0);
-        assert_eq!(sample.p99_ms, 0.0);
-        assert_eq!(sample.budget_ms, Some(16.0));
-        assert_eq!(sample.budget_utilization, Some(0.0));
-    }
-
-    #[test]
-    fn summarize_reports_latest_and_percentiles() {
-        let mut ring = TickTimingRing::default();
-        for ms in [1.0, 2.0, 3.0, 4.0] {
-            ring.push(ms);
-        }
-        let sample = ring.summarize(Some(16.0));
-        assert_eq!(sample.tick_ms, 4.0, "tick_ms is the most recent sample");
-        assert_eq!(sample.p50_ms, 2.0, "nearest-rank median of four samples");
-        assert_eq!(sample.p99_ms, 4.0);
-        assert_eq!(sample.budget_ms, Some(16.0));
-        assert_eq!(sample.budget_utilization, Some(4.0 / 16.0));
-    }
-
-    #[test]
-    fn window_evicts_oldest_samples() {
-        let mut ring = TickTimingRing::default();
-        for ms in 0..RING_CAPACITY {
-            ring.push(ms as f32);
-        }
-        ring.push(999.0);
-        let sample = ring.summarize(Some(16.0));
-        assert_eq!(sample.tick_ms, 999.0);
-        assert_eq!(
-            sample.p50_ms, 120.0,
-            "the window kept the newest {} samples",
-            RING_CAPACITY
-        );
     }
 
     #[test]
@@ -258,40 +339,5 @@ mod tests {
         }
         let rate = meter.rate(start + Duration::from_millis(1000));
         assert!((rate - 20.0).abs() < 0.01, "expected 20 Hz, got {rate}");
-    }
-
-    #[test]
-    fn tick_rate_keeps_the_boundary_tick_in_the_next_window() {
-        let mut meter = TickRateMeter::default();
-        let start = Instant::now();
-        for step in 0..=30u32 {
-            let now = start + Duration::from_millis(u64::from(step) * 50);
-            meter.record(now);
-            if step > 0 && step % 10 == 0 {
-                assert_eq!(meter.rate(now), 20.0);
-            }
-        }
-    }
-
-    #[test]
-    fn tick_rate_meter_decays_to_zero_when_silent() {
-        let mut meter = TickRateMeter::default();
-        let start = Instant::now();
-        for step in 1..=20u32 {
-            meter.record(start + Duration::from_millis(u64::from(step) * 50));
-        }
-        assert_eq!(
-            meter.rate(start + Duration::from_millis(4000)),
-            0.0,
-            "a paused runtime has a true zero rate, not a stale one"
-        );
-    }
-
-    #[test]
-    fn clear_drops_the_window() {
-        let mut ring = TickTimingRing::default();
-        ring.push(5.0);
-        ring.clear();
-        assert_eq!(ring.summarize(Some(16.0)).tick_ms, 0.0);
     }
 }

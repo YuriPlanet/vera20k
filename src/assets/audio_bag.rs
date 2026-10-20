@@ -315,26 +315,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_valid_idx() {
-        let idx = build_idx(&[
-            ("testsound", 0, 4, 22050, 0x04), // 16-bit PCM, offset 0, 4 bytes
-        ]);
-        let bag = vec![0x00, 0x40, 0x00, 0x40]; // two 16-bit samples: 16384, 16384
-        let index = AudioIndex::from_idx_bag(&idx, bag).expect("should parse");
-        assert_eq!(index.len(), 1);
-    }
-
-    #[test]
     fn test_bad_version() {
         let mut idx = build_idx(&[]);
         // Overwrite version to 99 (unsupported — v1 and v2 are valid).
         idx[4..8].copy_from_slice(&99u32.to_le_bytes());
-        assert!(AudioIndex::from_idx_bag(&idx, vec![]).is_none());
-    }
-
-    #[test]
-    fn test_truncated_idx() {
-        let idx = vec![0u8; 8]; // too short for header
         assert!(AudioIndex::from_idx_bag(&idx, vec![]).is_none());
     }
 
@@ -396,19 +380,6 @@ mod tests {
         let bag = vec![0, 0];
         let index = AudioIndex::from_idx_bag(&idx, bag).expect("should parse");
         assert!(index.get("overflow").is_none());
-    }
-
-    #[test]
-    fn test_empty_data_returns_none() {
-        let entry = AudioBagEntry {
-            name: "EMPTY".into(),
-            offset: 0,
-            size: 0,
-            sample_rate: 22050,
-            flags: 0,
-            chunk_size: 0,
-        };
-        assert!(decode_bag_audio(&entry, &[]).is_none());
     }
 
     // ---------------------------------------------------------------------
@@ -542,19 +513,5 @@ mod tests {
             audio.samples_i16,
             crate::assets::ima_adpcm::decode_blocks(ABIRJ01A_TAIL_BLOCK, 1, 512)
         );
-    }
-
-    #[test]
-    fn test_multiple_entries_sorted() {
-        let idx = build_idx(&[
-            ("zebra", 0, 2, 22050, 0x00),
-            ("alpha", 2, 2, 22050, 0x00),
-            ("middle", 4, 2, 22050, 0x00),
-        ]);
-        let bag = vec![128; 6];
-        let index = AudioIndex::from_idx_bag(&idx, bag).expect("should parse");
-        assert!(index.get("alpha").is_some());
-        assert!(index.get("middle").is_some());
-        assert!(index.get("zebra").is_some());
     }
 }

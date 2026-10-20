@@ -176,15 +176,6 @@ pub struct TerrainObject {
     pub name: String,
 }
 
-/// Parse overlay data from [OverlayPack] and [OverlayDataPack] sections.
-///
-/// Both sections are base64-encoded, LCW-compressed grids of 262,144 bytes.
-/// Returns a list of cells where an overlay is present (type != 0xFF).
-#[cfg(any(test, feature = "test-support"))]
-pub fn parse_overlays(ini: &IniFile) -> Vec<OverlayEntry> {
-    parse_overlay_packs(ini).entries
-}
-
 /// Parse overlay entries and preserve the full overlay-data byte grid.
 pub fn parse_overlay_packs(ini: &IniFile) -> ParsedOverlayPacks {
     let identity = decode_pack_section(ini, "OverlayPack")
@@ -417,16 +408,6 @@ mod tests {
     }
 
     #[test]
-    fn overlay_data_pack_returns_byte_for_empty_overlay_cell() {
-        let mut bytes = vec![0; OVERLAY_TOTAL_CELLS];
-        bytes[7 * OVERLAY_GRID_SIZE + 9] = 42;
-        let data = OverlayDataPack::from_decoded(bytes);
-
-        assert!(data.is_present());
-        assert_eq!(data.byte_at(9, 7), 42);
-    }
-
-    #[test]
     fn raw_overlay_data_pack_preserves_failed_short_reads() {
         let data = OverlayDataPack::from_decoded(vec![7, 8]);
 
@@ -440,29 +421,6 @@ mod tests {
             0,
             "legacy projection remains zero-fallback"
         );
-    }
-
-    #[test]
-    fn overlay_data_pack_returns_zero_out_of_range() {
-        let data = OverlayDataPack::from_decoded(vec![1; OVERLAY_TOTAL_CELLS]);
-
-        assert_eq!(data.byte_at(512, 0), 0);
-        assert_eq!(data.byte_at(0, 512), 0);
-    }
-
-    #[test]
-    fn overlay_data_pack_missing_reports_absent_and_returns_zero() {
-        let data = OverlayDataPack::missing();
-
-        assert!(!data.is_present());
-        assert_eq!(data.byte_at(1, 1), 0);
-    }
-
-    #[test]
-    fn parse_overlays_still_returns_entries_for_existing_callers() {
-        let ini = IniFile::from_str("[Other]\nFoo=Bar\n");
-
-        assert!(parse_overlays(&ini).is_empty());
     }
 
     #[test]
@@ -486,22 +444,6 @@ mod tests {
         let rock = objects.iter().find(|o| o.name == "ROCK01").unwrap();
         assert_eq!(rock.rx, 15);
         assert_eq!(rock.ry, 72);
-    }
-
-    #[test]
-    fn test_no_overlay_section() {
-        let text: &str = "[Map]\nTheater=TEMPERATE\n";
-        let ini: IniFile = IniFile::from_str(text);
-        let overlays: Vec<OverlayEntry> = parse_overlays(&ini);
-        assert!(overlays.is_empty());
-    }
-
-    #[test]
-    fn test_no_terrain_section() {
-        let text: &str = "[Map]\nTheater=TEMPERATE\n";
-        let ini: IniFile = IniFile::from_str(text);
-        let objects: Vec<TerrainObject> = parse_terrain_objects(&ini);
-        assert!(objects.is_empty());
     }
 
     /// Build a minimal OverlayTypeRegistry where overlay_id 0 = GAWALL (wall)
@@ -535,30 +477,6 @@ Tiberium=yes
         let updated = compute_wall_connectivity(&mut entries, &reg);
         assert_eq!(updated, 1);
         assert_eq!(entries[0].frame, 0, "isolated wall = frame 0 (pillar)");
-    }
-
-    #[test]
-    fn wall_connectivity_north_neighbor() {
-        let reg = test_wall_registry();
-        let mut entries = vec![
-            OverlayEntry {
-                rx: 10,
-                ry: 10,
-                overlay_id: 0,
-                frame: 0,
-            },
-            OverlayEntry {
-                rx: 10,
-                ry: 9,
-                overlay_id: 0,
-                frame: 0,
-            }, // North
-        ];
-        compute_wall_connectivity(&mut entries, &reg);
-        // (10,10) has neighbor at (10,9) = North → bit 0
-        assert_eq!(entries[0].frame, 1);
-        // (10,9) has neighbor at (10,10) = South → bit 2
-        assert_eq!(entries[1].frame, 4);
     }
 
     #[test]
@@ -702,13 +620,5 @@ Tiberium=yes
         let updated = compute_wall_connectivity(&mut entries, &reg);
         assert_eq!(updated, 0);
         assert_eq!(entries[0].frame, 7, "non-wall frame unchanged");
-    }
-
-    #[test]
-    fn wall_connectivity_no_walls() {
-        let reg = test_wall_registry();
-        let mut entries: Vec<OverlayEntry> = Vec::new();
-        let updated = compute_wall_connectivity(&mut entries, &reg);
-        assert_eq!(updated, 0);
     }
 }

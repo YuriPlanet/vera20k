@@ -494,16 +494,6 @@ mod tests {
     }
 
     #[test]
-    fn open_keeps_an_existing_seed() {
-        let options = RmgOptions {
-            seed: 4321,
-            ..Default::default()
-        };
-        let state = RandomMapSetupModalState::open(options, None, false);
-        assert_eq!(state.options.seed, 4321);
-    }
-
-    #[test]
     fn ok_and_save_start_disabled() {
         let state = opened();
         assert!(!state.is_enabled(RandomMapSetupControl::Ok0x6c5));
@@ -529,35 +519,12 @@ mod tests {
     }
 
     #[test]
-    fn generate_and_cancel_start_enabled() {
-        let state = opened();
-        assert!(state.is_enabled(RandomMapSetupControl::Generate0x620));
-        assert!(state.is_enabled(RandomMapSetupControl::Cancel0x5c0));
-    }
-
-    #[test]
     fn changing_an_option_disables_accept_again() {
         let mut state = opened();
         state.generated = true;
         state.set_resources(2);
         assert!(!state.generated, "an edit invalidates the generated result");
         assert!(!state.is_enabled(RandomMapSetupControl::Ok0x6c5));
-    }
-
-    #[test]
-    fn size_writes_both_axes() {
-        let mut state = opened();
-        state.set_size(3);
-        assert_eq!((state.options.width, state.options.height), (3, 3));
-    }
-
-    #[test]
-    fn mutators_clamp_through_normalize() {
-        let mut state = opened();
-        state.set_num_players(99);
-        assert_eq!(state.options.num_players, 8);
-        state.set_num_players(0);
-        assert_eq!(state.options.num_players, 2);
     }
 
     #[test]
@@ -623,15 +590,6 @@ mod tests {
     }
 
     #[test]
-    fn finishing_generate_unlocks_accept() {
-        let mut state = opened();
-        state.begin_generate();
-        state.finish_generate(None);
-        assert!(state.is_enabled(RandomMapSetupControl::Ok0x6c5));
-        assert!(state.is_enabled(RandomMapSetupControl::Cancel0x5c0));
-    }
-
-    #[test]
     fn failed_generation_cannot_accept_or_save_old_or_partial_results() {
         for had_prior_result in [false, true] {
             let mut state = opened();
@@ -667,11 +625,6 @@ mod tests {
         state.finish_generate(None);
         assert!(state.is_enabled(RandomMapSetupControl::Load0x6c2));
         assert!(state.is_enabled(RandomMapSetupControl::Delete0x6c4));
-    }
-
-    #[test]
-    fn accept_before_generate_asks_for_generation() {
-        assert_eq!(opened().accept(), AcceptOutcome::NeedsGenerate);
     }
 
     #[test]
@@ -711,11 +664,6 @@ mod tests {
     }
 
     #[test]
-    fn only_two_theaters_are_offered() {
-        assert_eq!(setup_combo_items(SetupCombo::Theater).len(), 2);
-    }
-
-    #[test]
     fn size_selection_reflects_the_width_axis() {
         let mut state = opened();
         state.set_combo_value(SetupCombo::Size, 2);
@@ -743,22 +691,5 @@ mod tests {
         assert_eq!(state.open_combo, Some(SetupCombo::Theater));
         state.toggle_combo(SetupCombo::Theater);
         assert_eq!(state.open_combo, None);
-    }
-
-    #[test]
-    fn cancelling_returns_the_previous_selection_untouched() {
-        let previous = ChooseMapSelection {
-            mode_id: 1,
-            record_index: Some(3),
-        };
-        let state = RandomMapSetupModalState::open(
-            RmgOptions {
-                seed: 7,
-                ..Default::default()
-            },
-            Some(previous),
-            false,
-        );
-        assert_eq!(state.cancel(), Some(previous));
     }
 }

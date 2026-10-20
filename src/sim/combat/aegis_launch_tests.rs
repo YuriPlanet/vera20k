@@ -69,7 +69,7 @@ impl AegisScene {
                 crate::sim::mission::MissionId::from_known(
                     crate::sim::mission::MissionType::Attack,
                 ),
-                world.session.binary_frame,
+                world.session.binary_frame(),
             )
             .unwrap();
         Some(Self {
@@ -101,7 +101,7 @@ impl AegisScene {
     }
 
     fn fire(&mut self, frame: u32) -> Projectile {
-        self.world.session.binary_frame = frame;
+        self.world.session.set_binary_frame_for_test(frame);
         let actor = self.world.substrate.entities.get(self.aegis).unwrap();
         let object = self.rules.object("AEGIS").unwrap();
         let selected = combat_weapon::resolve_weapon_index(
@@ -150,16 +150,16 @@ impl AegisScene {
         assert_eq!(
             self.world
                 .interner
-                .resolve(bullet.payload.installed_weapon().unwrap()),
+                .resolve(bullet.payload().installed_weapon().unwrap()),
             expected_weapon
         );
-        assert_eq!(bullet.source_id, self.aegis);
+        assert_eq!(bullet.source_id(), self.aegis);
         assert_eq!(
-            bullet.target,
+            bullet.target(),
             crate::sim::projectile::ProjectileTarget::Entity(self.target)
         );
-        assert_eq!(bullet.guidance.unwrap().rot, 20);
-        assert_eq!(bullet.guidance.unwrap().course_lock_duration, 15);
+        assert_eq!(bullet.guidance().unwrap().rot, 20);
+        assert_eq!(bullet.guidance().unwrap().course_lock_duration, 15);
         bullet.clone()
     }
 }
@@ -182,7 +182,7 @@ fn retail_normal_and_elite_medusa_advance_the_fan_per_actual_shot() {
             assert_eq!(scene.radial_index(), shot % 10);
             assert_eq!(scene.burst_index(), if elite { shot % 2 } else { 0 });
             let bullet = scene.fire(100 + shot as u32 * 40);
-            velocities.push(bullet.velocity);
+            velocities.push(bullet.velocity());
             assert_eq!(scene.radial_index(), (shot + 1) % 10);
             assert_eq!(scene.burst_index(), if elite { (shot + 1) % 2 } else { 0 });
         }
@@ -289,12 +289,12 @@ fn mid_fan_snapshot_retains_counter_hash_and_continued_shots() {
     // BulletLoad46AE9C..46AEB0 restarts both timers at the loaded frame;
     // C4/CC is represented by arm_timer. Compare against that native load
     // result, then apply the same documented reset to the reference history.
-    let loaded_frame = scene.world.session.binary_frame as i32;
+    let loaded_frame = scene.world.session.binary_frame() as i32;
     for (id, before) in scene.world.projectiles.iter_mut() {
         let after = restored.world.projectiles.get(*id).unwrap();
-        assert_eq!(after.arm_timer.start_frame(), loaded_frame);
-        assert_eq!(after.arm_timer.duration(), 0);
-        before.arm_timer.start(loaded_frame, 0);
+        assert_eq!(after.arm_timer().start_frame(), loaded_frame);
+        assert_eq!(after.arm_timer().duration(), 0);
+        before.arm_timer_mut_for_test().start(loaded_frame, 0);
         assert_eq!(
             before, after,
             "BulletLoad changes only the represented timer for bullet {id}"

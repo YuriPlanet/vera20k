@@ -67,8 +67,7 @@ fn nuke_maker_matches_native() {
         sim.resolve_type_handles(&rules);
         let owner = sim.interner.intern("Russians");
         sim.houses
-            .insert(owner, HouseState::new(owner, 1, None, true, 0, 10));
-        sim.session.house_order.push(owner);
+            .register(HouseState::new(owner, 1, None, true, 0, 10));
         sim.resolved_terrain = Some(test_grid(80, 80, |x, y| ResolvedTerrainCell {
             level: if (x, y) == cell { level } else { 0 },
             ..test_flat_cell(x, y)
@@ -128,9 +127,9 @@ fn nuke_maker_matches_native() {
         let origin: Vec<i32> = fire[1].as_array().unwrap().iter().map(int).collect();
         assert_eq!(
             vec![
-                bullet.launch_origin.x,
-                bullet.launch_origin.y,
-                bullet.launch_origin.z
+                bullet.launch_origin().x,
+                bullet.launch_origin().y,
+                bullet.launch_origin().z
             ],
             origin,
             "{row}"
@@ -143,22 +142,22 @@ fn nuke_maker_matches_native() {
             .collect();
         assert_eq!(
             bullet
-                .velocity
+                .velocity()
                 .native()
                 .map(|component| component.bits())
                 .to_vec(),
             velocity,
             "{row}"
         );
-        assert_eq!(bullet.payload.base_damage, int(&construct[1]), "{row}");
+        assert_eq!(bullet.payload().base_damage, int(&construct[1]), "{row}");
         assert_eq!(
             sim.interner
-                .resolve(bullet.payload.installed_weapon().unwrap()),
+                .resolve(bullet.payload().installed_weapon().unwrap()),
             "NukePayload"
         );
-        assert_eq!(sim.interner.resolve(bullet.payload.warhead), "NUKE");
+        assert_eq!(sim.interner.resolve(bullet.payload().warhead), "NUKE");
         assert_eq!(
-            bullet.trajectory,
+            bullet.trajectory(),
             ProjectileTrajectory::Vertical {
                 detonation_altitude: 30000,
                 acceleration: 1,
@@ -166,6 +165,6 @@ fn nuke_maker_matches_native() {
             },
             "{row}"
         );
-        assert_eq!((bullet.target, bullet.source_id), (target, source_id));
+        assert_eq!((bullet.target(), bullet.source_id()), (target, source_id));
     }
 }

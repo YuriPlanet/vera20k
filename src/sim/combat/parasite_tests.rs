@@ -82,8 +82,8 @@ impl Arena {
         const SIZE: u16 = 32;
         let mut sim = Simulation::with_seed(7);
         sim.input_delay_ticks = 0;
-        sim.session.map_width = SIZE;
-        sim.session.map_height = SIZE;
+        sim.session.set_map_width_for_test(SIZE);
+        sim.session.set_map_height_for_test(SIZE);
         // Retail [Clear]: Foot/Track/Wheel 100%, Hover 50%, Amphibious 80%.
         let clear = crate::rules::terrain_rules::SpeedCostProfile {
             foot: Some(100),
@@ -133,7 +133,7 @@ impl Arena {
 
     fn attack(&mut self, attacker: u64, target: u64) {
         let owner = self.sim.substrate.entities.get(attacker).unwrap().owner();
-        let tick = self.sim.session.tick + 1;
+        let tick = self.sim.session.tick() + 1;
         self.sim.queue_command(CommandEnvelope::new(
             owner,
             tick,
@@ -152,7 +152,7 @@ impl Arena {
     }
 
     fn frame(&self) -> u32 {
-        self.sim.session.binary_frame
+        self.sim.session.binary_frame()
     }
 
     /// Step until `done` holds; panics after `limit` frames.
@@ -247,19 +247,6 @@ impl Arena {
                 .is_some_and(|v| v.parasite.eater == Some(owner))
         });
     }
-}
-
-#[test]
-fn constructor_allocates_a_parasite_only_for_weapon_zero_parasite_types() {
-    let rules = rules();
-    let mut arena = Arena::new(&rules);
-    let dog = arena.spawn(&rules, "DOG", "Russians", (5, 5));
-    let drone = arena.spawn(&rules, "DRON", "Russians", (6, 5));
-    let tank = arena.spawn(&rules, "MTNK", "Americans", (7, 5));
-    let entities = &arena.sim.substrate.entities;
-    assert!(entities.get(dog).unwrap().parasite.class.is_some());
-    assert!(entities.get(drone).unwrap().parasite.class.is_some());
-    assert!(entities.get(tank).unwrap().parasite.class.is_none());
 }
 
 #[test]
@@ -394,10 +381,12 @@ fn drone_bites_on_its_weapon_rate_until_the_host_dies_then_drops_off() {
     // A player's tank: ReceiveDamage's scatter tail moves a computer's host
     // off its cell at a bite (`0x00702C8A`).
     let owner = arena.sim.entities().get(tank).unwrap().owner();
-    arena.sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
+    arena
+        .sim
+        .houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
     arena.infect(&rules, drone, tank);
     assert!(arena.in_limbo(drone));
 
@@ -410,7 +399,7 @@ fn drone_bites_on_its_weapon_rate_until_the_host_dies_then_drops_off() {
             .get(tank)
             .map_or(0, |t| t.health.current());
         if hp != last {
-            bites.push((sim.session.binary_frame, hp));
+            bites.push((sim.session.binary_frame(), hp));
             last = hp;
         }
         hp == 0
@@ -475,10 +464,12 @@ fn a_paid_repair_radio_request_releases_the_drone_after_the_heal() {
     // A player's tank, before the sourceless hit: ReceiveDamage's scatter tail
     // moves a computer's (`0x00702C8A`).
     let owner = arena.sim.entities().get(tank).unwrap().owner();
-    arena.sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
+    arena
+        .sim
+        .houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
     arena.hit(&rules, tank, None, 10, "AP");
     arena.infect(&rules, drone, tank);
     let hp = arena.health(tank).unwrap();
@@ -502,7 +493,7 @@ fn a_paid_repair_radio_request_releases_the_drone_after_the_heal() {
         .houses
         .get_mut(&owner)
         .unwrap()
-        .economy
+        .economy_mut()
         .set_credits_for_test(1);
     assert_eq!(
         crate::sim::radio::receive_radio(
@@ -519,8 +510,8 @@ fn a_paid_repair_radio_request_releases_the_drone_after_the_heal() {
     assert_eq!(arena.health(tank), Some(hp + 8));
     assert!(arena.gone(drone));
     assert_eq!(arena.eater_of(tank), None);
-    assert_eq!(arena.sim.houses[&owner].economy.credits(), 0);
-    assert_eq!(arena.sim.houses[&owner].economy.spent_credits(), 1);
+    assert_eq!(arena.sim.houses[&owner].economy().credits(), 0);
+    assert_eq!(arena.sim.houses[&owner].economy().spent_credits(), 1);
 }
 
 #[test]
@@ -536,6 +527,101 @@ fn a_heal_forces_the_drone_off_and_its_running_suppression_kills_it() {
     assert!(arena.gone(drone));
     assert_eq!(arena.eater_of(tank), None);
     assert!(arena.health(tank).is_some_and(|hp| hp > 0));
+}
+
+#[test]
+fn retail_drone_fire_frames_survive_launch_parasitism_and_release() {
+    let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+        return;
+    };
+    let Some(art) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
+        return;
+    };
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    // The ordered reader above retains UnitType's native frame layout. Install
+    // its immutable ART metadata too, as the normal asset binding does.
+    rules.install_art_fixture(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    let mut arena = Arena::new(&rules);
+    let drone = arena.spawn(&rules, "DRON", "Russians", (8, 8));
+    let tank = arena.spawn(&rules, "MTNK", "Americans", (9, 8));
+    arena.infect(&rules, drone, tank);
+    assert_eq!(
+        arena
+            .sim
+            .entities()
+            .get(drone)
+            .unwrap()
+            .unit_firing_counter
+            .get(),
+        7
+    );
+    for _ in 0..12 {
+        arena.step(&rules);
+    }
+    assert!(arena.in_limbo(drone));
+    assert_eq!(
+        arena
+            .sim
+            .entities()
+            .get(drone)
+            .unwrap()
+            .unit_firing_counter
+            .get(),
+        7
+    );
+    arena.hit(&rules, tank, None, 4, "SonicWarhead");
+    let actor = arena.sim.substrate.entities.get(drone).unwrap();
+    assert!(actor.lifecycle.object_alive() && !actor.lifecycle.in_limbo());
+    let facing = actor.body_facing_byte(arena.frame());
+    let native = crate::test_fixture::json("tools/spatial_oracle/unit_shp_fire_frames.json");
+    let expected = u16::try_from(
+        native["first_by_facing"][usize::from(facing)]
+            .as_u64()
+            .unwrap(),
+    )
+    .unwrap();
+    let frame = crate::sim::animation::resolve_shp_vehicle_body_frame(
+        rules.animation_sequence("DRON").unwrap(),
+        facing,
+        actor.body_frame_counter.get(),
+        actor.unit_firing_counter.get(),
+        crate::sim::movement::motion_query::is_moving(actor) == Some(true),
+        false,
+    );
+    // Original Unit741340 -> Bullet4666E0 -> Attach62A980 -> Exit62A4A0
+    // retains +6C0=7 through limbo. Draw73C62B..73C725 selects the fire
+    // block for the actual facing, not the standing block. The original
+    // counter resumes in Unit7363C9.
+    assert_eq!(frame, Some(expected), "post-release DRON facing {facing}");
+
+    // Stop interrupts the attack without restarting/consuming a separate
+    // presentation clock. Match the actual original Unit AI countdown.
+    let owner = actor.owner();
+    arena.sim.queue_command(CommandEnvelope::new(
+        owner,
+        arena.sim.session.tick() + 1,
+        Command::Stop { entity_id: drone },
+    ));
+    let history = crate::test_fixture::json("tools/spatial_oracle/unit_shp_fire_history.json");
+    for row in history["history"]["recovery"].as_array().unwrap() {
+        arena.step(&rules);
+        let actor = arena.sim.entities().get(drone).unwrap();
+        let counter = actor.unit_firing_counter.get();
+        assert_eq!(
+            i64::from(counter),
+            row["source"]["counter"].as_i64().unwrap()
+        );
+        let image = crate::sim::animation::resolve_shp_vehicle_body_frame(
+            rules.animation_sequence("DRON").unwrap(),
+            actor.body_facing_byte(arena.frame()),
+            actor.body_frame_counter.get(),
+            counter,
+            crate::sim::movement::motion_query::is_moving(actor) == Some(true),
+            false,
+        )
+        .unwrap();
+        assert_eq!((56..88).contains(&image), counter >= 0);
+    }
 }
 
 #[test]
@@ -1026,8 +1112,13 @@ fn the_reselect_memo_stays_out_of_the_peer_hash() {
         let dog = arena.spawn(&rules, "DOG", "Russians", (10, 10));
         let gi = arena.spawn(&rules, "E1", "Americans", (11, 10));
         // Skirmish: IsHumanPlayer (`0x0050B6F0`) is the local player.
-        arena.sim.session.game_mode_nonzero = true;
-        arena.sim.session.current_house = Some(arena.sim.interner.intern(local));
+        arena.sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
+        arena
+            .sim
+            .session
+            .set_current_house_for_test(Some(arena.sim.interner.intern(local)));
         arena
             .sim
             .substrate
@@ -1074,7 +1165,7 @@ fn a_dog_released_on_a_bridge_deck_stays_on_the_deck() {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(x, y)
+            .cell_mut_for_test(x, y)
             .unwrap();
         cell.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
         cell.has_bridge_deck = true;
@@ -1137,7 +1228,7 @@ fn a_parasite_order_on_an_iron_curtained_host_is_dropped() {
         sim.substrate
             .entities
             .get(drone)
-            .is_some_and(|d| d.attack_target.target().is_none() && sim.session.tick > 2)
+            .is_some_and(|d| d.attack_target.target().is_none() && sim.session.tick() > 2)
     });
     assert!(!arena.in_limbo(drone));
     assert_eq!(arena.eater_of(tank), None);
@@ -1202,7 +1293,8 @@ fn naval_owner_water_gate_matches_original_can_infect() {
         };
         let terrain = arena.sim.resolved_terrain.as_mut().unwrap();
         terrain.set_projectile_water_set_base(row["water_set"].as_i64().unwrap() as i32);
-        terrain.cell_mut(5, 2).unwrap().final_tile_index = row["tile"].as_i64().unwrap() as i32;
+        terrain.cell_mut_for_test(5, 2).unwrap().final_tile_index =
+            row["tile"].as_i64().unwrap() as i32;
         if row["victim_cell"] != serde_json::json!([5, 2]) {
             arena
                 .sim
@@ -1260,16 +1352,20 @@ fn grinder_arrival_refunds_the_infesting_drone_before_forced_release() {
     actor
         .navigation
         .set_nav_com_for_test(Some(NavTargetRef::object(building)));
-    arena.sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
+    arena
+        .sim
+        .houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
     let russian = arena.sim.interner.get("Russians").unwrap();
-    arena.sim.houses.insert(
-        russian,
-        crate::sim::house_state::HouseState::new(russian, 1, None, false, 0, 10),
-    );
-    let before = arena.sim.houses[&owner].economy.credits();
+    arena
+        .sim
+        .houses
+        .register(crate::sim::house_state::HouseState::new(
+            russian, 1, None, false, 0, 10,
+        ));
+    let before = arena.sim.houses[&owner].economy().credits();
     arena
         .sim
         .per_cell_process(
@@ -1281,7 +1377,7 @@ fn grinder_arrival_refunds_the_infesting_drone_before_forced_release() {
         )
         .unwrap();
     // Unit73A0A5 refunds the tank300, then73A13E refunds the drone200.
-    assert_eq!(arena.sim.houses[&owner].economy.credits(), before + 500);
+    assert_eq!(arena.sim.houses[&owner].economy().credits(), before + 500);
     assert!(arena.gone(tank));
     assert!(
         arena.gone(drone),

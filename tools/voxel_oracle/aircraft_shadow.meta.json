@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Aircraft shadow caller/cleanup, Fly and Rocket base slots, generated selected-section and retail Harrier (ORCA type, FALC image) stencil",
+  "assumptions": [
+    "supplied original Aircraft/Type/Cell state, camera [-320,200], native startup matrices",
+    "identity HVA/header seam for caller; physical HVA/VXL loaded separately by original reader",
+    "Rocket uses its original COM vtable with supplied base owner; Rocket AI lifecycle is outside this fixture"
+  ],
+  "substitutions": [
+    "Foot Mark external display notification: records mode and supplies marked byte/success",
+    "Techno final drawing output boundary for caller cleanup; separate native core raster comparison",
+    "immutable file vtable IO and mapped heap allocation in shared shadow raster helper"
+  ],
+  "entry_points": {
+    "aircraft_caller": "0x00414687",
+    "fly_body_matrix": "0x004CF610",
+    "fly_matrix": "0x004CFB00",
+    "fly_point": "0x004CF940",
+    "rocket_matrix": "0x0055A7D0",
+    "rocket_point": "0x0055A8C0",
+    "foot_shadow": "0x004DB0D0",
+    "techno_shadow": "0x00706BD0",
+    "quad": "0x00753F90",
+    "crop": "0x00754510"
+  },
+  "replay_command": "python -m tools.voxel_oracle.aircraft_shadow",
+  "payload_sha256": "4fd1c6fd148099640fe4095576f493ebb0ac1fec7543825f2c484c09428b4743"
+}

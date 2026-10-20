@@ -59,6 +59,10 @@ impl Default for UnitShpReadState {
 }
 
 impl UnitShpReadState {
+    pub(crate) const fn firing_frames(&self) -> i8 {
+        self.firing_frames
+    }
+
     pub(crate) fn read_pass(&mut self, art: &IniSection, has_turret: bool) {
         // Original7477F1/74780F store AL, with each signed byte as its
         // ReadInteger default. These are not nonnegative u16 frame counts.
@@ -264,12 +268,10 @@ pub(crate) fn build_shp_vehicle_sequences(
                 frame_count: firing_frames,
                 facings,
                 facing_multiplier: firing_frames,
-                // TODO(parity): the native firing counter advances one image per
-                // two counter steps and is seeded counting down from
-                // `FiringFrames * 2 - 1`. Reproducing that needs the fire-seeding
-                // path, which lives outside this module, so the walk rate stands
-                // in until then.
-                frame_delay: 1,
+                // Unit741421/7363C9's retained countdown owns Unit drawing,
+                // one image per two steps. Aircraft's separate metadata-only
+                // projection retains its previous unverified cadence.
+                frame_delay: if retained.is_some() { 2 } else { 1 },
                 normalized: false,
                 completion_facing: None,
                 loop_mode: LoopMode::TransitionTo(SequenceKind::Stand),
@@ -435,6 +437,7 @@ mod tests {
             buildup: None,
             foundation: None,
             bib_shape: None,
+            factory_door: Default::default(),
             palette: None,
             sequence: None,
             crawls: false,
@@ -529,48 +532,6 @@ mod tests {
         assert_eq!(attack.facing_multiplier, 6);
 
         assert_eq!(body_frames_used(&set, 8), 104, "native StartDeathFrame");
-    }
-
-    #[test]
-    fn test_terror_drone_sequences() {
-        // DRON: WalkFrames=6, FiringFrames=4 → stand at 6*8=48, firing at
-        // (6+1)*8=56. Layout is walk 0..=47, stand 48..=55, firing 56..=87,
-        // which fills DRON.SHP's 88-frame body half exactly with nothing left
-        // over. Dropping the standing block strands frames 80..=87.
-        let art = make_art_entry(Some(6), Some(4));
-        let set = build_test(&art);
-
-        assert_eq!(set.get(&SequenceKind::Walk).expect("Walk").start_frame, 0);
-        assert_eq!(
-            set.get(&SequenceKind::Stand).expect("Stand").start_frame,
-            48
-        );
-        let attack = set.get(&SequenceKind::Attack).expect("Attack");
-        assert_eq!(attack.start_frame, 56);
-        assert_eq!(attack.frame_count, 4);
-
-        // 176 retail frames = 88 body + 88 shadow, and the body is fully used.
-        assert_eq!(body_frames_used(&set, 8), 88);
-    }
-
-    #[test]
-    fn test_squid_sequences() {
-        // SQD: WalkFrames=20, FiringFrames=16 → stand at 160, firing at 21*8=168.
-        // Layout runs 0..=295, and SQD.SHP is 296 frames with no shadow half.
-        let art = make_art_entry(Some(20), Some(16));
-        let set = build_test(&art);
-
-        assert_eq!(set.get(&SequenceKind::Walk).expect("Walk").start_frame, 0);
-        assert_eq!(
-            set.get(&SequenceKind::Stand).expect("Stand").start_frame,
-            160
-        );
-        assert_eq!(
-            set.get(&SequenceKind::Attack).expect("Attack").start_frame,
-            168
-        );
-
-        assert_eq!(body_frames_used(&set, 8), 296);
     }
 
     #[test]

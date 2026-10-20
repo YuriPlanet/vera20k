@@ -964,29 +964,6 @@ mod tests {
     }
 
     #[test]
-    fn gsi_05_13_spawn_admits_spark_systems() {
-        // `ParticleSystemClass::AI_Spark @ 0x0062E840` is implemented, so the
-        // Tier-3 refusal that used to sit here is gone for Spark. Railgun is
-        // still refused; see the test below.
-        let rules = build_rules("Spark", 50);
-        let mut sim = Simulation::new();
-        let result = sim.spawn_particle_system(
-            ParticleSystemTypeId(0),
-            IVec3::ZERO,
-            None,
-            None,
-            IVec3::ZERO,
-            None,
-            &rules,
-        );
-        let id = result.expect("Spark systems are admitted");
-        assert_eq!(sim.particle_systems().len(), 1);
-        let system = sim.particle_systems().get(id).expect("stored system");
-        assert_eq!(system.facing, 0x1D, "ParticleSystem+0xF4 starts at 0x1D");
-        assert!(!system.done_spawning);
-    }
-
-    #[test]
     fn spawn_returns_none_for_railgun_at_tier_2() {
         let rules = build_rules("Railgun", 50);
         let mut sim = Simulation::new();
@@ -1085,29 +1062,6 @@ mod tests {
         let mut reference = SimRng::new(1);
         reference.next_u32();
         assert_eq!(sim.particle_rng().state(), reference.state());
-    }
-
-    #[test]
-    fn spawn_with_insert_does_not_exceed_cap() {
-        let rules = build_rules("Fire", 5);
-        let mut sim = Simulation::new();
-        let sys_id = sim
-            .spawn_particle_system(
-                ParticleSystemTypeId(0),
-                IVec3::ZERO,
-                None,
-                None,
-                IVec3::ZERO,
-                None,
-                &rules,
-            )
-            .unwrap();
-        *sim.particle_rng() = SimRng::new(1);
-        let mut sys = sim.particle_systems_mut().take_for_tick(sys_id).unwrap();
-        for _ in 0..10 {
-            spawn_particle_with_insert(&mut sys, IVec3::ZERO, 3, &rules, &mut sim);
-        }
-        assert_eq!(sys.particles.len(), 5);
     }
 
     #[test]

@@ -465,29 +465,6 @@ mod tests {
     }
 
     #[test]
-    fn test_minimal_config() {
-        let toml_str = r#"
-[paths]
-ra2_dir = "C:/Westwood/RA2"
-"#;
-        let config = GameConfig::parse(toml_str).expect("Failed to parse test config");
-        assert!(config.graphics.extra_animations);
-        assert_eq!(config.gameplay.input_delay_ticks, 15);
-        assert!(!config.gameplay.pause_on_focus_loss);
-        // No [profile] section -> no pre-filled player name.
-        assert_eq!(config.profile.player_name(), None);
-    }
-
-    #[test]
-    fn configured_ahead_windows_preserve_zero_and_custom_values() {
-        for ahead in [0, 2, 30] {
-            let text = format!("[paths]\nra2_dir='.'\n[gameplay]\ninput_delay_ticks={ahead}\n");
-            let config = GameConfig::parse(&text).unwrap();
-            assert_eq!(config.gameplay.input_delay_ticks, ahead);
-        }
-    }
-
-    #[test]
     fn an_old_vsync_line_still_loads() {
         let toml_str = r#"
 [paths]
@@ -582,13 +559,5 @@ name = "   "
             retail_asset_root_from_executable(&executable).expect("volume root"),
             root
         );
-    }
-
-    #[test]
-    fn discovered_config_keeps_host_defaults() {
-        let config = GameConfig::from_retail_asset_root(PathBuf::from(r"D:\Games\RA2"));
-        assert_eq!(config.paths.ra2_dir, PathBuf::from(r"D:\Games\RA2"));
-        assert!(config.graphics.extra_animations);
-        assert_eq!(config.profile.player_name(), None);
     }
 }

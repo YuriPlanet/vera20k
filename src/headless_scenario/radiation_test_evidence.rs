@@ -29,10 +29,10 @@ pub fn visit_paid_deso_light_lifecycle(
     let launch: crate::skirmish_launch::SkirmishLaunchSession =
         serde_json::from_value(profile["launch"].clone()).unwrap();
     assert_eq!(
-        launch.local.country,
+        launch.local_slot().country,
         crate::skirmish_launch::LaunchCountry::Iraq
     );
-    let local_name = launch.player_name.clone();
+    let local_name = launch.local_player().name.clone();
     let map = launch.selected_map_file.as_deref().unwrap().to_owned();
     let retail =
         std::path::PathBuf::from(std::env::var_os("RA2_DIR").expect("physical retail root"));
@@ -47,7 +47,7 @@ pub fn visit_paid_deso_light_lifecycle(
     // deliberately not used: the accepted capture advances ordinary22ms.
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     assert_eq!(scene.sim().resolve(owner), local_name);
     assert_eq!(
         scene
@@ -182,7 +182,7 @@ pub fn visit_paid_deso_light_lifecycle(
                     );
                 }
                 paid_start = Some((
-                    scene.sim().houses[&owner].economy.spent_credits(),
+                    scene.sim().houses[&owner].economy().spent_credits(),
                     option.cost,
                 ));
                 assert!(!held && !delivered);
@@ -228,7 +228,7 @@ pub fn visit_paid_deso_light_lifecycle(
                 );
                 let (spent, cost) = paid_start.expect("ordinary DESO production was requested");
                 assert!(
-                    scene.sim().houses[&owner].economy.spent_credits() >= spent + cost,
+                    scene.sim().houses[&owner].economy().spent_credits() >= spent + cost,
                     "paid head must finish charging before world delivery"
                 );
                 delivered = true;
@@ -276,10 +276,10 @@ pub fn visit_paid_deso_light_lifecycle(
                         .radiation
                         .site_at(center)
                         .expect("published live site");
-                    assert_eq!(site.spread, spread);
-                    assert_eq!(site.level, rad_level);
-                    assert!(site.radius_leptons > 0);
-                    assert_eq!(source.radius_leptons, site.radius_leptons);
+                    assert_eq!(site.spread(), spread);
+                    assert_eq!(site.level(), rad_level);
+                    assert!(site.radius_leptons() > 0);
+                    assert_eq!(source.radius_leptons, site.radius_leptons());
                     assert!(source.active && expired_at.is_none());
                     if !active {
                         assert!(shots > 0, "actual FireAt/Bullet creates the site");
@@ -287,7 +287,7 @@ pub fn visit_paid_deso_light_lifecycle(
                         phase = Some("active");
                     } else if !faded && last_source.as_ref() != Some(source) {
                         assert!(
-                            site.remaining < site.duration,
+                            site.remaining() < site.duration(),
                             "source decay follows activation"
                         );
                         faded = true;
@@ -362,7 +362,7 @@ fn assert_paid_deso_lifecycle(profile_path: &'static str) {
         if let Some(output) = output {
             frames += 1;
             assert!(output.tick.frame_committed);
-            assert_eq!(scene.sim().session.total_sim_ms, frames * 22);
+            assert_eq!(scene.sim().session.total_sim_ms(), frames * 22);
         }
         if let Some(phase) = phase {
             phases.push(phase.to_owned());

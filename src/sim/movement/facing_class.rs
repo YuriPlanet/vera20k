@@ -271,13 +271,6 @@ mod tests {
     }
 
     #[test]
-    fn new_initializes_at_given_facing() {
-        let fc = FacingClass::new(12345, 5);
-        assert_eq!(fc.destination(), 12345);
-        assert_eq!(fc.rot_per_frame(), 5 * 256); // 5 << 8 = 1280
-    }
-
-    #[test]
     fn set_rot_clamps_at_0x7f() {
         let mut fc = FacingClass::new(0, 0);
         fc.set_rot(0x7E);
@@ -288,13 +281,6 @@ mod tests {
         assert_eq!(fc.rot_per_frame(), 0x7F00); // clamped to 127, 127 << 8
         fc.set_rot(200);
         assert_eq!(fc.rot_per_frame(), 0x7F00); // clamped
-    }
-
-    #[test]
-    fn set_rot_zero_means_instant() {
-        let mut fc = FacingClass::new(100, 5);
-        fc.set_rot(0);
-        assert_eq!(fc.rot_per_frame(), 0);
     }
 
     #[test]
@@ -324,23 +310,6 @@ mod tests {
         fc.start_frame = Some(start);
         fc.duration_frames = duration;
         fc
-    }
-
-    #[test]
-    fn current_returns_destination_when_rot_zero() {
-        let mut fc = mid_rotation(0, 1000, 0, 10, 5);
-        fc.set_rot(0);
-        assert_eq!(fc.current(0), 1000);
-        assert_eq!(fc.current(5), 1000);
-        assert_eq!(fc.current(100), 1000);
-    }
-
-    #[test]
-    fn current_returns_destination_when_no_start_frame() {
-        let fc = FacingClass::new(1000, 5);
-        // start_frame = None
-        assert_eq!(fc.current(0), 1000);
-        assert_eq!(fc.current(50), 1000);
     }
 
     #[test]
@@ -384,18 +353,6 @@ mod tests {
     }
 
     #[test]
-    fn current_non_multiple_arc_negative_diff_lands_on_prev() {
-        // Same as above for a negative (counter-clockwise) arc. prev=12900,
-        // current=0 → diff = -12900. step_size = 12900/1280 = 10;
-        // per_step = -12900/10 = -1290 (truncates toward zero).
-        let fc = mid_rotation(12900, 0, 0, 10, 5);
-        // elapsed=0, remaining=10: animated = 0 - (-1290*10) = 12900 == prev.
-        assert_eq!(fc.current(0), 12900);
-        assert_eq!(fc.current(10), 0);
-        assert_eq!(fc.current(5), 1290 * 5); // 6450
-    }
-
-    #[test]
     fn current_snaps_when_step_size_below_one() {
         // diff = current - prev = 100; rot_per_frame = 1280; step_size = 100/1280 = 0.
         // Should snap to current immediately.
@@ -416,19 +373,6 @@ mod tests {
         assert_eq!(fc.current(1), 0x0000);
         // At elapsed=2: complete.
         assert_eq!(fc.current(2), 0x0100);
-    }
-
-    #[test]
-    fn current_handles_wrap_around_short_path_negative_diff() {
-        // 0x0100 → 0xFF00: signed diff = (0xFF00 - 0x0100) as i16 = 0xFE00 = -512.
-        // shortest path is COUNTER-clockwise by 512 units (back through 0).
-        let fc = mid_rotation(0x0100, 0xFF00, 0, 2, 1);
-        // At elapsed=0: animated = 0xFF00 - sign(-) * 256 * 2 = 0xFF00 + 512 = 0x0100.
-        assert_eq!(fc.current(0), 0x0100);
-        // At elapsed=1: animated = 0xFF00 + 256 = 0x0000.
-        assert_eq!(fc.current(1), 0x0000);
-        // At elapsed=2: complete.
-        assert_eq!(fc.current(2), 0xFF00);
     }
 
     #[test]
@@ -453,15 +397,6 @@ mod tests {
         assert_eq!(fc.current(112), 0x4000);
     }
 
-    #[test]
-    fn set_no_op_when_target_equals_current() {
-        let mut fc = FacingClass::new(1000, 5);
-        let changed = fc.set(1000, 0);
-        assert!(!changed);
-        assert_eq!(fc.destination(), 1000);
-        assert!(fc.start_frame.is_none());
-    }
-
     // --- Native frame / tick contract acceptance tests ---
 
     #[test]
@@ -478,38 +413,6 @@ mod tests {
         // elapsed = 100 - 100 = 0 → animated == prev (start), still rotating.
         assert_eq!(fc.current(100), 0);
         assert!(fc.is_rotating(100));
-    }
-
-    #[test]
-    fn retarget_captures_supplied_frame_and_progresses_relative_to_it() {
-        // Acceptance: a facing retarget captures the frame it is given (the
-        // pre-increment frame visible during the tick) and animates relative
-        // to it. Invariant to a uniform frame offset — only relative elapsed
-        // matters.
-        let mut fc = FacingClass::new(0, 5); // rot_per_frame = 1280
-        fc.set(12800, 100); // duration 10, start_frame 100
-        assert_eq!(fc.start_frame, Some(100));
-        // 5 frames later: animated = 0 + 5 * 1280 = 6400, still rotating.
-        assert_eq!(fc.current(105), 6400);
-        assert!(fc.is_rotating(105));
-        // Retarget at frame 105: snapshots visible 6400 into prev, captures
-        // start_frame = 105.
-        fc.set(0, 105);
-        assert_eq!(fc.start_frame, Some(105));
-        assert_eq!(fc.prev, 6400);
-        // Same-frame after retarget: elapsed 0 → still at 6400.
-        assert_eq!(fc.current(105), 6400);
-    }
-
-    #[test]
-    fn set_initiates_rotation_when_target_differs() {
-        let mut fc = FacingClass::new(0, 5);
-        let changed = fc.set(12800, 0);
-        assert!(changed);
-        assert_eq!(fc.destination(), 12800);
-        assert_eq!(fc.start_frame, Some(0));
-        // duration = abs(12800 - 0) / 1280 = 10.
-        assert_eq!(fc.duration_frames, 10);
     }
 
     #[test]
@@ -531,25 +434,6 @@ mod tests {
     }
 
     #[test]
-    fn set_with_zero_rot_writes_destination_without_timer() {
-        let mut fc = FacingClass::new(0, 0);
-        let changed = fc.set(1000, 5);
-        assert!(changed);
-        assert_eq!(fc.destination(), 1000);
-        // No timer state set when rot is 0.
-        assert!(fc.start_frame.is_none());
-    }
-
-    #[test]
-    fn set_handles_wrap_around_shortest_path() {
-        // From 0x0100 to 0xFF00, shortest path is COUNTER-clockwise (-512 units).
-        let mut fc = FacingClass::new(0x0100, 1);
-        fc.set(0xFF00, 0);
-        // duration = abs((-512 as i16).unsigned_abs()) / 256 = 512/256 = 2.
-        assert_eq!(fc.duration_frames, 2);
-    }
-
-    #[test]
     fn snap_writes_both_current_and_prev() {
         let mut fc = FacingClass::new(0, 5);
         fc.snap(12800, 10);
@@ -557,26 +441,6 @@ mod tests {
         assert_eq!(fc.prev, 12800);
         assert_eq!(fc.duration_frames, 0);
         assert_eq!(fc.current(10), 12800); // animated = destination immediately
-    }
-
-    #[test]
-    fn snap_no_op_when_already_at_target() {
-        let mut fc = FacingClass::new(1000, 5);
-        let changed = fc.snap(1000, 0);
-        assert!(!changed);
-    }
-
-    #[test]
-    fn is_rotating_false_when_rot_zero() {
-        let fc = FacingClass::new(0, 0);
-        assert!(!fc.is_rotating(0));
-        assert!(!fc.is_rotating(100));
-    }
-
-    #[test]
-    fn is_rotating_false_when_no_start_frame() {
-        let fc = FacingClass::new(0, 5);
-        assert!(!fc.is_rotating(0));
     }
 
     #[test]

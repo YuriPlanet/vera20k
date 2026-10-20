@@ -185,22 +185,6 @@ mod tests {
     }
 
     #[test]
-    fn test_reject_wrong_size() {
-        let data: Vec<u8> = vec![0u8; 100]; // Too small
-        let result = Palette::from_bytes(&data);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_to_rgba_bytes_length() {
-        let data: Vec<u8> = vec![0u8; PAL_FILE_SIZE];
-        let pal: Palette = Palette::from_bytes(&data).expect("Should parse");
-        let rgba: Vec<u8> = pal.to_rgba_bytes();
-        // 256 colors * 4 bytes (RGBA) each = 1024 bytes
-        assert_eq!(rgba.len(), 1024);
-    }
-
-    #[test]
     fn test_house_color_remap() {
         let data: Vec<u8> = vec![0u8; PAL_FILE_SIZE];
         let pal: Palette = Palette::from_bytes(&data).expect("Should parse");

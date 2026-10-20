@@ -589,7 +589,7 @@ function fmtPhase(ms) {
 }
 /** Independent simulation and measured-render ledgers. Percentages are only
  *  within their own group; no whole-frame total or inferred idle cost exists. */
-function renderPhaseTable(table, profile, render) {
+function renderPhaseTable(table, profile, render, batch) {
     if (!table)
         return;
     const scroller = table.closest(".table-wrap");
@@ -609,6 +609,9 @@ function renderPhaseTable(table, profile, render) {
         `<td class="ph-ms"><b>${escapeHtml(fmtPhase(total))}</b></td>` +
         `<td class="ph-pct">${kind === "sim" && total > 0 ? "100%" : "—"}</td>` +
         `<td class="ph-pct">${kind === "render" && total > 0 ? "100%" : "—"}</td></tr>`;
+    const countRow = (label, value) => `<tr><td class="ph-name">${escapeHtml(label)}</td><td class="ph-bar"></td>` +
+        `<td class="ph-ms"><b>${escapeHtml(value)}</b></td>` +
+        `<td class="ph-pct">—</td><td class="ph-pct">—</td></tr>`;
     let body = "";
     if (profile && profile.frames > 0) {
         body += `<tbody><tr class="ph-group"><td colspan="5">${escapeHtml(t("rep.simTick"))}` +
@@ -627,6 +630,18 @@ function renderPhaseTable(table, profile, render) {
             body += `<tr><td colspan="5">phase ledger mismatch: ${values.length} phases on the wire, ` +
                 `${PHASE_KEYS.length} expected</td></tr>`;
         }
+        body += "</tbody>";
+    }
+    if (batch && batch.samples > 0) {
+        body += `<tbody><tr class="ph-group"><td colspan="5">${escapeHtml(t("rep.pathBatch"))}` +
+            ` · ${thousands(batch.samples)} ${escapeHtml(t("rep.pathPasses"))}</td></tr>`;
+        body += rowsFor([
+            { label: t("rep.pathMean"), ms: batch.mean_ms },
+            { label: t("rep.pathPeak"), ms: batch.peak_ms },
+        ], simTotal, "sim");
+        body += countRow(t("rep.pathSearched"), `${fmt(batch.searched, 0)} / ${fmt(batch.waiting, 0)}`);
+        body += countRow(t("rep.pathLeftOut"), fmt(batch.left_out, 0));
+        body += countRow(t("rep.pathSteps"), fmt(batch.steps, 0));
         body += "</tbody>";
     }
     if (render && render.frames > 0) {
@@ -668,14 +683,30 @@ function exportPalette() {
         violet: token("--blue", "#a884ff"),
     };
 }
-/** Read the rendered ledger back out of the DOM. Both the standalone snapshot
- *  and the full report draw from this, so they can never list different rows. */
-function readLedgerRows() {
-    const table = document.getElementById("report-phases");
+function reportViewOf(point) {
+    return {
+        tick: point.tick,
+        entities_total: point.entities_total,
+        map_width: point.map_width,
+        map_height: point.map_height,
+        timing: point.timing,
+        profile: point.profile,
+        render: point.render,
+        path_batch: point.path_batch,
+        houses: point.houses.map((house) => ({
+            name: house.name,
+            is_human: house.is_human,
+            passive: house.passive,
+            counts: { structure: house.structures },
+            credits: house.credits,
+            score: house.score,
+        })),
+    };
+}
+/** Read a rendered ledger table's rows. One formatter fills the table, so the
+ *  live report and a stored point cannot list different rows. */
+function readRows(table) {
     const rows = [];
-    if (!table)
-        return rows;
-    renderPhaseTable(table, lastSnapshot?.profile ?? null, lastSnapshot?.render ?? null);
     table.querySelectorAll("tr").forEach((tr) => {
         if (tr.closest("thead"))
             return;
@@ -697,8 +728,16 @@ function readLedgerRows() {
     });
     return rows;
 }
+/** The ledger for a view, rendered into a detached table. */
+function ledgerRowsFor(view) {
+    const table = document.createElement("table");
+    renderPhaseTable(table, view.profile, view.render, view.path_batch);
+    return readRows(table);
+}
 function buildPhaseLedgerCanvas() {
-    const rows = readLedgerRows();
+    if (!lastSnapshot)
+        return null;
+    const rows = ledgerRowsFor(lastSnapshot);
     if (rows.length === 0)
         return null;
     const dpr = Math.min(3, Math.max(2, window.devicePixelRatio || 1));
@@ -849,14 +888,14 @@ const REPORT_RULE = "#e2e8f0";
  * Light theme on purpose — this is a document to paste into an issue, not a
  * screenshot of the dashboard. The live panel keeps its dark styling.
  */
-function buildReportCanvas() {
-    const snapshot = lastSnapshot;
+function buildReportCanvas(view) {
+    const snapshot = view;
     const profile = snapshot?.profile ?? null;
     const render = snapshot?.render ?? null;
     if (!snapshot || !(profile?.frames || render?.frames))
         return null;
     const { sim: simSlices, render: renderSlices, simTotal, renderTotal } = buildTimingSlices(profile, render);
-    const ledger = readLedgerRows();
+    const ledger = ledgerRowsFor(snapshot);
     const parties = snapshot.houses.filter((house) => !house.passive);
     const width = 1000;
     const pad = 34;
@@ -1047,16 +1086,15 @@ function buildReportCanvas() {
  * The same report as a self-contained HTML file: inline SVG pies, no scripts,
  * no network — it opens years later and can be attached to a bug report.
  */
-function buildReportHtml() {
-    const snapshot = lastSnapshot;
-    const profile = snapshot?.profile ?? null;
-    const render = snapshot?.render ?? null;
-    if (!snapshot || !(profile?.frames || render?.frames))
+function buildReportHtml(view) {
+    const profile = view?.profile ?? null;
+    const render = view?.render ?? null;
+    if (!view || !(profile?.frames || render?.frames))
         return null;
     const { sim: simSlices, render: renderSlices, simTotal, renderTotal } = buildTimingSlices(profile, render);
-    const ledger = readLedgerRows();
-    const parties = snapshot.houses.filter((house) => !house.passive);
-    const tickHz = snapshot.timing?.tick_hz ?? 0;
+    const ledger = ledgerRowsFor(view);
+    const parties = view.houses.filter((house) => !house.passive);
+    const tickHz = view.timing?.tick_hz ?? 0;
     const pie = (slices, total, caption, samples, countLabel) => {
         const radius = 88;
         const size = 180;
@@ -1097,7 +1135,7 @@ function buildReportHtml() {
         .join("");
     return `<!doctype html>
 <html lang="${escapeHtml(document.documentElement.lang || "en")}">
-<head><meta charset="utf-8"><title>${escapeHtml(t("rep.title"))} · tick ${thousands(snapshot.tick)}</title>
+<head><meta charset="utf-8"><title>${escapeHtml(t("rep.title"))} · tick ${thousands(view.tick)}</title>
 <style>
 *{box-sizing:border-box;margin:0}
 body{font:14px/1.5 -apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;color:#1d2733;background:#f7f9fc;padding:28px 32px}
@@ -1126,7 +1164,7 @@ tr.foot td{font-weight:600;color:#1d2733;border-bottom:none}
 </style></head>
 <body>
 <h1>${escapeHtml(t("rep.title"))}</h1>
-<div class="sub">tick ${thousands(snapshot.tick)} · ${t("rep.fps")} ${fmt(snapshot.timing?.fps ?? 0, 0)} fps · ${fmt(tickHz, 1)} tick/s · ${t("hdr.map")} ${fmt(snapshot.map_width, 0)}x${fmt(snapshot.map_height, 0)}<br>
+<div class="sub">tick ${thousands(view.tick)} · ${t("rep.fps")} ${fmt(view.timing?.fps ?? 0, 0)} fps · ${fmt(tickHz, 1)} tick/s · ${t("hdr.map")} ${fmt(view.map_width, 0)}x${fmt(view.map_height, 0)}<br>
 ${t("rep.sim")} ${measuredCost(profile?.mean_frame_ms ?? 0, profile?.frames ?? 0)} · ${t("rep.peak")} ${measuredCost(profile?.peak_frame_ms ?? 0, profile?.frames ?? 0)}</div>
 <p class="note">${escapeHtml(t("rep.note"))}</p>
 <div class="pies">${pie(renderSlices, renderTotal, t("rep.renderSample"), render?.frames ?? 0, t("rep.renders"))}${pie(simSlices, simTotal, t("rep.simTick"), profile?.frames ?? 0, t("rep.frames"))}</div>
@@ -1136,13 +1174,13 @@ ${parties.length > 0 ? `<h2>${escapeHtml(t("rep.houses"))}</h2><table class="hou
 <p class="note">VERA20k · schema v${SCHEMA_VERSION} · ${new Date().toLocaleString()}</p>
 </body></html>`;
 }
-function openShotPreview(kind = "ledger") {
-    const tick = lastSnapshot?.tick ?? 0;
-    const canvas = kind === "report" ? buildReportCanvas() : buildPhaseLedgerCanvas();
+function openShotPreview(kind = "ledger", view = lastSnapshot) {
+    const tick = view?.tick ?? 0;
+    const canvas = kind === "report" ? buildReportCanvas(view) : buildPhaseLedgerCanvas();
     if (!canvas)
         return;
     // The report can also be saved as HTML; the ledger snapshot cannot.
-    shotHtml = kind === "report" ? buildReportHtml() : null;
+    shotHtml = kind === "report" ? buildReportHtml(view) : null;
     canvas.toBlob((blob) => {
         if (!blob)
             return;
@@ -2223,6 +2261,307 @@ function clearLogs() {
 const REPORT_RENDER_INTERVAL_MS = 250;
 let reportRenderedAt = 0;
 let reportRenderTimer = null;
+// ---------------------------------------------------- whole-match timeline
+/** Ticks the engine packs into one history sample (15 = one second at 15 Hz). */
+const HISTORY_TICKS = 15;
+/** Client-side ceiling; the engine ring keeps the same window. */
+const HISTORY_LIMIT = 7200;
+const HISTORY_W = 1000;
+const HISTORY_H = 220;
+const HISTORY_PAD = { l: 44, r: 12, t: 12, b: 18 };
+let historyPoints = [];
+let historyLive = null;
+let historyLo = 0;
+let historyHi = -1;
+let historySelection = null;
+let historyDrag = null;
+/** Report-grade samples: seeded by the backfill, extended by the newest one. */
+let reportPoints = [];
+const REPORT_POINT_LIMIT = 1440;
+function ingestReportPoints(snapshot) {
+    if (snapshot.report_points && snapshot.report_points.length > 0) {
+        reportPoints = snapshot.report_points.slice(-REPORT_POINT_LIMIT);
+    }
+    const latest = snapshot.report_point;
+    if (latest && (!reportPoints.length || latest.tick > reportPoints[reportPoints.length - 1].tick)) {
+        reportPoints.push(latest);
+        if (reportPoints.length > REPORT_POINT_LIMIT)
+            reportPoints.shift();
+    }
+}
+/** The stored report-grade sample closest to `tick`, or null when none exist. */
+function nearestReportPoint(tick) {
+    let best = null;
+    for (const point of reportPoints) {
+        if (!best || Math.abs(point.tick - tick) < Math.abs(best.tick - tick))
+            best = point;
+    }
+    return best;
+}
+/** Full match report for the sample nearest `tick`; null when none exists. */
+function pointReportHtml(tick) {
+    const point = nearestReportPoint(tick);
+    return point ? buildReportHtml(reportViewOf(point)) : null;
+}
+function pushHistoryPoint(point) {
+    historyPoints.push(point);
+    if (historyPoints.length > HISTORY_LIMIT)
+        historyPoints.shift();
+    if (historyHi < 0) {
+        historyLo = 0;
+        historyHi = historyPoints.length - 1;
+    }
+    else if (historyHi >= historyPoints.length - 2) {
+        historyHi = historyPoints.length - 1;
+    }
+}
+/** Seed from the engine's ring on the first publish, then keep appending. */
+function ingestHistory(snapshot) {
+    if (snapshot.history && snapshot.history.length > 0) {
+        historyPoints = snapshot.history.map((sample) => ({
+            tick: sample.tick,
+            tick_ms: sample.tick_ms,
+            peak_ms: sample.peak_ms,
+            entities: sample.entities,
+            houses: sample.houses,
+            batch: sample.path_batch,
+        }));
+        historyLive = null;
+        historyLo = 0;
+        historyHi = historyPoints.length - 1;
+        historySelection = null;
+    }
+    const ms = snapshot.timing?.tick_ms;
+    if (ms === undefined)
+        return;
+    if (!historyLive) {
+        historyLive = {
+            firstTick: snapshot.tick,
+            sum: 0,
+            n: 0,
+            peak: 0,
+            entities: snapshot.entities_total,
+            houses: snapshot.houses.length,
+            batch: snapshot.path_batch,
+        };
+    }
+    historyLive.sum += ms;
+    historyLive.n += 1;
+    historyLive.peak = Math.max(historyLive.peak, ms);
+    historyLive.entities = snapshot.entities_total;
+    historyLive.houses = snapshot.houses.length;
+    historyLive.batch = snapshot.path_batch;
+    if (snapshot.tick - historyLive.firstTick + 1 >= HISTORY_TICKS) {
+        pushHistoryPoint({
+            tick: snapshot.tick,
+            tick_ms: historyLive.sum / historyLive.n,
+            peak_ms: historyLive.peak,
+            entities: historyLive.entities,
+            houses: historyLive.houses,
+            batch: historyLive.batch,
+        });
+        historyLive = null;
+    }
+}
+function drawHistoryChart() {
+    const host = document.getElementById("history-chart");
+    const detail = document.getElementById("history-detail");
+    if (!host)
+        return;
+    const points = historyPoints.slice(historyLo, historyHi + 1);
+    if (points.length === 0) {
+        host.innerHTML = `<p class="hint">${escapeHtml(t("rep.historyEmpty"))}</p>`;
+        if (detail)
+            detail.textContent = "";
+        return;
+    }
+    const max = Math.max(1, ...points.map((p) => Math.max(p.peak_ms, p.batch?.mean_ms ?? 0))) * 1.1;
+    const x = (index) => HISTORY_PAD.l + (HISTORY_W - HISTORY_PAD.l - HISTORY_PAD.r) * (points.length < 2 ? 0.5 : index / (points.length - 1));
+    const y = (ms) => HISTORY_H - HISTORY_PAD.b - (HISTORY_H - HISTORY_PAD.t - HISTORY_PAD.b) * (ms / max);
+    let body = "";
+    for (let step = 0; step <= 4; step += 1) {
+        const yy = HISTORY_PAD.t + (HISTORY_H - HISTORY_PAD.t - HISTORY_PAD.b) * step / 4;
+        body += `<line class="hgrid" x1="${HISTORY_PAD.l}" x2="${HISTORY_W - HISTORY_PAD.r}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}"/>`;
+        body += `<text class="haxis" x="4" y="${(yy + 3).toFixed(1)}">${fmt(max * (1 - step / 4), 0)}</text>`;
+    }
+    for (let step = 0; step <= 5; step += 1) {
+        const index = Math.round((points.length - 1) * step / 5);
+        body += `<text class="haxis" x="${(x(index) - 16).toFixed(1)}" y="${HISTORY_H - 4}">t${thousands(points[index].tick)}</text>`;
+    }
+    // The peak band fills mean..peak, so one spike cannot rescale the mean line.
+    const up = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.tick_ms).toFixed(1)}`).join("");
+    const down = points
+        .map((p, i) => ({ p, i }))
+        .reverse()
+        .map(({ p, i }) => `L${x(i).toFixed(1)},${y(p.peak_ms).toFixed(1)}`)
+        .join("");
+    body += `<path class="hband" d="${up}${down}Z"/>`;
+    const line = (value, color) => `<path class="hline" stroke="${color}" d="${points
+        .map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(value(p)).toFixed(1)}`)
+        .join("")}"/>`;
+    // A dot on the axis marks every tick that has a full report-grade sample.
+    const firstTick = points[0].tick;
+    const lastTick = points[points.length - 1].tick;
+    const span = Math.max(1, lastTick - firstTick);
+    for (const mark of reportPoints) {
+        if (mark.tick < firstTick || mark.tick > lastTick)
+            continue;
+        const px = HISTORY_PAD.l + (HISTORY_W - HISTORY_PAD.l - HISTORY_PAD.r) * ((mark.tick - firstTick) / span);
+        body += `<circle class="hmark" cx="${px.toFixed(1)}" cy="${HISTORY_H - HISTORY_PAD.b - 2}" r="1.7"/>`;
+    }
+    body += line((p) => p.tick_ms, "#49b6ff");
+    body += line((p) => p.batch?.mean_ms ?? 0, "#ff5d73");
+    if (historySelection !== null) {
+        const index = historySelection - historyLo;
+        if (index >= 0 && index < points.length) {
+            const point = points[index];
+            body += `<line class="hsel" x1="${x(index).toFixed(1)}" x2="${x(index).toFixed(1)}" y1="${HISTORY_PAD.t}" y2="${HISTORY_H - HISTORY_PAD.b}"/>`;
+            body += `<circle class="hdot" cx="${x(index).toFixed(1)}" cy="${y(point.tick_ms).toFixed(1)}" fill="#49b6ff"/>`;
+        }
+    }
+    host.innerHTML = `<svg viewBox="0 0 ${HISTORY_W} ${HISTORY_H}" preserveAspectRatio="none">${body}</svg>`;
+    if (detail) {
+        const selected = historySelection === null ? historyPoints.length - 1 : historySelection;
+        const point = points[Math.min(Math.max(selected - historyLo, 0), points.length - 1)];
+        const rows = [
+            [t("rep.histTick"), `${fmt(point.tick_ms, 2)} ms`],
+            [t("rep.histPeak"), `${fmt(point.peak_ms, 2)} ms`],
+            [t("rep.histBatch"), point.batch ? `${fmt(point.batch.mean_ms, 2)} ms` : "—"],
+            [t("rep.histEntities"), thousands(point.entities)],
+            [t("rep.histPoints"), thousands(historyPoints.length)],
+        ];
+        // One line of facts: five short pairs stacked vertically pushed the chart's
+        // own panel taller than the data it describes.
+        detail.innerHTML =
+            `<div class="history-facts">` +
+                rows
+                    .map(([key, value]) => `<span class="hf"><span class="hk">${escapeHtml(key)}</span><b>${escapeHtml(value)}</b></span>`)
+                    .join("") +
+                `</div><p class="note">${escapeHtml(t("rep.histBatchNote"))}</p>`;
+    }
+}
+let bubbleTimer = null;
+/** A short-lived bubble under an anchor: used where a control is not ready. */
+function showBubble(anchor, text) {
+    let bubble = document.getElementById("ui-bubble");
+    if (!bubble) {
+        bubble = document.createElement("div");
+        bubble.id = "ui-bubble";
+        bubble.className = "ui-bubble";
+        document.body.appendChild(bubble);
+    }
+    bubble.textContent = text;
+    bubble.hidden = false;
+    const rect = anchor.getBoundingClientRect();
+    bubble.style.left = `${Math.min(window.innerWidth - 220, Math.max(8, rect.left))}px`;
+    bubble.style.top = `${rect.bottom + 6}px`;
+    if (bubbleTimer !== null)
+        window.clearTimeout(bubbleTimer);
+    bubbleTimer = window.setTimeout(() => {
+        bubble.hidden = true;
+        bubbleTimer = null;
+    }, 2600);
+}
+function setupHistoryChart() {
+    const host = document.getElementById("history-chart");
+    if (!host)
+        return;
+    const tip = document.createElement("div");
+    tip.className = "history-tip";
+    tip.hidden = true;
+    // The chart redraws through `innerHTML`; the tip must live outside it.
+    (host.parentElement ?? host).appendChild(tip);
+    const px = (event) => {
+        const svg = host.querySelector("svg");
+        if (!svg)
+            return 0;
+        return (event.clientX - svg.getBoundingClientRect().left) / svg.getBoundingClientRect().width * HISTORY_W;
+    };
+    const indexAt = (value) => {
+        const count = historyHi - historyLo + 1;
+        if (count <= 0)
+            return 0;
+        return Math.max(0, Math.min(count - 1, Math.round((value - HISTORY_PAD.l) / (HISTORY_W - HISTORY_PAD.l - HISTORY_PAD.r) * (count - 1))));
+    };
+    host.addEventListener("pointerdown", (event) => {
+        const value = px(event);
+        historyDrag = [value, value];
+    });
+    host.addEventListener("pointermove", (event) => {
+        if (historyDrag) {
+            historyDrag[1] = px(event);
+            return;
+        }
+        if (historyHi < historyLo)
+            return;
+        const index = historyLo + indexAt(px(event));
+        const point = historyPoints[index];
+        if (!point)
+            return;
+        tip.innerHTML =
+            `<b>t${thousands(point.tick)}</b> · ${escapeHtml(t("rep.histTick"))} ${fmt(point.tick_ms, 2)} ms` +
+                ` · ${escapeHtml(t("rep.histPeak"))} ${fmt(point.peak_ms, 2)} ms<br>` +
+                `${escapeHtml(t("rep.histBatch"))} ${point.batch ? `${fmt(point.batch.mean_ms, 2)} ms` : "—"}` +
+                ` · ${escapeHtml(t("rep.histEntities"))} ${thousands(point.entities)}`;
+        const panelRect = (host.parentElement ?? host).getBoundingClientRect();
+        let left = event.clientX - panelRect.left + 14;
+        if (left + 240 > panelRect.width)
+            left = event.clientX - panelRect.left - 250;
+        tip.style.left = `${Math.max(4, left)}px`;
+        tip.style.top = `${Math.max(4, event.clientY - panelRect.top - 44)}px`;
+        tip.hidden = false;
+    });
+    host.addEventListener("pointerleave", () => {
+        tip.hidden = true;
+    });
+    host.addEventListener("pointerup", (event) => {
+        const value = historyDrag ? px(event) : 0;
+        if (historyDrag && Math.abs(historyDrag[1] - historyDrag[0]) > 14) {
+            const from = indexAt(Math.min(historyDrag[0], historyDrag[1]));
+            const to = indexAt(Math.max(historyDrag[0], historyDrag[1]));
+            if (to > from) {
+                const lo = historyLo;
+                historyHi = lo + to;
+                historyLo = lo + from;
+                historySelection = null;
+            }
+        }
+        else {
+            historySelection = historyLo + indexAt(value);
+        }
+        historyDrag = null;
+        drawHistoryChart();
+    });
+    host.addEventListener("dblclick", () => {
+        historyLo = 0;
+        historyHi = historyPoints.length - 1;
+        historySelection = null;
+        drawHistoryChart();
+    });
+    document.getElementById("report-point")?.addEventListener("click", reportSelectedPoint);
+    document.getElementById("export-history")?.addEventListener("click", (event) => showBubble(event.currentTarget, t("rep.notImplemented")));
+}
+/** A one-sample report: the 1 Hz summary plus its neighbours.
+ *
+ *  It deliberately is not the full report: houses, production and the phase
+ *  ledger are measured live only, so history holds just these numbers. */
+/** Download the report for the selected point: the full match report when a
+ *  report-grade sample exists near it, else the 1 Hz summary. */
+function reportSelectedPoint() {
+    if (historyPoints.length === 0)
+        return;
+    const index = Math.max(0, Math.min(historySelection === null ? historyPoints.length - 1 : historySelection, historyPoints.length - 1));
+    const tick = historyPoints[index].tick;
+    const sample = nearestReportPoint(tick);
+    if (sample) {
+        // Same preview as the live report: PNG, clipboard and HTML save.
+        openShotPreview("report", reportViewOf(sample));
+        return;
+    }
+    const button = document.getElementById("report-point");
+    if (button)
+        showBubble(button, t("rep.noReportPoint"));
+}
 function renderReportSoon() {
     const wait = REPORT_RENDER_INTERVAL_MS - (performance.now() - reportRenderedAt);
     if (wait <= 0) {
@@ -2263,7 +2602,8 @@ function renderReport() {
     if (phasesPanel)
         phasesPanel.hidden = !hasSamples;
     document.getElementById("report")?.classList.toggle("only-pies", !snapshot);
-    renderPhaseTable(phasesTable, profile, render);
+    renderPhaseTable(phasesTable, profile, render, snapshot?.path_batch ?? null);
+    drawHistoryChart();
     if (!snapshot) {
         facts.innerHTML = `<div class='row'><span>${t("rep.waiting")}</span></div>`;
         table.textContent = "";
@@ -2343,8 +2683,19 @@ function setStatus(open, key, vars) {
     statusOverride = key ? { key, vars } : null;
     renderStatus();
 }
-/** Consume the session link once. The credential never enters storage or a URL request. */
+/** The link keeps the credential in this tab so a reload reconnects. */
+const SESSION_TOKEN_KEY = "vera20k.session";
+/**
+ * Consume the session link and keep its credential for this tab only.
+ *
+ * The fragment is removed from the address bar, and the credential never
+ * enters a request, history or another tab: `sessionStorage` is per-tab and
+ * dies with it. A link without a token (a reload, or a bare URL) falls back
+ * to the stored credential; a stale one from a previous game simply fails to
+ * connect, and the game's printed link replaces it.
+ */
 function consumeSessionToken() {
+    const valid = (value) => value !== null && /^[a-f0-9]{64}$/i.test(value);
     const url = new URL(location.href);
     const tokens = new URLSearchParams(url.hash.slice(1)).getAll("token");
     if (url.hash) {
@@ -2357,7 +2708,22 @@ function consumeSessionToken() {
             return null;
         }
     }
-    return tokens.length === 1 && /^[a-f0-9]{64}$/i.test(tokens[0]) ? tokens[0] : null;
+    if (tokens.length === 1 && valid(tokens[0])) {
+        try {
+            sessionStorage.setItem(SESSION_TOKEN_KEY, tokens[0]);
+        }
+        catch {
+            // Storage denied: the link still works for this load.
+        }
+        return tokens[0];
+    }
+    try {
+        const stored = sessionStorage.getItem(SESSION_TOKEN_KEY);
+        return valid(stored) ? stored : null;
+    }
+    catch {
+        return null;
+    }
 }
 function clearConnectionTimer() {
     if (connectionTimer !== null)
@@ -2490,6 +2856,8 @@ function connect() {
         updateTerrain(snapshot.debug);
         updatePopulation(snapshot);
         updateFrameProfile(snapshot.profile, snapshot.render);
+        ingestHistory(snapshot);
+        ingestReportPoints(snapshot);
         drawChart(snapshot.timing);
         // Live snapshots, so the report wall just rides the stream: no polling,
         // and no waiting for a match to end before it has anything to show.
@@ -2502,6 +2870,7 @@ applyStaticTranslations();
 syncSwitcher();
 renderStatus();
 setupViews();
+setupHistoryChart();
 setupPager();
 setupDebugTools((envelope) => {
     if (socket?.readyState === WebSocket.OPEN)
@@ -2571,4 +2940,8 @@ window.addEventListener("pageshow", (event) => {
 /** Read-only handle for the screenshot harness: headless browsers refuse
  *  downloads, so this is the only way to assert on the generated report. It
  *  exposes no state the panel does not already render. */
-window.veraReport = () => buildReportHtml();
+window.veraReport = () => buildReportHtml(lastSnapshot);
+/** Read-only handle for the screenshot harness, same contract as `veraReport`:
+ *  the full report for the stored point nearest `tick`. */
+window.veraPointReport =
+    (tick) => pointReportHtml(tick);

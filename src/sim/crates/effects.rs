@@ -317,7 +317,7 @@ pub(super) fn choose_unit_crate_type<'r>(
         let tracked = |category: EntityCategory, type_id: &str| -> i32 {
             sim.interner
                 .get(type_id)
-                .map_or(0, |type_id| house.tracking.owned_count(category, type_id))
+                .map_or(0, |type_id| house.tracking().owned_count(category, type_id))
         };
         let has_conyard = rules
             .build_const_types
@@ -349,8 +349,8 @@ pub(super) fn choose_unit_crate_type<'r>(
     if chosen.is_some() {
         return chosen;
     }
-    let human = house.is_controlled_by_human(sim.session.game_mode_nonzero);
-    let bases = sim.session.game_options.bases;
+    let human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
+    let bases = sim.session.game_options().bases;
     let ids = rules.type_array_ids(ObjectCategory::Vehicle);
     let eligible = |candidate: &crate::rules::object_type::ObjectType| {
         let is_base_unit = rules

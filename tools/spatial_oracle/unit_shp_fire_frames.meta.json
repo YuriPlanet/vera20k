@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "DRON original Unit SHP fire-frame arm for all256 facing bytes and eight countdown steps at eight canonical headings; original Unit AI counter arithmetic edges.",
+  "assumptions": [
+    "The existing building_body_rules VM supplies stack/scratch storage only. Physical DRON reader output is FiringFrames4, StartFiringFrame56, Facings8; the whole fire history independently executes those retail readers. No VERA frame result is an input.",
+    "Original Facing constructor4C91E0 and Set4C9300 initialize each declared byte heading. The admitted undisguised/eight-facing selector starts73C62B, executes Current4C93D0 and the firing branch, and stops73C725 before subsequent drawing.",
+    "Counter-step inputs are supplied signed dwords; original7363C9..7363DE performs the decrement/clamp. The INT_MIN control preserves wrapping arithmetic. Full Unit AI admission and lifecycle are covered separately, not inferred from this slice."
+  ],
+  "substitutions": [
+    "No instructions, native calls, frame values or counter outputs are replaced. The slices do not execute Draw_It's admission, blitter, pixels or negative-counter Stand/Walk branches; no full-scene equivalence claim."
+  ],
+  "entry_points": {
+    "frame": "0x0073C62B",
+    "frame_boundary": "0x0073C725",
+    "counter": "0x007363C9",
+    "counter_boundary": "0x007363DE",
+    "facing_ctor": "0x004C91E0",
+    "facing_set": "0x004C9300",
+    "facing_current": "0x004C93D0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.gattling_unit_fire --shp-frames",
+  "payload_sha256": "46c5dafdb6fbfe0d7410da9489549a06f255c0fc2c47dd26a683eaa2f7e76210"
+}

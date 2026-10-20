@@ -42,7 +42,7 @@ fn entity(sim: &Simulation, id: u64) -> &GameEntity {
 
 fn order(sim: &mut Simulation, house: &str, command: Command) {
     let owner = sim.interner.get(house).unwrap();
-    let tick = sim.session.tick;
+    let tick = sim.session.tick();
     sim.queue_command(CommandEnvelope::new(owner, tick + 1, command));
 }
 
@@ -212,7 +212,7 @@ fn retail_tank_let_go_over_a_unit_crashes_onto_it() {
     let below = spawn(&mut sim, &rules, "AMCV", "Americans", 13, 16);
     let below_health = entity(&sim, below).health.current();
     let americans = sim.interner.get("Americans").unwrap();
-    let kills = sim.houses[&americans].stats.units_killed();
+    let kills = sim.houses[&americans].stats().units_killed();
 
     assert!(
         run_until(&mut sim, &rules, &grid, 600, |sim| {
@@ -257,7 +257,7 @@ fn retail_tank_let_go_over_a_unit_crashes_onto_it() {
         "the fall hurts the Unit below"
     );
     assert_eq!(
-        sim.houses[&americans].stats.units_killed(),
+        sim.houses[&americans].stats().units_killed(),
         kills + 2,
         "the bullet and the drop's credit each book the kill"
     );
@@ -654,11 +654,10 @@ fn lift_links_and_drop_credit_are_saved_and_hashed() {
     let mut sim = Simulation::with_seed(0x1269);
     for (name, human) in [("Russians", false), ("Americans", true)] {
         let id = sim.interner.intern(name);
-        sim.houses.insert(
-            id,
-            crate::sim::house_state::HouseState::new(id, 0, None, human, 0, 10),
-        );
-        sim.session.house_order.push(id);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                id, 0, None, human, 0, 10,
+            ));
     }
     let magnetron = sim
         .spawn_object_at_height("TANK", "Americans", 10, 16, 0, 0, &rules)

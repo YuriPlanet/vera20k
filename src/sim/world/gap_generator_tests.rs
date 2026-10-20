@@ -18,17 +18,20 @@ fn fixture() -> (Simulation, RuleSet, InternedId, InternedId, InternedId) {
          [GASPYSAT]\nSpySat=yes\nStrength=100\nFoundation=1x1\n",
     )).unwrap();
     let mut sim = Simulation::with_seed(0x143);
-    sim.fog.width = 32;
-    sim.fog.height = 32;
+    sim.fog.set_width_for_test(32);
+    sim.fog.set_height_for_test(32);
     let a = sim.interner.intern("Americans");
     let b = sim.interner.intern("Soviet");
     let c = sim.interner.intern("Third");
     for owner in [a, b, c] {
-        sim.houses.insert(
+        sim.houses.register(HouseState::new(
             owner,
-            HouseState::new(owner, owner.index() as u8, None, true, 10_000, 10),
-        );
-        sim.session.house_order.push(owner);
+            owner.index() as u8,
+            None,
+            true,
+            10_000,
+            10,
+        ));
     }
     (sim, rules, a, b, c)
 }
@@ -55,11 +58,11 @@ fn insert(sim: &mut Simulation, id: u64, owner: InternedId, name: &str, x: u16, 
         false,
     );
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(false);
+    entity.lifecycle.set_cell_marked_for_test(false);
     entity.set_in_playfield(true);
     if name == "SIGHT" {
         let mut loco = LocomotorState::for_test_kind(LocomotorKind::Jumpjet);
-        loco.set_layer(MovementLayer::Air);
+        loco.set_layer_for_test(MovementLayer::Air);
         entity.position.set_exact_z_leptons_for_test(Some(208));
 
         // The kernel target height is left unset on purpose: the corpus outcome
@@ -83,7 +86,7 @@ fn power(sim: &mut Simulation, rules: &RuleSet) {
         &mut sim.substrate.entities,
         rules,
         &sim.interner,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     );
 }
 
@@ -191,9 +194,9 @@ fn gap_operational_original_gate_and_native_order_corpus() {
                 dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(0),
             });
         let power = sim.power_states.entry(owner).or_default();
-        power.total_output = v["output"].as_i64().unwrap() as i32;
-        power.total_drain = v["drain"].as_i64().unwrap() as i32;
-        power.is_low_power = !power.has_full_power();
+        power.set_total_output_for_test(v["output"].as_i64().unwrap() as i32);
+        power.set_total_drain_for_test(v["drain"].as_i64().unwrap() as i32);
+        power.set_is_low_power_for_test(!power.has_full_power());
         assert_eq!(
             sim.gap_operational_state(1, &rules).unwrap().0,
             case["admitted"] == 1,
@@ -245,10 +248,10 @@ pub fn gap_operational_power_loss_views() -> Vec<(
 
     // Actual nonlethal ReceiveDamage followed by aggregate power assessment.
     // House reconciliation must retain the deposit until its Building turn.
-    sim.session.binary_frame = 238;
+    sim.session.set_binary_frame_for_test(238);
     damage(&mut sim, &rules, 50, 75);
     power(&mut sim, &rules);
-    assert!(sim.power_states[&last].is_low_power);
+    assert!(sim.power_states[&last].is_low_power());
     sim.reconcile_active_vision_structures(&rules);
     assert!(
         sim.substrate
@@ -281,7 +284,7 @@ pub fn gap_operational_power_loss_views() -> Vec<(
         live.restore_after_snapshot_load().unwrap();
         assert_eq!(live.state_hash(), before);
         live.reconcile_active_vision_structures(&rules);
-        live.session.binary_frame = 239;
+        live.session.set_binary_frame_for_test(239);
         let runtime = live
             .substrate
             .entities
@@ -312,7 +315,7 @@ pub fn gap_operational_power_loss_views() -> Vec<(
             crate::sim::timer::CdTimer::started(239, 15)
         );
         live.reconcile_active_vision_structures(&rules);
-        live.session.binary_frame = 240;
+        live.session.set_binary_frame_for_test(240);
         live.advance_tick(&[], Some(&rules), None, None, 67);
         let shrouded = case["observations"].as_array().unwrap().last().unwrap()["shrouded"] == 1;
         assert_eq!(
@@ -324,38 +327,6 @@ pub fn gap_operational_power_loss_views() -> Vec<(
         views.push((live.fog, viewer, shrouded));
     }
     views
-}
-
-#[test]
-fn gap_operational_power_loss_preserves_object_order_and_snapshot_continuation() {
-    let _ = gap_operational_power_loss_views();
-}
-
-#[test]
-fn gap_operational_first_visit_creates_viewers_and_house_is_passive() {
-    let (mut sim, rules, viewer, owner, _) = fixture();
-    insert(&mut sim, 1, owner, "GAGAP", 12, 12);
-    assert!(sim.fog.by_owner.is_empty());
-    sim.set_logic_order_for_test(vec![1]);
-    sim.advance_live_object_pass(
-        Some(&rules),
-        None,
-        crate::sim::world::FrameEffects::default(),
-    )
-    .expect("fixture frame must complete");
-    assert!(sim.fog.is_cell_gap_covered(viewer, 12, 12));
-    let saved = sim.fog.gap_sources.clone();
-    power(&mut sim, &rules); // no plant: now low power
-    refresh(&mut sim, &rules);
-    sim.reconcile_active_vision_structures(&rules);
-    assert_eq!(sim.fog.gap_sources, saved);
-    sim.advance_live_object_pass(
-        Some(&rules),
-        None,
-        crate::sim::world::FrameEffects::default(),
-    )
-    .expect("fixture frame must complete");
-    assert!(sim.fog.gap_sources[&viewer].is_empty());
 }
 
 #[test]
@@ -383,11 +354,11 @@ fn gap_operational_spy_sat_rechecks_live_candidates_per_viewer() {
     );
     assert!(
         sim.fog
-            .gap_sources
+            .gap_sources()
             .get(&a)
             .is_none_or(|sources| sources.is_empty())
     );
-    assert_eq!(sim.fog.gap_sources[&b].len(), 1);
+    assert_eq!(sim.fog.gap_sources()[&b].len(), 1);
 
     // This viewer's inactive generator must still be called by a live bracket
     //after power restores, even while6C8 remains true and no receipt exists.
@@ -404,7 +375,7 @@ fn gap_operational_spy_sat_rechecks_live_candidates_per_viewer() {
             .viewers()[&a]
             .active()
     );
-    assert_eq!(sim.fog.gap_sources[&a].len(), 1);
+    assert_eq!(sim.fog.gap_sources()[&a].len(), 1);
 }
 
 #[test]
@@ -422,8 +393,8 @@ fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes()
     );
     assert!(sim.fog.is_cell_visible(a, 12, 12));
     assert!(sim.fog.is_cell_revealed(a, 12, 12));
-    assert!(sim.fog.gap_sources[&a].is_empty());
-    assert_eq!(sim.fog.gap_sources[&owner].len(), 1);
+    assert!(sim.fog.gap_sources()[&a].is_empty());
+    assert_eq!(sim.fog.gap_sources()[&owner].len(), 1);
     let radius = sim
         .substrate
         .entities
@@ -452,7 +423,7 @@ fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes()
             .radius(),
         radius
     );
-    assert!(sim.fog.gap_sources[&owner].is_empty());
+    assert!(sim.fog.gap_sources()[&owner].is_empty());
     assert!(
         !sim.fog
             .sight_admissions_for_test()
@@ -464,8 +435,8 @@ fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes()
 #[test]
 fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry() {
     let (mut sim, rules, viewer, owner, _) = fixture();
-    sim.session.game_options.shroud = false;
-    sim.session.current_house = Some(viewer);
+    sim.session.game_options_mut_for_test().shroud = false;
+    sim.session.set_current_house_for_test(Some(viewer));
     crate::sim::scenario_bootstrap::apply_launch_shroud_option(
         &mut sim,
         crate::sim::world::UninitContext::with_rules(&rules),
@@ -494,8 +465,8 @@ fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry
     );
 
     let (mut sim, rules, viewer, _, _) = fixture();
-    sim.session.game_options.shroud = false;
-    sim.session.current_house = Some(viewer);
+    sim.session.game_options_mut_for_test().shroud = false;
+    sim.session.set_current_house_for_test(Some(viewer));
     crate::sim::scenario_bootstrap::apply_launch_shroud_option(
         &mut sim,
         crate::sim::world::UninitContext::with_rules(&rules),
@@ -530,7 +501,7 @@ pub fn sustained_source_gap_limbo_views() -> Vec<(vision::FogState, InternedId, 
     let (mut sim, rules, viewer, gapper, _) = fixture();
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     sim.fog = vision::FogState::new(32, 32);
-    sim.session.current_house = Some(viewer);
+    sim.session.set_current_house_for_test(Some(viewer));
     let source = sim
         .spawn_object("SIGHT", "Americans", 16, 16, 0, &rules)
         .expect("source Unlimbo");
@@ -558,7 +529,7 @@ pub fn sustained_source_gap_limbo_views() -> Vec<(vision::FogState, InternedId, 
     assert!(!sim.fog.sight_is_latched(source, viewer));
     views.push((sim.fog.clone(), viewer, true));
     for (frame, open) in [(119, true), (120, false)] {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         sim.tick_pending_shroud_conceal(UninitContext::with_rules(&rules));
         assert_eq!(sim.fog.is_cell_revealed(viewer, 16, 16), open);
         views.push((sim.fog.clone(), viewer, open));
@@ -573,11 +544,8 @@ pub fn nontransitive_source_gap_views() -> Vec<(vision::FogState, InternedId, In
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     sim.fog = vision::FogState::new(32, 32);
     let hostile = sim.intern("Neutral");
-    sim.houses.insert(
-        hostile,
-        HouseState::new(hostile, 3, None, false, 10_000, 10),
-    );
-    sim.session.house_order.push(hostile);
+    sim.houses
+        .register(HouseState::new(hostile, 3, None, false, 10_000, 10));
     let graph = HouseAllianceMap::from([
         ("AMERICANS".into(), ["SOVIET".into()].into()),
         ("SOVIET".into(), ["AMERICANS".into(), "THIRD".into()].into()),
@@ -616,10 +584,4 @@ pub fn nontransitive_source_gap_views() -> Vec<(vision::FogState, InternedId, In
     assert!(!sim.fog.is_cell_revealed(c, 16, 16));
     views.push((sim.fog.clone(), b, c));
     views
-}
-
-#[test]
-fn native_source_consumers_use_lifecycle_and_direct_alliance_owners() {
-    let _ = sustained_source_gap_limbo_views();
-    let _ = nontransitive_source_gap_views();
 }

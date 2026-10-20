@@ -7,7 +7,7 @@
     1,
     33621247
   ],
-  "scope": "Greatest_Threat's flags word over masks; Evaluate_Candidate's All-To-Hunt and quarry terms over synthetic candidates, then its final acceptance; Calculate_Threat_Score's SpecialThreatValue term and EnemyHouseThreatBonus; Evaluate_Candidate's distance cutoff over coordinate offsets, the candidate's high-flying answer and positive, zero and negative ranges.",
+  "scope": "Greatest_Threat's flags word over masks; Evaluate_Candidate's All-To-Hunt and quarry terms over synthetic candidates, then its final acceptance; Calculate_Threat_Score's SpecialThreatValue term and EnemyHouseThreatBonus; Evaluate_Candidate's distance cutoff over coordinate offsets, the candidate's high-flying answer and positive, zero and negative ranges; Evaluate_Candidate's disguise arm over disguise, DetectDisguise=, blink timers, attacker control, difficulty and roll.",
   "assumptions": [
     "x87 control word 0x0E7F (PC53, chop), the harness default.",
     "Fixture objects carry only the fields the slices read."
@@ -15,14 +15,17 @@
   "substitutions": [
     "The candidate's WhatAmI (vt+0x2C), occupant count (vt+0x408) and current weapon (vt+0x3F4) answer from the case.",
     "For the cutoff, the scanner's and the candidate's GetCoords (vt+0x48) write the case's coordinates and the candidate's vt+0x54 answers its high-flying flag; Sqrt_Approx and ftol run.",
-    "Between the quarry slices, the ThreatAvoidance factor (0x6F88BF..0x6F8926) is skipped: 1.0, no score change."
+    "Between the quarry slices, the ThreatAvoidance factor (0x6F88BF..0x6F8926) is skipped: 1.0, no score change.",
+    "For the disguise arm, the candidate's IsDisguisedTo (vt+0xC8), the scanner's GetTechnoType (vt+0x84), IsControlledByHuman 0x50B730 and RandomRanged 0x65C7E0 answer from the case; the draw's stream and range are recorded. DisabledDisguiseDetectionPercent= holds retail 15,5,2."
   ],
   "entry_points": {
     "flags": "0x006F8F29",
     "quarry_terms": "0x006F875F",
     "finish": "0x006F8928",
     "enemy_bonus": "0x0070CEDC",
-    "cutoff": "0x006F8049"
+    "cutoff": "0x006F8049",
+    "disguise": "0x006F84B1"
   },
-  "payload_sha256": "2aa3315ba42a57a2795a39d121620f9003440983e1ff00280ec7c99cbb17411b"
+  "replay_command": "python -m tools.threat_mask_oracle",
+  "payload_sha256": "b3db2272837db35bbac66efe34270ae5dc3488c6baa96a710c74a457d48a54a6"
 }

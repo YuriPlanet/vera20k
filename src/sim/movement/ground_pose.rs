@@ -616,7 +616,7 @@ pub fn target_get_coords(
             } else {
                 // Terrain7F522C+48 inherits Object5F65A0: its constructor's
                 // retained Location survives ground changes and expiry.
-                let coord = world.production.terrain_objects.get(&id)?.world_coord();
+                let coord = world.terrain_objects.objects().get(&id)?.world_coord();
                 Some(DriveCoord {
                     x: coord.x,
                     y: coord.y,

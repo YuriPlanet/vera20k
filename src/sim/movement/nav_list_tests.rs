@@ -21,10 +21,10 @@ fn retail_world(human: bool) -> Option<(Simulation, RuleSet)> {
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let owner = sim.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, human, 0, 10),
-    );
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, human, 0, 10,
+        ));
     Some((sim, rules))
 }
 

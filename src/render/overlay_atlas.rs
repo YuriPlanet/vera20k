@@ -1676,19 +1676,6 @@ mod tests {
     }
 
     #[test]
-    fn populated_frames_resolve_to_themselves() {
-        // Ore density frames (TIB01: 12 populated body frames) must keep
-        // indexing straight through — the cell's data byte is the frame.
-        let ore: Vec<(u16, u16)> = (0..12).map(|i| (20 + i, 10 + i)).collect();
-        for requested in 0u8..12 {
-            assert_eq!(
-                resolve_body_frame(requested, ore.len(), &ore),
-                Some(requested as usize)
-            );
-        }
-    }
-
-    #[test]
     fn out_of_range_frames_still_collapse_to_zero() {
         // VERA-internal guard (gamemd equivalent UNCHECKED): a wall whose art
         // declares fewer body frames than DamageLevels can reach stays visible

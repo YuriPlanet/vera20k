@@ -1,5 +1,5 @@
 use super::RandomMapGenerationRetention;
-use super::frontend::skirmish_session::{OfflineSkirmishRuntime, skirmish_global_defaults};
+use super::frontend::skirmish_session::{MultiplayerShellRuntime, skirmish_global_defaults};
 use super::loading::pump::{LoadingProgressSink, LoadingRequest};
 use super::shell_random_map::{
     RandomMapUpdate, accept_random_map_setup_owners, begin_random_map_generation_owners,
@@ -24,6 +24,7 @@ impl LoadingProgressSink for SilentProgress {
 fn launch_session(seed_name: &str) -> SkirmishLaunchSession {
     SkirmishLaunchSession {
         mode: SkirmishLaunchMode {
+            class: crate::skirmish_modes::MpModeClass::Battle,
             id: 1,
             ui_name_key: "GUI:Battle".to_string(),
             tooltip_key: "STT:ModeBattle".to_string(),
@@ -34,16 +35,23 @@ fn launch_session(seed_name: &str) -> SkirmishLaunchSession {
             must_ally: false,
         },
         selected_map_file: Some(seed_name.to_string()),
-        player_name: "Player".to_string(),
-        local: SkirmishLocalSlot {
-            country: LaunchCountry::America,
-            country_random: false,
-            color_index: 0,
-            color_random: false,
-            start_position: LaunchStartPosition::Position(0),
-            team: LaunchTeam::None,
-        },
+        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+            raw_slot_index: Some(0),
+            name: "Player".to_string(),
+            slot: SkirmishLocalSlot {
+                country: LaunchCountry::America,
+                country_random: false,
+                color_index: 0,
+                color_random: false,
+                start_position: LaunchStartPosition::Position(0),
+                team: LaunchTeam::None,
+            },
+            role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+        }],
+        local_player_index: 0,
+        ai_player_count: 1,
         opponents: vec![SkirmishAiSlot {
+            raw_slot_index: 1,
             country: LaunchCountry::Russia,
             country_random: false,
             color_index: 1,
@@ -61,7 +69,7 @@ fn start_production_worker(
     assets: &mut crate::assets::asset_manager::AssetManager,
     options: &RmgOptions,
     native_rules: &crate::rules::process_owner::NativeRulesProcessOwner,
-    runtime: &mut OfflineSkirmishRuntime,
+    runtime: &mut MultiplayerShellRuntime,
     retention: &mut RandomMapGenerationRetention,
     shared_cell_dummy: &crate::map::resolved_terrain::SharedCellDummy,
 ) -> std::sync::mpsc::Receiver<RandomMapUpdate> {
@@ -163,7 +171,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         mode_id: 1,
         record_index: Some(7),
     };
-    let mut runtime = OfflineSkirmishRuntime::initialize(
+    let mut runtime = MultiplayerShellRuntime::initialize(
         0x0412_0003,
         None,
         None,

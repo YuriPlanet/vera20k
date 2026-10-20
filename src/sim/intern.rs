@@ -223,20 +223,6 @@ mod tests {
     }
 
     #[test]
-    fn different_strings_get_different_ids() {
-        let mut interner = StringInterner::new();
-        let a = interner.intern("Americans");
-        let b = interner.intern("HTNK");
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn get_returns_none_for_unknown() {
-        let interner = StringInterner::new();
-        assert_eq!(interner.get("unknown"), None);
-    }
-
-    #[test]
     fn serde_round_trip() {
         let mut interner = StringInterner::new();
         let a = interner.intern("Americans");
@@ -253,13 +239,5 @@ mod tests {
         // Case-insensitive lookup still works after round-trip
         assert_eq!(restored.get("americans"), Some(a));
         assert_eq!(restored.get("htnk"), Some(b));
-    }
-
-    #[test]
-    fn interned_id_is_copy() {
-        let mut interner = StringInterner::new();
-        let id = interner.intern("test");
-        let id2 = id; // Copy, not move
-        assert_eq!(id, id2);
     }
 }

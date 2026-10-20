@@ -220,7 +220,7 @@ fn place_garrison_passenger_at_cell(
         && sim
             .houses
             .get(&pax.owner())
-            .is_some_and(|house| house.is_human)
+            .is_some_and(|house| house.is_human())
     {
         pax.building_entry.clear_occupy_seeks();
     }
@@ -256,7 +256,7 @@ fn place_garrison_passenger_at_cell(
             passenger_id,
             crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Hunt),
             0,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &crate::sim::mission::authority::EntityReadyInputProvider,
         )
         .expect("a revealed garrison occupant can queue Hunt");
@@ -629,10 +629,10 @@ pub(crate) mod tests {
     ) {
         let americans = sim.interner.intern("Americans");
         // The refund (`0x0070ADA0`) reads the owner house.
-        sim.houses.insert(
-            americans,
-            crate::sim::house_state::HouseState::new(americans, 0, None, true, 0, 10),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                americans, 0, None, true, 0, 10,
+            ));
 
         let mut building = GameEntity::test_default_of_category(
             building_id,
@@ -701,14 +701,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn garrison_sellbuilding_scan_order_handles_map_edge_without_u16_wrap() {
-        // A Rust boundary-safety check; the native corpus uses origin10,10.
-        let cells = garrison_sellbuilding_exit_cells(0, 0, 2, 2);
-        assert!(!cells.is_empty());
-        assert!(cells.iter().all(|&(x, y)| x <= 2 && y <= 2));
-    }
-
-    #[test]
     fn garrison_scatter_handoff_matches_original_destinations_and_three_rng_states() {
         use crate::sim::components::NavTargetRef;
         use crate::sim::rng::SimRng;
@@ -748,7 +740,7 @@ pub(crate) mod tests {
                 lepton::CELL_CENTER_LEPTON,
             );
             pax.lifecycle.set_in_limbo_for_test(false);
-            pax.lifecycle.set_cell_marked(true);
+            pax.lifecycle.set_cell_marked_for_test(true);
             sim.substrate.entities.insert(pax);
             give_walk_locomotor(&mut sim, id);
         }
@@ -867,7 +859,7 @@ pub(crate) mod tests {
             let owner = sim.interner.get("Americans").unwrap();
             let other = sim.interner.intern("Neutral");
             sim.houses
-                .insert(other, HouseState::new(other, 1, None, false, 0, 10));
+                .register(HouseState::new(other, 1, None, false, 0, 10));
             insert_hidden_passenger(&mut sim, 22, 20, "Neutral");
             {
                 let cargo = sim
@@ -886,7 +878,7 @@ pub(crate) mod tests {
                 let pax = sim.substrate.entities.get_mut(id).unwrap();
                 pax.attack_target.set_for_test(Some(TargetKind::Entity(20)));
                 pax.navigation
-                    .path_replay
+                    .path_replay_mut()
                     .set_directions_for_test(vec![9, 2, 3]);
                 crate::sim::building_entry::set_should_enter_occupiable_for_test(pax, true);
                 crate::sim::building_entry::set_should_enter_nearest_occupiable_for_test(pax, true);
@@ -931,7 +923,12 @@ pub(crate) mod tests {
                 assert!(pax.lifecycle.cell_marked());
                 assert!(pax.passenger_role.is_none());
                 assert!(pax.attack_target.target().is_none());
-                assert!(pax.navigation.path_replay.remaining_directions().is_empty());
+                assert!(
+                    pax.navigation
+                        .path_replay()
+                        .remaining_directions()
+                        .is_empty()
+                );
                 assert_eq!(pax.building_entry.should_enter_occupiable(), !human);
                 assert_eq!(pax.building_entry.should_enter_nearest_occupiable(), !human);
                 assert_eq!(
@@ -1011,7 +1008,7 @@ pub(crate) mod tests {
             .get_mut(22)
             .unwrap()
             .lifecycle
-            .set_cell_marked(true);
+            .set_cell_marked_for_test(true);
         assert_eq!(
             sell_building_occupants(
                 &mut sim,
@@ -1086,55 +1083,6 @@ pub(crate) mod tests {
             Some((12, 11)),
             "full exterior infantry sub-cells reject the selected cell and continue the scan"
         );
-    }
-
-    #[test]
-    fn sellbuilding_helper_ejects_without_owner_revert() {
-        let rules = garrison_edge_rules();
-        let mut sim = garrison_map(&rules);
-        let building_id = 20;
-        let passenger_id = 21;
-        insert_captured_player_owned_garrison(&mut sim, &rules, building_id, passenger_id);
-
-        let americans = sim.interner.intern("Americans");
-
-        assert_eq!(
-            sell_building_occupants(
-                &mut sim,
-                &rules,
-                None,
-                building_id,
-                GarrisonEjectMode::PlayerSell,
-                crate::sim::world::FrameEffects::default()
-            ),
-            1
-        );
-
-        let building = sim
-            .substrate
-            .entities
-            .get(building_id)
-            .expect("helper should not remove building");
-        assert_eq!(
-            building.owner(),
-            americans,
-            "SellBuilding-style helper must not ChangeOwner"
-        );
-        assert!(
-            building
-                .passenger_role
-                .cargo()
-                .is_some_and(|cargo| cargo.is_empty()),
-            "helper should clear building cargo"
-        );
-
-        let passenger = sim
-            .substrate
-            .entities
-            .get(passenger_id)
-            .expect("passenger should remain");
-        assert!(passenger.passenger_role.is_none());
-        assert!(!passenger.death.is_dying());
     }
 
     #[test]

@@ -30,7 +30,7 @@ fn sidebar_item(
         &[],
         None,
         &[],
-        Some(&sim.interner),
+        Some(sim.interner()),
         &views,
         &SidebarGadgetState::default(),
         None,
@@ -98,14 +98,14 @@ fn native_superweapon_cameo_controls_match_modes_and_requests() {
             supplied["drain"].as_bool().unwrap_or(false)
         ))).unwrap();
         let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
-        let id = sim.interner.intern("SUPER");
+        let owner = sim.intern("Americans");
+        let id = sim.intern("SUPER");
         let mut instance = SuperWeaponInstance::new(id, owner, 0);
-        instance.is_active = true;
-        instance.is_ready = supplied["ready"].as_bool().unwrap_or(true);
-        instance.is_suspended = supplied["held"].as_bool().unwrap_or(false);
-        instance.charge_drain_state = supplied["state"].as_i64().unwrap_or(0) as i32;
-        sim.super_weapons
+        instance.set_is_active_for_test(true);
+        instance.set_is_ready_for_test(supplied["ready"].as_bool().unwrap_or(true));
+        instance.set_is_suspended_for_test(supplied["held"].as_bool().unwrap_or(false));
+        instance.set_charge_drain_state_for_test(supplied["state"].as_i64().unwrap_or(0) as i32);
+        sim.super_weapons_mut_for_test()
             .entry(owner)
             .or_default()
             .insert(id, instance);
@@ -202,12 +202,12 @@ fn delivery_missing_or_custom_action_arms_the_real_cameo_targeting_path() {
         )))
         .unwrap();
         let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
-        let id = sim.interner.intern("Delivery");
+        let owner = sim.intern("Americans");
+        let id = sim.intern("Delivery");
         let mut instance = SuperWeaponInstance::new(id, owner, 0);
-        instance.is_active = true;
-        instance.is_ready = true;
-        sim.super_weapons
+        instance.set_is_active_for_test(true);
+        instance.set_is_ready_for_test(true);
+        sim.super_weapons_mut_for_test()
             .entry(owner)
             .or_default()
             .insert(id, instance);
@@ -240,16 +240,16 @@ fn superweapon_money_cameo_refuses_before_target_or_direct_launch_but_allows_rig
             )), &IniFile::empty(),
         ).unwrap();
         let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
-        let id = sim.interner.intern("Paid");
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 499, 10),
-        );
+        let owner = sim.intern("Americans");
+        let id = sim.intern("Paid");
+        sim.houses_mut_for_test()
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 499, 10,
+            ));
         let mut instance = SuperWeaponInstance::new(id, owner, 0);
-        instance.is_active = true;
-        instance.is_ready = true;
-        sim.super_weapons
+        instance.set_is_active_for_test(true);
+        instance.set_is_ready_for_test(true);
+        sim.super_weapons_mut_for_test()
             .entry(owner)
             .or_default()
             .insert(id, instance);
@@ -277,7 +277,11 @@ fn superweapon_money_cameo_refuses_before_target_or_direct_launch_but_allows_rig
             SuperWeaponClick::None
         );
         assert!(input.targeting_mode.is_none());
-        sim.houses.get_mut(&owner).unwrap().economy.add_credits(1);
+        sim.houses_mut_for_test()
+            .get_mut(&owner)
+            .unwrap()
+            .economy_mut_for_test()
+            .add_credits(1);
         let views = superweapon_views_for_owner(&sim, &rules, &owner);
         let result = press(&mut input, &mut gadgets, views.first(), Some(action), false);
         assert_eq!(

@@ -283,15 +283,15 @@ pub(crate) fn start(
     sim.sound_events.push(SimSoundEvent::RadarEvent {
         radar: RadarEventRequest::new(RadarEventType::ImpactSilent, cell.0 as u16, cell.1 as u16),
     });
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let storm = &mut sim.lightning_storm;
     storm.duration = duration;
     storm.start_frame = frame as i32;
     storm.active = true;
     let local_player_defeated = sim.local_player_defeated();
     // HouseClass::Array, in creation order.
-    for index in 0..sim.session.house_order.len() {
-        let house = sim.session.house_order[index];
+    for index in 0..sim.houses.order().len() {
+        let house = sim.houses.order()[index];
         if let Some(owner) = owner
             && crate::map::houses::is_allied_with(
                 &sim.house_alliances,
@@ -301,7 +301,12 @@ pub(crate) fn start(
         {
             continue;
         }
-        if sim.houses.get(&house).is_none_or(|state| state.is_defeated) || local_player_defeated {
+        if sim
+            .houses
+            .get(&house)
+            .is_none_or(|state| state.is_defeated())
+            || local_player_defeated
+        {
             continue;
         }
         sim.power_states
@@ -309,7 +314,7 @@ pub(crate) fn start(
             .or_default()
             .start_radar_outage(frame, duration);
     }
-    if let Some(player) = sim.session.current_house
+    if let Some(player) = sim.session.current_house()
         && sim.houses.contains_key(&player)
     {
         sim.power_states.entry(player).or_default().recheck_radar();
@@ -389,7 +394,7 @@ pub(super) fn process(
         }
     }
 
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let storm = &sim.lightning_storm;
     if storm.active && !storm.time_to_end {
         if storm.duration != -1 && storm.start_frame.wrapping_add(storm.duration) < frame {

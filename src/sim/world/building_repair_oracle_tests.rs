@@ -222,15 +222,20 @@ fn toggle_repair_matches_the_original() {
             _ => continue,
         };
         let mut sim = Simulation::new();
-        sim.session.game_mode_nonzero = input["game_mode"].as_i64().unwrap_or(1) != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["game_mode"].as_i64().unwrap_or(1) != 0,
+            ),
+        );
         let owner = sim.interner.intern("AI");
         // Native House50B6F0's nonzero-mode identity input, distinct from
         // its campaign human/control bytes. The flash call is gated here;
         // the sound events retain their app-side audibility admission.
-        sim.session.current_house = (input["player"] == true).then_some(owner);
+        sim.session
+            .set_current_house_for_test((input["player"] == true).then_some(owner));
         let mut house = HouseState::new(owner, 0, None, input["human"] == true, 0, 10);
-        house.player_control = input["player_control"] == true;
-        sim.houses.insert(owner, house);
+        house.set_player_control_for_test(input["player_control"] == true);
+        sim.houses.register(house);
         let kind = sim.interner.intern("YAREFN");
         let mut building = GameEntity::new_at_frame_zero_for_test(
             1,
@@ -248,8 +253,8 @@ fn toggle_repair_matches_the_original() {
         );
         building.repairing.set_for_test(input["repairing"] == 1);
         sim.substrate.entities.insert(building);
-        let timer_before = sim.houses[&owner].repair_latch_timer;
-        let latch_before = sim.houses[&owner].repair_start_latch;
+        let timer_before = *sim.houses[&owner].repair_latch_timer();
+        let latch_before = sim.houses[&owner].repair_start_latch();
         let (admitted, draws) = crate::sim::rng::trace_draws(|| {
             production::toggle_repair(&mut sim, &rules, 1, control)
         });
@@ -259,11 +264,13 @@ fn toggle_repair_matches_the_original() {
             "{name}: manual ToggleRepair spends no RNG"
         );
         assert_eq!(
-            sim.houses[&owner].repair_latch_timer, timer_before,
+            *sim.houses[&owner].repair_latch_timer(),
+            timer_before,
             "{name}"
         );
         assert_eq!(
-            sim.houses[&owner].repair_start_latch, latch_before,
+            sim.houses[&owner].repair_start_latch(),
+            latch_before,
             "{name}"
         );
         assert_eq!(
@@ -328,8 +335,13 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
         constant(corpus, "rate_016")
     );
     let mut sim = Simulation::new();
-    sim.session.game_mode_nonzero = int("game_mode", 1) != 0;
-    sim.session.binary_frame = int("frame", 196) as u32;
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            int("game_mode", 1) != 0,
+        ),
+    );
+    sim.session
+        .set_binary_frame_for_test(int("frame", 196) as u32);
     let owner = sim.interner.intern("AI");
     let mut house = HouseState::new(
         owner,
@@ -339,20 +351,20 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
         int("balance", 5000),
         10,
     );
-    house.player_control = flag("player_control", false);
-    house.current_iq = int("current_iq", 2);
-    house.authored_iq = 2;
-    house.repair_start_latch = flag("latched", false);
+    house.set_player_control_for_test(flag("player_control", false));
+    house.set_current_iq_for_test(int("current_iq", 2));
+    house.set_authored_iq_for_test(2);
+    house.set_repair_start_latch_for_test(flag("latched", false));
     let timer = input["timer"].as_array().map_or([0, 0], |timer| {
         [timer[0].as_i64().unwrap(), timer[2].as_i64().unwrap()]
     });
-    house.repair_latch_timer = CdTimer::from_raw(timer[0] as i32, timer[1] as i32);
+    house.set_repair_latch_timer_for_test(CdTimer::from_raw(timer[0] as i32, timer[1] as i32));
     house.set_repair_delay_for_test(f64::from_bits(
         input["delay"]
             .as_u64()
             .unwrap_or_else(|| constant(corpus, "delay_02")),
     ));
-    sim.houses.insert(owner, house);
+    sim.houses.register(house);
     assert_eq!(sim.allocate_stable_id(), 1);
     let kind = sim.interner.intern("YAREFN");
     let health = int("health", 300);
@@ -484,12 +496,12 @@ fn update_repair_and_power_matches_the_original() {
         );
         assert_eq!(
             json!([
-                house.economy.credits(),
-                house.economy.spent_credits(),
-                u8::from(house.repair_start_latch),
+                house.economy().credits(),
+                house.economy().spent_credits(),
+                u8::from(house.repair_start_latch()),
                 [
-                    house.repair_latch_timer.start_frame(),
-                    house.repair_latch_timer.duration()
+                    house.repair_latch_timer().start_frame(),
+                    house.repair_latch_timer().duration()
                 ],
             ]),
             json!([row["balance"], row["spent"], row["latched"], row["timer"]]),
@@ -502,7 +514,7 @@ fn update_repair_and_power_matches_the_original() {
         );
         if let Some(smoke) = smoke {
             assert_eq!(
-                u8::from(sim.particle_systems().get(smoke).unwrap().done_spawning),
+                u8::from(sim.particle_systems().get(smoke).unwrap().done_spawning()),
                 row["smoke_done"].as_u64().unwrap() as u8,
                 "{name}: smoke"
             );
@@ -554,7 +566,7 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
         let name = input["name"].as_str().unwrap();
         let (mut sim, rules, _smoke) = update_scene(&corpus, input);
         // Original build() calls prepare_update with mission=none before entry.
-        sim.mission_assign_exact(1, MissionId::NONE, sim.session.binary_frame)
+        sim.mission_assign_exact(1, MissionId::NONE, sim.session.binary_frame())
             .unwrap();
         let owner = sim.interner.get("AI").unwrap();
         let control: [i32; 3] = serde_json::from_value(input["control"].clone()).unwrap();
@@ -585,7 +597,7 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
         }
         for frame in row["frames"].as_array().unwrap() {
             let now = frame["frame"].as_u64().unwrap();
-            sim.session.binary_frame = now as u32;
+            sim.session.set_binary_frame_for_test(now as u32);
             sim.sound_events.clear();
             let placed_before = sim
                 .substrate
@@ -614,11 +626,11 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
                 json!([
                     building.health.current(),
                     u8::from(building.repairing.is_on()),
-                    house.economy.credits(),
-                    u8::from(house.repair_start_latch),
+                    house.economy().credits(),
+                    u8::from(house.repair_start_latch()),
                     [
-                        house.repair_latch_timer.start_frame(),
-                        house.repair_latch_timer.duration()
+                        house.repair_latch_timer().start_frame(),
+                        house.repair_latch_timer().duration()
                     ],
                 ]),
                 json!([
@@ -656,14 +668,14 @@ fn the_auto_repair_latch_releases_on_the_original_timer() {
     for row in corpus()["release"].as_array().unwrap() {
         let input = &row["input"];
         let mut house = HouseState::new(Default::default(), 0, None, false, 0, 10);
-        house.repair_start_latch = input["latched"] == 1;
-        house.repair_latch_timer = CdTimer::from_raw(
+        house.set_repair_start_latch_for_test(input["latched"] == 1);
+        house.set_repair_latch_timer_for_test(CdTimer::from_raw(
             input["timer"][0].as_i64().unwrap() as i32,
             input["timer"][1].as_i64().unwrap() as i32,
-        );
+        ));
         house.release_repair_latch(input["frame"].as_u64().unwrap() as u32);
         assert_eq!(
-            u8::from(house.repair_start_latch),
+            u8::from(house.repair_start_latch()),
             row["latched"].as_u64().unwrap() as u8,
             "{}",
             input["name"]
@@ -771,7 +783,7 @@ fn the_repair_step_keeps_signed_adds_and_the_live_strength() {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, true, 1000, 10));
+            .register(HouseState::new(owner, 0, None, true, 1000, 10));
         let kind = sim.interner.intern("GAPOWR");
         let mut building = GameEntity::new_at_frame_zero_for_test(
             1,
@@ -841,7 +853,7 @@ fn a_sale_s_first_visit_stops_the_repair() {
         entity.repairing.set_for_test(repairing);
         let sale_order = crate::sim::command::CommandEnvelope::new(
             s.sim.substrate.entities.get(building).unwrap().owner(),
-            s.sim.session.tick + 1,
+            s.sim.session.tick() + 1,
             crate::sim::command::Command::SellBuilding {
                 entity_id: building,
             },

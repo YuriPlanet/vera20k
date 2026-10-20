@@ -242,7 +242,7 @@ pub fn install_bunker_link(sim: &mut Simulation, building_id: u64, unit_id: u64,
     {
         rt.occupy();
     }
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         unit_id,
         MissionId::from_known(MissionType::Guard),
@@ -333,14 +333,14 @@ pub(crate) fn release_normal(
     power_and_force_release(sim, building_id, unit_id, Some(rules), effects);
     if let Some(cell) = bunker_exit_cell(sim, building_id, unit_id, rules) {
         let terrain = sim.resolved_terrain.as_ref();
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         if let Some(unit) = sim.substrate.entities.get_mut(unit_id) {
             crate::sim::movement::set_destination_internal_cell(unit, cell, terrain, frame);
         }
     }
     #[cfg(test)]
     release_tests::record(sim, building_id, unit_id, "destination");
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         unit_id,
         MissionId::from_known(MissionType::Move),
@@ -471,7 +471,7 @@ fn break_first_contact(sim: &mut Simulation, building_id: u64, effects: FrameEff
 }
 
 fn queue_guard(sim: &mut Simulation, building_id: u64) {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         building_id,
         MissionId::from_known(MissionType::Guard),
@@ -922,7 +922,7 @@ mod tests {
         let stored = |sim: &Simulation, receiver, rules| {
             assign_target_stored(
                 &sim.substrate.entities,
-                &sim.production.terrain_objects,
+                sim.terrain_objects.objects(),
                 receiver,
                 tank,
                 Some((rules, &sim.interner)),
@@ -939,7 +939,7 @@ mod tests {
         assert_eq!(stored(&sim, 3, &rules), Some(TargetKind::Entity(2)));
         let own = assign_target_stored(
             &sim.substrate.entities,
-            &sim.production.terrain_objects,
+            sim.terrain_objects.objects(),
             3,
             Some(TargetKind::Entity(3)),
             None,

@@ -56,7 +56,8 @@ fn offline_sparks_match_original_execution() {
             .set_for_test(row["deactivated"].as_bool().unwrap());
         let mut sim = Simulation::new();
         sim.substrate.entities.insert(entity);
-        sim.session.binary_frame = row["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(row["frame"].as_u64().unwrap() as u32);
         let seed = row["seed"].as_u64().unwrap();
         sim.scenario_rng = SimRng::new(seed);
         sim.deactivated_unit_sparks(1, &rules);
@@ -67,14 +68,14 @@ fn offline_sparks_match_original_execution() {
             .particle_systems()
             .iter()
             .map(|(_, system)| {
-                assert_eq!(system.type_id, spark, "{name}");
+                assert_eq!(system.type_id(), spark, "{name}");
                 let coord = |coord: glam::IVec3| serde_json::json!([coord.x, coord.y, coord.z]);
                 serde_json::json!({
-                    "coords": coord(system.coords),
-                    "target": system.target_ref.map_or(0, |_| 1),
-                    "owner": system.owner_entity.map_or(0, |_| 1),
-                    "target_coords": coord(system.target_coords),
-                    "house": system.owner_house.map_or(0, |_| 1),
+                    "coords": coord(system.coords()),
+                    "target": system.target_ref().map_or(0, |_| 1),
+                    "owner": system.owner_entity().map_or(0, |_| 1),
+                    "target_coords": coord(system.target_coords()),
+                    "house": system.owner_house().map_or(0, |_| 1),
                 })
             })
             .collect();
@@ -165,8 +166,10 @@ fn arena(rules: &RuleSet) -> (Simulation, PathGrid) {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x0050_E0E0);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.session.game_mode_nonzero = true;
-    sim.session.current_house = sim.interner.get("Americans");
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    sim.session
+        .set_current_house_for_test(sim.interner.get("Americans"));
     let grid = sim
         .path_grid_snapshot()
         .map(|grid| (*grid).clone())
@@ -269,7 +272,7 @@ fn order_move(sim: &mut Simulation, id: u64, target: (u16, u16)) {
     let americans = sim.interner.get("Americans").unwrap();
     sim.queue_command(CommandEnvelope::new(
         americans,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Move {
             entity_id: id,
             target_rx: target.0,
@@ -358,7 +361,7 @@ fn losing_and_regaining_the_last_powered_center_switches_robot_tanks() {
         sparks.extend(
             sim.particle_systems()
                 .iter()
-                .filter(|(_, system)| system.type_id == spark)
+                .filter(|(_, system)| system.type_id() == spark)
                 .map(|(&id, _)| id),
         );
         false
@@ -614,7 +617,7 @@ fn losing_robot_power_drops_water_hover_and_keeps_land_hover_alive() {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(water_cell.0, water_cell.1)
+            .cell_mut_for_test(water_cell.0, water_cell.1)
             .unwrap();
         terrain_cell.land_type = 2;
         terrain_cell.base_land_type = 2;
@@ -645,9 +648,9 @@ fn losing_robot_power_drops_water_hover_and_keeps_land_hover_alive() {
                 }
                 if let Some(splash) = splash {
                     saw_splash |= sim.substrate.anims.iter().any(|(_, anim)| {
-                        sim.interner.resolve(anim.type_id) == splash.as_str()
-                            && anim.world_coord.to_cell_sub_z().0 == water_cell.0
-                            && anim.world_coord.to_cell_sub_z().1 == water_cell.1
+                        sim.interner.resolve(anim.type_id()) == splash.as_str()
+                            && anim.world_coord().to_cell_sub_z().0 == water_cell.0
+                            && anim.world_coord().to_cell_sub_z().1 == water_cell.1
                     });
                 }
                 sim.substrate.entities.get(water_tank).is_none()
@@ -705,7 +708,7 @@ fn robot_tank_state_is_saved_and_hashed() {
     sim.scenario_rng = SimRng::new(0);
     let house = sim.interner.intern("Americans");
     sim.houses
-        .insert(house, HouseState::new(house, 0, None, true, 0, 10));
+        .register(HouseState::new(house, 0, None, true, 0, 10));
     let tank = sim.allocate_stable_id();
     sim.substrate
         .entities

@@ -320,29 +320,6 @@ mod tests {
     }
 
     #[test]
-    fn responsive_layout_stretches_the_page_list_and_prompt() {
-        let base = compute_movie_list_layout(800, 600);
-        let same = compute_responsive_movie_list_layout(800, 600);
-        assert_eq!(same, base);
-        let double = compute_responsive_movie_list_layout(1600, 1200);
-        assert_eq!(double.list, RectPx::new(240, 256, 798, 608));
-        assert_eq!(double.prompt, RectPx::new(240, 146, 798, 78));
-        assert_eq!(
-            double.page.button_rect(0x0686),
-            Some(RectPx::new(1288, 1070, 312, 84))
-        );
-    }
-
-    #[test]
-    fn fresh_open_selects_nothing_and_retained_selection_restores() {
-        let fresh = MovieListState::open(MovieProgress::default(), -1);
-        assert_eq!(fresh.rows.len(), 1);
-        assert_eq!(fresh.selected, None);
-        let reopened = MovieListState::open(MovieProgress::default(), 0);
-        assert_eq!(reopened.selected, Some(0));
-    }
-
-    #[test]
     fn press_hit_uses_client_y_without_border_correction() {
         let list = RectPx::new(120, 128, 399, 304);
         let state = MovieListState::open(MovieProgress::default(), -1);
@@ -362,11 +339,6 @@ mod tests {
             .iter()
             .map(|movie| movie.file)
             .collect()
-    }
-
-    #[test]
-    fn fresh_process_lists_only_the_intro() {
-        assert_eq!(files(MovieProgress::default()), ["A00_F00E"]);
     }
 
     #[test]

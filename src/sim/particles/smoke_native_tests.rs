@@ -128,7 +128,8 @@ fn original_smoke_dispatch_cadence_drift_speed_and_word_lifetime() {
         let rules = rules(&data, &case["input"]);
         let mut sim = sim(false);
         let mut p = declared_particle(&mut sim, &rules, &case["before"]);
-        sim.session.binary_frame = case["input"]["frame"].as_u64().unwrap_or(40) as u32;
+        sim.session
+            .set_binary_frame_for_test(case["input"]["frame"].as_u64().unwrap_or(40) as u32);
         adopt_rng(&mut sim, case);
         let main = sim.main_rng.native_state_hex();
         let mapgen = sim.mapgen_rng.native_state_hex();
@@ -315,7 +316,7 @@ fn original_smoke_follows_owner_offset_leaves_trail_and_suppresses_tube_births()
                     },
                 )
             });
-            sim.session.binary_frame = 0;
+            sim.session.set_binary_frame_for_test(0);
             assert!(super::super::system_ai::tick_particle_system(
                 &mut sim,
                 &rules,
@@ -381,7 +382,8 @@ fn original_smoke_system_birth_split_emission_cutoff_and_limbo() {
         let (id, owner) = install_system(&mut sim, &rules, &case["input"], &case["before"]);
         adopt_rng(&mut sim, case);
         for visit in case["visits"].as_array().unwrap() {
-            sim.session.binary_frame = visit["frame"].as_u64().unwrap() as u32;
+            sim.session
+                .set_binary_frame_for_test(visit["frame"].as_u64().unwrap() as u32);
             assert!(super::super::system_ai::tick_particle_system(
                 &mut sim,
                 &rules,
@@ -429,7 +431,7 @@ fn original_stored_smoke_accumulator_preserves_long_run_rng_boundaries() {
     adopt_rng(&mut sim, case);
     let points = case["checkpoints"].as_array().unwrap();
     for frame in 0..=points.last().unwrap()["frame"].as_u64().unwrap() as u32 {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         super::super::system_ai::tick_particle_system(
             &mut sim,
             &rules,
@@ -469,14 +471,15 @@ fn smoke_scalar_and_air_authorities_survive_existing_snapshot_roundtrip() {
             y: c.y,
             z: c.z,
         });
-    sim.session.binary_frame = 0;
+    sim.session.set_binary_frame_for_test(0);
     super::super::system_ai::tick_particle_system(
         &mut sim,
         &rules,
         id,
         crate::sim::world::UninitContext::with_rules(&rules),
     );
-    sim.session.map_name = "damage-smoke-continuation".into();
+    sim.session
+        .set_map_name_for_test("damage-smoke-continuation".into());
     let bytes = GameSnapshot::save_validated(&sim, 17, 23, "Smoke continuation", 0);
     let mut restored = GameSnapshot::load_validated(&bytes, 17, 23, "damage-smoke-continuation")
         .unwrap()

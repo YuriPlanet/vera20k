@@ -51,7 +51,7 @@ impl Simulation {
             crate::util::lepton::lepton_to_cell_packed(coord.y) as u16,
         );
         let (authored, waypoint) = self.houses.get(&house_id).map_or((-1, 0), |house| {
-            (house.authored_edge(), house.waypoint_edge)
+            (house.authored_edge(), house.waypoint_edge())
         });
         let edge = super::edge_cell::Edge::authored_or_waypoint(authored, waypoint);
         let Some(seed) = self.aircraft_edge_cell(edge) else {
@@ -121,7 +121,7 @@ impl Simulation {
             }
             crate::sim::mission::authority::commence_entity_mission(
                 self.substrate.entities.get_mut(plane).unwrap(),
-                self.session.binary_frame,
+                self.session.binary_frame(),
             );
             result.aircraft.push(plane);
             result.count += 1;
@@ -202,7 +202,7 @@ mod tests {
         };
         let owner = sim.substrate.entities.get(boris).unwrap().owner();
         let house = sim.houses.get(&owner).unwrap();
-        let edge = Edge::authored_or_waypoint(house.authored_edge(), house.waypoint_edge);
+        let edge = Edge::authored_or_waypoint(house.authored_edge(), house.waypoint_edge());
         let mut expected = sim.scenario_rng.clone();
         super::super::edge_cell::find_paradrop_edge_cell(
             sim.playfield_bounds,

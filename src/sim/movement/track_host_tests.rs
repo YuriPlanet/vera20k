@@ -17,7 +17,7 @@ fn fixture(family: TrackFamily, budget: i32) -> (Simulation, TrackInvocation, i3
     ));
     entity.lifecycle.set_object_alive_for_test(true);
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(true);
+    entity.lifecycle.set_cell_marked_for_test(true);
     let head = DriveCoord {
         x: 10 * 256 + 128,
         y: 9 * 256 + 128,
@@ -585,14 +585,22 @@ fn terminal_saved_reached_clears_callback_navcom_and_only_live_queue_head() {
             entity
                 .navigation
                 .set_nav_com_for_test(Some(NavTargetRef::cell(25, 25)));
-            entity.navigation.path_replay = FootPathQueue::for_test(vec![1, 2, 3], 1, Some((7, 8)));
+            entity
+                .navigation
+                .set_path_replay_for_test(FootPathQueue::for_test(vec![1, 2, 3], 1, Some((7, 8))));
         }
     });
     let entity = sim.substrate.entities.get(1).unwrap();
     assert!(entity.navigation.nav_com().is_none());
-    assert_eq!(entity.navigation.path_replay.directions(), vec![1, 255, 3]);
-    assert_eq!(entity.navigation.path_replay.cursor(), 1);
-    assert_eq!(entity.navigation.path_replay.reference_cell(), Some((7, 8)));
+    assert_eq!(
+        entity.navigation.path_replay().directions(),
+        vec![1, 255, 3]
+    );
+    assert_eq!(entity.navigation.path_replay().cursor(), 1);
+    assert_eq!(
+        entity.navigation.path_replay().reference_cell(),
+        Some((7, 8))
+    );
 }
 
 #[test]
@@ -654,7 +662,9 @@ fn accepted_chain_preserves_call_budget_and_reloads_callback_queue_once() {
                 .unwrap()
                 .store_track_progress(family, TrackProgress::for_test(1, 37, false, 0))
         );
-        entity.navigation.path_replay = FootPathQueue::for_test(vec![2, 3], 0, Some((10, 10)));
+        entity
+            .navigation
+            .set_path_replay_for_test(FootPathQueue::for_test(vec![2, 3], 0, Some((10, 10))));
         let saved_fraction = entity.foot_speed.applied_fraction();
         let mut callbacks = 0;
         sim.run_track_points_observed(
@@ -675,8 +685,13 @@ fn accepted_chain_preserves_call_budget_and_reloads_callback_queue_once() {
                     assert_eq!(head(entity, family), DriveCoord { x: 0, y: 0, z: 0 });
                     assert!(valid(entity, family));
                     set_head(entity, family, Some(DriveCoord::cell(1, 1, 0)));
-                    entity.navigation.path_replay =
-                        FootPathQueue::for_test(vec![7, 3, 4], 0, Some((6, 7)));
+                    entity
+                        .navigation
+                        .set_path_replay_for_test(FootPathQueue::for_test(
+                            vec![7, 3, 4],
+                            0,
+                            Some((6, 7)),
+                        ));
                     entity
                         .foot_speed
                         .set_speed_fraction(SimFixed::from_num(0.25));
@@ -694,9 +709,9 @@ fn accepted_chain_preserves_call_budget_and_reloads_callback_queue_once() {
             // it never reaches accepted candidate publication or restoration.
             assert!(!valid(entity, family));
             assert_eq!(head(entity, family), DriveCoord::cell(1, 1, 0));
-            assert_eq!(entity.navigation.path_replay.cursor(), 0);
+            assert_eq!(entity.navigation.path_replay().cursor(), 0);
             assert_eq!(
-                entity.navigation.path_replay.remaining_directions(),
+                entity.navigation.path_replay().remaining_directions(),
                 &[7, 3, 4]
             );
             assert_eq!(
@@ -709,9 +724,9 @@ fn accepted_chain_preserves_call_budget_and_reloads_callback_queue_once() {
         assert!(valid(entity, family));
         assert!(progress(entity, family).unwrap().cursor() > i32::from(selected.entry_index));
         assert_eq!(progress(entity, family).unwrap().residual(), 1);
-        assert_eq!(entity.navigation.path_replay.cursor(), 1);
+        assert_eq!(entity.navigation.path_replay().cursor(), 1);
         assert_eq!(
-            entity.navigation.path_replay.remaining_directions(),
+            entity.navigation.path_replay().remaining_directions(),
             &[3, 4]
         );
         assert_eq!(entity.foot_speed.applied_fraction(), saved_fraction);
@@ -947,8 +962,9 @@ fn terminal_retires_the_head_before_callback_and_keeps_a_new_order() {
                         .navigation
                         .set_nav_com_for_test(Some(NavTargetRef::cell(12, 9)));
                     // The callback's new route: Foot+5E0 words from (10,9).
-                    entity.navigation.path_replay =
-                        crate::sim::movement::fixture_path_replay(&[(10, 9), (11, 9), (12, 9)]);
+                    entity.navigation.set_path_replay_for_test(
+                        crate::sim::movement::fixture_path_replay(&[(10, 9), (11, 9), (12, 9)]),
+                    );
                 }
             }
         });
@@ -957,7 +973,7 @@ fn terminal_retires_the_head_before_callback_and_keeps_a_new_order() {
         assert_eq!(
             entity
                 .navigation
-                .path_replay
+                .path_replay()
                 .remaining_directions()
                 .is_empty(),
             !retarget
@@ -978,7 +994,7 @@ fn per_cell_promotes_queued_mission_before_tail_without_dispatching_handler() {
     .unwrap();
     for unload_active in [false, true] {
         let (mut sim, _, _) = fixture(TrackFamily::Drive, 8);
-        sim.session.binary_frame = 57;
+        sim.session.set_binary_frame_for_test(57);
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         assert!(entity.locomotor.as_mut().unwrap().store_track_head(
             crate::sim::movement::track_process::TrackFamily::Drive,
@@ -1031,7 +1047,7 @@ fn factory_per_cell_fixture(
     use crate::sim::radio::{RadioMessage, RadioPayload, RadioResponse, transmit};
 
     let (mut sim, _, _) = fixture(TrackFamily::Drive, 0);
-    sim.session.binary_frame = 57;
+    sim.session.set_binary_frame_for_test(57);
     let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=6\n{unit_reader_lines}\n\
          [BuildingTypes]\n0=GAWEAP\n[GAWEAP]\nWeaponsFactory=yes\n",
@@ -1061,10 +1077,10 @@ fn factory_per_cell_fixture(
         crate::sim::movement::track_process::TrackFamily::Drive,
         false
     ));
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
+    sim.houses
+        .insert_for_test(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
     let mut producer = GameEntity::test_default_of_category(
         2,
         "GAWEAP",
@@ -1079,7 +1095,7 @@ fn factory_per_cell_fixture(
     producer.set_on_bridge(producer_on_bridge);
     producer.lifecycle.set_object_alive_for_test(true);
     producer.lifecycle.set_in_limbo_for_test(false);
-    producer.lifecycle.set_cell_marked(true);
+    producer.lifecycle.set_cell_marked_for_test(true);
     producer.mission.apply_test_fixture(guard);
     sim.substrate.entities.insert(producer);
     sim.substrate.occupancy =
@@ -1151,7 +1167,7 @@ fn per_cell_factory_clearance_precedes_ready_and_preserves_foot_stop_scope() {
             .cloned(),
     )
     .unwrap();
-    let path_runtime = unit.navigation.path_runtime;
+    let path_runtime = unit.navigation.path_runtime().clone();
     let producer_mission = sim.substrate.entities.get(2).unwrap().mission;
     let rng = sim.rng_state();
     assert_eq!(
@@ -1208,7 +1224,7 @@ fn per_cell_factory_clearance_precedes_ready_and_preserves_foot_stop_scope() {
         .unwrap(),
         drive
     );
-    assert_eq!(unit.navigation.path_runtime, path_runtime);
+    assert_eq!(*unit.navigation.path_runtime(), path_runtime);
     assert_eq!(unit.navigation.nav_com(), None);
     assert_eq!(unit.navigation.nav_com_aux(), None);
     assert_eq!(
@@ -1489,8 +1505,8 @@ fn computer_product_at_factory_exit() -> (Simulation, RuleSet) {
     let (mut sim, rules) = factory_per_cell_fixture(true, false, "");
     let owner = sim.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 10);
-    house.base_center = Some((20, 20));
-    sim.houses.insert(owner, house);
+    house.set_base_center_for_test(Some((20, 20)));
+    sim.houses.insert_for_test(house);
     let producer = sim.substrate.entities.get_mut(2).unwrap();
     producer.type_facts.set_foundation_for_test("5x3".into());
     producer.position.put_location(DriveCoord::cell(6, 9, 0));
@@ -1853,12 +1869,12 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
         let raw_stage = serde_json::to_value(stage).unwrap();
         let rng = sim.scenario_rng.logical_view();
         json!({
-            "frame": sim.session.binary_frame,
+            "frame": sim.session.binary_frame(),
             "unit_coordinate": [at.x,at.y,at.z],
             "health": unit.health.current(),
             "estimate": unit.estimated_health.get(),
-            "balance": house.economy.credits(),
-            "spent": house.economy.spent_credits(),
+            "balance": house.economy().credits(),
+            "spent": house.economy().spent_credits(),
             "unit_mission": unit.mission.current().raw(),
             "unit_queued": unit.mission.queued().raw(),
             "unit_nav": nav(unit.navigation.nav_com()),
@@ -1968,7 +1984,8 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
             RuleSet::from_processed_rules(&stack.process_with_fixed_art(&art).unwrap()).unwrap();
         rules.install_art_data(ArtRegistry::from_ini(&art));
         let mut sim = Simulation::new();
-        sim.session.binary_frame = integer(&before["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(integer(&before["frame"]) as u32);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         // Same declared clear-map membership as the native joined fixture.
@@ -1977,16 +1994,16 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
         );
         sim.playfield_bounds = Some(bounds);
         sim.playfield_size_height = Some(16);
-        sim.session.map_width = 16;
-        sim.session.map_height = 16;
+        sim.session.set_map_width_for_test(16);
+        sim.session.set_map_height_for_test(16);
         let terrain = test_flat_ground_grid(32);
         sim.path_grid = Some(Arc::new(PathGrid::from_resolved_terrain(&terrain)));
         sim.install_resolved_terrain_for_new_map(terrain);
         let owner = sim.intern("Russians");
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 1, None, true, 0, 0),
-        );
+        sim.houses
+            .insert_for_test(crate::sim::house_state::HouseState::new(
+                owner, 1, None, true, 0, 0,
+            ));
         let depot = sim
             .spawn_object(building_name, "Russians", 6, 9, 0, &rules)
             .unwrap();
@@ -2131,9 +2148,11 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
             ));
         let house = sim.houses.get_mut(&owner).unwrap();
         house
-            .economy
+            .economy_mut()
             .set_credits_for_test(integer(&before["balance"]));
-        house.economy.set_spent_for_test(integer(&before["spent"]));
+        house
+            .economy_mut()
+            .set_spent_for_test(integer(&before["spent"]));
         sim.substrate.occupancy =
             crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
         sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
@@ -2261,7 +2280,7 @@ fn idle_base_fixture(category: EntityCategory) -> Simulation {
     actor.locomotor = None;
     actor.lifecycle.set_object_alive_for_test(true);
     actor.lifecycle.set_in_limbo_for_test(false);
-    actor.lifecycle.set_cell_marked(false);
+    actor.lifecycle.set_cell_marked_for_test(false);
     sim.substrate.entities.insert(actor);
     sim.substrate.next_stable_object_id = 2;
     sim
@@ -2565,8 +2584,8 @@ fn retail_unit_on_move(
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let owner = sim.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, human, 0, 10);
-    house.current_iq = iq;
-    sim.houses.insert(owner, house);
+    house.set_current_iq_for_test(iq);
+    sim.houses.register(house);
     let id = sim
         .spawn_object(type_name, "Americans", 10, 10, 0, &rules)
         .unwrap();
@@ -2936,4 +2955,341 @@ fn paid_drive_crossing_sets_wall_tilt_after_mark_put_before_per_cell() {
         assert_eq!(&actual[..3], &before[..3]);
         assert_eq!(actual[3], if expected { 0xbd4c_cccd } else { before[3] });
     }
+}
+
+fn drive_crush_fixture(
+    input: &serde_json::Value,
+) -> (Simulation, TrackInvocation, RuleSet, OverlayTypeRegistry) {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::overlay_grid::OverlayGrid;
+    use crate::util::fixed_math::SIM_ONE;
+    use crate::util::native_x87::NativeF32Bits;
+
+    let (mut sim, invocation, _) = fixture(TrackFamily::Drive, 8);
+    let yes = |key: &str| {
+        if input[key].as_bool().unwrap() {
+            "yes"
+        } else {
+            "no"
+        }
+    };
+    let zone = match input["zone"].as_i64().unwrap() {
+        0 => "Normal",
+        11 => "WaterBeach",
+        12 => "CrusherAll",
+        zone => panic!("unexpected native zone {zone}"),
+    };
+    let ini = IniFile::from_str(&format!(
+        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=6\n\
+         Crusher={}\nMovementZone={zone}\nAccelerates={}\nTiltsWhenCrushes={}\n\
+         [OverlayTypes]\n0=FENCE\n[FENCE]\nWall={}\nCrushable={}\nStrength=100\n",
+        yes("crusher"),
+        yes("accelerates"),
+        yes("tilts"),
+        yes("wall"),
+        yes("crushable"),
+    ));
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let registry = OverlayTypeRegistry::from_ini(&ini, None);
+    sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
+        33,
+    ));
+    let mut overlays = OverlayGrid::new(33, 33);
+    if input["overlay"].as_bool().unwrap() {
+        for y in 0..33 {
+            for x in 0..33 {
+                overlays.place_overlay(x, y, 0, 0);
+            }
+        }
+    }
+    sim.overlay_grid = Some(overlays);
+    let actor = sim.substrate.entities.get_mut(1).unwrap();
+    actor.health = crate::sim::combat::Health::new(300);
+    actor
+        .mover_facts
+        .set_drive_accelerates_for_test(input["accelerates"].as_bool().unwrap());
+    actor.foot_speed.set_speed_fraction(SIM_ONE);
+    actor
+        .foot_speed
+        .set_crush_slowdown_for_test(input["initial_flag"].as_bool().unwrap());
+    let mut rocking = crate::sim::rocking::RockingState::default();
+    rocking.set_angles_native_for_test([0.0, f32::from_bits(0x3e99_999a)]);
+    rocking.set_vel_forwards_native(NativeF32Bits::from_bits(0x3d23_d70a));
+    actor.rocking = Some(rocking);
+    let loco = actor.locomotor.as_mut().unwrap();
+    loco.store_drive_straight(input["straight"].as_bool().unwrap());
+    loco.store_track_target_fraction(TrackFamily::Drive, SIM_ONE);
+    loco.store_track_destination(TrackFamily::Drive, Some(DriveCoord::cell(20, 10, 0)));
+    loco.store_track_head(TrackFamily::Drive, Some(DriveCoord::cell(10, 7, 0)));
+    (sim, invocation, rules, registry)
+}
+
+fn assert_crush_history_state(actor: &GameEntity, expected: &serde_json::Value) {
+    let word =
+        |field: &serde_json::Value| u32::from_str_radix(field.as_str().unwrap(), 16).unwrap();
+    let fraction = |key: &str| {
+        f64::from_bits(u64::from_str_radix(expected[key].as_str().unwrap(), 16).unwrap())
+    };
+    assert_eq!(
+        actor.foot_speed.crush_slowdown(),
+        expected["crush_flag"] == 1
+    );
+    assert_eq!(
+        actor.rocking.unwrap().native_bits(),
+        [
+            word(&expected["rocking_bits"][0]),
+            word(&expected["rocking_bits"][1]),
+            word(&expected["rocking_bits"][2]),
+            word(&expected["rocking_bits"][3]),
+        ]
+    );
+    // The existing speed owner uses I16F16 instead of native binary64.
+    assert!(
+        (actor.foot_speed.applied_fraction().to_num::<f64>() - fraction("applied_bits")).abs()
+            < 0.0001
+    );
+    assert!(
+        (actor
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .track_target_fraction(TrackFamily::Drive)
+            .unwrap()
+            .to_num::<f64>()
+            - fraction("target_bits"))
+        .abs()
+            < 0.0001
+    );
+}
+
+/// Original component histories plus production paid-point/Mark and full Unit
+/// PerCell integration. Inputs supply admission, budget and uniform overlays;
+/// this does not certify whole native path admission or rendering.
+#[test]
+fn crusher_all_paid_crossing_caps_the_next_track_speed_prefix() {
+    use crate::sim::occupancy::CellListInsertion;
+    use crate::util::fixed_math::SIM_ONE;
+
+    let rows =
+        crate::test_fixture::json("tools/spatial_oracle/unit_per_cell_overlay.drive_crush.json");
+    let mut checked = 0;
+    for row in rows.as_array().unwrap() {
+        let input = &row["input"];
+        // Drive Process is scheduled only in active gameplay. The additional
+        // native GameActive=false control documents the query's loader gate.
+        if !input["game_active"].as_bool().unwrap() {
+            continue;
+        }
+        let (mut sim, invocation, rules, registry) = drive_crush_fixture(input);
+        let occupant = input["occupant"].as_str().unwrap();
+        let mut marked = false;
+        let moved = sim.run_track_points_observed(
+            invocation,
+            8,
+            Some(&rules),
+            Some(&registry),
+            &mut |sim, id, event| {
+                if event != TrackWorldEvent::MarkPut {
+                    return;
+                }
+                marked = true;
+                let actor = sim.substrate.entities.get(id).unwrap();
+                assert_eq!(
+                    actor.foot_speed.crush_slowdown(),
+                    input["initial_flag"].as_bool().unwrap()
+                );
+                let at = (actor.position.rx(), actor.position.ry());
+                // These three controls supply the same post-Mark selected
+                // lists as the native boundary, without changing the query.
+                if occupant != "self" {
+                    sim.substrate.occupancy.remove(at.0, at.1, id);
+                    match occupant {
+                        "none" => {}
+                        "deck" => sim.substrate.occupancy.add(
+                            at.0,
+                            at.1,
+                            id,
+                            MovementLayer::Bridge,
+                            None,
+                            CellListInsertion::PrependNonBuilding,
+                        ),
+                        "infantry" => {
+                            sim.substrate
+                                .entities
+                                .insert(GameEntity::test_default_of_category(
+                                    2,
+                                    "E1",
+                                    "Americans",
+                                    at.0,
+                                    at.1,
+                                    EntityCategory::Infantry,
+                                ));
+                            sim.substrate.occupancy.add(
+                                at.0,
+                                at.1,
+                                2,
+                                MovementLayer::Ground,
+                                None,
+                                CellListInsertion::PrependNonBuilding,
+                            );
+                        }
+                        other => panic!("unexpected occupant {other}"),
+                    }
+                }
+            },
+        );
+        assert_eq!(moved, 1, "{input}");
+        assert!(marked);
+        assert_crush_history_state(sim.substrate.entities.get(1).unwrap(), &row["pre_entry"]);
+        let advance_speed = |sim: &mut Simulation| {
+            super::super::track_speed::advance(
+                sim.substrate.entities.get_mut(1).unwrap(),
+                rules.object("MTNK"),
+                Some(&rules),
+                &sim.houses,
+                sim.resolved_terrain.as_ref(),
+                sim.path_grid.as_deref(),
+            );
+        };
+        advance_speed(&mut sim);
+        assert_crush_history_state(sim.substrate.entities.get(1).unwrap(), &row["speed"]);
+        assert!(!crate::sim::rocking::rocking_system::update(
+            sim.substrate.entities.get_mut(1).unwrap(),
+            rules.object("MTNK").unwrap(),
+            SIM_ONE,
+            0,
+        ));
+        assert_crush_history_state(sim.substrate.entities.get(1).unwrap(), &row["rocking"]);
+        let at = {
+            let actor = sim.substrate.entities.get(1).unwrap();
+            (actor.position.rx(), actor.position.ry())
+        };
+        sim.per_cell_process(
+            1,
+            super::super::PerCellReason::TurnComplete,
+            Some(&rules),
+            Some(&registry),
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+        assert_crush_history_state(sim.substrate.entities.get(1).unwrap(), &row["per_cell"]);
+        assert_eq!(
+            sim.overlay_grid
+                .as_ref()
+                .unwrap()
+                .cell(at.0, at.1)
+                .overlay_id
+                .is_none(),
+            !input["overlay"].as_bool().unwrap()
+                || (input["crusher"].as_bool().unwrap() && input["wall"].as_bool().unwrap())
+        );
+        advance_speed(&mut sim);
+        assert_crush_history_state(
+            sim.substrate.entities.get(1).unwrap(),
+            &row["retained_speed"],
+        );
+        super::super::track_speed::publish_fresh_track_target(
+            sim.substrate.entities.get_mut(1).unwrap(),
+            300,
+            &rules,
+            sim.resolved_terrain.as_ref().unwrap(),
+            &crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
+            (20, 10),
+            false,
+        );
+        advance_speed(&mut sim);
+        assert_crush_history_state(
+            sim.substrate.entities.get(1).unwrap(),
+            &row["refreshed_speed"],
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 13);
+}
+
+#[test]
+fn crush_slowdown_is_foot_owned_saved_and_hashed() {
+    use crate::sim::snapshot::GameSnapshot;
+    let mut sim = Simulation::new();
+    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    sim.interner = crate::sim::intern::test_interner();
+    sim.substrate
+        .entities
+        .insert(GameEntity::test_default(1, "BFRT", "Americans", 10, 10));
+    let clear = sim.state_hash();
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .foot_speed
+        .set_crush_slowdown_for_test(true);
+    assert_ne!(sim.state_hash(), clear);
+    let actor = sim.substrate.entities.get_mut(1).unwrap();
+    actor.locomotor = Some(super::super::locomotor::LocomotorState::for_test_kind(
+        crate::rules::locomotor_type::LocomotorKind::Ship,
+    ));
+    assert!(
+        actor.foot_speed.crush_slowdown(),
+        "a locomotor replacement does not own Foot+6B5"
+    );
+    let hash = sim.state_hash();
+    let bytes = GameSnapshot::save(&sim, 0, 0, "crush-slowdown", 0);
+    let restored = GameSnapshot::load(&bytes).unwrap().sim;
+    assert_eq!(restored.state_hash(), hash);
+    assert!(
+        restored
+            .substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .foot_speed
+            .crush_slowdown()
+    );
+}
+
+#[test]
+fn retail_battle_fortress_preserves_nonaccelerating_speed_during_crush() {
+    use crate::util::fixed_math::SIM_ONE;
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+        return;
+    };
+    let object = rules.object("BFRT").unwrap();
+    assert_eq!(
+        object.movement_zone,
+        crate::rules::locomotor_type::MovementZone::CrusherAll
+    );
+    assert!(object.crusher);
+    assert!(!object.accelerates);
+    let rows =
+        crate::test_fixture::json("tools/spatial_oracle/unit_per_cell_overlay.drive_crush.json");
+    let (mut sim, invocation, _, registry) = drive_crush_fixture(&rows[0]["input"]);
+    let type_ref = sim.intern("BFRT");
+    let actor = sim.substrate.entities.get_mut(1).unwrap();
+    actor.set_type_ref_for_test(type_ref);
+    actor.health = crate::sim::combat::Health::new(object.strength);
+    actor
+        .mover_facts
+        .set_drive_accelerates_for_test(object.accelerates);
+    // The paid fixture supplies only track admission/budget. Type gates and
+    // speed parameters below are read through the stock production reader.
+    assert_eq!(
+        sim.run_track_points(invocation, 8, Some(&rules), Some(&registry)),
+        1
+    );
+    let actor = sim.substrate.entities.get_mut(1).unwrap();
+    assert!(actor.foot_speed.crush_slowdown());
+    assert_eq!(
+        actor.foot_speed.applied_fraction(),
+        SIM_ONE,
+        "the current call paid its budget before crossing"
+    );
+    super::super::track_speed::advance(
+        actor,
+        Some(object),
+        Some(&rules),
+        &sim.houses,
+        sim.resolved_terrain.as_ref(),
+        sim.path_grid.as_deref(),
+    );
+    assert_eq!(actor.foot_speed.applied_fraction(), SIM_ONE);
 }

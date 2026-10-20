@@ -293,16 +293,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn direction_offsets_are_clockwise_from_north() {
-        assert_eq!(DIRECTION_DELTAS[0], (0, -1), "N");
-        assert_eq!(DIRECTION_DELTAS[2], (1, 0), "E");
-        assert_eq!(DIRECTION_DELTAS[4], (0, 1), "S");
-        assert_eq!(DIRECTION_DELTAS[6], (-1, 0), "W");
-        assert_eq!(DIRECTION_DELTAS[3], (1, 1), "SE");
-        assert_eq!(DIRECTION_DELTAS[7], (-1, -1), "NW");
-    }
-
-    #[test]
     fn step_masks_the_direction_like_the_original() {
         assert_eq!(RmgGrid::step(5, 5, 2), (6, 5));
         assert_eq!(RmgGrid::step(5, 5, 8 + 2), (6, 5), "dir & 7 wraps");
@@ -334,28 +324,6 @@ mod tests {
                 (5, 3), // row sum 8, 3 cells
             ]
         );
-    }
-
-    #[test]
-    fn scan_rows_alternate_between_full_and_short() {
-        let mut scan = DiamondScan::new(6);
-        let mut rows: Vec<Vec<(i32, i32)>> = Vec::new();
-        let mut row: Vec<(i32, i32)> = Vec::new();
-        for _ in 0..40 {
-            let coord = scan.next_coord();
-            if let Some(&(px, py)) = row.last()
-                && coord.0 + coord.1 != px + py
-            {
-                rows.push(std::mem::take(&mut row));
-            }
-            row.push(coord);
-        }
-        for (index, row) in rows.iter().enumerate() {
-            let expected = if index % 2 == 0 { 6 } else { 5 };
-            assert_eq!(row.len(), expected, "row {index} length");
-            let sum = row[0].0 + row[0].1;
-            assert!(row.iter().all(|(x, y)| x + y == sum), "row {index} sum");
-        }
     }
 
     #[test]

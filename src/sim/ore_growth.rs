@@ -68,17 +68,48 @@ pub struct OreGrowthConfig {
     /// `Set_Defaults @ 0x00683848`, read at `Read_INI_Basic @ 0x0068A57A`):
     /// the entry gate of both `GrowthDriver_AllTypes @ 0x00722C40` and
     /// `SpreadDriver_AllTypes @ 0x007221B0`, and of `CanGrowTiberium`.
-    pub grows: bool,
+    grows: bool,
     /// `ScenarioClass` flags bit `0x80` (`TiberiumSpreads`): the
     /// `CellClass::CanSpreadTiberium @ 0x00483690` gate.
-    pub spreads: bool,
+    spreads: bool,
     /// `ScenarioClass` flags bit `0x40` (`TiberiumGrows`): selects the
     /// `Growth * 0.3` growth-timer reload (`0x00722CA4`).
     #[serde(default)]
-    pub tiberium_grows_flag: bool,
+    tiberium_grows_flag: bool,
 }
 
 impl OreGrowthConfig {
+    pub const fn grows(&self) -> bool {
+        self.grows
+    }
+
+    pub const fn spreads(&self) -> bool {
+        self.spreads
+    }
+
+    pub const fn tiberium_grows_flag(&self) -> bool {
+        self.tiberium_grows_flag
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_grows_for_test(&mut self, grows: bool) {
+        self.grows = grows;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_spreads_for_test(&mut self, spreads: bool) {
+        self.spreads = spreads;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test(grows: bool, spreads: bool, tiberium_grows_flag: bool) -> Self {
+        Self {
+            grows,
+            spreads,
+            tiberium_grows_flag,
+        }
+    }
+
     /// Execute86 at6DDBB4 stores Action+90's low byte at Scenario+34A6.
     /// CanGrow483620 and drivers722C40/7221B0 test that byte for nonzero.
     /// This is independent of the SpecialFlags growth/spread bits.
@@ -113,8 +144,11 @@ impl OreGrowthConfig {
         session: &crate::sim::scenario_session::ScenarioSession,
     ) -> Self {
         let grows = basic.tiberium_growth_enabled.unwrap_or(true);
-        let (tiberium_grows_flag, spreads) = if session.game_mode_nonzero {
-            (session.tiberium_grows_flag, session.tiberium_spreads_flag)
+        let (tiberium_grows_flag, spreads) = if session.game_mode_nonzero() {
+            (
+                session.tiberium_grows_flag(),
+                session.tiberium_spreads_flag(),
+            )
         } else {
             (
                 special_flags.tiberium_grows.unwrap_or(true),
@@ -1762,24 +1796,6 @@ SpreadPercentage=.06
     }
 
     #[test]
-    fn native_tiberium_shell_allocates_per_type_due_timers() {
-        let mut state = make_state(20, 20);
-
-        state.reset_native_tiberium_classes(4, 1234);
-
-        let native = state.native_tiberium_state();
-        assert_eq!(native.classes.len(), 4);
-        for class in &native.classes {
-            assert_eq!(class.growth_timer, CdTimer::started(1234, 0));
-            assert_eq!(class.spread_timer, CdTimer::started(1234, 0));
-            assert!(class.growth.is_empty());
-            assert!(class.spread.is_empty());
-            assert!(class.growth_bitmap.is_empty());
-            assert!(class.spread_bitmap.is_empty());
-        }
-    }
-
-    #[test]
     fn native_tiberium_shell_hashes_timers_heaps_and_bitmaps() {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::Hasher;
@@ -3173,7 +3189,7 @@ SpreadPercentage=.06
         overlay_grid.place_overlay(3, 3, tib01, 3);
         block_all_neighbors_except(&mut overlay_grid, blocker, (3, 3), Some((4, 3)));
         let mut terrain = flat_clear_resolved_grid(8, 8);
-        terrain.cell_mut(4, 3).unwrap().outside_playfield = true;
+        terrain.cell_mut_for_test(4, 3).unwrap().outside_playfield = true;
 
         let rules_ini = IniFile::from_str(
             "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n",

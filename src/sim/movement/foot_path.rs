@@ -189,7 +189,7 @@ impl Simulation {
             .resolved_terrain
             .as_ref()
             .ok_or("the code-2 chain requires map cells")?;
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let mut list = Some((cell, layer));
         for _ in 0..CODE2_CHAIN_MAX_HOPS {
             let Some(object) = list.and_then(|(cell, layer)| {
@@ -212,7 +212,8 @@ impl Simulation {
                 return Ok(true);
             }
             let direction = if foot.foot_speed.applied_fraction() == SIM_ZERO {
-                let Some(&word) = foot.navigation.path_replay.remaining_directions().first() else {
+                let Some(&word) = foot.navigation.path_replay().remaining_directions().first()
+                else {
                     return Ok(false);
                 };
                 word & 7
@@ -373,7 +374,7 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
         };
-        if actor.navigation.path_runtime.scold_latch_raw() != 0
+        if actor.navigation.path_runtime().scold_latch_raw() != 0
             && let Some(sound_id) = rules.general.scold_sound.clone()
         {
             self.sound_events
@@ -423,25 +424,25 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> Result<FindPathResult, String> {
         let id = request.entity_id;
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         #[cfg(test)]
         if let Some(path) = super::fresh_oracle_seam::supplied_path(
             (request.destination.x / 256, request.destination.y / 256),
             request.urgency,
         ) {
             use super::fresh_oracle_seam::SuppliedPath;
-            let queue = &mut self
+            let queue = self
                 .substrate
                 .entities
                 .get_mut(id)
                 .ok_or("retired Find_Path requester")?
                 .navigation
-                .path_replay;
+                .path_replay_mut();
             match path {
                 SuppliedPath::FoundUnchanged => return Ok(FindPathResult::Route),
                 SuppliedPath::Found(words) => {
                     queue.set_directions_for_test(words);
-                    queue.set_cursor(0);
+                    queue.set_cursor_for_test(0);
                     return Ok(FindPathResult::Route);
                 }
                 SuppliedPath::Failed => return Ok(FindPathResult::Failed),
@@ -455,7 +456,7 @@ impl Simulation {
             .get_mut(id)
             .ok_or("retired Find_Path requester")?
             .navigation
-            .path_replay
+            .path_replay_mut()
             .clear_live_head();
         let Some(answer) =
             self.find_path_target_answer(id, request.destination, rules, registry)?
@@ -492,7 +493,7 @@ impl Simulation {
                     .get_mut(id)
                     .ok_or("retired Find_Path core receiver")?
                     .navigation
-                    .path_runtime
+                    .path_runtime_mut()
                     .start_movement(frame, rules.general.path_delay_ticks());
                 self.foot_stop_driver(id, rules, registry, frame_effects)?;
                 self.finish_find_path_failure(id, goal, rules, registry, frame_effects)?;
@@ -544,7 +545,7 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> Result<Result<(), CoreRefusal>, String> {
         let id = request.entity_id;
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         if self.path_grid.is_none() {
             return Err("Find_Path core requires PathGrid; no native failure inferred".into());
         }
@@ -609,7 +610,7 @@ impl Simulation {
             .get_mut(id)
             .ok_or("retired Find_Path core receiver")?;
         //4D3EB2..3ECA: +640 = (Frame, 0) on success and failure alike.
-        actor.navigation.path_runtime.start_movement(frame, 0);
+        actor.navigation.path_runtime_mut().start_movement(frame, 0);
         use super::movement_path::MovePathFailure;
         use crate::sim::pathfinding::zone_search::PathSearchFailure as Search;
         match searched {
@@ -654,7 +655,7 @@ impl Simulation {
         bool,
     ) {
         let id = request.entity_id;
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         // Original42ACF0 runs at429C1A after FootMark0 (4D3E11), before
         // reconstruction and both finishing passes. Reuse its one marker
         // owner against the live ordered peer lists/raw bytes here; the
@@ -824,7 +825,7 @@ impl Simulation {
         } else {
             MissionType::AreaGuard
         };
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         // Queue's own guards decide; with commence 0 only a missing receiver
         // fails, and that receiver was just resolved.
         let _ = self.mission_queue_exact(
@@ -839,7 +840,7 @@ impl Simulation {
         //0x4D4189, and unless that is the zero Cell (0x8B3D88) is sent there:
         //SetDestination(cell, 1) through vt+0x480.
         if !human
-            && self.session.game_mode_nonzero
+            && self.session.game_mode_nonzero()
             && let Some((rx, ry)) = self.house_return_cell(owner, id)
         {
             self.assign_destination_represented(
@@ -1471,7 +1472,7 @@ mod tests {
                 .get(id)
                 .unwrap()
                 .navigation
-                .path_replay
+                .path_replay()
                 .route_cells();
             assert_eq!(found.is_ok(), !in_playfield, "in_playfield={in_playfield}");
             assert_eq!(
@@ -1499,12 +1500,14 @@ mod tests {
                     crate::sim::world::entry_test_fixture::fixture_with_rules(
                         "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=400\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
                     );
-                sim.session.game_mode_nonzero = skirmish;
+                sim.session.set_game_mode(
+                    crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(skirmish),
+                );
                 let owner = sim.intern("Americans");
                 let mut house =
                     crate::sim::house_state::HouseState::new(owner, 0, None, human, 0, 10);
-                house.base_center = Some((16, 16));
-                sim.houses.insert(owner, house);
+                house.set_base_center_for_test(Some((16, 16)));
+                sim.houses.register(house);
                 let id = sim
                     .spawn_object("MTNK", "Americans", 13, 15, 0, &rules)
                     .unwrap();

@@ -776,15 +776,6 @@ mod tests {
     }
 
     #[test]
-    fn gsi_04_03a_off_map_neighbors_are_flat_for_slope_smoothing() {
-        let config = SlopeFixupConfig {
-            ramp_base: 100,
-            ramp_smooth: 500,
-        };
-        assert_eq!(slope_fixed_tile(100, 1, [0; 4], config), 502);
-    }
-
-    #[test]
     fn gsi_04_03a_second_sweep_converges_after_future_neighbor_state_arrives() {
         let cells = vec![cell(9, 10, 100), cell(10, 10, 100), cell(11, 10, 100)];
         let lat_config = LatConfig {

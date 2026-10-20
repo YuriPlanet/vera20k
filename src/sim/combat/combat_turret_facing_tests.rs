@@ -144,9 +144,9 @@ fn run_combat_direct(
         None,
         None,
         None,
-        sim.session.tick,
+        sim.session.tick(),
         67,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         &live_order,
         None, // radiation state — not under test here
         &mut sim.scenario_rng,
@@ -178,7 +178,7 @@ fn save_load_round_trip_on_kill_tick() {
             &sim,
             Some(&rules),
             &sim.interner,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         )
         .turret_destination
         .expect("turreted")

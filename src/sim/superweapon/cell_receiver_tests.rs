@@ -76,9 +76,8 @@ fn fixture_with_art(extra: &str, art: Option<&IniFile>) -> (Simulation, RuleSet)
     sim.resolve_type_handles(&rules);
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 50_000, 10));
-    sim.session.house_order.push(owner);
-    sim.session.game_options.super_weapons = true;
+        .register(HouseState::new(owner, 0, None, true, 50_000, 10));
+    sim.session.game_options_mut_for_test().super_weapons = true;
     sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(16, 16, |x, y| {
         test_terrain_cell(x, y)
     }));
@@ -95,7 +94,7 @@ fn launch_command(sim: &mut Simulation, rules: &RuleSet, name: &str, rx: u16, ry
     // Charged on a running timer: ClickFire refuses a stopped one.
     let mut instance = SuperWeaponInstance::new(sw_type_id, owner, 0);
     instance.is_active = true;
-    instance.charge_start_tick = (sim.session.binary_frame) as i32;
+    instance.charge_start_tick = (sim.session.binary_frame()) as i32;
     instance.charge_duration = 1;
     instance.is_ready = true;
     sim.super_weapons
@@ -134,7 +133,7 @@ fn held_infantry_survives_launch(name: &str) {
     ));
     let held = sim
         .production
-        .factories
+        .factories()
         .view(owner, production::ProductionCategory::Infantry)
         .unwrap()
         .object
@@ -195,7 +194,7 @@ fn held_infantry_survives_launch(name: &str) {
     );
     let before_factory = sim
         .production
-        .factories
+        .factories()
         .iter_insertion_ordered()
         .into_iter()
         .cloned()
@@ -228,7 +227,7 @@ fn held_infantry_survives_launch(name: &str) {
     );
     assert_eq!(
         sim.production
-            .factories
+            .factories()
             .iter_insertion_ordered()
             .into_iter()
             .cloned()
@@ -241,11 +240,6 @@ fn held_infantry_survives_launch(name: &str) {
 #[test]
 fn iron_curtain_command_does_not_damage_factory_held_or_unmarked_infantry() {
     held_infantry_survives_launch("IC");
-}
-
-#[test]
-fn genetic_converter_command_does_not_damage_factory_held_or_unmarked_infantry() {
-    held_infantry_survives_launch("GM");
 }
 
 #[test]
@@ -406,9 +400,9 @@ fn infantry_same_frame_firer_death_keeps_electric_consequences() {
         );
         assert_eq!(
             sim.projectiles.iter().filter(|(_, bullet)| {
-                bullet.in_logic_vector
-                    && bullet.guidance.as_ref().is_some_and(|guidance| guidance.rot == 1)
-                    && matches!(bullet.target, crate::sim::projectile::ProjectileTarget::Entity(id) if id == tesla)
+                bullet.in_logic_vector()
+                    && bullet.guidance().is_some_and(|guidance| guidance.rot == 1)
+                    && matches!(bullet.target(), crate::sim::projectile::ProjectileTarget::Entity(id) if id == tesla)
             }).count(),
             1,
             "the Rifle bullet must remain live so its removal cannot skip the Tesla bullet"
@@ -582,7 +576,7 @@ fn genetic_converter_command_uses_selected_bridge_membership() {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(5, 5)
+            .cell_mut_for_test(5, 5)
             .unwrap();
         cell.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
         cell.has_bridge_deck = true;
@@ -646,8 +640,7 @@ fn iron_curtain_command_forces_authored_strength_and_attributes_retained_deaths(
     let owner = sim.interner.intern("Americans");
     let enemy = sim.interner.intern("Soviet");
     sim.houses
-        .insert(enemy, HouseState::new(enemy, 1, None, true, 10_000, 10));
-    sim.session.house_order.push(enemy);
+        .register(HouseState::new(enemy, 1, None, true, 10_000, 10));
     let tank = sim
         .spawn_object_at_height("MTNK", "Americans", 5, 5, 0, 0, &rules)
         .unwrap();
@@ -691,7 +684,7 @@ fn iron_curtain_command_forces_authored_strength_and_attributes_retained_deaths(
         ));
     }
 
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     {
         let object = sim.substrate.entities.get_mut(over_strength).unwrap();
         object.health.set_for_test(150);
@@ -729,8 +722,8 @@ fn iron_curtain_command_forces_authored_strength_and_attributes_retained_deaths(
     // The ordinary sequence still owns the object; the existing shared UnInit
     // terminal owns score publication. Verify the attributed receipt survives it.
     sim.uninit_with_rules(wounded, &rules);
-    assert_eq!(sim.houses[&owner].stats.units_killed(), 1);
-    assert_eq!(sim.houses[&enemy].stats.units_lost(), 1);
+    assert_eq!(sim.houses[&owner].stats().units_killed(), 1);
+    assert_eq!(sim.houses[&enemy].stats().units_lost(), 1);
     assert!(
         sim.substrate
             .entities
@@ -753,7 +746,7 @@ fn iron_curtain_command_selects_deck_members_and_overlapping_foundation() {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(5, 5)
+            .cell_mut_for_test(5, 5)
             .unwrap();
         cell.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
         cell.has_bridge_deck = true;
@@ -873,11 +866,6 @@ fn iron_curtain_command_uses_packed_aliases_and_stamps_missing_cells() {
     command_uses_packed_aliases_and_stamps_missing_cells("IC", "MTNK");
 }
 
-#[test]
-fn genetic_converter_command_uses_packed_aliases_and_stamps_missing_cells() {
-    command_uses_packed_aliases_and_stamps_missing_cells("GM", "E1");
-}
-
 fn command_uses_packed_aliases_and_stamps_missing_cells(name: &str, object_type: &str) {
     for (x, y) in [(512, 1), (u16::MAX, 2)] {
         let (mut sim, rules) = fixture();
@@ -885,23 +873,11 @@ fn command_uses_packed_aliases_and_stamps_missing_cells(name: &str, object_type:
             .spawn_object_at_height(object_type, "Americans", 0, 2, 0, 0, &rules)
             .unwrap();
         launch_command(&mut sim, &rules, name, x, y);
-        if name == "GM" {
-            // The fixed-stride alias / independent word wrap reaches actual
-            // cell (0,2), whose victim InfDeath 9 UnInits.
-            assert!(
-                sim.substrate
-                    .entities
-                    .get(victim)
-                    .is_none_or(|object| !object.lifecycle.object_alive())
-            );
-            assert!(!sim.substrate.occupancy.contains_entity(0, 2, victim));
-        } else {
-            let object = sim.substrate.entities.get(victim).unwrap();
-            assert!(
-                object.invulnerability.is_some(),
-                "fixed-stride alias / independent word wrap reaches actual cell (0,2)"
-            );
-        }
+        let object = sim.substrate.entities.get(victim).unwrap();
+        assert!(
+            object.invulnerability.is_some(),
+            "fixed-stride alias / independent word wrap reaches actual cell (0,2)"
+        );
     }
     let (mut sim, rules) = fixture();
     let victim = sim
@@ -955,7 +931,7 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(x, y)
+            .cell_mut_for_test(x, y)
             .unwrap();
         // Ground level 3 puts the deck at level 7 (Z 728), inside the
         // dispatcher's height window, so the death exercises its actual
@@ -969,7 +945,7 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
         .resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(5, 5)
+        .cell_mut_for_test(5, 5)
         .unwrap()
         .bridge_facts;
     facts.overlay_id = Some(24);

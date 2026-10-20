@@ -57,7 +57,7 @@ fn pair(value: &Value) -> (i32, i32) {
 
 fn global_lighting_events(sim: &Simulation) -> usize {
     sim.lighting_sources
-        .pending
+        .pending()
         .iter()
         .filter(|event| matches!(event, LightingEvent::Global { .. }))
         .count()
@@ -66,7 +66,7 @@ fn global_lighting_events(sim: &Simulation) -> usize {
 /// The cell profiles of the pending relight-profile changes, in order.
 fn relight_profiles(sim: &Simulation) -> Vec<ScenarioLightingProfile> {
     sim.lighting_sources
-        .pending
+        .pending()
         .iter()
         .filter_map(|event| match event {
             LightingEvent::RelightProfile { cell_profile, .. } => Some(*cell_profile),
@@ -88,13 +88,13 @@ fn owner_name(sim: &Simulation, id: u64) -> &str {
 /// The anim whose owner object is `id` and whose type is `kind`.
 fn attached_anim(sim: &Simulation, id: u64, kind: &str) -> bool {
     sim.anims().any(|(_, anim)| {
-        anim.owner_entity == Some(id) && sim.interner.resolve(anim.type_id) == kind
+        anim.owner_entity() == Some(id) && sim.interner.resolve(anim.type_id()) == kind
     })
 }
 
 fn anim_kind(sim: &Simulation) -> Option<&str> {
     let anim = sim.anim(sim.psychic_dominator.anim()?)?;
-    Some(sim.interner.resolve(anim.type_id))
+    Some(sim.interner.resolve(anim.type_id()))
 }
 
 /// The keys the chain reads, through the production readers on the retail
@@ -215,15 +215,19 @@ fn retail_process_steps_match_native() {
                 .anims
                 .get_mut(anim)
                 .unwrap()
-                .runtime
+                .runtime_mut_for_test()
                 .current_frame = stage;
             anim
         });
         sim.psychic_dominator =
             PsychicDominatorState::for_test(status, ORACLE_CELL, Some(americans), anim);
         let (target, current) = pair(&row["ambient"]);
-        sim.session.lighting.target_ambient = target;
-        sim.session.lighting.current_ambient = current;
+        sim.session
+            .lighting_mut()
+            .set_target_ambient_for_test(target);
+        sim.session
+            .lighting_mut()
+            .set_current_ambient_for_test(current);
         let lighting_before = global_lighting_events(&sim);
         let relights_before = relight_profiles(&sim).len();
 
@@ -254,7 +258,7 @@ fn retail_process_steps_match_native() {
         );
         if lit {
             assert_eq!(
-                sim.session.lighting.selected_profile,
+                sim.session.lighting().selected_profile(),
                 ScenarioLightingProfile::Normal
             );
         }
@@ -312,9 +316,13 @@ fn retail_start_matches_native() {
         rules.general.dominator_first_anim = set(&anims.0, &row["first"]);
         rules.general.dominator_second_anim = set(&anims.1, &row["second"]);
         sim.psychic_dominator = PsychicDominatorState::default();
-        sim.session.binary_frame = u32::try_from(int(&row["frame"])).unwrap();
-        sim.session.lighting = ScenarioLightingState::default();
-        sim.session.lighting.transition_timer = CdTimer::from_raw(77, 55);
+        sim.session
+            .set_binary_frame_for_test(u32::try_from(int(&row["frame"])).unwrap());
+        sim.session
+            .set_lighting_for_test(ScenarioLightingState::default());
+        sim.session
+            .lighting_mut()
+            .set_transition_timer_for_test(CdTimer::from_raw(77, 55));
         let sw_type = charge_super(&mut sim, americans, DOMINATOR);
         let lighting_before = global_lighting_events(&sim);
 
@@ -336,7 +344,7 @@ fn retail_start_matches_native() {
         assert_eq!(state.anim().is_some(), int(&row["anim_set"]) != 0, "{row}");
         let (x, y) = pair(&row["coords"]);
         assert_eq!(state.cell(), (x as i16, y as i16), "{row}");
-        let timer = sim.session.lighting.transition_timer;
+        let timer = sim.session.lighting().transition_timer();
         assert_eq!(
             (timer.start_frame(), timer.duration()),
             pair(&row["timer"]),
@@ -346,16 +354,19 @@ fn retail_start_matches_native() {
         if let Some(anim_event) = events.iter().find(|event| event[0] == "anim") {
             let anim = sim.anim(state.anim().unwrap()).unwrap();
             assert_eq!(anim_event[1], "first");
-            assert_eq!(sim.interner.resolve(anim.type_id), "PDFXCLD");
+            assert_eq!(sim.interner.resolve(anim.type_id()), "PDFXCLD");
             let coords: Vec<i32> = anim_event[2].as_array().unwrap().iter().map(int).collect();
-            let at = anim.world_coord;
+            let at = anim.world_coord();
             assert_eq!(vec![at.x, at.y, at.z], coords, "{row}");
             // (delay 0, loopCount 1, drawFlags 0x600, zAdjust 0, reverse 0)
             assert_eq!(
-                (anim.draw_flags, anim.z_adjust),
+                (anim.draw_flags(), anim.z_adjust()),
                 (int(&anim_event[5]) as u32, int(&anim_event[6]))
             );
-            assert_eq!(i32::from(anim.runtime.loop_remaining), int(&anim_event[4]));
+            assert_eq!(
+                i32::from(anim.runtime().loop_remaining),
+                int(&anim_event[4])
+            );
         }
         let lit = events.iter().any(|event| event[0] == "update_lighting");
         assert_eq!(
@@ -364,7 +375,7 @@ fn retail_start_matches_native() {
             "{row}"
         );
         assert_eq!(
-            sim.session.lighting.selected_profile,
+            sim.session.lighting().selected_profile(),
             if lit {
                 ScenarioLightingProfile::Dominator
             } else {
@@ -390,30 +401,31 @@ fn update_lighting_matches_native() {
         if int(&row["chrono"]) != 0 || psydom > 5 {
             continue;
         }
-        sim.session.lighting = ScenarioLightingState::new(
-            ScenarioLightProfileUnits {
-                ambient_percent: 101,
-                ..ScenarioLightProfileUnits::normal_default()
-            },
-            ScenarioLightProfileUnits {
-                ambient_percent: 87,
-                red_percent: 30,
-                green_percent: 40,
-                blue_percent: 75,
-                ..ScenarioLightProfileUnits::ion_default()
-            },
-            ScenarioLightProfileUnits {
-                ambient_percent: 150,
-                red_percent: 85,
-                green_percent: 20,
-                blue_percent: 30,
-                ..ScenarioLightProfileUnits::dominator_default()
-            },
-            1,
-            1,
-        );
         sim.session
-            .lighting
+            .set_lighting_for_test(ScenarioLightingState::new(
+                ScenarioLightProfileUnits {
+                    ambient_percent: 101,
+                    ..ScenarioLightProfileUnits::normal_default()
+                },
+                ScenarioLightProfileUnits {
+                    ambient_percent: 87,
+                    red_percent: 30,
+                    green_percent: 40,
+                    blue_percent: 75,
+                    ..ScenarioLightProfileUnits::ion_default()
+                },
+                ScenarioLightProfileUnits {
+                    ambient_percent: 150,
+                    red_percent: 85,
+                    green_percent: 20,
+                    blue_percent: 30,
+                    ..ScenarioLightProfileUnits::dominator_default()
+                },
+                1,
+                1,
+            ));
+        sim.session
+            .lighting_mut()
             .set_nuke_flash_for_test(int(&row["nuke"]), 0, 30);
         sim.lightning_storm = if row["storm"].as_bool().unwrap() {
             LightningStorm::raging_for_test(owner, (10, 10))
@@ -426,8 +438,8 @@ fn update_lighting_matches_native() {
 
         sim.update_lighting();
 
-        let lighting = &sim.session.lighting;
-        assert_eq!(lighting.target_ambient, int(&row["target"]), "{row}");
+        let lighting = sim.session.lighting();
+        assert_eq!(lighting.target_ambient(), int(&row["target"]), "{row}");
         let recalc = &row["events"][0];
         assert_eq!(recalc[0], "recalc");
         let rgb = [int(&recalc[1]), int(&recalc[2]), int(&recalc[3])];
@@ -467,20 +479,22 @@ fn ambient_step_matches_native() {
         rules.general.ambient_change_rate_nonzero = nonzero;
         rules.general.ambient_change_interval_frames = interval;
         rules.general.ambient_change_step = step;
-        sim.session.binary_frame = u32::try_from(int(&row["frame"])).unwrap();
-        sim.session.lighting = ScenarioLightingState::new(
-            ScenarioLightProfileUnits::normal_default(),
-            ScenarioLightProfileUnits::ion_default(),
-            ScenarioLightProfileUnits::dominator_default(),
-            int(&row["dominator_rate"]),
-            int(&row["nuke_rate"]),
-        );
-        let lighting = &mut sim.session.lighting;
+        sim.session
+            .set_binary_frame_for_test(u32::try_from(int(&row["frame"])).unwrap());
+        sim.session
+            .set_lighting_for_test(ScenarioLightingState::new(
+                ScenarioLightProfileUnits::normal_default(),
+                ScenarioLightProfileUnits::ion_default(),
+                ScenarioLightProfileUnits::dominator_default(),
+                int(&row["dominator_rate"]),
+                int(&row["nuke_rate"]),
+            ));
+        let lighting = sim.session.lighting_mut();
         lighting.set_nuke_flash_for_test(int(&row["nuke"]), 0, 30);
-        lighting.target_ambient = int(&row["target"]);
-        lighting.current_ambient = int(&row["current"]);
+        lighting.set_target_ambient_for_test(int(&row["target"]));
+        lighting.set_current_ambient_for_test(int(&row["current"]));
         let (start, duration) = pair(&row["timer"]);
-        lighting.transition_timer = CdTimer::from_raw(start, duration);
+        lighting.set_transition_timer_for_test(CdTimer::from_raw(start, duration));
         let psydom = u8::try_from(int(&row["psydom"])).unwrap();
         sim.psychic_dominator =
             PsychicDominatorState::for_test(psydom, ORACLE_CELL, Some(owner), None);
@@ -488,13 +502,13 @@ fn ambient_step_matches_native() {
 
         sim.tick_scenario_lighting_transition(&rules);
 
-        let lighting = &sim.session.lighting;
+        let lighting = sim.session.lighting();
         assert_eq!(
-            (lighting.target_ambient, lighting.current_ambient),
+            (lighting.target_ambient(), lighting.current_ambient()),
             (int(&row["target_after"]), int(&row["current_after"])),
             "{row}"
         );
-        let timer = lighting.transition_timer;
+        let timer = lighting.transition_timer();
         assert_eq!(
             (timer.start_frame(), timer.duration()),
             pair(&row["timer_after"]),
@@ -546,7 +560,7 @@ fn dominator_lighting_read_matches_native() {
             assert_eq!(field(&profiles), int(&authored[1]), "{key}={token}");
             let state = ScenarioLightingState::from_map(&profiles);
             assert_eq!(
-                (state.dominator, state.dominator_change_rate),
+                (state.dominator(), state.dominator_change_rate()),
                 (profiles.dominator.into(), profiles.dominator_change_rate)
             );
         }
@@ -578,7 +592,7 @@ fn retail_dominator_strike_captures_the_block() {
     let conscript = spawn(&mut sim, &rules, "E2", "Russians", (41, 40));
     let far = spawn(&mut sim, &rules, "HTNK", "Russians", (43, 40));
     let curtained = spawn(&mut sim, &rules, "HTNK", "Russians", (40, 41));
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     crate::sim::superweapon::invulnerability::apply_invulnerability(
         sim.substrate.entities.get_mut(curtained).unwrap(),
         frame,
@@ -600,8 +614,8 @@ fn retail_dominator_strike_captures_the_block() {
         .unwrap()
         .health
         .current();
-    let normal_ambient = sim.session.lighting.normal.ambient_percent;
-    let dominator_ambient = sim.session.lighting.dominator.ambient_percent;
+    let normal_ambient = sim.session.lighting().normal().ambient_percent;
+    let dominator_ambient = sim.session.lighting().dominator().ambient_percent;
     let sw_type = charge_super(&mut sim, americans, DOMINATOR);
 
     click(&mut sim, &rules, americans, DOMINATOR, TARGET);
@@ -609,7 +623,7 @@ fn retail_dominator_strike_captures_the_block() {
     assert!(!sim.super_weapons[&americans][&sw_type].is_ready);
     let first = sim.psychic_dominator.anim().expect("PDFXCLD");
     let anim = sim.anim(first).unwrap();
-    assert_eq!(sim.interner.resolve(anim.type_id), "PDFXCLD");
+    assert_eq!(sim.interner.resolve(anim.type_id()), "PDFXCLD");
     let ground = crate::sim::projectile::cell_ground_coord(
         sim.resolved_terrain.as_ref(),
         TARGET.0,
@@ -617,14 +631,18 @@ fn retail_dominator_strike_captures_the_block() {
     );
     let ground = [ground.x, ground.y, ground.z];
     assert_eq!(
-        [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
+        [
+            anim.world_coord().x,
+            anim.world_coord().y,
+            anim.world_coord().z
+        ],
         [ground[0], ground[1], ground[2] + 750]
     );
     assert_eq!(
-        sim.session.lighting.selected_profile,
+        sim.session.lighting().selected_profile(),
         ScenarioLightingProfile::Dominator
     );
-    assert_eq!(sim.session.lighting.target_ambient, dominator_ambient);
+    assert_eq!(sim.session.lighting().target_ambient(), dominator_ambient);
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
         SimSoundEvent::RadarEvent { radar } if (radar.rx, radar.ry) == TARGET
@@ -633,7 +651,7 @@ fn retail_dominator_strike_captures_the_block() {
     // The strike.
     let mut frames = 0;
     loop {
-        let stage = sim.anim(first).map(|anim| anim.runtime.current_frame);
+        let stage = sim.anim(first).map(|anim| anim.runtime().current_frame);
         step(&mut sim, &rules);
         frames += 1;
         if sim.psychic_dominator.status_number() == 3 {
@@ -740,10 +758,10 @@ fn retail_dominator_strike_captures_the_block() {
             assert_eq!(sim.psychic_dominator.cell(), (0, 0));
             assert_eq!(sim.psychic_dominator.anim(), None);
             assert_eq!(
-                sim.session.lighting.selected_profile,
+                sim.session.lighting().selected_profile(),
                 ScenarioLightingProfile::Normal
             );
-            assert_eq!(sim.session.lighting.target_ambient, normal_ambient);
+            assert_eq!(sim.session.lighting().target_ambient(), normal_ambient);
         }
     }
     assert!(faded);
@@ -752,7 +770,7 @@ fn retail_dominator_strike_captures_the_block() {
         frames += 1;
         ripple(&sim, frames);
     }
-    assert_eq!(sim.session.lighting.current_ambient, normal_ambient);
+    assert_eq!(sim.session.lighting().current_ambient(), normal_ambient);
     assert_eq!(relight_profiles(&sim), [ScenarioLightingProfile::Normal]);
     // Nothing lets the captives go.
     assert_eq!(owner_name(&sim, tank), "Americans");
@@ -808,7 +826,10 @@ fn retail_computer_aims_its_dominator_at_the_group() {
     };
     let (rules, mut sim, americans) = world_with(rules, 64, &[]);
     let russians: InternedId = sim.interner.intern("Russians");
-    sim.houses.get_mut(&russians).unwrap().enemy_house = Some(americans);
+    sim.houses
+        .get_mut(&russians)
+        .unwrap()
+        .set_enemy_house_for_test(Some(americans));
     let lone = spawn(&mut sim, &rules, "MTNK", "Americans", (20, 20));
     let group = [
         spawn(&mut sim, &rules, "E1", "Americans", (40, 40)),
@@ -873,11 +894,8 @@ fn retail_dominator_takes_a_captive_from_its_controller() {
     };
     let (rules, mut sim, americans) = world_with(rules, 64, &[]);
     let yuri_house = sim.interner.intern("YuriCountry");
-    sim.houses.insert(
-        yuri_house,
-        HouseState::new(yuri_house, 2, None, true, 0, 10),
-    );
-    sim.session.house_order.push(yuri_house);
+    sim.houses
+        .register(HouseState::new(yuri_house, 2, None, true, 0, 10));
     let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", (37, 40));
     let tank = spawn(&mut sim, &rules, "HTNK", "Russians", TARGET);
     assert!(sim.capture_unit(

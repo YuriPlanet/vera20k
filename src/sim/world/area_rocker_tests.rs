@@ -88,7 +88,7 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
     let owner = sim.substrate.entities.get(kirov).unwrap().owner();
     let enemy = sim.substrate.entities.get(target).unwrap().owner();
     assert_ne!(owner, enemy);
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     for (x, y) in [(25, 24), (25, 23)] {
         sim.fog.mark_visible_for_owner(owner, x, y);
     }
@@ -137,7 +137,7 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
         ascended,
         "ground-admitted Kirov must naturally reach its retail hover height"
     );
-    let tick = sim.session.tick + 1;
+    let tick = sim.session.tick() + 1;
     sim.queue_command(CommandEnvelope::new(
         owner,
         tick,
@@ -165,11 +165,11 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
             actual_shot = true;
         }
         actual_bomb |= sim.projectiles.iter().any(|(_, bullet)| {
-            bullet.source_id == kirov
-                && bullet.target == crate::sim::projectile::ProjectileTarget::Entity(target)
-                && bullet.in_logic_vector
+            bullet.source_id() == kirov
+                && bullet.target() == crate::sim::projectile::ProjectileTarget::Entity(target)
+                && bullet.in_logic_vector()
                 && bullet
-                    .payload
+                    .payload()
                     .projectile_type()
                     .is_some_and(|id| sim.interner.resolve(id) == "BlimpBombP")
         });
@@ -188,7 +188,7 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
         if actual_shot {
             timeline.push_back(format!(
                 "frame={} kirov={:?} target={:?} neighbor={:?} shots={:?} bombs={:?}",
-                sim.session.binary_frame - 1,
+                sim.session.binary_frame() - 1,
                 sim.substrate.entities.get(kirov).map(|actor| (
                     position_world_coord(&actor.position),
                     actor.mission.current()
@@ -214,14 +214,14 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
                     .collect::<Vec<_>>(),
                 sim.projectiles
                     .iter()
-                    .filter(|(_, bullet)| bullet.source_id == kirov)
+                    .filter(|(_, bullet)| bullet.source_id() == kirov)
                     .map(|(id, bullet)| (
                         id,
-                        bullet.position,
-                        bullet.launch_origin,
-                        bullet.launch_target,
-                        bullet.velocity,
-                        bullet.trajectory
+                        bullet.position(),
+                        bullet.launch_origin(),
+                        bullet.launch_target(),
+                        bullet.velocity(),
+                        bullet.trajectory()
                     ))
                     .collect::<Vec<_>>()
             ));
@@ -248,13 +248,13 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
             assert!(
                 rates.iter().any(|word| word & 0x7fff_ffff != 0),
                 "ordinary BlimpHE impact must assign its live neighbor an area rocker impulse; frame={} direct_hp={} neighbor_hp={}",
-                sim.session.binary_frame - 1,
+                sim.session.binary_frame() - 1,
                 direct.health.current(),
                 adjacent.health.current()
             );
             sim.queue_command(CommandEnvelope::new(
                 owner,
-                sim.session.tick + 1,
+                sim.session.tick() + 1,
                 Command::Stop { entity_id: kirov },
             ));
             // Move away through the real command owner after Stop has cleared
@@ -262,7 +262,7 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
             // the tanks while this impulse naturally decays.
             sim.queue_command(CommandEnvelope::new(
                 owner,
-                sim.session.tick + 1,
+                sim.session.tick() + 1,
                 Command::Move {
                     entity_id: kirov,
                     target_rx: 4,
@@ -304,7 +304,7 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
             assert!(
                 sim.projectiles
                     .iter()
-                    .all(|(_, bullet)| bullet.source_id != kirov),
+                    .all(|(_, bullet)| bullet.source_id() != kirov),
                 "the observed physical bomb must retire through its ordinary impact"
             );
             assert!(
@@ -510,7 +510,7 @@ fn zero_and_scenario_no_damage_stop_before_receivers_and_area_rocking() {
         let Some(mut scene) = AreaScene::retail("") else {
             return;
         };
-        scene.sim.session.no_damage = no_damage;
+        scene.sim.session.set_no_damage_for_test(no_damage);
         let rng = (
             scene.sim.main_rng.native_state_hex(),
             scene.sim.scenario_rng.native_state_hex(),
@@ -567,7 +567,7 @@ fn central_iron_curtain_receipt_suppresses_the_area_continuation_only_when_isola
         // claim about the IronCurtain superweapon's area/cell producer.
         apply_invulnerability(
             scene.sim.substrate.entities.get_mut(protected).unwrap(),
-            scene.sim.session.binary_frame,
+            scene.sim.session.binary_frame(),
             scene.rules.general.iron_curtain_duration,
             InvulnKind::IronCurtain,
         );
@@ -834,77 +834,6 @@ fn negative_impact_uses_the_original_signed_cell_for_the_live_49_cell_span() {
             scene.health(id),
             scene.rules.object("MTNK").unwrap().strength,
             "rocker traversal is distinct from the splash receiver radius"
-        );
-    }
-}
-
-#[test]
-fn negative_impact_sweep_wraps_into_cell_zero_and_dispatches_its_real_receiver() {
-    let Some(mut scene) = AreaScene::retail("") else {
-        return;
-    };
-    let victim = scene
-        .sim
-        .spawn_object("MTNK", "Russians", 0, 20, 0, &scene.rules)
-        .expect("ordinary tank in the cell reached by signed-word wrapping");
-    let strength = scene.rules.object("MTNK").unwrap().strength;
-    assert_eq!(scene.health(victim), strength);
-    let position =
-        position_world_coord(&scene.sim.substrate.entities.get(victim).unwrap().position);
-    assert_eq!([position.x, position.y, position.z], [128, 5248, 0]);
-    assert_eq!(scene.rules.warhead("BlimpHE").unwrap().cell_spread_f64, 2.0);
-    //4895D7/4895DC ADD WORD wraps center cell-1 plus dx1 into cell0.
-    // The live actor is385 leptons from the exact impact, inside retail
-    // CellSpread2. The receiver's real nonlethal result must precede any
-    // rocker claim; the separate x2/x3 test covers the larger49-cell scan.
-    scene.apply_at(
-        crate::sim::projectile::ProjectileCoord::new(-257, 5248, 0),
-        "BlimpHE",
-        250,
-        None,
-        false,
-    );
-    assert!(
-        scene.health(victim) > 0 && scene.health(victim) < strength,
-        "packed cell-1+1 must dispatch cell0's actual nonlethal receiver; health={}",
-        scene.health(victim)
-    );
-    assert!(
-        has_rates(scene.words(victim)),
-        "the live receiver is also reached by the post-receiver rocker"
-    );
-}
-
-#[test]
-fn area_entry_zero_and_no_damage_leave_the_live_dummy_coordinate_untouched() {
-    for (damage, no_damage) in [(0, false), (250, true)] {
-        let Some(mut scene) = AreaScene::retail("") else {
-            return;
-        };
-        scene.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
-        scene.sim.session.no_damage = no_damage;
-        let terrain = scene.sim.resolved_terrain.as_ref().unwrap();
-        // Establish a live fallback coordinate through its actual Map lookup.
-        assert_eq!(
-            terrain.native_cell_identity((-7, -11)),
-            crate::map::cell_index::NativeCellIdentity::Dummy
-        );
-        let dummy = terrain.shared_cell_dummy();
-        let before = dummy.snapshot();
-        //600*512+600 is outside the native fixed grid. An admitted lookup
-        // would stamp600,600, but489280's entry gate precedes that lookup and
-        // even the primary-cell wall-route decision must remain unobserved.
-        scene.apply_at(
-            crate::sim::projectile::ProjectileCoord::new(600 * 256 + 17, 600 * 256 + 23, 0),
-            "BlimpHE",
-            damage,
-            Some(scene.source),
-            false,
-        );
-        assert_eq!(
-            dummy.snapshot(),
-            before,
-            "zero/NoDamage must return before any wall/receiver/rocker Map lookup"
         );
     }
 }

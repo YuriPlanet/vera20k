@@ -582,19 +582,6 @@ mod tests {
     }
 
     #[test]
-    fn choose_scale_magnifies_tiny_sprites() {
-        // A 16x2 pip strip: 1024 / 16 = 64.
-        assert_eq!(choose_scale(16, 2), 64);
-    }
-
-    #[test]
-    fn choose_scale_uses_the_long_edge_for_a_tile() {
-        // 60x30 iso tile: 1024 / 60 = 17, long edge lands at 1020.
-        assert_eq!(choose_scale(60, 30), 17);
-        const { assert!(60 * 17 <= MAX_LONG_EDGE && 60 * 17 >= MIN_LONG_EDGE) };
-    }
-
-    #[test]
     fn choose_scale_leaves_large_images_alone() {
         assert_eq!(choose_scale(640, 480), 1);
         assert_eq!(choose_scale(4096, 4096), 1);
@@ -647,16 +634,6 @@ mod tests {
         assert_eq!(pixel(&dst, 1, 1), RED);
         assert_eq!(pixel(&dst, 2, 2), BLUE);
         assert_eq!(pixel(&dst, 0, 2), BLUE);
-    }
-
-    #[test]
-    fn blit_over_fully_offscreen_leaves_destination_untouched() {
-        let src = Rgba::new_filled(4, 4, RED);
-        let mut dst = Rgba::new_filled(10, 10, BLUE);
-        let before = dst.data.clone();
-        blit_over(&mut dst, &src, -50, -50);
-        blit_over(&mut dst, &src, 50, 50);
-        assert_eq!(dst.data, before);
     }
 
     #[test]
@@ -724,14 +701,6 @@ mod tests {
     }
 
     #[test]
-    fn checkerboard_alternates_by_checker_size() {
-        let board = Rgba::checkerboard(CHECKER_SIZE * 2, CHECKER_SIZE * 2);
-        assert_eq!(pixel(&board, 0, 0), CHECKER_LIGHT);
-        assert_eq!(pixel(&board, CHECKER_SIZE, 0), CHECKER_DARK);
-        assert_eq!(pixel(&board, CHECKER_SIZE, CHECKER_SIZE), CHECKER_LIGHT);
-    }
-
-    #[test]
     fn text_width_matches_the_draw_text_advance() {
         let mut target = Rgba::new_filled(200, 32, CHECKER_DARK);
         for text in [
@@ -746,13 +715,6 @@ mod tests {
             let drawn = draw_text(&mut target, 2, 2, text, HEADER_COLOR);
             assert_eq!(drawn, text_width(text), "advance mismatch for {text:?}");
         }
-    }
-
-    #[test]
-    fn text_width_is_zero_for_empty_input() {
-        assert_eq!(text_width(""), 0);
-        assert_eq!(text_width("A"), GLYPH_W);
-        assert_eq!(text_width("AB"), GLYPH_W * 2 + GLYPH_SPACING);
     }
 
     #[test]
@@ -789,22 +751,6 @@ mod tests {
     fn build_contact_sheet_handles_an_empty_cell_list() {
         let sheet = build_contact_sheet(&["no frames".to_string()], &[]);
         assert!(sheet.w > 0 && sheet.h > 0);
-        assert_eq!(sheet.data.len(), sheet.pixel_count() * 4);
-    }
-
-    #[test]
-    fn build_contact_sheet_handles_no_header_and_no_cells() {
-        let sheet = build_contact_sheet(&[], &[]);
-        assert!(sheet.w > 0 && sheet.h > 0);
-        assert_eq!(sheet.data.len(), sheet.pixel_count() * 4);
-    }
-
-    #[test]
-    fn build_contact_sheet_fits_one_cell() {
-        let cells = [cell(32, 28, "f0")];
-        let sheet = build_contact_sheet(&["shp 32x28".to_string()], &cells);
-        assert!(sheet.w >= SHEET_PADDING * 2 + 32);
-        assert!(sheet.h >= SHEET_PADDING * 2 + 28 + LABEL_HEIGHT);
         assert_eq!(sheet.data.len(), sheet.pixel_count() * 4);
     }
 

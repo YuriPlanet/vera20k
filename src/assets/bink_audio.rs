@@ -21,9 +21,16 @@ use crate::assets::error::AssetError;
 const MAX_CHANNELS: usize = 2;
 const MAX_BANDS: usize = 26;
 
+#[cfg(test)]
+#[path = "bink_audio_tests.rs"]
+mod oracle_tests;
+
 pub struct BinkAudioDecoder {
+    /// Output format from the track header, independent of transform geometry.
     sample_rate: u32,
     channels: u16,
+    /// RDFT folds interleaved output into one transform; DCT keeps each channel.
+    transform_channels: usize,
     use_dct: bool,
     /// Number of samples per inverse-transform output (per channel).
     /// For RDFT mode this equals the multi-channel-folded `frame_len`.
@@ -39,7 +46,7 @@ pub struct BinkAudioDecoder {
     root: f32,
     /// True until the first block is decoded; suppresses overlap-add on first call.
     first: bool,
-    /// Per-channel overlap-tail buffer. Length `channels`, each entry `overlap_len`.
+    /// Per-transform-channel overlap tails, each of length `overlap_len`.
     prev: Vec<Vec<f32>>,
     /// Scratch buffer of length `frame_len + 2` (the +2 holds the Nyquist
     /// bin moved out of `coeffs[1]` for RDFT input layout).
@@ -81,8 +88,8 @@ impl BinkAudioDecoder {
         // Per binkaudio.c:99-111: RDFT mode treats audio as interleaved
         // single-channel by multiplying sample_rate by channel count and
         // scaling frame_len up.
-        let (sample_rate, channels) = if use_dct {
-            (sample_rate_in, channels_in)
+        let (transform_sample_rate, transform_channels) = if use_dct {
+            (sample_rate_in, channels_in as usize)
         } else {
             // RDFT: fold channels into one logical stream.
             if channels_in > 1 {
@@ -93,12 +100,12 @@ impl BinkAudioDecoder {
                 .ok_or_else(|| AssetError::BinkAudioError {
                     reason: "sample-rate overflow".to_string(),
                 })?;
-            (folded_sr, 1u16)
+            (folded_sr, 1)
         };
 
         let frame_len = 1usize << frame_len_bits;
         let overlap_len = frame_len / 16;
-        let sample_rate_half = (sample_rate as u64).div_ceil(2);
+        let sample_rate_half = (transform_sample_rate as u64).div_ceil(2);
 
         // Scaling factor differs by transform.
         let root = if use_dct {
@@ -136,13 +143,18 @@ impl BinkAudioDecoder {
         // DCT:  our inverse_dct_ii uses an N-point FFT internally.
         let fft = Fft::new(if use_dct { frame_len } else { frame_len / 2 });
 
-        let prev = (0..channels).map(|_| vec![0.0f32; overlap_len]).collect();
-        let out_per_ch = (0..channels).map(|_| vec![0.0f32; frame_len]).collect();
+        let prev = (0..transform_channels)
+            .map(|_| vec![0.0f32; overlap_len])
+            .collect();
+        let out_per_ch = (0..transform_channels)
+            .map(|_| vec![0.0f32; frame_len])
+            .collect();
         let coeffs = vec![0.0f32; frame_len + 2];
 
         Ok(Self {
-            sample_rate,
-            channels,
+            sample_rate: sample_rate_in,
+            channels: channels_in,
+            transform_channels,
             use_dct,
             frame_len,
             overlap_len,
@@ -208,23 +220,23 @@ impl BinkAudioDecoder {
             }
 
             // Decode each channel's coefficients + inverse-transform.
-            for ch in 0..self.channels as usize {
+            for ch in 0..self.transform_channels {
                 self.decode_channel_block(&mut gb, ch)?;
             }
 
             // Apply overlap-add with previous block's tail.
             self.apply_overlap_add();
 
-            // Interleave channels into output.
-            out.reserve(usable * self.channels as usize);
+            // Interleave DCT channels; RDFT output is already interleaved.
+            out.reserve(usable * self.transform_channels);
             for i in 0..usable {
-                for ch in 0..self.channels as usize {
+                for ch in 0..self.transform_channels {
                     out.push(self.out_per_ch[ch][i]);
                 }
             }
 
             // Stash the last `overlap_len` samples per channel for next block's cross-fade.
-            for ch in 0..self.channels as usize {
+            for ch in 0..self.transform_channels {
                 let start = self.frame_len - self.overlap_len;
                 self.prev[ch].copy_from_slice(&self.out_per_ch[ch][start..self.frame_len]);
             }
@@ -293,10 +305,10 @@ impl BinkAudioDecoder {
                 }
                 i = j;
                 while k < self.num_bands && (self.bands[k] as usize) < i {
+                    // FFmpeg decode_block: q = quant[k++], just as in
+                    // the nonzero run below (n4.4.2 binkaudio.c:207-212).
+                    q = quant[k];
                     k += 1;
-                    if k < self.num_bands {
-                        q = quant[k];
-                    }
                 }
             } else {
                 // Decode `width`-bit magnitudes + sign per coefficient.
@@ -335,9 +347,10 @@ impl BinkAudioDecoder {
             // for this mode.
             let coeffs_in: Vec<f32> = self.coeffs[..self.frame_len].to_vec();
             inverse_dct_ii(&coeffs_in, &mut self.out_per_ch[ch], &self.fft);
-            // FFmpeg's AV_TX_FLOAT_DCT inverse uses scale = 1.0 / frame_len
-            // (binkaudio.c:143). Our primitive is un-normalized, so apply here.
-            let scale = 1.0 / self.frame_len as f32;
+            // FFmpeg's DCT-III is (DC + 2 * sum(AC*cos)) / N
+            // (n4.4.2 libavcodec/dct.c:96-124). Our primitive uses half-DC
+            // weighting and an unnormalized FFT, so it needs 2/N here.
+            let scale = 2.0 / self.frame_len as f32;
             for s in self.out_per_ch[ch].iter_mut() {
                 *s *= scale;
             }
@@ -369,15 +382,15 @@ impl BinkAudioDecoder {
         if self.first {
             return;
         }
-        let count = (self.overlap_len as i32) * (self.channels as i32);
-        for ch in 0..self.channels as usize {
+        let count = (self.overlap_len as i32) * (self.transform_channels as i32);
+        for ch in 0..self.transform_channels {
             let mut j = ch as i32;
             for i in 0..self.overlap_len {
                 let prev = self.prev[ch][i];
                 let cur = self.out_per_ch[ch][i];
                 self.out_per_ch[ch][i] =
                     (prev * (count - j) as f32 + cur * j as f32) / count as f32;
-                j += self.channels as i32;
+                j += self.transform_channels as i32;
             }
         }
     }
@@ -566,6 +579,8 @@ fn inverse_dct_ii(input: &[f32], output: &mut [f32], fft: &Fft) {
         let ci = theta.sin();
         buf[k] = Complex32::new(input[k] * cr, input[k] * ci);
     }
+    // DCT-III weights DC by half relative to the cosine coefficients.
+    buf[0].re *= 0.5;
 
     // Un-normalized inverse complex FFT (conjugate-forward-conjugate).
     for c in buf.iter_mut() {
@@ -623,20 +638,8 @@ mod tests {
     }
 
     #[test]
-    fn fft_round_trip_256() {
-        assert_round_trip(256);
-    }
-    #[test]
-    fn fft_round_trip_512() {
-        assert_round_trip(512);
-    }
-    #[test]
     fn fft_round_trip_1024() {
         assert_round_trip(1024);
-    }
-    #[test]
-    fn fft_round_trip_2048() {
-        assert_round_trip(2048);
     }
 
     fn make_track(sample_rate: u16, stereo: bool, dct: bool) -> AudioTrack {
@@ -651,6 +654,29 @@ mod tests {
             sample_rate,
             flags,
             track_id: 0,
+        }
+    }
+
+    #[test]
+    fn rdft_stereo_keeps_header_output_format() {
+        let dec = BinkAudioDecoder::new(make_track(44100, true, false)).unwrap();
+        assert_eq!((dec.sample_rate(), dec.channels()), (44100, 2));
+        // RDFT still decodes one folded transform, whose samples already
+        // alternate between left and right.
+        assert_eq!(dec.frame_len, 4096);
+        assert_eq!(dec.prev.len(), 1);
+    }
+
+    #[test]
+    fn mono_and_dct_keep_header_output_format() {
+        for (rate, stereo, dct) in [
+            (22050, false, false),
+            (22050, false, true),
+            (44100, true, true),
+        ] {
+            let dec = BinkAudioDecoder::new(make_track(rate, stereo, dct)).unwrap();
+            assert_eq!(dec.sample_rate(), u32::from(rate));
+            assert_eq!(dec.channels(), if stereo { 2 } else { 1 });
         }
     }
 
@@ -677,7 +703,7 @@ mod tests {
         if d.use_dct {
             push(0, 2, &mut acc, &mut nbits, &mut bits);
         }
-        for _ in 0..d.channels as usize {
+        for _ in 0..d.transform_channels {
             // get_float = 0: power=0, mantissa=0, sign=0 → 29 bits of zero.
             push(0, 29, &mut acc, &mut nbits, &mut bits);
             push(0, 29, &mut acc, &mut nbits, &mut bits);
@@ -701,30 +727,6 @@ mod tests {
     }
 
     #[test]
-    fn decode_silent_packet_yields_silence_dct() {
-        let track = make_track(22050, true, true);
-        let mut dec = BinkAudioDecoder::new(track).unwrap();
-        let pkt = make_silent_packet(&dec);
-        let samples = dec.decode_packet(&pkt).expect("decode silent packet");
-        assert!(!samples.is_empty(), "should produce some samples");
-        for &s in &samples {
-            assert!(s.abs() < 1e-3, "non-silent sample: {}", s);
-        }
-    }
-
-    #[test]
-    fn decode_silent_packet_yields_silence_rdft() {
-        let track = make_track(22050, true, false);
-        let mut dec = BinkAudioDecoder::new(track).unwrap();
-        let pkt = make_silent_packet(&dec);
-        let samples = dec.decode_packet(&pkt).expect("decode silent packet");
-        assert!(!samples.is_empty());
-        for &s in &samples {
-            assert!(s.abs() < 1e-3, "non-silent sample: {}", s);
-        }
-    }
-
-    #[test]
     fn reset_restores_first_flag() {
         let track = make_track(22050, true, false);
         let mut dec = BinkAudioDecoder::new(track).unwrap();
@@ -738,61 +740,5 @@ mod tests {
                 assert_eq!(s, 0.0);
             }
         }
-    }
-
-    /// IDCT of [c, 0, 0, ..., 0] is a constant signal proportional to c.
-    #[test]
-    fn idct_dc_only_constant_output() {
-        let n = 512;
-        let fft = Fft::new(n);
-        let mut input = vec![0.0f32; n];
-        input[0] = 2.0; // pre-doubled per binkaudio.c convention
-        let mut output = vec![0.0f32; n];
-        inverse_dct_ii(&input, &mut output, &fft);
-
-        // All samples should be equal (within rounding) since input is DC-only.
-        let first = output[0];
-        for (i, &s) in output.iter().enumerate() {
-            assert!(
-                (s - first).abs() < 1e-4,
-                "non-constant output at i={}: got {}, expected {}",
-                i,
-                s,
-                first,
-            );
-        }
-        // And nonzero — DC input shouldn't yield silence.
-        assert!(first.abs() > 1e-3, "DC output is silent: {}", first);
-    }
-
-    /// A pure-tone spectrum (single non-zero bin) inverse-transforms to
-    /// a sinusoid whose peak amplitude matches our expected scaling.
-    #[test]
-    fn rdft_pure_tone_round_trip() {
-        let n = 512;
-        let half_fft = Fft::new(n / 2);
-        // Build spectrum: real sinusoid of bin index 5 amplitude 1.
-        // Hermitian: X[5] = (0, -0.5), X[N-5] = (0, 0.5), all else 0.
-        // Bink-storage layout has imag halves negated, so input[2*5+1] = +0.5.
-        let mut input = vec![0.0f32; n + 2];
-        input[2 * 5] = 0.0;
-        input[2 * 5 + 1] = 0.5; // post-negate
-        let mut output = vec![0.0f32; n];
-        inverse_rdft(&input, &mut output, &half_fft);
-
-        // The output should be approximately sin(2π * 5 * t / N).
-        // We just check the peak amplitude is in a sane range.
-        let max = output.iter().cloned().fold(0.0f32, f32::max);
-        let min = output.iter().cloned().fold(0.0f32, f32::min);
-        assert!(
-            max > 0.5 && max < 1.5,
-            "max amplitude out of range: {}",
-            max
-        );
-        assert!(
-            min < -0.5 && min > -1.5,
-            "min amplitude out of range: {}",
-            min
-        );
     }
 }

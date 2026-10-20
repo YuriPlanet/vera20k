@@ -478,10 +478,10 @@ impl Simulation {
                     .expect("constructed falling Bullet");
                 let detonation = crate::sim::projectile::ProjectileDetonation {
                     projectile_id: bullet_id,
-                    source_id: bullet.source_id,
-                    target: bullet.target,
+                    source_id: bullet.source_id(),
+                    target: bullet.target(),
                     impact: crate::sim::projectile::ProjectileCoord::new(coords.x, coords.y, z),
-                    payload: bullet.payload,
+                    payload: bullet.payload(),
                     reason: crate::sim::projectile::ProjectileDetonationReason::DeathWeapon,
                 };
                 bridge_state_changed |= self.commit_logic_projectile_detonations(
@@ -537,7 +537,7 @@ impl Simulation {
             .as_ref()
             .and_then(|terrain| terrain.cell(entity.position.rx(), entity.position.ry()))
             .is_some_and(|cell| {
-                cell.land_type() == crate::rules::terrain_rules::LandType::Water.as_index()
+                cell.land_type == crate::rules::terrain_rules::LandType::Water.as_index()
             });
         let object = self.object_type(entity.type_ref(), rules);
         let sound = if water {
@@ -581,7 +581,10 @@ impl Simulation {
             let object = self.object_type(entity.type_ref(), rules);
             let voice = object.and_then(|object| object.voice_crashing.clone());
             let crashing_sound = object.and_then(|object| object.crashing_sound.clone());
-            let human = self.houses.get(&owner).is_some_and(|house| house.is_human);
+            let human = self
+                .houses
+                .get(&owner)
+                .is_some_and(|house| house.is_human());
             if let Some(voice) = voice
                 && human
             {

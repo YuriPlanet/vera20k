@@ -9,7 +9,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::ai_buildable::{
     candidate_allowed, country_bit, first_buildable_from_array, first_owner_compatible_harvester,
 };
-use crate::sim::base_plan::{BasePlanNode, BasePlanState};
+use crate::sim::base_plan::BasePlanState;
 use crate::sim::house_state::HouseDifficulty;
 use crate::sim::rng::SimRng;
 use crate::sim::world::TypeTechLevels;
@@ -27,7 +27,7 @@ pub(crate) enum RecalcPreflightError {
 pub(crate) fn preflight_recalc(
     rules: &RuleSet,
     country_name: &str,
-    side_index: u8,
+    side_index: i32,
     difficulty: HouseDifficulty,
 ) -> Result<(), RecalcPreflightError> {
     let country_index = rules
@@ -67,14 +67,13 @@ pub(crate) fn recalc_base_plan(
     rules: &RuleSet,
     type_tech_levels: &TypeTechLevels,
     country_name: &str,
-    side_index: u8,
+    side_index: i32,
     difficulty: HouseDifficulty,
     tech_level: i32,
     super_weapons: bool,
     scenario_rng: &mut SimRng,
 ) {
     debug_assert!(preflight_recalc(rules, country_name, side_index, difficulty).is_ok());
-    plan.nodes.clear();
 
     let country_index = rules
         .trigger_house_type_index(country_name)
@@ -241,23 +240,14 @@ pub(crate) fn recalc_base_plan(
         final_values.insert(insert_after + 1, -1);
     }
 
-    plan.nodes.extend(
-        final_values
-            .into_iter()
-            .map(|type_or_control| BasePlanNode {
-                type_or_control,
-                packed_cell: 0,
-                filled: false,
-                retry_count: 0,
-            }),
-    );
+    plan.rebuild(final_values);
 }
 
 fn recalc_candidate_allowed(
     candidate: &ObjectType,
     type_tech_levels: &TypeTechLevels,
     country_bit: u32,
-    side_index: u8,
+    side_index: i32,
     tech_level: i32,
     super_weapons: bool,
     rules: &RuleSet,
@@ -326,6 +316,7 @@ pub(crate) fn prerequisites_satisfied(
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
+    use crate::sim::base_plan::BasePlanNode;
 
     fn planner_rules(
         harvester_list: &str,
@@ -383,19 +374,18 @@ mod tests {
     fn generated_values(
         rules: &RuleSet,
         country: &str,
-        side: u8,
+        side: i32,
         difficulty: HouseDifficulty,
         seed: u64,
     ) -> (BasePlanState, SimRng) {
-        let mut plan = BasePlanState {
-            percent_built: 37,
-            nodes: vec![BasePlanNode {
-                type_or_control: 99,
-                packed_cell: 4,
-                filled: true,
-                retry_count: 8,
-            }],
-        };
+        let mut plan = BasePlanState::default();
+        plan.set_percent_built_for_test(37);
+        plan.set_nodes_for_test(vec![BasePlanNode {
+            type_or_control: 99,
+            packed_cell: 4,
+            filled: true,
+            retry_count: 8,
+        }]);
         let mut rng = SimRng::new(seed);
         recalc_base_plan(
             &mut plan,
@@ -412,7 +402,10 @@ mod tests {
     }
 
     fn values(plan: &BasePlanState) -> Vec<i32> {
-        plan.nodes.iter().map(|node| node.type_or_control).collect()
+        plan.nodes()
+            .iter()
+            .map(|node| node.type_or_control)
+            .collect()
     }
 
     #[test]
@@ -475,9 +468,9 @@ mod tests {
         let rules = basic_rules("", "");
         let (plan, rng) = generated_values(&rules, "Americans", 0, HouseDifficulty::Hard, 9);
         assert_eq!(values(&plan), [0, 1, 3, 4, 2, 1]);
-        assert_eq!(plan.percent_built, 37);
+        assert_eq!(plan.percent_built(), 37);
         assert!(
-            plan.nodes
+            plan.nodes()
                 .iter()
                 .all(|node| { node.packed_cell == 0 && !node.filled && node.retry_count == 0 })
         );

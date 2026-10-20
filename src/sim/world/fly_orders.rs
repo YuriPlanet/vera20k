@@ -101,7 +101,7 @@ impl Simulation {
         self.aircraft_locomotor_move_to(id, coord, rules);
         // Accepted Foot setter resets both timers even when Fly MoveTo refuses
         // (e.g. powered off). Retry count is preserved.
-        DestinationTiming::from_rules(self.session.binary_frame, Some(rules))
+        DestinationTiming::from_rules(self.session.binary_frame(), Some(rules))
             .accept(self.substrate.entities.get_mut(id).unwrap());
     }
 
@@ -267,7 +267,7 @@ impl Simulation {
                 );
             }
             if self.mission_ready_to_commence(id, rules) {
-                let now = self.session.binary_frame;
+                let now = self.session.binary_frame();
                 let _ = self.mission_commence_exact(id, now);
             }
         }
@@ -376,7 +376,7 @@ impl Simulation {
             .entities
             .get(id)
             .and_then(|entity| self.houses.get(&entity.owner()))
-            .map_or(0, |house| house.waypoint_edge)
+            .map_or(0, |house| house.waypoint_edge())
     }
 
     /// Fly `Move_To @ 0x004CCC80` with a non-null coordinate. Answers whether

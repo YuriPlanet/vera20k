@@ -188,7 +188,7 @@ fn original_can_auto_cloak_matches_retail_inputs_and_retained_target_controls() 
         let mut terrain = sim.resolved_terrain.take().unwrap();
         for y in 0..64 {
             for x in 0..64 {
-                terrain.cell_mut(x, y).unwrap().level =
+                terrain.cell_mut_for_test(x, y).unwrap().level =
                     native["inputs"]["world_boundary"]["flat_cell_level"]
                         .as_u64()
                         .unwrap() as u8;
@@ -197,7 +197,7 @@ fn original_can_auto_cloak_matches_retail_inputs_and_retained_target_controls() 
         sim.install_resolved_terrain_for_new_map(terrain);
         assert!(sim.rebuild_dynamic_navigation(rules));
         for house in sim.houses.values_mut() {
-            house.is_human = true;
+            house.set_is_human_for_test(true);
         }
         let spawn = |sim: &mut super::Simulation, name, owner, xyz: &Value| {
             let id = sim
@@ -222,7 +222,8 @@ fn original_can_auto_cloak_matches_retail_inputs_and_retained_target_controls() 
         };
         let source = spawn(&mut sim, "SUB", "Americans", &input["source_xyz"]);
         let target = spawn(&mut sim, "DEST", "Russians", &input["target_xyz"]);
-        sim.session.binary_frame = u32::try_from(signed(&input["frame"])).unwrap();
+        sim.session
+            .set_binary_frame_for_test(u32::try_from(signed(&input["frame"])).unwrap());
         let actor = sim.substrate.entities.get_mut(source).unwrap();
         // Deserialize explicit native component inputs through the cloak
         // owner's existing persistence boundary; no new mutation API/state.

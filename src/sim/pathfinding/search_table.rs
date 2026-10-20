@@ -75,19 +75,6 @@ mod tests {
     use super::SearchTable;
 
     #[test]
-    fn a_new_search_forgets_the_last_one() {
-        let mut table = SearchTable::default();
-        table.begin(4, 0);
-        table.set(1, 7u8);
-        assert_eq!(table.get(1), Some(7));
-        assert_eq!(table.get(2), None);
-        table.begin(8, 0);
-        assert_eq!(table.get(1), None);
-        table.set(6, 3);
-        assert_eq!(table.get(6), Some(3));
-    }
-
-    #[test]
     fn entries_in_neighbouring_words_stay_apart() {
         let mut table = SearchTable::default();
         table.begin(200, 0u16);

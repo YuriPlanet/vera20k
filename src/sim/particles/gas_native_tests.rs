@@ -200,7 +200,8 @@ fn gas_system_motion_lifetime_replacement_and_rng_match_original_histories() {
             SimRng::from_native_state_hex_for_test(case["scenario_before"].as_str().unwrap());
         let other_rng = (sim.main_rng.logical_state(), sim.mapgen_rng.logical_state());
         for visit in case["visits"].as_array().unwrap() {
-            sim.session.binary_frame = visit["frame"].as_u64().unwrap() as u32;
+            sim.session
+                .set_binary_frame_for_test(visit["frame"].as_u64().unwrap() as u32);
             assert!(super::system_ai::tick_particle_system(
                 &mut sim,
                 &rules,

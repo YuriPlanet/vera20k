@@ -71,8 +71,8 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
     rules.general.scold_sound = None;
     let owner = sim.interner.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 0);
-    house.player_control = true;
-    sim.houses.insert(owner, house);
+    house.set_player_control_for_test(true);
+    sim.houses.register(house);
     let id = sim
         .spawn_object("ENGINEER", "Americans", 9, 10, 0, &rules)
         .unwrap();
@@ -99,12 +99,13 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
     // map-node row is cluster0->1, except zone_rejected's candidate cluster1->2.
     let terrain = sim.resolved_terrain.as_mut().unwrap();
     for (x, y) in [(9, 10), (10, 10), (11, 10)] {
-        let cell = terrain.cell_mut(x, y).unwrap();
+        let cell = terrain.cell_mut_for_test(x, y).unwrap();
         cell.level = 2;
         cell.slope_type = 1;
     }
-    terrain.cell_mut(9, 10).unwrap().land_type = input["current_land"].as_u64().unwrap_or(0) as u8;
-    let candidate = terrain.cell_mut(10, 10).unwrap();
+    terrain.cell_mut_for_test(9, 10).unwrap().land_type =
+        input["current_land"].as_u64().unwrap_or(0) as u8;
+    let candidate = terrain.cell_mut_for_test(10, 10).unwrap();
     candidate.level = input["candidate_level"].as_i64().unwrap_or(2) as u8;
     candidate.bridge_facts.raw_flags = input["candidate_flags"].as_u64().unwrap_or(0) as u32;
     if input["current_missing"] == true {
@@ -118,17 +119,17 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
             .shared_cell_dummy()
             .test_set_land_type(input["dummy_land"].as_i64().unwrap() as i32);
     }
-    let base = sim.zone_grid.as_mut().unwrap().base_topology_mut();
-    base.native_bridge_source_size = Some((8, 8));
-    base.zone_ids.fill(0);
-    for row in &mut base.raw_zone_ids_by_row {
+    let base = sim.zone_grid.as_mut().unwrap().base_topology_mut_for_test();
+    base.set_native_bridge_source_size_for_test(Some((8, 8)));
+    base.zone_ids_mut_for_test().fill(0);
+    for row in base.raw_zone_ids_by_row_mut_for_test() {
         *row = vec![1, 2];
     }
     if input["zone_rejected"] == true {
-        base.zone_ids[10 * 33 + 10] = 1;
+        base.zone_ids_mut_for_test()[10 * 33 + 10] = 1;
     }
     if input["target_zone_rejected"] == true {
-        base.zone_ids[10 * 33 + 11] = 1;
+        base.zone_ids_mut_for_test()[10 * 33 + 11] = 1;
     }
     // The wall stands in OverlayGrid alone, as one built in play does; the
     // Override reads the live Cell+0x44 (75BAF3).
@@ -154,7 +155,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
     e.set_on_bridge(false);
     e.set_in_playfield(input["in_playfield"].as_bool().unwrap_or(false));
     e.lifecycle.set_object_alive_for_test(true);
-    e.lifecycle.set_cell_marked(true);
+    e.lifecycle.set_cell_marked_for_test(true);
     e.tether
         .set_for_test(input["tethered"].as_bool().unwrap_or(false).then_some(999));
     e.mission.apply_test_fixture(MissionTestFixture {
@@ -188,15 +189,15 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
         .set_for_test((input["attack_target"] == true).then_some(TargetKind::Cell(11, 10)));
     e.suspended_attack_target.set_for_test(None);
     e.navigation
-        .path_replay
+        .path_replay_mut()
         .set_directions_for_test(vec![2, 3, 4, 5]);
-    e.navigation.path_replay.set_cursor(0);
-    e.navigation.path_replay.set_reference_cell(Some(
-        input.get("path_reference").map_or((9, 8), |p| {
+    e.navigation.path_replay_mut().set_cursor_for_test(0);
+    e.navigation
+        .path_replay_mut()
+        .set_reference_cell_for_test(Some(input.get("path_reference").map_or((9, 8), |p| {
             (p[0].as_i64().unwrap() as i16, p[1].as_i64().unwrap() as i16)
-        }),
-    ));
-    let p = &mut e.navigation.path_runtime;
+        })));
+    let p = e.navigation.path_runtime_mut();
     p.set_movement_timer_for_test(CdTimer::from_raw(
         before["movement_timer"][0].as_i64().unwrap() as i32,
         before["movement_timer"][2].as_i64().unwrap() as i32,
@@ -205,8 +206,8 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
         before["blockage_timer"][0].as_i64().unwrap() as i32,
         before["blockage_timer"][2].as_i64().unwrap() as i32,
     ));
-    p.set_path_blocked(before["blocked"] == 1);
-    p.set_retries_left(before["retries"].as_i64().unwrap() as u32);
+    p.set_path_blocked_for_test(before["blocked"] == 1);
+    p.set_retries_left_for_test(before["retries"].as_i64().unwrap() as u32);
     p.set_scold_latch_for_test(before["flag68a"].as_u64().unwrap() as u8);
     if input["radio"] == true {
         e.radio_contacts.insert(999);
@@ -235,7 +236,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
         e.position.set_exact_z_leptons_for_test(Some(current.z));
         e.lifecycle
             .set_object_alive_for_test(input["obstacle_alive"].as_bool().unwrap_or(true));
-        e.lifecycle.set_cell_marked(true);
+        e.lifecycle.set_cell_marked_for_test(true);
         e.set_on_bridge(input["obstacle_deck"] == true);
         let mut cloak = CloakRuntime::new(0);
         cloak.set_state_for_test(input["cloak"].as_i64().unwrap_or(0) as i32);
@@ -253,7 +254,8 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
             CellListInsertion::PrependNonBuilding,
         );
     }
-    sim.session.binary_frame = input["frame"].as_u64().unwrap_or(100) as u32;
+    sim.session
+        .set_binary_frame_for_test(input["frame"].as_u64().unwrap_or(100) as u32);
     sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(31));
     (sim, rules, registry, id, other)
 }
@@ -276,7 +278,7 @@ fn compare(sim: &Simulation, id: u64, other: Option<u64>, expected: &Value, row:
         Some(NavTargetRef::Cell { rx: 10, ry: 10 }) => CELL,
         other => panic!("unexpected NavCom {other:?}"),
     };
-    let q = &e.navigation.path_replay;
+    let q = e.navigation.path_replay();
     let words: Vec<i32> = (0..4)
         .map(|i| {
             q.directions()
@@ -284,7 +286,7 @@ fn compare(sim: &Simulation, id: u64, other: Option<u64>, expected: &Value, row:
                 .map_or(-1, |&w| if w == u8::MAX { -1 } else { i32::from(w) })
         })
         .collect();
-    let p = &e.navigation.path_runtime;
+    let p = e.navigation.path_runtime();
     for (key, actual) in [
         (
             "doing",
@@ -550,7 +552,7 @@ fn exhausted_walk_retry_emits_native_retained_scold_request() {
             .get_mut(id)
             .unwrap()
             .navigation
-            .path_runtime
+            .path_runtime_mut()
             .set_scold_latch_for_test(guard["supplied_byte"].as_u64().unwrap() as u8);
         let current = crate::sim::movement::ground_pose::position_world_coord(
             &sim.substrate.entities.get(id).unwrap().position,
@@ -586,7 +588,7 @@ fn exhausted_walk_retry_emits_native_retained_scold_request() {
                     .get(id)
                     .unwrap()
                     .navigation
-                    .path_runtime
+                    .path_runtime()
                     .scold_latch_raw()
             ),
             guard["final_byte"]

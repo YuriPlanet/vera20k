@@ -394,7 +394,7 @@ impl Simulation {
             ) {
                 let issuer = usize::try_from(record.house_id())
                     .ok()
-                    .and_then(|index| self.session.house_order.get(index))
+                    .and_then(|index| self.houses.order().get(index))
                     .ok_or("missing planning order house")?;
                 if !self.houses.contains_key(issuer) {
                     return Err("missing planning order house");
@@ -408,17 +408,11 @@ impl Simulation {
         if !self.houses.contains_key(&owner) {
             return None;
         }
-        let house = i8::try_from(
-            self.session
-                .house_order
-                .iter()
-                .position(|&id| id == owner)?,
-        )
-        .ok()?;
+        let house = i8::try_from(self.houses.order().iter().position(|&id| id == owner)?).ok()?;
         CommandRecord::encode(
             opcode,
             i32::from(house),
-            self.session.binary_frame as i32,
+            self.session.binary_frame() as i32,
             &[],
         )
         .ok()
@@ -988,7 +982,7 @@ impl Simulation {
     fn planning_actor_house(&self, actor: u64) -> Option<InternedId> {
         let owner = self.substrate.entities.get(actor)?.owner();
         if self.house_is_human_player(owner) {
-            self.session.current_house
+            self.session.current_house()
         } else {
             Some(owner)
         }
@@ -1469,7 +1463,7 @@ impl Simulation {
         };
         let Some(owner) = usize::try_from(record.house_id())
             .ok()
-            .and_then(|index| self.session.house_order.get(index))
+            .and_then(|index| self.houses.order().get(index))
             .copied()
         else {
             return false;
@@ -1478,7 +1472,7 @@ impl Simulation {
         record.set_issue_header(
             4,
             i32::from(record.house_id()),
-            self.session.binary_frame.wrapping_add(1) as i32,
+            self.session.binary_frame().wrapping_add(1) as i32,
         );
         let path = self.planning.paths.get_mut(&actor).unwrap();
         let keep_member = path.loop_start == Some(0);
@@ -1498,14 +1492,14 @@ impl Simulation {
                 crate::sim::mission::MissionType::Deliberate,
             ),
             0,
-            self.session.binary_frame,
+            self.session.binary_frame(),
             &crate::sim::mission::authority::EntityReadyInputProvider,
         );
         // 637550 ->652230: deferred publication stamps frame+1. Reverse
         // pending traversal plus ring prepend restores generation order.
         self.queue_command(CommandEnvelope::new(
             owner,
-            self.session.tick.saturating_add(2),
+            self.session.tick().saturating_add(2),
             Command::PlanningRecord { record },
         ));
         true

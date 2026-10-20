@@ -425,7 +425,7 @@ mod tests {
             for y in 0..8u16 {
                 for x in 0..8u16 {
                     let values = &row["cells"][format!("{x},{y}")];
-                    let cell = terrain.cell_mut(x, y).unwrap();
+                    let cell = terrain.cell_mut_for_test(x, y).unwrap();
                     cell.level = values["level"].as_i64().unwrap_or(0) as u8;
                     cell.slope_type = values["slope"].as_u64().unwrap_or(0) as u8;
                     cell.bridge_facts.raw_flags = values["flags"].as_u64().unwrap_or(0) as u32;

@@ -523,5 +523,218 @@ def metadata():
                       "rng_seed": SEED})
 
 
+def shp_frames_generate():
+    """Original DRON frame selection for every facing byte, plus counter edges.
+
+    The 4/56 layout is the physical DRON UnitType reader's output, independently
+    retained by the whole fire/parasite history. This is the already-admitted
+    eight-facing, undisguised SHP arm, not a complete Draw_It or visible capture.
+    """
+    from tools.spatial_oracle import building_body_rules as body
+    from tools.spatial_oracle import building_construction as construction
+
+    fixture = body.Fixture()
+    u = fixture.u
+    source, kind, heading = body.TYPE, body.RULES, body.RAW
+    u.mem_write(source + 0x6C4, body.dwords(kind))
+    u.mem_write(kind + 0xE5D, b"\x04")
+    u.mem_write(kind + 0xE30, body.dwords(56))
+    spans = [(0x73C62B, 0x73C725), (0x7363C9, 0x7363DE), (0x4C91E0, 0x4C94F0)]
+    original = [bytes(u.mem_read(a, b - a)) for a, b in spans]
+    construction.invoke(u, 0x4C91E0, source + 0x388, 3)
+
+    def frame(facing, counter):
+        u.mem_write(heading, body.dwords(facing << 8))
+        construction.invoke(u, 0x4C9300, source + 0x388, heading)
+        u.mem_write(source + 0x6C0, body.dwords(counter))
+        u.reg_write(UC_X86_REG_ESP, body.SP)
+        u.reg_write(UC_X86_REG_EBP, source)
+        run_checked(u, 0x73C62B, 0x73C725,
+                    required_addresses=(0x4C93D0, 0x73C64B, 0x73C65B))
+        return u.reg_read(UC_X86_REG_EBX)
+
+    first_by_facing = [frame(facing, 7) for facing in range(256)]
+    countdown = [dict(facing=facing, frames=[frame(facing, n) for n in range(7, -1, -1)])
+                 for facing in range(0, 256, 32)]
+    steps = []
+    for before in (-0x80000000, -5, -1, 0, 1, 7, 0x7FFFFFFF):
+        u.mem_write(source + 0x6C0, body.dwords(before))
+        u.reg_write(UC_X86_REG_ESP, body.SP)
+        u.reg_write(UC_X86_REG_ESI, source)
+        run_checked(u, 0x7363C9, 0x7363DE, required_addresses=(0x7363D8,))
+        steps.append(dict(before=before, after=struct.unpack("<i", u.mem_read(source + 0x6C0, 4))[0]))
+    assert original == [bytes(u.mem_read(a, b - a)) for a, b in spans]
+    return dict(input=dict(firing_frames=4, start_firing_frame=56, counter=7,
+                           facings=8, disguised=False, binary_frame=0),
+                first_by_facing=first_by_facing, countdown=countdown, counter_steps=steps)
+
+
+def shp_frames_metadata():
+    return provenance(
+        scope="DRON original Unit SHP fire-frame arm for all256 facing bytes and eight countdown "
+              "steps at eight canonical headings; original Unit AI counter arithmetic edges.",
+        assumptions=[
+            "The existing building_body_rules VM supplies stack/scratch storage only. Physical DRON "
+            "reader output is FiringFrames4, StartFiringFrame56, Facings8; the whole fire history "
+            "independently executes those retail readers. No VERA frame result is an input.",
+            "Original Facing constructor4C91E0 and Set4C9300 initialize each declared byte heading. "
+            "The admitted undisguised/eight-facing selector starts73C62B, executes Current4C93D0 "
+            "and the firing branch, and stops73C725 before subsequent drawing.",
+            "Counter-step inputs are supplied signed dwords; original7363C9..7363DE performs "
+            "the decrement/clamp. The INT_MIN control preserves wrapping arithmetic. Full Unit AI "
+            "admission and lifecycle are covered separately, not inferred from this slice.",
+        ],
+        substitutions=["No instructions, native calls, frame values or counter outputs are replaced. "
+                       "The slices do not execute Draw_It's admission, blitter, pixels or negative-counter "
+                       "Stand/Walk branches; no full-scene equivalence claim."],
+        entry_points=dict(frame=0x73C62B, frame_boundary=0x73C725,
+                          counter=0x7363C9, counter_boundary=0x7363DE,
+                          facing_ctor=0x4C91E0, facing_set=0x4C9300, facing_current=0x4C93D0))
+
+
+def shp_history_generate():
+    import hashlib
+    import json
+    import os
+    from tools.spatial_oracle import building_death_anims as host,building_construction as bc
+    from tools.spatial_oracle.building_body_rules import dwords,SP
+    from tools.procedural_drawing_oracle.electric_bolt import RngTrace
+    root=Path(os.environ['VERA20K_BUILDING_DEATH_ASSETS'])
+    print('Reading physical DRON fire inputs',flush=True)
+    inputs=host.grapple_inputs(root,drone=True,firing=True)
+    f=host.grapple_fixture(inputs,root,drone=True,start_attached=False)
+    u,read=f.u,f.read32
+    source,victim,manager=f.grapple_source,f.grapple_victim,f.grapple_manager
+    kind=f.types['DRON'];scenario=read(0xA8B230)
+    signed=lambda p:struct.unpack('<i',u.mem_read(p,4))[0]
+    def xyz(p):return list(struct.unpack('<3i',u.mem_read(p,12)))
+    def timer(p):return list(struct.unpack('<3i',u.mem_read(p,12)))
+    def member(p):return p in [read(read(0x87F778+4)+i*4) for i in range(read(0x87F778+16))]
+    def state():
+        return dict(counter=signed(source+0x6C0),alive=u.mem_read(source+0x90,1)[0],limbo=u.mem_read(source+0x81,1)[0],
+            health=signed(source+0x6C),position=xyz(source+0x9C),logic_member=member(source),
+            target_is_host=read(source+0x2B4)==victim,target_is_null=read(source+0x2B4)==0,
+            host_has_eater=read(victim+0x694)==source,manager_has_host=read(manager+0x28)==victim,
+            rearm_timer=timer(source+0x2EC),source_paralysis=timer(source+0x6A0),
+            host_paralysis=timer(victim+0x6A0),manager_timer_2c=timer(manager+0x2C),
+            manager_timer_38=timer(manager+0x38),body_facing_fields_hex=bytes(u.mem_read(source+0x388,24)).hex())
+    rng=RngTrace.__new__(RngTrace);rng.u=u
+    rng.streams={'main':0x886B88,'scenario':scenario+0x218,'mapgen':0xABE890}
+    rng.requests,rng.pending=[],[]
+    u.hook_add(UC_HOOK_CODE,rng.observe)
+    roles={0:None,source:'drone',victim:'host',manager:'parasite'}
+    def role(p):return roles.get(p,f'0x{p:08X}')
+    phase='constructor';last_pc=None;calls=[];writes=[];returns=[];bullets=[]
+    watched={0x736DF0:'UnitFireAtTarget',0x741340:'UnitFire',0x6FDD50:'TechnoFire',
+        0x5F4D30:'ObjectLimbo',0x62A980:'AttachTo',0x4664C0:'BulletCtor',
+        0x468670:'BulletFire',0x4666E0:'BulletAI',0x629FD0:'ParasiteAI',
+        0x62A4A0:'ExitUnit',0x7360C0:'UnitAI',0x7258D0:'AnnounceExpired'}
+    regions=[('firing_counter',source+0x6C0,4),('rearm_timer',source+0x2EC,12),
+        ('passive_scan_timer',source+0x180,12),('source_paralysis',source+0x6A0,12),
+        ('host_paralysis',victim+0x6A0,12),('manager_timer_2c',manager+0x2C,12),
+        ('manager_timer_38',manager+0x38,12)]
+    def observe(_u,pc,size,data):
+        nonlocal last_pc
+        last_pc=pc;sp=u.reg_read(UC_X86_REG_ESP)
+        if returns and (pc,sp)==returns[-1][:2]:
+            _,_,row=returns.pop();row['result']=role(u.reg_read(UC_X86_REG_EAX))
+        if pc in watched:
+            this=u.reg_read(UC_X86_REG_ECX)
+            if pc==0x4664C0:
+                roles[this]='bullet'
+                if this not in bullets:bullets.append(this)
+            row=dict(phase=phase,event=watched[pc],receiver=role(this),frame=read(bc.FRAME),
+                counter=signed(source+0x6C0),rng_request_count=len(rng.requests))
+            calls.append(row)
+            if pc==0x741340:returns.append((read(sp),sp+12,row))
+    def write(_u,access,address,size,value,data):
+        for name,start,length in regions:
+            if address<start+length and start<address+size:
+                writes.append(dict(phase=phase,pc=f'{last_pc:08X}',field=name,offset=address-start,
+                    size=size,value=value,frame=read(bc.FRAME),rng_request_count=len(rng.requests)))
+    u.hook_add(UC_HOOK_CODE,observe);u.hook_add(UC_HOOK_MEM_WRITE,write)
+    layout=dict(firing_frames=struct.unpack('<b',u.mem_read(kind+0xE5D,1))[0],start_firing_frame=signed(kind+0xE30),
+        facings=signed(kind+0xE3C),sync=[signed(kind+0xE40),signed(kind+0xE44)],walk_frames=struct.unpack('<b',u.mem_read(kind+0xE5C,1))[0])
+    kernel=json.loads(Path(host.__file__).with_name('unit_shp_fire_frames.json').read_text())['input']
+    assert all(layout[k]==kernel[k] for k in ('firing_frames','start_firing_frame','facings'))
+    history={'constructor':state()};rng_states={'before_target_assignment':rng.states()}
+    phase='target_assignment_and_aim'
+    bc.invoke(u,0x6FCDB0,source,victim)
+    heading=f.allocate(4);bc.invoke(u,0x5F3DB0,source,heading,victim)
+    for offset in (0x388,0x3A0):bc.invoke(u,0x4C9300,source+offset,heading)
+    slot=bc.invoke(u,0x746CD0,source,victim)
+    error=bc.invoke(u,0x740FD0,source,victim,slot,1)
+    assert slot==0 and error==0
+    phase='ordinary_per_frame_fire_visit'
+    print('Whole original UnitFireAtTarget736DF0',flush=True)
+    bc.invoke(u,0x736DF0,source)
+    assert not returns and bullets and any(c['event']=='UnitFire' and c.get('result')=='bullet' for c in calls)
+    bullet=bullets[-1]
+    assert read(source+0x6C0)>0 and u.mem_read(source+0x81,1)[0]
+    history['after_fire']=state();rng_states['after_fire']=rng.states()
+    flight=[]
+    for frame in range(1,30):
+        phase=f'bullet_frame_{frame}';u.mem_write(bc.FRAME,dwords(frame));bc.invoke(u,0x4666E0,bullet)
+        flight.append(dict(frame=frame,source=state(),bullet_alive=u.mem_read(bullet+0x90,1)[0]))
+        if read(manager+0x28)==victim or not u.mem_read(bullet+0x90,1)[0]:break
+    assert read(manager+0x28)==victim and read(victim+0x694)==source
+    history['flight']=flight;rng_states['after_attachment']=rng.states()
+    attached=[]
+    for frame in range(frame+1,frame+4):
+        phase=f'host_parasite_frame_{frame}';u.mem_write(bc.FRAME,dwords(frame));bc.invoke(u,0x629FD0,manager)
+        attached.append(dict(frame=frame,source=state(),host_health=signed(victim+0x6C)))
+    history['attached']=attached;rng_states['after_parasite_visits']=rng.states()
+    def draw():
+        u.reg_write(UC_X86_REG_ESP,SP);u.reg_write(UC_X86_REG_EBP,source)
+        run_checked(u,0x73C62B,0x73C725,required_addresses=(0x73C64B,))
+        return u.reg_read(UC_X86_REG_EBX)
+    phase='whole_exit_unit';bc.invoke(u,0x62A4A0,manager)
+    assert not u.mem_read(source+0x81,1)[0] and u.mem_read(source+0x90,1)[0]
+    history['release']=dict(frame=frame,source=state(),body_frame=draw())
+    rng_states['after_release']=rng.states();recovery=[]
+    for frame in range(frame+1,frame+11):
+        phase=f'whole_unit_ai_frame_{frame}';u.mem_write(bc.FRAME,dwords(frame))
+        assert member(source)
+        bc.invoke(u,0x7360C0,source)
+        recovery.append(dict(frame=frame,source=state(),body_frame=draw()))
+    history['recovery']=recovery;rng_states['after_recovery']=rng.states()
+    assert f.code_unchanged() and not rng.pending and not returns
+    assets={name:dict(bytes=(root/name).stat().st_size,sha256=hashlib.sha256((root/name).read_bytes()).hexdigest())
+        for name in ('ARTMD.INI','DRON.SHP','DRONP.SHP','GTNK.VXL','GTNK.HVA','VOXELS.VPL')}
+    result=dict(input=dict(context=f.grapple_context,layers=inputs.grapple_layers,layout=layout,assets=assets,
+        weapon_slot=slot,fire_error=error,release='direct original ExitUnit after three host ParasiteAI visits'),
+        history=history,calls=calls,writes=writes,rng=dict(states=rng_states,requests=rng.requests))
+    print('Native recovery counters:',[r['source']['counter'] for r in recovery],flush=True)
+    print('Native recovery frames:',[r['body_frame'] for r in recovery],flush=True)
+    return result
+
+def shp_history_metadata():
+    return provenance(scope='Retail DRON per-frame FireAtTarget736DF0 through actual Unit/Techno FireAt, Bullet flight/Parasite attachment, ExitUnit and ten whole UnitAI visits; retained firing counter and bounded SHP frame reads',
+        assumptions=['Existing building_death_anims owns original retail readers, VM, allocator, physical actors, flat map/House projection and platform/presentation boundaries. Its opt-in fresh actor boundary runs native constructors/Unlimbo, without supplied Limbo or AttachTo.',
+            'Original physical RULESMD, optional LANGRULE, MPBattleMD and Hills map layers plus fixed ART/DRONP are read; DRON/MTNK are admitted at declared (8,8)/(9,8). Target assignment and instantaneous aim use original owners. This is a bounded projected map, not full scenario startup.',
+            'One real736DF0 invokes original741340 and6FDD50; no FireAt, fire legality, Bullet or parasite answer is substituted. BulletAI runs until real attachment; three real host ParasiteAI visits precede direct whole ExitUnit. Later whole UnitAI visits run only for the genuinely registered released source.',
+            'Draw73C62B..73C725 reads admitted undisguised eight-facing DRON frame state; it is not DrawIt admission, blitter execution or original pixels. Other actors/particles/animations and the whole Logic schedule are not advanced in this component.',
+            'RNG streams are retained from actual constructor inputs without reseeding. All subsequent raw/ranged requests and continuation states are recorded. Watched firing/rearm/passive/paralysis/parasite timer stores and Limbo/expiry calls preserve phase/order; this does not establish exhaustive whole-game timer/detach coverage.'],
+        substitutions=['Only existing declared IO/allocator/presentation/cache seams of the joined runtime; exact original code remains unchanged. The direct ExitUnit invocation is the release boundary, not a native Sonic-hit producer or user input event. Native full-match/pixel equivalence is not claimed.'],
+        entry_points=dict(unit_fire_visit=0x736DF0,unit_fire=0x741340,techno_fire=0x6FDD50,unit_ctor=0x7353C0,unit_unlimbo=0x737BA0,
+            bullet_ai=0x4666E0,attach=0x62A980,parasite_ai=0x629FD0,exit_unit=0x62A4A0,unit_ai=0x7360C0,counter=0x7363C9,frame=0x73C62B))
+
+
+
+def main(argv=None):
+    import sys
+    args = list(sys.argv[1:] if argv is None else argv)
+    if "--shp-history" in args:
+        args.remove("--shp-history")
+        finish_vectors(shp_history_generate, Path(__file__).with_name("unit_shp_fire_history.json"),
+                       provenance=shp_history_metadata, argv=args)
+    elif "--shp-frames" in args:
+        args.remove("--shp-frames")
+        finish_vectors(shp_frames_generate, Path(__file__).with_name("unit_shp_fire_frames.json"),
+                       provenance=shp_frames_metadata, argv=args)
+    else:
+        finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=metadata, argv=args)
+
+
 if __name__ == "__main__":
-    finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=metadata)
+    main()

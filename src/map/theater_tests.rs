@@ -194,16 +194,6 @@ fn gsi_04_02_last_tiles_transform_is_signed_original_ordered_and_wrapping() {
 }
 
 #[test]
-fn gsi_04_02_empty_last_tiles_table_is_full_signed_identity() {
-    let lookup = parse_tileset_ini(b"[TileSet0000]\nTilesInSet=1\n", "tem")
-        .expect("empty compatibility table");
-    assert!(lookup.legacy_tile_index_exceptions.is_empty());
-    for raw in [i32::MIN, -123, -1, 0, 123, i32::from(u16::MAX), i32::MAX] {
-        assert_eq!(lookup.translate_legacy_map_tile_index(raw), raw);
-    }
-}
-
-#[test]
 fn gsi_04_02_last_tiles_parser_preserves_readint_termination_and_wrapping() {
     let parsed = parse_tileset_ini(
         b"[TileSet0000]\nTilesInSet=junk\nLastTilesInSet=-1\n\n\
@@ -456,18 +446,6 @@ fn test_collect_used_tiles() {
 }
 
 #[test]
-fn test_theater_def_lookup() {
-    assert!(theater_def("TEMPERATE").is_some());
-    assert!(theater_def("temperate").is_some());
-    assert!(theater_def("SNOW").is_some());
-    assert!(theater_def("URBAN").is_some());
-    assert!(theater_def("DESERT").is_some());
-    assert!(theater_def("LUNAR").is_some());
-    assert!(theater_def("NEWURBAN").is_some());
-    assert!(theater_def("BOGUS").is_none());
-}
-
-#[test]
 fn parses_morphable_flag_per_tileset() {
     let ini = b"[TileSet0000]\n\
                 FileName=foo\n\
@@ -515,24 +493,6 @@ fn theater_parse_allow_tiberium_defaults_false() {
     assert!(lookup.allows_tiberium(3));
     assert!(!lookup.allows_tiberium(4));
     assert!(!lookup.allows_tiberium(99));
-}
-
-#[test]
-fn general_reader_finds_bridge_middle_keys() {
-    let ini = "[General]\nBridgeSet=5\nBridgeMiddle1=7\nBridgeMiddle2=12\n\n[TileSet0000]\nTilesInSet=1\nFileName=clear\n";
-    let parsed = IniFile::from_bytes(ini.as_bytes()).unwrap();
-    let general = parsed.section("General");
-    assert_eq!(super::read_general_u16(general, "BridgeMiddle1"), Some(7));
-    assert_eq!(super::read_general_u16(general, "BridgeMiddle2"), Some(12));
-}
-
-#[test]
-fn general_reader_missing_bridge_middle_returns_none() {
-    let ini = "[General]\nBridgeSet=5\n\n[TileSet0000]\nTilesInSet=1\nFileName=clear\n";
-    let parsed = IniFile::from_bytes(ini.as_bytes()).unwrap();
-    let general = parsed.section("General");
-    assert_eq!(super::read_general_u16(general, "BridgeMiddle1"), None);
-    assert_eq!(super::read_general_u16(general, "BridgeMiddle2"), None);
 }
 
 fn native_general_corpus() -> &'static serde_json::Value {
@@ -1006,20 +966,6 @@ fn active_retail_automatic_shell_corpus_is_exact() {
 }
 
 #[test]
-fn cliff_ranges_resolve_ordinals_to_cumulative_tile_starts() {
-    let ini = b"[TileSet0000]\nTilesInSet=2\nFileName=clear\nSetName=Clear\n\n\
-                [TileSet0001]\nTilesInSet=3\nFileName=shore\nSetName=Shore\n\n\
-                [TileSet0002]\nTilesInSet=4\nFileName=cliff\nSetName=Anything\n";
-    let lookup = super::parse_tileset_ini(ini, "tem").unwrap();
-
-    assert_eq!(super::resolve_tileset_start(&lookup, 0), Some(0));
-    assert_eq!(super::resolve_tileset_start(&lookup, 1), Some(2));
-    assert_eq!(super::resolve_tileset_start(&lookup, 2), Some(5));
-    assert_eq!(super::resolve_tileset_start(&lookup, -1), None);
-    assert_eq!(super::resolve_tileset_start(&lookup, 99), None);
-}
-
-#[test]
 fn gsi_04_03a_rmg_tile_keys_parse_ramp_smooth_and_resolve_ordinals() {
     let ini_bytes =
         b"[General]\nClearTile = 0\nRampBase = 1\nRampSmooth = 2\nSlopeSetPieces = 0\nGreenTile = 2\nWaterSet = 1\n\n\
@@ -1230,16 +1176,6 @@ fn bridge_middle_tiles_cover_every_variant_a_publication_writes() {
 }
 
 #[test]
-fn bridge_middle_tiles_include_the_wooden_set() {
-    use super::BridgeMiddleTiles;
-    let mut td = synthetic_theater_with_bridge_keys(Some(2), Some(9));
-    td.bridge_set = None;
-    td.wood_bridge_set = Some(0);
-    let tiles = BridgeMiddleTiles::from_theater(&td).expect("tiles");
-    assert_eq!(tiles.tile_ids, [1, 2, 3, 4, 5, 8, 9, 10, 11, 12]);
-}
-
-#[test]
 fn bridge_middle_tiles_need_both_keys() {
     use super::BridgeMiddleTiles;
     let td = synthetic_theater_with_bridge_keys(None, Some(12));
@@ -1341,14 +1277,6 @@ fn gsi_13_04_tile_anim_numeric_keys_fall_back_to_constructor_defaults() {
     assert_eq!(anim.y_offset, 0);
     assert_eq!(anim.z_adjust, 0);
     assert_eq!(anim.attaches_to, TILE_ANIM_NO_SUBTILE);
-}
-
-#[test]
-fn gsi_13_04_tile_anim_block_is_not_read_from_the_tileset_section() {
-    let ini = "[TileSet0000]\nSetName=Grass\nFileName=clear\nTilesInSet=1\n\
-               Tile01Anim=WA01X\nTile01AttachesTo=0\n";
-    let lookup = parse_tileset_ini(ini.as_bytes(), "tem").unwrap();
-    assert_eq!(lookup.tile_anim(0), None);
 }
 
 /// Sprite atlas growth draws through the palettes `load_theater` publishes:

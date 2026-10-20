@@ -124,7 +124,7 @@ fn retail_middle_perpendicular_live_tiles_match_original_sequences() {
                 );
             }
             let mut restored = initial.clone();
-            for (&p, state) in &live.sim.dynamic_terrain_cells {
+            for (&p, state) in live.sim.dynamic_terrain_cells.iter() {
                 assert!(restored.apply_dynamic_cell_state(p.0, p.1, state));
                 assert_eq!(
                     DynamicTerrainCellState::capture(restored.cell(p.0, p.1).unwrap()),

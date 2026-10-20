@@ -24,8 +24,8 @@ pub struct BasePlanNode {
 /// The authoritative ordered `HouseClass` BasePlan.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BasePlanState {
-    pub percent_built: i32,
-    pub nodes: Vec<BasePlanNode>,
+    percent_built: i32,
+    nodes: Vec<BasePlanNode>,
 }
 
 /// Pack the native `CellStruct` words after signed-16 narrowing.
@@ -39,6 +39,130 @@ pub(crate) const fn unpack_base_plan_cell(packed: u32) -> (i16, i16) {
 }
 
 impl BasePlanState {
+    /// `BaseClass+0x24`, read from the House section's `PercentBuilt=`.
+    pub const fn percent_built(&self) -> i32 {
+        self.percent_built
+    }
+
+    /// The nodes in plan order.
+    pub fn nodes(&self) -> &[BasePlanNode] {
+        &self.nodes
+    }
+
+    /// `BaseClass::Read_INI` from `HouseClass::Read_Scenario_INI`: the House
+    /// section's `PercentBuilt=` and its authored nodes, in order.
+    pub(crate) fn read_scenario(
+        &mut self,
+        percent_built: i32,
+        nodes: impl IntoIterator<Item = BasePlanNode>,
+    ) {
+        self.percent_built = percent_built;
+        self.nodes = nodes.into_iter().collect();
+    }
+
+    /// `AI_RecalcBuildOptions` empties the vector and appends one unplaced
+    /// node per chosen type or control, in order
+    /// ([`crate::sim::base_plan_generation::recalc_base_plan`]).
+    pub(crate) fn rebuild(&mut self, types_or_controls: impl IntoIterator<Item = i32>) {
+        self.nodes.clear();
+        self.nodes.extend(
+            types_or_controls
+                .into_iter()
+                .map(|type_or_control| BasePlanNode {
+                    type_or_control,
+                    packed_cell: 0,
+                    filled: false,
+                    retry_count: 0,
+                }),
+        );
+    }
+
+    /// Node zero takes the base anchor's cell, before the BasePlan center
+    /// (`0x0050C2F5..` after a BuildConst pick, `0x00739926..` after an MCV
+    /// deploy). An empty plan has no node to take it.
+    pub(crate) fn anchor_first_node(&mut self, packed_cell: u32) {
+        if let Some(node) = self.nodes.first_mut() {
+            node.packed_cell = packed_cell;
+        }
+    }
+
+    /// The ordered insert at `index`: the node there and the rest shift up.
+    pub(crate) fn insert(&mut self, index: usize, node: BasePlanNode) {
+        self.nodes.insert(index, node);
+    }
+
+    /// The site search stores its cell in node `index`; a node that may
+    /// replan forgets its cell (zero). Nothing past the end.
+    pub(crate) fn assign_site(&mut self, index: usize, packed_cell: u32) {
+        if let Some(node) = self.nodes.get_mut(index) {
+            node.packed_cell = packed_cell;
+        }
+    }
+
+    /// `HouseClass::AI_ChooseNextProduction @ 0x00506EF0`'s writes
+    /// (`0x00507A4C..0x00507B7B`): a placeholder node (negative) becomes the
+    /// defense at the cell; a WallTower node takes the cell, and hands the
+    /// defense and the cell to the next node when that is `-1`.
+    pub(crate) fn place_defense(&mut self, index: usize, defense_type: i32, packed_cell: u32) {
+        let Some(node) = self.nodes.get_mut(index) else {
+            return;
+        };
+        if node.type_or_control < 0 {
+            node.type_or_control = defense_type;
+            node.packed_cell = packed_cell;
+            return;
+        }
+        node.packed_cell = packed_cell;
+        if let Some(next) = self.nodes.get_mut(index + 1)
+            && next.type_or_control == -1
+        {
+            next.type_or_control = defense_type;
+            next.packed_cell = packed_cell;
+        }
+    }
+
+    /// Manage_Build_Queue's rebuild node (`0x004FE1D6..0x004FE2BD`): `node`
+    /// goes in at `index`. Past the count (1 on a plan the sale emptied)
+    /// native writes the slot past the count, which grows to take in slot 0:
+    /// `slot_zero`, the node last removed, returns instead. With
+    /// `drop_later_same_type`, later nodes of `node`'s type go.
+    pub(crate) fn insert_rebuild_node(
+        &mut self,
+        index: usize,
+        node: BasePlanNode,
+        slot_zero: Option<BasePlanNode>,
+        drop_later_same_type: bool,
+    ) {
+        if index > self.nodes.len() {
+            self.nodes.extend(slot_zero);
+            return;
+        }
+        self.nodes.insert(index, node);
+        if drop_later_same_type {
+            let later = self.nodes.split_off(index + 1);
+            self.nodes.extend(
+                later
+                    .into_iter()
+                    .filter(|later| later.type_or_control != node.type_or_control),
+            );
+        }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_percent_built_for_test(&mut self, percent_built: i32) {
+        self.percent_built = percent_built;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_nodes_for_test(&mut self, nodes: Vec<BasePlanNode>) {
+        self.nodes = nodes;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn nodes_mut_for_test(&mut self) -> &mut Vec<BasePlanNode> {
+        &mut self.nodes
+    }
+
     /// Fold the exact fields consumed by `FUN_0042F180 @ 0x0042F180`
     /// (`BaseClass::CalculateChecksum`).
     ///

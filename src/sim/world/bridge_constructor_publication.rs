@@ -74,12 +74,9 @@ impl LivePublication<'_> {
         ];
         let lookup = ((world[0] / 256) as i16, (world[1] / 256) as i16);
         let cell = self.lookup(lookup);
-        let terrain_present = self.real_coord(cell).is_some_and(|coord| {
-            self.sim
-                .production
-                .terrain_object_cells
-                .contains_key(&coord)
-        });
+        let terrain_present = self
+            .real_coord(cell)
+            .is_some_and(|coord| self.sim.terrain_objects.cell_index().contains_key(&coord));
         if terrain_present {
             self.sim
                 .load_objects
@@ -249,7 +246,7 @@ impl OverlayMarkHost for BridgeMarkHost<'_, '_> {
         let sim = &mut *self.publication.sim;
         let lighting = sim
             .session
-            .lighting
+            .lighting()
             .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
             .into();
         sim.construct_overlay_cell_anim(

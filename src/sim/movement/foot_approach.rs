@@ -139,7 +139,7 @@ impl Simulation {
             is_human: self
                 .houses
                 .get(&actor.owner())
-                .is_some_and(|house| house.is_human),
+                .is_some_and(|house| house.is_human()),
             passive: actor.passive_scan.acquired(),
         };
         Some((facts, target))
@@ -158,7 +158,7 @@ impl Simulation {
             .is_some_and(|object| {
                 object_is_crushable_by(
                     object.omni_crusher,
-                    CrushTarget::from_entity(victim, self.session.binary_frame),
+                    CrushTarget::from_entity(victim, self.session.binary_frame()),
                     |owner| {
                         crate::sim::combat::combat_weapon::is_ally_by_object(
                             Some(&self.house_alliances),
@@ -391,7 +391,7 @@ impl Simulation {
                 TargetKind::Cell(..) => true,
                 TargetKind::Entity(target) => {
                     self.substrate.entities.contains(target)
-                        || self.production.terrain_objects.contains_key(&target)
+                        || self.terrain_objects.objects().contains_key(&target)
                 }
             }
             && self.resolved_terrain.is_some()
@@ -509,7 +509,7 @@ impl Simulation {
         let human = self
             .houses
             .get(&actor.owner())
-            .is_none_or(|h| h.is_controlled_by_human(self.session.game_mode_nonzero));
+            .is_none_or(|h| h.is_controlled_by_human(self.session.game_mode_nonzero()));
         let may_approach = object.can_approach_target
             && actor.drain.target().is_none()
             && actor.bunker.link().installed_in().is_none()

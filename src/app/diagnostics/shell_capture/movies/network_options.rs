@@ -49,10 +49,7 @@ impl NetworkOptionsTarget {
 }
 
 fn native_case(target: NetworkOptionsTarget) -> Result<Value> {
-    let corpus: Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tools/storage_oracle/network_options.json"
-    )))?;
+    let corpus: Value = super::native_corpus("tools/storage_oracle/network_options.json")?;
     corpus["cases"]
         .as_array()
         .context("native D7 cases")?

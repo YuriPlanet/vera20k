@@ -100,12 +100,7 @@ impl<'a> SimView<'a> {
         &self.simulation.house_alliances
     }
 
-    pub fn houses(
-        &self,
-    ) -> &'a std::collections::BTreeMap<
-        crate::sim::intern::InternedId,
-        crate::sim::house_state::HouseState,
-    > {
+    pub fn houses(&self) -> &'a crate::sim::houses::Houses {
         &self.simulation.houses
     }
 
@@ -300,11 +295,11 @@ mod tests {
         )
         .expect("staged map-roster construction");
         let selected = sim.interner.get("Alpha").unwrap();
-        assert_eq!(sim.session.current_house, Some(selected));
-        assert!(sim.houses[&selected].is_human && sim.houses[&selected].player_control);
+        assert_eq!(sim.session.current_house(), Some(selected));
+        assert!(sim.houses[&selected].is_human() && sim.houses[&selected].player_control());
         let first = sim.interner.get("Zulu").unwrap();
-        assert_eq!(sim.session.house_order, [first, selected]);
-        assert!(!sim.houses[&first].is_human && !sim.houses[&first].player_control);
+        assert_eq!(sim.houses.order(), [first, selected]);
+        assert!(!sim.houses[&first].is_human() && !sim.houses[&first].player_control());
     }
 
     /// F07 matrix: the runtime always uses bound navigation and resources —
@@ -362,8 +357,10 @@ mod tests {
         use crate::sim::crates::tests::{crate_registry, crate_ruleset, sim_with_grid};
 
         let mut simulation = sim_with_grid(0x62);
-        simulation.session.game_mode_nonzero = true;
-        simulation.session.game_options.crates = true;
+        simulation.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
+        simulation.session.game_options_mut_for_test().crates = true;
         let due = CrateSlot {
             start_frame: -1,
             aux: 0,
@@ -371,7 +368,7 @@ mod tests {
             cell_x: 15,
             cell_y: 15,
         };
-        *simulation.crate_authority.slot_mut(0) = due;
+        *simulation.crate_authority.slot_mut_for_test(0) = due;
 
         let mut resources = SimResources::empty();
         resources.rules = crate_ruleset("");
@@ -438,10 +435,10 @@ mod tests {
         .expect("one exact generated binding");
         let mut sim = Simulation::with_seed(0xC701_0412);
         let owner = sim.interner.intern("Americans");
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
         let before = sim.scenario_rng.logical_state();
 
         assert_eq!(
@@ -821,7 +818,7 @@ pub fn initialize_native_tiberium_queues(
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
     native_rect: (u16, u16),
 ) -> Option<crate::sim::ore_growth::NativeTiberiumRebuildStats> {
-    sim.production.ore_growth_config =
+    sim.ore_growth_config =
         crate::sim::ore_growth::OreGrowthConfig::resolve(basic, special_flags, &sim.session);
     let (width, height) = overlay_grid
         .map(|grid| (grid.width(), grid.height()))
@@ -831,13 +828,13 @@ pub fn initialize_native_tiberium_queues(
                 .map(|terrain| (terrain.width(), terrain.height()))
         })
         .unwrap_or((0, 0));
-    sim.production.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(width, height);
+    sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(width, height);
     // `CellClass+0xE4 FirstObject != 0` at this point: terrain objects plus
     // every ground-list Techno already constructed (none on an authored load,
     // the generator's own Technos on a generated one).
     let mut source_object_cells = sim
-        .production
-        .terrain_object_cells
+        .terrain_objects
+        .cell_index()
         .keys()
         .copied()
         .collect::<std::collections::BTreeSet<_>>();
@@ -849,23 +846,24 @@ pub fn initialize_native_tiberium_queues(
     let Some(overlay_grid) = overlay_grid else {
         // No overlay grid: no stores to seed, but keep the `[Map] Size` rect
         // so a later snapshot restore rebuilds from it, not the storage dims.
-        sim.production
-            .ore_growth_state
-            .reset_native_tiberium_classes_for_rect(native_rect, 0, sim.session.binary_frame);
+        sim.ore_growth_state.reset_native_tiberium_classes_for_rect(
+            native_rect,
+            0,
+            sim.session.binary_frame(),
+        );
         return None;
     };
     Some(
-        sim.production
-            .ore_growth_state
+        sim.ore_growth_state
             .rebuild_native_tiberium_queues_from_overlays(
                 overlay_grid,
                 overlay_registry,
                 &rules.tiberium_types,
                 sim.resolved_terrain.as_ref(),
                 &source_object_cells,
-                sim.production.ore_growth_config.grows,
-                sim.production.ore_growth_config.spreads,
-                sim.session.binary_frame,
+                sim.ore_growth_config.grows(),
+                sim.ore_growth_config.spreads(),
+                sim.session.binary_frame(),
                 native_rect,
             ),
     )
@@ -939,7 +937,7 @@ where
         lat_enabled,
         cliff_back_impassability,
         terrain.cells().len(),
-        sim.session.pixel_conversion_bounds,
+        sim.session.pixel_conversion_bounds(),
     );
     let shape = crate::map::authored_overlay::NativeOverlayMapShape::new(
         i32::try_from(map_data.header.width).unwrap_or(i32::MAX),
@@ -1163,7 +1161,7 @@ pub fn finalize_constructed_scenario(
                 let country = sim
                     .houses
                     .get(&entity.owner())
-                    .and_then(|house| house.country)
+                    .and_then(|house| house.country())
                     .map(|country| sim.interner.resolve(country));
                 map_wall_owner_candidate_from_building(
                     entity,
@@ -1211,7 +1209,7 @@ pub fn finalize_constructed_scenario(
     let campaign_new_game_map = sim
         .session
         .campaign_mission_counter()
-        .filter(|_| !sim.session.game_mode_nonzero)
+        .filter(|_| !sim.session.game_mode_nonzero())
         .map(|_| map_data);
     let output =
         sim.finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {

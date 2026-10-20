@@ -122,8 +122,8 @@ pub(super) fn world(rules: RuleSet) -> (RuleSet, Simulation, InternedId) {
     let (rules, mut sim, americans) = world_with(rules, 64, &[]);
     sim.playfield_bounds = Some(PlayfieldBounds::from_raw_local_size(32, 32, [2, 4, 28, 22]));
     sim.playfield_size_height = Some(32);
-    sim.fog.width = 64;
-    sim.fog.height = 64;
+    sim.fog.set_width_for_test(64);
+    sim.fog.set_height_for_test(64);
     (rules, sim, americans)
 }
 
@@ -350,8 +350,10 @@ fn send_spy_planes_matches_native() {
                 "{row}"
             );
         }
-        sim.houses.get_mut(&americans).unwrap().waypoint_edge =
-            u8::try_from(waypoint_edge).unwrap_or(u8::MAX);
+        sim.houses
+            .get_mut(&americans)
+            .unwrap()
+            .set_waypoint_edge_for_test(u8::try_from(waypoint_edge).unwrap_or(u8::MAX));
         // The plane's constructor draws one word before the pick.
         let expected = expected_pick(&sim, own, 1);
         let sw_type = sim.interner.intern(SPY_PLANE);
@@ -387,7 +389,7 @@ fn send_spy_planes_matches_native() {
             (plane.position.sub_x(), plane.position.sub_y()),
             (SimFixed::from_num(128), SimFixed::from_num(128))
         );
-        assert_eq!(plane.body_facing_current(sim.session.binary_frame), 0);
+        assert_eq!(plane.body_facing_current(sim.session.binary_frame()), 0);
     }
     assert_eq!(authored_replayed, 1);
 }
@@ -541,8 +543,10 @@ fn spyplane_missions_match_native() {
         };
         let (rules, mut sim, americans) = world(rules(&keys));
         let house = sim.houses.get_mut(&americans).unwrap();
-        house.waypoint_edge = u8::try_from(int(&row["waypoint_edge"])).unwrap_or(u8::MAX);
-        house.multiplay_passive = flag(row, "passive");
+        house.set_waypoint_edge_for_test(
+            u8::try_from(int(&row["waypoint_edge"])).unwrap_or(u8::MAX),
+        );
+        house.set_multiplay_passive_for_test(flag(row, "passive"));
         let id = mission_plane(&mut sim, &rules, row);
         if flag(row, "latched") {
             // A snapshot held from before, as the row's `+0x250` stands for.
@@ -555,7 +559,7 @@ fn spyplane_missions_match_native() {
             expected_pick(&sim, opposite, 0)
         });
         sim.sound_events.clear();
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
 
         crate::sim::aircraft::dispatch_mission(&mut sim, id, &rules, Default::default());
 
@@ -688,7 +692,7 @@ fn retail_spy_plane_flies_with_super_weapons_off() {
     };
     let (rules, mut sim, americans) = world(rules);
     let russians: InternedId = sim.interner.intern("Russians");
-    sim.session.game_options.super_weapons = false;
+    sim.session.game_options_mut_for_test().super_weapons = false;
     for (kind, owner, at) in [
         // Native Grant pauses a fresh Super in low power even when its
         // type is not IsPowered. This option test supplies working power.
@@ -711,8 +715,8 @@ fn retail_spy_plane_flies_with_super_weapons_off() {
     };
 
     step(&mut sim, &rules);
-    assert!(!sim.power_states[&americans].is_low_power);
-    assert!(!sim.power_states[&russians].is_low_power);
+    assert!(!sim.power_states[&americans].is_low_power());
+    assert!(!sim.power_states[&russians].is_low_power());
     assert!(granted(&sim, americans, spy_plane));
     assert!(granted(&sim, russians, spy_plane));
     assert!(!granted(&sim, americans, nuke));
@@ -741,8 +745,14 @@ fn retail_computer_sends_its_spy_plane_past_the_enemy_base() {
     };
     let (rules, mut sim, americans) = world(rules);
     let russians: InternedId = sim.interner.intern("Russians");
-    sim.houses.get_mut(&russians).unwrap().enemy_house = Some(americans);
-    sim.houses.get_mut(&americans).unwrap().base_center = Some(TARGET);
+    sim.houses
+        .get_mut(&russians)
+        .unwrap()
+        .set_enemy_house_for_test(Some(americans));
+    sim.houses
+        .get_mut(&americans)
+        .unwrap()
+        .set_base_center_for_test(Some(TARGET));
     let sw_type = charge_super(&mut sim, russians, SPY_PLANE);
 
     super::ai_fire::try_fire(

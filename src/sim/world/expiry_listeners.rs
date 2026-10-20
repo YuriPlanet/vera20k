@@ -454,7 +454,7 @@ mod tests {
                 paused: false,
             },
         );
-        anim.owner_entity = owner;
+        anim.set_owner_entity_for_test(owner);
         anim
     }
 
@@ -619,8 +619,8 @@ mod tests {
         stores.anims.insert(anim(11, None));
         let mut system =
             ParticleSystem::test_fixture(20, ParticleSystemTypeId(0), glam::IVec3::ZERO);
-        system.target_ref = Some(crate::sim::combat::TargetKind::Entity(3));
-        system.owner_entity = Some(4);
+        system.set_target_ref_for_test(Some(crate::sim::combat::TargetKind::Entity(3)));
+        system.set_owner_entity_for_test(Some(4));
         stores.particle_systems.insert(system);
         bullet(&mut stores, 30, 4, ProjectileTarget::Entity(3));
         bullet(
@@ -631,8 +631,8 @@ mod tests {
         );
         let origin = ProjectileCoord::new(0, 0, 0);
         let mut wave = Wave::new(0, origin, origin);
-        wave.owner_id = Some(3);
-        wave.target_ref = Some(TargetKind::Entity(4));
+        wave.set_owner_id_for_test(Some(3));
+        wave.set_target_ref_for_test(Some(TargetKind::Entity(4)));
         stores.waves.spawn(40, wave);
         let mut index = ExpiryListeners::default();
 
@@ -642,8 +642,16 @@ mod tests {
         assert_eq!(reach(&mut index, &mut stores, RAD_NO_ATTACKER), [0u64; 0]);
         // A new owner, a retarget, a cleared target and a removal are read
         // back on the next expiry.
-        stores.anims.get_mut(11).unwrap().owner_entity = Some(4);
-        stores.projectiles.get_mut(30).unwrap().target = ProjectileTarget::Entity(5);
+        stores
+            .anims
+            .get_mut(11)
+            .unwrap()
+            .set_owner_entity_for_test(Some(4));
+        stores
+            .projectiles
+            .get_mut(30)
+            .unwrap()
+            .set_target_for_test(ProjectileTarget::Entity(5));
         assert!(stores.particle_systems.pointer_expired(20, 3));
         stores.waves.remove(40);
         assert_eq!(reach(&mut index, &mut stores, 3), [3, 10]);
@@ -653,7 +661,7 @@ mod tests {
         stores.anims = stores.anims.clone();
         stores.anims.remove(10);
         for (_, bullet) in stores.projectiles.iter_mut() {
-            bullet.source_id = 6;
+            bullet.set_source_id_for_test(6);
         }
         assert_eq!(reach(&mut index, &mut stores, 3), [3]);
         assert_eq!(reach(&mut index, &mut stores, 6), [30, 31]);

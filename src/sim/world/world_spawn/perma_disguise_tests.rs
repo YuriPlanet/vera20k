@@ -50,10 +50,9 @@ fn a_perma_disguised_spy_starts_wearing_its_sides_rules_disguise() {
     for (name, side) in houses {
         let id = sim.interner.intern(name);
         sim.houses
-            .insert(id, HouseState::new(id, side, None, false, 0, 10));
-        sim.session.house_order.push(id);
+            .register(HouseState::new(id, side, None, false, 0, 10));
     }
-    sim.session.binary_frame = 40;
+    sim.session.set_binary_frame_for_test(40);
     for (i, ((owner, _), worn)) in houses
         .into_iter()
         .zip(["E1", "E2", "INIT", "INIT"])
@@ -97,8 +96,7 @@ fn a_none_rules_disguise_starts_the_spy_with_no_disguise_type() {
     let mut sim = Simulation::with_seed(3);
     let id = sim.interner.intern("Americans");
     sim.houses
-        .insert(id, HouseState::new(id, 0, None, false, 0, 10));
-    sim.session.house_order.push(id);
+        .register(HouseState::new(id, 0, None, false, 0, 10));
     let spy = sim
         .spawn_object_at_height("SPY", "Americans", 10, 10, 0, 0, &rules)
         .expect("SPY spawns");
@@ -131,8 +129,7 @@ fn a_retail_spy_starts_disguised_as_its_sides_infantry() {
     let mut sim = Simulation::with_seed(3);
     let id = sim.interner.intern("Russians");
     sim.houses
-        .insert(id, HouseState::new(id, 1, None, false, 0, 10));
-    sim.session.house_order.push(id);
+        .register(HouseState::new(id, 1, None, false, 0, 10));
     let spy = sim
         .spawn_object_at_height("SPY", "Russians", 10, 10, 0, 0, &rules)
         .expect("SPY spawns");

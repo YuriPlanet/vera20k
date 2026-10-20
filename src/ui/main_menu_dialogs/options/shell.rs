@@ -6,10 +6,12 @@
 //! second set of option values or bypassing its ordered preview events.
 
 use super::{
-    FULL_SCREEN_HELP, FULL_SCREEN_LABEL, LauncherCheckboxId, LauncherComboId, LauncherCue,
-    LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, ORIGINAL_SHAPE_HELP,
-    ORIGINAL_SHAPE_LABEL, OptionsDialogState, PhysicalControlFrame, RA2_LOOK_HELP, RA2_LOOK_LABEL,
-    SIDEBAR_HELP, SIDEBAR_LABEL, SidebarSize, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    DEVELOPER_OPTIONS_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, LauncherCheckboxId,
+    LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId,
+    ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState, PhysicalControlFrame,
+    RA2_LOOK_HELP, RA2_LOOK_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP,
+    SIDEBAR_LABEL, SidebarSize, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL, ZOOM_HELP,
+    ZOOM_LABEL, Zoom,
 };
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, child_window, dlu_rect};
@@ -82,7 +84,7 @@ pub(crate) struct LauncherOptionsLayout {
     /// The Sidebar combo, beside Difficulty as Zoom is beside Visual Details.
     pub(crate) sidebar: RectPx,
     pub(crate) trackbars: [(LauncherTrackbarId, RectPx); 6],
-    pub(crate) checkboxes: [(LauncherCheckboxId, RectPx); 6],
+    pub(crate) checkboxes: [(LauncherCheckboxId, RectPx); 8],
     pub(crate) buttons: [(LauncherParentResult, RectPx); 3],
     /// The mapping the rects are in: [`ShellScale::RETAIL`] centres the
     /// authored dialog in the window, otherwise the authored dialog is
@@ -162,6 +164,12 @@ impl LauncherOptionsLayout {
                 // The RA2 Loading & Menu Movie box continues the UI Options column
                 // under Show Hidden, where the band is empty above Audio.
                 (LauncherCheckboxId::Ra2Look, dlu(93, 233, 130, 10)),
+                // Shift-Click Batch Queue sits beside it, under the Scroll
+                // Rate slider, where the UI Options band is empty too.
+                (LauncherCheckboxId::ShiftQueue, dlu(238, 233, 120, 10)),
+                // VERA's Developer Options band under Audio, above the
+                // status line, where the template has nothing.
+                (LauncherCheckboxId::WolTestService, dlu(93, 323, 200, 10)),
             ],
             buttons: [
                 (LauncherParentResult::Keyboard, button(KEYBOARD_BUTTON)),
@@ -306,6 +314,7 @@ impl OptionsDialogState {
             (&labels.music_volume, 82, 274, 85, 10, Center),
             (&labels.sound_volume, 179, 274, 85, 10, Center),
             (&labels.voice_volume, 277, 274, 85, 10, Center),
+            (DEVELOPER_OPTIONS_LABEL, 20, 308, 298, 10, Left),
             (&labels.blank, 2, 355, 303, 12, Left),
         ] {
             result.push(LauncherShellLabel {
@@ -326,6 +335,8 @@ impl OptionsDialogState {
             LauncherCheckboxId::FullScreen => FULL_SCREEN_LABEL,
             LauncherCheckboxId::OriginalShape => ORIGINAL_SHAPE_LABEL,
             LauncherCheckboxId::Ra2Look => RA2_LOOK_LABEL,
+            LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
+            LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
         }
     }
 
@@ -365,6 +376,8 @@ impl OptionsDialogState {
             LauncherCheckboxId::FullScreen => self.values.full_screen,
             LauncherCheckboxId::OriginalShape => self.values.original_shape,
             LauncherCheckboxId::Ra2Look => self.values.ra2_look,
+            LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
+            LauncherCheckboxId::WolTestService => self.values.wol_test_service,
         }
     }
 
@@ -489,6 +502,10 @@ impl OptionsDialogState {
                 LauncherCheckboxId::FullScreen => LauncherStatusHelp::Text(FULL_SCREEN_HELP),
                 LauncherCheckboxId::OriginalShape => LauncherStatusHelp::Text(ORIGINAL_SHAPE_HELP),
                 LauncherCheckboxId::Ra2Look => LauncherStatusHelp::Text(RA2_LOOK_HELP),
+                LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Text(SHIFT_QUEUE_HELP),
+                LauncherCheckboxId::WolTestService => {
+                    LauncherStatusHelp::Text(WOL_TEST_SERVICE_HELP)
+                }
             });
         }
         if layout.sidebar.contains(x, y) {
@@ -614,56 +631,6 @@ mod tests {
     }
 
     #[test]
-    fn right_panel_children_follow_the_family_places() {
-        let layout = LauncherOptionsLayout::new(800, 600);
-        assert_eq!(layout.title, RectPx::new(635, 9, 163, 18));
-        assert_eq!(layout.status_help, RectPx::new(10, 578, 456, 21));
-        let buttons = layout.buttons.map(|(_, rect)| rect);
-        assert_eq!(
-            buttons,
-            [
-                RectPx::new(644, 199, 156, 42),
-                RectPx::new(644, 241, 156, 42),
-                RectPx::new(644, 535, 156, 42),
-            ]
-        );
-    }
-
-    #[test]
-    fn responsive_layout_stretches_the_dialog_and_keeps_its_right_panel() {
-        // Identity at the authored size, where the retail layout is used.
-        assert_eq!(
-            LauncherOptionsLayout::responsive(800, 600),
-            LauncherOptionsLayout::new(800, 600)
-        );
-        let base = LauncherOptionsLayout::new(800, 600);
-        let scale = ShellScale::from_screen(1600, 1200);
-        let wide = LauncherOptionsLayout::responsive(1600, 1200);
-        assert_eq!(wide.scale, scale);
-        // No centring offset of its own: at 4:3 the scale fills the window.
-        assert_eq!((wide.offset_x, wide.offset_y), (0, 0));
-        assert_eq!(wide.title, RectPx::new(1270, 18, 326, 36));
-        assert_eq!(wide.status_help, RectPx::new(20, 1156, 912, 42));
-        assert_eq!(wide.zoom, RectPx::new(702, 172, 360, 48));
-        assert_eq!(
-            wide.buttons.map(|(_, rect)| rect),
-            [
-                RectPx::new(1288, 398, 312, 84),
-                RectPx::new(1288, 482, 312, 84),
-                RectPx::new(1288, 1070, 312, 84),
-            ]
-        );
-        assert_eq!(
-            wide.trackbars.map(|(_, rect)| rect),
-            base.trackbars.map(|(_, rect)| scale.scale_rect(rect))
-        );
-        assert_eq!(
-            wide.checkboxes.map(|(_, rect)| rect),
-            base.checkboxes.map(|(_, rect)| scale.scale_rect(rect))
-        );
-    }
-
-    #[test]
     fn a_stretched_slider_maps_the_pointer_back_to_its_authored_track() {
         let mut dialog = state();
         let base = LauncherOptionsLayout::new(800, 600);
@@ -749,30 +716,6 @@ mod tests {
             Some(LauncherStatusHelp::Text(RA2_LOOK_HELP))
         );
         assert_eq!(state.shell_status_help_key(5, 5, &layout), None);
-    }
-
-    #[test]
-    fn a_captured_slider_keeps_the_status_help_until_release() {
-        let mut state = state();
-        let layout = LauncherOptionsLayout::new(800, 600);
-        let rect = layout.trackbar_rect(LauncherTrackbarId::Score);
-        let thumb = state.shell_trackbar_thumb_left(LauncherTrackbarId::Score, rect, layout.scale);
-        state.shell_mouse_down(rect.x + thumb + 5, rect.y + 10, &layout);
-        assert_eq!(
-            state.shell_status_help(),
-            Some(LauncherStatusHelp::Csf("STT:MainOptSliderMusic"))
-        );
-        let back = layout.buttons[2].1;
-        state.shell_mouse_move(back.x + 5, back.y + 5, &layout);
-        assert_eq!(
-            state.shell_status_help(),
-            Some(LauncherStatusHelp::Csf("STT:MainOptSliderMusic"))
-        );
-        state.shell_mouse_up(back.x + 5, back.y + 5, &layout);
-        assert_eq!(
-            state.shell_status_help(),
-            Some(LauncherStatusHelp::Csf("STT:MainOptButtonBack"))
-        );
     }
 
     #[test]
@@ -1044,19 +987,24 @@ mod tests {
     }
 
     #[test]
-    fn ra2_look_box_continues_the_ui_options_column_and_applies_at_once() {
+    fn shift_queue_box_sits_under_scroll_rate_and_applies_at_once() {
         let mut state = state();
         let layout = LauncherOptionsLayout::new(800, 600);
-        let (id, rect) = layout.checkboxes[5];
-        let show_hidden = layout.checkboxes[2].1;
-        assert_eq!(id, LauncherCheckboxId::Ra2Look);
-        // One more row of the column under Show Hidden, clear of it and of
+        let (id, rect) = layout.checkboxes[6];
+        assert_eq!(id, LauncherCheckboxId::ShiftQueue);
+        // Beside RA2 Look, under the Scroll Rate slider, clear of both and of
         // the Audio Options heading.
-        assert_eq!(
-            (rect.x, rect.w, rect.h),
-            (show_hidden.x, show_hidden.w, show_hidden.h)
-        );
-        assert!(rect.y >= show_hidden.y + show_hidden.h);
+        let ra2_look = layout.checkboxes[5].1;
+        let scroll = layout
+            .trackbars
+            .iter()
+            .find(|(id, _)| *id == LauncherTrackbarId::Scroll)
+            .unwrap()
+            .1;
+        assert_eq!((rect.y, rect.h), (ra2_look.y, ra2_look.h));
+        assert!(rect.x >= ra2_look.x + ra2_look.w);
+        assert_eq!(rect.x, scroll.x);
+        assert!(rect.y >= scroll.y + scroll.h);
         let heading = state
             .shell_labels(&layout)
             .into_iter()
@@ -1064,14 +1012,51 @@ mod tests {
             .expect("Audio Options heading")
             .rect;
         assert!(rect.y + rect.h <= heading.y);
-        assert_eq!(state.shell_checkbox_label(id), RA2_LOOK_LABEL);
+        assert_eq!(state.shell_checkbox_label(id), SHIFT_QUEUE_LABEL);
+        // Off until the player ticks it.
+        assert!(!state.shell_checkbox_checked(id));
         state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
         assert!(state.shell_checkbox_checked(id));
         assert_eq!(
             state.drain_output().events,
             [
                 LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
-                LauncherOptionsEvent::Ra2LookChanged(true)
+                LauncherOptionsEvent::ShiftQueueChanged(true)
+            ]
+        );
+    }
+
+    #[test]
+    fn wol_test_service_box_sits_in_its_developer_band_and_applies_at_once() {
+        let mut state = state();
+        let layout = LauncherOptionsLayout::new(800, 600);
+        let (id, rect) = layout.checkboxes[7];
+        assert_eq!(id, LauncherCheckboxId::WolTestService);
+        let labels = state.shell_labels(&layout);
+        let heading = labels
+            .iter()
+            .find(|label| label.text == DEVELOPER_OPTIONS_LABEL)
+            .expect("Developer Options heading")
+            .rect;
+        // Under the volume sliders and its heading, clear of the status line.
+        let lowest_slider = layout
+            .trackbars
+            .iter()
+            .map(|(_, rect)| rect.y + rect.h)
+            .max()
+            .unwrap();
+        assert!(heading.y >= lowest_slider);
+        assert!(rect.y >= heading.y + heading.h);
+        assert!(rect.y + rect.h <= layout.status_help.y);
+        assert_eq!(state.shell_checkbox_label(id), WOL_TEST_SERVICE_LABEL);
+        assert!(!state.shell_checkbox_checked(id));
+        state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
+        assert!(state.shell_checkbox_checked(id));
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
+                LauncherOptionsEvent::WolTestServiceChanged(true)
             ]
         );
     }

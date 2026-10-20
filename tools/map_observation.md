@@ -201,6 +201,16 @@ capture demonstrate building pixels crossing a frontier while its anchor is
 still unexplored, without changing sight or substituting a diagnostic reveal.
 Older receipts may omit the field; their absence supplies no visibility evidence.
 
+Requested terrain rows additionally retain nullable `render`. It stays `null`
+for committed steps that were not drawn. After the matching ordinary draw,
+`phase: "after_draw"` records the live TMP variant/pavement choice, exact atlas
+key and nullable UV, palette-light words, camera and elevated cell center, and
+the shared CPU A-buffer's nullable center sample (`a_bound` names whether that
+buffer was bound). Missing cells/assets/light state or out-of-view samples stay
+explicitly null. These are passive post-draw inputs, not GPU fragment or pixel
+readbacks; they do not certify that a selected tile reached the final surface.
+Historical receipts may omit `render` and supply no evidence for those inputs.
+
 Actor `cloak`, when present, reads the existing raw signed state/progress,
 live signed Rules `CloakingStages`, actual VXL/SHP route, and original type's
 `NoShadow` flag. `null` means no cloak runtime. Reading this projection sends
@@ -628,6 +638,7 @@ absence of a submission alone cannot establish the exact rejected value.
 
 The [movement-voice profile](map_observation.move-voice.example.json) selects
 one full-health stock MTNK and issues an ordinary command click on clear ground.
+
 Generate its map with:
 
 ```sh
@@ -642,6 +653,23 @@ health and weapons stay identical. Inspect the committed acknowledgement,
 queued/head voice actions, physical sample/finite PCM and event/channel
 retirement. Loading and service can advance Main before the order, so a launch
 seed alone does not determine which entry a multi-entry list chooses.
+
+The [Terror Drone firing profile](map_observation.drone-fire.example.json)
+orders a retail DRON to jump a sleeping enemy tank, then a local tank to fire
+SonicZap at the host, then issues Stop to the released DRON. Generate its scene with
+`python tools/render_depth_fixture.py /absolute/drone-fire.map --drone-fire`.
+Optional `--terrain-template /absolute/extracted/Hills.map` retains that physical
+map's terrain packs, scenery, lighting and waypoints; the template must admit
+the fixed scene around `(48,48)`. Set the profile's selected map to the result.
+DRON, DroneJump and its ART keep their retail fields. The fixture explicitly
+overrides MTNK's primary to SonicZap and SonicZap's damage to 4 so a normal shot
+can exercise the production parasite-release receiver while both actors survive.
+`observe_disguise_inputs` retains the existing read-only SHP-frame projection. Exact
+release/idle steps must be inspected from the run. The example Stop at step 49 is based
+on the retained Hills scene: change it if a different terrain template shifts the
+hit, since a type selector cannot bind a still-limboed DRON. The profile does not
+prescribe a successful hit or native timing and is not an original scene/pixel
+comparison.
 
 The [building power-status profile](map_observation.building-power-status.example.json)
 selects an ordinary full-health owned GAPOWR in the existing clear-ground scene:
@@ -856,6 +884,10 @@ variable in its denylist must be absent, even if set to an empty string. The
 wrapper reports denied variables and does not silently change the environment.
 After sourcing the native development environment, explicitly remove `RA2_DIR`
 for this command as above; asset loading uses the working directory's config.
+
+On Linux, winit's text-free `Ime::Disabled` startup notification is recognized
+as lifecycle state while the capture window is observably hidden and unfocused.
+Keyboard, pointer and other IME events still reach the input guards.
 
 The [factory tank exit profile](map_observation.factory-tank-exit.example.json)
 exercises the ordinary human GAWEAP → MTNK production path on retail AnyTown

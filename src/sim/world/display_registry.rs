@@ -133,14 +133,14 @@ impl GroundSortKeys for GroundSortView<'_> {
         if let Some(system) = self.particles.get(id) {
             // ParticleSystem VT7EFB9C: +AC ->41BE00 ->+48 ->5F65A0,
             // +B8 ->5F6BD0. Attachment updates coords in its AI, not here.
-            let key = system.coords.x.wrapping_add(system.coords.y);
+            let key = system.coords().x.wrapping_add(system.coords().y);
             return (key, KeptSortKey::Unknown);
         }
         if let Some(anim) = self.anims.get(id) {
             // Anim422BC0 -> Object5F6BD0 -> GetCoords422BE0, then retained
             // instance+104. Type changes do not recopy this constructor field.
             let key = crate::sim::anim_class::anim_display_sort_key(anim, self.entities);
-            let kept = match anim.owner_entity {
+            let kept = match anim.owner_entity() {
                 Some(owner) => KeptSortKey::Attached {
                     own: crate::sim::anim_class::anim_own_sort_term(anim),
                     owner,
@@ -177,7 +177,7 @@ impl Simulation {
             entities: &self.substrate.entities,
             anims: &self.substrate.anims,
             particles: &self.substrate.particle_systems,
-            terrain: &self.production.terrain_objects,
+            terrain: self.terrain_objects.objects(),
             interner: &self.interner,
             rules,
         };
@@ -272,7 +272,7 @@ impl Simulation {
             entities: &self.substrate.entities,
             anims: &self.substrate.anims,
             particles: &self.substrate.particle_systems,
-            terrain: &self.production.terrain_objects,
+            terrain: self.terrain_objects.objects(),
             interner: &self.interner,
             rules,
         };
@@ -372,7 +372,7 @@ mod tests {
                 .set_exact_z_leptons_for_test(Some(input["z"].as_i64().unwrap() as i32));
             entity
                 .lifecycle
-                .set_cell_marked(input["marked"].as_bool().unwrap_or(true));
+                .set_cell_marked_for_test(input["marked"].as_bool().unwrap_or(true));
             entity.set_on_bridge(input["on_bridge"].as_bool().unwrap_or(false));
             entity.set_falling_down_for_test(input["falling"].as_bool().unwrap_or(false));
             let loco_kind = match kind {
@@ -522,7 +522,7 @@ mod tests {
                 entities: &sim.substrate.entities,
                 anims: &sim.substrate.anims,
                 particles: &sim.substrate.particle_systems,
-                terrain: &sim.production.terrain_objects,
+                terrain: sim.terrain_objects.objects(),
                 interner: &sim.interner,
                 rules,
             }
@@ -561,7 +561,12 @@ mod tests {
                 }
                 2 => {
                     let anim = anims[next(8) as usize];
-                    sim.substrate.anims.get_mut(anim).unwrap().world_coord.x += delta;
+                    sim.substrate
+                        .anims
+                        .get_mut(anim)
+                        .unwrap()
+                        .world_coord_mut_for_test()
+                        .x += delta;
                 }
                 3 => {
                     let anim = anims[next(8) as usize];

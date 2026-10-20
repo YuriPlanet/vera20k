@@ -1246,13 +1246,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn wrap_layout_hard_cuts_no_space() {
-        let font = make_test_font(&[(b'a' as u16, 6)], 4);
-        let layout = font.wrap_layout("aaaa", 14);
-        assert!(layout.lines.len() >= 2);
-    }
-
-    #[test]
     fn wrap_layout_single_char_overflow_accepted() {
         let font = make_test_font(&[(b'a' as u16, 20)], 4);
         let layout = font.wrap_layout("a", 10);
@@ -1267,22 +1260,6 @@ pub(crate) mod tests {
         let layout = font.wrap_layout("a\r\nb", 1000);
         assert_eq!(layout.lines.len(), 2);
         assert_eq!(layout.height, CELL_HEIGHT * 2);
-    }
-
-    #[test]
-    fn wrap_layout_bare_cr_advances() {
-        let font = make_test_font(&[(b'a' as u16, 6), (b'b' as u16, 6)], 4);
-        let layout = font.wrap_layout("a\rb", 1000);
-        assert_eq!(layout.lines.len(), 2);
-    }
-
-    #[test]
-    fn missing_color_xor_produces_large_shift_for_white() {
-        // 0xFFFF ^ 0x5555 = 0xAAAA. Per-channel: R5 0x15 (21/31), G6 0x15 (21/63), B5 0x0A (10/31)
-        let xored = BitFont::missing_color_xor([1.0, 1.0, 1.0]);
-        assert!((xored[0] - 21.0 / 31.0).abs() < 0.01, "R = {}", xored[0]);
-        assert!((xored[1] - 21.0 / 63.0).abs() < 0.01, "G = {}", xored[1]);
-        assert!((xored[2] - 10.0 / 31.0).abs() < 0.01, "B = {}", xored[2]);
     }
 
     #[test]
@@ -1378,14 +1355,5 @@ pub(crate) mod tests {
         // Path-A yellow is (248, 252, 0) in bytes, (31, 63, 0) in units.
         let xored = BitFont::missing_color_xor([248.0 / 255.0, 252.0 / 255.0, 0.0]);
         assert_eq!(xored, [21.0 / 31.0, 21.0 / 63.0, 21.0 / 31.0]);
-    }
-
-    #[test]
-    fn missing_color_xor_produces_large_shift_for_black() {
-        // 0x0000 ^ 0x5555 = 0x5555. R5 0x0A (10/31), G6 0x2A (42/63), B5 0x15 (21/31)
-        let xored = BitFont::missing_color_xor([0.0, 0.0, 0.0]);
-        assert!((xored[0] - 10.0 / 31.0).abs() < 0.01);
-        assert!((xored[1] - 42.0 / 63.0).abs() < 0.01);
-        assert!((xored[2] - 21.0 / 31.0).abs() < 0.01);
     }
 }

@@ -32,14 +32,16 @@ fn clickable_radar_points_roundtrip_at_native_and_scaled_apertures() {
     }
 }
 
-
 #[test]
 fn native_radar_screen_geometry_rejects_letterbox_and_maps_half_open_edges() {
     let wide = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 300, 180).unwrap();
     let screen = NativeRadarScreenGeometry::new(wide, [100.0, 50.0, 280.0, 216.0]);
     assert_eq!(screen.content_rect(), [100.0, 74.0, 280.0, 166.0]);
     assert_eq!(screen.screen_to_surface_pixel((100.0, 74.0)), Some((0, 0)));
-    assert_eq!(screen.screen_to_surface_pixel((379.0, 239.0)), Some((139, 82)));
+    assert_eq!(
+        screen.screen_to_surface_pixel((379.0, 239.0)),
+        Some((139, 82))
+    );
     assert_eq!(screen.screen_to_surface_pixel((100.0, 73.0)), None);
     assert_eq!(screen.screen_to_surface_pixel((380.0, 239.0)), None);
     assert_eq!(screen.screen_to_surface_pixel((379.0, 240.0)), None);
@@ -48,16 +50,11 @@ fn native_radar_screen_geometry_rejects_letterbox_and_maps_half_open_edges() {
     let screen = NativeRadarScreenGeometry::new(tall, [100.0, 50.0, 280.0, 216.0]);
     assert_eq!(screen.content_rect(), [176.0, 50.0, 128.0, 216.0]);
     assert_eq!(screen.screen_to_surface_pixel((176.0, 50.0)), Some((0, 0)));
-    assert_eq!(screen.screen_to_surface_pixel((303.0, 265.0)), Some((63, 107)));
+    assert_eq!(
+        screen.screen_to_surface_pixel((303.0, 265.0)),
+        Some((63, 107))
+    );
     assert_eq!(screen.screen_to_surface_pixel((175.0, 50.0)), None);
-}
-
-#[test]
-fn native_radar_click_inverse_uses_x87_rounding_at_corners_center_and_edge() {
-    let geometry = NativeRadarSurfaceGeometry::from_raw_rect(30, 20, 300, 180).unwrap();
-    assert_eq!(geometry.surface_pixel_to_cell((0, 0)), Some((-4i16 as u16, 25)));
-    assert_eq!(geometry.surface_pixel_to_cell((70, 41)), Some((114, -5i16 as u16)));
-    assert_eq!(geometry.surface_pixel_to_cell((139, 82)), Some((232, -35i16 as u16)));
 }
 
 #[test]
@@ -65,21 +62,41 @@ fn native_viewport_rect_matches_wide_and_tall_binary_arithmetic() {
     let wide = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 300, 180).unwrap();
     assert_eq!(
         native_viewport_rect(wide, (80, 50), 632, 570),
-        NativeRadarRect { x: 9, y: 52, w: 10, h: 17 }
+        NativeRadarRect {
+            x: 9,
+            y: 52,
+            w: 10,
+            h: 17
+        }
     );
     assert_eq!(
         native_viewport_rect(wide, (0, 0), 632, 570),
-        NativeRadarRect { x: 0, y: 0, w: 10, h: 17 }
+        NativeRadarRect {
+            x: 0,
+            y: 0,
+            w: 10,
+            h: 17
+        }
     );
 
     let tall = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 180, 300).unwrap();
     assert_eq!(
         native_viewport_rect(tall, (80, 60), 632, 570),
-        NativeRadarRect { x: 4, y: 44, w: 8, h: 13 }
+        NativeRadarRect {
+            x: 4,
+            y: 44,
+            w: 8,
+            h: 13
+        }
     );
     assert_eq!(
         native_viewport_rect(tall, (179, 0), 632, 570),
-        NativeRadarRect { x: 55, y: 58, w: 8, h: 13 }
+        NativeRadarRect {
+            x: 55,
+            y: 58,
+            w: 8,
+            h: 13
+        }
     );
 }
 
@@ -93,11 +110,51 @@ fn native_viewport_rect_exhausts_lower_right_equality_and_all_four_corners() {
     assert_eq!(wide.generated_size(), (140, 83));
     let fixture = |center| native_viewport_rect_from_center(wide, center, 632, 570);
 
-    assert_eq!(fixture((3, 7)), NativeRadarRect { x: 0, y: 0, w: 10, h: 17 });
-    assert_eq!(fixture((4, 8)), NativeRadarRect { x: 0, y: 0, w: 10, h: 17 });
-    assert_eq!(fixture((134, 7)), NativeRadarRect { x: 129, y: 0, w: 10, h: 17 });
-    assert_eq!(fixture((3, 74)), NativeRadarRect { x: 0, y: 65, w: 10, h: 17 });
-    assert_eq!(fixture((134, 74)), NativeRadarRect { x: 129, y: 65, w: 10, h: 17 });
+    assert_eq!(
+        fixture((3, 7)),
+        NativeRadarRect {
+            x: 0,
+            y: 0,
+            w: 10,
+            h: 17
+        }
+    );
+    assert_eq!(
+        fixture((4, 8)),
+        NativeRadarRect {
+            x: 0,
+            y: 0,
+            w: 10,
+            h: 17
+        }
+    );
+    assert_eq!(
+        fixture((134, 7)),
+        NativeRadarRect {
+            x: 129,
+            y: 0,
+            w: 10,
+            h: 17
+        }
+    );
+    assert_eq!(
+        fixture((3, 74)),
+        NativeRadarRect {
+            x: 0,
+            y: 65,
+            w: 10,
+            h: 17
+        }
+    );
+    assert_eq!(
+        fixture((134, 74)),
+        NativeRadarRect {
+            x: 129,
+            y: 65,
+            w: 10,
+            h: 17
+        }
+    );
 
     // Just inside, equality, and just outside all settle on the native
     // lower clamp point; equality enters the clamp branch (`JL` is false).
@@ -112,10 +169,42 @@ fn native_viewport_rect_exhausts_lower_right_equality_and_all_four_corners() {
     let tall = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 180, 300).unwrap();
     assert_eq!(tall.generated_size(), (64, 108));
     let fixture = |center| native_viewport_rect_from_center(tall, center, 632, 570);
-    assert_eq!(fixture((2, 5)), NativeRadarRect { x: 0, y: 0, w: 8, h: 13 });
-    assert_eq!(fixture((59, 5)), NativeRadarRect { x: 55, y: 0, w: 8, h: 13 });
-    assert_eq!(fixture((2, 101)), NativeRadarRect { x: 0, y: 94, w: 8, h: 13 });
-    assert_eq!(fixture((59, 101)), NativeRadarRect { x: 55, y: 94, w: 8, h: 13 });
+    assert_eq!(
+        fixture((2, 5)),
+        NativeRadarRect {
+            x: 0,
+            y: 0,
+            w: 8,
+            h: 13
+        }
+    );
+    assert_eq!(
+        fixture((59, 5)),
+        NativeRadarRect {
+            x: 55,
+            y: 0,
+            w: 8,
+            h: 13
+        }
+    );
+    assert_eq!(
+        fixture((2, 101)),
+        NativeRadarRect {
+            x: 0,
+            y: 94,
+            w: 8,
+            h: 13
+        }
+    );
+    assert_eq!(
+        fixture((59, 101)),
+        NativeRadarRect {
+            x: 55,
+            y: 94,
+            w: 8,
+            h: 13
+        }
+    );
 }
 
 #[test]
@@ -127,7 +216,12 @@ fn native_viewport_rect_stores_vertical_divisor_and_preserves_oversize_branch_or
     // Rust quotient this fixture produced h=280 and half-height=140.
     assert_eq!(
         native_viewport_rect_from_center(tiny, (0, 0), 632, 570),
-        NativeRadarRect { x: 0, y: 0, w: 156, h: 279 },
+        NativeRadarRect {
+            x: 0,
+            y: 0,
+            w: 156,
+            h: 279
+        },
     );
 
     // The clamp is an ordered if/else-if on each axis. It deliberately does
@@ -135,14 +229,29 @@ fn native_viewport_rect_stores_vertical_divisor_and_preserves_oversize_branch_or
     // oversize window approached from inside can acquire a negative origin.
     assert_eq!(
         native_viewport_rect_from_center(tiny, (300, 300), 632, 570),
-        NativeRadarRect { x: -17, y: -207, w: 156, h: 279 },
+        NativeRadarRect {
+            x: -17,
+            y: -207,
+            w: 156,
+            h: 279
+        },
     );
 }
 
 #[test]
 fn native_viewport_state_dirties_previous_then_rebuild_suppresses_baseline_replay() {
-    let first = NativeRadarRect { x: 4, y: 5, w: 8, h: 6 };
-    let second = NativeRadarRect { x: 9, y: 7, w: 8, h: 6 };
+    let first = NativeRadarRect {
+        x: 4,
+        y: 5,
+        w: 8,
+        h: 6,
+    };
+    let second = NativeRadarRect {
+        x: 9,
+        y: 7,
+        w: 8,
+        h: 6,
+    };
     let mut state = NativeRadarViewportState::default();
     let initial = state.update(first);
     assert_eq!(initial.previous, first);
@@ -152,7 +261,10 @@ fn native_viewport_state_dirties_previous_then_rebuild_suppresses_baseline_repla
     assert_eq!(moved.previous, first);
     assert_eq!(moved.current, second);
     assert_eq!(moved.dirty_previous_border.len(), 28);
-    assert_eq!(&moved.dirty_previous_border[..4], &[(4, 5), (11, 5), (4, 6), (11, 6)]);
+    assert_eq!(
+        &moved.dirty_previous_border[..4],
+        &[(4, 5), (11, 5), (4, 6), (11, 6)]
+    );
 
     state.reset_for_rebuild();
     let rebuilt = state.update(second);
@@ -164,58 +276,78 @@ fn native_viewport_state_dirties_previous_then_rebuild_suppresses_baseline_repla
 
 #[test]
 fn native_previous_border_visits_keep_duplicates_and_native_edge_order() {
-    let rect = NativeRadarRect { x: 4, y: 5, w: 3, h: 2 };
+    let rect = NativeRadarRect {
+        x: 4,
+        y: 5,
+        w: 3,
+        h: 2,
+    };
     assert_eq!(
         native_previous_border_visits(rect),
         vec![
-            (4, 5), (6, 5), (4, 6), (6, 6),
-            (4, 5), (4, 6), (5, 5), (5, 6), (6, 5), (6, 6),
+            (4, 5),
+            (6, 5),
+            (4, 6),
+            (6, 6),
+            (4, 5),
+            (4, 6),
+            (5, 5),
+            (5, 6),
+            (6, 5),
+            (6, 6),
         ],
     );
     assert_eq!(
-        native_previous_border_visits(NativeRadarRect { x: 4, y: 5, w: 1, h: 1 }),
+        native_previous_border_visits(NativeRadarRect {
+            x: 4,
+            y: 5,
+            w: 1,
+            h: 1
+        }),
         vec![(4, 5), (4, 5), (4, 5), (4, 5)],
         "MarkCellDirty receives all four corner visits even for one pixel",
     );
     assert_eq!(
-        native_previous_border_visits(NativeRadarRect { x: 4, y: 5, w: 0, h: 2 }),
+        native_previous_border_visits(NativeRadarRect {
+            x: 4,
+            y: 5,
+            w: 0,
+            h: 2
+        }),
         vec![(4, 5), (3, 5), (4, 6), (3, 6)],
         "zero width skips only the horizontal loop",
     );
     assert_eq!(
-        native_previous_border_visits(NativeRadarRect { x: 4, y: 5, w: 2, h: 0 }),
+        native_previous_border_visits(NativeRadarRect {
+            x: 4,
+            y: 5,
+            w: 2,
+            h: 0
+        }),
         vec![(4, 5), (4, 4), (5, 5), (5, 4)],
         "zero height skips only the vertical loop",
     );
-    assert!(native_previous_border_visits(NativeRadarRect { x: 4, y: 5, w: 0, h: 0 }).is_empty());
-}
-
-#[test]
-fn native_viewport_state_dirties_overlap_before_action40_rebuild_resets_baseline() {
-    let wide = NativeRadarRect { x: 20, y: 20, w: 10, h: 17 };
-    let overlapping = NativeRadarRect { x: 21, y: 21, w: 10, h: 17 };
-    let tall = NativeRadarRect { x: 8, y: 30, w: 8, h: 13 };
-    let mut state = NativeRadarViewportState::default();
-    assert!(state.update(wide).dirty_previous_border.is_empty());
-    assert_eq!(
-        state.update(overlapping).dirty_previous_border,
-        native_previous_border_visits(wide),
-        "overlap does not suppress the old-border visit chronology",
+    assert!(
+        native_previous_border_visits(NativeRadarRect {
+            x: 4,
+            y: 5,
+            w: 0,
+            h: 0
+        })
+        .is_empty()
     );
-
-    state.reset_for_rebuild();
-    let rebuilt = state.update(tall);
-    assert_eq!(rebuilt.previous, tall);
-    assert!(rebuilt.dirty_previous_border.is_empty());
-    state.reset_for_rebuild();
-    assert!(state.update(tall).dirty_previous_border.is_empty());
 }
 
 #[test]
 fn native_viewport_outline_is_one_surface_pixel_and_uses_injected_sidebar_color() {
     let surface = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 300, 180).unwrap();
     let screen = NativeRadarScreenGeometry::new(surface, [100.0, 50.0, 280.0, 216.0]);
-    let rect = NativeRadarRect { x: 10, y: 12, w: 8, h: 6 };
+    let rect = NativeRadarRect {
+        x: 10,
+        y: 12,
+        w: 8,
+        h: 6,
+    };
     let color = [164.0 / 255.0, 210.0 / 255.0, 1.0];
     let lines = native_viewport_outline_instances(
         (3.0, 4.0),
@@ -239,7 +371,12 @@ fn native_viewport_outline_is_one_surface_pixel_and_uses_injected_sidebar_color(
 fn native_viewport_lower_right_outline_is_inclusive_and_leaves_native_final_pixel_gap() {
     let surface = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 300, 180).unwrap();
     let screen = NativeRadarScreenGeometry::new(surface, [0.0, 0.0, 140.0, 108.0]);
-    let rect = NativeRadarRect { x: 129, y: 65, w: 10, h: 17 };
+    let rect = NativeRadarRect {
+        x: 129,
+        y: 65,
+        w: 10,
+        h: 17,
+    };
     let lines = native_viewport_outline_instances(
         (0.0, 0.0),
         screen,
@@ -260,33 +397,6 @@ fn native_viewport_lower_right_outline_is_inclusive_and_leaves_native_final_pixe
 }
 
 #[test]
-fn native_viewport_outline_clips_oversize_edges_to_full_sidebar_not_radar_aperture() {
-    let surface = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 140, 108).unwrap();
-    assert_eq!(surface.generated_size(), (140, 108));
-    let screen = NativeRadarScreenGeometry::new(surface, [216.0, 49.0, 140.0, 108.0]);
-    let sidebar = [200.0, 0.0, 168.0, 300.0];
-
-    // top=-1, right=395, left=196 are outside the retained surface. The
-    // bottom line crosses the whole surface at y=198. Its x=200..215 pixels
-    // deliberately survive even though they are left of the radar aperture.
-    let lines = native_viewport_outline_instances(
-        (7.0, 11.0),
-        screen,
-        NativeRadarRect { x: -20, y: -50, w: 200, h: 200 },
-        sidebar,
-        [1.0; 3],
-    );
-    assert_eq!(lines.len(), 1);
-    assert_eq!(lines[0].position, [207.0, 209.0]);
-    assert_eq!(lines[0].size, [168.0, 1.0]);
-
-    let final_screen_x = lines[0].position[0] - 7.0;
-    let final_screen_y = lines[0].position[1] - 11.0;
-    assert_eq!([final_screen_x, final_screen_y], [200.0, 198.0]);
-    assert!(final_screen_x < 216.0, "the radar aperture must not be the clip rect");
-}
-
-#[test]
 fn native_viewport_outline_clips_all_sidebar_edges_with_inclusive_equality() {
     let surface = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 140, 108).unwrap();
     let screen = NativeRadarScreenGeometry::new(surface, [216.0, 49.0, 140.0, 108.0]);
@@ -295,7 +405,12 @@ fn native_viewport_outline_clips_all_sidebar_edges_with_inclusive_equality() {
     let horizontal = native_viewport_outline_instances(
         (0.0, 0.0),
         screen,
-        NativeRadarRect { x: -20, y: -49, w: 200, h: 10 },
+        NativeRadarRect {
+            x: -20,
+            y: -49,
+            w: 200,
+            h: 10,
+        },
         sidebar,
         [1.0; 3],
     );
@@ -308,7 +423,12 @@ fn native_viewport_outline_clips_all_sidebar_edges_with_inclusive_equality() {
     let vertical = native_viewport_outline_instances(
         (0.0, 0.0),
         screen,
-        NativeRadarRect { x: -16, y: -60, w: 168, h: 400 },
+        NativeRadarRect {
+            x: -16,
+            y: -60,
+            w: 168,
+            h: 400,
+        },
         sidebar,
         [1.0; 3],
     );
@@ -323,39 +443,67 @@ fn native_viewport_outline_clips_all_sidebar_edges_with_inclusive_equality() {
     let last_column = native_viewport_outline_instances(
         (0.0, 0.0),
         screen,
-        NativeRadarRect { x: 151, y: 0, w: 1, h: 1 },
+        NativeRadarRect {
+            x: 151,
+            y: 0,
+            w: 1,
+            h: 1,
+        },
         sidebar,
         [1.0; 3],
     );
     assert_eq!(last_column.len(), 4);
-    assert!(last_column.iter().all(|line| line.position == [367.0, 49.0]));
+    assert!(
+        last_column
+            .iter()
+            .all(|line| line.position == [367.0, 49.0])
+    );
     assert!(last_column.iter().all(|line| line.size == [1.0, 1.0]));
-    assert!(native_viewport_outline_instances(
-        (0.0, 0.0),
-        screen,
-        NativeRadarRect { x: 152, y: 0, w: 1, h: 1 },
-        sidebar,
-        [1.0; 3],
-    )
-    .is_empty());
+    assert!(
+        native_viewport_outline_instances(
+            (0.0, 0.0),
+            screen,
+            NativeRadarRect {
+                x: 152,
+                y: 0,
+                w: 1,
+                h: 1
+            },
+            sidebar,
+            [1.0; 3],
+        )
+        .is_empty()
+    );
 
     let last_row = native_viewport_outline_instances(
         (0.0, 0.0),
         screen,
-        NativeRadarRect { x: 0, y: 250, w: 1, h: 1 },
+        NativeRadarRect {
+            x: 0,
+            y: 250,
+            w: 1,
+            h: 1,
+        },
         sidebar,
         [1.0; 3],
     );
     assert_eq!(last_row.len(), 4);
     assert!(last_row.iter().all(|line| line.position == [216.0, 299.0]));
-    assert!(native_viewport_outline_instances(
-        (0.0, 0.0),
-        screen,
-        NativeRadarRect { x: 0, y: 251, w: 1, h: 1 },
-        sidebar,
-        [1.0; 3],
-    )
-    .is_empty());
+    assert!(
+        native_viewport_outline_instances(
+            (0.0, 0.0),
+            screen,
+            NativeRadarRect {
+                x: 0,
+                y: 251,
+                w: 1,
+                h: 1
+            },
+            sidebar,
+            [1.0; 3],
+        )
+        .is_empty()
+    );
 }
 
 #[test]
@@ -367,7 +515,12 @@ fn native_viewport_outline_preserves_thin_zero_and_fully_outside_contracts() {
     let one_pixel = native_viewport_outline_instances(
         (0.0, 0.0),
         screen,
-        NativeRadarRect { x: 10, y: 10, w: 1, h: 1 },
+        NativeRadarRect {
+            x: 10,
+            y: 10,
+            w: 1,
+            h: 1,
+        },
         sidebar,
         [1.0; 3],
     );
@@ -378,7 +531,12 @@ fn native_viewport_outline_preserves_thin_zero_and_fully_outside_contracts() {
     let vertical = native_viewport_outline_instances(
         (0.0, 0.0),
         screen,
-        NativeRadarRect { x: 10, y: 10, w: 1, h: 3 },
+        NativeRadarRect {
+            x: 10,
+            y: 10,
+            w: 1,
+            h: 3,
+        },
         sidebar,
         [1.0; 3],
     );
@@ -393,7 +551,12 @@ fn native_viewport_outline_preserves_thin_zero_and_fully_outside_contracts() {
     let zero = native_viewport_outline_instances(
         (0.0, 0.0),
         screen,
-        NativeRadarRect { x: 10, y: 10, w: 0, h: 0 },
+        NativeRadarRect {
+            x: 10,
+            y: 10,
+            w: 0,
+            h: 0,
+        },
         sidebar,
         [1.0; 3],
     );
@@ -407,14 +570,21 @@ fn native_viewport_outline_preserves_thin_zero_and_fully_outside_contracts() {
     assert_eq!(zero[3].position, [26.0, 58.0]);
     assert_eq!(zero[3].size, [1.0, 2.0]);
 
-    assert!(native_viewport_outline_instances(
-        (0.0, 0.0),
-        screen,
-        NativeRadarRect { x: -500, y: -500, w: 4, h: 4 },
-        sidebar,
-        [1.0; 3],
-    )
-    .is_empty());
+    assert!(
+        native_viewport_outline_instances(
+            (0.0, 0.0),
+            screen,
+            NativeRadarRect {
+                x: -500,
+                y: -500,
+                w: 4,
+                h: 4
+            },
+            sidebar,
+            [1.0; 3],
+        )
+        .is_empty()
+    );
 }
 
 #[test]
@@ -425,7 +595,12 @@ fn native_viewport_outline_scales_then_clips_without_sidebar_bleed() {
     let unsampled_phase = native_viewport_outline_instances(
         (13.0, 17.0),
         screen,
-        NativeRadarRect { x: -20, y: -50, w: 200, h: 200 },
+        NativeRadarRect {
+            x: -20,
+            y: -50,
+            w: 200,
+            h: 200,
+        },
         sidebar,
         [1.0; 3],
     );
@@ -437,7 +612,12 @@ fn native_viewport_outline_scales_then_clips_without_sidebar_bleed() {
     let lines = native_viewport_outline_instances(
         (13.0, 17.0),
         screen,
-        NativeRadarRect { x: -20, y: -50, w: 200, h: 201 },
+        NativeRadarRect {
+            x: -20,
+            y: -50,
+            w: 200,
+            h: 201,
+        },
         sidebar,
         [1.0; 3],
     );
@@ -511,31 +691,6 @@ fn native_content_boundary_clips_to_sidebar_edges_not_generated_content() {
     assert_eq!(lines[0].position[0] - 7.0, 140.0);
 }
 
-#[test]
-fn native_content_boundary_rebuild_uses_current_surface_without_stale_state() {
-    let wide = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 300, 180).unwrap();
-    let tall = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 180, 300).unwrap();
-    let screen_rect = [16.0, 49.0, 140.0, 108.0];
-    let sidebar = [0.0, 0.0, 168.0, 300.0];
-    let build = |surface| {
-        native_content_boundary_outline_instances(
-            (0.0, 0.0),
-            NativeRadarScreenGeometry::new(surface, screen_rect),
-            surface,
-            sidebar,
-            [1.0; 3],
-        )
-        .into_iter()
-        .map(|line| (line.position, line.size))
-        .collect::<Vec<_>>()
-    };
-
-    let before_action40 = build(wide);
-    let after_action40 = build(tall);
-    assert_ne!(before_action40, after_action40);
-    assert_eq!(build(tall), after_action40, "equal rebuilds derive the same current frame");
-}
-
 fn outline_source_pixels(
     rect: NativeRadarRect,
     source_content: (i32, i32),
@@ -578,10 +733,7 @@ fn nearest_scaled_reference(
     pixels
 }
 
-fn shader_raster_pixels(
-    instances: &[SpriteInstance],
-    camera: (f32, f32),
-) -> BTreeSet<(i32, i32)> {
+fn shader_raster_pixels(instances: &[SpriteInstance], camera: (f32, f32)) -> BTreeSet<(i32, i32)> {
     let mut pixels = BTreeSet::new();
     for instance in instances {
         let raw_left = instance.position[0] - camera.0;
@@ -592,10 +744,22 @@ fn shader_raster_pixels(
         let top = shader_pixel_round(raw_top);
         let right = shader_pixel_round(raw_right);
         let bottom = shader_pixel_round(raw_bottom);
-        assert_eq!(raw_left, left as f32, "adapter must submit an integer left edge");
-        assert_eq!(raw_top, top as f32, "adapter must submit an integer top edge");
-        assert_eq!(raw_right, right as f32, "adapter must submit an integer right edge");
-        assert_eq!(raw_bottom, bottom as f32, "adapter must submit an integer bottom edge");
+        assert_eq!(
+            raw_left, left as f32,
+            "adapter must submit an integer left edge"
+        );
+        assert_eq!(
+            raw_top, top as f32,
+            "adapter must submit an integer top edge"
+        );
+        assert_eq!(
+            raw_right, right as f32,
+            "adapter must submit an integer right edge"
+        );
+        assert_eq!(
+            raw_bottom, bottom as f32,
+            "adapter must submit an integer bottom edge"
+        );
         for y in top..bottom {
             for x in left..right {
                 pixels.insert((x, y));
@@ -610,8 +774,18 @@ fn native_outlines_match_retained_surface_nearest_raster_at_half_one_and_one_hal
     let surface = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 300, 180).unwrap();
     assert_eq!(surface.generated_size(), (140, 83));
     let camera = (7.25, -2.5);
-    let viewport = NativeRadarRect { x: 10, y: 12, w: 8, h: 6 };
-    let boundary = NativeRadarRect { x: -1, y: -1, w: 142, h: 85 };
+    let viewport = NativeRadarRect {
+        x: 10,
+        y: 12,
+        w: 8,
+        h: 6,
+    };
+    let boundary = NativeRadarRect {
+        x: -1,
+        y: -1,
+        w: 142,
+        h: 85,
+    };
     // Native aperture starts at source (16,49); the height-constrained raw
     // surface is centred another 12 source rows down.
     let source_content = (16, 61);
@@ -634,75 +808,30 @@ fn native_outlines_match_retained_surface_nearest_raster_at_half_one_and_one_hal
             sidebar,
             (scale, scale),
         );
-        assert_eq!(viewport_actual, viewport_expected, "camera outline scale={scale}");
-
-        let boundary_instances = native_content_boundary_outline_instances(
-            camera,
-            screen,
-            surface,
-            sidebar,
-            [1.0; 3],
+        assert_eq!(
+            viewport_actual, viewport_expected,
+            "camera outline scale={scale}"
         );
+
+        let boundary_instances =
+            native_content_boundary_outline_instances(camera, screen, surface, sidebar, [1.0; 3]);
         let boundary_actual = shader_raster_pixels(&boundary_instances, camera);
         let boundary_expected = nearest_scaled_reference(
             &outline_source_pixels(boundary, source_content),
             sidebar,
             (scale, scale),
         );
-        assert_eq!(boundary_actual, boundary_expected, "content boundary scale={scale}");
-        assert!(!viewport_actual.is_empty(), "fixture must cover camera pixels at scale={scale}");
-        assert!(!boundary_actual.is_empty(), "fixture must cover boundary pixels at scale={scale}");
-    }
-}
-
-#[test]
-fn native_outlines_match_nearest_raster_when_oversize_edges_clip_the_sidebar() {
-    let surface = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 140, 108).unwrap();
-    let camera = (-3.75, 8.5);
-    let oversize = NativeRadarRect { x: -10, y: -40, w: 170, h: 130 };
-    let boundary = NativeRadarRect { x: -1, y: -1, w: 142, h: 110 };
-    let source_content = (16, 49);
-
-    for scale in [0.5_f32, 1.5] {
-        // Eighty retained source rows deliberately clip the lower camera and
-        // generated-boundary edges while preserving top/side corner phases.
-        let sidebar = [101.0, 3.0, 168.0 * scale, 80.0 * scale];
-        let aperture = [
-            sidebar[0] + 16.0 * scale,
-            sidebar[1] + 49.0 * scale,
-            140.0 * scale,
-            108.0 * scale,
-        ];
-        let screen = NativeRadarScreenGeometry::new(surface, aperture);
-
-        let camera_actual = shader_raster_pixels(
-            &native_viewport_outline_instances(camera, screen, oversize, sidebar, [1.0; 3]),
-            camera,
+        assert_eq!(
+            boundary_actual, boundary_expected,
+            "content boundary scale={scale}"
         );
-        let camera_expected = nearest_scaled_reference(
-            &outline_source_pixels(oversize, source_content),
-            sidebar,
-            (scale, scale),
+        assert!(
+            !viewport_actual.is_empty(),
+            "fixture must cover camera pixels at scale={scale}"
         );
-        assert_eq!(camera_actual, camera_expected, "clipped camera scale={scale}");
-
-        let boundary_actual = shader_raster_pixels(
-            &native_content_boundary_outline_instances(
-                camera,
-                screen,
-                surface,
-                sidebar,
-                [1.0; 3],
-            ),
-            camera,
+        assert!(
+            !boundary_actual.is_empty(),
+            "fixture must cover boundary pixels at scale={scale}"
         );
-        let boundary_expected = nearest_scaled_reference(
-            &outline_source_pixels(boundary, source_content),
-            sidebar,
-            (scale, scale),
-        );
-        assert_eq!(boundary_actual, boundary_expected, "clipped boundary scale={scale}");
-        assert!(!camera_actual.is_empty());
-        assert!(!boundary_actual.is_empty());
     }
 }

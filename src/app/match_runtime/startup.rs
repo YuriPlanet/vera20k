@@ -89,16 +89,16 @@ impl MatchStartup {
     ) -> Result<(), String> {
         let simulation =
             simulation.ok_or_else(|| "campaign map load produced no Simulation".to_string())?;
-        let session = &simulation.session;
+        let session = &simulation.session();
         if !matches!(self.phase, StartupPhase::Noncertifying) || !screen_is_loading {
             return Err("campaign map load lost its loading admission".to_string());
         }
         if !session.started()
-            || session.game_mode_nonzero
-            || session.tick != 0
-            || session.binary_frame != 0
-            || session.seed != u64::from(startup.seed.value)
-            || !session.map_name.eq_ignore_ascii_case(startup.scenario())
+            || session.game_mode_nonzero()
+            || session.tick() != 0
+            || session.binary_frame() != 0
+            || session.seed() != u64::from(startup.seed.value)
+            || !session.map_name().eq_ignore_ascii_case(startup.scenario())
             || session.campaign_mission_counter() != Some(startup.mission_counter())
             || session
                 .campaign_house_difficulties()

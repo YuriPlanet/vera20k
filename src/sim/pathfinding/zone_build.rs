@@ -25,17 +25,70 @@ use crate::util::lookup_hash::LookupSet;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BaseZoneTopology {
     /// Derived record source Size, shared by full and incremental hierarchy use.
-    pub(crate) native_bridge_source_size: Option<(i32, i32)>,
-    pub(crate) movement_classes: Vec<u8>,
+    pub(super) native_bridge_source_size: Option<(i32, i32)>,
+    pub(super) movement_classes: Vec<u8>,
     /// Unsigned cached heights: Map+68 byte1 and Map+70 byte8. Original
     /// 47D2B0 publishes both with the class on every non-dummy Recalc exit;
     /// 56CB90 and hierarchy flood consume these, not current PathGrid heights.
-    pub(crate) levels: Vec<u8>,
-    pub(crate) zone_ids: Vec<ZoneId>,
+    pub(super) levels: Vec<u8>,
+    pub(super) zone_ids: Vec<ZoneId>,
     /// Raw `MapClass+0x18[row][base_cluster]` values. Label 1 and `0xffff`
     /// remain represented here even though the flattened compatibility maps
     /// expose both as an invalid cell zone.
-    pub(crate) raw_zone_ids_by_row: [Vec<ZoneId>; passability::ZONE_LAYER_COUNT],
+    pub(super) raw_zone_ids_by_row: [Vec<ZoneId>; passability::ZONE_LAYER_COUNT],
+}
+
+impl BaseZoneTopology {
+    pub(crate) fn native_bridge_source_size(&self) -> Option<(i32, i32)> {
+        self.native_bridge_source_size
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn movement_classes(&self) -> &[u8] {
+        &self.movement_classes
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn levels(&self) -> &[u8] {
+        &self.levels
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn zone_ids(&self) -> &[ZoneId] {
+        &self.zone_ids
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn raw_zone_ids_by_row(&self) -> &[Vec<ZoneId>; passability::ZONE_LAYER_COUNT] {
+        &self.raw_zone_ids_by_row
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_native_bridge_source_size_for_test(&mut self, value: Option<(i32, i32)>) {
+        self.native_bridge_source_size = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn movement_classes_mut_for_test(&mut self) -> &mut Vec<u8> {
+        &mut self.movement_classes
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn levels_mut_for_test(&mut self) -> &mut Vec<u8> {
+        &mut self.levels
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn zone_ids_mut_for_test(&mut self) -> &mut Vec<ZoneId> {
+        &mut self.zone_ids
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn raw_zone_ids_by_row_mut_for_test(
+        &mut self,
+    ) -> &mut [Vec<ZoneId>; passability::ZONE_LAYER_COUNT] {
+        &mut self.raw_zone_ids_by_row
+    }
 }
 
 struct BaseEdgeBuckets {
@@ -803,7 +856,7 @@ fn bridge_redirect_for_structural_cell(
         }
         return Some(
             if terrain.high_bridge_tile_offset(cell).is_some()
-                && cell.land_type() != LandType::Rock.as_index()
+                && cell.land_type != LandType::Rock.as_index()
             {
                 record.endpoint_b
             } else {
@@ -1086,12 +1139,12 @@ mod tests {
         let redirect = build_bridge_redirect(&path_grid, Some(&terrain), &records, 7, 1).unwrap();
         assert_eq!(redirect[1], Some((5, 0)));
 
-        terrain.cell_mut(3, 0).unwrap().land_type = LandType::Rock.as_index();
+        terrain.cell_mut_for_test(3, 0).unwrap().land_type = LandType::Rock.as_index();
         let path_grid = PathGrid::from_resolved_terrain(&terrain);
         let redirect = build_bridge_redirect(&path_grid, Some(&terrain), &records, 7, 1).unwrap();
         assert_eq!(redirect[1], Some((0, 0)));
 
-        let exit = terrain.cell_mut(3, 0).unwrap();
+        let exit = terrain.cell_mut_for_test(3, 0).unwrap();
         exit.land_type = LandType::Clear.as_index();
         exit.final_tile_index = 50;
         let path_grid = PathGrid::from_resolved_terrain(&terrain);
@@ -1207,7 +1260,7 @@ mod tests {
             project_live_cell_for_test(&terrain, &records, (2, 2), true),
             (6, 2)
         );
-        terrain.cell_mut(4, 2).unwrap().land_type = LandType::Rock.as_index();
+        terrain.cell_mut_for_test(4, 2).unwrap().land_type = LandType::Rock.as_index();
         assert_eq!(
             project_live_cell_for_test(&terrain, &records, (2, 2), true),
             (1, 2)

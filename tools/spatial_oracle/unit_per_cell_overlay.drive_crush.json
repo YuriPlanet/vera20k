@@ -1,0 +1,1836 @@
+[
+  {
+    "calls": [
+      {
+        "arg": 0,
+        "entry": "007509E0"
+      },
+      {
+        "arg": -1,
+        "entry": "00480CB0"
+      }
+    ],
+    "initial_rocking_bits": [
+      "00000000",
+      "3e99999a",
+      "00000000",
+      "3d23d70a"
+    ],
+    "input": {
+      "accelerates": true,
+      "crushable": true,
+      "crusher": true,
+      "game_active": true,
+      "initial_flag": false,
+      "name": "bfrt_wall",
+      "occupant": "self",
+      "overlay": true,
+      "straight": true,
+      "tilts": true,
+      "wall": true,
+      "zone": 12
+    },
+    "per_cell": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "pre_entry": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry_stores": [
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B19FA",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "01",
+        "instruction": "004B1A2F",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B1A4E",
+        "offset": 820,
+        "size": 4
+      }
+    ],
+    "refreshed_speed": {
+      "applied_bits": "3fcd70a3d70a3d71",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "retained_speed": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "rocking": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "speed": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "stores": [
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B19FA",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "01",
+        "instruction": "004B1A2F",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B1A4E",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "bd6147ae",
+        "instruction": "0070BB49",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "00",
+        "instruction": "0073B067",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd0f5c29",
+        "instruction": "0073B06E",
+        "offset": 820,
+        "size": 4
+      }
+    ]
+  },
+  {
+    "calls": [
+      {
+        "arg": 0,
+        "entry": "007509E0"
+      },
+      {
+        "arg": -1,
+        "entry": "00480CB0"
+      }
+    ],
+    "initial_rocking_bits": [
+      "00000000",
+      "3e99999a",
+      "00000000",
+      "3d23d70a"
+    ],
+    "input": {
+      "accelerates": true,
+      "crushable": true,
+      "crusher": true,
+      "game_active": true,
+      "initial_flag": false,
+      "name": "bfrt_no_tilt",
+      "occupant": "self",
+      "overlay": true,
+      "straight": true,
+      "tilts": false,
+      "wall": true,
+      "zone": 12
+    },
+    "per_cell": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3ea0d97c",
+        "00000000",
+        "3c75c28f"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "pre_entry": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "3d23d70a"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry_stores": [
+      {
+        "bits": "01",
+        "instruction": "004B1A2F",
+        "offset": 1717,
+        "size": 1
+      }
+    ],
+    "refreshed_speed": {
+      "applied_bits": "3fcd70a3d70a3d71",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3ea0d97c",
+        "00000000",
+        "3c75c28f"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "retained_speed": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3ea0d97c",
+        "00000000",
+        "3c75c28f"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "rocking": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3ea0d97c",
+        "00000000",
+        "bba3d70a"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "speed": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "3d23d70a"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "stores": [
+      {
+        "bits": "01",
+        "instruction": "004B1A2F",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "00000000",
+        "instruction": "0070BA8B",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "bba3d70a",
+        "instruction": "0070BB49",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "00",
+        "instruction": "0073B067",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "3c75c28f",
+        "instruction": "0073B06E",
+        "offset": 820,
+        "size": 4
+      }
+    ]
+  },
+  {
+    "calls": [
+      {
+        "arg": 0,
+        "entry": "007509E0"
+      },
+      {
+        "arg": -1,
+        "entry": "00480CB0"
+      }
+    ],
+    "initial_rocking_bits": [
+      "00000000",
+      "3e99999a",
+      "00000000",
+      "3d23d70a"
+    ],
+    "input": {
+      "accelerates": true,
+      "crushable": true,
+      "crusher": true,
+      "game_active": true,
+      "initial_flag": false,
+      "name": "normal_tank_wall",
+      "occupant": "self",
+      "overlay": true,
+      "straight": true,
+      "tilts": true,
+      "wall": true,
+      "zone": 0
+    },
+    "per_cell": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry_stores": [
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B19FA",
+        "offset": 820,
+        "size": 4
+      }
+    ],
+    "refreshed_speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "retained_speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "rocking": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "stores": [
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B19FA",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "bd6147ae",
+        "instruction": "0070BB49",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "00",
+        "instruction": "0073B067",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd0f5c29",
+        "instruction": "0073B06E",
+        "offset": 820,
+        "size": 4
+      }
+    ]
+  },
+  {
+    "calls": [
+      {
+        "arg": 0,
+        "entry": "007509E0"
+      },
+      {
+        "arg": -1,
+        "entry": "00480CB0"
+      }
+    ],
+    "initial_rocking_bits": [
+      "00000000",
+      "3e99999a",
+      "00000000",
+      "3d23d70a"
+    ],
+    "input": {
+      "accelerates": true,
+      "crushable": true,
+      "crusher": true,
+      "game_active": true,
+      "initial_flag": false,
+      "name": "not_straight",
+      "occupant": "self",
+      "overlay": true,
+      "straight": false,
+      "tilts": true,
+      "wall": true,
+      "zone": 12
+    },
+    "per_cell": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3eae147b",
+        "00000000",
+        "3d6147ad"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "3d23d70a"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry_stores": [],
+    "refreshed_speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3eae147b",
+        "00000000",
+        "3d6147ad"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "retained_speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3eae147b",
+        "00000000",
+        "3d6147ad"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "rocking": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3eae147b",
+        "00000000",
+        "3d0f5c28"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "3d23d70a"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "stores": [
+      {
+        "bits": "3d0f5c28",
+        "instruction": "0070BB49",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "00",
+        "instruction": "0073B067",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "3d6147ad",
+        "instruction": "0073B06E",
+        "offset": 820,
+        "size": 4
+      }
+    ]
+  },
+  {
+    "calls": [
+      {
+        "arg": 0,
+        "entry": "007509E0"
+      },
+      {
+        "arg": -1,
+        "entry": "00480CB0"
+      }
+    ],
+    "initial_rocking_bits": [
+      "00000000",
+      "3e99999a",
+      "00000000",
+      "3d23d70a"
+    ],
+    "input": {
+      "accelerates": true,
+      "crushable": true,
+      "crusher": true,
+      "game_active": true,
+      "initial_flag": false,
+      "name": "empty_ground",
+      "occupant": "none",
+      "overlay": true,
+      "straight": true,
+      "tilts": true,
+      "wall": true,
+      "zone": 12
+    },
+    "per_cell": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry_stores": [
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B19FA",
+        "offset": 820,
+        "size": 4
+      }
+    ],
+    "refreshed_speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "retained_speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "rocking": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "stores": [
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B19FA",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "bd6147ae",
+        "instruction": "0070BB49",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "00",
+        "instruction": "0073B067",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd0f5c29",
+        "instruction": "0073B06E",
+        "offset": 820,
+        "size": 4
+      }
+    ]
+  },
+  {
+    "calls": [
+      {
+        "arg": 0,
+        "entry": "007509E0"
+      },
+      {
+        "arg": -1,
+        "entry": "00480CB0"
+      }
+    ],
+    "initial_rocking_bits": [
+      "00000000",
+      "3e99999a",
+      "00000000",
+      "3d23d70a"
+    ],
+    "input": {
+      "accelerates": true,
+      "crushable": true,
+      "crusher": true,
+      "game_active": true,
+      "initial_flag": false,
+      "name": "deck_only",
+      "occupant": "deck",
+      "overlay": true,
+      "straight": true,
+      "tilts": true,
+      "wall": true,
+      "zone": 12
+    },
+    "per_cell": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry_stores": [
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B19FA",
+        "offset": 820,
+        "size": 4
+      }
+    ],
+    "refreshed_speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "retained_speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "rocking": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "stores": [
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B19FA",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "bd6147ae",
+        "instruction": "0070BB49",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "00",
+        "instruction": "0073B067",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd0f5c29",
+        "instruction": "0073B06E",
+        "offset": 820,
+        "size": 4
+      }
+    ]
+  },
+  {
+    "calls": [
+      {
+        "arg": 0,
+        "entry": "007509E0"
+      },
+      {
+        "arg": -1,
+        "entry": "00480CB0"
+      }
+    ],
+    "initial_rocking_bits": [
+      "00000000",
+      "3e99999a",
+      "00000000",
+      "3d23d70a"
+    ],
+    "input": {
+      "accelerates": true,
+      "crushable": true,
+      "crusher": true,
+      "game_active": true,
+      "initial_flag": false,
+      "name": "infantry_only",
+      "occupant": "infantry",
+      "overlay": true,
+      "straight": true,
+      "tilts": true,
+      "wall": true,
+      "zone": 12
+    },
+    "per_cell": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry_stores": [
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B19FA",
+        "offset": 820,
+        "size": 4
+      }
+    ],
+    "refreshed_speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "retained_speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "rocking": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "stores": [
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B19FA",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "bd6147ae",
+        "instruction": "0070BB49",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "00",
+        "instruction": "0073B067",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd0f5c29",
+        "instruction": "0073B06E",
+        "offset": 820,
+        "size": 4
+      }
+    ]
+  },
+  {
+    "calls": [
+      {
+        "arg": 0,
+        "entry": "007509E0"
+      },
+      {
+        "arg": -1,
+        "entry": "00480CB0"
+      }
+    ],
+    "initial_rocking_bits": [
+      "00000000",
+      "3e99999a",
+      "00000000",
+      "3d23d70a"
+    ],
+    "input": {
+      "accelerates": true,
+      "crushable": true,
+      "crusher": true,
+      "game_active": false,
+      "initial_flag": false,
+      "name": "inactive",
+      "occupant": "self",
+      "overlay": true,
+      "straight": true,
+      "tilts": true,
+      "wall": true,
+      "zone": 12
+    },
+    "per_cell": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry_stores": [
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B19FA",
+        "offset": 820,
+        "size": 4
+      }
+    ],
+    "refreshed_speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "retained_speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "rocking": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "stores": [
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B19FA",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "bd6147ae",
+        "instruction": "0070BB49",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "00",
+        "instruction": "0073B067",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd0f5c29",
+        "instruction": "0073B06E",
+        "offset": 820,
+        "size": 4
+      }
+    ]
+  },
+  {
+    "calls": [
+      {
+        "arg": 0,
+        "entry": "007509E0"
+      },
+      {
+        "arg": -1,
+        "entry": "00480CB0"
+      }
+    ],
+    "initial_rocking_bits": [
+      "00000000",
+      "3e99999a",
+      "00000000",
+      "3d23d70a"
+    ],
+    "input": {
+      "accelerates": true,
+      "crushable": true,
+      "crusher": true,
+      "game_active": true,
+      "initial_flag": false,
+      "name": "zone11",
+      "occupant": "self",
+      "overlay": true,
+      "straight": true,
+      "tilts": true,
+      "wall": true,
+      "zone": 11
+    },
+    "per_cell": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry_stores": [
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B19FA",
+        "offset": 820,
+        "size": 4
+      }
+    ],
+    "refreshed_speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "retained_speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "rocking": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "stores": [
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B19FA",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "bd6147ae",
+        "instruction": "0070BB49",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "00",
+        "instruction": "0073B067",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd0f5c29",
+        "instruction": "0073B06E",
+        "offset": 820,
+        "size": 4
+      }
+    ]
+  },
+  {
+    "calls": [],
+    "initial_rocking_bits": [
+      "00000000",
+      "3e99999a",
+      "00000000",
+      "3d23d70a"
+    ],
+    "input": {
+      "accelerates": true,
+      "crushable": true,
+      "crusher": true,
+      "game_active": true,
+      "initial_flag": false,
+      "name": "no_overlay",
+      "occupant": "self",
+      "overlay": false,
+      "straight": true,
+      "tilts": true,
+      "wall": true,
+      "zone": 12
+    },
+    "per_cell": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "pre_entry": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry_stores": [
+      {
+        "bits": "01",
+        "instruction": "004B1A2F",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B1A4E",
+        "offset": 820,
+        "size": 4
+      }
+    ],
+    "refreshed_speed": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "retained_speed": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "rocking": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "speed": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "stores": [
+      {
+        "bits": "01",
+        "instruction": "004B1A2F",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B1A4E",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "bd6147ae",
+        "instruction": "0070BB49",
+        "offset": 820,
+        "size": 4
+      }
+    ]
+  },
+  {
+    "calls": [],
+    "initial_rocking_bits": [
+      "00000000",
+      "3e99999a",
+      "00000000",
+      "3d23d70a"
+    ],
+    "input": {
+      "accelerates": true,
+      "crushable": false,
+      "crusher": true,
+      "game_active": true,
+      "initial_flag": false,
+      "name": "nonwall_overlay",
+      "occupant": "self",
+      "overlay": true,
+      "straight": true,
+      "tilts": true,
+      "wall": false,
+      "zone": 12
+    },
+    "per_cell": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "pre_entry": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry_stores": [
+      {
+        "bits": "01",
+        "instruction": "004B1A2F",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B1A4E",
+        "offset": 820,
+        "size": 4
+      }
+    ],
+    "refreshed_speed": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "retained_speed": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "rocking": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "speed": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "stores": [
+      {
+        "bits": "01",
+        "instruction": "004B1A2F",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B1A4E",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "bd6147ae",
+        "instruction": "0070BB49",
+        "offset": 820,
+        "size": 4
+      }
+    ]
+  },
+  {
+    "calls": [],
+    "initial_rocking_bits": [
+      "00000000",
+      "3e99999a",
+      "00000000",
+      "3d23d70a"
+    ],
+    "input": {
+      "accelerates": true,
+      "crushable": true,
+      "crusher": false,
+      "game_active": true,
+      "initial_flag": false,
+      "name": "noncrusher",
+      "occupant": "self",
+      "overlay": true,
+      "straight": true,
+      "tilts": true,
+      "wall": true,
+      "zone": 12
+    },
+    "per_cell": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "pre_entry": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry_stores": [
+      {
+        "bits": "01",
+        "instruction": "004B1A2F",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B1A4E",
+        "offset": 820,
+        "size": 4
+      }
+    ],
+    "refreshed_speed": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "retained_speed": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "rocking": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "speed": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "stores": [
+      {
+        "bits": "01",
+        "instruction": "004B1A2F",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B1A4E",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "bd6147ae",
+        "instruction": "0070BB49",
+        "offset": 820,
+        "size": 4
+      }
+    ]
+  },
+  {
+    "calls": [
+      {
+        "arg": 0,
+        "entry": "007509E0"
+      },
+      {
+        "arg": -1,
+        "entry": "00480CB0"
+      }
+    ],
+    "initial_rocking_bits": [
+      "00000000",
+      "3e99999a",
+      "00000000",
+      "3d23d70a"
+    ],
+    "input": {
+      "accelerates": false,
+      "crushable": true,
+      "crusher": true,
+      "game_active": true,
+      "initial_flag": false,
+      "name": "nonaccelerating",
+      "occupant": "self",
+      "overlay": true,
+      "straight": true,
+      "tilts": true,
+      "wall": true,
+      "zone": 12
+    },
+    "per_cell": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry_stores": [
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B19FA",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "01",
+        "instruction": "004B1A2F",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B1A4E",
+        "offset": 820,
+        "size": 4
+      }
+    ],
+    "refreshed_speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "retained_speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 0,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd0f5c29"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "rocking": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e800000",
+        "00000000",
+        "bd6147ae"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "speed": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "bd4ccccd"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "stores": [
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B19FA",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "01",
+        "instruction": "004B1A2F",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd4ccccd",
+        "instruction": "004B1A4E",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "bd6147ae",
+        "instruction": "0070BB49",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "00",
+        "instruction": "0073B067",
+        "offset": 1717,
+        "size": 1
+      },
+      {
+        "bits": "bd0f5c29",
+        "instruction": "0073B06E",
+        "offset": 820,
+        "size": 4
+      }
+    ]
+  },
+  {
+    "calls": [],
+    "initial_rocking_bits": [
+      "00000000",
+      "3e99999a",
+      "00000000",
+      "3d23d70a"
+    ],
+    "input": {
+      "accelerates": true,
+      "crushable": true,
+      "crusher": true,
+      "game_active": true,
+      "initial_flag": true,
+      "name": "retain_until_overlay",
+      "occupant": "self",
+      "overlay": false,
+      "straight": false,
+      "tilts": true,
+      "wall": true,
+      "zone": 12
+    },
+    "per_cell": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3ea0d97c",
+        "00000000",
+        "bba3d70a"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "pre_entry": {
+      "applied_bits": "3ff0000000000000",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "3d23d70a"
+      ],
+      "target_bits": "3ff0000000000000"
+    },
+    "pre_entry_stores": [],
+    "refreshed_speed": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3ea0d97c",
+        "00000000",
+        "bba3d70a"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "retained_speed": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3ea0d97c",
+        "00000000",
+        "bba3d70a"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "rocking": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3ea0d97c",
+        "00000000",
+        "bba3d70a"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "speed": {
+      "applied_bits": "3fc999999999999a",
+      "crush_flag": 1,
+      "rocking_bits": [
+        "00000000",
+        "3e99999a",
+        "00000000",
+        "3d23d70a"
+      ],
+      "target_bits": "3fc999999999999a"
+    },
+    "stores": [
+      {
+        "bits": "00000000",
+        "instruction": "0070BA8B",
+        "offset": 820,
+        "size": 4
+      },
+      {
+        "bits": "bba3d70a",
+        "instruction": "0070BB49",
+        "offset": 820,
+        "size": 4
+      }
+    ]
+  }
+]

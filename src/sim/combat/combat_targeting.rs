@@ -289,7 +289,7 @@ pub(crate) fn should_retaliate(
     };
     let house = world.houses.get(&victim.owner());
     let human =
-        house.is_some_and(|house| house.is_controlled_by_human(world.session.game_mode_nonzero));
+        house.is_some_and(|house| house.is_controlled_by_human(world.session.game_mode_nonzero()));
     // `0x007087DD` CanRetaliate; `0x007087EB` a slave (SlaveOwner `+0x2DC`);
     // `0x007087F9` a slaver (SlaveManager `+0x2D8`). A slave freed by its
     // master's death (`0x006B0B73`) retaliates again.
@@ -301,7 +301,7 @@ pub(crate) fn should_retaliate(
     }
     // `0x00708807..0x0070881F`: draining (`+0x1CC`) for a house that is not
     // human (`House+0x1EC`).
-    if victim.drain.target().is_some() && !house.is_some_and(|house| house.is_human) {
+    if victim.drain.target().is_some() && !house.is_some_and(|house| house.is_human()) {
         return false;
     }
     // `0x0070882F` a full CaptureManager (being controlled is no gate);
@@ -416,7 +416,7 @@ pub(crate) fn should_retaliate(
     let victim_enemy = world
         .houses
         .get(&victim.owner())
-        .and_then(|house| house.enemy_house);
+        .and_then(|house| house.enemy_house());
     if !human
         && let Some(TargetKind::Entity(current_id)) = victim.attack_target.target()
         && let (Some(current_score), Some(source_score)) = (

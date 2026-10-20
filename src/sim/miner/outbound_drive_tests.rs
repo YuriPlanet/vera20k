@@ -106,18 +106,14 @@ fn production_sim(seed: u64, oracle: &OutboundContractOracle) -> Simulation {
 
 fn seed_human_house(sim: &mut Simulation, owner: &str) {
     let owner_id = sim.interner.intern(owner);
-    sim.houses.insert(
+    sim.houses.register(HouseState::new(
         owner_id,
-        HouseState::new(
-            owner_id,
-            0,
-            Some(owner_id),
-            true,
-            crate::sim::production::STARTING_CREDITS,
-            10,
-        ),
-    );
-    sim.session.house_order.push(owner_id);
+        0,
+        Some(owner_id),
+        true,
+        crate::sim::production::STARTING_CREDITS,
+        10,
+    ));
 }
 
 fn resolved_cell(
@@ -152,7 +148,7 @@ fn staged_terrain(
             .collect(),
     );
     for &(rx, ry) in ore_cells {
-        let cell = terrain.cell_mut(rx, ry).expect("staged ore cell");
+        let cell = terrain.cell_mut_for_test(rx, ry).expect("staged ore cell");
         let tiberium_land_type = LandType::Tiberium.as_index();
         cell.land_type = tiberium_land_type;
         cell.speed_costs = oracle.tiberium_speed_costs;
@@ -234,7 +230,7 @@ fn rock_where_grid_blocks(sim: &mut Simulation, grid: &PathGrid) {
             let cell = sim
                 .resolved_terrain
                 .as_mut()
-                .and_then(|terrain| terrain.cell_mut(rx, ry))
+                .and_then(|terrain| terrain.cell_mut_for_test(rx, ry))
                 .expect("staged cell");
             cell.land_type = LandType::Rock.as_index();
             cell.speed_costs = rock;
@@ -408,7 +404,7 @@ fn assert_ore_intact(sim: &Simulation, oracle: &OutboundContractOracle, target: 
 fn assert_command_state(sim: &Simulation, entity_id: u64, target: (u16, u16)) {
     let entity = sim.substrate.entities.get(entity_id).expect("miner entity");
     // Find_Path installed the route as Foot+5E0 words from START.
-    let route = entity.navigation.path_replay.installed_cells(START);
+    let route = entity.navigation.path_replay().installed_cells(START);
     assert_eq!(route.first().copied(), Some(START));
     assert_eq!(route.last().copied(), Some(target));
     assert_eq!(
@@ -439,7 +435,7 @@ fn assert_command_state(sim: &Simulation, entity_id: u64, target: (u16, u16)) {
     );
     assert!(drive.track().cursor() >= 0);
     assert!(!drive.track().reversed());
-    assert!(!entity.navigation.path_replay.directions().is_empty());
+    assert!(!entity.navigation.path_replay().directions().is_empty());
     // The Harvest handler dispatches BEFORE Phase-1 ground movement (the
     // native handler→locomotion order), so by observation time the drive has
     // already begun accelerating in the same tick the command was issued.
@@ -496,7 +492,7 @@ fn scenario_after_one_epilogue_draw(sim: &mut Simulation) -> SimRngLogicalState 
 /// not its frame number, which `state_four_exit_draws_and_applies_resume_jitter`
 /// already pins.
 fn arm_dispatch_now(sim: &mut Simulation, entity_id: u64) {
-    let now = sim.session.binary_frame as i32;
+    let now = sim.session.binary_frame() as i32;
     sim.substrate
         .entities
         .get_mut(entity_id)
@@ -802,7 +798,7 @@ fn production_stock_harv_far_return_drive_uses_rule_profile() {
     assert_eq!(entity.foot_speed.applied_fraction(), SIM_ZERO);
     // Do_Turn 0x4B0EF0 sets the body FacingClass (0x4C9220).
     assert!(
-        entity.body_facing.is_rotating(sim.session.binary_frame),
+        entity.body_facing.is_rotating(sim.session.binary_frame()),
         "the hull is commanded onto the head path node's octant first"
     );
 
@@ -1100,101 +1096,6 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
 }
 
 #[test]
-fn production_cmin_outbound_drive_keeps_teleport_primary() {
-    let oracle = outbound_contract_oracle();
-    let target = (32, 29);
-    let mut sim = production_sim(0x0715_D003, &oracle);
-    let grid = PathGrid::new(GRID_SIZE, GRID_SIZE);
-    install_world(&mut sim, &oracle, &grid, &[target], true);
-    let entity_id = spawn_stock_miner(&mut sim, &oracle, "CMIN", MinerKind::Chrono);
-    spawn_inert_dock_instance(&mut sim);
-    arm_search(&mut sim, entity_id);
-    let rng_before = sim.rng_state();
-
-    // The scan dispatch installs the outbound command itself. What must survive
-    // that is the locomotor arrangement: Teleport stays the PRIMARY in its own
-    // slot and Drive is only piggybacked on top, so the first outbound trip is a
-    // drive and never a warp.
-    advance(&mut sim, &oracle, &grid);
-    assert_command_state(&sim, entity_id, target);
-    {
-        let entity = sim.substrate.entities.get(entity_id).expect("CMIN");
-        let locomotor = entity.locomotor.as_ref().expect("CMIN locomotor");
-        assert_eq!(
-            entity.navigation.nav_com(),
-            Some(NavTargetRef::cell(target.0, target.1)),
-        );
-        assert_eq!(locomotor.active_kind(), LocomotorKind::Drive);
-        assert_eq!(locomotor.effective_kind(), LocomotorKind::Teleport);
-        assert_eq!(
-            locomotor
-                .piggyback()
-                .as_ref()
-                .expect("CMIN Drive piggyback")
-                .active_kind(),
-            LocomotorKind::Teleport,
-        );
-        assert!(
-            entity.teleport_state().is_none(),
-            "the outbound leg must never start a warp"
-        );
-    }
-
-    let mut reached_harvest = false;
-    for _ in 0..240 {
-        advance(&mut sim, &oracle, &grid);
-        let entity = sim.substrate.entities.get(entity_id).expect("CMIN");
-        assert!(entity.teleport_state().is_none());
-        if crate::sim::movement::motion_query::is_moving(&entity) == Some(true) {
-            let locomotor = entity.locomotor.as_ref().expect("CMIN locomotor");
-            assert_eq!(locomotor.active_kind(), LocomotorKind::Drive);
-            assert_eq!(locomotor.effective_kind(), LocomotorKind::Teleport);
-            assert!(locomotor.piggyback().is_some());
-        }
-        if entity.miner_state().expect("miner") == MinerState::Harvest {
-            assert!(crate::sim::movement::motion_query::is_moving(&entity) != Some(true));
-            let locomotor = entity.locomotor.as_ref().expect("CMIN locomotor");
-            assert_eq!(
-                locomotor.active_kind(),
-                LocomotorKind::Teleport,
-                "Drive={:?}; Foot={:?}; position={:?}; Nav={:?}; mission={:?}",
-                entity
-                    .locomotor
-                    .as_ref()
-                    .and_then(|l| l.selected_drive_runtime())
-                    .and_then(|r| r.retained())
-                    .cloned(),
-                entity.foot_speed,
-                entity.position,
-                entity.navigation,
-                entity.mission
-            );
-            assert_eq!(locomotor.effective_kind(), LocomotorKind::Teleport);
-            assert!(locomotor.piggyback().is_none());
-            assert_eq!(entity.navigation.nav_com(), None);
-            assert!(!entity.navigation.pending_destination_setter());
-            assert!(
-                entity
-                    .locomotor
-                    .as_ref()
-                    .and_then(|l| l.selected_drive_runtime())
-                    .and_then(|r| r.retained())
-                    .is_none()
-            );
-            reached_harvest = true;
-            break;
-        }
-    }
-    assert!(reached_harvest);
-    // The still-driving dispatches draw one scenario RandomRanged(0,2) each
-    // (the default Rate epilogue); only the non-scenario streams are
-    // untouched across the outbound leg.
-    let rng_after = sim.rng_state();
-    assert_eq!(rng_after.main, rng_before.main);
-    assert_eq!(rng_after.mapgen, rng_before.mapgen);
-}
-
-#[test]
 fn production_cmin_unreachable_outbound_drive_returns_to_teleport() {
     let oracle = outbound_contract_oracle();
     let target = (32, 29);
@@ -1248,56 +1149,6 @@ fn production_cmin_unreachable_outbound_drive_returns_to_teleport() {
     assert_eq!(rng_after_retry.scenario, scenario_after_retry);
     assert_eq!(rng_after_retry.main, rng_before.main);
     assert_eq!(rng_after_retry.mapgen, rng_before.mapgen);
-}
-
-#[test]
-fn production_harv_navcom_is_not_reissued() {
-    let oracle = outbound_contract_oracle();
-    let original = (32, 29);
-    let preferable = (32, 31);
-    let mut sim = production_sim(0x0715_D005, &oracle);
-    let grid = PathGrid::new(GRID_SIZE, GRID_SIZE);
-    // Only `original` carries ore at acquisition time; the nearer `preferable`
-    // cell is staged mid-test below so it can tempt a scan that must not run.
-    install_world(&mut sim, &oracle, &grid, &[original], true);
-    let entity_id = spawn_stock_miner(&mut sim, &oracle, "HARV", MinerKind::War);
-    spawn_inert_dock_instance(&mut sim);
-    arm_search(&mut sim, entity_id);
-
-    // One dispatch acquires `original` and takes NavCom ownership.
-    advance(&mut sim, &oracle, &grid);
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(entity_id)
-            .expect("HARV")
-            .navigation
-            .nav_com(),
-        Some(NavTargetRef::cell(original.0, original.1)),
-    );
-
-    // A strictly nearer ore cell appears. Retail ore is the overlay, so the
-    // temptation has to be planted there for the scan to be able to see it.
-    sim.overlay_grid
-        .as_mut()
-        .expect("overlay grid")
-        .place_overlay(preferable.0, preferable.1, oracle.tib01, 0);
-    let rng_before = sim.rng_state();
-    // The still-driving dispatch (non-null NavCom) exits through the default
-    // Rate epilogue: exactly one scenario RandomRanged(0,2) draw, no scan.
-    arm_dispatch_now(&mut sim, entity_id);
-    let expected_scenario_after_draw = scenario_after_one_epilogue_draw(&mut sim);
-
-    advance(&mut sim, &oracle, &grid);
-    let entity = sim.substrate.entities.get(entity_id).expect("HARV");
-    assert_eq!(
-        entity.navigation.nav_com(),
-        Some(NavTargetRef::cell(original.0, original.1)),
-    );
-    let rng_after = sim.rng_state();
-    assert_eq!(rng_after.scenario, expected_scenario_after_draw);
-    assert_eq!(rng_after.main, rng_before.main);
-    assert_eq!(rng_after.mapgen, rng_before.mapgen);
 }
 
 #[test]

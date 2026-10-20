@@ -37,9 +37,9 @@ fn rng_hex<'a>(row: &'a Value, state: &Value, stream: &str) -> &'a str {
 
 fn assert_rng(sim: &Simulation, row: &Value, state: &Value) {
     for (name, stream) in [
-        ("main", sim.main_rng.native_state_hex()),
-        ("scenario", sim.scenario_rng.native_state_hex()),
-        ("mapgen", sim.mapgen_rng.native_state_hex()),
+        ("main", sim.main_rng().native_state_hex()),
+        ("scenario", sim.scenario_rng().native_state_hex()),
+        ("mapgen", sim.mapgen_rng().native_state_hex()),
     ] {
         assert_eq!(stream, rng_hex(row, state, name), "{}: {name}", row["name"]);
     }
@@ -75,8 +75,8 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.session.map_width = stride;
-    sim.session.map_height = stride;
+    sim.session_mut_for_test().set_map_width_for_test(stride);
+    sim.session_mut_for_test().set_map_height_for_test(stride);
     // Navigation Cell5F6A10 reads the current admitted coordinate here. A
     // flat surrounding arena is sufficient for this ingress-only comparison;
     // no path search, Process, terrain asset loading or held movement runs.
@@ -94,8 +94,8 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
         stride, stride, cells,
     ));
     crate::sim::arena_fixture::supply_native_map(&mut sim);
-    sim.fog.width = stride;
-    sim.fog.height = stride;
+    sim.fog_mut_for_test().set_width_for_test(stride);
+    sim.fog_mut_for_test().set_height_for_test(stride);
     let current_house = before["current_house"].as_u64().unwrap();
     let mut owners = BTreeMap::new();
     let mut owner_rows: Vec<_> = before["actors"].as_object().unwrap().values().collect();
@@ -111,7 +111,7 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
             continue;
         }
         let name = format!("NativeHouse{pointer}");
-        let owner = sim.interner.intern(&name);
+        let owner = sim.intern(&name);
         let mut house = HouseState::new(
             owner,
             u8::try_from(owners.len()).unwrap(),
@@ -120,17 +120,23 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
             10_000,
             10,
         );
-        house.player_control = actor["player_control"].as_u64().unwrap() != 0;
-        sim.houses.insert(owner, house);
-        sim.session.house_order.push(owner);
+        house.set_player_control_for_test(actor["player_control"].as_u64().unwrap() != 0);
+        sim.houses_mut_for_test().register(house);
         if pointer == current_house {
-            sim.session.current_house = Some(owner);
+            sim.session_mut_for_test()
+                .set_current_house_for_test(Some(owner));
         }
         owners.insert(pointer, name);
     }
-    sim.session.game_mode_nonzero = before["game_mode"].as_u64().unwrap() != 0;
-    sim.session.binary_frame = before["frame"].as_u64().unwrap() as u32;
-    sim.session.tick = before["frame"].as_u64().unwrap();
+    sim.session_mut_for_test().set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            before["game_mode"].as_u64().unwrap() != 0,
+        ),
+    );
+    sim.session_mut_for_test()
+        .set_binary_frame_for_test(before["frame"].as_u64().unwrap() as u32);
+    sim.session_mut_for_test()
+        .set_tick_for_test(before["frame"].as_u64().unwrap());
     let mut ids = BTreeMap::new();
     let mut native_ids = BTreeMap::new();
     let mut actors: Vec<_> = before["actors"].as_object().unwrap().iter().collect();
@@ -180,9 +186,12 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
     // Construction is outside the comparison. Continue all three actual
     // original process streams from the observed input boundary, without
     // reproducing their seed/draw arithmetic in this test.
-    sim.main_rng = SimRng::from_native_state_hex_for_test(rng_hex(row, before, "main")).into();
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(rng_hex(row, before, "scenario"));
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(rng_hex(row, before, "mapgen"));
+    *sim.main_rng_mut_for_test() =
+        SimRng::from_native_state_hex_for_test(rng_hex(row, before, "main")).into();
+    *sim.scenario_rng_mut_for_test() =
+        SimRng::from_native_state_hex_for_test(rng_hex(row, before, "scenario"));
+    *sim.mapgen_rng_mut_for_test() =
+        SimRng::from_native_state_hex_for_test(rng_hex(row, before, "mapgen"));
     Fixture {
         sim,
         rules,
@@ -323,8 +332,8 @@ fn area_guard_ingress_matches_native_order_current_cells_voices_and_rng() {
             let actual: Vec<_> = pending[prior_count..]
                 .iter()
                 .map(|envelope| {
-                    assert_eq!(envelope.owner, f.sim.session.current_house.unwrap());
-                    assert_eq!(envelope.execute_tick, f.sim.session.tick);
+                    assert_eq!(envelope.owner, f.sim.session().current_house().unwrap());
+                    assert_eq!(envelope.execute_tick, f.sim.session().tick());
                     MegaMissionRecord::decode(
                         &f.sim
                             .encode_megamission_record(envelope.owner, &envelope.payload)
@@ -390,10 +399,10 @@ fn area_guard_uses_pending_selection_array_before_simulation_membership_commits(
     );
     let selected = selected_stable_ids_in_order(Some(&f.sim), Some(&f.rules), &pending_order, true);
     assert_eq!(selected, pending_order);
-    let owner = f.sim.session.current_house.unwrap();
+    let owner = f.sim.session().current_house().unwrap();
     f.sim.queue_command(CommandEnvelope::new(
         owner,
-        f.sim.session.tick,
+        f.sim.session().tick(),
         Command::Select {
             entity_ids: selected.clone(),
             additive: false,

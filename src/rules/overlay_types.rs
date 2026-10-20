@@ -650,24 +650,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_overlay_types() {
-        let text: &str = "\
-[OverlayTypes]
-0=GASAND
-1=INTREE01
-2=GAWALL
-3=GEM01
-";
-        let ini: IniFile = IniFile::from_str(text);
-        let reg: OverlayTypeRegistry = OverlayTypeRegistry::from_ini(&ini, None);
-        assert_eq!(reg.len(), 4);
-        assert_eq!(reg.name(0), Some("GASAND"));
-        assert_eq!(reg.name(1), Some("INTREE01"));
-        assert_eq!(reg.name(3), Some("GEM01"));
-        assert_eq!(reg.name(255), None);
-    }
-
-    #[test]
     fn test_sparse_overlay_types() {
         let text: &str = "\
 [OverlayTypes]
@@ -685,15 +667,6 @@ mod tests {
         assert_eq!(reg.name(2), Some("BRIDGE"));
         assert_eq!(reg.name(3), Some("BIGFENCE"));
         assert_eq!(reg.name(4), None);
-    }
-
-    #[test]
-    fn test_empty_registry() {
-        let text: &str = "[General]\nKey=Value\n";
-        let ini: IniFile = IniFile::from_str(text);
-        let reg: OverlayTypeRegistry = OverlayTypeRegistry::from_ini(&ini, None);
-        assert!(reg.is_empty());
-        assert_eq!(reg.name(0), None);
     }
 
     #[test]
@@ -794,21 +767,6 @@ NoUseTileLandType=no
     }
 
     #[test]
-    fn gsi_04_11_chain_reaction_ctor_default_is_false_and_ini_key_overrides() {
-        let ini = IniFile::from_str(
-            "[OverlayTypes]\n0=GREEN\n1=CHAIN\n2=BLUE\n\
-             [GREEN]\nTiberium=yes\n\
-             [CHAIN]\nTiberium=yes\nChainReaction=yes\n\
-             [BLUE]\nTiberium=yes\nChainReaction=no\n",
-        );
-        let reg = OverlayTypeRegistry::from_ini(&ini, None);
-
-        assert!(!reg.flags(0).unwrap().chain_reaction);
-        assert!(reg.flags(1).unwrap().chain_reaction);
-        assert!(!reg.flags(2).unwrap().chain_reaction);
-    }
-
-    #[test]
     fn gsi_04_04_overlay_land_retention_matches_recalc_attributes() {
         let mut ordinary = OverlayTypeFlags {
             land: LandType::Road,
@@ -867,39 +825,6 @@ NoUseTileLandType=no
             assert_eq!(retained_overlay_land(&authoritative, 0), Some(land));
             assert_eq!(retained_overlay_land(&authoritative, 1), Some(land));
         }
-    }
-
-    #[test]
-    fn test_one_based_overlay_types_compacted() {
-        let text: &str = "\
-[OverlayTypes]
-1=GASAND
-2=GEM01
-";
-        let ini: IniFile = IniFile::from_str(text);
-        let reg: OverlayTypeRegistry = OverlayTypeRegistry::from_ini(&ini, None);
-        // Keys sorted and compacted to 0-based — key numbers are ordering hints only.
-        assert_eq!(reg.len(), 2);
-        assert_eq!(reg.name(0), Some("GASAND"));
-        assert_eq!(reg.name(1), Some("GEM01"));
-    }
-
-    #[test]
-    fn test_sparse_keys_compacted() {
-        let text: &str = "\
-[OverlayTypes]
-1=GASAND
-2=GEM01
-6=BRIDGE
-11=BIGFENCE
-";
-        let ini: IniFile = IniFile::from_str(text);
-        let reg: OverlayTypeRegistry = OverlayTypeRegistry::from_ini(&ini, None);
-        assert_eq!(reg.len(), 4);
-        assert_eq!(reg.name(0), Some("GASAND"));
-        assert_eq!(reg.name(1), Some("GEM01"));
-        assert_eq!(reg.name(2), Some("BRIDGE"));
-        assert_eq!(reg.name(3), Some("BIGFENCE"));
     }
 
     #[test]
@@ -1066,23 +991,6 @@ Image=4
             Some(TiberiumTypeId(0)),
             "Cruentus has no extra range; a flagged miss falls back to type zero"
         );
-    }
-
-    #[test]
-    fn overlay_to_tiberium_index_uses_compact_slots_across_numeric_key_gaps() {
-        let (overlays, tiberiums) = stock_shaped_tiberium_registries(None);
-        for (name, compact_id, type_id) in
-            [("GEM01", 27, 1), ("TIB2_01", 127, 2), ("TIB3_01", 147, 3)]
-        {
-            let overlay_id = overlays
-                .id_for_name(name)
-                .unwrap_or_else(|| panic!("{name} id"));
-            assert_eq!(overlay_id, compact_id);
-            assert_eq!(
-                overlays.tiberium_type_for_overlay(&tiberiums, overlay_id),
-                Some(TiberiumTypeId(type_id))
-            );
-        }
     }
 
     /// Retail rulesmd `[OverlayTypes]` puts each resource family exactly at

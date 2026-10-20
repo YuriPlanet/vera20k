@@ -198,7 +198,7 @@ impl Simulation {
         let coord = super::foot_coordinate::current_coordinate(infantry);
         let start = super::scatter_cell::null_start_direction(
             (coord.x, coord.y),
-            infantry.body_facing.current(self.session.binary_frame),
+            infantry.body_facing.current(self.session.binary_frame()),
             &mut self.scenario_rng,
         );
         if let Some(cell) = self.scatter_nearby_cell(id, rules) {
@@ -641,7 +641,7 @@ impl Simulation {
             LocomotorKind::Teleport => {
                 // Foot tail: NavCom, then Teleport Move_To, then the accepted
                 // timers whatever it answered (`0x004D96C2..0x004D9707`).
-                let frame = self.session.binary_frame;
+                let frame = self.session.binary_frame();
                 let actor = self.substrate.entities.get_mut(id).unwrap();
                 super::navcom::publish_nav_com(actor, requested);
                 // Infantry51AA40 -> Foot4D94B0 samples destination +4C before
@@ -675,7 +675,7 @@ impl Simulation {
                     id,
                     (requested, coord),
                     self.resolved_terrain.as_ref(),
-                    super::DestinationTiming::from_rules(self.session.binary_frame, Some(rules)),
+                    super::DestinationTiming::from_rules(self.session.binary_frame(), Some(rules)),
                 );
                 Ok(true)
             }

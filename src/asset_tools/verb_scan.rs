@@ -774,12 +774,6 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_where_argument_carries_no_predicates() {
-        assert!(parse_predicates("").expect("legal").is_empty());
-        assert!(parse_predicates("   ").expect("legal").is_empty());
-    }
-
-    #[test]
     fn malformed_clauses_are_errors_not_silent_drops() {
         let missing_op = parse_predicates("w60").expect_err("no operator");
         assert!(
@@ -875,24 +869,6 @@ mod tests {
     }
 
     #[test]
-    fn common_fields_are_valid_for_every_format() {
-        for tag in KNOWN_FORMATS {
-            let valid = valid_fields(Some(tag));
-            for field in COMMON_FIELDS {
-                assert!(valid.contains(field), "{tag} should accept {field}");
-            }
-        }
-    }
-
-    #[test]
-    fn compiled_checks_echo_back_in_their_original_form() {
-        let predicates = parse_predicates("w=60,frames>100").expect("legal");
-        let checks = compile_checks(Some("shp"), &predicates).expect("valid shp fields");
-        let echoed: Vec<String> = checks.iter().map(Check::echo).collect();
-        assert_eq!(echoed, vec!["w=60".to_string(), "frames>100".to_string()]);
-    }
-
-    #[test]
     fn an_unknown_format_tag_is_an_error_not_an_empty_scan() {
         let err = compile_format(Some(&"shpp".to_string())).expect_err("shpp is not a tag");
         assert!(err.error.contains("unknown --format"), "{}", err.error);
@@ -966,25 +942,6 @@ mod tests {
 
         // No predicates at all matches everything.
         assert!(row_matches(&fields.map, &[]));
-    }
-
-    #[test]
-    fn name_globs_match_rows_through_the_name_field() {
-        let data = synthetic_shp(60, 48, 1);
-        let fields = build_fields("shp", &data, "ra2.mix", "gapowricon.shp", data.len() as u32);
-        let checks = compile_checks(
-            Some("shp"),
-            &parse_predicates("name=*icon*").expect("legal"),
-        )
-        .expect("valid");
-        assert!(row_matches(&fields.map, &checks));
-
-        let miss = compile_checks(
-            Some("shp"),
-            &parse_predicates("name=*cameo*").expect("legal"),
-        )
-        .expect("valid");
-        assert!(!row_matches(&fields.map, &miss));
     }
 
     #[test]

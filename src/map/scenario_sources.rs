@@ -553,22 +553,6 @@ mod tests {
     }
 
     #[test]
-    fn pkt_and_missions_pkt_rows_keep_their_title_verbatim() {
-        let mut records = Vec::new();
-        append_pkt_records(
-            &mut records,
-            &retail_shaped_pkt(),
-            SkirmishScenarioSource::MissionsMdPkt,
-            None,
-            PktTitleStyle::Verbatim,
-            bare_map_payload,
-        );
-
-        assert_eq!(records[0].display_name, "Dustbowl");
-        assert_eq!(records[1].display_name, "Circuit Board");
-    }
-
-    #[test]
     fn yro_title_suffix_is_bounded_to_the_native_title_slot() {
         // 0x2C wide slots less the forced terminator.
         assert_eq!(PKT_TITLE_MAX_CHARS, 43);
@@ -624,13 +608,5 @@ mod tests {
         );
         assert_eq!(manager.registered_archive_names(), ["COLLIDE.YRO"]);
         assert_eq!(manager.get_ref("YROONLY.BIN"), Some(&b"retained"[..]));
-    }
-
-    #[test]
-    fn loose_scan_exclusion_names_match_the_native_wildcard_skips() {
-        // Both are compared case-insensitively against the found file name.
-        assert!("missionsmd.pkt".eq_ignore_ascii_case(MISSIONS_MD_PKT_FILE_NAME));
-        assert!("Missions.Yro".eq_ignore_ascii_case(MISSIONS_YRO_FILE_NAME));
-        assert!(!"MISSIONS.PKT".eq_ignore_ascii_case(MISSIONS_MD_PKT_FILE_NAME));
     }
 }

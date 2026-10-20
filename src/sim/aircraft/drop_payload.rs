@@ -218,7 +218,7 @@ fn drop_passenger(
         }
         Some(_) => {}
     }
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let terrain = sim.resolved_terrain.as_ref();
     let Some(plane_entity) = sim.substrate.entities.get(plane) else {
         return Err(DepartureFailure::Placement);
@@ -489,7 +489,7 @@ fn land_tail(
         observe(Observed::RemoveMember(passenger));
         sim.team_remove_member(team, passenger, false, Some(rules), effects);
     }
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     if let Some(plane_entity) = sim.substrate.entities.get_mut(plane) {
         plane_entity.mission_leaf.restore_paradrop_passes();
         plane_entity.rearm_timer.start(frame, 0);
@@ -823,8 +823,8 @@ mod tests {
             sim.substrate
                 .anims
                 .iter()
-                .find(|(_, anim)| anim.type_id == parachute)
-                .map(|(id, anim)| (*id, anim.owner_entity, anim.runtime.loop_remaining))
+                .find(|(_, anim)| anim.type_id() == parachute)
+                .map(|(id, anim)| (*id, anim.owner_entity(), anim.runtime().loop_remaining))
         };
         let (canopy_id, owner, loops) = canopy(&sim).expect("the drop attached a canopy");
         assert_eq!((owner, loops), (Some(passenger_id), u8::MAX));
@@ -950,8 +950,8 @@ mod tests {
             .substrate
             .anims
             .iter()
-            .filter(|(_, anim)| anim.type_id == explode)
-            .map(|(_, anim)| anim.world_coord)
+            .filter(|(_, anim)| anim.type_id() == explode)
+            .map(|(_, anim)| anim.world_coord())
             .collect();
         assert_eq!(explosions.len(), 1, "{explosions:?}");
         assert_eq!(
@@ -964,8 +964,8 @@ mod tests {
             sim.substrate
                 .anims
                 .iter()
-                .filter(|(_, anim)| anim.type_id == parachute)
-                .all(|(_, anim)| anim.owner_entity.is_none() && anim.runtime.inactive),
+                .filter(|(_, anim)| anim.type_id() == parachute)
+                .all(|(_, anim)| anim.owner_entity().is_none() && anim.runtime().inactive),
             "the canopy's owner expired"
         );
     }
@@ -1157,7 +1157,7 @@ mod tests {
         let rules = drop_test_rules();
         let (aircraft_id, passenger_id) = (1, 2);
         insert_loaded_paradrop_pair(&mut sim, aircraft_id, passenger_id);
-        sim.session.binary_frame = 77;
+        sim.session.set_binary_frame_for_test(77);
         let plane = sim.substrate.entities.get_mut(aircraft_id).unwrap();
         plane.mission_leaf.set_paradrop_passes_for_test(-2);
         plane
@@ -1199,7 +1199,7 @@ mod tests {
         );
         // Unlimbo faces it south (`0x005F5A35`).
         assert_eq!(
-            passenger.body_facing_current(sim.session.binary_frame),
+            passenger.body_facing_current(sim.session.binary_frame()),
             0x8000
         );
         let occupied_subcells: Vec<(u64, u8)> = sim
@@ -1224,10 +1224,10 @@ mod tests {
             let (aircraft_id, passenger_id) = (1, 2);
             insert_loaded_paradrop_pair(&mut sim, aircraft_id, passenger_id);
             let americans = sim.interner.intern("Americans");
-            sim.houses.insert(
-                americans,
-                crate::sim::house_state::HouseState::new(americans, 0, None, human, 0, 10),
-            );
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    americans, 0, None, human, 0, 10,
+                ));
             sim.substrate
                 .entities
                 .get_mut(passenger_id)
@@ -1337,12 +1337,12 @@ mod tests {
             let rules = drop_test_rules();
             insert_loaded_paradrop_pair(&mut sim, 1, 2);
             let mut loco = LocomotorState::from_object_type(rules.object("E1").unwrap(), 0);
-            loco.set_layer(MovementLayer::Bridge);
+            loco.set_layer_for_test(MovementLayer::Bridge);
             {
                 let passenger = sim.substrate.entities.get_mut(2).unwrap();
                 passenger.locomotor = Some(loco);
                 passenger.lifecycle.set_object_alive_for_test(post_attach);
-                passenger.lifecycle.set_cell_marked(post_attach);
+                passenger.lifecycle.set_cell_marked_for_test(post_attach);
             }
             let mut peer = GameEntity::test_default(9, "E1", "Americans", 30, 30);
             peer.mark_live_contact_with(2);
@@ -1423,7 +1423,7 @@ mod tests {
                     .get_mut(2)
                     .unwrap()
                     .lifecycle
-                    .set_cell_marked(false);
+                    .set_cell_marked_for_test(false);
                 drop_payload(
                     &mut sim,
                     1,

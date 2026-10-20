@@ -57,6 +57,17 @@ pub(crate) fn house_type_index_of_name<'a>(
         .unwrap_or(-1)
 }
 
+/// HouseClassGetPlayerAtFromString510FB0's exact physical token table.
+/// Shared by ReadHouseType475540 and TeamType House decoding.
+pub(crate) fn house_type_player_at(incoming: &str) -> Option<u8> {
+    let bytes = incoming.as_bytes();
+    (bytes.len() == 12
+        && bytes.starts_with(b"<Player @ ")
+        && bytes[11] == b'>'
+        && (b'A'..=b'H').contains(&bytes[10]))
+    .then(|| bytes[10] - b'A')
+}
+
 /// One native `RulesClass::Process` source in its runtime position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RulesLayerKind {
@@ -369,6 +380,49 @@ fn process_native_noncampaign_rules_prepass_inner(
     (trace, [after_countries, after_general, after_house_bodies])
 }
 
+/// Session ReadMultiPlayer6980C0 calls Countries6722F0 before its Side475540
+/// read. It does not read Country bodies; PrepareSession52E123 does that later.
+/// Executed controls: tools/rules_oracle/session_country.{py,json,meta.json}.
+pub(crate) fn read_native_multiplayer_country(
+    registry: NativeRulesRegistryState,
+    root: &IniFile,
+    settings: &IniFile,
+    current: i32,
+) -> (i32, NativeTypeConstructionTrace) {
+    let mut processor = RulesPassProcessor::with_registry_state(registry);
+    processor.allocate_explicit_family(root, "Countries", RulesTypeFamily::Country);
+    let name = settings
+        .section_or_empty("MultiPlayer")
+        .read_string("Side", "", 0x80);
+    let index = if name.is_empty() {
+        current
+    } else if let Some(player) = house_type_player_at(&name) {
+        0x117b + i32::from(player)
+    } else {
+        let found = processor.country_index_of_name(&name);
+        if found != -1 {
+            found
+        } else {
+            // Unlike generic FindOrAllocate, this reader constructs none
+            // spellings too (4755A0..4755F5).
+            i32::try_from(processor.find_or_construct(RulesTypeFamily::Country, &name))
+                .expect("native Country index exceeds i32")
+        }
+    };
+    (index, processor.finish().1)
+}
+
+/// PrepareSession52E123..52E14B reads each live Country against the selected
+/// root after Session settings. D7/55FD31 omits this separate body pass.
+pub(crate) fn refresh_native_multiplayer_country_bodies(
+    registry: NativeRulesRegistryState,
+    root: &IniFile,
+) -> NativeTypeConstructionTrace {
+    let mut processor = RulesPassProcessor::with_registry_state(registry);
+    processor.process_house_family(root);
+    processor.finish().1
+}
+
 /// Retained RulesClass type vectors, distinct from the process-resident type
 /// registries. The constructor @ 0x00665827 initializes them empty; ReadGeneral
 /// @ 0x0066DA90/0x0066DB93 replaces MetallicDebris/BridgeExplosions only after
@@ -424,6 +478,10 @@ pub struct ProcessedRulesLayers {
 }
 
 impl ProcessedRulesLayers {
+    pub(crate) fn native_registry_state(&self) -> &NativeRulesRegistryState {
+        self.native_type_construction_trace.registry_state()
+    }
+
     pub fn ini(&self) -> &IniFile {
         &self.ini
     }
@@ -547,6 +605,20 @@ impl ProcessedRulesLayers {
                     member.building_has_spotlight,
                 )
             })
+    }
+
+    /// BuildingType+E30..E40 after each admitted Rules section, including
+    /// missing-key integer-default conversions460C8C..460DCA.
+    pub(crate) fn building_light_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, crate::rules::building_light::BuildingLightRules)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Building)
+            .into_iter()
+            .flatten()
+            .map(|member| (member.native_stored_id.as_str(), member.building_light))
     }
 
     /// BuildingType+EBC after each reached Rules body. Fixed ART never reads it.
@@ -851,6 +923,26 @@ impl ProcessedRulesLayers {
             })
     }
 
+    /// TechnoType+7FC after each reached fixed-ART ShadowIndex read.
+    pub(crate) fn voxel_shadow_states(&self) -> impl Iterator<Item = (ObjectCategory, &str, i32)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.voxel_shadow_index,
+                    )
+                })
+            })
+    }
+
     /// Each SuperWeaponType's `WeaponType=` (+9C) and `AuxBuilding=` (+C8)
     /// after every reached pass.
     pub(crate) fn super_weapon_reference_states(
@@ -1059,20 +1151,10 @@ impl ProcessedRulesLayers {
     /// Ordered live Country identities, Color+C0 and Side+BC. Side672440
     /// writes BC before HouseType511850 can override it in ReadTypeData.
     /// A constructor-only Country retains BC=-1, not an invented side.
-    pub(crate) fn country_registry_states(&self) -> impl Iterator<Item = (&str, i32, i32)> {
+    pub(crate) fn country_projection(&self) -> impl Iterator<Item = (&str, &IniSection, i32, i32)> {
         self.native_type_construction_trace
             .registry_state()
-            .families
-            .get(&RulesTypeFamily::Country)
-            .into_iter()
-            .flatten()
-            .map(|member| {
-                (
-                    member.native_stored_id.as_str(),
-                    member.country_color_scheme,
-                    member.country_side_index,
-                )
-            })
+            .country_projection()
     }
 
     pub(crate) fn side_registry_names(&self) -> impl Iterator<Item = &str> {
@@ -1223,6 +1305,13 @@ impl ProcessedRulesLayers {
         self.native_type_construction_trace
             .registry_state()
             .rules_survivor_divisors
+    }
+
+    /// Retained AI.CompEasyBonus at Rules+17E3 (ReadAI673D18).
+    pub(crate) fn comp_easy_bonus(&self) -> bool {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_comp_easy_bonus
     }
 
     /// Retained General.MaximumCheerRate at Rules+580 (ReadGeneral66EBD4).
@@ -1421,6 +1510,11 @@ impl NativeTypeConstructionTrace {
         self.allocated_super_weapon_type_count
     }
 
+    pub(crate) fn prepend_events(&mut self, mut earlier: Vec<NativeTypeConstructionEvent>) {
+        earlier.append(&mut self.events);
+        self.events = earlier;
+    }
+
     pub(crate) fn registry_state(&self) -> &NativeRulesRegistryState {
         &self.registry_state
     }
@@ -1498,6 +1592,7 @@ pub(crate) struct NativeRulesRegistryState {
     rules_chrono_beam_color: [u8; 3],
     rules_prism_support: PrismSupportRules,
     rules_patrol_scan_minutes: NativeF64Bits,
+    rules_comp_easy_bonus: bool,
     rules_prism_type: Option<String>,
     rules_drop_zone_anim: Option<String>,
     rules_drop_zone_radius: i32,
@@ -1564,6 +1659,7 @@ impl Default for NativeRulesRegistryState {
             rules_chrono_beam_color: general.chrono_beam_color,
             rules_prism_support: PrismSupportRules::default(),
             rules_patrol_scan_minutes: general.patrol_scan_minutes,
+            rules_comp_easy_bonus: general.comp_easy_bonus,
             rules_prism_type: None,
             rules_drop_zone_anim: None,
             rules_drop_zone_radius: general.drop_zone_radius,
@@ -1582,6 +1678,29 @@ impl Default for NativeRulesRegistryState {
 }
 
 impl NativeRulesRegistryState {
+    pub(crate) fn country_projection(&self) -> impl Iterator<Item = (&str, &IniSection, i32, i32)> {
+        self.families
+            .get(&RulesTypeFamily::Country)
+            .into_iter()
+            .flatten()
+            .map(|member| {
+                (
+                    member.native_stored_id.as_str(),
+                    &member.body,
+                    member.country_color_scheme,
+                    member.country_side_index,
+                )
+            })
+    }
+
+    pub(crate) fn side_projection_names(&self) -> impl Iterator<Item = &str> {
+        self.families
+            .get(&RulesTypeFamily::Side)
+            .into_iter()
+            .flatten()
+            .map(|member| member.native_stored_id.as_str())
+    }
+
     fn validate_techno_type_order(&self) -> Result<(), RulesError> {
         let expected = self
             .families
@@ -1760,6 +1879,7 @@ impl NativeRulesRegistryState {
             rules_chrono_beam_color: self.rules_chrono_beam_color,
             rules_prism_support: self.rules_prism_support,
             rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,
+            rules_comp_easy_bonus: self.rules_comp_easy_bonus,
             // Plain index vectors, so RulesClass keeps them; the next pass
             // reads them as its default.
             rules_prerequisite_lists: self.rules_prerequisite_lists,
@@ -1901,6 +2021,10 @@ struct WarheadAnimReadState {
 struct ProcessedType {
     native_stored_id: String,
     body: IniSection,
+    /// Constructor711351=0; fixed ART ReadInt71592A..715948 keeps the
+    /// current value as default across Image changes and later Rules passes.
+    #[serde(default)]
+    voxel_shadow_index: i32,
     /// TechnoType ctor711082 initializes+634 to255; ReadInt714570 uses
     /// its current value, including a prior TAction106 write, as the default.
     /// Native controls: trigger_object_tech_level.json scalar_layers/lifecycle.
@@ -1927,6 +2051,7 @@ struct ProcessedType {
     building_target_coord_offset: [i32; 3],
     /// BuildingType ctor45DFDA=false; ReadBool45FEE5..45FF0D, current default.
     building_has_spotlight: bool,
+    building_light: crate::rules::building_light::BuildingLightRules,
     secret_lab: crate::rules::secret_lab::SecretLabRules,
     /// Unit ctor747167..7471B2 and reached fixed-ART reader7477C1..747AAE.
     unit_shp: crate::rules::shp_vehicle_sequence::UnitShpReadState,
@@ -2296,6 +2421,7 @@ impl ProcessedType {
     fn new(native_stored_id: String) -> Self {
         Self {
             body: IniSection::new(native_stored_id.clone()),
+            voxel_shadow_index: 0,
             tech_level: crate::rules::object_type::DEFAULT_TECH_LEVEL,
             projectile_art: ProjectileArtState::new(&native_stored_id),
             techno_references: TechnoTypeReferences::new(&native_stored_id),
@@ -2307,6 +2433,7 @@ impl ProcessedType {
             building_foundation: 0,
             building_target_coord_offset: [0; 3],
             building_has_spotlight: false,
+            building_light: Default::default(),
             secret_lab: Default::default(),
             unit_shp: Default::default(),
             unit_speed_type: SpeedType::Invalid,
@@ -2377,6 +2504,7 @@ struct RulesPassProcessor {
     rules_chrono_beam_color: [u8; 3],
     rules_prism_support: PrismSupportRules,
     rules_patrol_scan_minutes: NativeF64Bits,
+    rules_comp_easy_bonus: bool,
     rules_prism_type: Option<String>,
     rules_drop_zone_anim: Option<String>,
     rules_drop_zone_radius: i32,
@@ -2433,6 +2561,7 @@ impl RulesPassProcessor {
             rules_chrono_beam_color: registry_state.rules_chrono_beam_color,
             rules_prism_support: registry_state.rules_prism_support,
             rules_patrol_scan_minutes: registry_state.rules_patrol_scan_minutes,
+            rules_comp_easy_bonus: registry_state.rules_comp_easy_bonus,
             rules_prism_type: registry_state.rules_prism_type,
             rules_drop_zone_anim: registry_state.rules_drop_zone_anim,
             rules_drop_zone_radius: registry_state.rules_drop_zone_radius,
@@ -2818,6 +2947,10 @@ impl RulesPassProcessor {
         // in the same process-resident authority as the other retained rules.
         self.rules_patrol_scan_minutes =
             section.read_double_bits("PatrolScan", self.rules_patrol_scan_minutes);
+        // ReadAI672AE0 reaches673CFD..673D1D after AirstripLimit and
+        // before Paranoid. Rules+17E3 survives the6686C0 Type reset;
+        // ReadBool5295F0 retains its current byte on absent/invalid input.
+        self.rules_comp_easy_bonus = section.read_bool("CompEasyBonus", self.rules_comp_easy_bonus);
     }
 
     fn allocate_general_references(&mut self, pass: &IniFile) {
@@ -3481,6 +3614,10 @@ impl RulesPassProcessor {
                 let references = &mut self.family_mut(family)[index].techno_references;
                 let image = raw.read_string("Image", &references.image, 0x19);
                 references.image.clone_from(&image);
+                let member = &mut self.families.get_mut(&family).unwrap()[index];
+                member.voxel_shadow_index = fixed_art
+                    .section_or_empty(&image)
+                    .read_int("ShadowIndex", member.voxel_shadow_index);
                 match family {
                     RulesTypeFamily::Building => {
                         let member = &mut self.families.get_mut(&family).unwrap()[index];
@@ -3488,6 +3625,7 @@ impl RulesPassProcessor {
                         // current value as default, no clamp or conversion.
                         member.building_has_spotlight =
                             raw.read_bool("HasSpotlight", member.building_has_spotlight);
+                        member.building_light.read_pass(&raw);
                         member.building_target_coord_offset = raw
                             .read_coord3("TargetCoordOffset", member.building_target_coord_offset);
                         member.building_foundation =
@@ -4381,6 +4519,7 @@ impl RulesPassProcessor {
                     rules_chrono_beam_color: self.rules_chrono_beam_color,
                     rules_prism_support: self.rules_prism_support,
                     rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,
+                    rules_comp_easy_bonus: self.rules_comp_easy_bonus,
                     rules_prism_type: self.rules_prism_type,
                     rules_drop_zone_anim: self.rules_drop_zone_anim,
                     rules_drop_zone_radius: self.rules_drop_zone_radius,

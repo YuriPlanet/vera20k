@@ -43,9 +43,9 @@ pub(in crate::sim) fn formed_sim(seed: u64, level: u8) -> Simulation {
     terrain.shared_cell_dummy().set_level_slope(level as i8, 0);
     sim.install_resolved_terrain_for_new_map(terrain);
     sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
-    sim.session.map_width = 128;
-    sim.session.map_height = 128;
-    sim.session.binary_frame = 1000;
+    sim.session.set_map_width_for_test(128);
+    sim.session.set_map_height_for_test(128);
+    sim.session.set_binary_frame_for_test(1000);
     sim
 }
 
@@ -93,7 +93,7 @@ fn original_meteor_shower_controls_preserve_signed_spread_and_interleaved_constr
             ),
             expected["result"] == 1
         );
-        let actual:Vec<_>=sim.anims().map(|(_, anim)|serde_json::json!({"type":sim.interner.resolve(anim.type_id),"location":[anim.world_coord.x,anim.world_coord.y,anim.world_coord.z],"velocity_bits":anim.bounce.unwrap().velocity.map(|v|v.bits())})).collect();
+        let actual:Vec<_>=sim.anims().map(|(_, anim)|serde_json::json!({"type":sim.interner.resolve(anim.type_id),"location":[anim.world_coord.x,anim.world_coord.y,anim.world_coord.z],"velocity_bits":anim.bounce.unwrap().velocity().map(|v|v.bits())})).collect();
         let pieces:Vec<_>=expected["pieces"].as_array().unwrap().iter().map(|p|serde_json::json!({"type":p["type"],"location":p["location"],"velocity_bits":p["velocity_bits"]})).collect();
         assert_eq!(actual, pieces, "{input}");
         assert_rng(&sim, expected, "after");
@@ -203,7 +203,7 @@ fn meteor_landing_runs_children_without_expire_and_uses_last_water_splash() {
         .resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(40, 40)
+        .cell_mut_for_test(40, 40)
         .unwrap()
         .land_type = 2;
     assert!(!water.anim_bounce_landing(
@@ -353,7 +353,9 @@ fn meteor_flight_restores_native_rng_prior_and_cleans_up() {
     ];
     for _ in 0..100 {
         for world in [&mut sim, &mut restored] {
-            world.session.binary_frame = world.session.binary_frame.wrapping_add(1);
+            world
+                .session
+                .set_binary_frame_for_test(world.session.binary_frame().wrapping_add(1));
             for &id in &ids {
                 world.visit_anim(id, &rules, None, FrameEffects::empty());
             }

@@ -73,7 +73,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
             .anims
             .get_mut(anim)
             .unwrap()
-            .runtime
+            .runtime_mut_for_test()
             .current_frame = i32::from(slot) + 1;
     }
     let entry = rules.art_entry_mut_for_test("B").unwrap();
@@ -156,17 +156,17 @@ fn native_refresh_corpus_replays_through_live_animation_slots() {
             assert!(sim.anim(old).is_none(), "{name}: old slot {slot} survives");
             let anim = sim.anim(new).unwrap();
             assert_eq!(
-                sim.interner.resolve(anim.type_id),
+                sim.interner.resolve(anim.type_id()),
                 call["name"].as_str().unwrap(),
                 "{name}: slot {slot} selection",
             );
             assert_eq!(
-                i32::from(anim.runtime.delay_remaining),
+                i32::from(anim.runtime().delay_remaining),
                 integer(&call["delay"]),
                 "{name}: slot {slot} delay",
             );
-            assert_eq!(anim.runtime.current_frame, slot as i32 + 1, "{name}");
-            assert_eq!(anim.building_slot, Some((id, slot as u8)), "{name}");
+            assert_eq!(anim.runtime().current_frame, slot as i32 + 1, "{name}");
+            assert_eq!(anim.building_slot(), Some((id, slot as u8)), "{name}");
             // Shared451890 may first synchronize all live slots when retained
             // damage changes. Its extra allocations precede these final IDs;
             // their increasing order must still match native458330's calls.

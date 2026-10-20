@@ -234,24 +234,26 @@ fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm(
         None,
     );
     sim.classify_map_triggers(None);
-    sim.session.set_started(true);
+    sim.publish_scenario_started();
     // Declared raging-storm fixture; its lifecycle has separate tests.
-    let owner = sim.interner.intern("Americans");
-    sim.lightning_storm =
+    let owner = sim.intern("Americans");
+    *sim.lightning_storm_mut_for_test() =
         crate::sim::superweapon::lightning_storm::LightningStorm::raging_for_test(owner, (0, 0));
-    sim.session.lighting.select(ScenarioLightingProfile::Ion);
+    sim.session_mut_for_test()
+        .lighting_mut()
+        .select(ScenarioLightingProfile::Ion);
     let terrain =
         crate::map::resolved_terrain::test_grid(3, 1, crate::map::resolved_terrain::test_flat_cell);
     let mut lights = MatchLighting::default();
     lights
         .grid
         .insert_profiled_light((0, 0), [0.512, 0.640, 0.768], 1.0);
-    sim.publish_global_lighting(PaletteUpdate::from_scenario(&sim.session.lighting));
-    lights.apply_events(&terrain, &sim.lighting_sources.pending);
+    sim.publish_global_lighting(PaletteUpdate::from_scenario(&sim.session().lighting()));
+    lights.apply_events(&terrain, sim.lighting_sources().pending());
     sim.discard_lighting_events();
     sim.advance_triggers(None, None, FrameEffects::default());
-    assert_eq!(sim.lighting_sources.pending.len(), 3);
-    lights.apply_events(&terrain, &sim.lighting_sources.pending);
+    assert_eq!(sim.lighting_sources().pending().len(), 3);
+    lights.apply_events(&terrain, sim.lighting_sources().pending());
     sim.discard_lighting_events();
     //73 changes normal Ambient after the final RGB publication. Reconciling
     // that state must not infer a new Ion palette operation.

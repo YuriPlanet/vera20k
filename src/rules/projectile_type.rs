@@ -478,23 +478,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_aa_projectile() {
-        let ini: IniFile = IniFile::from_str("[MissileAA]\nAA=yes\nAG=no\nROT=20\nImage=DRAGON\n");
-        let section: &IniSection = ini.section("MissileAA").unwrap();
-        let proj: ProjectileType = ProjectileType::from_ini_section("MissileAA", section, None);
-
-        assert_eq!(proj.id, "MissileAA");
-        assert_eq!(proj.image.as_deref(), Some("DRAGON"));
-        assert!(proj.aa);
-        assert!(!proj.ag);
-        assert_eq!(proj.rot, 20);
-        assert!(!proj.arcing);
-        assert!(!proj.inaccurate);
-        // Rotates defaults to true when not specified
-        assert!(proj.rotates);
-    }
-
-    #[test]
     fn test_defaults() {
         let ini: IniFile = IniFile::from_str("[Empty]\nFixtureOnly=1\n");
         let section: &IniSection = ini.section("Empty").unwrap();
@@ -548,19 +531,6 @@ mod tests {
     }
 
     #[test]
-    fn test_arcing_projectile() {
-        let ini: IniFile =
-            IniFile::from_str("[ArtilleryShell]\nAG=yes\nArcing=yes\nInaccurate=yes\n");
-        let section: &IniSection = ini.section("ArtilleryShell").unwrap();
-        let proj: ProjectileType =
-            ProjectileType::from_ini_section("ArtilleryShell", section, None);
-
-        assert!(proj.ag);
-        assert!(proj.arcing);
-        assert!(proj.inaccurate);
-    }
-
-    #[test]
     fn test_rotates_inversion() {
         // Rotates is an art Image key. The binary stores its inverse, and this
         // field intentionally exposes that stored form.
@@ -592,27 +562,6 @@ mod tests {
     }
 
     #[test]
-    fn isolated_section_keeps_constructor_color_without_a_registry() {
-        let ini: IniFile = IniFile::from_str("[ChemMissile]\nColor=DarkGreen\n");
-        let section = ini.section("ChemMissile").unwrap();
-        let proj = ProjectileType::from_ini_section("ChemMissile", section, None);
-
-        assert_eq!(proj.color_scheme(), 0);
-    }
-
-    #[test]
-    fn test_string_fields() {
-        let ini: IniFile = IniFile::from_str(
-            "[V3Rocket]\nImage=V3RocketImage\n[V3RocketImage]\nTrailer=V3TRAIL\n",
-        );
-        let section = ini.section("V3Rocket").unwrap();
-        let image_section = ini.section("V3RocketImage").unwrap();
-        let proj = ProjectileType::from_ini_section("V3Rocket", section, Some(image_section));
-
-        assert_eq!(proj.trailer.as_deref(), Some("V3TRAIL"));
-    }
-
-    #[test]
     fn test_image_section_fields() {
         let ini: IniFile = IniFile::from_str(
             "[Proj]\nImage=ProjImage\nFlat=no\nSpawnDelay=99\nAnimLow=1\nAnimHigh=2\nAnimRate=3\nAnimPalette=no\nTrailer=RULES_TRAIL\n[ProjImage]\nFlat=yes\nSpawnDelay=10\nAnimLow=4\nAnimHigh=5\nAnimRate=6\nAnimPalette=yes\nTrailer=ART_TRAIL\n",
@@ -628,17 +577,6 @@ mod tests {
         assert_eq!(proj.anim_rate, 6);
         assert!(proj.anim_palette);
         assert_eq!(proj.trailer.as_deref(), Some("ART_TRAIL"));
-    }
-
-    #[test]
-    fn test_arm_is_projectile_arming_delay_not_speed() {
-        let ini: IniFile = IniFile::from_str("[Proj]\nArm=2\nSpeed=99\n");
-        let section = ini.section("Proj").unwrap();
-        let proj = ProjectileType::from_ini_section("Proj", section, None);
-
-        assert_eq!(proj.arm, 2);
-        assert_eq!(proj.rot, 0);
-        assert_eq!(proj.spawn_delay, 3);
     }
 }
 

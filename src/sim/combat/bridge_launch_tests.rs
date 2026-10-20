@@ -68,25 +68,27 @@ fn retail_grizzly_forcefire_freezes_the_native_cell_aim() {
     }) {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-        );
-        sim.session.house_order.push(owner);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
         let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
         let terrain = sim.resolved_terrain.as_mut().unwrap();
         for (x, y) in [(10, 16), (10, 20)] {
-            terrain.cell_mut(x, y).unwrap().level = 2;
+            terrain.cell_mut_for_test(x, y).unwrap().level = 2;
         }
-        terrain.cell_mut(10, 20).unwrap().bridge_facts.raw_flags =
-            row["input"]["flags"].as_u64().unwrap() as u32;
+        terrain
+            .cell_mut_for_test(10, 20)
+            .unwrap()
+            .bridge_facts
+            .raw_flags = row["input"]["flags"].as_u64().unwrap() as u32;
         let grizzly = sim
             .spawn_object("MTNK", "Americans", 10, 16, 128, &rules)
             .expect("retail Grizzly");
         sim.resolve_type_handles(&rules);
         sim.queue_command(CommandEnvelope::new(
             owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::ForceAttackCell {
                 attacker_id: grizzly,
                 target_rx: 10,
@@ -98,13 +100,18 @@ fn retail_grizzly_forcefire_freezes_the_native_cell_aim() {
         for _ in 0..200 {
             let commands = sim.take_due_commands();
             sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 67);
-            if let Some((_, shell)) = sim.projectiles.iter().find(|(_, p)| p.source_id == grizzly) {
+            if let Some((_, shell)) = sim
+                .projectiles
+                .iter()
+                .find(|(_, p)| p.source_id() == grizzly)
+            {
                 assert_eq!(
-                    shell.launch_target, expected,
+                    shell.launch_target(),
+                    expected,
                     "retail shot {}",
                     row["input"]
                 );
-                assert_eq!(shell.last_target_position, expected);
+                assert_eq!(shell.last_target_position(), expected);
                 launched = true;
                 break;
             }

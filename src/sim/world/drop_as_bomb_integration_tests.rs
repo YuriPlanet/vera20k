@@ -28,8 +28,7 @@ fn houses(sim: &mut Simulation) {
     for (name, side) in [("Americans", 0), ("Russians", 1)] {
         let owner = sim.interner.intern(name);
         sim.houses
-            .insert(owner, HouseState::new(owner, side, None, true, 0, 10));
-        sim.session.house_order.push(owner);
+            .register(HouseState::new(owner, side, None, true, 0, 10));
     }
 }
 
@@ -119,7 +118,7 @@ fn put_on_deck(sim: &mut Simulation, rules: &RuleSet, id: u64, water: bool) {
         .resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(CELL.0, CELL.1)
+        .cell_mut_for_test(CELL.0, CELL.1)
         .unwrap();
     cell.bridge_facts.raw_flags |= crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
     cell.has_bridge_deck = true;
@@ -149,7 +148,7 @@ fn remove_deck(sim: &mut Simulation) {
         .resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(CELL.0, CELL.1)
+        .cell_mut_for_test(CELL.0, CELL.1)
         .unwrap();
     cell.bridge_facts.raw_flags &= !crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
     cell.has_bridge_deck = false;
@@ -175,7 +174,7 @@ fn run_drop(sim: &mut Simulation, rules: &RuleSet, carrier: u64, passenger: u64,
     let owner = sim.substrate.entities.get(carrier).unwrap().owner();
     let landing_xy =
         ground_pose::position_world_xy(&sim.substrate.entities.get(carrier).unwrap().position);
-    let losses = sim.houses[&owner].stats.units_lost();
+    let losses = sim.houses[&owner].stats().units_lost();
     let existing = sim.substrate.entities.keys_sorted();
     sim.clear_lifecycle_test_events_for_test();
     remove_deck(sim);
@@ -242,7 +241,7 @@ fn run_drop(sim: &mut Simulation, rules: &RuleSet, carrier: u64, passenger: u64,
         !sim.substrate.entities.contains(passenger),
         "bomb cargo dies without escape"
     );
-    assert_eq!(sim.houses[&owner].stats.units_lost(), losses + 2);
+    assert_eq!(sim.houses[&owner].stats().units_lost(), losses + 2);
     assert!(
         sim.substrate
             .entities
@@ -276,10 +275,10 @@ fn run_drop(sim: &mut Simulation, rules: &RuleSet, carrier: u64, passenger: u64,
         .filter(|(id, _)| !anims_before_landing.contains(id))
         .map(|(_, anim)| {
             (
-                sim.interner.resolve(anim.type_id).to_owned(),
-                anim.world_coord,
-                anim.draw_flags,
-                anim.z_adjust,
+                sim.interner.resolve(anim.type_id()).to_owned(),
+                anim.world_coord(),
+                anim.draw_flags(),
+                anim.z_adjust(),
             )
         })
         .collect::<Vec<_>>();

@@ -4,7 +4,7 @@
 
 use super::button::ShellButtonInteraction;
 use super::geom::{self, RectPx};
-use super::in_game_shell::InGameShellLayout;
+use super::in_game_shell::{self, InGameShellLayout};
 use crate::ui::shell::trackbar::{thumb_left, trackbar_position_from_x};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,16 +141,13 @@ pub struct SoundLayout {
 }
 impl SoundLayout {
     pub fn new(width: i32, height: i32, shell: InGameShellLayout, button_size: [i32; 2]) -> Self {
-        let dlu = |x, y, w, h| ordinary(geom::dlu_rect(x, y, w, h), width, height);
+        let dlu = |x, y, w, h| {
+            in_game_shell::ordinary_child_rect(geom::dlu_rect(x, y, w, h), width, height)
+        };
         Self {
-            title: RectPx::new(width - 165, 2, 162, 16),
-            back: RectPx::new(
-                width - 147,
-                shell.side3.y - button_size[1],
-                button_size[0],
-                button_size[1],
-            ),
-            footer: RectPx::new(10, height - 21, 455, 20),
+            title: in_game_shell::right_panel_title_rect(width),
+            back: shell.lower_button_rect(width, button_size),
+            footer: in_game_shell::status_line_rect(height),
             sliders: [
                 dlu(157, 60, 175, 13),
                 dlu(157, 82, 175, 13),
@@ -198,15 +195,6 @@ impl SoundLayout {
         None
     }
 }
-fn ordinary(raw: RectPx, width: i32, height: i32) -> RectPx {
-    RectPx::new(
-        (raw.x + (width - 800) / 2).max(0),
-        (raw.y + (height - 600) / 2).max(0),
-        raw.w,
-        raw.h,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,7 +250,7 @@ mod tests {
                 .iter()
                 .map(|v| v.as_i64().unwrap() as i32)
                 .collect();
-            let actual = ordinary(
+            let actual = in_game_shell::ordinary_child_rect(
                 geom::dlu_rect(r[0], r[1], r[2], r[3]),
                 case["width"].as_i64().unwrap() as i32,
                 case["height"].as_i64().unwrap() as i32,

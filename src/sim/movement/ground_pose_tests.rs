@@ -66,8 +66,9 @@ fn mover(sim: &mut Simulation, kind: LocomotorKind) -> GameEntity {
                 .as_mut()
                 .unwrap()
                 .set_walk_destination(Some(DriveCoord::cell(3, 1, 0)));
-            entity.navigation.path_replay =
-                crate::sim::components::FootPathQueue::for_test(vec![0, 0], 0, Some((3, 3)));
+            entity.navigation.set_path_replay_for_test(
+                crate::sim::components::FootPathQueue::for_test(vec![0, 0], 0, Some((3, 3))),
+            );
         }
         _ => unreachable!(),
     }
@@ -158,7 +159,7 @@ fn insert(sim: &mut Simulation, mut entity: GameEntity) {
     // must agree. Forced terminal relinking intentionally respects this flag.
     entity.lifecycle.set_object_alive_for_test(true);
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(true);
+    entity.lifecycle.set_cell_marked_for_test(true);
     sim.substrate.occupancy.add(
         entity.position.rx(),
         entity.position.ry(),
@@ -209,8 +210,8 @@ fn walk_tick(sim: &mut Simulation, terrain: &ResolvedTerrainGrid, grid: &PathGri
     );
     crate::sim::arena_fixture::supply_native_map(sim);
     sim.install_fixture_path_grid(Some(grid));
-    sim.session.tick = u64::from(frame);
-    sim.session.binary_frame = frame;
+    sim.session.set_tick_for_test(u64::from(frame));
+    sim.session.set_binary_frame_for_test(frame);
     sim.process_ground_locomotor_stats_for_test(1, Some(&rules), None)
         .expect("Walk fixture reaches the production object turn");
 }
@@ -228,8 +229,8 @@ fn tick_with_rules(
 ) {
     sim.resolved_terrain = Some(terrain.clone());
     sim.install_fixture_path_grid(Some(grid));
-    sim.session.tick = u64::from(frame);
-    sim.session.binary_frame = frame;
+    sim.session.set_tick_for_test(u64::from(frame));
+    sim.session.set_binary_frame_for_test(frame);
     sim.process_ground_locomotor_stats_for_test(1, rules, None)
         .expect("fixture reached an unsupported production movement receiver");
 }
@@ -238,7 +239,7 @@ fn tick_with_rules(
 fn drive_ship_paid_points_sample_before_residual_xy_and_no_paid_point_retains_raw_z() {
     for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
         let mut terrain = terrain();
-        terrain.cell_mut(3, 3).unwrap().slope_type = 2;
+        terrain.cell_mut_for_test(3, 3).unwrap().slope_type = 2;
         let grid = PathGrid::from_resolved_terrain(&terrain);
         let mut sim = Simulation::with_seed(3);
         let mut entity = mover(&mut sim, kind);
@@ -283,7 +284,7 @@ fn residual_bridge_crossing_preserves_z_and_projects_the_layer_from_on_bridge() 
         let mut grid = PathGrid::from_resolved_terrain(&terrain);
         for (y, bridge) in [(3, leaving), (2, !leaving), (1, !leaving)] {
             let level = if bridge { 0 } else { 4 };
-            let cell = terrain.cell_mut(3, y).unwrap();
+            let cell = terrain.cell_mut_for_test(3, y).unwrap();
             cell.level = level;
             cell.bridge_facts.raw_flags = if bridge {
                 crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
@@ -307,7 +308,11 @@ fn residual_bridge_crossing_preserves_z_and_projects_the_layer_from_on_bridge() 
         } else {
             MovementLayer::Bridge
         };
-        entity.locomotor.as_mut().unwrap().set_layer(start_layer);
+        entity
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .set_layer_for_test(start_layer);
         set_track_budget(&mut entity, 7); // strict paid gate >7
         // This route continues beyond the first retained segment. Native
         // owner NavCom must survive that terminal; a route without it admits
@@ -375,7 +380,7 @@ fn residual_bridge_crossing_preserves_z_and_projects_the_layer_from_on_bridge() 
 #[test]
 fn walking_subcell_motion_refreshes_exact_ramp_height() {
     let mut terrain = terrain();
-    terrain.cell_mut(3, 3).unwrap().slope_type = 2;
+    terrain.cell_mut_for_test(3, 3).unwrap().slope_type = 2;
     let grid = PathGrid::from_resolved_terrain(&terrain);
     let mut sim = Simulation::with_seed(3);
     let entity = mover(&mut sim, LocomotorKind::Walk);
@@ -403,9 +408,9 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
 
     for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
         let mut terrain = terrain();
-        terrain.cell_mut(3, 3).unwrap().level = 4;
-        terrain.cell_mut(3, 3).unwrap().slope_type = 2;
-        terrain.cell_mut(3, 2).unwrap().slope_type = 2;
+        terrain.cell_mut_for_test(3, 3).unwrap().level = 4;
+        terrain.cell_mut_for_test(3, 3).unwrap().slope_type = 2;
+        terrain.cell_mut_for_test(3, 2).unwrap().slope_type = 2;
         let mut grid = PathGrid::from_resolved_terrain(&terrain);
         grid.set_bridge_cell_decoupled_for_test(3, 2, 0, true, true, 4, true);
         let mut sim = Simulation::with_seed(71);
@@ -431,8 +436,8 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
         seed_track(&mut entity, kind, 11, DriveCoord::cell(3, 2, 731));
         insert(&mut sim, entity);
         tick(&mut sim, &terrain, &grid, 0);
-        sim.session.tick = 1;
-        sim.session.binary_frame = 1;
+        sim.session.set_tick_for_test(1);
+        sim.session.set_binary_frame_for_test(1);
         let entity = sim.substrate.entities.get(1).unwrap();
         assert_eq!(
             (entity.position.rx(), entity.position.ry()),
@@ -498,10 +503,12 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
         for frame in 1..=3 {
             tick(&mut sim, &terrain, &grid, frame);
             tick(&mut restored, &restored_terrain, &grid, frame);
-            sim.session.tick = u64::from(frame) + 1;
-            sim.session.binary_frame = frame + 1;
-            restored.session.tick = sim.session.tick;
-            restored.session.binary_frame = sim.session.binary_frame;
+            sim.session.set_tick_for_test(u64::from(frame) + 1);
+            sim.session.set_binary_frame_for_test(frame + 1);
+            restored.session.set_tick_for_test(sim.session.tick());
+            restored
+                .session
+                .set_binary_frame_for_test(sim.session.binary_frame());
             let original = sim.substrate.entities.get(1).unwrap();
             let loaded = restored.substrate.entities.get(1).unwrap();
             let pose = |entity: &GameEntity| {
@@ -513,7 +520,7 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
                     entity.position.z(),
                     entity.position.exact_z_leptons(),
                     entity.on_bridge(),
-                    entity.navigation.path_replay.clone(),
+                    entity.navigation.path_replay().clone(),
                 )
             };
             assert_eq!(
@@ -545,7 +552,7 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
 fn drive_ship_crossing_stores_the_entered_cell_level() {
     for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
         let mut terrain = terrain();
-        terrain.cell_mut(3, 2).unwrap().level = 5;
+        terrain.cell_mut_for_test(3, 2).unwrap().level = 5;
         let grid = PathGrid::from_resolved_terrain(&terrain);
         let mut sim = Simulation::with_seed(71);
         let mut entity = mover(&mut sim, kind);
@@ -569,10 +576,14 @@ fn drive_ship_crossing_stores_the_entered_cell_level() {
 #[test]
 fn walking_bridge_entry_commits_new_surface_and_object_list_plane() {
     let mut terrain = terrain();
-    terrain.cell_mut(3, 3).unwrap().level = 4;
-    terrain.cell_mut(3, 2).unwrap().slope_type = 2;
+    terrain.cell_mut_for_test(3, 3).unwrap().level = 4;
+    terrain.cell_mut_for_test(3, 2).unwrap().slope_type = 2;
     // Walk's admission and boundary read the Cell's structural bridge bit.
-    terrain.cell_mut(3, 2).unwrap().bridge_facts.raw_flags |= 0x100;
+    terrain
+        .cell_mut_for_test(3, 2)
+        .unwrap()
+        .bridge_facts
+        .raw_flags |= 0x100;
     let mut grid = PathGrid::from_resolved_terrain(&terrain);
     grid.set_bridge_cell_decoupled_for_test(3, 2, 0, true, true, 4, true);
     let mut sim = Simulation::new();
@@ -622,8 +633,8 @@ fn walking_bridge_entry_commits_new_surface_and_object_list_plane() {
 #[test]
 fn fresh_walk_refusal_preserves_xyz_before_head_selection() {
     let mut terrain = terrain();
-    terrain.cell_mut(3, 3).unwrap().slope_type = 2;
-    terrain.cell_mut(3, 2).unwrap().level = 2;
+    terrain.cell_mut_for_test(3, 3).unwrap().slope_type = 2;
+    terrain.cell_mut_for_test(3, 2).unwrap().level = 2;
     let grid = PathGrid::from_resolved_terrain(&terrain);
     let mut sim = Simulation::new();
     let mut entity = mover(&mut sim, LocomotorKind::Walk);
@@ -633,7 +644,9 @@ fn fresh_walk_refusal_preserves_xyz_before_head_selection() {
     blocker.set_owner_for_test(sim.intern("Americans"));
     blocker.set_type_ref_for_test(sim.intern("BLOCKER"));
     // Moving: its Foot+5E0 head word steps east from (3,2).
-    blocker.navigation.path_replay = crate::sim::movement::fixture_path_replay(&[(3, 2), (4, 2)]);
+    blocker
+        .navigation
+        .set_path_replay_for_test(crate::sim::movement::fixture_path_replay(&[(3, 2), (4, 2)]));
     sim.substrate.occupancy.add(
         3,
         2,
@@ -669,7 +682,7 @@ fn fresh_walk_refusal_preserves_xyz_before_head_selection() {
 #[test]
 fn terminal_drive_snap_updates_ramp_height_with_stashed_teleport_owner() {
     let mut terrain = terrain();
-    terrain.cell_mut(3, 3).unwrap().slope_type = 2;
+    terrain.cell_mut_for_test(3, 3).unwrap().slope_type = 2;
     let grid = PathGrid::from_resolved_terrain(&terrain);
     let mut sim = Simulation::new();
     let mut entity = mover(&mut sim, LocomotorKind::Drive);
@@ -703,7 +716,7 @@ fn terminal_drive_snap_updates_ramp_height_with_stashed_teleport_owner() {
 #[test]
 fn terminal_centre_height_commits_before_next_process_turn_without_finalizer() {
     let mut terrain = terrain();
-    terrain.cell_mut(3, 3).unwrap().slope_type = 2;
+    terrain.cell_mut_for_test(3, 3).unwrap().slope_type = 2;
     let grid = PathGrid::from_resolved_terrain(&terrain);
     let mut sim = Simulation::new();
     let mut entity = mover(&mut sim, LocomotorKind::Drive);
@@ -715,12 +728,10 @@ fn terminal_centre_height_commits_before_next_process_turn_without_finalizer() {
     );
     entity.position.set_sub_y_for_test(SimFixed::from_num(131));
     super::navcom::set_destination_internal_cell(&mut entity, (4, 3), Some(&terrain), 0);
-    super::path_markers::install_path_replay(
-        &mut entity.navigation.path_replay,
-        (3, 3),
-        &[(3, 3), (4, 3)],
-        1,
-    );
+    entity
+        .navigation
+        .path_replay_mut()
+        .install((3, 3), &[(3, 3), (4, 3)], 1);
     insert(&mut sim, entity);
     tick_with_rules(&mut sim, &terrain, &grid, 0, Some(&mover_rules()));
     let entity = sim.substrate.entities.get(1).unwrap();
@@ -746,7 +757,7 @@ fn terminal_centre_height_commits_before_next_process_turn_without_finalizer() {
 #[test]
 fn surface_query_uses_live_fixed_slot_alias_and_stamps_nonzero_shared_dummy() {
     let mut terrain = terrain();
-    terrain.cell_mut(0, 2).unwrap().level = 3;
+    terrain.cell_mut_for_test(0, 2).unwrap().level = 3;
     assert_eq!(
         ground_pose::ground_surface_z_at([512 * 256, 256], false, Some(&terrain), None),
         Some(312)
@@ -806,7 +817,7 @@ fn live_surface_and_coordinate_setter_match_all_native_ramp_vectors() {
         } else {
             let stored = &case["stored_cell"];
             let cell = terrain
-                .cell_mut(
+                .cell_mut_for_test(
                     stored[0].as_u64().unwrap() as u16,
                     stored[1].as_u64().unwrap() as u16,
                 )
@@ -869,7 +880,7 @@ fn idle_drive_keeps_supplied_raw_height() {
 fn set_height_samples_terrain_then_path_grid_then_the_dummy_ground() {
     use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
     let mut terrain = terrain();
-    terrain.cell_mut(3, 3).unwrap().level = 2;
+    terrain.cell_mut_for_test(3, 3).unwrap().level = 2;
     let grid = PathGrid::from_resolved_terrain(&terrain);
     let mut position = GameEntity::test_default(1, "MOVER", "Americans", 3, 3).position;
     position.set_z_for_test(1);
@@ -885,7 +896,7 @@ fn set_height_samples_terrain_then_path_grid_then_the_dummy_ground() {
         position.exact_z_leptons(),
         Some(BRIDGE_DECK_HEIGHT_LEPTONS + 10)
     );
-    terrain.cell_mut(3, 3).unwrap().slope_type = 21;
+    terrain.cell_mut_for_test(3, 3).unwrap().slope_type = 21;
     position.set_height(false, 0, Some(&terrain), None);
     assert_eq!(
         position.exact_z_leptons(),
@@ -896,8 +907,8 @@ fn set_height_samples_terrain_then_path_grid_then_the_dummy_ground() {
 #[test]
 fn forced_track_terminal_samples_full_head_xy_before_relink() {
     let mut terrain = terrain();
-    terrain.cell_mut(3, 4).unwrap().slope_type = 7;
-    terrain.cell_mut(3, 4).unwrap().level = 2;
+    terrain.cell_mut_for_test(3, 4).unwrap().slope_type = 7;
+    terrain.cell_mut_for_test(3, 4).unwrap().level = 2;
     let grid = PathGrid::from_resolved_terrain(&terrain);
     let mut sim = Simulation::new();
     let entity = mover(&mut sim, LocomotorKind::Drive);
@@ -919,7 +930,7 @@ fn forced_track_terminal_samples_full_head_xy_before_relink() {
         sim.path_grid = Some(std::sync::Arc::new(grid.clone()));
     }
     for frame in 0..64 {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         sim.run_track_points(
             super::track_process::TrackInvocation {
                 entity_id: 1,
@@ -977,7 +988,7 @@ fn ordinary_drive_ship_command_keeps_subcell_origin_through_terminal_cleanup() {
                 crate::sim::world::FrameEffects::default(),
             ));
             for frame in 0..128 {
-                sim.session.binary_frame = frame;
+                sim.session.set_binary_frame_for_test(frame);
                 sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
                     .unwrap();
                 if crate::sim::movement::motion_query::is_moving(
@@ -1055,9 +1066,9 @@ fn chained_mover(sim: &mut Simulation, kind: LocomotorKind) -> (GameEntity, Driv
     let head = offset(offset(current, (turn / 8) as u8), (turn % 8) as u8);
     super::track_head::accept_fresh_progress(entity.locomotor.as_mut().unwrap(), turn);
     let mut replay = crate::sim::components::FootPathQueue::default();
-    super::path_markers::install_path_replay(&mut replay, (3, 3), &path, 1);
-    super::path_markers::accept_path_replay(&mut replay, (4, 1), 2);
-    entity.navigation.path_replay = replay;
+    replay.install((3, 3), &path, 1);
+    replay.accept((4, 1), 2);
+    entity.navigation.set_path_replay_for_test(replay);
     match kind {
         LocomotorKind::Drive => {
             let d = entity.locomotor.as_mut().unwrap();
@@ -1103,7 +1114,7 @@ fn admitted_tick_chain_uses_remaining_queue_and_retains_old_head_z() {
                         .and_then(|l| l.selected_drive_runtime())
                         .and_then(|r| r.retained())
                         .unwrap();
-                    (d.head_to(), &entity.navigation.path_replay)
+                    (d.head_to(), entity.navigation.path_replay())
                 }
                 LocomotorKind::Ship => {
                     let s = entity
@@ -1112,7 +1123,7 @@ fn admitted_tick_chain_uses_remaining_queue_and_retains_old_head_z() {
                         .and_then(|l| l.selected_ship_runtime())
                         .and_then(|r| r.retained())
                         .unwrap();
-                    (s.head_to(), &entity.navigation.path_replay)
+                    (s.head_to(), entity.navigation.path_replay())
                 }
                 _ => unreachable!(),
             };
@@ -1139,7 +1150,7 @@ fn admitted_tick_chain_uses_remaining_queue_and_retains_old_head_z() {
 #[test]
 fn destination_cell_height_keeps_receiver_before_structural_lookup() {
     let mut terrain = terrain();
-    terrain.cell_mut(0, 0).unwrap().level = 7;
+    terrain.cell_mut_for_test(0, 0).unwrap().level = 7;
     terrain.test_set_dummy_cell_level_slope(-3, 0);
     let real = terrain.native_cell_identity((0, 0));
     terrain.write_native_cell_flags(real, 0x100);
@@ -1216,7 +1227,7 @@ fn a_building_on_a_ramp_is_targeted_at_its_floor() {
     let mut terrain = terrain();
     // Native `signed_level_5_bridge_0` (tools/ramp_height_vectors.json):
     // `0x00578080` at (640, 640) on a level-5 ramp-1 cell answers 572.
-    let cell = terrain.cell_mut(2, 2).unwrap();
+    let cell = terrain.cell_mut_for_test(2, 2).unwrap();
     cell.level = 5;
     cell.slope_type = 1;
     let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -1272,7 +1283,7 @@ fn two_marked_units() -> Simulation {
     for id in [1, 2] {
         let mut entity = GameEntity::test_default(id, "ACTOR", "Americans", 4, 4);
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.lifecycle.set_cell_marked(false);
+        entity.lifecycle.set_cell_marked_for_test(false);
         entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
         entity.position.set_exact_z_leptons_for_test(Some(0));
         sim.substrate.entities.insert(entity);

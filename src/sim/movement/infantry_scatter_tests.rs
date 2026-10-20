@@ -94,7 +94,7 @@ fn player_scatter_event_gates_and_rng_prefix_match_native_gi() {
             sim.resolve_type_handles(&retail.rules);
             let owner = sim.interner.intern("Allies");
             sim.houses
-                .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+                .register(HouseState::new(owner, 0, None, true, 0, 10));
             sim.scenario_rng = SimRng::from_native_state_hex_for_test(native_rng(before));
             let initial_rng = sim.scenario_rng.native_state_hex();
             let reached = sim.apply_command(
@@ -403,9 +403,14 @@ fn damage_gates_match_original_execution() {
         let type_ref = victim.type_ref();
         let mut sim = sim_with(victim);
         let mut house = HouseState::new(owner, 0, None, flag("human", false), 0, 10);
-        house.player_control = flag("player_control", false);
-        sim.houses.insert(owner, house);
-        sim.session.game_mode_nonzero = flag("game_mode_nonzero", true);
+        house.set_player_control_for_test(flag("player_control", false));
+        sim.houses.register(house);
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(flag(
+                "game_mode_nonzero",
+                true,
+            )),
+        );
         if flag("team", false) {
             sim.team_script_vm.create_team(owner, type_ref, vec![1], 0);
         }
@@ -449,8 +454,10 @@ fn deploy_doing_head_refuses_a_human_owner_without_both_flags() {
             let owner = man.owner();
             let mut sim = sim_with(man);
             sim.houses
-                .insert(owner, HouseState::new(owner, 0, None, human, 0, 10));
-            sim.session.game_mode_nonzero = true;
+                .register(HouseState::new(owner, 0, None, human, 0, 10));
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+            );
             let admitted = sim
                 .infantry_scatter_admitted(
                     1,

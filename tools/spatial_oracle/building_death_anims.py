@@ -2998,7 +2998,7 @@ def typed_debris_main(argv):
 
 
 
-def grapple_inputs(root, *, drone=False):
+def grapple_inputs(root, *, drone=False, firing=False):
     """Extend the existing physical reader for the selected stock SQD/DEST route."""
     from collections import deque
     from types import SimpleNamespace
@@ -3020,6 +3020,8 @@ def grapple_inputs(root, *, drone=False):
     weapon,projectile,warhead=('DroneJump','JUMP','Parasite') if drone else ('SquidGrab','SQDJUMP','ParasitePlus')
     artall=sections((root/'ARTMD.INI').read_bytes());animnames=[] if drone else ['SQDG','WAKE1','H2O_EXP1','H2O_EXP2','H2O_EXP3']
     artnames=['DRON','GTNK'] if drone else ['SQD','DEST','ASW']
+    if drone and firing:
+     artnames.append('DRONP')
     art={k:v for k,v in m.death_art_input_sections.items() if v};art.update({k:artall[k] for k in artnames+animnames if k in artall})
     for n in animnames:m.assets[n+'.SHP']=(root/(n+'.SHP')).read_bytes()
     sound=sections((root/'SOUNDMD.INI').read_bytes());wanted=set()
@@ -3068,11 +3070,13 @@ def grapple_inputs(root, *, drone=False):
     return m
 
 
-def grapple_fixture(inputs, root, *, seed=1, drone=False):
+def grapple_fixture(inputs, root, *, seed=1, drone=False, start_attached=True):
     """Fresh stock actors on the shared runtime's declared water projection.
 
-    This calls Object::Limbo directly before AttachTo; native FireAt and the
-    Bullet producer are excluded. Every selected actor remains genuinely alive.
+    By default this calls Object::Limbo directly before AttachTo; native FireAt
+    and the Bullet producer are excluded. With start_attached=False both actors
+    remain at their original constructor/Unlimbo boundary so the caller can run
+    the ordinary FireAt/Bullet producer. Every actor remains genuinely alive.
     """
     from types import SimpleNamespace
     import hashlib
@@ -3157,15 +3161,20 @@ def grapple_fixture(inputs, root, *, seed=1, drone=False):
         f.drone_model_input=dict(**{key:loaded[key] for key in ('model_header_hex','is_voxel','first_section_size','half_size_bits')},
             joined_is_voxel_al=admitted,files={name:dict(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest()) for name,raw in files.items()})
     assert read(manager+0x10)==0xFFFFFFFF
-    limbo=bc.invoke(u,0x5F4D30,source)&255;assert limbo==1
-    attach_entry=[actor_state(p) for p in actors]
-    timers_before_attach=manager_timers(manager)
-    assert [(a['alive'],a['limbo']) for a in attach_entry]==[(1,1),(1,0)]
-    can_infect=bc.invoke(u,0x62A8E0,manager,victim)&255;assert can_infect==1
-    bc.invoke(u,0x62A980,manager,victim)
-    assert read(manager+0x28)==victim and read(victim+0x694)==source
+    if start_attached:
+        limbo=bc.invoke(u,0x5F4D30,source)&255;assert limbo==1
+        attach_entry=[actor_state(p) for p in actors]
+        timers_before_attach=manager_timers(manager)
+        assert [(a['alive'],a['limbo']) for a in attach_entry]==[(1,1),(1,0)]
+        can_infect=bc.invoke(u,0x62A8E0,manager,victim)&255;assert can_infect==1
+        bc.invoke(u,0x62A980,manager,victim)
+        assert read(manager+0x28)==victim and read(victim+0x694)==source
+    else:
+        limbo,can_infect=None,None
+        attach_entry=[actor_state(p) for p in actors]
+        timers_before_attach=manager_timers(manager)
     grapple_entry=[actor_state(p) for p in actors]
-    assert [(a['alive'],a['limbo']) for a in grapple_entry]==[(1,1),(1,0)]
+    assert [(a['alive'],a['limbo']) for a in grapple_entry]==[(1,int(start_attached)),(1,0)]
     scenario=read(0xA8B230)
     # This component does not run Scenario map lighting or a cell relight.
     # Preserve that supplied lighting prior, rather than imply reset defaults.
@@ -3197,6 +3206,8 @@ def grapple_fixture(inputs, root, *, seed=1, drone=False):
             weapon_input=dict(name=f.string(w+0x24),damage=read(w+0xA4),rof=read(w+0xB0),
                 warhead=f.string(wh+0x24),paralyzes=read(wh+0x170)),
             spark_type_inputs=inputs.effective_types,sound_names=inputs.sound_names)
+    if not start_attached:
+        f.grapple_context['entry_boundary']='original constructors and Unlimbo; before FireAt, Limbo and AttachTo'
     assert f.code_unchanged()
     return f
 

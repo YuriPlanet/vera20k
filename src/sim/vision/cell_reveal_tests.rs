@@ -21,9 +21,9 @@ fn grow_shroud_captures_frontier_before_neighbors_lose_open_and_preserves_counte
         fog.set_ground_bits_for_test(viewer, cell.0, cell.1, bits);
         let vis = fog.by_owner.get_mut(&viewer).unwrap();
         let index = vis.index(cell.0, cell.1).unwrap();
-        vis.shroud_knowledge[index].counter = -7;
-        vis.shroud_knowledge[index].gap_counter = 3;
-        vis.shroud_knowledge[index].pending = pending;
+        vis.shroud_knowledge[index].set_counter_for_test(-7);
+        vis.shroud_knowledge[index].set_gap_counter_for_test(3);
+        vis.shroud_knowledge[index].set_pending_for_test(pending);
         vis.map_cell_edge_cache[index] = MapCellEdgeCache {
             initialized: true,
             fog_open: true,
@@ -46,14 +46,14 @@ fn grow_shroud_captures_frontier_before_neighbors_lose_open_and_preserves_counte
     ] {
         let i = vis.index(cell.0, cell.1).unwrap();
         assert_eq!(vis.ground_flags[i], bits, "{cell:?}");
-        assert_eq!(vis.shroud_knowledge[i].pending, pending, "{cell:?}");
+        assert_eq!(vis.shroud_knowledge[i].pending(), pending, "{cell:?}");
         assert_eq!(
-            vis.shroud_knowledge[i].counter,
-            before.shroud_knowledge[i].counter
+            vis.shroud_knowledge[i].counter(),
+            before.shroud_knowledge[i].counter()
         );
         assert_eq!(
-            vis.shroud_knowledge[i].gap_counter,
-            before.shroud_knowledge[i].gap_counter
+            vis.shroud_knowledge[i].gap_counter(),
+            before.shroud_knowledge[i].gap_counter()
         );
         assert_eq!(vis.map_cell_edge_cache[i], before.map_cell_edge_cache[i]);
     }
@@ -86,8 +86,8 @@ fn grow_shroud_uses_the_shared_dummy_without_clearing_its_cache() {
     let mut fog = FogState::new(33, 33);
     let mut vis = OwnerVisibility::new(33, 33);
     vis.dummy_visibility.ground = 8;
-    vis.dummy_visibility.knowledge.open = true;
-    vis.dummy_visibility.knowledge.counter = 9;
+    vis.dummy_visibility.knowledge.set_open_for_test(true);
+    vis.dummy_visibility.knowledge.set_counter_for_test(9);
     vis.dummy_visibility.cache = MapCellEdgeCache {
         initialized: true,
         fog_open: true,
@@ -102,9 +102,9 @@ fn grow_shroud_uses_the_shared_dummy_without_clearing_its_cache() {
     );
     let dummy = fog.by_owner[&viewer].dummy_visibility;
     assert_eq!(dummy.ground, 0);
-    assert!(!dummy.knowledge.pending);
-    assert!(!dummy.knowledge.open);
-    assert_eq!(dummy.knowledge.counter, 9);
+    assert!(!dummy.knowledge.pending());
+    assert!(!dummy.knowledge.open());
+    assert_eq!(dummy.knowledge.counter(), 9);
     assert_eq!(dummy.cache, cache);
 }
 
@@ -208,10 +208,10 @@ fn seed_cell(view: &mut OwnerVisibility, key: VisibilityCell, input: &Value) {
     let (knowledge, ground, cache) = view.map_cell_parts_mut(key);
     let flags = input["flags"].as_u64().unwrap() as u32;
     *ground = input["alt"].as_u64().unwrap() as u8;
-    knowledge.counter = input["counter"].as_i64().unwrap() as i32;
-    knowledge.gap_counter = input["gap"].as_i64().unwrap() as i32;
-    knowledge.open = *ground & 0x18 == 0x18;
-    knowledge.pending = flags & 0x20 != 0;
+    knowledge.set_counter_for_test(input["counter"].as_i64().unwrap() as i32);
+    knowledge.set_gap_counter_for_test(input["gap"].as_i64().unwrap() as i32);
+    knowledge.set_open_for_test(*ground & 0x18 == 0x18);
+    knowledge.set_pending_for_test(flags & 0x20 != 0);
     *cache = MapCellEdgeCache {
         initialized: flags & 2 != 0,
         fog_open: flags & 1 != 0,
@@ -292,7 +292,7 @@ fn bulk_map_store_shares_forced_reveal_admission_without_changing_frame_bytes() 
     //577ED1/577EE0 writes bits18/3, leaving120/121 and pending20.
     let view = &fog.by_owner[&viewer];
     assert_eq!(view.map_cell_edge_cache_for_test((9, 10)), (frames, 3));
-    assert!(view.shroud_knowledge[view.index(9, 10).unwrap()].pending);
+    assert!(view.shroud_knowledge[view.index(9, 10).unwrap()].pending());
     let notification = fog
         .reveal_forced_map_cell(viewer, (9, 10), Some(&query))
         .unwrap();
@@ -349,12 +349,12 @@ pub(crate) fn assert_native_cell_history(
         VisibilityCell::Dummy => view.dummy_visibility.knowledge,
     };
     assert_eq!(
-        state.counter,
+        state.counter(),
         row["counter"].as_i64().unwrap() as i32,
         "counter at {cell:?}"
     );
     assert_eq!(
-        state.gap_counter,
+        state.gap_counter(),
         row["gap"].as_i64().unwrap() as i32,
         "gap at {cell:?}"
     );
@@ -364,7 +364,7 @@ pub(crate) fn assert_native_cell_history(
         "ground at {cell:?}"
     );
     assert_eq!(
-        state.pending,
+        state.pending(),
         row["flags"].as_u64().unwrap() & 0x20 != 0,
         "pending at {cell:?}"
     );
@@ -618,7 +618,8 @@ fn reveal_cell_explores_every_cell_and_opens_only_surrounded_ones() {
         let expected = if surrounded { 0x18 } else { 0x08 };
         assert_eq!(view.ground_flags[index], expected, "ground at {x},{y}");
         assert_eq!(
-            view.shroud_knowledge[index].counter, 1,
+            view.shroud_knowledge[index].counter(),
+            1,
             "counter at {x},{y}"
         );
         assert!(fog.is_cell_revealed(viewer, x, y));

@@ -111,7 +111,7 @@ fn retail_deso_attack_emits_a_copied_straight_radiation_beam() {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0xC29D_E500);
     sim.fog = FogState::new(32, 32);
     let owner = sim.interner.intern("Americans");
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     let source = sim
@@ -191,7 +191,7 @@ fn retail_cleg_first_attack_emits_a_copied_chrono_beam() {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0xC30C_1E60);
     sim.fog = FogState::new(32, 32);
     let owner = sim.interner.intern("Americans");
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     let source = sim
@@ -449,7 +449,7 @@ fn assert_native_births(
         sim.resolve_type_handles(&rules);
         // Explicit native component frame (rad_beam.py PhysicalBirth setup),
         // not a simulated scenario clock or timing-event history.
-        sim.session.binary_frame = 200;
+        sim.session.set_binary_frame_for_test(200);
         let source_entity = sim.substrate.entities.get_mut(source).unwrap();
         source_entity
             .body_facing

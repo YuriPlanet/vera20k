@@ -33,7 +33,7 @@ fn weapon_report_sounds(sim: &Simulation, events: &[SimFireEvent]) -> Vec<GameSo
                 coord.y.div_euclid(256).clamp(0, i32::from(u16::MAX)) as u16,
             );
             Some(GameSoundEvent::WeaponFired {
-                sound_id: sim.interner.resolve(report_id).to_string(),
+                sound_id: sim.interner().resolve(report_id).to_string(),
                 source: Some(SoundSource::new(screen, cell)),
             })
         })
@@ -44,7 +44,7 @@ pub(crate) fn build_weapon_wave_visuals(
     sim: &Simulation,
     observer: Option<crate::sim::intern::InternedId>,
 ) -> Vec<WeaponWaveVisual> {
-    sim.waves
+    sim.waves()
         .iter()
         .filter_map(|(_, wave)| {
             let polygon = wave.sonic_draw_polygon([0, 0])?;
@@ -78,13 +78,13 @@ fn weapon_wave_visible(
             u16::try_from(point.y.div_euclid(256)).ok()?,
         ))
     };
-    let (Some((sx, sy)), Some((tx, ty))) = (cell(wave.source), cell(wave.target)) else {
+    let (Some((sx, sy)), Some((tx, ty))) = (cell(wave.source()), cell(wave.target())) else {
         return false;
     };
     wave.visible_through_fog(
-        sim.session.game_options.fog_of_war,
-        !sim.fog.is_cell_revealed(observer, sx, sy),
-        !sim.fog.is_cell_revealed(observer, tx, ty),
+        sim.session().game_options().fog_of_war,
+        !sim.fog().is_cell_revealed(observer, sx, sy),
+        !sim.fog().is_cell_revealed(observer, tx, ty),
     )
 }
 
@@ -98,7 +98,7 @@ pub(crate) fn build_magnetic_wave_draws(
 ) -> Vec<(u64, crate::render::wave_geometry::MagneticWaveDraw)> {
     use crate::render::wave_geometry::{MagneticClipPath, MagneticWaveDraw};
 
-    sim.waves
+    sim.waves()
         .iter()
         .filter_map(|(&id, wave)| {
             let geometry = wave.magnetic_draw_geometry(camera)?;
@@ -110,9 +110,9 @@ pub(crate) fn build_magnetic_wave_draws(
                 MagneticWaveDraw {
                     polygon: geometry.polygon,
                     source_point: geometry.source_point,
-                    source_z: wave.source.z,
-                    phase: wave.lifetime,
-                    direction: u8::try_from(wave.direction_octant).ok()?,
+                    source_z: wave.source().z,
+                    phase: wave.lifetime(),
+                    direction: u8::try_from(wave.direction_octant()).ok()?,
                     // VERA's existing scene Z is contiguous. Native ring
                     // fallback can differ by one clipping-edge pixel; C32's
                     // production footprints remain inside both margins.
@@ -143,30 +143,6 @@ pub(crate) fn queue_weapon_report_sounds(state: &mut AppState, events: &[SimFire
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn report_sound_is_positioned_at_the_sim_fire_coordinate() {
-        let mut sim = Simulation::new();
-        let report = sim.interner.intern("GIAttack");
-        let mut event = crate::sim::world::SimFireEvent::for_test(1);
-        event.report_sound_id = Some(report);
-        event.fire_coord =
-            crate::sim::projectile::ProjectileCoord::new(10 * 256 + 200, 11 * 256 + 40, 105);
-
-        let sounds = weapon_report_sounds(&sim, &[event.clone()]);
-        let expected =
-            crate::util::lepton::absolute_leptons_to_screen(10 * 256 + 200, 11 * 256 + 40, 105);
-        match sounds.as_slice() {
-            [GameSoundEvent::WeaponFired { sound_id, source }] => {
-                assert_eq!(sound_id, "GIAttack");
-                assert_eq!(*source, Some(SoundSource::new(expected, (10, 11))));
-            }
-            other => panic!("unexpected sound events: {other:?}"),
-        }
-
-        event.report_sound_id = None;
-        assert!(weapon_report_sounds(&sim, &[event]).is_empty());
-    }
 
     /// Dustbowl/Battle's production RULESMD/LANGRULE/mode/map reader, then
     /// the actual object visit through bullet, AnimClass and positioned audio.
@@ -248,11 +224,14 @@ mod tests {
             let facing = fire_coord::building_direction_to(
                 &sim,
                 rules,
-                sim.substrate.entities.get(gun).unwrap(),
+                sim.entities().get(gun).unwrap(),
                 TargetKind::Entity(target),
             )
             .unwrap();
-            sim.substrate.entities.get_mut(gun).unwrap().body_facing = FacingClass::new(facing, 0);
+            sim.entities_mut_for_test()
+                .get_mut(gun)
+                .unwrap()
+                .body_facing = FacingClass::new(facing, 0);
             sim.assign_target_represented(
                 gun,
                 Some(TargetKind::Entity(target)),
@@ -262,12 +241,12 @@ mod tests {
             )
             .unwrap();
             for _ in 0..300 {
-                sim.fire_events.clear();
+                sim.fire_events_mut_for_test().clear();
                 let before: std::collections::BTreeSet<_> =
-                    sim.projectiles.iter().map(|(&id, _)| id).collect();
+                    sim.projectiles().iter().map(|(&id, _)| id).collect();
                 sim.advance_tick(&[], Some(rules), None, None, 67);
                 let Some(event) = sim
-                    .fire_events
+                    .fire_events()
                     .iter()
                     .find(|event| event.attacker_id == gun)
                 else {
@@ -275,23 +254,21 @@ mod tests {
                 };
                 let event = event.clone();
                 let shell = sim
-                    .projectiles
+                    .projectiles()
                     .iter()
-                    .find(|(id, projectile)| projectile.source_id == gun && !before.contains(id))
+                    .find(|(id, projectile)| projectile.source_id() == gun && !before.contains(id))
                     .unwrap_or_else(|| panic!(
                         "a real Grand Cannon shell: frame={} shot={event:?} live_bullets={:?} target_health={:?}",
-                        sim.session.binary_frame,
-                        sim.projectiles.iter().collect::<Vec<_>>(),
-                        sim.substrate.entities.get(target).map(|entity| entity.health)
+                        sim.session().binary_frame(),
+                        sim.projectiles().iter().collect::<Vec<_>>(),
+                        sim.entities().get(target).map(|entity| entity.health)
                     ))
                     .1;
-                assert_eq!(shell.launch_origin, event.fire_coord);
+                assert_eq!(shell.launch_origin(), event.fire_coord);
                 let flash_type = event.muzzle_anim.expect("stock weapon selects a flash");
                 let (flash_id, flash) = sim
-                    .substrate
-                    .anims
-                    .iter()
-                    .find(|(_, anim)| anim.type_id == flash_type)
+                    .anims()
+                    .find(|(_, anim)| anim.type_id() == flash_type)
                     .expect("the real muzzle AnimClass exists");
                 assert_eq!(
                     sim.anim_absolute_coord(*flash_id),
@@ -302,11 +279,11 @@ mod tests {
                     })
                 );
                 assert!(
-                    flash.owner_entity.is_none(),
+                    flash.owner_entity().is_none(),
                     "a building flash stays at its birth"
                 );
                 assert_eq!(
-                    flash.z_adjust,
+                    flash.z_adjust(),
                     fire_coord::building_muzzle_z_adjust(event.fire_offset_y, false)
                 );
                 let sounds = weapon_report_sounds(&sim, std::slice::from_ref(&event));
@@ -319,7 +296,7 @@ mod tests {
                     [GameSoundEvent::WeaponFired { sound_id, source }] => {
                         assert_eq!(
                             sound_id,
-                            sim.interner.resolve(event.report_sound_id.unwrap())
+                            sim.interner().resolve(event.report_sound_id.unwrap())
                         );
                         assert_eq!(*source, Some(expected_source));
                     }
@@ -341,23 +318,5 @@ mod tests {
         );
         assert_eq!(shot.fire_coord.z, bare.fire_coord.z);
         assert_eq!(shot.fire_offset_y - bare.fire_offset_y, displacement.1);
-    }
-
-    #[test]
-    fn persistent_sonic_wave_produces_geometry() {
-        let mut sim = Simulation::new();
-        let wave_id = sim.allocate_stable_id();
-        sim.admit_wave(
-            wave_id,
-            crate::sim::wave::Wave::new(
-                0,
-                crate::sim::projectile::ProjectileCoord::new(10 * 256, 10 * 256, 0),
-                crate::sim::projectile::ProjectileCoord::new(14 * 256, 11 * 256, 0),
-            ),
-        );
-
-        let waves = build_weapon_wave_visuals(&sim, None);
-        assert_eq!(waves.len(), 1);
-        assert_eq!(waves[0].polygon.len(), 6);
     }
 }

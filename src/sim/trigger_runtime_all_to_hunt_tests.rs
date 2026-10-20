@@ -52,24 +52,27 @@ fn all_to_hunt_action_matches_original_selector_mode_timer_and_ordinary_foot() {
                 let owner = sim.interner.intern(&format!("H{slot}"));
                 let country = sim.interner.intern(&format!("C{}", int(country)));
                 let mut house = HouseState::new(owner, slot as u8, Some(country), false, 0, 10);
-                house.strategy_emergency.mode = int(&control["modes_before"][slot]);
-                house.strategy_timer = CdTimer::from_raw(
+                house
+                    .strategy_emergency_mut()
+                    .set_mode_for_test(int(&control["modes_before"][slot]));
+                house.set_strategy_timer_for_test(CdTimer::from_raw(
                     int(&control["strategy_timers_before"][slot][0]),
                     int(&control["strategy_timers_before"][slot][2]),
-                );
-                sim.houses.insert(owner, house);
+                ));
+                sim.houses.register(house);
                 owner
             })
             .collect();
-        sim.session.house_order = input["order"].as_array().map_or_else(
-            || houses.clone(),
-            |order| {
-                order
-                    .iter()
-                    .map(|slot| houses[slot.as_u64().unwrap() as usize])
-                    .collect()
-            },
-        );
+        sim.houses
+            .reorder_for_test(&input["order"].as_array().map_or_else(
+                || houses.clone(),
+                |order| {
+                    order
+                        .iter()
+                        .map(|slot| houses[slot.as_u64().unwrap() as usize])
+                        .collect()
+                },
+            ));
         super::tests::install_event_ingress_map(
             &mut sim,
             &rules,
@@ -119,7 +122,7 @@ fn all_to_hunt_action_matches_original_selector_mode_timer_and_ordinary_foot() {
                 );
                 entity
                     .lifecycle
-                    .set_cell_marked(actor["down"].as_bool().unwrap());
+                    .set_cell_marked_for_test(actor["down"].as_bool().unwrap());
                 entity
                     .lifecycle
                     .set_in_limbo_for_test(actor["limbo"].as_bool().unwrap());
@@ -163,17 +166,17 @@ fn all_to_hunt_action_matches_original_selector_mode_timer_and_ordinary_foot() {
         assert_eq!(actual, int(&control["result"]) != 0, "{input}");
         for (slot, house) in houses.iter().enumerate() {
             assert_eq!(
-                sim.houses[house].strategy_emergency.mode(),
+                sim.houses[house].strategy_emergency().mode(),
                 int(&control["modes_after"][slot]),
                 "{input}"
             );
             assert_eq!(
-                sim.houses[house].strategy_emergency.all_to_hunt_bias(),
+                sim.houses[house].strategy_emergency().all_to_hunt_bias(),
                 int(&control["latch_after"][slot]) != 0,
                 "{input}"
             );
             assert_eq!(
-                sim.houses[house].strategy_timer,
+                *sim.houses[house].strategy_timer(),
                 CdTimer::from_raw(
                     int(&control["strategy_timers_after"][slot][0]),
                     int(&control["strategy_timers_after"][slot][2])
@@ -313,7 +316,8 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
     );
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let owner = sim.interner.get("YuriCountry").unwrap();
     assert_eq!(
@@ -395,7 +399,7 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
     ));
     assert!(enabled(&sim, chain[0]));
     for frame in [0, 3599, 3600, 4049, 4050] {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         sim.advance_triggers(Some(&rules), None, FrameEffects::default());
         for &id in &actors {
             assert_eq!(
@@ -417,17 +421,17 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
             }
         }
     }
-    assert!(sim.houses[&owner].strategy_emergency.all_to_hunt_bias());
+    assert!(sim.houses[&owner].strategy_emergency().all_to_hunt_bias());
     // Continue through the existing mission consumer on the selected
     // ordinary armed route. This is Rust integration, not a native full map.
     for &id in &actors {
         assert!(
-            sim.mission_commence_exact(id, sim.session.binary_frame)
+            sim.mission_commence_exact(id, sim.session.binary_frame())
                 .unwrap()
         );
     }
     for frame in 4051..4091 {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         for &id in &actors {
             sim.object_ai_visit_one(id, Some(&rules), crate::sim::world::ObjectAiCtx::default());
         }

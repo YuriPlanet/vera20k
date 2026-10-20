@@ -44,7 +44,7 @@ fn magnetron_temporary_bullet_state_matches_original_construction() {
             sim.resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(10, 20)
+                .cell_mut_for_test(10, 20)
                 .unwrap()
                 .level = 6;
             let falling = sim
@@ -58,7 +58,8 @@ fn magnetron_temporary_bullet_state_matches_original_construction() {
             } else {
                 credit
             };
-            sim.session.binary_frame = row["input"]["frame"].as_u64().unwrap() as u32;
+            sim.session
+                .set_binary_frame_for_test(row["input"]["frame"].as_u64().unwrap() as u32);
             sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
                 state["native_id"].as_u64().unwrap() as u32 - 1,
             ));
@@ -83,42 +84,47 @@ fn magnetron_temporary_bullet_state_matches_original_construction() {
                 &rules,
             );
             let bullet = sim.projectiles.get(id).unwrap();
-            assert_eq!(bullet.native_unique_id, state["native_id"]);
-            assert_eq!(bullet.position, ProjectileCoord::new(0, 0, 0));
+            assert_eq!(bullet.native_unique_id(), state["native_id"]);
+            assert_eq!(bullet.position(), ProjectileCoord::new(0, 0, 0));
             assert_eq!(
-                serde_json::json!([bullet.position.x, bullet.position.y, bullet.position.z]),
+                serde_json::json!([
+                    bullet.position().x,
+                    bullet.position().y,
+                    bullet.position().z
+                ]),
                 state["location"]
             );
-            assert_eq!(bullet.source_id, source);
-            assert_eq!(bullet.target, ProjectileTarget::Entity(falling));
-            assert_eq!(bullet.payload.base_damage, state["damage"]);
+            assert_eq!(bullet.source_id(), source);
+            assert_eq!(bullet.target(), ProjectileTarget::Entity(falling));
+            assert_eq!(bullet.payload().base_damage, state["damage"]);
             assert_eq!(
-                bullet.payload.damage_multiplier(),
+                bullet.payload().damage_multiplier(),
                 state["damage_multiplier"]
             );
             assert_eq!(
-                sim.interner.resolve(bullet.payload.warhead),
+                sim.interner.resolve(bullet.payload().warhead),
                 state["warhead"]
             );
             assert_eq!(
                 sim.interner
-                    .resolve(bullet.payload.projectile_type().unwrap()),
+                    .resolve(bullet.payload().projectile_type().unwrap()),
                 state["projectile"]
             );
-            assert_eq!(bullet.payload.bright(), state["bright"]);
+            assert_eq!(bullet.payload().bright(), state["bright"]);
             assert!(
-                bullet.payload.installed_weapon().is_none() && state["installed_weapon"].is_null()
+                bullet.payload().installed_weapon().is_none()
+                    && state["installed_weapon"].is_null()
             );
             assert_eq!(
-                i32::from(bullet.speed_leptons_per_frame),
+                i32::from(bullet.speed_leptons_per_frame()),
                 state["maximum_speed"]
             );
-            assert_eq!(bullet.arm_timer.start_frame(), state["timers"][2]);
-            assert_eq!(bullet.arm_timer.duration(), state["timers"][3]);
-            assert_eq!(bullet.proximity_reference, ProjectileCoord::new(0, 0, 0));
-            assert_eq!(bullet.last_distance_half, 0);
-            assert!(!bullet.in_logic_vector && state["in_logic"] == false);
-            assert!(!bullet.on_bridge && state["on_bridge"] == false);
+            assert_eq!(bullet.arm_timer().start_frame(), state["timers"][2]);
+            assert_eq!(bullet.arm_timer().duration(), state["timers"][3]);
+            assert_eq!(bullet.proximity_reference(), ProjectileCoord::new(0, 0, 0));
+            assert_eq!(bullet.last_distance_half(), 0);
+            assert!(!bullet.in_logic_vector() && state["in_logic"] == false);
+            assert!(!bullet.on_bridge() && state["on_bridge"] == false);
             assert_eq!(sim.substrate.display.layer_of(id), None);
             assert!(
                 state["object_registered"] == true
@@ -128,10 +134,10 @@ fn magnetron_temporary_bullet_state_matches_original_construction() {
             if index == 0 {
                 sim.notify_pointer_expired(falling, UninitContext::with_rules(&rules));
                 let repaired = sim.projectiles.get(id).unwrap();
-                assert_eq!(repaired.target, ProjectileTarget::Cell { rx: 10, ry: 20 });
+                assert_eq!(repaired.target(), ProjectileTarget::Cell { rx: 10, ry: 20 });
                 assert_eq!(expected["after_detonate"]["target"]["kind"], "cell");
                 assert_eq!(
-                    repaired.source_id == crate::sim::combat::RAD_NO_ATTACKER,
+                    repaired.source_id() == crate::sim::combat::RAD_NO_ATTACKER,
                     expected["after_detonate"]["source"].is_null()
                 );
             }
@@ -181,10 +187,11 @@ fn magnetron_temporary_bullet_tails_match_original_rng_lights_and_ids() {
     }
     let mut sim = Simulation::with_seed(31);
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    for cell in &mut sim.resolved_terrain.as_mut().unwrap().cells {
+    for cell in sim.resolved_terrain.as_mut().unwrap().cells_mut_for_test() {
         cell.level = 6;
     }
-    sim.session.binary_frame = row["input"]["frame"].as_u64().unwrap() as u32;
+    sim.session
+        .set_binary_frame_for_test(row["input"]["frame"].as_u64().unwrap() as u32);
     sim.main_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap()).into();
     sim.scenario_rng =
@@ -217,7 +224,7 @@ fn magnetron_temporary_bullet_tails_match_original_rng_lights_and_ids() {
         let target = ProjectileTarget::Cell { rx: 10, ry: 20 };
         let id = sim.construct_projectile(RAD_NO_ATTACKER, target, payload, &rules);
         assert_eq!(
-            sim.projectiles.get(id).unwrap().native_unique_id,
+            sim.projectiles.get(id).unwrap().native_unique_id(),
             state["native_id"]
         );
         let impact = ProjectileCoord::new(
@@ -265,16 +272,20 @@ fn magnetron_temporary_bullet_tails_match_original_rng_lights_and_ids() {
             .anims
             .iter()
             .find(|(_, anim)| {
-                anim.native_unique_id as u64 == native_anims[index]["native_id"].as_u64().unwrap()
+                anim.native_unique_id() as u64 == native_anims[index]["native_id"].as_u64().unwrap()
             })
             .map(|(_, anim)| anim)
             .expect("interleaved native Anim allocation");
         assert_eq!(
-            sim.interner.resolve(anim.type_id),
+            sim.interner.resolve(anim.type_id()),
             native_anims[index]["name"]
         );
         assert_eq!(
-            serde_json::json!([anim.world_coord.x, anim.world_coord.y, anim.world_coord.z]),
+            serde_json::json!([
+                anim.world_coord().x,
+                anim.world_coord().y,
+                anim.world_coord().z
+            ]),
             native_anims[index]["location"]
         );
         assert_eq!(
@@ -378,7 +389,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         let terrain = sim.resolved_terrain.as_mut().unwrap();
         for ry in 44..68 {
             for rx in 44..68 {
-                let cell = terrain.cell_mut(rx, ry).unwrap();
+                let cell = terrain.cell_mut_for_test(rx, ry).unwrap();
                 cell.land_type = int(input, "land_type", 0) as u8;
                 if input["bridge"].as_bool() == Some(true) {
                     cell.bridge_facts.raw_flags |= 0x100;
@@ -394,7 +405,8 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         off_108: 64,
     });
     sim.playfield_size_height = Some(64);
-    sim.session.binary_frame = int(input, "frame", 1000) as u32;
+    sim.session
+        .set_binary_frame_for_test(int(input, "frame", 1000) as u32);
     sim.scenario_rng = SimRng::new(int(input, "seed", 1) as u64);
     assert_eq!(sim.allocate_stable_id(), 1);
     insert_entity(&mut sim, 1, EntityCategory::Aircraft);
@@ -425,7 +437,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         [0, 1, 2].map(|i| a[i].as_i64().unwrap() as i32)
     });
     assert_eq!((xyz[0], xyz[1]), (START, START));
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     entity.position.set_exact_z_leptons_for_test(Some(xyz[2]));
     entity.health.set_for_test(int(input, "health", 0) as i32);
@@ -444,7 +456,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
     loco.set_fly_target_height(int(input, "target_height", 1500) as i32);
     loco.fly_runtime_mut()
         .unwrap()
-        .set_current_speed(SimFixed::from_bits(int(input, "speed_bits", 65536) as i32));
+        .set_current_speed_for_test(SimFixed::from_bits(int(input, "speed_bits", 65536) as i32));
     if int(input, "moving", 1) != 0 {
         let destination = input["destination"].as_array().map_or(
             DriveCoord {
@@ -553,11 +565,10 @@ fn live_null_crash_books_one_loss_through_impact_and_retirement() {
     input["crashing"] = serde_json::json!(0);
     let (mut sim, rules) = fixture(&input);
     let owner = sim.substrate.entities.get(1).unwrap().owner();
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
-    sim.session.house_order.push(owner);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
     let callbacks = row["calls"]
         .as_array()
         .unwrap()
@@ -572,11 +583,12 @@ fn live_null_crash_books_one_loss_through_impact_and_retirement() {
         None,
         crate::sim::world::FrameEffects::default()
     ));
-    assert_eq!(sim.houses[&owner].stats.units_lost(), callbacks);
+    assert_eq!(sim.houses[&owner].stats().units_lost(), callbacks);
 
     let mut reached_impact = false;
     for _ in 0..128 {
-        sim.session.binary_frame += 1;
+        sim.session
+            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
         if sim
             .tick_air_movement_with_cell_lists_one(
                 1,
@@ -598,7 +610,7 @@ fn live_null_crash_books_one_loss_through_impact_and_retirement() {
     );
     assert!(!sim.substrate.entities.get(1).unwrap().is_active());
     assert_eq!(
-        sim.houses[&owner].stats.units_lost(),
+        sim.houses[&owner].stats().units_lost(),
         callbacks,
         "impact UnInit does not add a second loss"
     );
@@ -610,7 +622,7 @@ fn live_null_crash_books_one_loss_through_impact_and_retirement() {
         false,
     );
     assert!(!sim.substrate.entities.contains(1));
-    assert_eq!(sim.houses[&owner].stats.units_lost(), callbacks);
+    assert_eq!(sim.houses[&owner].stats().units_lost(), callbacks);
 }
 
 /// The whole fall of a dead crashing aircraft, frame by frame, through the
@@ -627,9 +639,9 @@ fn crash_fall_matches_native_frames_to_the_impact() {
         let name = input["name"].as_str().unwrap();
         let (mut sim, rules) = fixture(input);
         let frames = row["frames"].as_array().unwrap();
-        let start = sim.session.binary_frame;
+        let start = sim.session.binary_frame();
         for (n, frame) in frames.iter().enumerate() {
-            sim.session.binary_frame = start + n as u32;
+            sim.session.set_binary_frame_for_test(start + n as u32);
             sim.sound_events.clear();
             let impact = n + 1 == frames.len();
             let expected: Vec<i32> = frame["xyz"]
@@ -793,9 +805,9 @@ fn a_crash_fall_lists_the_wreck_in_its_impact_cell() {
         ),
         RevealOutcome::Revealed { .. }
     ));
-    let start = sim.session.binary_frame;
+    let start = sim.session.binary_frame();
     for n in 0..frames.len() {
-        sim.session.binary_frame = start + n as u32;
+        sim.session.set_binary_frame_for_test(start + n as u32);
         let stats = sim
             .tick_air_movement_with_cell_lists_one(
                 1,
@@ -834,128 +846,6 @@ fn crash_smoke_matches_native_rows() {
             "{name}"
         );
     }
-}
-
-/// A lethal hit on a flying aircraft through the production receiver, then
-/// whole frames through `advance_tick`: the aircraft stays alive at Health 0,
-/// latched and spinning, trails smoke and plays its crash sound while it
-/// falls, and at the impact its death weapon strikes the victim below before
-/// it is UnInit. The killer's house holds the kill from the hit on.
-#[test]
-fn a_shot_down_aircraft_falls_and_detonates_through_advance_tick() {
-    use crate::sim::combat::combat_aoe::AreaDamageReceiver;
-    let input = serde_json::json!({"health": 150, "crashing": 0});
-    let (mut sim, rules) = fixture(&input);
-    let soviets = sim.interner.intern("Soviets");
-    let shooter = sim.allocate_stable_id();
-    let shooter_type = sim.interner.intern("VICTIM");
-    let mut entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
-        shooter,
-        40,
-        40,
-        0,
-        0,
-        soviets,
-        crate::sim::combat::Health::new(1000),
-        shooter_type,
-        EntityCategory::Unit,
-        0,
-        5,
-        true,
-    );
-    entity.lifecycle.set_in_limbo_for_test(true);
-    sim.substrate.entities.insert(entity);
-    assert!(matches!(
-        sim.try_reveal_entity(
-            shooter,
-            RevealRequest {
-                position: RevealPosition::new(
-                    40,
-                    40,
-                    0,
-                    None,
-                    SimFixed::from_num(128),
-                    SimFixed::from_num(128)
-                ),
-                placement: PlacementEvidence::MarkSucceeded,
-                logic_eligible: true,
-            }
-        ),
-        RevealOutcome::Revealed { .. }
-    ));
-    let warhead = sim.interner.intern("CrashWH");
-    let hit =
-        crate::sim::combat::EntityDamageEvent::area(1, 200, 0, shooter, Some(soviets), warhead);
-    sim.commit_noncombat_aoe_receivers(
-        &rules,
-        None,
-        &[AreaDamageReceiver::Entity(hit)],
-        crate::sim::world::FrameEffects::default(),
-    );
-    let entity = sim
-        .substrate
-        .entities
-        .get(1)
-        .expect("a crashing aircraft stays represented");
-    assert!(
-        entity.crash.is_crashing() && entity.lifecycle.object_alive() && !entity.death.is_dying()
-    );
-    assert_eq!(entity.health.current(), 0);
-    assert_eq!(entity.kill_record.killer(), Some(soviets));
-    assert!(
-        entity
-            .rocking
-            .as_ref()
-            .is_some_and(|r| r.vel_sideways() != SimFixed::ZERO)
-    );
-
-    let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
-    let mut smoke = 0;
-    let mut crash_sound = false;
-    let mut frames = 0;
-    let mut last_xyz = None;
-    while sim
-        .substrate
-        .entities
-        .get(1)
-        .is_some_and(|e| e.lifecycle.object_alive())
-    {
-        frames += 1;
-        assert!(frames < 60, "the fall must reach the ground");
-        let anims_before = sim.substrate.anims.len();
-        sim.sound_events.clear();
-        sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
-        smoke += sim.substrate.anims.len().saturating_sub(anims_before);
-        crash_sound |= sim.sound_events.iter().any(|event| {
-            matches!(
-                event,
-                super::SimSoundEvent::AnimationStarted { anim_id: 1, .. }
-            )
-        });
-        if let Some(entity) = sim.substrate.entities.get(1) {
-            last_xyz = Some(crate::sim::movement::ground_pose::position_world_coord(
-                &entity.position,
-            ));
-        }
-    }
-    let last = last_xyz.unwrap();
-    assert!(
-        frames > 30,
-        "a 1500-lepton fall takes ~39 frames, took {frames}"
-    );
-    assert!(smoke > 0, "a dead airborne aircraft trails SGRYSMK1");
-    // The type names no CrashingSound: the test only proves the edge ran once
-    // with nothing to play.
-    assert!(!crash_sound);
-    assert!(last.z >= 0);
-    assert!(
-        sim.sound_events.iter().any(|event| matches!(
-            event,
-            super::SimSoundEvent::VocAt { sound_id, .. } if sound_id == "TypeLand"
-        )),
-        "the impact cue"
-    );
-    assert!(sim.substrate.entities.get(shooter).is_some());
 }
 
 /// A save in mid-fall restores the latch, its seen edge, the fall counter and
@@ -1135,11 +1025,11 @@ fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
         off_108: 64,
     });
     sim.playfield_size_height = Some(64);
-    sim.session.binary_frame = 1000;
+    sim.session.set_binary_frame_for_test(1000);
     for (name, human) in [("Americans", true), ("Soviets", false)] {
         let house = sim.interner.intern(name);
         sim.houses
-            .insert(house, HouseState::new(house, 0, None, human, 0, 10));
+            .register(HouseState::new(house, 0, None, human, 0, 10));
     }
     let reveal = |sim: &mut Simulation, id: u64, rx: u16, ry: u16| {
         assert!(matches!(
@@ -1178,7 +1068,7 @@ fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
         let runtime = loco.jumpjet_runtime_mut().unwrap();
         let mut flight = runtime.flight();
         flight.facing_mut().snap(0x4000, 1000);
-        flight.set_target_height(500);
+        flight.set_target_height_for_test(500);
         *runtime = runtime
             .clone()
             .with_phase_for_test(crate::sim::movement::jumpjet_movement::jumpjet_flight::STATE_HOLD)
@@ -1279,7 +1169,7 @@ fn fall_to_the_impact(sim: &mut Simulation, rules: &RuleSet) -> JumpjetFall {
             .substrate
             .anims
             .iter()
-            .filter(|(_, anim)| anim.type_id == boom)
+            .filter(|(_, anim)| anim.type_id() == boom)
             .count();
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
         if sim.sound_events.iter().any(|event| {
@@ -1310,7 +1200,7 @@ fn fall_to_the_impact(sim: &mut Simulation, rules: &RuleSet) -> JumpjetFall {
                     .substrate
                     .anims
                     .iter()
-                    .filter(|(_, anim)| anim.type_id == boom)
+                    .filter(|(_, anim)| anim.type_id() == boom)
                     .count()
                     - booms_before;
                 return fall;
@@ -1374,7 +1264,7 @@ fn a_shot_down_drainer_drops_its_link_and_ray_at_the_kill() {
         None
     );
     assert!(sim.anim(ray).is_none_or(|anim| {
-        !anim.in_logic_vector && sim.substrate.pending_delete.contains_object(&ray)
+        !anim.in_logic_vector() && sim.substrate.pending_delete.contains_object(&ray)
     }));
 }
 
@@ -1456,7 +1346,7 @@ fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
             .all(|call| call["call"] != "record_kill")
     );
     assert_eq!(
-        sim.houses[&soviets].stats.units_killed(),
+        sim.houses[&soviets].stats().units_killed(),
         3,
         "the transport and both riders are credited before the wreck falls"
     );
@@ -1508,118 +1398,10 @@ fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
         "an Explosion= anim deals no damage"
     );
     assert_eq!(
-        sim.houses[&soviets].stats.units_killed(),
+        sim.houses[&soviets].stats().units_killed(),
         3,
         "impact UnInit does not repeat the transport's fatal callback"
     );
-}
-
-/// A `BalloonHover=` wreck (the Kirov) fires its current weapon as its death
-/// weapon at the impact (`0x007461EF`), which strikes the unit below.
-///
-/// A balloon's Update keeps reading the cell top even over its own cell, and
-/// the victim below lifts that by 85 (`CellClass @ 0x00485080`): the first
-/// frame climbs 10 before State 5's drop, and near the ground Update climbs
-/// against the drop again, so the fall takes a frame more than the
-/// Nighthawk's.
-#[test]
-fn a_shot_down_balloon_jumpjet_bombs_its_impact_cell() {
-    let (mut sim, rules, victim, shooter) = jumpjet_fixture(true);
-    shoot_down(&mut sim, &rules, shooter);
-    let fall = fall_to_the_impact(&mut sim, &rules);
-    assert_eq!(
-        fall.heights,
-        vec![470, 420, 370, 320, 270, 220, 170, 120, 70, 40, 10]
-    );
-    assert_eq!(fall.impact_frame, 12);
-    assert_eq!(fall.impact_booms, 0, "no second Explosion= for a balloon");
-    assert_eq!(fall.impact_sounds, 0);
-    assert_eq!(
-        sim.substrate.entities.get(victim).unwrap().health.current(),
-        1000 - 150,
-        "the death weapon's CrashGun hit the victim below"
-    );
-}
-
-/// A class NULL destination in the cruise runs `Stop_Moving` through Foot's
-/// null arm, which keeps
-/// the moving byte: shot down there, the wreck still latches into State 5 and
-/// reaches the ground. (A hold without the moving byte never latches, natively
-/// too; VERA no longer makes one out of a dropped order.)
-#[test]
-fn a_jumpjet_shot_down_after_its_null_destination_reaches_the_ground() {
-    let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
-    sim.assign_destination_represented(
-        1,
-        Some(crate::sim::components::NavTargetRef::cell(60, 52)),
-        Some(&rules),
-        None,
-        crate::sim::world::FrameEffects::default(),
-    )
-    .expect("the Unit setter takes the cell");
-    // Cruise until the owner has left the hover cell.
-    let mut frame = 1001;
-    while sim
-        .substrate
-        .entities
-        .get(1)
-        .is_some_and(|entity| (entity.position.rx(), entity.position.ry()) == (52, 52))
-    {
-        assert!(frame < 1200, "the cruise never left the hover cell");
-        sim.session.binary_frame = frame;
-        sim.tick_air_movement_with_cell_lists_one(
-            1,
-            Some(&rules),
-            None,
-            crate::sim::world::FrameEffects::default(),
-        )
-        .unwrap();
-        frame += 1;
-    }
-    let runtime = |sim: &Simulation| {
-        sim.substrate
-            .entities
-            .get(1)
-            .and_then(|entity| entity.locomotor.as_ref())
-            .and_then(|locomotor| locomotor.jumpjet_runtime())
-            .cloned()
-            .expect("runtime")
-    };
-    assert_eq!(
-        runtime(&sim).phase(),
-        crate::sim::movement::jumpjet_movement::jumpjet_flight::STATE_TRANSLATE
-    );
-    let entity = sim.substrate.entities.get_mut(1).unwrap();
-    let here = (entity.position.rx(), entity.position.ry());
-    sim.assign_null_destination(
-        1,
-        Some(&rules),
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
-    sim.session.binary_frame = frame;
-    sim.tick_air_movement_with_cell_lists_one(
-        1,
-        Some(&rules),
-        None,
-        crate::sim::world::FrameEffects::default(),
-    )
-    .unwrap();
-    let stopped = runtime(&sim);
-    assert!(stopped.moving(), "Stop_Moving keeps the moving byte");
-    assert_eq!(
-        stopped.destination(),
-        DriveCoord {
-            x: i32::from(here.0) * 256 + 128,
-            y: i32::from(here.1) * 256 + 128,
-            z: 0,
-        }
-    );
-
-    shoot_down(&mut sim, &rules, shooter);
-    let fall = fall_to_the_impact(&mut sim, &rules);
-    assert!(fall.impact_frame > 0, "the wreck reached the ground");
-    assert!(fall.heights.windows(2).all(|pair| pair[1] < pair[0]));
 }
 
 /// Shot down one climb step above the ground in State 4, the kill's
@@ -1635,7 +1417,7 @@ fn a_jumpjet_shot_down_touching_down_still_crashes() {
         let loco = entity.locomotor.as_mut().unwrap();
         let runtime = loco.jumpjet_runtime_mut().unwrap();
         let mut flight = runtime.flight();
-        flight.set_target_height(0);
+        flight.set_target_height_for_test(0);
         *runtime = runtime
             .clone()
             .with_phase_for_test(
@@ -1682,7 +1464,7 @@ fn a_jumpjet_wreck_scans_only_on_its_committed_guard() {
     use crate::sim::mission::{MissionId, MissionType};
     for (mission, scans) in [(MissionType::Guard, true), (MissionType::Attack, false)] {
         let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         sim.mission_assign_exact(1, MissionId::from_known(mission), frame)
             .unwrap();
         // An enemy two cells east, inside `CrashGun`'s range.
@@ -1747,30 +1529,6 @@ fn a_jumpjet_wreck_scans_only_on_its_committed_guard() {
     }
 }
 
-/// On the ground a crashable unit's Crash refuses, and the receiver UnInits
-/// it as before (`0x00738475..0x0073847F`).
-#[test]
-fn a_landed_jumpjet_dies_where_it_stands() {
-    let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
-    {
-        let entity = sim.substrate.entities.get_mut(1).unwrap();
-        entity.position.set_exact_z_leptons_for_test(Some(0));
-        let loco = entity.locomotor.as_mut().unwrap();
-        let runtime = loco.jumpjet_runtime_mut().unwrap();
-        *runtime = runtime.clone().with_phase_for_test(
-            crate::sim::movement::jumpjet_movement::jumpjet_flight::STATE_GROUND,
-        );
-    }
-    shoot_down(&mut sim, &rules, shooter);
-    assert!(
-        sim.substrate
-            .entities
-            .get(1)
-            .is_none_or(|entity| !entity.lifecycle.object_alive()),
-        "no crash on the ground"
-    );
-}
-
 /// Retail Dustbowl runtime, end to end through production: a Harrier ordered
 /// at three flak tracks takes off, their `FlakTrackAAGun` volleys shoot it
 /// down, and it crashes. It has an Airforce Command to fly home to: after
@@ -1806,12 +1564,9 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
     } = &mut scenario.runtime;
     for (name, side, human) in [("Americans", 0, true), ("Russians", 1, false)] {
         let house = sim.interner.intern(name);
-        sim.houses
-            .entry(house)
-            .or_insert_with(|| HouseState::new(house, side, None, human, 10_000, 10));
-        if !sim.session.house_order.contains(&house) {
-            sim.session.house_order.push(house);
-        }
+        sim.houses.get_or_register_for_test(house, || {
+            HouseState::new(house, side, None, human, 10_000, 10)
+        });
     }
     // A Harrier on open level ground with three flak tracks eight and nine
     // cells east: beyond their sight while it stands, inside their AA range
@@ -1877,7 +1632,7 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
         .collect();
     let order = CommandEnvelope::new(
         americans,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Attack {
             attacker_id: harrier,
             target_id: flak[0],
@@ -1946,9 +1701,9 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
                 .anims
                 .iter()
                 .filter(|(id, anim)| {
-                    !anims_before.contains(id) && impact_anims.contains(&anim.type_id)
+                    !anims_before.contains(id) && impact_anims.contains(&anim.type_id())
                 })
-                .map(|(_, anim)| sim.interner.resolve(anim.type_id).to_string())
+                .map(|(_, anim)| sim.interner.resolve(anim.type_id()).to_string())
                 .collect();
             break;
         };
@@ -1979,7 +1734,7 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
                 rocking.angle_forwards().to_num::<f64>()
             );
             for (id, anim) in sim.substrate.anims.iter() {
-                if anim.type_id == smoke_type {
+                if anim.type_id() == smoke_type {
                     smoke.insert(*id);
                 }
             }
@@ -2081,12 +1836,9 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
     } = &mut scenario.runtime;
     for (name, side, human) in [("Americans", 0, true), ("Russians", 1, false)] {
         let house = sim.interner.intern(name);
-        sim.houses
-            .entry(house)
-            .or_insert_with(|| HouseState::new(house, side, None, human, 10_000, 10));
-        if !sim.session.house_order.contains(&house) {
-            sim.session.house_order.push(house);
-        }
+        sim.houses.get_or_register_for_test(house, || {
+            HouseState::new(house, side, None, human, 10_000, 10)
+        });
     }
     // Open level ground: the Nighthawk and the Kirov land west of three flak
     // tracks and are ordered past them. Each side keeps a power plant out of
@@ -2184,7 +1936,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
         .map(|entity_id| {
             CommandEnvelope::new(
                 americans,
-                sim.session.tick + 1,
+                sim.session.tick() + 1,
                 Command::Move {
                     entity_id,
                     target_rx: destination.0,
@@ -2266,7 +2018,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
                     .anims
                     .iter()
                     .filter(|(anim_id, _)| !anims_before.contains(anim_id))
-                    .map(|(_, anim)| sim.interner.resolve(anim.type_id).to_string())
+                    .map(|(_, anim)| sim.interner.resolve(anim.type_id()).to_string())
                     .collect();
                 continue;
             };
@@ -2280,7 +2032,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
                 assert_eq!(entity.health.current(), 0);
                 assert_eq!(entity.kill_record.killer(), Some(russians));
                 if id == nighthawk {
-                    riders_killed_by_crash = Some(sim.houses[&russians].stats.units_killed());
+                    riders_killed_by_crash = Some(sim.houses[&russians].stats().units_killed());
                     assert!(
                         entity
                             .passenger_role

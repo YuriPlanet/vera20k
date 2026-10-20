@@ -319,7 +319,7 @@ fn compare(s: &Scene, native: &Value, context: &str) {
     let house = s.sim.houses.get(&e.owner()).unwrap();
     let view = s.sim.scenario_rng.logical_view();
     let fields = json!({
-        "frame":s.sim.session.binary_frame, "cell":[at.x,at.y,at.z],
+        "frame":s.sim.session.binary_frame(), "cell":[at.x,at.y,at.z],
         "miner_mission":e.mission.current().raw(),"miner_queued":e.mission.queued().raw(),
         "miner_status":e.mission.handler_state(),
         "dispatch_timer":[e.mission.dispatch_timer().start_frame(),e.mission.dispatch_timer().delay()],
@@ -336,7 +336,7 @@ fn compare(s: &Scene, native: &Value, context: &str) {
         "facing":{"desired":e.body_facing.destination(),"start":e.body_facing.start_word(),"timer_start":e.body_facing.timer_start_frame().map_or(-1,|n|n as i32),"duration":e.body_facing.timer_duration()},
         "unloading":u8::from(e.miner.as_ref().is_some_and(|m|m.unload_active())),
         "harvesting":u8::from(e.miner.as_ref().is_some_and(|m|m.harvesting())),
-        "storage":storage,"balance":house.economy.credits(),"score":house.economy.score(),
+        "storage":storage,"balance":house.economy().credits(),"score":house.economy().score(),
         "scenario_rng":{"disabled":view.disabled,"index_a":view.index_a,"index_b":view.index_b,"state":view.words}
     });
     for (key, value) in fields.as_object().unwrap() {
@@ -398,9 +398,9 @@ fn compare(s: &Scene, native: &Value, context: &str) {
 fn step(s: &mut Scene, step: &Value, context: &str) {
     let op = &step["input"];
     if let Some(frame) = op["frame"].as_u64() {
-        s.sim.session.binary_frame = frame as u32;
+        s.sim.session.set_binary_frame_for_test(frame as u32);
     }
-    let now = s.sim.session.binary_frame;
+    let now = s.sim.session.binary_frame();
     radio::take_transmit_log();
     match op["op"].as_str().unwrap() {
         "has_free_or_own" => assert_eq!(
@@ -673,13 +673,17 @@ fn replay(row: &Value) {
     }
 }
 
+/// The actual contact slots (admission, receiver and scanner) and the
+/// deposit busy retry and destroyed refinery histories.
 #[test]
-fn actual_contact_slots_match_original_admission_receiver_and_scanner() {
+fn contact_slots_and_deposit_histories_match_original_controls() {
     let c = corpus();
-    let rows = c["actual_slot_controls"].as_array().unwrap();
-    assert_eq!(rows.len(), 9);
-    for row in rows {
-        replay(row);
+    for (group, count) in [("actual_slot_controls", 9), ("deposit_histories", 3)] {
+        let rows = c[group].as_array().unwrap();
+        assert_eq!(rows.len(), count, "{group}");
+        for row in rows {
+            replay(row);
+        }
     }
 }
 
@@ -699,16 +703,6 @@ fn shared_enter_radio_and_depot_arrival_match_original_controls() {
         }
     }
     assert!(failures.is_empty(), "failed native controls: {failures:?}");
-}
-
-#[test]
-fn deposit_busy_retry_and_destroyed_refinery_match_original_histories() {
-    let c = corpus();
-    let rows = c["deposit_histories"].as_array().unwrap();
-    assert_eq!(rows.len(), 3);
-    for row in rows {
-        replay(row);
-    }
 }
 
 #[test]

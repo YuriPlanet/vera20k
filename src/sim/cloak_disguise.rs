@@ -532,6 +532,15 @@ impl crate::sim::game_entity::GameEntity {
         let Some(disguise) = self.disguise.as_ref() else {
             return false;
         };
+        // Building and Aircraft keep the Techno base (`0x0041C020`): the raw
+        // `+0x1D8` flag, whoever asks.
+        if matches!(
+            self.category(),
+            crate::map::entities::EntityCategory::Structure
+                | crate::map::entities::EntityCategory::Aircraft
+        ) {
+            return disguise.disguised;
+        }
         let allied = |asker: InternedId, other: InternedId| {
             crate::sim::combat::combat_weapon::is_ally_by_object(alliances, interner, asker, other)
         };
@@ -546,6 +555,51 @@ impl crate::sim::game_entity::GameEntity {
                 .is_some_and(|fake| allied(observer, fake)),
             disguise.disguised_as_house.is_some(),
         )
+    }
+
+    /// vtable `+0xD0` `GetDisguiseHouse(skip_own)`: the house an observer
+    /// reads off this object.
+    /// - Unit `0x007465F0` and Infantry `0x005226C0` answer the owner when it
+    ///   is allied with the current player (`0x004F9A50`) and `skip_own` is
+    ///   false; otherwise the worn house (`+0x51C`), which Infantry replaces
+    ///   with the current player's when NULL. So a Mirage worn as terrain
+    ///   has none, a Spy always has one.
+    /// - Building and Aircraft keep the Techno base (`0x0041BE70`): NULL.
+    pub fn disguise_house(
+        &self,
+        skip_own: bool,
+        current_player: Option<InternedId>,
+        owner_allied_with_player: bool,
+    ) -> Option<InternedId> {
+        use crate::map::entities::EntityCategory;
+        let worn = self.disguise.as_ref().and_then(DisguiseRuntime::house);
+        match self.category() {
+            EntityCategory::Unit | EntityCategory::Infantry
+                if owner_allied_with_player && !skip_own =>
+            {
+                Some(self.owner())
+            }
+            EntityCategory::Unit => worn,
+            EntityCategory::Infantry => worn.or(current_player),
+            EntityCategory::Structure | EntityCategory::Aircraft => None,
+        }
+    }
+
+    /// Whether `player` sees this object disguised with no house behind it:
+    /// `+0xC8` ([`Self::is_disguised_to`]) with `+0xD0(1)`
+    /// ([`Self::disguise_house`]) NULL, as for a Mirage worn as terrain to an
+    /// enemy that cannot see through it. DrawExtras then skips the hover
+    /// health bar (`0x006F5E4B..0x006F5E70`), Flash skips its write and
+    /// `ObjectClass::Is_Selectable` (`+0x138`, `0x005F6C30`) refuses.
+    pub fn disguise_hides_house_from(
+        &self,
+        player: InternedId,
+        fog: Option<&crate::sim::vision::FogState>,
+        alliances: Option<&crate::map::houses::HouseAllianceMap>,
+        interner: &crate::sim::intern::StringInterner,
+    ) -> bool {
+        self.disguise_house(true, Some(player), false).is_none()
+            && self.is_disguised_to(player, fog, alliances, interner)
     }
 }
 
@@ -579,7 +633,7 @@ pub fn disguise_rejects_candidate(
     if !is_disguised_to_attacker || attacker_detects_disguise {
         return DisguiseGateOutcome::Accept;
     }
-    if blink_frames_remaining <= 0 {
+    if blink_frames_remaining == 0 {
         return DisguiseGateOutcome::Reject;
     }
     if attacker_house_is_human {
@@ -596,10 +650,8 @@ pub enum DisguiseGateOutcome {
     /// Native rejects without drawing.
     Reject,
     /// Native reaches its one `RandomRanged(0, 99)` on the Scenario stream and
-    /// compares against `[General] DisabledDisguiseDetectionPercent`. Only an
-    /// AI-controlled attacking house gets here, and VERA has no AI opponent, so
-    /// no production caller can produce this variant yet — it is modelled, not
-    /// wired, and wiring it costs one Scenario draw per evaluated candidate.
+    /// compares against `[General] DisabledDisguiseDetectionPercent`. Only a
+    /// computer attacking house gets here, while the candidate blinks.
     AiDetectionRoll,
 }
 
@@ -608,8 +660,9 @@ pub(crate) mod transitions;
 #[cfg(any(test, feature = "test-support"))]
 use transitions::{StartCloakingResult, StartUncloakingResult};
 
-/// Retained Techno disguise identity and re-disguise timer. Original
-/// `6F2CBE..6F2CCA` starts +1E0/+1E8 at construction with duration zero.
+/// Retained Techno disguise identity, re-disguise timer and firing blink
+/// timer. Original `6F2CBE..6F2CDB` starts +1E0/+1E8 and +1EC/+1F4 at
+/// construction with duration zero.
 /// The intervening +1E4 word is uninitialized by that constructor and copied
 /// from different stack slots by the two reveal writers. It has no established
 /// behavioral meaning in this chain and is not deterministic cell state.
@@ -621,6 +674,9 @@ pub struct DisguiseRuntime {
     disguise_type: Option<InternedId>,
     disguised_as_house: Option<InternedId>,
     reveal_timer: CdTimer,
+    /// `+0x1EC`/`+0x1F4`: the frames a firing `DisguiseWhenStill=` Unit
+    /// blinks (`UnitClass::Fire_At @ 0x0074143E..0x00741471`).
+    blink_timer: CdTimer,
 }
 
 impl Default for DisguiseRuntime {
@@ -637,6 +693,7 @@ impl DisguiseRuntime {
             disguise_type: None,
             disguised_as_house: None,
             reveal_timer: CdTimer::started(construction_frame as i32, 0),
+            blink_timer: CdTimer::started(construction_frame as i32, 0),
         }
     }
 
@@ -660,6 +717,10 @@ impl DisguiseRuntime {
         self.reveal_timer
     }
 
+    pub const fn blink_timer(&self) -> CdTimer {
+        self.blink_timer
+    }
+
     pub(crate) fn hash_state(&self, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
         self.disguised.hash(hasher);
@@ -667,6 +728,7 @@ impl DisguiseRuntime {
         self.disguise_type.hash(hasher);
         self.disguised_as_house.hash(hasher);
         self.reveal_timer.hash(hasher);
+        self.blink_timer.hash(hasher);
     }
 
     /// `InfantryClass::DisguiseAs` / `UnitClass::DisguiseAs`.
@@ -741,6 +803,20 @@ impl DisguiseRuntime {
     pub fn reveal_blocks(&self, current_frame: u32) -> bool {
         !self.reveal_timer.expired(current_frame as i32)
     }
+
+    /// `UnitClass::Fire_At @ 0x0074143E..0x00741471`: after a launched shot,
+    /// a `DisguiseWhenStill=` Unit starts the blink at the current frame for
+    /// the weapon's `DisguiseFakeBlinkTime=`. The intervening `+0x1F0` word
+    /// is copied from a stack slot no reader takes.
+    pub(crate) fn start_fire_blink(&mut self, current_frame: u32, duration: i32) {
+        self.blink_timer.start(current_frame as i32, duration);
+    }
+
+    /// The blink's remaining frames: IsClearlyVisibleTo (`0x0070EE39..0x0070EE5D`)
+    /// and Evaluate_Candidate (`0x006F84DE..0x006F8503`) read it alike.
+    pub fn blink_remaining(&self, current_frame: u32) -> i32 {
+        self.blink_timer.remaining(current_frame as i32)
+    }
 }
 
 impl crate::sim::world::Simulation {
@@ -769,9 +845,13 @@ impl crate::sim::world::Simulation {
         }
         let side = self
             .session
-            .current_house
+            .current_house()
             .and_then(|id| self.houses.get(&id))
-            .map_or(2, |house| usize::from(house.side_index).min(2));
+            .map_or(2, |house| match house.side_index() {
+                0 => 0,
+                1 => 1,
+                _ => 2,
+            });
         rules.general.infantry_disguises[side]
             .as_deref()
             .and_then(|name| self.interner.get(name))
@@ -825,7 +905,7 @@ impl crate::sim::world::Simulation {
                     match target.disguise.as_ref().filter(|d| d.is_disguised()) {
                         Some(disguise) => (
                             self.forced_disguise_type(target.stable_id(), rules),
-                            disguise.house().or(self.session.current_house),
+                            disguise.house().or(self.session.current_house()),
                         ),
                         None => (Some(target.type_ref()), Some(target.owner())),
                     },
@@ -838,7 +918,7 @@ impl crate::sim::world::Simulation {
                 return;
             }
         };
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let disguise = self
             .substrate
             .entities
@@ -877,7 +957,7 @@ impl crate::sim::world::Simulation {
         {
             return Ok(());
         }
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         // Both original calls ask ILoco+10, not the queued Move/NavCom. The
         // predicate has no intervening simulation writer on this route.
         let moving = crate::sim::movement::motion_query::is_moving(entity)
@@ -1158,15 +1238,6 @@ mod tests {
         );
         assert!(result.transitioned && !result.consumed_scenario_rng);
         assert_eq!(rng.logical_state(), before);
-    }
-
-    #[test]
-    fn reveal_timer_blocks_until_expiry() {
-        let mut state = DisguiseRuntime::default();
-        assert!(!state.reveal_blocks(0));
-        state.block_reacquisition(100, 10);
-        assert!(state.reveal_blocks(109));
-        assert!(!state.reveal_blocks(110));
     }
 
     #[test]

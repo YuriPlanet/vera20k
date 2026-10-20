@@ -218,8 +218,35 @@ impl ObjectLifecycle {
         self.cell_marked
     }
 
-    /// Store whether Mark/cell-list insertion owns cell membership.
-    pub fn set_cell_marked(&mut self, marked: bool) {
+    /// `ObjectClass::Mark` (`0x005F5850`) DOWN's admission: a Limbo (`+0x81`)
+    /// or already marked (`+0x74`) object is refused; otherwise `+0x74` is
+    /// stored (`0x005F58F7`).
+    pub(crate) fn admit_mark_down(&mut self) -> bool {
+        if self.in_limbo() || self.cell_marked {
+            return false;
+        }
+        self.cell_marked = true;
+        true
+    }
+
+    /// Mark(UP)'s admission: a Limbo or unmarked object is refused; otherwise
+    /// `+0x74` is cleared (`0x005F5913`).
+    pub(crate) fn admit_mark_up(&mut self) -> bool {
+        if self.in_limbo() || !self.cell_marked {
+            return false;
+        }
+        self.cell_marked = false;
+        true
+    }
+
+    /// Replace `+0x74` without Mark's callbacks, answering the old value.
+    pub(crate) fn replace_cell_marked(&mut self, marked: bool) -> bool {
+        std::mem::replace(&mut self.cell_marked, marked)
+    }
+
+    /// A fixture's marked byte.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_cell_marked_for_test(&mut self, marked: bool) {
         self.cell_marked = marked;
     }
 
@@ -1102,7 +1129,7 @@ impl Simulation {
         else {
             return;
         };
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.unlimbo_barrel_elevation(fire_angle, frame);
         }
@@ -1237,7 +1264,7 @@ impl Simulation {
         {
             entity
                 .body_facing
-                .snap(u16::from(facing) << 8, self.session.binary_frame);
+                .snap(u16::from(facing) << 8, self.session.binary_frame());
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::UnlimboBodyFacingSnapped);
         }
@@ -1304,7 +1331,7 @@ impl Simulation {
             crate::sim::movement::slope_transition::snap_after_successful_unlimbo(
                 entity,
                 sampled_slope,
-                self.session.binary_frame,
+                self.session.binary_frame(),
             );
         }
         // ObjectUnlimbo5F4FB4 Mark/CellPUT has already run. Foot4D722F calls
@@ -1359,7 +1386,7 @@ impl Simulation {
             )
             && let Some(barrel) = entity.barrel_facing.as_mut()
         {
-            barrel.snap(u16::from(facing) << 8, self.session.binary_frame);
+            barrel.snap(u16::from(facing) << 8, self.session.binary_frame());
         }
         // Unit737BF5..737C75 resets the SAME +F8 StageClass after Foot
         // success. E18/E19 are Unit-section booleans, not General references.
@@ -1388,7 +1415,7 @@ impl Simulation {
             if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
                 entity.restart_native_stage(
                     value,
-                    self.session.binary_frame as i32,
+                    self.session.binary_frame() as i32,
                     i32::from(visceroid),
                 );
             }
@@ -1420,7 +1447,7 @@ impl Simulation {
                 entity.finish_aircraft_unlimbo(
                     height,
                     object.flight_level(rules.general.flight_level),
-                    self.session.binary_frame as i32,
+                    self.session.binary_frame() as i32,
                 );
             }
         }
@@ -1571,11 +1598,11 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
-        let game_mode_nonzero = self.session.game_mode_nonzero;
+        let game_mode_nonzero = self.session.game_mode_nonzero();
         if entity.category() == EntityCategory::Structure
             && game_mode_nonzero
             && self.houses.get(&entity.owner()).is_some_and(|house| {
-                !house.is_controlled_by_human(game_mode_nonzero) && !house.multiplay_passive
+                !house.is_controlled_by_human(game_mode_nonzero) && !house.multiplay_passive()
             })
             && let Some(entity) = self.substrate.entities.get_mut(stable_id)
         {
@@ -1604,7 +1631,7 @@ impl Simulation {
         if self
             .houses
             .get(&owner)
-            .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero))
+            .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero()))
         {
             self.discover_techno(id, owner, context);
         }
@@ -1631,7 +1658,7 @@ impl Simulation {
         //6F4960..6F4972 compares the nonnull viewer against PlayerPtr;
         //there is no null-Player guard. A headless owner callback therefore
         //takes the ordinary other-house arm when no local player is bound.
-        let current = Some(viewer) == self.session.current_house;
+        let current = Some(viewer) == self.session.current_house();
         let history = entity.discovery;
         if (current && history.discovered_by_current_house)
             || (!current && history.discovered_by_other_house)
@@ -1641,7 +1668,7 @@ impl Simulation {
         let Some(house) = self.houses.get(&viewer) else {
             return false;
         };
-        let controlled = house.is_controlled_by_human(self.session.game_mode_nonzero);
+        let controlled = house.is_controlled_by_human(self.session.game_mode_nonzero());
         let owner = entity.owner();
         let entity = self
             .substrate
@@ -1739,7 +1766,7 @@ impl Simulation {
         let controlled = self
             .houses
             .get(&owner)
-            .is_some_and(|house| house.is_controlled_by_human(self.session.game_mode_nonzero));
+            .is_some_and(|house| house.is_controlled_by_human(self.session.game_mode_nonzero()));
         //44D632/44D664 query OWNER; shared6F4960 queries VIEWER.
         // A foreign viewer therefore does not open an AI building.
         // ScenarioInit affects the House notification writes,
@@ -1781,10 +1808,10 @@ impl Simulation {
         cell: (u16, u16),
         context: UninitContext<'_>,
     ) {
-        let Some(viewer) = self.session.current_house else {
+        let Some(viewer) = self.session.current_house() else {
             return;
         };
-        if !self.session.game_mode_nonzero {
+        if !self.session.game_mode_nonzero() {
             let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref()) else {
                 return;
             };
@@ -1817,7 +1844,7 @@ impl Simulation {
         else {
             return;
         };
-        let game_mode_nonzero = self.session.game_mode_nonzero;
+        let game_mode_nonzero = self.session.game_mode_nonzero();
         let Some(house) = self.houses.get_mut(&owner) else {
             return;
         };
@@ -1825,7 +1852,7 @@ impl Simulation {
             return;
         }
         let _filled = house
-            .base_plan
+            .base_plan_mut()
             .fill_successful_building(type_index, packed_cell, has_undeploy_target)
             .is_some();
         #[cfg(any(test, feature = "test-support"))]
@@ -1861,11 +1888,11 @@ impl Simulation {
             return;
         }
         if let Some(house) = self.houses.get_mut(&owner) {
-            house.base_plan.invalidate_limbo_building(
+            house.base_plan_mut().invalidate_limbo_building(
                 type_index,
                 packed_cell,
                 is_base_defense,
-                self.session.game_mode_nonzero,
+                self.session.game_mode_nonzero(),
             );
         }
     }
@@ -1890,7 +1917,7 @@ impl Simulation {
         };
         let edge = crate::sim::house_state::determine_waypoint_edge(anchor, bounds);
         if let Some(house) = self.houses.get_mut(&owner) {
-            house.waypoint_edge = edge;
+            house.assign_waypoint_edge(edge);
         }
     }
 
@@ -1955,7 +1982,7 @@ impl Simulation {
                         current_cell,
                         &foundation,
                         profile,
-                        Some((self.session.map_width, self.session.map_height)),
+                        Some((self.session.map_width(), self.session.map_height())),
                     )
                 })
             {
@@ -2009,18 +2036,16 @@ impl Simulation {
         // Active YR Full_Init constructs the complete HouseClass array before
         // Terrain/Techno map sections reveal objects. Scenario loading preserves
         // that order, so Reveal writes the final house-index bit immediately.
-        if self.session.house_order.is_empty() {
+        if self.houses.is_empty() {
             return None;
         }
         let index = self
-            .session
-            .house_order
-            .iter()
-            .position(|registered| *registered == owner)
+            .houses
+            .index_of(owner)
             .and_then(|index| i32::try_from(index).ok());
         debug_assert!(
             index.is_some(),
-            "base-reservation owner must be present in ScenarioSession.house_order"
+            "base-reservation owner must be registered in the House array"
         );
         index
     }
@@ -2044,7 +2069,7 @@ impl Simulation {
         );
         if let Some(house) = self.houses.get_mut(&owner) {
             house
-                .base_reservation
+                .base_reservation_mut()
                 .update_bounds(rect.x, rect.y, rect.width, rect.height);
         } else {
             debug_assert!(false, "base-reservation owner must have HouseState");
@@ -2077,9 +2102,9 @@ impl Simulation {
             let packed = packed_reservation_coord(x, y);
             if let Some(house) = self.houses.get_mut(&owner) {
                 match neighbor_mask {
-                    0x0000_00ff => house.base_reservation.remove_perimeter_cell(packed),
+                    0x0000_00ff => house.base_reservation_mut().remove_perimeter_cell(packed),
                     1..=0x0000_00fe => house
-                        .base_reservation
+                        .base_reservation_mut()
                         .append_perimeter_cell_if_absent(packed),
                     0 | u32::MAX => {}
                     _ => unreachable!("neighbor mask is eight bits or the absent-center sentinel"),
@@ -2110,19 +2135,19 @@ impl Simulation {
             match neighbor_mask {
                 0x0000_00ff => {
                     if let Some(house) = self.houses.get_mut(&owner) {
-                        house.base_reservation.remove_perimeter_cell(packed);
+                        house.base_reservation_mut().remove_perimeter_cell(packed);
                     }
                 }
                 1..=0x0000_00fe => {
                     if let Some(house) = self.houses.get_mut(&owner) {
                         house
-                            .base_reservation
+                            .base_reservation_mut()
                             .append_perimeter_cell_if_absent(packed);
                     }
                 }
                 0 | u32::MAX => {
                     if let Some(house) = self.houses.get_mut(&owner) {
-                        house.base_reservation.remove_perimeter_cell(packed);
+                        house.base_reservation_mut().remove_perimeter_cell(packed);
                     }
                     // Native resolves the center again before the extra clear.
                     self.substrate.base_reservations.clear(
@@ -2284,7 +2309,7 @@ impl Simulation {
                         current_cell,
                         &foundation,
                         profile,
-                        Some((self.session.map_width, self.session.map_height)),
+                        Some((self.session.map_width(), self.session.map_height())),
                     )
                 })
             {
@@ -2661,7 +2686,7 @@ impl Simulation {
                     .barrel_facing
                     .as_mut()
                     .unwrap()
-                    .set(desired, self.session.binary_frame);
+                    .set(desired, self.session.binary_frame());
             }
             TakeoffFacing::PrimaryToDestination => {
                 // Original also evaluates the zero delta; do not special-case
@@ -2670,14 +2695,14 @@ impl Simulation {
                     destination.x.wrapping_sub(xy[0]),
                     destination.y.wrapping_sub(xy[1]),
                 );
-                entity.body_facing.set(desired, self.session.binary_frame);
+                entity.body_facing.set(desired, self.session.binary_frame());
                 entity
                     .locomotor
                     .as_mut()
                     .unwrap()
                     .fly_runtime_mut()
                     .unwrap()
-                    .set_target_speed(crate::util::fixed_math::SIM_ONE);
+                    .request_full_speed();
             }
         }
     }
@@ -2696,7 +2721,7 @@ impl Simulation {
             Some(ObjectKind::Spotlight)
         } else if self.substrate.particle_systems.contains_key(stable_id) {
             Some(ObjectKind::ParticleSystem)
-        } else if self.production.terrain_objects.contains_key(&stable_id) {
+        } else if self.terrain_objects.objects().contains_key(&stable_id) {
             Some(ObjectKind::Terrain)
         } else if self.projectiles.get(stable_id).is_some() {
             Some(ObjectKind::Projectile)
@@ -2726,36 +2751,36 @@ impl Simulation {
                 .substrate
                 .spotlights
                 .get(stable_id)
-                .is_some_and(|l| l.in_logic_vector),
+                .is_some_and(|l| l.in_logic_vector()),
             ObjectKind::Smudge => false,
             ObjectKind::Anim => self
                 .substrate
                 .anims
                 .get(stable_id)
-                .is_some_and(|anim| anim.in_logic_vector),
+                .is_some_and(|anim| anim.in_logic_vector()),
             ObjectKind::VoxelAnim => self
                 .substrate
                 .voxel_anims
                 .get(stable_id)
-                .is_some_and(|debris| debris.in_logic_vector),
+                .is_some_and(|debris| debris.in_logic_vector()),
             ObjectKind::ParticleSystem => self
                 .substrate
                 .particle_systems
                 .get(stable_id)
-                .is_some_and(|system| system.in_logic_vector),
+                .is_some_and(|system| system.in_logic_vector()),
             ObjectKind::Terrain => self
-                .production
                 .terrain_objects
+                .objects()
                 .get(&stable_id)
-                .is_some_and(|terrain| terrain.in_logic_vector),
+                .is_some_and(|terrain| terrain.in_logic_vector()),
             ObjectKind::Projectile => self
                 .projectiles
                 .get(stable_id)
-                .is_some_and(|projectile| projectile.in_logic_vector),
+                .is_some_and(|projectile| projectile.in_logic_vector()),
             ObjectKind::Wave => self
                 .waves
                 .get(stable_id)
-                .is_some_and(|wave| wave.in_logic_vector),
+                .is_some_and(|wave| wave.in_logic_vector()),
             ObjectKind::Entity => self
                 .substrate
                 .entities
@@ -2772,38 +2797,36 @@ impl Simulation {
         match kind {
             ObjectKind::Spotlight => {
                 if let Some(l) = self.substrate.spotlights.get_mut(stable_id) {
-                    l.in_logic_vector = member;
+                    l.mark_logic_membership(member);
                 }
             }
             ObjectKind::Smudge => assert!(!member, "Smudge {stable_id} never joins Logic"),
             ObjectKind::Anim => {
                 if let Some(anim) = self.substrate.anims.get_mut(stable_id) {
-                    anim.in_logic_vector = member;
+                    anim.mark_logic_membership(member);
                 }
             }
             ObjectKind::VoxelAnim => {
                 if let Some(debris) = self.substrate.voxel_anims.get_mut(stable_id) {
-                    debris.in_logic_vector = member;
+                    debris.mark_logic_membership(member);
                 }
             }
             ObjectKind::ParticleSystem => {
                 if let Some(system) = self.substrate.particle_systems.get_mut(stable_id) {
-                    system.in_logic_vector = member;
+                    system.mark_logic_membership(member);
                 }
             }
             ObjectKind::Terrain => {
-                if let Some(terrain) = self.production.terrain_objects.get_mut(&stable_id) {
-                    terrain.in_logic_vector = member;
-                }
+                self.terrain_objects.set_logic_membership(stable_id, member);
             }
             ObjectKind::Projectile => {
                 if let Some(projectile) = self.projectiles.get_mut(stable_id) {
-                    projectile.in_logic_vector = member;
+                    projectile.mark_logic_membership(member);
                 }
             }
             ObjectKind::Wave => {
                 if let Some(wave) = self.waves.get_mut(stable_id) {
-                    wave.in_logic_vector = member;
+                    wave.mark_logic_membership(member);
                 }
             }
             ObjectKind::Entity => {
@@ -2887,7 +2910,7 @@ impl Simulation {
                 .substrate
                 .anims
                 .get(stable_id)
-                .is_some_and(|anim| !anim.runtime.inactive)
+                .is_some_and(|anim| !anim.runtime().inactive)
         {
             return false;
         }
@@ -2979,8 +3002,8 @@ impl Simulation {
         rules: Option<&RuleSet>,
     ) -> bool {
         if !self
-            .production
             .terrain_objects
+            .objects()
             .get(&stable_id)
             .is_some_and(|terrain| terrain.is_live())
         {
@@ -3067,11 +3090,8 @@ impl Simulation {
         for _ in 0..3 {
             self.notify_pointer_expired(lethal.stable_id, context);
         }
-        let finalized = crate::sim::terrain_object::finalize_terrain_lethal(
-            crate::sim::terrain_object::production_authority_parts(
-                &mut self.production,
-                &mut self.substrate.raw_cell_occupation,
-            ),
+        let finalized = self.terrain_objects.finalize_lethal(
+            &mut self.substrate.raw_cell_occupation,
             finalizing,
             navigation_changed_cells,
             lethal,
@@ -3098,7 +3118,7 @@ impl Simulation {
             return;
         };
         assert!(
-            !bullet.in_logic_vector && self.substrate.display.layer_of(id).is_none(),
+            !bullet.in_logic_vector() && self.substrate.display.layer_of(id).is_none(),
             "temporary Bullet {id} must not be Fired before direct destruction"
         );
         self.substrate
@@ -3352,7 +3372,7 @@ impl Simulation {
             .entities
             .get(stable_id)
             .and_then(|entity| self.houses.get(&entity.owner()))
-            .map(|house| house.is_controlled_by_human(self.session.game_mode_nonzero));
+            .map(|house| house.is_controlled_by_human(self.session.game_mode_nonzero()));
         if human == Some(false)
             && let Some(entity) = self.substrate.entities.get_mut(stable_id)
         {
@@ -3525,7 +3545,7 @@ impl Simulation {
             // keeps an alternate admission it holds. Every production Limbo
             // passes rules.
             let reveal_to_all = context.rules().filter(|&rules| {
-                self.session.current_house.is_some()
+                self.session.current_house().is_some()
                     && self
                         .substrate
                         .entities
@@ -3563,7 +3583,9 @@ impl Simulation {
             {
                 let owner = entity.owner();
                 if let Some(house) = self.houses.get_mut(&owner) {
-                    house.tracking.limbo_airport_docks(object.number_of_docks);
+                    house
+                        .tracking_mut()
+                        .limbo_airport_docks(object.number_of_docks);
                 }
             }
         }
@@ -3668,7 +3690,7 @@ impl Simulation {
             && !dont_score
             && let Some(house) = self.houses.get_mut(&owner)
         {
-            house.stats.record_loss(category);
+            house.stats_mut().record_loss(category);
         }
     }
 
@@ -4400,7 +4422,7 @@ impl Simulation {
     /// The native priority bracket A8E7AC suppresses both the draw and write.
     /// Original controls: infantry_deploy_action.json's reload rows.
     pub(crate) fn shorten_passive_scan_timer(&mut self, id: u64) -> bool {
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         if self.object_placement_scope_active()
             || self
                 .substrate
@@ -4742,7 +4764,7 @@ impl Simulation {
                 .particle_systems
                 .detached_particle(expired_id)
                 .is_none()
-            && !self.production.terrain_objects.contains_key(&expired_id)
+            && !self.terrain_objects.objects().contains_key(&expired_id)
             && self.projectiles.get(expired_id).is_none()
             && self
                 .smudge_grid
@@ -4754,13 +4776,12 @@ impl Simulation {
         }
 
         #[cfg(any(test, feature = "test-support"))]
-        if let Some(tree) = self.production.terrain_objects.get(&expired_id) {
+        if let Some(tree) = self.terrain_objects.objects().get(&expired_id) {
             self.trace_lifecycle_for_test(LifecycleTestEvent::TerrainExpiryBoundary {
                 stable_id: expired_id,
                 cell: tree.cell(),
-                indexed: self.production.terrain_object_cells.get(&tree.cell())
-                    == Some(&expired_id),
-                in_logic: tree.in_logic_vector,
+                indexed: self.terrain_objects.cell_index().get(&tree.cell()) == Some(&expired_id),
+                in_logic: tree.in_logic_vector(),
                 live: tree.is_live(),
             });
         }
@@ -4835,7 +4856,7 @@ impl Simulation {
         if !self
             .projectiles
             .iter()
-            .any(|(_, bullet)| bullet.target.object_id() == Some(target_id))
+            .any(|(_, bullet)| bullet.target().object_id() == Some(target_id))
         {
             return;
         }
@@ -4860,10 +4881,10 @@ impl Simulation {
                 self.substrate
                     .particle_systems
                     .get(target_id)
-                    .map(|system| [system.coords.x, system.coords.y])
+                    .map(|system| [system.coords().x, system.coords().y])
             })
             .or_else(|| {
-                self.production.terrain_objects.get(&target_id).map(|tree| {
+                self.terrain_objects.objects().get(&target_id).map(|tree| {
                     let coord = tree.world_coord();
                     [coord.x, coord.y]
                 })
@@ -4895,8 +4916,8 @@ impl Simulation {
                 )
             })
             || self
-                .production
                 .terrain_objects
+                .objects()
                 .get(&target_id)
                 .is_some_and(|tree| tree.is_in_air(terrain))
             || (rx, ry) == NULL_TARGET_CELL_SENTINEL
@@ -4998,7 +5019,7 @@ impl Simulation {
         // FactoryClass::PointerExpired4CA580 is a control-insensitive
         // listener in Dispatch7258D0. Its only mutation clears a matching
         // held product; no entity listener consumes that factory pointer.
-        self.production.factories.pointer_expired(expired_id);
+        self.production.factories_mut().pointer_expired(expired_id);
         // `HouseClass::PointerExpired @ 0x004FB9B0`, each house a listener
         // (`0x004F5FFB`), forgets House+54E0 whatever the control.
         for house in self.houses.values_mut() {
@@ -5034,9 +5055,11 @@ impl Simulation {
             })
             .or_else(|| {
                 let system = self.substrate.particle_systems.get(expired_id)?;
-                let cell = u16::try_from(crate::util::lepton::lepton_to_cell(system.coords.x))
+                let cell = u16::try_from(crate::util::lepton::lepton_to_cell(system.coords().x))
                     .ok()
-                    .zip(u16::try_from(crate::util::lepton::lepton_to_cell(system.coords.y)).ok());
+                    .zip(
+                        u16::try_from(crate::util::lepton::lepton_to_cell(system.coords().y)).ok(),
+                    );
                 // ObjectCtor5F390B..5F3919 supplies Health=255. A System
                 // has no Techno flags, selling mission or Techno owner;
                 // its retained coordinates and liveness are still readable
@@ -5048,28 +5071,29 @@ impl Simulation {
                     .substrate
                     .particle_systems
                     .detached_particle(expired_id)?;
-                let cell = u16::try_from(crate::util::lepton::lepton_to_cell(particle.coords.x))
+                let cell = u16::try_from(crate::util::lepton::lepton_to_cell(particle.coords().x))
                     .ok()
                     .zip(
-                        u16::try_from(crate::util::lepton::lepton_to_cell(particle.coords.y)).ok(),
+                        u16::try_from(crate::util::lepton::lepton_to_cell(particle.coords().y))
+                            .ok(),
                     );
                 Some((cell, alive, 255, false, None))
             })
             .or_else(|| {
                 let bullet = self.projectiles.get(expired_id)?;
-                let point = bullet.position;
+                let point = bullet.position();
                 let cell = u16::try_from(crate::util::lepton::lepton_to_cell(point.x))
                     .ok()
                     .zip(u16::try_from(crate::util::lepton::lepton_to_cell(point.y)).ok());
-                Some((cell, true, bullet.payload.base_damage, false, None))
+                Some((cell, true, bullet.payload().base_damage, false, None))
             })
             .or_else(|| {
-                let tree = self.production.terrain_objects.get(&expired_id)?;
+                let tree = self.terrain_objects.objects().get(&expired_id)?;
                 let coord = tree.world_coord();
                 let cell = u16::try_from(crate::util::lepton::lepton_to_cell(coord.x))
                     .ok()
                     .zip(u16::try_from(crate::util::lepton::lepton_to_cell(coord.y)).ok());
-                Some((cell, tree.object_alive(), tree.health, false, None))
+                Some((cell, tree.object_alive(), tree.health(), false, None))
             })
             .or_else(|| {
                 let smudge = self.smudge_grid.as_ref()?.object(expired_id)?;
@@ -5153,7 +5177,7 @@ impl Simulation {
             && self
                 .projectiles
                 .get(expired_id)
-                .and_then(|bullet| bullet.payload.projectile_type())
+                .and_then(|bullet| bullet.payload().projectile_type())
                 .and_then(|type_id| context.rules()?.projectile(self.interner.resolve(type_id)))
                 .is_some_and(|kind| kind.scalable)
             && self.projectiles.scalable_enrolled(expired_id);
@@ -5246,8 +5270,8 @@ impl Simulation {
                             .map(|(_, alive)| (alive, !alive))
                     })
                     .or_else(|| {
-                        self.production
-                            .terrain_objects
+                        self.terrain_objects
+                            .objects()
                             .get(&expired_id)
                             .map(|tree| (tree.object_alive(), !tree.is_live()))
                     })
@@ -5260,7 +5284,7 @@ impl Simulation {
                     .or_else(|| {
                         self.projectiles
                             .get(expired_id)
-                            .map(|bullet| (true, !bullet.in_logic_vector))
+                            .map(|bullet| (true, !bullet.in_logic_vector()))
                     })
                     .or_else(|| {
                         self.spotlight_alive(expired_id)
@@ -5404,7 +5428,7 @@ impl Simulation {
                 let target_matches = self
                     .projectiles
                     .get(listener_id)
-                    .is_some_and(|projectile| projectile.target.object_id() == Some(expired_id));
+                    .is_some_and(|projectile| projectile.target().object_id() == Some(expired_id));
                 let projectile_replacement_target = if target_matches {
                     self.projectile_lost_target(expired_id, context)
                 } else {
@@ -5429,7 +5453,7 @@ impl Simulation {
                 if let Some((source_id, target)) = self
                     .projectiles
                     .get(listener_id)
-                    .map(|projectile| (projectile.source_id, projectile.target))
+                    .map(|projectile| (projectile.source_id(), projectile.target()))
                 {
                     self.trace_lifecycle_for_test(
                         LifecycleTestEvent::ProjectilePointerExpiredVisited {
@@ -5616,7 +5640,7 @@ impl Simulation {
             .particle_systems
             .get(stable_id)
             .is_some_and(|system| {
-                system.alive() && system.done_spawning && system.particles.is_empty()
+                system.alive() && system.done_spawning() && system.particles().is_empty()
             });
         if !ready {
             return;
@@ -5656,25 +5680,25 @@ impl Simulation {
             // Every ordinary Anim retirement Conceals before queueing. Owner
             // expiry425196 only sets19B and leaves Logic live until its own AI;
             // that byte is not ObjectUnInit5F6625's readiness state.
-            return !anim.in_logic_vector;
+            return !anim.in_logic_vector();
         }
         if let Some(system) = self.substrate.particle_systems.get(stable_id) {
             // SystemVT7EFB9C+44 -> IsReadyToDelete62FE60: done+F8 and
             // count+CC==0, independently of the ObjectAlive byte.
-            return system.done_spawning && system.particles.is_empty();
+            return system.done_spawning() && system.particles().is_empty();
         }
         if let Some((_, alive)) = self.substrate.particle_systems.detached_particle(stable_id) {
             // Particle+44 inherits Object5F6690: !ObjectAlive.
             return !alive;
         }
-        if let Some(terrain) = self.production.terrain_objects.get(&stable_id) {
-            return !terrain.is_live() && !terrain.in_logic_vector;
+        if let Some(terrain) = self.terrain_objects.objects().get(&stable_id) {
+            return !terrain.is_live() && !terrain.in_logic_vector();
         }
         if let Some(projectile) = self.projectiles.get(stable_id) {
-            return !projectile.in_logic_vector;
+            return !projectile.in_logic_vector();
         }
         if let Some(wave) = self.waves.get(stable_id) {
-            return !wave.in_logic_vector;
+            return !wave.in_logic_vector();
         }
         true
     }
@@ -5767,7 +5791,7 @@ impl Simulation {
             // survive this destructor and Building Mark(0).
             self.notify_pointer_expired(stable_id, context);
         }
-        if self.production.terrain_objects.contains_key(&stable_id) {
+        if self.terrain_objects.objects().contains_key(&stable_id) {
             // Terrain destructor71B7D6 repeats expiry before leaving its
             // registry. This is later than the live lethal/UnInit callbacks.
             self.notify_pointer_expired(stable_id, context);
@@ -5974,22 +5998,12 @@ impl Simulation {
             // SystemDtor62E0AE..62E15D disposes retained children before its
             // vector is freed. Ordinary AI retirement has no children left;
             // direct disposal must still remove each individual AIR entry.
-            for particle in &system.particles {
+            for particle in system.particles() {
                 self.conceal_particle(particle.stable_id());
             }
         }
-        let terrain = self.production.terrain_objects.remove(&stable_id);
+        let terrain = self.terrain_objects.remove(stable_id);
         self.drop_object_custom_sound(stable_id);
-        if let Some(terrain) = terrain.as_ref() {
-            let cell = terrain.cell();
-            if self.production.terrain_object_cells.get(&cell) == Some(&stable_id) {
-                self.production.terrain_object_cells.remove(&cell);
-                self.production.terrain_animations.remove(&cell);
-                self.production
-                    .tiberium_spawning_terrain_cells
-                    .remove(&cell);
-            }
-        }
         let projectile = self.projectiles.remove(stable_id);
         if projectile.is_some() {
             self.lifecycle_outputs
@@ -6001,7 +6015,7 @@ impl Simulation {
             .as_mut()
             .and_then(|grid| grid.finalize_remove(stable_id));
         if let Some(wave) = wave.as_ref()
-            && let Some(owner_id) = wave.owner_id
+            && let Some(owner_id) = wave.owner_id()
             && self.active_wave_links.get(&owner_id) == Some(&stable_id)
         {
             self.active_wave_links.remove(&owner_id);

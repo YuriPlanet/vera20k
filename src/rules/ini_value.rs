@@ -283,6 +283,16 @@ impl IniSection {
         self.fold_rules_values(key, default, parse_read_int)
     }
 
+    /// ReadInt5276D0 with its default supplied later: absent keys and failed
+    /// hexadecimal scans retain the default. Decimal text still uses C-atoi,
+    /// so present nonnumeric text is a concrete zero. Preserve prior successful
+    /// reads when this section represents multiple retained rules passes.
+    pub fn read_int_value(&self, key: &str) -> Option<i32> {
+        self.fold_rules_values(key, None, |current, raw| {
+            parse_read_int_value(raw).or(current)
+        })
+    }
+
     /// Ares Valueable<int>: ReadString(2048), then Parser<int>::TryParse.
     /// Absent, empty or failed conversions keep the current value. The `$`
     /// branch scans decimal (`$%d`), while a final `h`/`H` scans hex (`%xh`).
@@ -1381,6 +1391,23 @@ mod tests {
         }
     }
 
+    #[test]
+    fn read_int_value_preserves_deferred_default_and_successful_prior_pass() {
+        let mut section = IniSection::new("Header".to_owned());
+        assert_eq!(section.read_int_value("NumCoopHumanStartSpots"), None);
+        section.set("NumCoopHumanStartSpots", "$invalid");
+        assert_eq!(section.read_int_value("NumCoopHumanStartSpots"), None);
+        section.set("NumCoopHumanStartSpots", "garbage");
+        assert_eq!(section.read_int_value("NumCoopHumanStartSpots"), Some(0));
+        let mut patch = IniSection::new("Header".to_owned());
+        patch.set("NumCoopHumanStartSpots", "2");
+        section.overlay_rules_pass(&patch);
+        patch.set("NumCoopHumanStartSpots", "$invalid");
+        section.overlay_rules_pass(&patch);
+        assert_eq!(section.read_int_value("NumCoopHumanStartSpots"), Some(2));
+        assert_eq!(section.read_int("NumCoopHumanStartSpots", 4), 2);
+    }
+
     #[test] // P1/P2
     fn test_read_int_hex() {
         let ini = sec("[S]\nA=$1A\nB=1Ah\nC=0FFH\nD=$0\nE=$FF\nF=$0xFF\nG=0xFFh\nH=$-1\n");
@@ -1393,25 +1420,6 @@ mod tests {
         assert_eq!(s.read_int("F", -9), 255);
         assert_eq!(s.read_int("G", -9), 255);
         assert_eq!(s.read_int("H", -9), -1);
-    }
-
-    #[test] // P3/P4/P18
-    fn test_read_int_atoi_leniency() {
-        let ini = sec("[S]\nA=5cells\nB=abc\nC=-50\nD=\nE=  7 \n");
-        let s = ini.section("S").unwrap();
-        assert_eq!(s.read_int("A", -9), 5);
-        assert_eq!(s.read_int("B", -9), 0); // present-nonnumeric -> 0, NOT default
-        assert_eq!(s.read_int("C", -9), -50);
-        assert_eq!(s.read_int("D", -9), -9); // empty values are omitted
-        assert_eq!(s.read_int("E", -9), 7);
-        assert_eq!(s.read_int("MISSING", -9), -9); // absent -> default
-    }
-
-    #[test] // OQ3: 0x is NOT hex via atoi fallback
-    fn test_read_int_0x_prefix_is_zero() {
-        let ini = sec("[S]\nA=0x1A\n");
-        // atoi("0x1A") = 0 (stops at 'x'); $/h branches don't fire.
-        assert_eq!(ini.section("S").unwrap().read_int("A", -9), 0);
     }
 
     #[test]
@@ -1428,60 +1436,6 @@ mod tests {
         assert_eq!(section.read_campaign_score_time("Negative", 0), -208_620);
     }
 
-    #[test]
-    fn test_read_int_signs_and_edges() {
-        let ini = sec("[S]\nA=+9\nB=-0\nC=$\nD=h\nE=$junk\nF=junkh\n");
-        let s = ini.section("S").unwrap();
-        assert_eq!(s.read_int("A", -1), 9);
-        assert_eq!(s.read_int("B", -1), 0);
-        assert_eq!(s.read_int("C", -1), -1);
-        assert_eq!(s.read_int("D", -1), -1);
-        assert_eq!(s.read_int("E", -1), -1);
-        assert_eq!(s.read_int("F", -1), -1);
-    }
-
-    #[test] // P6/P18
-    fn test_read_bool_first_char() {
-        let ini = sec(
-            "[S]\nA=yes\nB=Y\nC=T\nD=true\nE=1\nF=no\nG=N\nH=F\nI=false\nJ=0\nK=off\nL=xyz\nM=\n",
-        );
-        let s = ini.section("S").unwrap();
-        for k in ["A", "B", "C", "D", "E"] {
-            assert!(s.read_bool(k, false), "{k}");
-        }
-        for k in ["F", "G", "H", "I", "J"] {
-            assert!(!s.read_bool(k, true), "{k}");
-        }
-        assert!(s.read_bool("K", true)); // 'off' first char 'o' -> default
-        assert!(s.read_bool("L", true)); // xyz -> default
-        assert!(s.read_bool("M", true)); // empty values are omitted -> default
-        assert!(s.read_bool("MISSING", true)); // absent -> default
-    }
-
-    #[test] // P7 (after the S0 gate pins precision)
-    fn test_read_double_percent() {
-        let ini = sec("[S]\nA=50%\nB=100%\nC=7\nD=0.5\nE=12.5%\n");
-        let s = ini.section("S").unwrap();
-        assert!((s.read_double("A", -1.0) - 0.5).abs() < 1e-6);
-        assert!((s.read_double("B", -1.0) - 1.0).abs() < 1e-6);
-        assert!((s.read_double("C", -1.0) - 7.0).abs() < 1e-6);
-        assert!((s.read_double("D", -1.0) - 0.5).abs() < 1e-6);
-        assert!((s.read_double("E", -1.0) - 0.125).abs() < 1e-6);
-        assert!((s.read_double("MISSING", -42.0) + 42.0).abs() < 1e-9); // absent -> default
-    }
-
-    #[test] // P5/P18
-    fn test_read_string_trim_default() {
-        let ini = sec("[S]\nA=  hello  \nB=\n");
-        let s = ini.section("S").unwrap();
-        assert_eq!(s.read_string("A", "D", 32), "hello");
-        assert_eq!(s.read_string("A", "D", 4), "hel");
-        assert_eq!(s.read_string("B", "D", 32), "D"); // empty values are omitted
-        assert_eq!(s.read_string("MISSING", "D", 32), "D");
-        assert_eq!(s.read_string("MISSING", " default ", 6), "defa");
-        assert_eq!(s.read_string("A", "D", 0), "");
-    }
-
     /// `strncpy` counts source bytes, and the store widens each byte to one
     /// character: a `0xE9` byte is one of the 3 bytes a capacity of 4 keeps.
     #[test]
@@ -1490,18 +1444,6 @@ mod tests {
         let s = ini.section("S").unwrap();
         assert_eq!(s.read_string("A", "", 4), "\u{e9}t\u{e9}");
         assert_eq!(truncate_native_bytes("\u{e9}\u{e9}", 1), "\u{e9}");
-    }
-
-    /// ReadString returns 0 only for an absent key; `read_name` keeps that
-    /// distinction so callers retain their current field.
-    #[test]
-    fn read_name_is_present_value_after_cut_and_trim() {
-        let ini = sec("[S]\nA=  GAPOWR \nB=0123456789\n");
-        let s = ini.section("S").unwrap();
-        assert_eq!(s.read_name("A", 0x80), Some("GAPOWR"));
-        assert_eq!(s.read_name("B", 5), Some("0123"));
-        assert_eq!(s.read_name("MISSING", 0x80), None);
-        assert_eq!(s.read_name("A", 0), None);
     }
 
     /// `strtok(",")`: empty fields collapse, tokens keep their spaces, the

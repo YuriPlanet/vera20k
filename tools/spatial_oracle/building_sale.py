@@ -718,7 +718,100 @@ def generate():
             'ai_sale': ai_sale_rows()}
 
 
+def crew_type_controls():
+    """Whole707D20; preserve the native raw-Country -1 RNG early return."""
+    from tools.rmg_oracle.gen_rng_vectors import STRUCT_LEN
+    rows=[]
+    for country_side,armed in [(-1,True),(-1,False),(0,True),(1,True),(2,True),(3,True)]:
+        case=dict(name='get_crew',side=country_side if country_side in (0,1,2) else -1,
+                  country_side=country_side,armed=armed,cost=2000)
+        u,call,read32,events=crew_fixture(case)
+        observe_crew(u,read32,events,case)
+        before=bytes(u.mem_read(SCENARIO+0x218,STRUCT_LEN)).hex()
+        result=bc.invoke(u,0x707D20,sm.YAREFN)
+        rows.append(dict(country_side=country_side,armed=armed,result=crew_name(result),
+                         rng_before=before,rng_after=bytes(u.mem_read(SCENARIO+0x218,STRUCT_LEN)).hex()))
+    return rows
+
+
+
+def pending_house_death_controls():
+    """Original House flag/update and one fatal-building crew RNG gate.
+
+    Reuses crew_fixture's PE/House/Scenario transport. Consumer stops at the
+    existing Blowup_All entry; crew stops after RandomRanged or at smudge join.
+    Neither callee's broader gameplay is duplicated in this bounded control.
+    """
+    from unicorn.x86_const import UC_X86_REG_EBX, UC_X86_REG_EBP, UC_X86_REG_ESI, UC_X86_REG_EDI
+    from tools.rmg_oracle.gen_rng_vectors import STRUCT_LEN
+    flags = []
+    for name,initial,frame,timer in [
+            ('fresh_frame_zero',[0,0,0],0,[-1,60]),
+            ('pending_preserves_timer',[1,0,0],25,[-1,60]),
+            ('winner_rejects',[0,1,0],25,[10,90]),
+            ('loser_rejects',[0,0,1],25,[10,90])]:
+        u,call,read32,events=crew_fixture(dict(name=name,side=0,cost=3000,seed=5))
+        u.mem_write(HOUSE+0x1F6,bytes(initial))
+        u.mem_write(HOUSE+0x298,struct.pack('<iii',timer[0],0,timer[1]))
+        u.mem_write(0xA8ED84,dwords(frame))
+        rng_before=bytes(u.mem_read(SCENARIO+0x218,STRUCT_LEN))
+        result=bc.invoke(u,0x4FC980,HOUSE)&255
+        def state():
+            return dict(flags=list(u.mem_read(HOUSE+0x1F6,3)),
+                        timer=[struct.unpack('<i',u.mem_read(HOUSE+offset,4))[0]
+                               for offset in (0x298,0x2A0)])
+        produced=state()
+        u.mem_write(0xA8ED84,dwords(frame+1))
+        repeated=bc.invoke(u,0x4FC980,HOUSE)&255
+        assert state()==produced
+        assert bytes(u.mem_read(SCENARIO+0x218,STRUCT_LEN))==rng_before
+        u.reg_write(UC_X86_REG_ESP,bc.SP)
+        u.reg_write(UC_X86_REG_ESI,HOUSE)
+        u.reg_write(UC_X86_REG_EBP,0)
+        run_checked(u,0x4F87C2,(0x4F87FF,0x4FC6D0),count=100,
+                    required_addresses=(0x4F87C2,))
+        flags.append(dict(name=name,initial=initial,frame=frame,initial_timer=timer,
+                          result=result,repeated_result=repeated,produced=produced,
+                          consumed=state(),blowup=u.reg_read(UC_X86_REG_EIP)==0x4FC6D0))
+    crew=[]
+    for pending in (False,True):
+        u,call,read32,events=crew_fixture(dict(name='crew_pending',side=0,cost=3000,seed=5))
+        u.mem_write(HOUSE+0x1F6,bytes([pending]))
+        u.mem_write(bc.SP,bytes(0x40))
+        u.mem_write(bc.SP+0x18,dwords(2))  # ordinary uncaptured chance max
+        u.mem_write(bc.SP+0x1C,dwords(5))  # positive survivor count
+        u.reg_write(UC_X86_REG_ESP,bc.SP)
+        u.reg_write(UC_X86_REG_EDI,sm.YAREFN)
+        u.reg_write(UC_X86_REG_EBX,0)
+        before=bytes(u.mem_read(SCENARIO+0x218,STRUCT_LEN)).hex()
+        run_checked(u,0x443070,(0x4430A7,0x443292),count=1000,
+                    required_addresses=(0x443070,0x44307A))
+        crew.append(dict(pending=pending,rng_before=before,
+                         rng_after=bytes(u.mem_read(SCENARIO+0x218,STRUCT_LEN)).hex(),
+                         reached_smudge=u.reg_read(UC_X86_REG_EIP)==0x443292,
+                         roll=None if pending else u.reg_read(UC_X86_REG_EAX)))
+    return dict(flags=flags,crew=crew)
+
+
 def main(argv=None):
+    import sys
+    argv=list(sys.argv[1:] if argv is None else argv)
+    if '--pending-house-death' in argv:
+        argv.remove('--pending-house-death')
+        finish_vectors(pending_house_death_controls,Path(__file__).with_name('pending_house_death.json'),argv=argv,
+            provenance=lambda: provenance(scope='House Flag_To_Die4FC980, Update4F87C2 and fatal-building crew1F6 gate443070',
+                assumptions=['Existing crew_fixture supplies declared House flags/shared timer and original-seeded Scenario RNG. Producer runs twice to test retained timer. Consumer frame is producer frame+1. Crew gate uses declared count5 and ordinary uncaptured chance_max2. Timer+29C padding is excluded.'],
+                substitutions=['No substitutions inside4FC980 or RNG65C7E0. House Update stops at4F87FF or before Blowup_All4FC6D0. Crew block stops at443292 smudge suffix or4430A7 immediately after original RandomRanged; no smudge/spawn behavior supplied. Existing crew_fixture startup transport only.'],
+                entry_points={'flag_to_die':0x4FC980,'update_gate':0x4F87C2,'crew_gate':0x443070,'random_ranged':0x65C7E0}))
+        return
+    if '--crew-type' in argv:
+        argv.remove('--crew-type')
+        finish_vectors(crew_type_controls,Path(__file__).with_name('crew_type.json'),argv=argv,
+            provenance=lambda: provenance(scope='Whole Techno GetCrew707D20 signed Country side and Scenario RNG',
+                assumptions=['Declared Crewed building and raw Country side; House planning side supplied as constructor4F6455..6490 leaves it (0/1/2 otherwise-1). Original707D20 and RNG65C7E0 execute.'],
+                substitutions=['Existing crew_fixture heap/world transport; IsArmed458DB0 is a declared bool via existing observe_crew. No RNG or GetCrew replacement.'],
+                entry_points={'get_crew':0x707D20,'random_ranged':0x65C7E0}))
+        return
     finish_vectors(
         generate, Path(__file__).with_suffix('.json'),
         provenance=lambda: provenance(

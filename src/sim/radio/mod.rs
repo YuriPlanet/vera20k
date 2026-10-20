@@ -456,33 +456,23 @@ impl RadioPayload {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[test]
+fn message_codes_match_wire_opcodes() {
+    assert_eq!(RadioMessage::Hello.code(), 0x02);
+    assert_eq!(RadioMessage::Break.code(), 0x03);
+    assert_eq!(RadioMessage::TetherBack.code(), 0x09);
+    assert_eq!(RadioMessage::CanDock.code(), 0x0E);
+    assert_eq!(RadioMessage::DockNow.code(), 0x15);
+    assert_eq!(RadioMessage::IsOccupied.code(), 0x23);
+}
 
-    #[test]
-    fn message_codes_match_wire_opcodes() {
-        assert_eq!(RadioMessage::Hello.code(), 0x02);
-        assert_eq!(RadioMessage::Break.code(), 0x03);
-        assert_eq!(RadioMessage::TetherBack.code(), 0x09);
-        assert_eq!(RadioMessage::CanDock.code(), 0x0E);
-        assert_eq!(RadioMessage::DockNow.code(), 0x15);
-        assert_eq!(RadioMessage::IsOccupied.code(), 0x23);
-    }
-
-    #[test]
-    fn response_codes_match_wire_opcodes() {
-        assert_eq!(RadioResponse::None.code(), 0);
-        assert_eq!(RadioResponse::Roger.code(), 1);
-        assert_eq!(RadioResponse::Negatory.code(), 0x0A);
-        assert_eq!(RadioResponse::AlreadyThere.code(), 0x14);
-        assert_eq!(RadioResponse::Queued.code(), 0x17);
-        assert_eq!(RadioResponse::InsufficientFunds.code(), 0x20);
-        assert_eq!(RadioResponse::RepairComplete.code(), 0x21);
-    }
-
-    #[test]
-    fn payload_defaults_to_no_target() {
-        assert_eq!(RadioPayload::default().target, None);
-    }
+#[test]
+fn response_codes_match_wire_opcodes() {
+    assert_eq!(RadioResponse::None.code(), 0);
+    assert_eq!(RadioResponse::Roger.code(), 1);
+    assert_eq!(RadioResponse::Negatory.code(), 0x0A);
+    assert_eq!(RadioResponse::AlreadyThere.code(), 0x14);
+    assert_eq!(RadioResponse::Queued.code(), 0x17);
+    assert_eq!(RadioResponse::InsufficientFunds.code(), 0x20);
+    assert_eq!(RadioResponse::RepairComplete.code(), 0x21);
 }

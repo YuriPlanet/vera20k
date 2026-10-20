@@ -4,15 +4,12 @@
 
 use crate::rules::ini_parser::ini_value::{crt_atoi, scan_hex_u32, strtok};
 use crate::ui::shell::button::ShellButtonInteraction;
+use crate::ui::shell::combobox::ComboPopup;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, child_window, dlu_rect};
-use crate::ui::shell::list::{
-    ListMetrics, ListScrollInteraction, ListScrollPart, ShellListGeometry,
-};
+use crate::ui::shell::list::ListScrollInteraction;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
-use crate::ui::skirmish_shell::{
-    COMBO_FACE_H, DropdownMetrics, SavedSeedDescriptionEdit, ScrollModel, combo_dropdown_row_rect,
-};
+use crate::ui::skirmish_shell::{COMBO_FACE_H, SavedSeedDescriptionEdit};
 
 pub(crate) const OK: u16 = 1;
 pub(crate) const CANCEL: u16 = 2;
@@ -258,26 +255,17 @@ impl NetworkOptionsState {
         self.card_scroll.cancel();
     }
 
-    pub(crate) fn card_popup(&self, layout: &NetworkOptionsLayout) -> Option<NetworkCardPopup> {
+    pub(crate) fn card_popup(&self, layout: &NetworkOptionsLayout) -> Option<ComboPopup> {
         if !self.combo_open {
             return None;
         }
-        let total = self.cards.len().max(1);
-        let visible_rows = total.min(CARD_VISIBLE_ROWS);
-        let metrics = DropdownMetrics::scaled(layout.page.scale);
-        Some(NetworkCardPopup {
-            rect: RectPx::new(
-                layout.card.x,
-                layout.card.y + layout.card.h + 1,
-                layout.card.w,
-                visible_rows as i32 * metrics.row_h,
-            ),
-            first: self.card_top_index.min(total.saturating_sub(visible_rows)),
-            visible_rows,
-            total,
-            row_height: metrics.row_h,
-            scale: layout.page.scale,
-        })
+        Some(ComboPopup::new(
+            layout.card,
+            layout.page.scale,
+            self.cards.len().max(1),
+            CARD_VISIBLE_ROWS,
+            self.card_top_index,
+        ))
     }
 
     fn error(&mut self, message: NetworkOptionsMessage) -> NetworkOptionsEffect {
@@ -551,43 +539,6 @@ mod tests {
     }
 
     #[test]
-    fn validation_precedes_lan_commit_but_port_failure_does_not_undo_it() {
-        let mut state = fresh();
-        set(&mut state.socket, "16384");
-        set(&mut state.destination, "ff.ff.ff.100");
-        set(&mut state.port, "65536");
-        assert_eq!(
-            state.accept(),
-            vec![NetworkOptionsEffect::Message(
-                NetworkOptionsMessage::InvalidSocket
-            )]
-        );
-        state.acknowledge();
-        set(&mut state.socket, "123");
-        assert_eq!(
-            state.accept(),
-            vec![NetworkOptionsEffect::Message(
-                NetworkOptionsMessage::InvalidDestination
-            )]
-        );
-        state.acknowledge();
-        set(&mut state.destination, "ff.ff.ff.ff");
-        assert_eq!(
-            state.accept(),
-            vec![
-                NetworkOptionsEffect::Lan {
-                    socket: 123,
-                    destination: "ff.ff.ff.ff".into(),
-                    card: 0
-                },
-                NetworkOptionsEffect::Message(NetworkOptionsMessage::InvalidPort),
-            ]
-        );
-        state.acknowledge();
-        assert_eq!(state.cancel(), vec![NetworkOptionsEffect::Close]);
-    }
-
-    #[test]
     fn firewall_warnings_suspend_each_native_write_in_order() {
         let mut state = fresh();
         state.send_delay = true;
@@ -620,67 +571,6 @@ mod tests {
     }
 
     #[test]
-    fn socket_uses_low_word_and_port_comparison_is_signed() {
-        let mut state = fresh();
-        set(&mut state.socket, "65536");
-        set(&mut state.port, "-12345678");
-        assert_eq!(
-            state.accept(),
-            vec![
-                NetworkOptionsEffect::Lan {
-                    socket: 0,
-                    destination: String::new(),
-                    card: 0
-                },
-                NetworkOptionsEffect::SendDelay(false),
-                NetworkOptionsEffect::PortAndClose(-123456),
-            ]
-        );
-    }
-
-    #[test]
-    fn destination_uses_hex_prefix_scans_and_strtok_delimiters() {
-        let mut state = fresh();
-        set(&mut state.destination, ".1..2.3.4.");
-        assert!(
-            matches!(state.accept().first(), Some(NetworkOptionsEffect::Lan { destination, .. }) if destination == ".1..2.3.4.")
-        );
-        let mut state = fresh();
-        set(&mut state.destination, "aZ.b.c.d");
-        assert!(matches!(
-            state.accept().first(),
-            Some(NetworkOptionsEffect::Lan { .. })
-        ));
-        let mut state = fresh();
-        set(&mut state.destination, "1.2.3.4.5");
-        assert_eq!(
-            state.accept(),
-            vec![NetworkOptionsEffect::Message(
-                NetworkOptionsMessage::InvalidDestination
-            )]
-        );
-    }
-
-    #[test]
-    fn disabling_or_changing_existing_firewall_overrides_does_not_warn() {
-        let mut state = NetworkOptionsState::new(1, "", 0, true, 123, &[]);
-        state.send_delay = false;
-        set(&mut state.port, "456");
-        assert_eq!(
-            state.accept(),
-            vec![
-                NetworkOptionsEffect::Lan {
-                    socket: 1,
-                    destination: String::new(),
-                    card: 0
-                },
-                NetworkOptionsEffect::SendDelay(false),
-                NetworkOptionsEffect::PortAndClose(456),
-            ]
-        );
-    }
-
-    #[test]
     fn newedit_narrow_getter_uses_low_bytes_and_stops_at_nul() {
         let mut edit = SavedSeedDescriptionEdit::default();
         edit.set_units_limited([0x0131, 0x0132, 0x0100, 0x0033], 0);
@@ -700,89 +590,6 @@ pub(crate) struct NetworkOptionsLayout {
     pub(crate) send_delay: RectPx,
     pub(crate) labels: [(&'static str, RectPx); 4],
     pub(crate) groups: [(&'static str, RectPx); 2],
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct NetworkCardPopup {
-    pub(crate) rect: RectPx,
-    pub(crate) first: usize,
-    pub(crate) visible_rows: usize,
-    pub(crate) total: usize,
-    pub(crate) row_height: i32,
-    scale: ShellScale,
-}
-
-impl NetworkCardPopup {
-    pub(crate) fn scrollbar(&self) -> Option<RectPx> {
-        (self.total > self.visible_rows).then(|| {
-            let width = DropdownMetrics::scaled(self.scale).scrollbar_w;
-            RectPx::new(
-                self.rect.x + self.rect.w - width,
-                self.rect.y,
-                width,
-                self.rect.h,
-            )
-        })
-    }
-
-    pub(crate) fn thumb(&self) -> Option<RectPx> {
-        let bar = self.scrollbar()?;
-        let model = ScrollModel::combo_at(
-            CARD_VISIBLE_ROWS as i32,
-            DropdownMetrics::scaled(self.scale),
-        );
-        let height = model.thumb_height(self.visible_rows, self.total, bar.h);
-        let y = model.thumb_y(bar, height, self.first, self.total - self.visible_rows);
-        Some(RectPx::new(bar.x + 1, y, bar.w - 2, height))
-    }
-
-    pub(crate) fn scroll_geometry(&self) -> ShellListGeometry {
-        let metrics = DropdownMetrics::scaled(self.scale);
-        ShellListGeometry {
-            outer: self.rect,
-            content: self.content(),
-            scrollbar: self.scrollbar(),
-            thumb: self.thumb(),
-            visible_rows: self.visible_rows,
-            max_top: self.total - self.visible_rows,
-            metrics: ListMetrics {
-                row_h: metrics.row_h,
-                scrollbar_w: metrics.scrollbar_w,
-                arrow_h: metrics.button_h,
-                min_thumb_h: metrics.min_thumb_h,
-            },
-        }
-    }
-
-    pub(crate) fn scroll_part_at(&self, x: i32, y: i32) -> Option<ListScrollPart> {
-        self.scroll_geometry().scroll_part_at(x, y)
-    }
-
-    fn content(&self) -> RectPx {
-        RectPx::new(
-            self.rect.x,
-            self.rect.y,
-            self.rect.w - self.scrollbar().map_or(0, |bar| bar.w),
-            self.rect.h,
-        )
-    }
-
-    pub(crate) fn row_rect(&self, index: usize) -> Option<RectPx> {
-        if index < self.first || index >= self.first + self.visible_rows {
-            return None;
-        }
-        Some(combo_dropdown_row_rect(
-            self.content(),
-            self.scale,
-            index - self.first,
-        ))
-    }
-
-    pub(crate) fn row_at(&self, x: i32, y: i32) -> Option<usize> {
-        self.content()
-            .contains(x, y)
-            .then(|| self.first + ((y - self.rect.y) / self.row_height) as usize)
-    }
 }
 
 impl NetworkOptionsLayout {

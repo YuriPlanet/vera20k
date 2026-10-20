@@ -128,7 +128,7 @@ fn set_tile(sim: &mut Simulation, cell: (u16, u16), offset: i32) {
     sim.resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(cell.0, cell.1)
+        .cell_mut_for_test(cell.0, cell.1)
         .unwrap()
         .final_tile_index = WATER_SET + offset;
 }
@@ -341,7 +341,10 @@ fn launch_cases_five_and_six_match_native() {
         if let Some(tile) = tile {
             set_tile(&mut sim, TARGET, tile);
         }
-        sim.houses.get_mut(&americans).unwrap().side_index = int(&row["side"]) as u8;
+        sim.houses
+            .get_mut(&americans)
+            .unwrap()
+            .set_side_index_for_test(int(&row["side"]) as i32);
         let sw_type = if charged {
             charge_super(&mut sim, americans, name)
         } else {
@@ -464,7 +467,7 @@ fn a_water_click_sends_the_plane_to_land_beside_it() {
         .resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(TARGET.0, TARGET.1)
+        .cell_mut_for_test(TARGET.0, TARGET.1)
         .unwrap();
     // Water: Foot's speed there is 0.
     cell.land_type = 2;
@@ -572,7 +575,10 @@ fn send_paradrop_planes_matches_native() {
             authored_replayed += 1;
         }
         let waypoint_edge = u8::try_from(int(&row["waypoint_edge"])).unwrap_or(u8::MAX);
-        sim.houses.get_mut(&americans).unwrap().waypoint_edge = waypoint_edge;
+        sim.houses
+            .get_mut(&americans)
+            .unwrap()
+            .set_waypoint_edge_for_test(waypoint_edge);
         let own = edge(pick);
         if !(0..=3).contains(&house_edge) {
             assert_eq!(own, Edge::own_edge(waypoint_edge), "{row}");
@@ -623,7 +629,7 @@ fn send_paradrop_planes_matches_native() {
             (entity.position.sub_x(), entity.position.sub_y()),
             (SimFixed::from_num(128), SimFixed::from_num(128))
         );
-        assert_eq!(entity.body_facing_current(sim.session.binary_frame), 0);
+        assert_eq!(entity.body_facing_current(sim.session.binary_frame()), 0);
         let mut infantry: Vec<u64> = sim
             .substrate
             .entities
@@ -747,7 +753,7 @@ fn paradrop_missions_match_native() {
         };
         let (rules, mut sim, _) = paradrop_world(retail_list_rules(int(&row["radius"])));
         let id = mission_plane(&mut sim, &rules, row, target);
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
 
         let (observed, records) = observe(7, || {
             crate::sim::aircraft::dispatch_mission(&mut sim, id, &rules, Default::default());
@@ -849,11 +855,11 @@ fn drop_payload_matches_native() {
                     .get(id)
                     .unwrap()
                     .navigation
-                    .neighbor_state
+                    .neighbor_state()
                     .cell()
             })
             .collect();
-        sim.session.binary_frame = 4321;
+        sim.session.set_binary_frame_for_test(4321);
         sim.sound_events.clear();
 
         let can_enter = int(&row["can_enter"]) as u8;
@@ -981,7 +987,7 @@ fn drop_payload_matches_native() {
                 .get(id)
                 .unwrap()
                 .navigation
-                .neighbor_state
+                .neighbor_state()
                 .cell();
             assert_eq!(cell, expected, "{row}");
         }
@@ -1006,9 +1012,13 @@ fn spawn_parachuted_matches_native() {
             panic!("one passenger");
         };
         let house = sim.houses.get_mut(&americans).unwrap();
-        house.is_human = flag(row, "human");
-        house.player_control = flag(row, "player_control");
-        sim.session.game_mode_nonzero = int(&row["game_mode"]) != 0;
+        house.set_is_human_for_test(flag(row, "human"));
+        house.set_player_control_for_test(flag(row, "player_control"));
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                int(&row["game_mode"]) != 0,
+            ),
+        );
         if !flag(row, "paradropped") {
             sim.playfield_bounds = Some(NO_DROP_PLAYFIELD);
         }
@@ -1193,8 +1203,14 @@ fn retail_computer_paradrops_conscripts_past_the_enemy_base() {
     };
     let (rules, mut sim, americans) = paradrop_world(rules);
     let russians: InternedId = sim.interner.intern("Russians");
-    sim.houses.get_mut(&russians).unwrap().enemy_house = Some(americans);
-    sim.houses.get_mut(&americans).unwrap().base_center = Some(TARGET);
+    sim.houses
+        .get_mut(&russians)
+        .unwrap()
+        .set_enemy_house_for_test(Some(americans));
+    sim.houses
+        .get_mut(&americans)
+        .unwrap()
+        .set_base_center_for_test(Some(TARGET));
     let sw_type = charge_super(&mut sim, russians, PARADROP);
 
     super::super::ai_fire::try_fire(

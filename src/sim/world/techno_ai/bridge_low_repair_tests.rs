@@ -36,7 +36,7 @@ fn export_scene(scene: &HeadlessScenario, phase: &str) {
         .map(|e| json!({"type":sim.resolve(e.type_ref()), "entity":e}))
         .collect();
     let result = json!({
-        "phase":phase, "frame":sim.session.binary_frame,
+        "phase":phase, "frame":sim.session.binary_frame(),
         "map_hash":format!("{:016x}",scene.map.ini.content_hash()),
         "rules_hash":format!("{:016x}",scene.runtime.resources.rules.simulation_config_hash()),
         "theater":scene.map.header.theater,
@@ -54,7 +54,7 @@ fn export_scene(scene: &HeadlessScenario, phase: &str) {
     }
     eprintln!(
         "SHRAPNEL_BOUNDARY {phase} frame{}",
-        sim.session.binary_frame
+        sim.session.binary_frame()
     );
 }
 
@@ -87,7 +87,7 @@ fn retail_shrapnel_engineer_repairs_authored_water_gap() {
                 .then_some(entity.stable_id())
         })
         .unwrap();
-    let owner = runtime.simulation.session.current_house.unwrap();
+    let owner = runtime.simulation.session.current_house().unwrap();
     let owner_name = runtime.simulation.resolve(owner).to_owned();
     let engineer = runtime
         .simulation
@@ -102,7 +102,7 @@ fn retail_shrapnel_engineer_repairs_authored_water_gap() {
         .expect("ordinary Engineer placement on the hut's bank");
     let command = CommandEnvelope::new(
         owner,
-        runtime.simulation.session.tick + 1,
+        runtime.simulation.session.tick() + 1,
         Command::CaptureBuilding {
             engineer_id: engineer,
             target_building_id: hut,
@@ -199,7 +199,7 @@ fn retail_shrapnel_engineer_repairs_authored_water_gap() {
 
 fn cross_repaired_road(scene: &mut HeadlessScenario) {
     let runtime = &mut scene.runtime;
-    let owner = runtime.simulation.session.current_house.unwrap();
+    let owner = runtime.simulation.session.current_house().unwrap();
     let owner_name = runtime.simulation.resolve(owner).to_owned();
     let fv = runtime
         .simulation
@@ -215,7 +215,7 @@ fn cross_repaired_road(scene: &mut HeadlessScenario) {
         .expect("ordinary FV on the north road");
     let command = CommandEnvelope::new(
         owner,
-        runtime.simulation.session.tick + 1,
+        runtime.simulation.session.tick() + 1,
         Command::Move {
             entity_id: fv,
             target_rx: 115,
@@ -310,7 +310,7 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
     let mut scene = loaded_shrapnel();
     let pristine = scene.sim().resolved_terrain.as_ref().unwrap().clone();
     let runtime = &mut scene.runtime;
-    let owner = runtime.simulation.session.current_house.unwrap();
+    let owner = runtime.simulation.session.current_house().unwrap();
     let owner_name = runtime.simulation.resolve(owner).to_owned();
     let hut = runtime
         .simulation
@@ -389,11 +389,11 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
     );
     let ships = |sim: &crate::sim::world::Simulation| {
         sim.houses[&owner]
-            .tracking
+            .tracking()
             .active_count(crate::map::entities::EntityCategory::Unit, ship_type)
     };
     let other_ships = ships(&runtime.simulation) - 1;
-    let initial_losses = runtime.simulation.houses[&owner].stats.units_lost();
+    let initial_losses = runtime.simulation.houses[&owner].stats().units_lost();
     let ship_delay: usize = std::env::var("VERA20K_LOW_NAVAL_DELAY")
         .ok()
         .map(|value| value.parse().unwrap())
@@ -405,7 +405,7 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
     let mut retained_track = None;
     let mut saw_last_live_height = false;
     for frame in 0..150 {
-        let visit_frame = scene.sim().session.binary_frame;
+        let visit_frame = scene.sim().session.binary_frame();
         if frame == ship_delay {
             // The native interval begins at Unit741970 after command
             // dispatch. Match its explicit inputs at our ordinary order edge;
@@ -452,7 +452,7 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
             None
         };
         let envelope = command
-            .map(|command| CommandEnvelope::new(owner, scene.sim().session.tick + 1, command));
+            .map(|command| CommandEnvelope::new(owner, scene.sim().session.tick() + 1, command));
         let before = scene.sim().entities().get(ship).map(|e| {
             json!({
                 "position":e.position,"ship":e.locomotor.as_ref().and_then(|l| l.selected_ship_runtime()).and_then(|r| r.retained()).cloned(),"lifecycle":e.lifecycle,
@@ -478,9 +478,9 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
         let actor = scene.sim().entities().get(ship);
         let engineer_present = scene.sim().entities().get(engineer).is_some();
         trace.push(json!({
-            "frame":frame,"binary_frame":scene.sim().session.binary_frame,
+            "frame":frame,"binary_frame":scene.sim().session.binary_frame(),
             "before":before,"after":actor,"engineer_present":engineer_present,
-            "owner_losses":scene.sim().houses[&owner].stats.units_lost(),
+            "owner_losses":scene.sim().houses[&owner].stats().units_lost(),
             "lifecycle":format!("{lifetime:?}"),
             "fire_sources":output.fire_events.iter().map(|event|event.attacker_id).collect::<Vec<_>>(),
         }));
@@ -519,7 +519,7 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
                     json!([destination.x, destination.y, destination.z]),
                     head_process["destination"]
                 );
-                assert_eq!(actor.navigation.path_replay.remaining_directions(), route);
+                assert_eq!(actor.navigation.path_replay().remaining_directions(), route);
                 assert_eq!(
                     i64::from(loco.track().turn_index()),
                     head_process["track_selector"]
@@ -533,7 +533,7 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
                     loco.target_speed_fraction().to_num::<f64>(),
                     head_process["fraction"].as_f64().unwrap()
                 );
-                let timer = actor.navigation.path_runtime.movement_timer();
+                let timer = actor.navigation.path_runtime().movement_timer();
                 assert_eq!(
                     i64::from(timer.start_frame()),
                     head_process["movement_timer"][0]
@@ -543,7 +543,7 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
                     head_process["movement_timer"][2]
                 );
                 assert_eq!(
-                    u64::from(actor.navigation.path_runtime.retries_left()),
+                    u64::from(actor.navigation.path_runtime().retries_left()),
                     head_process["retries"]
                 );
                 assert_eq!(
@@ -718,8 +718,8 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
             "restored frame{frame}"
         );
         assert_eq!(
-            scene.sim().houses[&owner].stats,
-            second.houses[&owner].stats
+            scene.sim().houses[&owner].stats(),
+            second.houses[&owner].stats()
         );
         if scene.sim().entities().contains(ship) {
             assert_retained_naval_ship(scene.sim(), ship, &native["after_damage"], initial_losses);
@@ -795,7 +795,7 @@ fn assert_retained_naval_ship(
     assert!(loco.destination().is_none());
     assert_eq!(native["destination"], json!([0, 0, 0]));
     assert_eq!(
-        sim.houses[&actor.owner()].stats.units_lost() - initial_losses,
+        sim.houses[&actor.owner()].stats().units_lost() - initial_losses,
         native["owner_losses"].as_u64().unwrap() as u32
     );
     assert_eq!(
@@ -845,7 +845,7 @@ fn assert_naval_cleanup(
     assert!(sim.display_layers().layer_of(id).is_none());
     assert_eq!(native["layer"], -1);
     assert_eq!(
-        sim.houses[&owner].stats.units_lost() - initial_losses,
+        sim.houses[&owner].stats().units_lost() - initial_losses,
         native["owner_losses"].as_u64().unwrap() as u32
     );
     assert!(!sim.entities().contains(id));

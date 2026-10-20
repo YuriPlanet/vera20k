@@ -429,7 +429,7 @@ impl Simulation {
                 if !shot.target.is_some_and(|target| match target {
                     TargetKind::Entity(target) => {
                         self.substrate.entities.get(target).is_some()
-                            || self.production.terrain_objects.contains_key(&target)
+                            || self.terrain_objects.objects().contains_key(&target)
                     }
                     TargetKind::Cell(_, _) => true,
                 }) {

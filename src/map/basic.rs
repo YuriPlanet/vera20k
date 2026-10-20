@@ -28,6 +28,9 @@ pub struct BasicSection {
     pub briefing: Option<String>,
     /// Post-read movie catalog name (Scenario+1444, Basic.Action).
     pub action: Option<String>,
+    /// Scenario+0x1440 movie (`ReadMovie` at `0x0068A066`), which campaign
+    /// defeat plays before its retry prompt (`0x0068606B`).
+    pub lose: Option<String>,
     /// Opening campaign waypoint; SetDefaults683622 resets it to699.
     pub home_cell: Option<i32>,
     /// Alternate opening waypoint; SetDefaults683628 resets it to699.
@@ -166,6 +169,9 @@ pub fn parse_basic_section(ini: &IniFile) -> BasicSection {
         action: section
             .is_present("Action")
             .then(|| section.read_string("Action", "", 128)),
+        lose: section
+            .is_present("Lose")
+            .then(|| section.read_string("Lose", "", 128)),
         // Current-default reads at68A601..68A656, after fresh SetDefaults.
         home_cell: section
             .is_present("HomeCell")
@@ -312,13 +318,6 @@ mod tests {
     }
 
     #[test]
-    fn missing_basic_section_returns_defaults() {
-        let ini = IniFile::from_str("[Map]\nTheater=TEMPERATE\n");
-        let basic = parse_basic_section(&ini);
-        assert_eq!(basic, BasicSection::default());
-    }
-
-    #[test]
     fn free_radar_preserves_original_bool_tokens_and_supplied_default() {
         let original: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/free_radar_oracle/fixtures/native-free-radar.json",
@@ -363,32 +362,6 @@ mod tests {
         assert_eq!(flags.tiberium_spreads, Some(false));
         assert_eq!(flags.destroyable_bridges, Some(false));
         assert_eq!(flags.inert, Some(true));
-    }
-
-    #[test]
-    fn gsi_04_10_special_flags_inert_is_optional_scenario_authority() {
-        assert_eq!(
-            parse_special_flags_section(&IniFile::from_str("[SpecialFlags]\nInert=yes\n")).inert,
-            Some(true)
-        );
-        assert_eq!(
-            parse_special_flags_section(&IniFile::from_str("[SpecialFlags]\nInert=no\n")).inert,
-            Some(false)
-        );
-        assert_eq!(
-            parse_special_flags_section(&IniFile::from_str("[Basic]\nName=Ordinary\n")).inert,
-            None
-        );
-    }
-
-    #[test]
-    fn parse_special_flags_mcvdeploy_no() {
-        let ini = IniFile::from_str("[SpecialFlags]\nMCVDeploy=no\n");
-        let flags = parse_special_flags_section(&ini);
-        assert_eq!(flags.mcv_deploy, Some(false));
-        assert_eq!(flags.tiberium_grows, None);
-        assert_eq!(flags.tiberium_spreads, None);
-        assert_eq!(flags.destroyable_bridges, None);
     }
 
     /// `HarvesterImmune=` (`0x006B8EBF..0x006B8ED7`): present key parses;

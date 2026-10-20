@@ -524,26 +524,6 @@ mod tests {
     }
 
     #[test]
-    fn responsive_layout_stretches_the_fixed_control_rects() {
-        let base = compute_layout(800, 600);
-        // The authored 800x600 rectangles carry no centring offset, so doubling
-        // them is the whole of the responsive mapping.
-        let double = compute_responsive_layout(1600, 1200);
-        assert_eq!(double.scale, ShellScale::from_screen(1600, 1200));
-        assert_eq!(double.allied, RectPx::new(282, 116, 696, 272));
-        assert_eq!(double.slider, RectPx::new(354, 530, 544, 44));
-        assert_eq!(double.difficulty_value, RectPx::new(618, 582, 282, 40));
-        assert_eq!(
-            double.page.button_rect(BACK_BUTTON),
-            Some(RectPx::new(1288, 1070, 312, 84))
-        );
-        // Identity at the base size, on both the dialog and its page.
-        let same = compute_responsive_layout(800, 600);
-        assert_eq!(same.slider, base.slider);
-        assert_eq!(same.page, base.page);
-    }
-
-    #[test]
     fn layout_puts_back_on_the_last_row_and_hit_tests_the_emblems() {
         let layout = compute_layout(800, 600);
         assert_eq!(

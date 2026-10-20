@@ -329,6 +329,7 @@ impl RadarAnimState {
             &presentation.surface.rgba,
             width,
             height,
+            wgpu::FilterMode::Nearest,
         );
         Some(Self {
             presentation,
@@ -356,6 +357,7 @@ impl RadarAnimState {
                 &self.presentation.surface.rgba,
                 width,
                 height,
+                wgpu::FilterMode::Nearest,
             );
             self.texture_raw = raw;
             self.texture = texture;

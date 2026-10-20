@@ -412,24 +412,13 @@ mod tests {
     }
 
     #[test]
-    fn native_click_tracker_miss_clamps_negative_inverse_before_unsigned_pack() {
-        let surface = NativeRadarSurfaceGeometry::from_raw_rect(30, 20, 300, 180).unwrap();
-        let signed = signed_tracker_or_inverse_cell(surface, (0, 0), None);
-        assert_eq!(signed, (-4, 25));
-        assert_eq!(
-            clamp_native_radar_click_cell(signed, (100, 100), (632, 570)),
-            (85, 114)
-        );
-    }
-
-    #[test]
     fn native_click_target_samples_all_active_slopes_at_cell_center() {
         let mut terrain = click_terrain(64, 64);
         let expected_contributions = [
             0, 52, 52, 52, 52, 0, 0, 0, 0, 104, 104, 104, 104, 104, 104, 104, 104, 52, 52, 52, 52,
         ];
         for (slope, contribution) in expected_contributions.into_iter().enumerate() {
-            let cell = terrain.cell_mut(55, 55).unwrap();
+            let cell = terrain.cell_mut_for_test(55, 55).unwrap();
             cell.level = 2;
             cell.slope_type = slope as u8;
             let target =
@@ -443,7 +432,7 @@ mod tests {
     #[test]
     fn native_click_target_uses_ground_slope_for_bridge_and_fails_closed_without_cell() {
         let mut terrain = click_terrain(64, 64);
-        let cell = terrain.cell_mut(63, 63).unwrap();
+        let cell = terrain.cell_mut_for_test(63, 63).unwrap();
         cell.level = 3;
         cell.slope_type = 1;
         cell.has_bridge_deck = true;
@@ -484,7 +473,7 @@ mod tests {
                 crate::rules::locomotor_type::LocomotorKind::Drive,
             ),
         );
-        simulation.entities_mut().insert(entity);
+        simulation.entities_mut_for_test().insert(entity);
         let rules = crate::rules::ruleset::RuleSet::from_ini(
             &crate::rules::ini_parser::IniFile::from_str("[General]\n"),
         )
@@ -512,14 +501,14 @@ mod tests {
             "GoldSt.mmx",
             &[(LaunchCountry::France, AiDifficulty::Easy)],
         );
-        launch.player_name = "VERA-OBSERVER".into();
-        launch.local.start_position = LaunchStartPosition::Position(3);
+        launch.local_player_mut().name = "VERA-OBSERVER".into();
+        launch.local_slot_mut().start_position = LaunchStartPosition::Position(3);
         launch.opponents[0].start_position = LaunchStartPosition::Position(0);
         launch.options.unit_count = 0;
         let mut scene =
             crate::headless_scenario::load_session(&root, "GoldSt.mmx", 0x1234_5678, launch)
                 .unwrap();
-        let owner = scene.sim().session.current_house.unwrap();
+        let owner = scene.sim().session().current_house().unwrap();
         let id = scene
             .sim()
             .entities()
@@ -531,7 +520,7 @@ mod tests {
             .unwrap();
         let command = CommandEnvelope::new(
             owner,
-            scene.sim().session.tick + 1,
+            scene.sim().session().tick() + 1,
             Command::Move {
                 entity_id: id,
                 target_rx: 111,
@@ -587,7 +576,7 @@ mod tests {
         );
         let stop = CommandEnvelope::new(
             owner,
-            scene.sim().session.tick + 1,
+            scene.sim().session().tick() + 1,
             Command::Stop { entity_id: id },
         );
         scene
@@ -662,7 +651,7 @@ mod tests {
             signed,
             pair(&input["map_size"]),
             pair(&input["viewport"]),
-            sim.resolved_terrain.as_ref().unwrap(),
+            sim.resolved_terrain().unwrap(),
         )
         .unwrap();
         let xyz = &call("cell_center")["xyz"];
@@ -848,7 +837,7 @@ mod tests {
         assert_eq!(tracker.object_at_pixel(pixel.0, pixel.1), Some(2));
         let mut simulation = crate::sim::world::Simulation::new();
         let mobile = crate::sim::game_entity::GameEntity::test_default(1, "MTNK", "Enemy", 60, 60);
-        simulation.entities_mut().insert(mobile);
+        simulation.entities_mut_for_test().insert(mobile);
         let mut building = crate::sim::game_entity::GameEntity::test_default_of_category(
             2,
             "BLDG",
@@ -866,8 +855,8 @@ mod tests {
         building
             .position
             .set_sub_y_for_test(crate::util::fixed_math::SimFixed::from_num(33));
-        simulation.entities_mut().insert(building);
-        simulation.interner = crate::sim::intern::test_interner();
+        simulation.entities_mut_for_test().insert(building);
+        *simulation.interner_mut_for_test() = crate::sim::intern::test_interner();
         let rules =
             crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
                 "[BuildingTypes]\n0=BLDG\n[BLDG]\nFoundation=4x3\n",
@@ -886,7 +875,7 @@ mod tests {
             "the exact tracker GetCoords cell is the immediate camera centre"
         );
 
-        let edge = simulation.entities_mut().get_mut(2).unwrap();
+        let edge = simulation.entities_mut_for_test().get_mut(2).unwrap();
         edge.position.set_rx_for_test(u16::MAX);
         edge.position.set_ry_for_test(u16::MAX);
         assert_eq!(

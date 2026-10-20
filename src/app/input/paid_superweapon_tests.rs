@@ -23,21 +23,23 @@ fn fixture(paid: bool) -> (RuleSet, Simulation, InternedId, InternedId, Interned
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    let owner = sim.interner.intern("Americans");
-    sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 1000, 10));
-    sim.session.house_order.push(owner);
-    sim.session.current_house = Some(owner);
-    sim.session.game_options.super_weapons = true;
+    let owner = sim.intern("Americans");
+    sim.houses_mut_for_test()
+        .register(HouseState::new(owner, 0, None, true, 1000, 10));
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
+    sim.session_mut_for_test()
+        .game_options_mut_for_test()
+        .super_weapons = true;
     sim.spawn_object("PROVIDER", "Americans", 5, 5, 0, &rules)
         .unwrap();
-    let source = sim.interner.get("Sphere").unwrap();
-    let destination = sim.interner.get("Warp").unwrap();
+    let source = sim.interner().get("Sphere").unwrap();
+    let destination = sim.interner().get("Warp").unwrap();
     for id in [source, destination] {
         let mut instance = SuperWeaponInstance::new(id, owner, 0);
-        instance.is_active = id == source;
-        instance.is_ready = id == source;
-        sim.super_weapons
+        instance.set_is_active_for_test(id == source);
+        instance.set_is_ready_for_test(id == source);
+        sim.super_weapons_mut_for_test()
             .entry(owner)
             .or_default()
             .insert(id, instance);
@@ -77,7 +79,7 @@ fn paid_superweapon_input_cancels_before_source_exec_and_does_not_duplicate_canc
     schedule_command_in_sim(&mut sim, "Americans", next);
     drain(&mut sim, &rules);
     assert_eq!(sim.paid_super_weapon_selection(owner), Some(second));
-    assert_eq!(sim.houses[&owner].economy.credits(), 1000);
+    assert_eq!(sim.houses()[&owner].economy().credits(), 1000);
 }
 
 #[test]
@@ -102,7 +104,7 @@ fn paid_superweapon_input_final_and_mode_switch_use_the_saved_ticket() {
     schedule_command_in_sim(&mut sim, "Americans", final_click);
     assert!(paid_super_weapon_cursor_cancellation(&sim, owner, None).is_none());
     drain(&mut sim, &rules);
-    assert_eq!(sim.houses[&owner].economy.credits(), 500);
+    assert_eq!(sim.houses()[&owner].economy().credits(), 500);
     assert!(sim.paid_super_weapon_selection(owner).is_none());
 }
 

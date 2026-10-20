@@ -54,7 +54,7 @@ fn retail_middle_bridge_resident_recalc_admits_both_families() {
             for variant in 0..5 {
                 let target = base + variant;
                 for level_override in [-1, 0].into_iter().take(if variant == 4 { 2 } else { 1 }) {
-                    let cell = grid.cell_mut(coord.0, coord.1).unwrap();
+                    let cell = grid.cell_mut_for_test(coord.0, coord.1).unwrap();
                     *cell = source.clone();
                     cell.final_tile_index = target;
                     let outcome = grid
@@ -86,7 +86,7 @@ fn retail_middle_bridge_resident_recalc_admits_both_families() {
                     assert_eq!(outcome.finalized, overlay);
                     coverage.insert((target, sub));
                 }
-                *grid.cell_mut(coord.0, coord.1).unwrap() = source.clone();
+                *grid.cell_mut_for_test(coord.0, coord.1).unwrap() = source.clone();
             }
         }
     }

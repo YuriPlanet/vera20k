@@ -123,9 +123,13 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     );
     let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
     let mut sim = Simulation::with_seed(input["seed"].as_u64().unwrap_or(31));
-    sim.session.map_width = 128;
-    sim.session.map_height = 128;
-    sim.session.game_mode_nonzero = input["game_mode"].as_u64().unwrap_or(1) != 0;
+    sim.session.set_map_width_for_test(128);
+    sim.session.set_map_height_for_test(128);
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            input["game_mode"].as_u64().unwrap_or(1) != 0,
+        ),
+    );
     let local = input["local"]
         .as_array()
         .cloned()
@@ -258,12 +262,11 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     // The original global Cell flags belong to CurrentHouse, even when the
     // searching aircraft belongs to a different house. No UI cache is built.
     let viewer = sim.interner.intern("CURRENT_HOUSE");
-    sim.session.current_house = Some(viewer);
-    sim.houses.insert(
-        viewer,
-        crate::sim::house_state::HouseState::new(viewer, 0, None, true, 0, 1),
-    );
-    sim.session.house_order.push(viewer);
+    sim.session.set_current_house_for_test(Some(viewer));
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            viewer, 0, None, true, 0, 1,
+        ));
     let mut view = serde_json::to_value(OwnerVisibility::new(128, 128)).unwrap();
     for cell in view["ground_flags"].as_array_mut().unwrap() {
         *cell = json!(if input["visible"].as_bool().unwrap_or(true) {
@@ -285,7 +288,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         }
     }
     sim.fog
-        .by_owner
+        .by_owner_mut_for_test()
         .insert(viewer, serde_json::from_value(view).unwrap());
     (sim, rules)
 }
@@ -303,7 +306,7 @@ pub(super) fn reengagement_fixture(input: &Value) -> (Simulation, RuleSet) {
             "[Attack]\nRate={}\n",
             input["rate"].as_f64().unwrap_or(0.016)
         )));
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     if input["open_transport"].as_bool().unwrap_or(false) {
         insert(
             &mut sim,
@@ -363,11 +366,11 @@ pub(super) fn reengagement_fixture(input: &Value) -> (Simulation, RuleSet) {
             .bunker
             .set_bunker_link_for_test(crate::sim::docking::bunker_link::BunkerLink::Installed(2));
     }
-    let path = &mut entity.navigation.path_runtime;
+    let path = entity.navigation.path_runtime_mut();
     path.set_movement_timer_for_test(crate::sim::timer::CdTimer::from_raw(7, 23));
     path.set_blocked_timer_for_test(crate::sim::timer::CdTimer::from_raw(9, 29));
-    path.set_retries_left(19);
-    path.set_path_blocked(true);
+    path.set_retries_left_for_test(19);
+    path.set_path_blocked_for_test(true);
     let mut loco = LocomotorState::from_object_type(rules.object("TEST").unwrap(), 0);
     loco.set_powered_for_test(input["powered"].as_bool().unwrap_or(true));
     loco.set_fly_target_height(37);
@@ -398,7 +401,7 @@ pub(super) fn assert_reengagement(sim: &mut Simulation, row: &Value) {
     };
     let fly = entity.locomotor.as_ref().unwrap().fly_runtime().unwrap();
     let point = fly.destination();
-    let path = &entity.navigation.path_runtime;
+    let path = entity.navigation.path_runtime();
     let fields = json!({
         "state": sub_state,
         "delay": entity.mission.dispatch_timer().delay(),

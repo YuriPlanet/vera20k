@@ -50,7 +50,7 @@ mod tests {
             Err::<Option<u64>, _>(InjectedUploadFailure)
         });
         assert_eq!(failed, Err(InjectedUploadFailure));
-        assert_eq!(runtime.simulation.radar_terrain_dirty_cells, [(7, 9)]);
+        assert_eq!(runtime.simulation.radar_terrain_dirty_cells(), [(7, 9)]);
 
         let skipped = present_minimap_frame(&mut runtime, |_| Ok::<_, InjectedUploadFailure>(None))
             .expect("skipped presentation is not an upload failure");
@@ -61,9 +61,9 @@ mod tests {
                 acknowledged: false,
             }
         );
-        assert_eq!(runtime.simulation.radar_terrain_dirty_cells, [(7, 9)]);
+        assert_eq!(runtime.simulation.radar_terrain_dirty_cells(), [(7, 9)]);
 
-        let generation = runtime.simulation.radar_terrain_dirty_generation;
+        let generation = runtime.simulation.radar_terrain_dirty_generation();
         let completed = present_minimap_frame(&mut runtime, |_| {
             Ok::<_, InjectedUploadFailure>(Some(generation))
         })
@@ -75,7 +75,7 @@ mod tests {
                 acknowledged: true,
             }
         );
-        assert!(runtime.simulation.radar_terrain_dirty_cells.is_empty());
+        assert!(runtime.simulation.radar_terrain_dirty_cells().is_empty());
 
         let unchanged =
             present_minimap_frame(&mut runtime, |_| Ok::<_, InjectedUploadFailure>(None))

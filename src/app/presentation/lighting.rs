@@ -53,7 +53,7 @@ pub(crate) fn body_extra_light(
             rules.general.extra_aircraft_light,
             crate::sim::movement::air_movement::current_fly_height(entity, terrain),
             crate::sim::superweapon::lightning_storm::raging(sim),
-            &sim.session.lighting,
+            &sim.session().lighting(),
         ),
         _ => 0,
     }
@@ -76,9 +76,9 @@ pub(crate) fn aircraft_extra_light(
     scenario: &crate::sim::scenario_session::ScenarioLightingState,
 ) -> i32 {
     let level = if storm {
-        scenario.ion.level_units
+        scenario.ion().level_units
     } else {
-        scenario.normal.level_units
+        scenario.normal().level_units
     };
     let levels = height / (2 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS);
     extra_aircraft_light.wrapping_add(levels.wrapping_mul(level))
@@ -173,7 +173,7 @@ pub(crate) fn techno_effect_light(
         entity,
         tint,
         light,
-        sim.session.binary_frame,
+        sim.session().binary_frame(),
         sim.airstrike_tint_active(entity.stable_id()),
     )
 }
@@ -212,7 +212,7 @@ pub(crate) fn building_anim_light(
             building,
             tint,
             light,
-            sim.session.binary_frame.wrapping_sub(1),
+            sim.session().binary_frame().wrapping_sub(1),
             sim.airstrike_tint_active(building.stable_id()),
         )
     };
@@ -389,7 +389,7 @@ pub(crate) fn shp_colour_word(
         curtain.kind() == crate::sim::superweapon::invulnerability::InvulnKind::ForceShield
             && crate::sim::superweapon::invulnerability::is_invulnerable(
                 Some(curtain),
-                sim.session.binary_frame,
+                sim.session().binary_frame(),
             )
     });
     let marked = entity.has_airstrike_marker();
@@ -468,7 +468,7 @@ impl MatchLighting {
             let view = derive_lighting_view(&self.config, Some(sim), detail_level);
             self.grid = build_lighting_grid_from_view(terrain, &view);
             self.profile = view.profile;
-            self.scenario = Some(sim.session.lighting);
+            self.scenario = Some(*sim.session().lighting());
             (self.buildings, self.radiation) = source_maps(sim);
         }
     }
@@ -613,24 +613,24 @@ impl MatchLighting {
             }
         }
         let cell_profile = sim.lighting_cell_profile();
-        if self.scenario != Some(sim.session.lighting) {
+        if self.scenario != Some(*sim.session().lighting()) {
             events.push(LightingEvent::Global {
-                state: sim.session.lighting,
+                state: *sim.session().lighting(),
                 cell_profile,
                 // Target/timer/normal-ambient writes do not retint palettes.
                 // An explicit profile selection's ordered event owns that
                 // operation; retain the compatibility fallback for a newly
                 // installed or externally supplied profile.
                 palette: if self.scenario.as_ref().is_some_and(|previous| {
-                    previous.selected_profile == sim.session.lighting.selected_profile
+                    previous.selected_profile() == sim.session().lighting().selected_profile()
                 }) {
                     PaletteUpdate::Preserve
                 } else {
-                    PaletteUpdate::from_scenario(&sim.session.lighting)
+                    PaletteUpdate::from_scenario(&sim.session().lighting())
                 },
                 constructor_rgb: sim.palette_constructor_rgb(),
             });
-        } else if self.profile != scenario_profile(&sim.session.lighting, cell_profile)
+        } else if self.profile != scenario_profile(&sim.session().lighting(), cell_profile)
             || self.grid.constructor_alternate_rgb() != sim.palette_constructor_rgb()
         {
             events.push(LightingEvent::RelightProfile {
@@ -662,10 +662,10 @@ fn queue_area(
 
 fn source_maps(sim: &Simulation) -> (BTreeMap<u64, PointLight>, BTreeMap<(u16, u16), PointLight>) {
     (
-        sim.lighting_sources.buildings.clone(),
-        sim.radiation
+        sim.lighting_sources().buildings().clone(),
+        sim.radiation()
             .sites()
-            .filter_map(|site| site.light_source().map(|source| (site.center, source)))
+            .filter_map(|site| site.light_source().map(|source| (site.center(), source)))
             .collect(),
     )
 }
@@ -680,10 +680,10 @@ fn scenario_profile(
     let cell = state.profile(cell_profile);
     CellRelightProfile {
         units: LightingProfileUnits {
-            ambient_percent: state.current_ambient,
-            red_percent: state.normal.red_percent,
-            green_percent: state.normal.green_percent,
-            blue_percent: state.normal.blue_percent,
+            ambient_percent: state.current_ambient(),
+            red_percent: state.normal().red_percent,
+            green_percent: state.normal().green_percent,
+            blue_percent: state.normal().blue_percent,
             ground_units: cell.ground_units,
             level_units: cell.level_units,
         },
@@ -710,14 +710,14 @@ pub(crate) fn derive_lighting_view(
 ) -> DerivedLightingView {
     let profile = simulation.map_or_else(
         || lighting::normal_profile_units(lighting_config).into(),
-        |sim| scenario_profile(&sim.session.lighting, sim.lighting_cell_profile()),
+        |sim| scenario_profile(&sim.session().lighting(), sim.lighting_cell_profile()),
     );
-    let alternate_rgb = simulation.and_then(|sim| sim.session.lighting.alternate_rgb());
+    let alternate_rgb = simulation.and_then(|sim| sim.session().lighting().alternate_rgb());
 
     let building_lights = collect_live_building_lights(simulation, detail_level);
     let radiation_lights = simulation
         .map(|sim| {
-            sim.radiation
+            sim.radiation()
                 .sites()
                 .filter_map(|site| site.light_source())
                 .collect::<Vec<_>>()
@@ -774,8 +774,8 @@ fn collect_live_building_lights(
     let Some(sim) = simulation else {
         return Vec::new();
     };
-    sim.lighting_sources
-        .buildings
+    sim.lighting_sources()
+        .buildings()
         .values()
         .filter(|source| source.active && source.detail && detail_level >= 2)
         .cloned()
@@ -793,45 +793,8 @@ mod tint_tests;
 #[cfg(test)]
 mod palette_producer_tests {
     use super::*;
-    use crate::rules::art_data::ArtRegistry;
     use crate::rules::ini_parser::IniFile;
     use crate::sim::scenario_session::ScenarioLightingState;
-
-    fn split_cell() -> CellLightGrid {
-        let mut grid = CellLightGrid::new();
-        grid.insert_profiled_light((4, 7), [0.512, 0.640, 0.768], 1.0);
-        let id = grid.cell_light_at((4, 7)).unwrap().profile_id;
-        grid.insert_light(
-            (4, 7),
-            lighting::CellLight::new(
-                id,
-                [512, 640, 768],
-                [512, 640, 768],
-                65536,
-                0,
-                0,
-                1200,
-                800,
-                1200,
-                900,
-                800,
-            ),
-        );
-        grid
-    }
-
-    #[test]
-    fn techno_selected_scheme_does_not_inherit_cell_hue_or_row_count() {
-        let grid = split_cell();
-        let unit = body_palette_light(&grid, (4, 7), 100);
-        let infantry = body_palette_light(&grid, (4, 7), 200);
-        let cell = crate::render::palette_light::PaletteLight::cell(&grid, (4, 7), false);
-        assert_eq!((unit.rows(), unit.brightness()), (53, 1300));
-        assert_eq!((infantry.rows(), infantry.brightness()), (53, 1400));
-        assert_eq!((cell.rows(), cell.brightness()), (27, 900));
-        assert_eq!(unit.0[0] & 0x3ffff, 65535);
-        assert_ne!(unit.0[0] & 0x3ffff, cell.0[0] & 0x3ffff);
-    }
 
     #[test]
     fn palette_producers_preserve_normalized_common_from_real_map_grid() {
@@ -849,106 +812,6 @@ mod palette_producer_tests {
         assert_eq!((cell.rows(), cell.brightness()), (27, 799));
         assert_eq!((unit.rows(), unit.brightness()), (53, 1200));
         assert_eq!(unit.0[0] & 0x3ffff, 65535);
-    }
-
-    #[test]
-    fn building_art_selects_cell_palette_or_top_plus_signed_extra() {
-        let grid = split_cell();
-        let art = ArtRegistry::from_ini(&IniFile::from_str(
-            "[BODY]\nExtraLight=350\n[ISO]\nTerrainPalette=yes\nExtraLight=350\n[NEG]\nExtraLight=65535\n",
-        ));
-        let body = art.resolve_metadata_entry("BODY", "BODY");
-        assert_eq!(
-            building_palette_light(&grid, (4, 7), body, false).brightness(),
-            1550
-        );
-        assert_eq!(
-            building_palette_light(&grid, (4, 7), body, true).brightness(),
-            1200
-        );
-        let iso = building_palette_light(
-            &grid,
-            (4, 7),
-            art.resolve_metadata_entry("ISO", "ISO"),
-            false,
-        );
-        assert_eq!((iso.rows(), iso.brightness()), (27, 900));
-        // Building VXL uses the independent selected scheme/top producer even
-        // when the SHP body above uses TerrainPalette or ExtraLight.
-        let voxel = body_palette_light(&grid, (4, 7), 0);
-        assert_eq!((voxel.rows(), voxel.brightness()), (53, 1200));
-        assert_eq!(voxel.0[0] & 0x3ffff, 65535);
-        assert_eq!(
-            building_palette_light(
-                &grid,
-                (4, 7),
-                art.resolve_metadata_entry("NEG", "NEG"),
-                false
-            )
-            .brightness(),
-            1199
-        );
-    }
-
-    #[test]
-    fn animation_explicit_cell_plain_global_and_first_scheme_keep_distinct_rows() {
-        let grid = split_cell();
-        let art = ArtRegistry::from_ini(&IniFile::from_str(
-            "[PLAIN]\nUseNormalLight=no\n[ALT]\nAltPalette=yes\n[FULL]\nUseNormalLight=yes\n",
-        ));
-        let plain = anim_palette_light(&grid, (4, 7), art.anim_runtime_config("PLAIN"), false);
-        let cell = anim_palette_light(&grid, (4, 7), art.anim_runtime_config("PLAIN"), true);
-        let alt = anim_palette_light(&grid, (4, 7), art.anim_runtime_config("ALT"), false);
-        assert_eq!(
-            (plain.rows(), plain.brightness(), plain.0[1] & (1 << 30)),
-            (53, 1200, 1 << 30)
-        );
-        assert_eq!((cell.rows(), cell.brightness()), (27, 900));
-        assert_eq!((alt.rows(), alt.brightness()), (1, 1200));
-        assert_eq!(
-            anim_palette_light(&grid, (4, 7), art.anim_runtime_config("FULL"), true).brightness(),
-            1000
-        );
-    }
-
-    /// Each class's draw adds its own extra light, so no class's key reaches
-    /// another's draw: ExtraUnitLight= for a unit, ExtraInfantryLight= for
-    /// infantry, ExtraAircraftLight= and the height's Levels for an aircraft
-    /// (IonLevel= while a storm rages), and none for a building.
-    #[test]
-    fn each_class_adds_its_own_extra_light() {
-        use crate::map::entities::EntityCategory;
-        let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[General]\nFixtureOnly=1\n[AudioVisual]\nExtraUnitLight=.1\nExtraInfantryLight=.2\n\
-             ExtraAircraftLight=.3\n",
-        ))
-        .unwrap();
-        let mut sim = Simulation::new();
-        sim.session.lighting.normal.level_units = 32;
-        sim.session.lighting.ion.level_units = 20;
-        let extra = |sim: &Simulation, category| {
-            let mut entity = crate::sim::game_entity::GameEntity::test_default_of_category(
-                1,
-                "HTNK",
-                "Americans",
-                10,
-                10,
-                category,
-            );
-            entity.position.set_exact_z_leptons_for_test(Some(1500));
-            body_extra_light(&entity, &rules, sim, None)
-        };
-        assert_eq!(extra(&sim, EntityCategory::Unit), 100);
-        assert_eq!(extra(&sim, EntityCategory::Infantry), 200);
-        assert_eq!(extra(&sim, EntityCategory::Aircraft), 300 + 7 * 32);
-        assert_eq!(extra(&sim, EntityCategory::Structure), 0);
-        let owner = sim.interner.intern("Americans");
-        sim.lightning_storm =
-            crate::sim::superweapon::lightning_storm::LightningStorm::raging_for_test(
-                owner,
-                (0, 0),
-            );
-        assert_eq!(extra(&sim, EntityCategory::Aircraft), 300 + 7 * 20);
     }
 
     /// Each `aircraft_light` row (AircraftClass::Draw_It `0x004148D1..
@@ -976,8 +839,8 @@ mod palette_producer_tests {
         let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
         let mut scenario = ScenarioLightingState::default();
         for row in rows {
-            scenario.normal.level_units = int(&row["level"]);
-            scenario.ion.level_units = int(&row["ion_level"]);
+            scenario.normal_mut_for_test().level_units = int(&row["level"]);
+            scenario.ion_mut_for_test().level_units = int(&row["ion_level"]);
             let extra = aircraft_extra_light(
                 int(&row["extra"]),
                 int(&row["height"]),

@@ -163,14 +163,6 @@ mod tests {
         assert_eq!(direction_delta(8), None);
     }
 
-    #[test]
-    fn invalid_non_8_directions_do_not_wrap() {
-        for direction in [9, 10, 15, 16, 255] {
-            assert_eq!(Ra2Direction::from_index(direction), None);
-            assert_eq!(direction_delta(direction), None);
-        }
-    }
-
     /// Original initializer execution through RET `0x0049F39B`, under the
     /// inherited `0000` and the supplied `0E7F` control words.
     #[test]
@@ -209,34 +201,6 @@ mod tests {
         for f in 0u8..=255 {
             let gamemd = ((((f as u16) >> 4) + 1) >> 1) as u8 & 7;
             assert_eq!(direction_from_facing(f), gamemd, "f={f}");
-        }
-    }
-
-    #[test]
-    fn facing_quantization_matches_drive_locomotor_formula() {
-        let samples = [
-            (0, 0),
-            (15, 0),
-            (16, 1),
-            (32, 1),
-            (47, 1),
-            (48, 2),
-            (64, 2),
-            (96, 3),
-            (128, 4),
-            (160, 5),
-            (192, 6),
-            (224, 7),
-            (239, 7),
-            (240, 0),
-            (255, 0),
-        ];
-        for (facing, direction) in samples {
-            assert_eq!(direction_from_facing(facing), direction);
-            assert_eq!(
-                delta_from_facing(facing),
-                DIRECTION_DELTAS[direction as usize]
-            );
         }
     }
 

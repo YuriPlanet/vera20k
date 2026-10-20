@@ -3,8 +3,6 @@
 //! These are client-local presentation predicates: they read the current
 //! player, that player's shroud/sensor plane, and fresh mutable MapClass bounds.
 
-use std::collections::BTreeMap;
-
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::Ability;
 use crate::rules::ruleset::RuleSet;
@@ -18,7 +16,7 @@ use super::tracker::{RadarObjectUpdate, RadarProjectionFacts};
 pub(super) fn radar_owner_is_human_player(
     owner: InternedId,
     local_owner: InternedId,
-    houses: &BTreeMap<InternedId, crate::sim::house_state::HouseState>,
+    houses: &crate::sim::houses::Houses,
     game_mode_nonzero: bool,
 ) -> bool {
     if game_mode_nonzero {
@@ -26,7 +24,7 @@ pub(super) fn radar_owner_is_human_player(
     } else {
         houses
             .get(&owner)
-            .is_some_and(|house| house.is_human || house.player_control)
+            .is_some_and(|house| house.is_human() || house.player_control())
     }
 }
 
@@ -263,7 +261,7 @@ impl RadarRegistrationVisibilityFacts {
 
 pub(super) fn build_radar_object_update(
     entity: &crate::sim::game_entity::GameEntity,
-    houses: &BTreeMap<InternedId, crate::sim::house_state::HouseState>,
+    houses: &crate::sim::houses::Houses,
     local_owner: Option<InternedId>,
     fog: &FogState,
     alliances: &crate::map::houses::HouseAllianceMap,
@@ -512,7 +510,7 @@ mod tests {
         projection.native_surface = Some(surface);
         let update = build_radar_object_update(
             &entity,
-            &BTreeMap::new(),
+            &crate::sim::houses::Houses::default(),
             None,
             &FogState::default(),
             &Default::default(),
@@ -544,22 +542,22 @@ mod tests {
         let id = sim.allocate_stable_id();
         let mut entity =
             crate::sim::game_entity::GameEntity::test_default(id, "TEST", "Americans", 4, 5);
-        entity.set_type_ref_for_test(sim.interner.intern("TEST"));
-        entity.set_owner_for_test(sim.interner.intern("Americans"));
+        entity.set_type_ref_for_test(sim.intern("TEST"));
+        entity.set_owner_for_test(sim.intern("Americans"));
         entity.set_category_for_test(EntityCategory::Unit);
         entity.lifecycle.set_in_limbo_for_test(false);
-        sim.substrate.entities.insert(entity);
+        sim.entities_mut_for_test().insert(entity);
         let update = |sim: &crate::sim::world::Simulation| {
             build_radar_object_update(
                 sim.entities().get(id).unwrap(),
-                &sim.houses,
+                sim.houses(),
                 None,
-                &sim.fog,
-                &sim.house_alliances,
+                sim.fog(),
+                sim.house_alliances(),
                 true,
                 false,
                 Some(&rules),
-                Some(&sim.interner),
+                Some(sim.interner()),
                 visibility_projection(),
                 None,
                 None,
@@ -877,11 +875,10 @@ mod tests {
             "[VehicleTypes]\n0=DOT\n[DOT]\nStrength=100\nInvisibleInGame=yes\n",
         ))
         .expect("visibility fixture rules");
-        let mut houses = BTreeMap::new();
-        houses.insert(
-            enemy,
-            crate::sim::house_state::HouseState::new(enemy, 0, None, false, 0, 10),
-        );
+        let mut houses = crate::sim::houses::Houses::default();
+        houses.register(crate::sim::house_state::HouseState::new(
+            enemy, 0, None, false, 0, 10,
+        ));
         let mut fog = FogState::default();
         fog.mark_visible_for_owner(local, 5, 5);
         let mut entity = crate::sim::game_entity::GameEntity::test_default(1, "DOT", "Enemy", 5, 5);

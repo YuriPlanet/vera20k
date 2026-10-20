@@ -284,7 +284,7 @@ fn set_state(sim: &mut Simulation, building_id: u64, state: BunkerState, unit: O
 /// `BuildingClass::UpdateBunker` (`0x00458E50`) states 1 and 3 call
 /// `FacingClass::Set_Desired` (`0x004C9220`) at `0x004590EA` and `0x00459228`.
 fn turn_unit(sim: &mut Simulation, unit_id: u64, facing: u16) {
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     if let Some(u) = sim.substrate.entities.get_mut(unit_id) {
         u.body_facing.set(facing, frame);
     }
@@ -293,7 +293,7 @@ fn turn_unit(sim: &mut Simulation, unit_id: u64, facing: u16) {
 /// `FacingClass::Is_Rotating` (`0x004C9480`) on the unit's body (`+0x388`), which
 /// `BuildingClass::UpdateBunker` states 2 and 4 wait on (`0x00459109`, `0x00459245`).
 fn is_turning(sim: &Simulation, unit_id: u64) -> bool {
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     sim.substrate
         .entities
         .get(unit_id)
@@ -426,7 +426,7 @@ fn start_install_force_track(
     let Some(unit) = sim.substrate.entities.get(unit_id) else {
         return;
     };
-    let current = unit.body_facing_current(sim.session.binary_frame);
+    let current = unit.body_facing_current(sim.session.binary_frame());
     let track = match ((u32::from(current) >> 7) + 1) & 0x1FE {
         0x40 => 0x43,
         0xC0 => 0x44,
@@ -546,7 +546,7 @@ mod tests {
         assert!(matches!(sim.reveal(2), RevealOutcome::Revealed { .. }));
         spawn_tank_on(&mut sim, 1, 11, 11);
         let centre = object_get_coords(sim.substrate.entities.get(2).unwrap(), None);
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         let unit = sim.substrate.entities.get_mut(1).unwrap();
         unit.position.put_location(centre);
         unit.body_facing = movement::FacingClass::new(0x6000, 5);
@@ -573,7 +573,7 @@ mod tests {
         assert_eq!(unit.bunker.link(), BunkerLink::Approaching(2));
         assert_eq!(movement::motion_query::is_moving(unit), Some(false));
         assert_eq!(unit.body_facing.destination(), SOUTH_FACING);
-        sim.session.binary_frame = frame + 100;
+        sim.session.set_binary_frame_for_test(frame + 100);
         tick_bunker_install(&mut sim, &rules, None, FrameEffects::default());
         assert_eq!(rt(&sim, 2).state(), BunkerState::Occupied);
 
@@ -641,7 +641,7 @@ mod tests {
             sim.intern_rule_type_ids(&rules);
             sim.resolve_type_handles(&rules);
             sim.input_delay_ticks = 0;
-            sim.session.binary_frame = 1;
+            sim.session.set_binary_frame_for_test(1);
             let bunker = sim
                 .spawn_object("NATBNK", "Americans", 10, 10, 0, &rules)
                 .unwrap();
@@ -651,7 +651,7 @@ mod tests {
             let owner = sim.interner.intern("Americans");
             sim.queue_command(CommandEnvelope::new(
                 owner,
-                sim.session.tick + 1,
+                sim.session.tick() + 1,
                 Command::EnterBunker {
                     unit_id: tank,
                     bunker_id: bunker,
@@ -691,7 +691,7 @@ mod tests {
                     let unit = sim.substrate.entities.get(tank).unwrap();
                     trace.push(format!(
                         "frame={} state={state:?} coord={:?} mission={:?} moving={:?}",
-                        sim.session.binary_frame,
+                        sim.session.binary_frame(),
                         object_get_coords(unit, sim.resolved_terrain.as_ref()),
                         unit.mission.current(),
                         movement::motion_query::is_moving(unit)
@@ -717,7 +717,7 @@ mod tests {
             );
             assert_eq!(unit.bunker.link(), BunkerLink::Installed(bunker));
             assert_eq!(
-                unit.body_facing_current(sim.session.binary_frame),
+                unit.body_facing_current(sim.session.binary_frame()),
                 SOUTH_FACING
             );
             let building = sim.substrate.entities.get(bunker).unwrap();
@@ -776,7 +776,7 @@ mod tests {
                 })
                 .collect();
             sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(32, 32, cells));
-            sim.session.binary_frame = 100;
+            sim.session.set_binary_frame_for_test(100);
             spawn_bunker(&mut sim, 2);
             spawn_tank_on(&mut sim, 1, 10, 10);
             let building = sim.substrate.entities.get_mut(2).unwrap();
@@ -826,11 +826,12 @@ mod tests {
                     "{name}"
                 );
             }
-            sim.session.binary_frame = integer(&expected["completed_frame"]) as u32;
+            sim.session
+                .set_binary_frame_for_test(integer(&expected["completed_frame"]) as u32);
             step_install(&mut sim, &rules, None, 2, FrameEffects::default());
             let unit = sim.substrate.entities.get(1).unwrap();
             assert_eq!(
-                unit.body_facing_current(sim.session.binary_frame),
+                unit.body_facing_current(sim.session.binary_frame()),
                 integer(&expected["current_facing"]) as u16,
                 "{name}"
             );
@@ -998,13 +999,16 @@ mod tests {
         assert_eq!(rt(&sim, 2).state, BunkerState::TurnToBuilding);
 
         // Let the facing owner finish, then enter TrackStep even at the centre.
-        sim.session.binary_frame += u32::from(
-            sim.substrate
-                .entities
-                .get(1)
-                .unwrap()
-                .body_facing
-                .timer_duration(),
+        sim.session.set_binary_frame_for_test(
+            sim.session.binary_frame()
+                + u32::from(
+                    sim.substrate
+                        .entities
+                        .get(1)
+                        .unwrap()
+                        .body_facing
+                        .timer_duration(),
+                ),
         );
         tick_bunker_install(
             &mut sim,
@@ -1038,7 +1042,7 @@ mod tests {
         );
 
         // Let the South turn finish.
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         sim.substrate
             .entities
             .get_mut(1)

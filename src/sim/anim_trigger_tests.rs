@@ -154,7 +154,7 @@ fn simulation_for_history(rules: &RuleSet, row: &Value) -> Simulation {
     let terrain = sim.resolved_terrain.as_mut().unwrap();
     let cell = terrain.native_cell_identity((x as i16, y as i16));
     terrain.write_native_cell_flags(cell, row["input"]["flags"].as_u64().unwrap() as u32);
-    sim.session.binary_frame = 1000;
+    sim.session.set_binary_frame_for_test(1000);
     // The original fixture supplies Scenario+214=1000. Reserve the same
     // prefix through the existing cursor; stable IDs remain independent.
     for _ in 0..1000 {
@@ -279,7 +279,7 @@ fn retail_trigger_anim_and_retained_no_effects_next_match_original_until_cleanup
         for visit in row["history"].as_array().unwrap() {
             let frame = visit["frame"].as_u64().unwrap() as u32;
             for current in [&mut sim, &mut restored] {
-                current.session.binary_frame = frame;
+                current.session.set_binary_frame_for_test(frame);
                 current.sound_events.clear();
                 current.visit_anim(id, &rules, None, FrameEffects::default());
                 assert_state(current, id, &visit["state"], label);

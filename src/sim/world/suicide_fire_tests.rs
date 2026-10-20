@@ -37,12 +37,16 @@ fn retail_scene() -> Option<TerrorScene> {
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     for (name, human) in [("Confederation", true), ("Americans", false)] {
         let id = sim.interner.intern(name);
-        let side = rules.country_side_index(name).unwrap().0 as u8;
-        sim.houses.insert(
-            id,
-            crate::sim::house_state::HouseState::new(id, side, Some(id), human, 10_000, 10),
-        );
-        sim.session.house_order.push(id);
+        let side = rules.country_side_index_raw(name).unwrap();
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                id,
+                side,
+                Some(id),
+                human,
+                10_000,
+                10,
+            ));
     }
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -71,7 +75,7 @@ fn retail_scene() -> Option<TerrorScene> {
         )
         .unwrap();
     let owner = sim.substrate.entities.get(source).unwrap().owner();
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     for y in 10..12 {
         for x in 10..12 {
             sim.fog.mark_visible_for_owner(owner, x, y);
@@ -128,7 +132,7 @@ fn compare_native_phase(scene: &TerrorScene, phase: &serde_json::Value) {
     let location = crate::sim::movement::ground_pose::position_world_coord(&source.position);
     let stage = source.native_stage();
     let actual = json!({
-        "frame": sim.session.binary_frame,
+        "frame": sim.session.binary_frame(),
         "health": source.health.current(),
         "alive": u8::from(source.lifecycle.object_alive()),
         "limbo": u8::from(source.lifecycle.in_limbo()),
@@ -245,13 +249,13 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                         scene.source,
                         MissionId::from_known(MissionType::Attack),
                         0,
-                        scene.sim.session.binary_frame,
+                        scene.sim.session.binary_frame(),
                         &crate::sim::mission::authority::EntityReadyInputProvider,
                     )
                     .unwrap();
                 scene
                     .sim
-                    .mission_commence_exact(scene.source, scene.sim.session.binary_frame)
+                    .mission_commence_exact(scene.source, scene.sim.session.binary_frame())
                     .unwrap();
             }
             compare_native_phase(&scene, native_phase(row, "before_fire"));
@@ -281,7 +285,7 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                     .as_u64()
                     .unwrap() as u32
                 {
-                    scene.sim.session.binary_frame = frame;
+                    scene.sim.session.set_binary_frame_for_test(frame);
                     scene
                         .sim
                         .advance_live_object_turn(scene.source, Some(&scene.rules), ai)
@@ -298,11 +302,14 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                     .sim
                     .projectiles
                     .iter()
-                    .all(|(_, bullet)| bullet.source_id != scene.source),
+                    .all(|(_, bullet)| bullet.source_id() != scene.source),
                 "the nested DeathWeapon finishes synchronously; no ordinary outgoing shot remains"
             );
             for visit in row["death_visits"].as_array().unwrap() {
-                scene.sim.session.binary_frame = visit["frame"].as_u64().unwrap() as u32;
+                scene
+                    .sim
+                    .session
+                    .set_binary_frame_for_test(visit["frame"].as_u64().unwrap() as u32);
                 scene
                     .sim
                     .advance_live_object_turn(scene.source, Some(&scene.rules), ai)
@@ -354,11 +361,11 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
         for expected in source_anims {
             assert!(
                 scene.sim.substrate.anims.iter().any(|(_, anim)| {
-                    scene.sim.interner.resolve(anim.type_id) == expected["type"].as_str().unwrap()
+                    scene.sim.interner.resolve(anim.type_id()) == expected["type"].as_str().unwrap()
                         && serde_json::json!([
-                            anim.world_coord.x,
-                            anim.world_coord.y,
-                            anim.world_coord.z
+                            anim.world_coord().x,
+                            anim.world_coord().y,
+                            anim.world_coord().z
                         ]) == expected["location"]
                 }),
                 "{} anim {}",
@@ -416,7 +423,7 @@ fn ordinary_terror_attack_finishes_die2_and_retires_its_source() {
             .unwrap();
         assert!(output.tick.frame_committed);
         assert!(
-            !scene.sim.houses.get(&owner).unwrap().is_defeated,
+            !scene.sim.houses.get(&owner).unwrap().is_defeated(),
             "ordinary source cleanup must not be a house-defeat removal"
         );
         assert!(
@@ -452,7 +459,7 @@ fn ordinary_terror_attack_finishes_die2_and_retires_its_source() {
     );
     assert!(
         scene.sim.substrate.anims.iter().any(|(_, anim)| {
-            let name = scene.sim.interner.resolve(anim.type_id);
+            let name = scene.sim.interner.resolve(anim.type_id());
             scene
                 .rules
                 .general
@@ -476,13 +483,10 @@ fn ordinary_terror_attack_finishes_die2_and_retires_its_source() {
 }
 
 #[test]
-fn direct_suicide_blast_reports_building_loss() {
-    assert_suicide_blast_reports_building_loss(true);
-}
-
-#[test]
-fn ordinary_suicide_blast_reports_building_loss() {
-    assert_suicide_blast_reports_building_loss(false);
+fn direct_and_ordinary_suicide_blasts_report_building_loss() {
+    for direct in [true, false] {
+        assert_suicide_blast_reports_building_loss(direct);
+    }
 }
 
 fn assert_suicide_blast_reports_building_loss(direct: bool) {

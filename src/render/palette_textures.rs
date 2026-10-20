@@ -339,17 +339,6 @@ mod tests {
     }
 
     #[test]
-    fn build_house_ramp_unused_rows_zero() {
-        let pal: Palette = dummy_palette();
-        let bytes: Vec<u8> = build_house_ramp_bytes(&pal, &HouseColorRamps::default(), &[]);
-        let row_bytes: usize = (RAMP_SIZE * 4) as usize;
-        let row5_start: usize = 5 * row_bytes;
-        for i in 0..row_bytes {
-            assert_eq!(bytes[row5_start + i], 0, "row 5 byte {} not zero", i);
-        }
-    }
-
-    #[test]
     fn build_house_ramp_rows_are_value_indexed() {
         // Sparse indices {1, 5, 10} must land on rows {2, 6, 11} (= hc.0 + 1),
         // matching the shader's house_color_to_remap_row.

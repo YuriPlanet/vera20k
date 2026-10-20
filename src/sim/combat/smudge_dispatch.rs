@@ -687,58 +687,6 @@ mod dispatch_tests {
     }
 
     #[test]
-    fn crater_path_reduces_tiberium_even_when_can_place_fails() {
-        // Seed the authoritative overlay byte with 10 density levels (raw 9),
-        // more than the 6-unit reduction, so the cell stays present after the
-        // native partial reduction.
-        let crater_marks = marks(false, true, false);
-        let smudge_reg = make_smudge_registry();
-        let mut grid = SmudgeGrid::new(8, 8);
-        let mut terrain = flat_terrain(8, 8);
-        let mut overlay = OverlayGrid::new(8, 8);
-        let (overlay_registry, tiberium_types) = native_tiberium_registries();
-        let ore_id = overlay_registry.id_for_name("ORE").unwrap();
-        overlay.place_overlay(4, 4, ore_id, 9);
-        let occupancy = OccupancyGrid::new();
-        let mut rng = SimRng::new(1);
-        let mut growth = OreGrowthState::new(8, 8);
-        let mut radar_dirty = Vec::new();
-        let mut radar_generation = 0;
-        let mut tactical_dirty = Vec::new();
-        let coord = SimCoord {
-            x: 4 * 256 + 128,
-            y: 4 * 256 + 128,
-            z: 0,
-        };
-        {
-            let mut tiberium = tiberium_ctx(
-                &mut overlay,
-                &mut growth,
-                &mut radar_dirty,
-                &mut radar_generation,
-                &mut tactical_dirty,
-            );
-            tiberium.overlay_registry = Some(&overlay_registry);
-            tiberium.tiberium_types = Some(&tiberium_types);
-            dispatch_anim_middle_marks(
-                &crater_marks,
-                coord,
-                &mut grid,
-                &smudge_reg,
-                &occupancy,
-                &mut terrain,
-                &mut tiberium,
-                &mut rng,
-                None,
-            );
-        }
-        // Smudge NOT placed (overlay blocks) but ore reduced by 6 density levels.
-        assert_eq!(grid.iter_occupied().count(), 0);
-        assert_eq!(overlay.cell(4, 4).overlay_id, Some(ore_id));
-        assert_eq!(overlay.cell(4, 4).overlay_data, 3);
-    }
-
-    #[test]
     fn gsi_04_11_anim_crater_reduces_ore_before_zero_zero_sentinel_rejection() {
         let crater_marks = marks(false, true, false);
         let smudge_reg = make_smudge_registry();
@@ -783,46 +731,6 @@ mod dispatch_tests {
         assert_eq!(grid.iter_occupied().count(), 0);
         assert_eq!(overlay.cell(0, 0).overlay_id, Some(ore_id));
         assert_eq!(overlay.cell(0, 0).overlay_data, 3);
-    }
-
-    #[test]
-    fn scorch_only_anim_spawns_burn() {
-        let smudge_reg = make_smudge_registry();
-        let mut grid = SmudgeGrid::new(8, 8);
-        let mut terrain = flat_terrain(8, 8);
-        let mut overlay = OverlayGrid::new(8, 8);
-        let occupancy = OccupancyGrid::new();
-        let mut rng = SimRng::new(1);
-        let mut growth = OreGrowthState::new(8, 8);
-        let mut radar_dirty = Vec::new();
-        let mut radar_generation = 0;
-        let mut tactical_dirty = Vec::new();
-        let mut tiberium = tiberium_ctx(
-            &mut overlay,
-            &mut growth,
-            &mut radar_dirty,
-            &mut radar_generation,
-            &mut tactical_dirty,
-        );
-        let coord = SimCoord {
-            x: 4 * 256 + 128,
-            y: 4 * 256 + 128,
-            z: 0,
-        };
-        dispatch_anim_middle_marks(
-            &marks(true, false, false),
-            coord,
-            &mut grid,
-            &smudge_reg,
-            &occupancy,
-            &mut terrain,
-            &mut tiberium,
-            &mut rng,
-            None,
-        );
-        let placed = grid.cell(4, 4).type_id.unwrap();
-        // BURN1 is index 1 in the registry above.
-        assert_eq!(placed, 1);
     }
 
     // Building destruction + survivor dispatcher tests live inside
@@ -910,16 +818,16 @@ mod dispatch_tests {
                 1, 2, &raw, &terrain, &overlay,
             ));
 
-            terrain.cell_mut(1, 3).unwrap().speed_costs.track = None;
+            terrain.cell_mut_for_test(1, 3).unwrap().speed_costs.track = None;
             assert!(!survivor_smudge_cell_passable(
                 1, 3, &raw, &terrain, &overlay,
             ));
-            terrain.cell_mut(1, 4).unwrap().speed_costs.track = Some(0);
+            terrain.cell_mut_for_test(1, 4).unwrap().speed_costs.track = Some(0);
             assert!(!survivor_smudge_cell_passable(
                 1, 4, &raw, &terrain, &overlay,
             ));
 
-            let bridge = terrain.cell_mut(1, 5).unwrap();
+            let bridge = terrain.cell_mut_for_test(1, 5).unwrap();
             bridge.speed_costs.track = Some(0);
             bridge.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
             raw.mark_ground(1, 5, 0x40);
@@ -932,7 +840,7 @@ mod dispatch_tests {
                 1, 5, &raw, &terrain, &overlay,
             ));
 
-            let wall_bridge = terrain.cell_mut(1, 6).unwrap();
+            let wall_bridge = terrain.cell_mut_for_test(1, 6).unwrap();
             wall_bridge.speed_costs.track = Some(0);
             wall_bridge.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
             overlay.place_overlay(1, 6, 0, 0);

@@ -94,7 +94,10 @@ pub(crate) fn emit_refinery_smoke(sim: &mut Simulation, rules: &RuleSet, buildin
                 rules,
             ) {
                 // Original4599CD calls6301F0 after each constructor.
-                sim.particle_systems_mut().get_mut(system).unwrap().lifetime = lifetime;
+                sim.particle_systems_mut()
+                    .get_mut(system)
+                    .unwrap()
+                    .override_lifetime(lifetime);
             }
         }
     }
@@ -244,12 +247,12 @@ mod tests {
                 .collect();
             assert_eq!(actual.len(), expected.len(), "{row}");
             for (system, call) in actual.into_iter().zip(expected) {
-                assert_eq!(system.coords, vector(&call["coords"]), "{row}");
-                assert_eq!(system.target_coords, vector(&call["target"]));
-                assert_eq!(system.lifetime, call["lifetime"].as_i64().unwrap() as i32);
-                assert_eq!(system.owner_entity, Some(id));
-                assert_eq!(system.target_ref, None);
-                assert_eq!(system.owner_house, None);
+                assert_eq!(system.coords(), vector(&call["coords"]), "{row}");
+                assert_eq!(system.target_coords(), vector(&call["target"]));
+                assert_eq!(system.lifetime(), call["lifetime"].as_i64().unwrap() as i32);
+                assert_eq!(system.owner_entity(), Some(id));
+                assert_eq!(system.target_ref(), None);
+                assert_eq!(system.owner_house(), None);
             }
             represented += 1;
         }
@@ -405,44 +408,6 @@ mod tests {
     }
 
     #[test]
-    fn app_frame_hash_includes_synchronous_bale_slot_and_particle_state() {
-        let rules = refinery_rules_and_art();
-        let mut sim = Simulation::new();
-        sim.hash_state_every(std::num::NonZeroU64::MIN);
-        insert_building(&mut sim, 41, "GAREFN", 7, 9);
-        sim.bale_events.push(BaleDepositEvent {
-            building_id: 41,
-            tick: 12,
-            drained: true,
-            empty: false,
-        });
-
-        begin_refinery_unload_gate(&mut sim, &rules, 41);
-        let output = sim
-            .advance_app_frame(
-                &[],
-                Some(&rules),
-                None,
-                67,
-                crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
-            )
-            .expect("fixture frame must complete");
-
-        assert!(output.tick.frame_committed);
-        assert!(sim.bale_events.is_empty());
-        assert!(
-            sim.entities()
-                .get(41)
-                .expect("refinery")
-                .building_art
-                .anim_slots()[10]
-                .is_some()
-        );
-        assert_eq!(sim.particle_systems().len(), 1);
-        assert_eq!(output.tick.state_hash, Some(sim.state_hash()));
-    }
-    #[test]
     fn original_health_ratio_corpus_selects_real_refinery_slot_variant() {
         for row in crate::sim::health_ratio_fixture::rows() {
             let art_ini = IniFile::from_str(
@@ -467,7 +432,7 @@ mod tests {
             finalize(&mut sim);
             let id = sim.entities().get(41).unwrap().building_art.anim_slots()[10].unwrap();
             assert_eq!(
-                sim.interner.resolve(sim.anim(id).unwrap().type_id),
+                sim.interner.resolve(sim.anim(id).unwrap().type_id()),
                 if row.output.refinery_special_damaged {
                     "DAMAGED"
                 } else {

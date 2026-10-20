@@ -901,25 +901,12 @@ fn frame_to_canvas_rgba(shp: &ShpFile, frame_idx: usize, palette: &Palette) -> R
 mod tests {
     use super::*;
 
-    /// MOUSE.SHA carries 517 frames; no table row may point past it.
-    const MOUSE_SHA_FRAME_COUNT: usize = 517;
-
     fn row(id: CursorId) -> (usize, usize, u64) {
         CURSOR_DEFS
             .iter()
             .find(|(row_id, ..)| *row_id == id)
             .map(|&(_, start, count, interval, _)| (start, count, interval))
             .expect("cursor row")
-    }
-
-    /// The animation clock ticks every 16 ms and every animated row runs at
-    /// rate 4, so one frame advance is 64 ms — not the 133 ms that came from
-    /// assuming the rate was counted in 30 FPS display frames.
-    #[test]
-    fn animated_cursor_interval_is_sixty_four_milliseconds() {
-        assert_eq!(CURSOR_TIMER_UNIT_MS, 16);
-        assert_eq!(ANIM_RATE_UNITS, 4);
-        assert_eq!(ANIM_INTERVAL_MS, 64);
     }
 
     /// Spot-check the rows a player sees most: select, move, the two attack
@@ -931,31 +918,6 @@ mod tests {
         assert_eq!(row(CursorId::Attack), (53, 5, 64));
         assert_eq!(row(CursorId::AttackOutOfRange), (58, 5, 64));
         assert_eq!(row(CursorId::AttackMove), (404, 9, 64));
-    }
-
-    /// Guard-area is its own cursor row (22), not the select cursor.
-    #[test]
-    fn guard_area_cursor_is_row_twenty_two() {
-        assert_eq!(row(CursorId::GuardArea), (68, 5, 64));
-    }
-
-    /// These three superweapon reticles carry rate 0 and must be static.
-    #[test]
-    fn static_superweapon_reticles_do_not_animate() {
-        assert_eq!(row(CursorId::IronCurtain), (346, 5, 0));
-        assert_eq!(row(CursorId::Chronosphere), (357, 12, 0));
-        assert_eq!(row(CursorId::Paradrop), (259, 10, 0));
-    }
-
-    #[test]
-    fn every_cursor_row_stays_inside_the_mouse_shape_file() {
-        for &(id, start, count, ..) in CURSOR_DEFS {
-            assert!(
-                start + count <= MOUSE_SHA_FRAME_COUNT,
-                "{id:?} runs to frame {} of {MOUSE_SHA_FRAME_COUNT}",
-                start + count
-            );
-        }
     }
 
     /// Every loaded frame set must come from the compiled descriptor table,

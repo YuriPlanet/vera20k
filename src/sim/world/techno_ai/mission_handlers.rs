@@ -39,6 +39,10 @@ mod hover_attack_tests;
 #[path = "guard_sabotage_tests.rs"]
 mod guard_sabotage_tests;
 
+#[cfg(test)]
+#[path = "hunt_idle_tests.rs"]
+mod hunt_idle_tests;
+
 /// Whether [`dispatch_foot_mission`] runs `id`'s handler at `now`: a Unit or
 /// Infantry that passes `MissionClass::AI`'s gate
 /// ([`GameEntity::mission_handler_due`]; harvest_attack_return.json
@@ -74,7 +78,7 @@ pub(crate) fn dispatch_foot_mission(
     ctx: super::ObjectAiCtx<'_>,
 ) -> bool {
     let mut bridge_changed = false;
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     if !foot_mission_handler_due(sim, id, now) {
         return bridge_changed;
     }
@@ -931,7 +935,7 @@ fn infantry_automatic_guard_delay(
     let Some(object) = sim.object_type(actor.type_ref(), rules) else {
         return -1;
     };
-    if house.is_controlled_by_human(sim.session.game_mode_nonzero)
+    if house.is_controlled_by_human(sim.session.game_mode_nonzero())
         || !object.deployer
         || !object.deploy_fire
         || object.undeploy_delay > -1
@@ -943,7 +947,7 @@ fn infantry_automatic_guard_delay(
     // of unsigned elapsed frames changes admission across the sign boundary.
     let deadline = (actor.mission.mission_start_frame() as i32)
         .wrapping_add(house.difficulty_value(&rules.general.ai_auto_deploy_frame_delay));
-    if deadline >= sim.session.binary_frame as i32 {
+    if deadline >= sim.session.binary_frame() as i32 {
         return -1;
     }
     if let Some(archive) = actor.archive_target() {
@@ -1036,11 +1040,11 @@ fn infantry_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> Missi
     };
     let house = sim.houses.get(&entity.owner());
     let human =
-        house.is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero));
+        house.is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
     let teamed = sim.team_script_vm.team_for_member(id).is_some();
     let object = sim.object_type(entity.type_ref(), rules);
     let area_guard = if !human && !teamed {
-        house.is_some_and(|house| house.current_iq >= rules.general.iq_guard_area)
+        house.is_some_and(|house| house.current_iq() >= rules.general.iq_guard_area)
             && entity.slave.owner().is_none()
             && object.is_some_and(|object| {
                 crate::sim::combat::combat_weapon::is_armed(entity, object)
@@ -1112,7 +1116,7 @@ impl Simulation {
                     id,
                     MissionId::from_known(mission),
                     0,
-                    self.session.binary_frame,
+                    self.session.binary_frame(),
                     &EntityReadyInputProvider,
                 );
             }
@@ -1202,7 +1206,7 @@ pub(crate) fn techno_unlimbo_idle_mode(
         }
         None => return,
     }
-    sim.mission_host_promote(id, sim.session.binary_frame, rules);
+    sim.mission_host_promote(id, sim.session.binary_frame(), rules);
 }
 
 /// One ordered selector shared by the live class receivers and scalar
@@ -1317,8 +1321,10 @@ pub(crate) fn foot_enter_idle_mode_selection(
 ///    `0x004D53A0..0x004D53B4`) whose scan came back with a target: the
 ///    engineer's, the C4 one, the VehicleThief's and the no-flag arm are
 ///    [`hunt_infantry_arm`].
-/// 4. **No target**: a human-owned object runs the idle-action virtual
-///    (`vt+0x478`, `0x004D557C`); an AI-owned one walks home to its base cell.
+/// 4. **No target**: an object whose owner is controlled by a human, or any
+///    object when `g_GameMode` is nonzero (every non-campaign match), runs
+///    the idle-action virtual (`vt+0x478`, `0x004D557C`); a campaign
+///    computer's marches on the player's base (RESIDUAL below).
 /// 5. **The tail** at `0x004D5582`, reached from every arm:
 ///    `ftol(MissionControl[current].Rate * 900.0) + RandomRanged(0, 2)`;
 ///    `0x005B3A00` indexes the current mission, Capture or Sabotage once a
@@ -1337,12 +1343,19 @@ pub(crate) fn foot_enter_idle_mode_selection(
 /// (`vt+0x480`); VERA runs it ([`Simulation::approach_target`]) for every
 /// mover the Foot body represents.
 ///
-/// RESIDUAL — **the AI return-to-base arm** (`0x004D54EE`-`0x004D5576`) is
-/// gated on `!HouseClass::IsControlledByHuman(this->Owner)` and
-/// `g_GameMode (0x00A8B238) == 0`, a campaign computer house; skirmish runs
-/// with a nonzero game mode, so it is dormant there. The human arm's
-/// `UpdateIdleAction` now uses its one Infantry receiver synchronously, before
-/// the cadence draw in that human no-target arm.
+/// RESIDUAL — **the campaign computer's march on the player**
+/// (`0x004D5506`-`0x004D5576`), taken when `!IsControlledByHuman(Owner)` and
+/// `g_GameMode (0x00A8B238) == 0`; every non-campaign match has a nonzero
+/// game mode, so it is dormant there. It asks the player's House
+/// (`[0x00A83D4C]`) for its base or starting cell
+/// (`HouseClass::Get_Base_Or_Starting_Cell @ 0x0050DEF0`); unless that is the
+/// empty cell, a Slave Miner abandons its hunt
+/// (`SlaveManagerClass::AbandonHunt @ 0x006B0C80`), then `Set_Destination`
+/// (`vt+0x480`) takes that cell and `vt+0x1E8(2, 1)` queues Move. Trigger: a
+/// campaign computer's hunter with no target. Effect: VERA's stays on Hunt
+/// where it stands, repeating the scan and cadence draws, instead of moving
+/// on the player's base. The idle arm's `UpdateIdleAction` uses its one
+/// Infantry receiver synchronously, before the cadence draw.
 ///
 /// Infantry reach this body past `InfantryClass::Mission_Hunt @ 0x0051F540`
 /// (slot `+0x228`, single DATA xref `0x007EB280`), whose two computer arms
@@ -1387,18 +1400,20 @@ fn evaluate_foot_hunt(
         }
         no_target_arm = !acquired;
     }
-    //4D54EE..4D5576: the human no-target arm invokes the class idle
-    //receiver before the mission-rate jitter, whatever Target an arm's
-    //Approach left. Campaign AI return-to-base still belongs to its
-    //documented House/mission continuation below.
+    // 0x004D54EE..0x004D557C: IsControlledByHuman (0x0050B730) or a nonzero
+    // g_GameMode (0x00A8B238) takes the class idle receiver before the
+    // mission-rate jitter, so every owner in a non-campaign match idles. Only
+    // a campaign computer house reaches the march on the player (RESIDUAL
+    // above).
     if no_target_arm
-        && sim
-            .substrate
-            .entities
-            .get(id)
-            .is_some_and(|entity| sim.owner_is_human(entity.owner()))
+        && (sim.session.game_mode_nonzero()
+            || sim
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| sim.owner_is_human(entity.owner())))
     {
-        let _ = sim.infantry_idle_action(id, rules, ctx.effects);
+        let _ = sim.infantry_idle_action(id, rules, ctx.overlay_registry, ctx.effects);
     }
     MissionHandlerEvaluation::cadence(sim.mission_rate_epilogue_for(rules, id, MissionType::Hunt))
 }
@@ -1429,7 +1444,7 @@ pub(super) fn foot_hunt_scans_ahead(sim: &Simulation, id: u64, rules: &RuleSet) 
     entity.mission.current().known() == Some(MissionType::Hunt)
         && entity.attack_target.target().is_none()
         && !entity.infantry_deploy_doing()
-        && foot_mission_handler_due(sim, id, sim.session.binary_frame)
+        && foot_mission_handler_due(sim, id, sim.session.binary_frame())
         && hunt_scans(sim, id, rules)
         && !(entity.category() == EntityCategory::Unit
             && crate::sim::mcv_deploy::hunt_deploys(sim, id, rules))
@@ -1502,7 +1517,7 @@ fn hunt_infantry_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: super:
         ctx.overlay_registry,
         ctx.effects,
     );
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         id,
         MissionId::from_known(mission),
@@ -1586,7 +1601,7 @@ fn infantry_computer_capture(
             ctx.overlay_registry,
             ctx.effects,
         );
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         let _ = sim.mission_assign_exact(id, MissionId::from_known(MissionType::Capture), now);
     }
     MissionHandlerEvaluation::cadence(1)
@@ -1705,10 +1720,10 @@ fn evaluate_foot_rescue(
             id,
             MissionId::from_known(MissionType::AreaGuard),
             0,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &EntityReadyInputProvider,
         );
-        let _ = sim.mission_commence_exact(id, sim.session.binary_frame);
+        let _ = sim.mission_commence_exact(id, sim.session.binary_frame());
     } else if state == 0 && actor.attack_target.target().is_none() {
         if actor.archive_target().is_none() {
             let post = foot_physical_cell_target(sim, id);
@@ -1831,7 +1846,7 @@ fn area_guard_scan_point(
         .substrate
         .entities
         .get(id)
-        .is_some_and(|entity| entity.passive_scan.timer().due(sim.session.binary_frame));
+        .is_some_and(|entity| entity.passive_scan.timer().due(sim.session.binary_frame()));
     if !(can_acquire_target(sim, id, rules) && timer_due) {
         return None;
     }
@@ -1864,7 +1879,7 @@ pub(super) fn foot_area_guard_scan_ahead(
         || entity.attack_target.target().is_some()
         || entity.infantry_deploy_doing()
         || entity.is_harvester()
-        || !foot_mission_handler_due(sim, id, sim.session.binary_frame)
+        || !foot_mission_handler_due(sim, id, sim.session.binary_frame())
     {
         return None;
     }
@@ -1910,7 +1925,7 @@ pub(super) fn evaluate_foot_area_guard(
         .get(id)
         .is_some_and(|entity| entity.bunker.link().installed_in().is_some())
     {
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         let _ = sim.mission_queue_exact(
             id,
             MissionId::from_known(MissionType::Guard),
@@ -1934,7 +1949,7 @@ pub(super) fn evaluate_foot_area_guard(
         // then Scenario RandomRanged(1,10)+1. Commence is deliberately not
         // gated by ReadyToCommence; the shared dispatcher writes this delay
         // AFTER the mission change. No idle/target/destination setter runs.
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         let _ = sim.mission_queue_exact(
             id,
             MissionId::from_known(MissionType::Harvest),
@@ -2029,7 +2044,7 @@ pub(super) fn evaluate_foot_area_guard(
         .get(id)
         .is_some_and(|entity| entity.attack_target.target().is_none())
     {
-        let _ = sim.infantry_idle_action(id, rules, ctx.effects);
+        let _ = sim.infantry_idle_action(id, rules, ctx.overlay_registry, ctx.effects);
     }
     //4D6F38..4D701F re-reads TarCom after idle and queues before the cadence
     //draw. An acquired enemy already returned above.
@@ -2172,13 +2187,13 @@ pub(super) fn evaluate_foot_guard_cadence(
     } else if !sim.acquire_adjacent_tesla_coil(id, rules, ctx.overlay_registry, effects) {
         //4D51A6 /4D51D8: Unit's receiver is a false stub; Infantry's owner
         //decides actual admission.
-        let _ = sim.infantry_idle_action(id, rules, effects);
+        let _ = sim.infantry_idle_action(id, rules, ctx.overlay_registry, effects);
     }
     let queue = guard_queues_sabotage(sim, id, rules).then_some(MissionType::Sabotage);
     let rearm = sim.substrate.entities.get(id).map_or(0, |entity| {
         entity
             .rearm_timer
-            .remaining(sim.session.binary_frame as i32)
+            .remaining(sim.session.binary_frame() as i32)
     });
     if rearm != 0 {
         return MissionHandlerEvaluation {
@@ -2341,15 +2356,15 @@ fn harvester_guard_override_requeues_harvest(sim: &Simulation, id: u64, rules: &
     if let Some(house) = sim
         .houses
         .get(&entity.owner())
-        .filter(|house| !house.is_controlled_by_human(sim.session.game_mode_nonzero))
+        .filter(|house| !house.is_controlled_by_human(sim.session.game_mode_nonzero()))
     {
         // Arm (ii), `0x00740880..0x0074092C`.
-        return house.tracking.owns_any_building(
+        return house.tracking().owns_any_building(
             unit_type
                 .dock
                 .iter()
                 .filter_map(|name| sim.interner.get(name)),
-        ) && !house.harvester_no_ore;
+        ) && !house.harvester_no_ore();
     }
     if !unit_type.teleporter {
         return false;
@@ -2731,7 +2746,7 @@ mod guard_rearm_tests {
                 field("base_cadence")
             );
             let mut sim = Simulation::with_seed(1);
-            sim.session.binary_frame = field("frame") as u32;
+            sim.session.set_binary_frame_for_test(field("frame") as u32);
             let mut entity = GameEntity::test_default(1, "TEST", "Americans", 5, 5);
             entity.set_type_ref_for_test(sim.interner.intern("TEST"));
             entity.set_owner_for_test(sim.interner.intern("Americans"));
@@ -2796,7 +2811,7 @@ mod guard_rearm_tests {
         for row in rows {
             let field = |name: &str| row["input"][name].as_i64().unwrap() as i32;
             let mut sim = Simulation::with_seed(1);
-            sim.session.binary_frame = field("frame") as u32;
+            sim.session.set_binary_frame_for_test(field("frame") as u32);
             let mut entity = GameEntity::test_default(1, "TEST", "Americans", 5, 5);
             // Guard now reaches the native GetWeapon(1) query before its
             // timer tail. Keep the fixture's null weapon, with valid identities.
@@ -2854,29 +2869,37 @@ mod terrain_target_tests {
             .set_for_test(Some(TargetKind::Entity(2)));
         sim.substrate.entities.insert(actor);
         let tree_type = sim.interner.intern("TREE01");
-        sim.production
-            .terrain_objects
+        sim.terrain_objects
+            .objects_mut_for_test()
             .insert(2, TerrainObjectState::for_test(2, tree_type, 7, 5));
 
         assert!(!attack_target_is_stale(&sim, 1));
         assert!(foot_dispatch_in_cadence_band(&sim, &rules, 1));
-        sim.production.terrain_objects.get_mut(&2).unwrap().health = 0;
+        sim.terrain_objects
+            .objects_mut_for_test()
+            .get_mut(&2)
+            .unwrap()
+            .set_health_for_test(0);
         assert!(attack_target_is_stale(&sim, 1));
         // Coordinate virtuals remain readable while expiry still holds the
         // Object; presence and coordinate resolution are different questions.
         assert!(foot_dispatch_in_cadence_band(&sim, &rules, 1));
-        let tree = sim.production.terrain_objects.get_mut(&2).unwrap();
-        tree.health = 100;
-        tree.lifecycle = TerrainObjectLifecycle::Limbo;
+        let tree = sim
+            .terrain_objects
+            .objects_mut_for_test()
+            .get_mut(&2)
+            .unwrap();
+        tree.set_health_for_test(100);
+        tree.set_lifecycle_for_test(TerrainObjectLifecycle::Limbo);
         // Object Alive remains set in Limbo; only UnInit clears it.
         assert!(!attack_target_is_stale(&sim, 1));
-        sim.production
-            .terrain_objects
+        sim.terrain_objects
+            .objects_mut_for_test()
             .get_mut(&2)
             .unwrap()
-            .lifecycle = TerrainObjectLifecycle::Destroyed;
+            .set_lifecycle_for_test(TerrainObjectLifecycle::Destroyed);
         assert!(attack_target_is_stale(&sim, 1));
-        sim.production.terrain_objects.remove(&2);
+        sim.terrain_objects.objects_mut_for_test().remove(&2);
         assert!(attack_target_is_stale(&sim, 1));
         assert!(!foot_dispatch_in_cadence_band(&sim, &rules, 1));
     }

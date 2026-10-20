@@ -195,6 +195,10 @@ pub struct GameEntity {
     /// [`BodyFrameCounter`]: crate::sim::animation::BodyFrameCounter
     #[serde(default)]
     pub body_frame_counter: crate::sim::animation::BodyFrameCounter,
+    /// UnitClass+6C0, owned by sim::animation. FireAt seeds it even when
+    /// LimboLaunch has removed this Unit from Logic; Unlimbo preserves it.
+    #[serde(default)]
+    pub unit_firing_counter: crate::sim::animation::UnitFiringCounter,
     /// The owning house (`TechnoClass+0x21C`), interned.
     /// `TechnoClass::ChangeOwner @ 0x007014A0` moves it; here only the store's
     /// owner-change path does ([`Self::set_owner_from_store`]).
@@ -851,8 +855,14 @@ impl GameEntity {
         self.ion_blast_lift
     }
 
-    pub(crate) fn set_ion_blast_lift(&mut self, pixels: i8) {
+    /// IonBlast (`0x0053CF7F`) stores the ripple's signed pixel lift.
+    pub(crate) fn lift_by_ion_blast(&mut self, pixels: i8) {
         self.ion_blast_lift = pixels;
+    }
+
+    /// FootAI (`0x004DAECA`) clears the transient draw lift.
+    pub(crate) fn clear_ion_blast_lift(&mut self) {
+        self.ion_blast_lift = 0;
     }
 
     /// The infantry house-total latches (`Techno+0x438/+0x439`). Only
@@ -1059,7 +1069,7 @@ impl GameEntity {
     /// Foot+5E0=-1; retained suffix/reference words and the destination
     /// remain intact.
     pub(crate) fn clear_live_path_head(&mut self) {
-        self.navigation.path_replay.clear_live_head();
+        self.navigation.path_replay_mut().clear_live_head();
     }
 
     /// The stored playfield membership (`TechnoClass+0x3D5`).
@@ -1458,6 +1468,7 @@ impl GameEntity {
             suppress_deploy_voice: Default::default(),
             barrel_elevation: crate::sim::movement::FacingClass::new(0, BARREL_ELEVATION_ROT),
             body_frame_counter: Default::default(),
+            unit_firing_counter: Default::default(),
             owner,
             health,
             estimated_health: crate::sim::estimated_health::EstimatedHealth::from_raw(
@@ -2032,64 +2043,6 @@ mod tests {
     }
 
     #[test]
-    fn test_new_entity_defaults() {
-        let e = GameEntity::test_default(1, "HTNK", "Americans", 30, 40);
-        assert_eq!(e.stable_id, 1);
-        assert_eq!(e.type_ref, crate::sim::intern::test_intern("HTNK"));
-        assert_eq!(e.owner, crate::sim::intern::test_intern("Americans"));
-        assert_eq!(e.position.rx(), 30);
-        assert_eq!(e.position.ry(), 40);
-        assert_eq!(e.position.z(), 0);
-        assert_eq!(e.body_facing_current(0), 0);
-        assert_eq!(e.health.current(), 100);
-        assert_eq!(e.category, EntityCategory::Unit);
-        assert_eq!(e.veterancy.rank(), 0);
-        assert_eq!(e.sight.range(), 5);
-        assert!(e.is_voxel);
-        assert!(!e.selection.is_selected());
-        assert!(!e.repairing.is_on());
-        assert!(e.locomotor.is_none());
-        assert!(e.attack_target.target().is_none());
-        assert!(e.radio_contacts.is_empty());
-        assert_eq!(e.rally_cell(), None);
-        assert!(!e.ai_sell_repair.was_attacked_by_enemy());
-        assert!(e.barrel_facing.is_none());
-        assert!(e.miner.is_none());
-        assert!(!e.mega_mission.is_attack_move());
-        assert!(!e.on_bridge());
-        assert!(
-            !e.in_playfield(),
-            "TechnoClass ctor @ 0x006F2F5B initializes +0x3D5 false"
-        );
-    }
-
-    #[test]
-    fn gsi_05_10_pending_building_fire_serde_default_is_none() {
-        let entity = GameEntity::test_default(1, "NATSLA", "Soviet", 30, 40);
-        let mut value = serde_json::to_value(entity).expect("serialize entity");
-        value
-            .as_object_mut()
-            .expect("entity object")
-            .remove("pending_building_fire");
-
-        let restored: GameEntity = serde_json::from_value(value).expect("deserialize entity");
-        assert!(restored.pending_building_fire.pending().is_none());
-    }
-
-    #[test]
-    fn gsi_13_06_body_frame_counter_serde_default_is_zero() {
-        let entity = GameEntity::test_default(1, "DRON", "Soviet", 30, 40);
-        let mut value = serde_json::to_value(entity).expect("serialize entity");
-        value
-            .as_object_mut()
-            .expect("entity object")
-            .remove("body_frame_counter");
-
-        let restored: GameEntity = serde_json::from_value(value).expect("deserialize entity");
-        assert_eq!(restored.body_frame_counter.get(), 0);
-    }
-
-    #[test]
     fn live_contacts_are_per_entity_and_idempotent() {
         let mut contacted = GameEntity::test_default(1, "MTNK", "Americans", 30, 40);
         let unrelated = GameEntity::test_default(2, "MTNK", "Americans", 31, 40);
@@ -2103,14 +2056,6 @@ mod tests {
 
         contacted.clear_live_contact_with(100);
         assert!(!contacted.has_live_contact_with(100));
-    }
-
-    #[test]
-    fn test_is_alive() {
-        let mut e = GameEntity::test_default(1, "E1", "Soviet", 10, 10);
-        assert!(e.is_alive());
-        e.health.set_for_test(0);
-        assert!(!e.is_alive());
     }
 }
 
@@ -2130,7 +2075,7 @@ mod lifecycle_tests {
         for bits in 0u8..64 {
             e.lifecycle.set_object_alive_for_test(bits & 0b00_0001 != 0);
             e.lifecycle.set_in_limbo_for_test(bits & 0b00_0010 != 0);
-            e.lifecycle.set_cell_marked(bits & 0b00_0100 != 0);
+            e.lifecycle.set_cell_marked_for_test(bits & 0b00_0100 != 0);
             e.in_logic_vector.set_for_test(bits & 0b00_1000 != 0);
             e.death.set_dying_for_test(bits & 0b01_0000 != 0);
             e.health

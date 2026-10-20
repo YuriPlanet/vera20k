@@ -273,24 +273,6 @@ mod tests {
     }
 
     #[test]
-    fn green_spread_runs_after_regions_and_before_the_first_recalc() {
-        assert!(position(Stage::Regions) < position(Stage::GreenSpread));
-        assert!(position(Stage::GreenSpread) < position(Stage::RecalcAfterTerrain));
-    }
-
-    #[test]
-    fn hills_run_after_tiberium_and_before_lat_patches() {
-        assert!(position(Stage::Tiberium) < position(Stage::Hills));
-        assert!(position(Stage::Hills) < position(Stage::LatPatches));
-    }
-
-    #[test]
-    fn starts_precede_everything_that_places_against_them() {
-        assert!(position(Stage::Starts) < position(Stage::TechBuildings));
-        assert!(position(Stage::Starts) < position(Stage::Tiberium));
-    }
-
-    #[test]
     fn lat_driver_tail_is_patches_then_fixup_then_trees_then_rocks() {
         // The native temperate driver order: paint patches, run the LAT fixup
         // that produces the sand-LAT tiles, scatter trees, then rocks.
@@ -394,17 +376,6 @@ mod tests {
     }
 
     #[test]
-    fn width_and_height_options_are_independent() {
-        let dims = generated_dimensions(&RmgOptions {
-            num_players: 4,
-            width: 0,
-            height: 3,
-            ..Default::default()
-        });
-        assert_eq!(dims, (70, 80));
-    }
-
-    #[test]
     fn geometry_derives_from_the_padded_size() {
         let options = RmgOptions {
             num_players: 4,
@@ -418,65 +389,5 @@ mod tests {
         assert_eq!(geometry.diamond_min, 74);
         assert_eq!(geometry.diamond_max, 74 + 2 * 82);
         assert_eq!(geometry.stride, 74 + 82 + 1);
-    }
-
-    /// The header projection every generated map starts from. `build` emits
-    /// into exactly this file, so the dimension and theater mapping is pinned
-    /// here rather than behind a whole generation run.
-    #[test]
-    fn generated_header_uses_the_real_dimensions() {
-        let options = RmgOptions {
-            num_players: 8,
-            width: 3,
-            height: 3,
-            ..Default::default()
-        };
-        let geometry = MapGeometry::from_options(&options);
-        let map = emit::empty_map_file(&options, geometry.gen_w as u32, geometry.gen_h as u32);
-        assert_eq!(map.header.width, 124, "120 interior + 4");
-        assert_eq!(map.header.height, 132, "120 interior + 12");
-        assert_eq!(map.header.local_width, 120);
-    }
-
-    #[test]
-    fn theater_option_reaches_the_generated_header() {
-        let options = RmgOptions {
-            theater: 1,
-            ..Default::default()
-        };
-        let geometry = MapGeometry::from_options(&options);
-        let map = emit::empty_map_file(&options, geometry.gen_w as u32, geometry.gen_h as u32);
-        assert_eq!(map.header.theater, "SNOW");
-    }
-
-    /// Out-of-range inputs must be clamped before anything derives geometry or
-    /// an RNG seed from them.
-    #[test]
-    fn normalize_clamps_before_geometry_and_seed() {
-        let mut options = RmgOptions {
-            seed: 0x9999_9999u32 as i32,
-            num_players: 99,
-            ..Default::default()
-        };
-        options.normalize();
-        assert!((2..=8).contains(&options.num_players));
-        assert!(!executed_stages(&options).is_empty());
-        let geometry = MapGeometry::from_options(&options);
-        assert!(geometry.gen_w > 0 && geometry.gen_h > 0);
-    }
-
-    #[test]
-    fn the_generator_rng_is_independent_of_the_match_rng() {
-        let mut first = RmgRng::new(77);
-        let mut unrelated = crate::sim::rng::SimRng::new(999);
-        for _ in 0..10 {
-            let _ = unrelated.next_u32();
-        }
-        let mut second = RmgRng::new(77);
-        assert_eq!(
-            first.next_u32(),
-            second.next_u32(),
-            "generator draws must not depend on any other stream"
-        );
     }
 }

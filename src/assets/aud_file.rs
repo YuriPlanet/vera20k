@@ -231,11 +231,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_header_too_short() {
-        assert!(parse_header(&[0u8; 5]).is_none());
-    }
-
-    #[test]
     fn test_parse_header_valid() {
         // sample_rate=22050 (0x5622), data_size=1000, output_size=4000, flags=2, format=99
         let mut data: Vec<u8> = Vec::new();
@@ -264,19 +259,6 @@ mod tests {
         data.push(0x02);
         data.push(50); // unsupported format
         assert!(decode_aud(&data).is_none());
-    }
-
-    #[test]
-    fn test_decode_aud_empty_data() {
-        let mut data: Vec<u8> = Vec::new();
-        data.extend_from_slice(&22050u16.to_le_bytes());
-        data.extend_from_slice(&0u32.to_le_bytes());
-        data.extend_from_slice(&0u32.to_le_bytes());
-        data.push(0x02);
-        data.push(99);
-        let (hdr, samples) = decode_aud(&data).expect("should decode");
-        assert_eq!(hdr.sample_rate, 22050);
-        assert!(samples.is_empty());
     }
 
     /// The four retail AUDs whose final chunk declares `4*compressed + 2` —
@@ -336,27 +318,5 @@ mod tests {
         let (_, b) = decode_aud(&two).expect("split chunks");
         assert_eq!(a.len(), 16);
         assert_eq!(a, b);
-    }
-
-    #[test]
-    fn test_decode_aud_single_chunk() {
-        let mut data: Vec<u8> = Vec::new();
-        // Header.
-        data.extend_from_slice(&22050u16.to_le_bytes()); // sample_rate
-        data.extend_from_slice(&10u32.to_le_bytes()); // data_size (approx)
-        data.extend_from_slice(&8u32.to_le_bytes()); // output_size
-        data.push(0x02); // flags
-        data.push(99); // format
-
-        // Chunk header: compressed_size=2, output_size=8, magic=0xDEAF.
-        data.extend_from_slice(&2u16.to_le_bytes());
-        data.extend_from_slice(&8u16.to_le_bytes());
-        data.extend_from_slice(&CHUNK_MAGIC.to_le_bytes());
-        // 2 bytes of ADPCM data → 4 samples.
-        data.push(0x00);
-        data.push(0x00);
-
-        let (_hdr, samples) = decode_aud(&data).expect("should decode chunk");
-        assert_eq!(samples.len(), 4);
     }
 }

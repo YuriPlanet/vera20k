@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original RT_DIALOG 0x73 controls, their 0x006040B0 help labels and every ordinary child's complete 0x0060B7A0 placement",
+  "assumptions": [
+    "Template bytes read from the mapped original resource directory; supplied 6x13 dialog base units, not emulated font metrics",
+    "0x0060C0C0 sends 0x73's ordinary children to 0x0060B7A0 (0x0060C3E1) and its title, Return and status line to dedicated placements, established by original instruction inspection",
+    "Parent origin 0 and extents 640x480, 800x600, 1024x768",
+    "Help: only the table fallback; the 0x73 proc handles no 0x4E9 and the children's own 0x4E8 answers are outside this fixture"
+  ],
+  "substitutions": [
+    "Shared native_child_case supplies GetParent/GetWindowRect/MoveWindow and true 0x0069BBE0 hooks",
+    "Shared help_label supplies the record-table hash and GetDlgCtrlID"
+  ],
+  "entry_points": {
+    "show": "0x006586D0",
+    "dialog_proc": "0x00657DA0",
+    "dispatcher": "0x0060C0C0",
+    "ordinary_child": "0x0060B7A0",
+    "help_lookup": "0x006040B0"
+  },
+  "replay_command": "python -m tools.storage_oracle.diplomacy_shell_layout",
+  "payload_sha256": "7f2f78c94671fc113bec50f21664f13891c4e3594d85b9bd7169c69776cb70df"
+}

@@ -21,7 +21,7 @@ fn cell(value: &Value) -> (u16, u16) {
 
 fn spawn_fv(scene: &mut HeadlessScenario, xyz: [i32; 3]) -> u64 {
     let runtime = &mut scene.runtime;
-    let owner = runtime.simulation.session.current_house.unwrap();
+    let owner = runtime.simulation.session.current_house().unwrap();
     let owner_name = runtime.simulation.resolve(owner).to_owned();
     let id = runtime
         .simulation
@@ -93,21 +93,21 @@ fn paid_diagnostic(
 ) -> Value {
     let sim = scene.sim();
     let actor = sim.substrate.entities.get(id).unwrap();
-    json!({"frame":sim.session.binary_frame,
+    json!({"frame":sim.session.binary_frame(),
         "stable_id":id,
-        "game_speed":sim.session.game_options.game_speed,
+        "game_speed":sim.session.game_options().game_speed,
         "native_id":actor.native_unique_id(),
         "next_native_id":sim.native_unique_ids.as_ref().unwrap().current_raw(),
         "mission":mission_state(actor),
         "passive_scan":passive_scan_state(actor),
-        "bullets":sim.projectiles.iter().filter(|(_,b)|b.source_id == id)
+        "bullets":sim.projectiles.iter().filter(|(_,b)|b.source_id() == id)
             .map(|(_,b)|b).collect::<Vec<_>>(),
         "anims":sim.substrate.anims.iter().filter(|(id, _)| !ambient_anims.contains(id))
             .map(|(_, anim)|anim).collect::<Vec<_>>(),
         "anim_types":sim.substrate.anims.iter().filter(|(id, _)| !ambient_anims.contains(id))
             .map(|(_, anim)| {
-                let name = sim.resolve(anim.type_id);
-                json!({"name":name,"native_id":anim.native_unique_id,
+                let name = sim.resolve(anim.type_id());
+                json!({"name":name,"native_id":anim.native_unique_id(),
                     "config":scene.runtime.resources.rules.art().anim_runtime_config(name)
                         .map(|c|json!({"raw_shp_frame_count":c.raw_shp_frame_count,
                             "start":c.start,"end":c.end,"loop_start":c.loop_start,
@@ -136,7 +136,7 @@ fn paid_snapshot(
         .and_then(|l| l.selected_drive_runtime())
         .and_then(|r| r.retained())
         .unwrap_or(&constructor_drive);
-    let path = &actor.navigation.path_runtime;
+    let path = actor.navigation.path_runtime();
     let track_state = json!({
         "movement_timer":[path.movement_timer().start_frame(), path.movement_timer().duration()],
         "blocked_timer":[path.blocked_timer().start_frame(), path.blocked_timer().duration()],
@@ -147,13 +147,13 @@ fn paid_snapshot(
     let bullets: Vec<_> = sim
         .projectiles
         .iter()
-        .filter(|(_, b)| b.source_id == id)
+        .filter(|(_, b)| b.source_id() == id)
         .map(|(_, b)| {
-            let guidance = b.guidance.as_ref().expect("physical FV guided missile");
-            json!({"native_id":b.native_unique_id,"alive":1,
-            "position":[b.position.x,b.position.y,b.position.z],
-            "velocity":[b.velocity.x.bits(),b.velocity.y.bits(),b.velocity.z.bits()],
-            "arm_timer":[b.arm_timer.start_frame(),b.arm_timer.duration()],
+            let guidance = b.guidance().expect("physical FV guided missile");
+            json!({"native_id":b.native_unique_id(),"alive":1,
+            "position":[b.position().x,b.position().y,b.position().z],
+            "velocity":[b.velocity().x.bits(),b.velocity().y.bits(),b.velocity().z.bits()],
+            "arm_timer":[b.arm_timer().start_frame(),b.arm_timer().duration()],
             "course_locked":guidance.course_locked,"course_frames":guidance.course_frames,
             "closing_frames":guidance.closing_frames,
             "closing_accumulator_bits":guidance.closing_accumulator_bits})
@@ -161,20 +161,20 @@ fn paid_snapshot(
         .collect();
     let anims: Vec<_> = sim.substrate.anims.iter()
         .filter(|(id, _)| !ambient_anims.contains(id))
-        .map(|(_, a)| json!({"native_id":a.native_unique_id,
-            "type_name":sim.resolve(a.type_id),"alive":true,
-            "position":[a.world_coord.x,a.world_coord.y,a.world_coord.z],
-            "runtime":{"current_frame":a.runtime.current_frame,
-                "frame_step":a.runtime.frame_step,"delay_remaining":a.runtime.delay_remaining,
-                "rate_reload":a.runtime.rate_reload,
-                "frame_timer":[a.runtime.frame_timer.start_frame(),a.runtime.frame_timer.duration()],
-                "loop_remaining":a.runtime.loop_remaining,"first_ai_guard":a.runtime.first_ai_guard,
-                "constructor_reverse":a.runtime.constructor_reverse,"inactive":a.runtime.inactive,
-                "paused":a.runtime.paused}}))
+        .map(|(_, a)| json!({"native_id":a.native_unique_id(),
+            "type_name":sim.resolve(a.type_id()),"alive":true,
+            "position":[a.world_coord().x,a.world_coord().y,a.world_coord().z],
+            "runtime":{"current_frame":a.runtime().current_frame,
+                "frame_step":a.runtime().frame_step,"delay_remaining":a.runtime().delay_remaining,
+                "rate_reload":a.runtime().rate_reload,
+                "frame_timer":[a.runtime().frame_timer.start_frame(),a.runtime().frame_timer.duration()],
+                "loop_remaining":a.runtime().loop_remaining,"first_ai_guard":a.runtime().first_ai_guard,
+                "constructor_reverse":a.runtime().constructor_reverse,"inactive":a.runtime().inactive,
+                "paused":a.runtime().paused}}))
         .collect();
     json!({
-        "next_frame":sim.session.binary_frame,
-        "game_speed":sim.session.game_options.game_speed,
+        "next_frame":sim.session.binary_frame(),
+        "game_speed":sim.session.game_options().game_speed,
         "native_id":actor.native_unique_id(),
         "next_native_id":sim.native_unique_ids.as_ref().unwrap().current_raw(),
         "mission":mission_state(actor),
@@ -278,12 +278,16 @@ fn command_paid_fv(
     game_speed: u8,
 ) -> u64 {
     let sim = &mut scene.runtime.simulation;
-    sim.session.binary_frame = 0;
-    sim.session.tick = 0;
+    sim.session.set_binary_frame_for_test(0);
+    sim.session.set_tick_for_test(0);
     // Match the declared original Options constructor input before any
     // measured constructor/AI. Normalized water-impact Anims use this
     // stored speed through native5FB2E0, independently of frame pacing.
-    assert!(sim.session.game_options.apply_in_game_speed(game_speed));
+    assert!(
+        sim.session
+            .game_options_mut_for_test()
+            .apply_in_game_speed(game_speed)
+    );
     sim.main_rng = crate::sim::rng::SimRng::new(0).into();
     sim.mapgen_rng = crate::sim::rng::SimRng::new(0);
     sim.scenario_rng = crate::sim::rng::SimRng::new(scenario_seed);
@@ -293,8 +297,8 @@ fn command_paid_fv(
     // an extra frame0 AI visit would add a Guard cadence draw.
     let runtime = &mut scene.runtime;
     let sim = &mut runtime.simulation;
-    sim.session.binary_frame = 1;
-    let owner = sim.resolve(sim.session.current_house.unwrap()).to_owned();
+    sim.session.set_binary_frame_for_test(1);
+    let owner = sim.resolve(sim.session.current_house().unwrap()).to_owned();
     assert!(sim.apply_command_with_overlays(
         &owner,
         &Command::ForceAttackCell {
@@ -343,7 +347,7 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
         let export_requested = std::env::var_os("VERA20K_FV_PAID_EXPORT").is_some();
         for (index, expected) in case["frames"].as_array().unwrap().iter().enumerate() {
             if index != 0 {
-                let frame = scene.sim().session.binary_frame;
+                let frame = scene.sim().session.binary_frame();
                 let advance = || {
                     for command in case["followup_commands"]
                         .as_array()
@@ -480,7 +484,11 @@ fn retail_fv_approach_matches_native_candidates_admission_and_queue() {
         for row in packet[group].as_array().unwrap() {
             let name = row["input"]["name"].as_str().unwrap();
             let mut scene = load_anytown_concrete();
-            scene.runtime.simulation.session.binary_frame = 173;
+            scene
+                .runtime
+                .simulation
+                .session
+                .set_binary_frame_for_test(173);
             scene.runtime.simulation.scenario_rng = crate::sim::rng::SimRng::new(31);
             let xyz = serde_json::from_value(row["source_xyz"].clone()).unwrap();
             let id = spawn_fv(&mut scene, xyz);
@@ -639,7 +647,7 @@ fn retail_fv_approach_matches_native_candidates_admission_and_queue() {
                 row["drive_head"],
                 "{name} paid head"
             );
-            let timing = actor.navigation.path_runtime;
+            let timing = actor.navigation.path_runtime();
             assert_eq!(
                 json!([
                     timing.movement_timer().start_frame(),
@@ -713,7 +721,7 @@ fn retail_fv_approaches_a_firing_cell_before_its_first_paid_step() {
     let destination: [u16; 2] = serde_json::from_value(witness["nav_cell"].clone()).unwrap();
     let mut scene = load_anytown_concrete();
     let runtime = &mut scene.runtime;
-    let owner = runtime.simulation.session.current_house.unwrap();
+    let owner = runtime.simulation.session.current_house().unwrap();
     let owner_name = runtime.simulation.resolve(owner).to_owned();
     let id = runtime
         .simulation
@@ -739,7 +747,7 @@ fn retail_fv_approaches_a_firing_cell_before_its_first_paid_step() {
     actor.position.set_exact_z_leptons_for_test(Some(xyz[2]));
     let command = CommandEnvelope::new(
         owner,
-        runtime.simulation.session.tick + 1,
+        runtime.simulation.session.tick() + 1,
         Command::ForceAttackCell {
             attacker_id: id,
             target_rx: 87,

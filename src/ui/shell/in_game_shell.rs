@@ -126,6 +126,46 @@ impl InGameShellLayout {
             button_size[1],
         )
     }
+
+    /// The lower right-panel button (Resume, Back, Return): active branch of
+    /// original 0x0060B350, whose lower anchor is SIDE3's top
+    /// (0x0060B3FC..0x0060B41C), not the viewport bottom.
+    pub fn lower_button_rect(&self, width: i32, button_size: [i32; 2]) -> RectPx {
+        RectPx::new(
+            width - 147,
+            self.side3.y - button_size[1],
+            button_size[0],
+            button_size[1],
+        )
+    }
+}
+
+/// An active-game dialog's title static 0x694: original 0x0060B1D0's active
+/// branch, without the launcher title's +7 final adjustment.
+pub fn right_panel_title_rect(width: i32) -> RectPx {
+    RectPx::new(width - 165, 2, 162, 16)
+}
+
+/// An active-game dialog's status line 0x695: original 0x0060B550's active
+/// branch keeps the 455x20 resource canvas, its left at 10 and its bottom one
+/// pixel above the parent's.
+pub fn status_line_rect(height: i32) -> RectPx {
+    RectPx::new(10, height - 21, 455, 20)
+}
+
+/// Active-game branch of original 0x0060B7A0 for an ordinary child: its
+/// template rectangle in pixels (`geom::dlu_rect`), moved by half the
+/// screen's growth beyond 800x600 per axis and clamped at zero. Signed halves
+/// truncate toward zero; the final coordinates clamp, not the half-delta.
+/// Executed for B6 and dialog 0x73 by `tools/storage_oracle/
+/// abort_shell_layout.py` and `diplomacy_shell_layout.py`.
+pub fn ordinary_child_rect(raw: RectPx, width: i32, height: i32) -> RectPx {
+    RectPx::new(
+        (raw.x + (width - 800) / 2).max(0),
+        (raw.y + (height - 600) / 2).max(0),
+        raw.w,
+        raw.h,
+    )
 }
 
 #[cfg(test)]

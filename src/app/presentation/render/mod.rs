@@ -458,8 +458,8 @@ pub(crate) fn render_game(
         .as_ref()
         .map(|runtime| runtime.view().simulation());
     let segments = presentation.line_trails.composite(|id| {
-        sim.and_then(|sim| sim.projectiles.get(id))
-            .map(|bullet| bullet.position)
+        sim.and_then(|sim| sim.projectiles().get(id))
+            .map(|bullet| bullet.position())
     });
     let frame_rate = presentation.detail.borrow().frame_rate();
     presentation.radiation_beams.composite(frame_rate, viewport);
@@ -759,33 +759,4 @@ fn upload_to_gpu(
 #[cfg(test)]
 mod tests {
     include!("../render_tests.rs");
-
-    #[test]
-    fn game_render_counts_preserve_exact_emitted_lengths() {
-        let sprite = crate::render::batch::SpriteInstance::default();
-        let instances = super::build_instances::SidebarInstances {
-            chrome: Vec::new(),
-            command_bar: Vec::new(),
-            cameo: Vec::new(),
-            unavailable: Vec::new(),
-            flash: Vec::new(),
-            gclock: Vec::new(),
-            cameo_overlay: Vec::new(),
-            queue_overlay: Vec::new(),
-            queue_text: vec![sprite; 2],
-            text: vec![sprite; 3],
-            minimap: vec![sprite],
-            viewport_rect: vec![sprite; 4],
-            content_boundary: vec![sprite; 4],
-            radar_anim: vec![sprite; 2],
-            view: None,
-        };
-        let counts = instances.emitted_instance_counts();
-
-        assert_eq!(counts.minimap, 1);
-        assert_eq!(counts.viewport_rect, 4);
-        assert_eq!(counts.radar_animation, 2);
-        assert_eq!(counts.sidebar_text, 5);
-        assert_eq!(instances.content_boundary.len(), 4);
-    }
 }

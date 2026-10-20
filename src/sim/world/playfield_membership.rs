@@ -12,20 +12,14 @@ use crate::map::resolved_terrain::ResolvedTerrainGrid;
 /// Writers:
 /// - [`Self::enter`]: `BuildingClass::ExitObject_Main`'s prelude
 ///   (`0x00443C81`), whatever the exit's outcome; Fly's playfield latch
-///   (`0x004CD5F0`); ordinary cell movement (`0x006F511A..0x006F5139`, the
-///   Teleport warp's PerCell(2) included), which only promotes.
+///   (`0x004CD5F0`); FootAI's BalloonHover admission (`0x004DA63B..0x004DA670`);
+///   ordinary cell movement (`0x006F511A..0x006F5139`, the Teleport warp's
+///   PerCell(2) included). These writers only promote.
 /// - [`Self::store`]: the exact mode-one result of `TechnoClass::Unlimbo`
 ///   (`0x006F6CFE`) and of `MapClass::Set_Clipped_LocalSize @ 0x00567230`
 ///   (`0x0056730E`), which may demote as well as promote.
 /// - [`Self::leave`]: the Chronosphere warp's arrival outside the playfield
 ///   (`0x00719A99`, `movement::teleport_chrono`).
-///
-/// RESIDUAL: `FootClass::AI`'s per-frame promotion (`0x004DA63B..0x004DA670`:
-/// a Foot that is not a member, of a type that is not `BalloonHover=`, whose
-/// cell is in the playfield) is not ported; VERA promotes on cell movement
-/// alone. Trigger: a Foot that entered the playfield from outside it
-/// (reinforcements and other off-map entries). Effect: until its cell
-/// movement promotes it, membership consumers can still see it outside.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub(crate) struct PlayfieldMembership(bool);
@@ -36,7 +30,7 @@ impl PlayfieldMembership {
         self.0
     }
 
-    /// Promote to a member: the exit prelude, Fly's latch and cell movement.
+    /// Promote to a member through the admitted native writer.
     pub(crate) fn enter(&mut self) {
         self.0 = true;
     }
@@ -53,6 +47,45 @@ impl PlayfieldMembership {
 }
 
 impl Simulation {
+    /// FootAI4DA63B..670, after Techno/radiation and before Process: an
+    /// unadmitted BalloonHover Foot enters when its physical Cell is inside.
+    /// GetCell+1BC is Object5F6960 on all three Foot class tables; reuse its
+    /// two Map565730 lookups, then Map578540's retained-Cell query. PerCell
+    /// and Unlimbo instead retain their packed-coordinate578460 semantics.
+    /// Original gamemd.exe body/callers; no RNG, timer or detach operation.
+    pub(super) fn promote_balloon_playfield_membership_before_process(
+        &mut self,
+        stable_id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        let Some(entity) = self.substrate.entities.get(stable_id) else {
+            return;
+        };
+        if !entity.category().is_foot()
+            || entity.in_playfield()
+            || self
+                .object_type(entity.type_ref(), rules)
+                .is_none_or(|object| !object.balloon_hover)
+        {
+            return;
+        }
+        let (Some(bounds), Some(terrain)) = (self.playfield_bounds, self.resolved_terrain.as_ref())
+        else {
+            // A partial Rust world has no Map authority for this writer.
+            return;
+        };
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let cell = crate::sim::movement::ground_pose::query_object_cell(
+            &cells,
+            crate::sim::movement::ground_pose::position_world_coord(&entity.position),
+        );
+        if crate::sim::cell_rect::retained_cell_is_in_playfield(cell, Some(bounds), &cells)
+            && let Some(entity) = self.substrate.entities.get_mut(stable_id)
+        {
+            entity.in_playfield.enter();
+        }
+    }
+
     /// Exact mode-one query for the stored TechnoClass+0x3D5 writer family.
     /// Absence means there is no live MapClass authority, not rectangular or
     /// permissive fallback authority.
@@ -111,3 +144,7 @@ impl Simulation {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "playfield_membership_tests.rs"]
+mod tests;

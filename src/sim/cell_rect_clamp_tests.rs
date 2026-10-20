@@ -45,7 +45,7 @@ fn native_house_playfield_clamp_matches_all_72_original_rows() {
     let cells: Vec<_> = allocated.iter().map(|&(x, y, _, _)| (x, y)).collect();
     terrain.test_set_native_allocated_cells(&cells);
     for &(x, y, level, slope) in &allocated {
-        let cell = &mut terrain.cells[usize::from(y) * 512 + usize::from(x)];
+        let cell = &mut terrain.cells_mut_for_test()[usize::from(y) * 512 + usize::from(x)];
         cell.level = level as u8;
         cell.slope_type = slope;
     }

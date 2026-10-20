@@ -127,7 +127,7 @@ impl Simulation {
             || !crate::sim::movement::motion_query::is_moving_now(
                 entity,
                 None,
-                self.session.binary_frame,
+                self.session.binary_frame(),
             )
         {
             // The locomotor's Is_Moving_Now: Fly `0x004CCAC0` reads the speed
@@ -172,7 +172,7 @@ impl Simulation {
             .barrel_facing
             .as_mut()
             .unwrap()
-            .set(facing, self.session.binary_frame);
+            .set(facing, self.session.binary_frame());
         if distance < 16 {
             self.assign_aircraft_destination(id, None, rules, effects);
             4

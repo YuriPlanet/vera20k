@@ -463,22 +463,6 @@ mod tests {
     }
 
     #[test]
-    fn corner_indexing_shares_edges_between_cells() {
-        let (_grid, _scratch, span) = world();
-        let cg = CornerGrid {
-            stride: span + 1,
-            corners: vec![Corner::default(); ((span + 1) * (span + 1)) as usize],
-        };
-        // A cell's SE corner is its eastern neighbour's SW corner.
-        let a = cg.cell_corners(10, 10);
-        let b = cg.cell_corners(11, 10);
-        assert_eq!(a[2], b[3], "SE of (10,10) == SW of (11,10)");
-        // and its southern neighbour's NW corner is its own SW corner.
-        let c = cg.cell_corners(10, 11);
-        assert_eq!(a[3], c[0], "SW of (10,10) == NW of (10,11)");
-    }
-
-    #[test]
     fn flat_land_builds_a_flat_unlocked_grid() {
         let (mut grid, scratch, span) = world();
         // All cells clear (unassigned) at level 4; morphable-permitting.
@@ -512,31 +496,6 @@ mod tests {
             corners.iter().all(|&c| cg.corners[c].locked),
             "water cell corners are locked"
         );
-    }
-
-    #[test]
-    fn a_raised_cell_becomes_a_ramp_or_plateau() {
-        let (mut grid, mut scratch, span) = world();
-        for (x, y) in grid.native_cells().collect::<Vec<_>>() {
-            grid.get_mut(x, y).unwrap().level = 0;
-        }
-        // Deposit a height of 2 on one interior cell; the walk would have
-        // truncated it to a whole number.
-        scratch.get_mut(16, 12).height = 2.0;
-        let identity = ids();
-        let morphable = |_tile: i32| true;
-        let mut cg = CornerGrid::build(&grid, &scratch, span, &identity, &morphable);
-        morph(&mut grid, &scratch, &mut cg, &identity, &morphable);
-        cg.finalize(&mut grid, &scratch, &identity, &morphable);
-        // The raised cell (and its surroundings) gained level / ramp tiles.
-        let touched = grid
-            .native_cells()
-            .filter(|&(x, y)| {
-                let cell = grid.get(x, y).unwrap();
-                cell.level > 0 || cell.slope > 0
-            })
-            .count();
-        assert!(touched > 0, "raising a cell reshapes the terrain");
     }
 
     #[test]

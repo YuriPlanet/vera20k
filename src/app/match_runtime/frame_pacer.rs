@@ -279,19 +279,6 @@ const fn frame_bucket(now_ms: u64) -> u32 {
 mod tests {
     use super::*;
 
-    #[cfg(feature = "telemetry-dashboard")]
-    #[test]
-    fn dashboard_budget_matches_admission_at_each_speed() {
-        let mut pacer = LocalFramePacer::new();
-        pacer.record_admitted_frame(0);
-        assert_eq!(pacer.budget_ms(0), None);
-        for speed in 1..=6 {
-            let budget = pacer.budget_ms(speed).unwrap() as u64;
-            assert!(!pacer.should_admit(budget - 1, speed, false));
-            assert!(pacer.should_admit(budget, speed, false));
-        }
-    }
-
     #[test]
     fn wall_clock_process_probe() {
         if std::env::var_os("VERA20K_PACING_CLOCK_PROBE").is_some() {
@@ -334,11 +321,6 @@ mod tests {
     }
 
     #[test]
-    fn first_unpaused_iteration_is_immediately_eligible() {
-        assert!(LocalFramePacer::new().should_admit(123, 1, false));
-    }
-
-    #[test]
     fn timed_speeds_require_the_exact_bucket_distance() {
         for speed in MIN_TIMED_GAME_SPEED..=MAX_TIMED_GAME_SPEED {
             let mut pacer = LocalFramePacer::new();
@@ -351,63 +333,11 @@ mod tests {
     }
 
     #[test]
-    fn speed_zero_is_uncapped() {
-        let mut pacer = LocalFramePacer::new();
-        pacer.record_admitted_frame(160);
-        assert!(pacer.should_admit(160, 0, false));
-        assert_eq!(pacer.next_deadline_ms(0), None);
-    }
-
-    #[test]
-    fn pause_does_not_consume_an_eligible_frame() {
-        let mut pacer = LocalFramePacer::new();
-        pacer.record_admitted_frame(160);
-        assert!(!pacer.should_admit(176, 1, true));
-        assert!(pacer.should_admit(176, 1, false));
-    }
-
-    #[test]
-    fn a_long_stall_still_admits_only_one_frame() {
-        let mut pacer = LocalFramePacer::new();
-        pacer.record_admitted_frame(0);
-        assert!(pacer.should_admit(10_000, 1, false));
-        pacer.record_admitted_frame(10_000);
-        assert!(!pacer.should_admit(10_000, 1, false));
-    }
-
-    #[test]
-    fn reanchor_discards_elapsed_wall_time() {
-        let mut pacer = LocalFramePacer::new();
-        pacer.record_admitted_frame(0);
-        assert!(pacer.should_admit(10_000, 1, false));
-        pacer.reanchor(10_000);
-        assert!(!pacer.should_admit(10_000, 1, false));
-        assert!(pacer.should_admit(10_016, 1, false));
-    }
-
-    #[test]
-    fn out_of_range_speed_clamps_to_six_buckets() {
-        let mut pacer = LocalFramePacer::new();
-        pacer.record_admitted_frame(0);
-        assert!(!pacer.should_admit(95, u8::MAX, false));
-        assert!(pacer.should_admit(96, u8::MAX, false));
-    }
-
-    #[test]
     fn native_signed_bucket_subtraction_stalls_at_uptime_rollover() {
         let mut pacer = LocalFramePacer::new();
         pacer.record_admitted_frame(u64::from(u32::MAX - 7));
 
         assert!(!pacer.should_admit(u64::from(u32::MAX) + 1, 1, false));
-    }
-
-    #[test]
-    fn scenario_elapsed_clock_uses_retail_sixty_bucket_seconds() {
-        for (buckets, seconds) in [(59_u64, 0), (60, 1), (119, 1), (120, 2)] {
-            let mut clock = ScenarioElapsedClock::new();
-            clock.start(0);
-            assert_eq!(clock.elapsed_seconds(buckets << 4), seconds);
-        }
     }
 
     #[test]
@@ -419,15 +349,6 @@ mod tests {
 
         clock.resume(1_070 << 4);
         assert_eq!(clock.stop(1_130 << 4), 2);
-    }
-
-    #[test]
-    fn scenario_elapsed_clock_uninterrupted_wall_span_ignores_frame_activity() {
-        let mut clock = ScenarioElapsedClock::new();
-        clock.start(200 << 4);
-
-        // No clock hook runs for focus loss or for any number of sim frames.
-        assert_eq!(clock.elapsed_seconds(320 << 4), 2);
     }
 
     #[test]

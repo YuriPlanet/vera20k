@@ -2,17 +2,15 @@
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
-use crate::sim::house_state::HouseState;
-use crate::sim::intern::{InternedId, StringInterner};
+use crate::sim::intern::StringInterner;
 use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::NativeF32Bits;
-use std::collections::BTreeMap;
 
 /// `HouseClass::GetSpeedBonus @ 0x0050C050` as the getter calls it: for the
 /// Foot's owner (`Foot+0x21C`) and its type. 1.0 without a type or a House
 /// (rules-less fixtures), like a constructor-default HouseType.
 pub fn owner_speed_bonus(
-    houses: &BTreeMap<InternedId, HouseState>,
+    houses: &crate::sim::houses::Houses,
     entity: &GameEntity,
     object: Option<&ObjectType>,
 ) -> NativeF32Bits {
@@ -36,7 +34,7 @@ pub(super) fn adjusted_speed(
     entity: &GameEntity,
     object: Option<&ObjectType>,
     veteran_speed: f64,
-    houses: &BTreeMap<InternedId, HouseState>,
+    houses: &crate::sim::houses::Houses,
 ) -> SimFixed {
     crate::sim::combat::veterancy::entity_mover_speed_leptons_per_second(
         entity,
@@ -73,14 +71,14 @@ pub(crate) fn owner_current_speed_from_fraction(
 pub struct SpeedRules<'a> {
     rules: &'a RuleSet,
     interner: &'a StringInterner,
-    houses: &'a BTreeMap<InternedId, HouseState>,
+    houses: &'a crate::sim::houses::Houses,
 }
 
 impl<'a> SpeedRules<'a> {
     pub fn new(
         rules: &'a RuleSet,
         interner: &'a StringInterner,
-        houses: &'a BTreeMap<InternedId, HouseState>,
+        houses: &'a crate::sim::houses::Houses,
     ) -> Self {
         Self {
             rules,
@@ -107,7 +105,7 @@ pub fn owner_current_speed(
     entity: &GameEntity,
     object: Option<&ObjectType>,
     veteran_speed: f64,
-    houses: &BTreeMap<InternedId, HouseState>,
+    houses: &crate::sim::houses::Houses,
 ) -> i32 {
     owner_current_speed_from_fraction(
         adjusted_speed(entity, object, veteran_speed, houses),
@@ -185,9 +183,9 @@ mod tests {
         let americans = test_intern("Americans");
         let mut house = HouseState::new(americans, 0, None, false, 0, 10);
         house.project_country_mults(&rules, &test_interner());
-        let houses = std::collections::BTreeMap::from([(americans, house)]);
+        let houses = [house].into_iter().collect::<crate::sim::houses::Houses>();
         let speed = |houses| super::owner_current_speed(&mtnk, rules.object("MTNK"), 1.0, houses);
-        let no_houses = std::collections::BTreeMap::new();
+        let no_houses = crate::sim::houses::Houses::default();
         assert_eq!(speed(&no_houses), 17);
         assert_eq!(speed(&houses), 25);
         let mut e1 = crate::sim::game_entity::GameEntity::test_default(2, "E1", "Americans", 0, 0);

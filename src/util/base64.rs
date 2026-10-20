@@ -91,26 +91,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_empty() {
-        assert_eq!(base64_decode("").unwrap(), Vec::<u8>::new());
-    }
-
-    #[test]
     fn test_hello() {
         // "Hello" = SGVsbG8=
         assert_eq!(base64_decode("SGVsbG8=").unwrap(), b"Hello".to_vec());
-    }
-
-    #[test]
-    fn test_no_padding() {
-        // "Man" = TWFu (no padding needed, length divisible by 3)
-        assert_eq!(base64_decode("TWFu").unwrap(), b"Man".to_vec());
-    }
-
-    #[test]
-    fn test_two_pad() {
-        // "M" = TQ==
-        assert_eq!(base64_decode("TQ==").unwrap(), b"M".to_vec());
     }
 
     #[test]

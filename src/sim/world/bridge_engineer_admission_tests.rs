@@ -166,7 +166,7 @@ fn one_cell_undeploy_navcom_stays_at_the_separate_conversion_boundary() {
         .get_mut(OTHER)
         .unwrap()
         .lifecycle
-        .set_cell_marked(false);
+        .set_cell_marked_for_test(false);
     assert_eq!(
         sim.infantry_per_cell_building_admission(
             sim.substrate.entities.get(INFANTRY).unwrap(),

@@ -67,11 +67,19 @@ pub struct ZoneMap {
     /// whose zone ID should be returned for bridge-layer queries.
     /// None = no bridges on map. Mirrors gamemd.exe GetZoneID redirect (0x0056d230).
     bridge_redirect: Option<Vec<Option<(u16, u16)>>>,
-    pub width: u16,
-    pub height: u16,
+    width: u16,
+    height: u16,
 }
 
 impl ZoneMap {
+    pub const fn width(&self) -> u16 {
+        self.width
+    }
+
+    pub const fn height(&self) -> u16 {
+        self.height
+    }
+
     /// Construct a ZoneMap from pre-computed arrays.
     pub(crate) fn new(
         zone_ids: Vec<ZoneId>,
@@ -173,8 +181,8 @@ pub struct ZoneGrid {
     /// hierarchy snapshot; record-only changes invalidate cached connectivity.
     bridge_records: Vec<crate::sim::bridge_state::BridgeEndpointRecord>,
     native_bridge_source_size: Option<(i32, i32)>,
-    pub width: u16,
-    pub height: u16,
+    width: u16,
+    height: u16,
 }
 
 /// Native Mouse Save5BE727..767 / Load5BE355..3A7 retain Map+68's
@@ -260,6 +268,14 @@ impl<'de> serde::Deserialize<'de> for ZoneGrid {
 }
 
 impl ZoneGrid {
+    pub const fn width(&self) -> u16 {
+        self.width
+    }
+
+    pub const fn height(&self) -> u16 {
+        self.height
+    }
+
     pub(crate) fn is_native_load_pending(&self) -> bool {
         self.pending_native_load
     }
@@ -683,7 +699,7 @@ impl ZoneGrid {
                     // in all six hash-bound retail theaters (bridge report).
                     if let CellRef::Real(exit) = current
                         && terrain.high_bridge_tile_offset(exit).is_some()
-                        && exit.land_type() != LandType::Rock.as_index()
+                        && exit.land_type != LandType::Rock.as_index()
                     {
                         selected = record.endpoint_b;
                     }
@@ -827,7 +843,7 @@ impl ZoneGrid {
         let is_exit = |cell: &CellRef<'_>| {
             matches!(cell, CellRef::Real(cell)
                 if terrain.high_bridge_tile_offset(cell).is_some()
-                && cell.land_type() != LandType::Rock.as_index())
+                && cell.land_type != LandType::Rock.as_index())
         };
         let step = |xy: (u16, u16), direction: usize| {
             let delta = DIRECTION_DELTAS[direction];
@@ -956,9 +972,14 @@ impl ZoneGrid {
             .copied()
     }
 
-    pub(crate) fn base_topology_mut(&mut self) -> &mut zone_build::BaseZoneTopology {
+    pub(super) fn base_topology_mut(&mut self) -> &mut zone_build::BaseZoneTopology {
         self.invalidate_navigation_history();
         &mut self.base_topology
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn base_topology_mut_for_test(&mut self) -> &mut zone_build::BaseZoneTopology {
+        self.base_topology_mut()
     }
 
     /// Supplied raw Map+18 row premise in native query fixtures. This does

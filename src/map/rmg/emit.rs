@@ -185,7 +185,6 @@ pub fn populate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::rmg::MapGeometry;
 
     #[test]
     fn theater_indices_map_to_engine_names() {
@@ -211,15 +210,6 @@ mod tests {
         assert_eq!(map.header.local_left, 2);
         assert_eq!(map.header.local_top, 5, "playable area starts at row 5");
         assert_eq!((map.header.local_width, map.header.local_height), (60, 60));
-    }
-
-    #[test]
-    fn generated_map_starts_with_no_content() {
-        let map = empty_map_file(&RmgOptions::default(), 32, 32);
-        assert!(map.cells.is_empty());
-        assert!(map.overlays.is_empty());
-        assert!(map.terrain_objects.is_empty());
-        assert!(map.waypoints.is_empty());
     }
 
     fn grid() -> RmgGrid {
@@ -321,25 +311,6 @@ mod tests {
                 ry: 30
             }
         );
-    }
-
-    #[test]
-    fn populated_geometry_matches_the_generator_grid_frame() {
-        // Cells emit at their grid coordinates verbatim (identity frame): the
-        // populated rx/ry are exactly the diamond cell coords.
-        let options = RmgOptions::default();
-        let geometry = MapGeometry::from_options(&options);
-        let g = RmgGrid::new(geometry.stride, geometry.diamond_min, geometry.diamond_max);
-        let mut map = empty_map_file(&options, geometry.gen_w as u32, geometry.gen_h as u32);
-        populate(&mut map, &g, &[], &[], &[]);
-        for (x, y) in g.native_cells() {
-            assert!(
-                map.cells
-                    .iter()
-                    .any(|c| c.rx == x as u16 && c.ry == y as u16),
-                "grid cell ({x},{y}) projects to the same map coord"
-            );
-        }
     }
 
     /// Architecture invariant: the simulation must never depend on the

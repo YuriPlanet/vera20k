@@ -8,7 +8,6 @@
 
 use super::*;
 use crate::map::cell_index::NativeCellIdentity as Cell;
-use crate::map::resolved_terrain::DynamicTerrainCellState;
 use crate::sim::bridge_state::Phase;
 use crate::sim::bridge_state::publication::{self, BridgePublicationHost, CellCoord};
 use crate::sim::bridge_state::ramp_repair::Family;
@@ -191,13 +190,10 @@ impl LivePublication<'_> {
                 terrain.capture_real_cell_bridge_flags_0x1180();
         }
         let resolved = &terrain.cells()[index];
-        let coord = (resolved.rx, resolved.ry);
         self.sim
             .real_cell_bridge_flags_0x1180
             .set_allocated_cell(index, resolved.bridge_facts.raw_flags);
-        self.sim
-            .dynamic_terrain_cells
-            .insert(coord, DynamicTerrainCellState::capture(resolved));
+        self.sim.dynamic_terrain_cells.record(resolved);
     }
 }
 

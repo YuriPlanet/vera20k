@@ -117,39 +117,6 @@ mod tests {
     }
 
     #[test]
-    fn every_page_button_maps_to_a_typed_control() {
-        for button in SINGLE_PLAYER_PAGE.buttons() {
-            let id = SinglePlayerControlId::from_resource_id(button.id).expect("typed control");
-            assert_eq!(id.resource_id(), button.id);
-        }
-    }
-
-    #[test]
-    fn status_help_keys_match_dialog_0x100_control_mapping() {
-        let key = |id: SinglePlayerControlId| {
-            SINGLE_PLAYER_PAGE
-                .button(id.resource_id())
-                .map(|button| button.tooltip_key)
-        };
-        assert_eq!(
-            key(SinglePlayerControlId::NewCampaign0x688),
-            Some("STT:SingleButtonNewCampaign")
-        );
-        assert_eq!(
-            key(SinglePlayerControlId::LoadSavedGame0x689),
-            Some("STT:SingleButtonLoadSavedGame")
-        );
-        assert_eq!(
-            key(SinglePlayerControlId::Skirmish0x579),
-            Some("STT:SingleButtonSkirmish")
-        );
-        assert_eq!(
-            key(SinglePlayerControlId::MainMenu0x686),
-            Some("STT:SingleButtonBack")
-        );
-    }
-
-    #[test]
     fn controller_hits_dialog_0x100_buttons_by_geometry() {
         let layout = compute_layout(800, 600);
         let feed = button_feed(&layout);

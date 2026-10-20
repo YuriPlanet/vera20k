@@ -28,6 +28,14 @@ pub(crate) struct MatchState {
     /// Read-only process measurements; never inputs to the simulation.
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) telemetry_timing: super::telemetry::TickTimingRing,
+    /// Whole-match 1 Hz timeline; recorded whether or not a dashboard client
+    /// is attached, so a late client can backfill.
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) telemetry_history: super::telemetry::MatchHistory,
+    /// Report-grade 5 s samples; each one renders the same report as the live
+    /// view, including the time before a client attached.
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) report_history: super::telemetry::ReportHistory,
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) telemetry_tick_rate: super::telemetry::TickRateMeter,
     pub(crate) map_basic: BasicSection,
@@ -46,6 +54,9 @@ pub(crate) struct MatchState {
     /// frame remains visible but simulation is frozen; its destination is
     /// committed only after the retail fade/voice-wait sequence completes.
     pub(crate) scenario_exit: Option<crate::app::match_runtime::scenario_exit::ScenarioExitCascade>,
+    /// `g_bScenarioRestartRequested` `0x008B41C0`: B6 Restart raised it and
+    /// the termination router consumes it before the next simulation frame.
+    pub(crate) scenario_restart_requested: bool,
     /// Match elapsed wall time for the retail score screen. App-local and never
     /// serialized, hashed, or read by deterministic simulation.
     pub(crate) scenario_elapsed_clock: crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
@@ -72,7 +83,7 @@ impl MatchState {
         presentation_pause_for_screen(
             screen,
             self.paused(),
-            self.sim_runtime.as_ref().map(|rt| &rt.simulation.session),
+            self.sim_runtime.as_ref().map(|rt| rt.simulation.session()),
         )
     }
     /// True when the game is paused and the simulation frozen: an in-scenario
@@ -115,12 +126,12 @@ mod tests {
     #[test]
     fn retained_pause_does_not_leak_into_result_or_shell_audio() {
         let mut sim = Simulation::with_seed(0);
-        sim.session.set_started(true);
+        sim.publish_scenario_started();
         sim.pause_scenario(2);
         assert!(presentation_pause_for_screen(
             &GameScreen::InGame,
             false,
-            Some(&sim.session)
+            Some(sim.session())
         ));
         // Score entry retains ScenarioStarted until Continue; it is not the
         // presentation-lifetime boundary. Shell return retains the runtime too.
@@ -133,27 +144,27 @@ mod tests {
             GameScreen::Loading,
         ] {
             assert!(
-                !presentation_pause_for_screen(&screen, false, Some(&sim.session)),
+                !presentation_pause_for_screen(&screen, false, Some(sim.session())),
                 "{screen:?}"
             );
         }
         // A failed load returning to the current world must retain the hold.
-        assert!(sim.session.scenario_pause_timed());
+        assert!(sim.session().scenario_pause_timed());
         assert!(presentation_pause_for_screen(
             &GameScreen::InGame,
             false,
-            Some(&sim.session)
+            Some(sim.session())
         ));
         sim.expire_scenario_pause();
         assert!(!presentation_pause_for_screen(
             &GameScreen::InGame,
             false,
-            Some(&sim.session)
+            Some(sim.session())
         ));
         assert!(presentation_pause_for_screen(
             &GameScreen::InGame,
             true,
-            Some(&sim.session)
+            Some(sim.session())
         ));
     }
 }
@@ -164,7 +175,7 @@ mod tests {
 /// Evidence: docs/research/PHASE3_CURRENT_HOUSE_IDENTITY_GHIDRA_REPORT.md.
 pub(crate) fn scenario_local_owner(simulation: &crate::sim::world::Simulation) -> Option<&str> {
     simulation
-        .session
-        .current_house
-        .map(|owner| simulation.interner.resolve(owner))
+        .session()
+        .current_house()
+        .map(|owner| simulation.interner().resolve(owner))
 }

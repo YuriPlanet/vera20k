@@ -53,13 +53,13 @@ fn create_overlap(rules: &RuleSet, count: usize) -> (Simulation, u64) {
         });
         desos.push(id);
     }
-    sim.session.binary_frame = 13;
+    sim.session.set_binary_frame_for_test(13);
     assert!(sim.radiation.is_empty());
     // Separate ordinary frames retain the native compacting-Bullet skip rule:
     // no second adjacent Inviso Bullet can lose its first AI behind retirement.
     // All three fields predate16 and their first level-decay timer remains90.
     for frame in 13..=15 {
-        assert_eq!(sim.session.binary_frame, frame);
+        assert_eq!(sim.session.binary_frame(), frame);
         let output = advance(&mut sim, rules);
         let index = (frame - 13) as usize;
         let shots: Vec<_> = output
@@ -86,12 +86,12 @@ fn create_overlap(rules: &RuleSet, count: usize) -> (Simulation, u64) {
             assert!(shots.is_empty());
         }
     }
-    assert_eq!(sim.session.binary_frame, 16);
+    assert_eq!(sim.session.binary_frame(), 16);
     assert_eq!(sim.radiation.sites().count(), count);
     for center in &CENTERS[..count] {
         let site = sim.radiation.site_at(*center).unwrap();
-        assert_eq!(site.level, 500);
-        assert_eq!(site.radius_leptons, 2688);
+        assert_eq!(site.level(), 500);
+        assert_eq!(site.radius_leptons(), 2688);
     }
     // Admit the fresh target after all direct self-shot damage has completed.
     // Field geometry and stock DOG health are the native comparison inputs.
@@ -177,7 +177,7 @@ fn stock_dog_survives_first_pulse_from_three_real_deso_fields() {
             "{count} native-overlapping stock fields"
         );
         if count == 3 {
-            while sim.session.binary_frame < 32 {
+            while sim.session.binary_frame() < 32 {
                 advance(&mut sim, &rules);
                 assert_eq!(
                     sim.substrate.entities.get(dog).unwrap().health.current(),
@@ -223,7 +223,7 @@ fn overlapping_stock_fields_preserve_serialized_bits_hash_and_decay() {
                 frame,
                 &rules.radiation,
                 scene.resolved_terrain.as_ref(),
-                &mut Vec::new(),
+                &mut crate::sim::light_sources::LightingSources::default(),
             );
         }
         assert_eq!(

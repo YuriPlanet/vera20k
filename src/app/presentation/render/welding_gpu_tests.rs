@@ -80,11 +80,11 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
     assert!(
         sim.particle_systems()
             .iter()
-            .all(|(&id, system)| id == system_id || system.particles.is_empty()),
+            .all(|(&id, system)| id == system_id || system.particles().is_empty()),
         "the selected fixture has no unrelated Particle queries"
     );
     let system = sim.particle_systems().get(system_id).unwrap();
-    let at = system.coords;
+    let at = system.coords();
     let child_ids: Vec<_> = sim
         .display_layers()
         .members(DisplayLayer::AIR)
@@ -92,18 +92,18 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
         .copied()
         .filter(|id| {
             system
-                .particles
+                .particles()
                 .iter()
                 .any(|particle| particle.stable_id() == *id)
         })
         .collect();
-    assert_eq!(child_ids.len(), system.particles.len());
+    assert_eq!(child_ids.len(), system.particles().len());
     assert!(!child_ids.is_empty());
     assert_eq!(
         sim.display_layers().layer_of(system_id),
         Some(DisplayLayer::GROUND)
     );
-    let type_id = sim.interner.intern(&anim_type);
+    let type_id = sim.intern(&anim_type);
     let anim = sim
         .spawn_anim_at_world(
             &rules,
@@ -156,7 +156,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
                 house_colors: &house_colors,
                 hidden_super_anims: &hidden,
                 show_hidden: false,
-                local_owner: sim.session.current_house,
+                local_owner: sim.session().current_house(),
                 observe_particles: false,
             },
             &mut parents,

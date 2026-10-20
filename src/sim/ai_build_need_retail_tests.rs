@@ -52,9 +52,9 @@ fn stock_scene(root: &std::path::Path) -> HeadlessScenario {
         "XMP03T4.MAP",
         &[(LaunchCountry::Russia, AiDifficulty::Easy)],
     );
-    launch.player_name = "VERA-OBSERVER".to_owned();
-    launch.local.country = LaunchCountry::Russia;
-    launch.local.start_position = LaunchStartPosition::Position(0);
+    launch.local_player_mut().name = "VERA-OBSERVER".to_owned();
+    launch.local_slot_mut().country = LaunchCountry::Russia;
+    launch.local_slot_mut().start_position = LaunchStartPosition::Position(0);
     launch.opponents[0].start_position = LaunchStartPosition::Position(1);
     launch.options = SkirmishLaunchOptions {
         starting_credits: 5000,
@@ -121,7 +121,7 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
             let rules = &scene.runtime.resources.rules;
             let live = gatherers(sim, rules, owner);
             assert_eq!(
-                sim.houses[&owner].tracking.resource_gatherers(),
+                sim.houses[&owner].tracking().resource_gatherers(),
                 live.len() as i32,
                 "committed-frame tracking consistency at {step}"
             );
@@ -136,7 +136,7 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
                     |(&entity_id, (target_rx, target_ry))| {
                         CommandEnvelope::new(
                             local,
-                            sim.session.tick,
+                            sim.session.tick(),
                             Command::Move {
                                 entity_id,
                                 target_rx,
@@ -150,10 +150,10 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
                 let original = original.expect("the AI generated a free miner");
                 assert_eq!(live, [original], "one on-map gatherer before the attack");
                 let house = &sim.houses[&owner];
-                assert!(house.tracking.resource_destinations() > 0);
-                assert!(house.tracking.war_factories() > 0);
-                assert!(!house.build_const_order.is_empty());
-                assert!(!house.base_plan.nodes.is_empty());
+                assert!(house.tracking().resource_destinations() > 0);
+                assert!(house.tracking().war_factories() > 0);
+                assert!(!house.build_const_order().is_empty());
+                assert!(!house.base_plan().nodes().is_empty());
                 assert_eq!(
                     house.difficulty_value(&rules.general.harvesters_per_refinery),
                     1,
@@ -203,7 +203,7 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
                     commands.extend(tanks.iter().map(|&attacker_id| {
                         CommandEnvelope::new(
                             local,
-                            sim.session.tick,
+                            sim.session.tick(),
                             Command::Attack {
                                 attacker_id,
                                 target_id: original,
@@ -216,10 +216,10 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
             let before_calls = calls.count();
             let admission = lost && !first_recovery && check_build_need(sim, rules, owner);
             let due = sim.houses[&owner]
-                .strategy_timer
-                .expired(sim.session.binary_frame as i32);
-            let before_income = i64::from(sim.houses[&owner].economy.credits())
-                + i64::from(sim.houses[&owner].economy.spent_credits());
+                .strategy_timer()
+                .expired(sim.session.binary_frame() as i32);
+            let before_income = i64::from(sim.houses[&owner].economy().credits())
+                + i64::from(sim.houses[&owner].economy().spent_credits());
             let carrying_before = recovered
                 .and_then(|id| sim.entities().get(id))
                 .and_then(|entity| entity.miner.as_ref())
@@ -259,9 +259,9 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
                 );
                 let house = &sim.houses[&owner];
                 let harvester = EconomyTypes::of(sim, rules, house).harvester.unwrap();
-                assert_eq!(house.ai_production.mode(), 2);
+                assert_eq!(house.ai_production().mode(), 2);
                 assert_eq!(
-                    Some(house.ai_unit_choices.get(UnitChoiceKind::Unit)),
+                    Some(house.ai_unit_choices().get(UnitChoiceKind::Unit)),
                     rules.type_array_index(ObjectCategory::Vehicle, &harvester.id)
                 );
                 first_recovery = true;
@@ -274,8 +274,8 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
                 {
                     recovered_harvested |= miner.harvesting() && !miner.cargo().is_empty();
                     recovered_unloaded |= miner.unload_active();
-                    let after_income = i64::from(sim.houses[&owner].economy.credits())
-                        + i64::from(sim.houses[&owner].economy.spent_credits());
+                    let after_income = i64::from(sim.houses[&owner].economy().credits())
+                        + i64::from(sim.houses[&owner].economy().spent_credits());
                     recovered_income |= recovered_unloaded
                         && carrying_before
                         && miner.cargo().is_empty()

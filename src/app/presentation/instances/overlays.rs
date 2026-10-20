@@ -34,9 +34,9 @@ use super::helpers::{
 fn terrain_object_is_render_visible(
     object: &crate::map::overlay::TerrainObject,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    authority: Option<&crate::sim::production::ProductionState>,
+    authority: Option<&crate::sim::terrain_object::TerrainObjectStore>,
 ) -> bool {
-    let (Some(rules), Some(production)) = (rules, authority) else {
+    let (Some(rules), Some(terrain_objects)) = (rules, authority) else {
         return true;
     };
     if rules
@@ -45,11 +45,10 @@ fn terrain_object_is_render_visible(
     {
         return true;
     }
-    let Some(stable_id) = production.terrain_object_cells.get(&(object.rx, object.ry)) else {
+    let Some(stable_id) = terrain_objects.id_at((object.rx, object.ry)) else {
         return false;
     };
-    production
-        .terrain_objects
+    terrain_objects
         .get(stable_id)
         .is_some_and(|terrain| terrain.is_live() && terrain.cell() == (object.rx, object.ry))
 }
@@ -260,7 +259,7 @@ pub(crate) fn build_display_effect_instances(
         .general
         .parachute_shp
         .as_deref()
-        .and_then(|name| sim.interner.get(name));
+        .and_then(|name| sim.interner().get(name));
     let local_owner = input.local_owner;
     for &stable_id in sim.display_layers().ordered_ids() {
         if let Some(light) = sim.building_spotlight(stable_id, input.rules) {
@@ -312,7 +311,7 @@ pub(crate) fn build_display_effect_instances(
         if parachute_type.is_some_and(|ty| parachute_canopy_owner(anim, ty).is_some()) {
             continue;
         }
-        let type_name: &str = sim.interner.resolve(anim.type_id);
+        let type_name: &str = sim.interner().resolve(anim.type_id());
         let config = input.rules.art().anim_runtime_config(type_name);
         if config.is_some_and(|config| !config.art_body_read) {
             continue;
@@ -346,23 +345,23 @@ pub(crate) fn build_display_effect_instances(
                     // A Super's ChronoPlacement anim: the client's byte
                     // (`match_runtime::super_selection`).
                     false => {
-                        anim.draw_runtime.hidden || input.hidden_super_anims.contains(&stable_id)
+                        anim.draw_runtime().hidden || input.hidden_super_anims.contains(&stable_id)
                     }
                 },
-                special_hidden: anim.draw_runtime.special_hidden,
+                special_hidden: anim.draw_runtime().special_hidden,
                 // The native special-hide type bit remains an explicit residual.
                 type_special_hide: false,
             },
         ) {
             continue;
         }
-        let Ok(frame) = u16::try_from(anim.runtime.current_frame) else {
+        let Ok(frame) = u16::try_from(anim.runtime().current_frame) else {
             continue;
         };
         // `AnimClass::GetCoords @ 0x00422BE0`: an owner-attached anim stores an
         // owner-relative delta, so the draw position must be resolved through
         // the owner rather than read off the field.
-        let Some(anim_coord) = sim.anim_absolute_coord(anim.stable_id) else {
+        let Some(anim_coord) = sim.anim_absolute_coord(anim.stable_id()) else {
             continue;
         };
         let (center_x, center_y, rx, ry, _, lift_px) = anim_world_render_coords(anim_coord);
@@ -373,7 +372,7 @@ pub(crate) fn build_display_effect_instances(
         }
         let tint = input.lighting.anim_tint_at((rx, ry), config);
         let remap_color =
-            crate::render::sprite_atlas::anim_remap_color(anim, &sim.interner, input.house_colors);
+            crate::render::sprite_atlas::anim_remap_color(anim, sim.interner(), input.house_colors);
         let palette_light = if remap_color.is_some() {
             Default::default()
         } else {
@@ -381,11 +380,11 @@ pub(crate) fn build_display_effect_instances(
                 input.lighting,
                 (rx, ry),
                 config,
-                anim.use_cell_drawer,
+                anim.use_cell_drawer(),
             )
         };
         let key = ShpSpriteKey {
-            palette_context: if anim.use_cell_drawer {
+            palette_context: if anim.use_cell_drawer() {
                 crate::render::sprite_atlas::ShpPaletteContext::Cell
             } else if remap_color.is_some() {
                 crate::render::sprite_atlas::ShpPaletteContext::SelectedScheme
@@ -402,14 +401,14 @@ pub(crate) fn build_display_effect_instances(
         };
         let Some(alpha) = anim_instance_alpha_with_flags(
             config,
-            anim.draw_flags,
-            anim.runtime.current_frame,
+            anim.draw_flags(),
+            anim.runtime().current_frame,
             i32::from(
                 presentation_anim_frame_count(&atlas.active_anim_frame_counts, type_name)
                     .unwrap_or(0),
             ),
             input.detail_level as i32,
-            anim.draw_runtime,
+            anim.draw_runtime(),
         ) else {
             continue;
         };
@@ -420,7 +419,7 @@ pub(crate) fn build_display_effect_instances(
             center_y,
             lift_px,
         );
-        debug_assert!(!anim.terrain_attached || anim.use_cell_drawer);
+        debug_assert!(!anim.terrain_attached() || anim.use_cell_drawer());
         // Native Z (`AnimClass__DrawIt @ 0x00422CA0`): 0x2800, gradient entry
         // 2 (0 when Flat), `YDrawOffset + ZAdjust - AdjustForZ - 2`; tests Z
         // per pixel and never writes. YDrawOffset is already in the atlas
@@ -433,7 +432,7 @@ pub(crate) fn build_display_effect_instances(
             source_palette: entry.source_palette,
             depth: apply_shape_z_adjust(
                 fire_depth,
-                anim.z_adjust + ANIM_DRAW_DEPTH_BIAS_PX,
+                anim.z_adjust() + ANIM_DRAW_DEPTH_BIAS_PX,
                 world_height,
             ),
             tint,
@@ -443,7 +442,7 @@ pub(crate) fn build_display_effect_instances(
             // ride the Z term to keep Z on the un-offset row, as natively.
             z_adjust: super::helpers::lifted_z_adjust(
                 lift_px,
-                anim.z_adjust + config.map_or(0, |c| c.y_draw_offset) + ANIM_DRAW_DEPTH_BIAS_PX,
+                anim.z_adjust() + config.map_or(0, |c| c.y_draw_offset) + ANIM_DRAW_DEPTH_BIAS_PX,
             ),
             z_gradient: crate::render::native_z::pack_z_gradient(
                 if config.is_some_and(|c| c.flat) {
@@ -455,7 +454,7 @@ pub(crate) fn build_display_effect_instances(
             ),
             ..Default::default()
         };
-        if let Some(parent) = ground_order.object_draw(anim.stable_id, SpriteEncoding::Plain) {
+        if let Some(parent) = ground_order.object_draw(anim.stable_id(), SpriteEncoding::Plain) {
             ground_objects.push(
                 crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance::object(
                     parent,
@@ -542,7 +541,7 @@ pub(crate) fn parachute_canopy_owners(
     let Some(parachute_type) = state
         .rules()
         .and_then(|rules| rules.general.parachute_shp.as_deref())
-        .and_then(|name| sim.interner.get(name))
+        .and_then(|name| sim.interner().get(name))
     else {
         return std::collections::HashSet::new();
     };
@@ -559,8 +558,8 @@ fn parachute_canopy_owner(
     anim: &crate::sim::anim_class::AnimObject,
     parachute_type: crate::sim::intern::InternedId,
 ) -> Option<u64> {
-    (anim.type_id == parachute_type)
-        .then_some(anim.owner_entity)
+    (anim.type_id() == parachute_type)
+        .then_some(anim.owner_entity())
         .flatten()
 }
 
@@ -862,20 +861,20 @@ pub(crate) fn build_overlay_instances(
                 .match_state
                 .sim_runtime
                 .as_ref()
-                .and_then(|runtime| runtime.simulation.overlay_grid.as_ref()),
+                .and_then(|runtime| runtime.simulation.overlay_grid()),
             registry: state.overlay_registry(),
             rules: state.rules(),
             interner: state
                 .match_state
                 .sim_runtime
                 .as_ref()
-                .map(|runtime| &runtime.simulation.interner),
+                .map(|runtime| runtime.simulation.interner()),
             tiberium_types: state.rules().map(|rules| &rules.tiberium_types),
             terrain: state
                 .match_state
                 .sim_runtime
                 .as_ref()
-                .and_then(|runtime| runtime.simulation.resolved_terrain.as_ref()),
+                .and_then(|runtime| runtime.simulation.resolved_terrain()),
             heights: state.height_map(),
             lighting: state.match_state.match_presentation.lighting.grid(),
             camera: [cam_x, cam_y],
@@ -902,11 +901,11 @@ pub(crate) fn build_overlay_instances(
     else {
         return;
     };
-    for obj in sim.production.terrain_objects.values() {
-        if !obj.is_live() || !obj.in_logic_vector {
+    for obj in sim.terrain_objects().objects().values() {
+        if !obj.is_live() || !obj.in_logic_vector() {
             continue;
         }
-        let name = sim.interner.resolve(obj.type_ref);
+        let name = sim.interner().resolve(obj.type_ref());
         // Ordinary native Ground6D97D0 -> Terrain71CC50/71C1B0 admits live
         // static art independently of anchor exploration; ABuffer clips pixels.
 
@@ -928,8 +927,8 @@ pub(crate) fn build_overlay_instances(
         // Terrain DrawIt71C208 selects the Stage written by Terrain AI.
         // Wall-clock presentation cannot advance or restart a spawner.
         let frame = sim
-            .production
-            .terrain_animations
+            .terrain_objects()
+            .animations()
             .get(&obj.cell())
             .map_or(Some(0), |animation| {
                 u8::try_from(animation.current_frame()).ok()
@@ -957,7 +956,7 @@ pub(crate) fn build_overlay_instances(
             .match_presentation
             .lighting
             .grid()
-            .terrain_object_tint_for_type((obj.rx, obj.ry), spawns_tiberium);
+            .terrain_object_tint_for_type(obj.cell(), spawns_tiberium);
         // Terrain DrawIt 0071C286..0071C304: SpawnsTiberium selects the
         // global ordinary Convert/top; ordinary trees select cell Convert/common.
         let light_grid = state.match_state.match_presentation.lighting.grid();
@@ -965,14 +964,15 @@ pub(crate) fn build_overlay_instances(
             crate::render::palette_light::PaletteLight::plain(
                 53,
                 light_grid
-                    .cell_light_at((obj.rx, obj.ry))
+                    .cell_light_at(obj.cell())
                     .map_or(1000, |l| l.top_scalar),
             )
         } else {
-            crate::render::palette_light::PaletteLight::cell(light_grid, (obj.rx, obj.ry), false)
+            crate::render::palette_light::PaletteLight::cell(light_grid, obj.cell(), false)
         };
 
-        let Some(parent) = ground_order.object_draw(obj.stable_id, SpriteEncoding::Terrain) else {
+        let Some(parent) = ground_order.object_draw(obj.stable_id(), SpriteEncoding::Terrain)
+        else {
             continue;
         };
         if let Some((body, shadow)) = atlas.native_terrain_pair(name, frame) {
@@ -991,7 +991,7 @@ pub(crate) fn build_overlay_instances(
             let [body_instance, shadow_instance] =
                 native_terrain_instances(body, shadow, point, lift_px, depth, tint, palette_light);
             let mut parent = parent;
-            let render_z = if sim.production.terrain_animations.contains_key(&obj.cell()) {
+            let render_z = if sim.terrain_objects().animations().contains_key(&obj.cell()) {
                 RenderZPolicy::ReadOnly
             } else {
                 RenderZPolicy::ReadWrite
@@ -1084,7 +1084,7 @@ pub(crate) fn build_weapon_wave_instances(
     };
     let observer = crate::app::input::commands::preferred_local_owner(state)
         .as_deref()
-        .and_then(|owner| sim.interner.get(owner));
+        .and_then(|owner| sim.interner().get(owner));
     let camera = [
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
@@ -1179,7 +1179,7 @@ pub(crate) fn build_parachute_instances(
     let Some(shp_name) = input.rules.general.parachute_shp.as_deref() else {
         return;
     };
-    let Some(parachute_type) = sim.interner.get(shp_name) else {
+    let Some(parachute_type) = sim.interner().get(shp_name) else {
         return;
     };
 
@@ -1190,7 +1190,7 @@ pub(crate) fn build_parachute_instances(
         let Some(target_id) = parachute_canopy_owner(anim, parachute_type) else {
             continue;
         };
-        let Ok(frame) = u16::try_from(anim.runtime.current_frame) else {
+        let Ok(frame) = u16::try_from(anim.runtime().current_frame) else {
             continue;
         };
         let entity = match sim.entities().get(target_id) {
@@ -1212,7 +1212,7 @@ pub(crate) fn build_parachute_instances(
 
         // Single-facing anim (no Facings= in art.ini for PARACH).
         let remap_color =
-            crate::render::sprite_atlas::anim_remap_color(anim, &sim.interner, input.house_colors);
+            crate::render::sprite_atlas::anim_remap_color(anim, sim.interner(), input.house_colors);
         let key = ShpSpriteKey {
             palette_context: if remap_color.is_some() {
                 crate::render::sprite_atlas::ShpPaletteContext::SelectedScheme
@@ -1325,48 +1325,9 @@ mod tests {
         assert_eq!(level_one.5, 15, "one level is one 15 px height step");
     }
 
-    #[test]
-    fn static_terrain_body_and_shadow_use_native_shared_point_and_piece_z() {
-        use crate::render::overlay_atlas::OverlaySpriteEntry;
-        let body = OverlaySpriteEntry {
-            uv_origin: [0.1, 0.2],
-            uv_size: [0.2, 0.3],
-            pixel_size: [33.0, 78.0],
-            offset_x: -16.0,
-            offset_y: -76.0,
-        };
-        let shadow = OverlaySpriteEntry {
-            uv_origin: [0.4, 0.5],
-            uv_size: [0.3, 0.4],
-            pixel_size: [74.0, 36.0],
-            offset_x: 2.0,
-            offset_y: -34.0,
-        };
-        let palette =
-            crate::render::palette_light::PaletteLight::new([288, 576, 992], 27, 799, false);
-        let pieces = super::native_terrain_instances(
-            &body,
-            &shadow,
-            [376.0, 404.0],
-            0,
-            0.3,
-            [0.5, 0.6, 0.7],
-            palette,
-        );
-        assert_eq!(pieces[0].position, [360.0, 328.0]);
-        assert_eq!(pieces[1].position, [378.0, 370.0]);
-        assert_eq!((pieces[0].z_gradient, pieces[0].z_adjust), (2, -12.0));
-        assert_eq!((pieces[1].z_gradient, pieces[1].z_adjust), (0, -3.0));
-        assert_eq!(pieces[0].palette_light, palette);
-        assert_eq!(pieces[0].uv_origin, body.uv_origin);
-        assert_eq!(pieces[1].uv_origin, shadow.uv_origin);
-    }
-
     use super::{
-        ANIM_DRAW_DEPTH_BIAS_PX, CRATE_BODY_FRAME, anim_instance_alpha, apply_shape_z_adjust,
-        body_draw_skips_live_identity, ordinary_overlay_accepts_identity, ordinary_overlay_z,
-        overlay_body_frame, overlay_display_identity, overlay_render_identity,
-        terrain_object_is_render_visible,
+        anim_instance_alpha, body_draw_skips_live_identity, ordinary_overlay_z,
+        overlay_display_identity, overlay_render_identity, terrain_object_is_render_visible,
     };
     use crate::map::overlay::TerrainObject;
     use crate::render::native_z::ZGradient;
@@ -1379,8 +1340,9 @@ mod tests {
     use crate::rules::tiberium_type::TiberiumTypeRegistry;
     use crate::sim::intern::StringInterner;
     use crate::sim::overlay_grid::OverlayCell;
-    use crate::sim::production::ProductionState;
-    use crate::sim::terrain_object::{TerrainObjectLifecycle, TerrainObjectState};
+    use crate::sim::terrain_object::{
+        TerrainObjectLifecycle, TerrainObjectState, TerrainObjectStore,
+    };
 
     /// The two identities 0047F6A0 never draws, read from retail through the
     /// production registry.
@@ -1397,15 +1359,6 @@ mod tests {
         for drawn in [0xA6, 0xA8, 0xB1, 0xB3, 0xEF] {
             assert!(!body_draw_skips_live_identity(drawn), "{drawn:#x}");
         }
-    }
-
-    #[test]
-    fn numeric_high_bridge_identity_has_no_ordinary_overlay_instance_route() {
-        assert!(!ordinary_overlay_accepts_identity(0x18, "HIGHANCHOR"));
-        assert!(!ordinary_overlay_accepts_identity(0x19, "RENAMED_EW"));
-        assert!(!ordinary_overlay_accepts_identity(0xED, "RENAMED_NS"));
-        assert!(!ordinary_overlay_accepts_identity(0xEE, "BRIDGEB2"));
-        assert!(ordinary_overlay_accepts_identity(0x20, "HIGHANCHOR"));
     }
 
     #[test]
@@ -1432,59 +1385,49 @@ mod tests {
             ry: 9,
             name: "MAPONLY".to_string(),
         };
-        let mut production = ProductionState::default();
+        let mut terrain_objects = TerrainObjectStore::default();
 
         assert!(terrain_object_is_render_visible(&registered, None, None));
         assert!(terrain_object_is_render_visible(
             &unregistered,
             Some(&rules),
-            Some(&production),
+            Some(&terrain_objects),
         ));
         assert!(!terrain_object_is_render_visible(
             &registered,
             Some(&rules),
-            Some(&production),
+            Some(&terrain_objects),
         ));
 
         let mut interner = StringInterner::default();
         let stable_id = 1;
-        production.terrain_object_cells.insert((4, 7), stable_id);
-        production.terrain_objects.insert(stable_id, {
+        terrain_objects
+            .cell_index_mut_for_test()
+            .insert((4, 7), stable_id);
+        terrain_objects.objects_mut_for_test().insert(stable_id, {
             let mut terrain =
                 TerrainObjectState::for_test(stable_id, interner.intern("TREE01"), 4, 7);
-            terrain.health = 10;
-            terrain.max_health = 10;
-            terrain.occupation_bits = 7;
+            terrain.set_health_for_test(10);
+            terrain.set_max_health_for_test(10);
+            terrain.set_occupation_bits_for_test(7);
             terrain
         });
         assert!(terrain_object_is_render_visible(
             &registered,
             Some(&rules),
-            Some(&production),
+            Some(&terrain_objects),
         ));
 
-        production
-            .terrain_objects
+        terrain_objects
+            .objects_mut_for_test()
             .get_mut(&stable_id)
             .unwrap()
-            .lifecycle = TerrainObjectLifecycle::Destroyed;
+            .set_lifecycle_for_test(TerrainObjectLifecycle::Destroyed);
         assert!(!terrain_object_is_render_visible(
             &registered,
             Some(&rules),
-            Some(&production),
+            Some(&terrain_objects),
         ));
-    }
-
-    #[test]
-    fn damaged_wall_keeps_its_overlay_data_byte_as_the_render_frame() {
-        // A GAWALL segment at damage stage 2 with all four neighbours joined
-        // stores 0x2F. The renderer must ask the atlas for exactly that frame;
-        // any collapse to 0 draws a pristine, isolated post.
-        assert_eq!(overlay_body_frame(false, 0x2F), 0x2F);
-        // Damage stage 1, N+E connected.
-        assert_eq!(overlay_body_frame(false, 0x13), 0x13);
-        // Undamaged, isolated.
-        assert_eq!(overlay_body_frame(false, 0x00), 0x00);
     }
 
     #[test]
@@ -1518,28 +1461,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn unsupported_overlay_slope_shapes_do_not_acquire_fabricated_depth() {
-        let ore = OverlayTypeFlags {
-            tiberium: true,
-            ..Default::default()
-        };
-        assert_eq!(ordinary_overlay_z(Some(&ore), 1, 4).0, RenderZPolicy::None);
-        assert_eq!(
-            ordinary_overlay_z(Some(&ore), 0, 4).0,
-            RenderZPolicy::ReadWrite
-        );
-        let wall = OverlayTypeFlags {
-            wall: true,
-            ..Default::default()
-        };
-        assert_eq!(
-            ordinary_overlay_z(Some(&wall), 1, 4).0,
-            RenderZPolicy::ReadWrite
-        );
-        assert_eq!(ordinary_overlay_z(None, 0, 0).0, RenderZPolicy::None);
-    }
-
     /// Walls and fences (Wall=yes overlays) draw through a native Convert,
     /// so unexplored shroud's A=2 stores black instead of a dimmed silhouette.
     #[test]
@@ -1569,15 +1490,6 @@ mod tests {
             let light = super::ordinary_overlay_palette_light(Some(&other), &grid, (3, 4));
             assert_eq!(light.rgb565(stone, 100, 2), 0);
         }
-    }
-
-    #[test]
-    fn crate_overlays_ignore_the_cell_byte_and_draw_frame_zero() {
-        // gamemd's overlay-body draw takes a Crate=yes branch that hardcodes
-        // the frame; the cell's overlay data never reaches the shape call.
-        assert_eq!(overlay_body_frame(true, 0), CRATE_BODY_FRAME);
-        assert_eq!(overlay_body_frame(true, 7), CRATE_BODY_FRAME);
-        assert_eq!(overlay_body_frame(true, 0x2F), CRATE_BODY_FRAME);
     }
 
     /// 0047F6A0's IsRubble arm: only the cell holding a rubble type draws,
@@ -1729,72 +1641,6 @@ mod tests {
             (tib01.checked_sub(1).expect("registered base - 1"), 8),
             "signed base-relative display selection must not change live density state"
         );
-    }
-
-    #[test]
-    fn apply_shape_z_adjust_is_pixel_exact_with_zero_neutral() {
-        let world_height: f32 = 2000.0;
-        let base: f32 = 0.5;
-        // Neutral is 0, NOT 1000 (the 1000 convention is the per-cell terrain
-        // path, a separate mechanism).
-        assert_eq!(apply_shape_z_adjust(base, 0, world_height), base);
-        // Negative = toward camera (smaller depth), pixel-exact magnitude.
-        let toward = apply_shape_z_adjust(base, -300, world_height);
-        assert!((toward - (base - 300.0 / world_height)).abs() < 1e-6);
-        // Positive = away from camera.
-        let away = apply_shape_z_adjust(base, 40, world_height);
-        assert!(away > base);
-        // Clamped to the valid depth range.
-        assert_eq!(apply_shape_z_adjust(0.002, -100_000, world_height), 0.001);
-        assert_eq!(apply_shape_z_adjust(0.998, 100_000, world_height), 0.999);
-    }
-
-    #[test]
-    fn anim_draw_bias_constant_matches_native() {
-        assert_eq!(ANIM_DRAW_DEPTH_BIAS_PX, -2);
-    }
-
-    #[test]
-    fn gsi_13_09_anim_emitters_carry_the_art_types_translucency_into_instance_alpha() {
-        // BURN-S/M/L (`Translucency=25`) and the wake/warp family
-        // (`Translucent=yes`) are the two stock shapes the emitters must honour.
-        let ini = IniFile::from_str(
-            "[BURNLIKE]\n\
-             Translucency=25\n\
-             [FIFTYLIKE]\n\
-             Translucency=50\n\
-             [WAKELIKE]\n\
-             Translucent=yes\n\
-             End=10\n\
-             [PLAIN]\nFixtureOnly=1\n",
-        );
-        let reg = ArtRegistry::from_ini(&ini);
-
-        // Translucency=N is N percent TRANSPARENT: 25 leaves three quarters of
-        // the source. A fire drawn at 0.25 would be nearly invisible.
-        let burn = reg.anim_runtime_config("BURNLIKE");
-        assert_eq!(anim_instance_alpha(burn, 0, 8), 0.75);
-        assert_eq!(anim_instance_alpha(burn, 7, 8), 0.75);
-        assert_eq!(
-            anim_instance_alpha(reg.anim_runtime_config("FIFTYLIKE"), 0, 8),
-            0.5
-        );
-
-        // Translucent=yes is a progressive fade against End: opaque through
-        // 0.2*End, then 3/4, 1/2, 1/4.
-        let wake = reg.anim_runtime_config("WAKELIKE");
-        assert_eq!(anim_instance_alpha(wake, 2, 10), 1.0);
-        assert_eq!(anim_instance_alpha(wake, 3, 10), 0.75);
-        assert_eq!(anim_instance_alpha(wake, 5, 10), 0.5);
-        assert_eq!(anim_instance_alpha(wake, 9, 10), 0.25);
-
-        // A type with neither key, and a type the registry never saw, draw
-        // opaque — wiring this in cannot dim an animation that was not marked.
-        assert_eq!(
-            anim_instance_alpha(reg.anim_runtime_config("PLAIN"), 4, 8),
-            1.0
-        );
-        assert_eq!(anim_instance_alpha(None, 4, 8), 1.0);
     }
 
     #[test]

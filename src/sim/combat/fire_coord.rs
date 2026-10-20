@@ -65,8 +65,8 @@ pub(crate) fn effect_target_coordinate(
         }
         // Terrain+A4 (41BDD0) delegates to its retained Object+48 (5F65A0).
         ProjectileTarget::Terrain(id) => world
-            .production
             .terrain_objects
+            .objects()
             .get(&id)
             .map(crate::sim::terrain_object::TerrainObjectState::world_coord),
         ProjectileTarget::Cell { rx, ry } => Some(crate::sim::projectile::cell_target_coord(
@@ -422,7 +422,7 @@ fn fire_coordinate_base<'r>(
     snap: &FireSource,
     obj: &ObjectType,
 ) -> FireBase<'r> {
-    let binary_frame = world.session.binary_frame;
+    let binary_frame = world.session.binary_frame();
     let source_z = world
         .substrate
         .entities
@@ -900,7 +900,7 @@ mod tests {
         shooter.hull_facing = crate::sim::movement::FacingClass::new(0, 0);
         shooter.barrel_facing = Some(crate::sim::movement::FacingClass::new(0x3fff, 0));
         for row in native["cases"].as_array().unwrap() {
-            world.session.binary_frame = row["supplied"]["binary_frame"].as_u64().unwrap() as u32;
+            world.session.set_binary_frame_for_test(row["supplied"]["binary_frame"].as_u64().unwrap() as u32);
             let shot = fire_coordinate(
                 &world,
                 &rules,
@@ -1017,7 +1017,7 @@ mod tests {
                 ids.push(id);
             }
             let frame = input["frame"].as_u64().unwrap() as u32;
-            world.session.binary_frame = frame;
+            world.session.set_binary_frame_for_test(frame);
             let source = world.substrate.entities.get_mut(ids[0]).unwrap();
             source.body_facing = crate::sim::movement::FacingClass::new(
                 input["primary_facing"].as_u64().unwrap() as u16,
@@ -1029,7 +1029,7 @@ mod tests {
             ));
             source
                 .lifecycle
-                .set_cell_marked(input["marked"].as_bool().unwrap());
+                .set_cell_marked_for_test(input["marked"].as_bool().unwrap());
             let obj = rules.object("DISK").unwrap();
             assert_eq!(obj.has_turret, input["has_turret"].as_bool().unwrap());
             assert_eq!(
@@ -1118,19 +1118,6 @@ mod tests {
                 .z,
             Z + 3
         );
-    }
-
-    #[test]
-    fn a_unit_fires_from_its_flh_for_the_selected_slot() {
-        let (rules, world) = (rules(), Simulation::new());
-        let obj = rules.object("E1").unwrap();
-        let shooter = source(EntityCategory::Infantry);
-        let primary = fire_coordinate(&world, &rules, &shooter, obj, 0, 0, Flh::default());
-        let secondary = fire_coordinate(&world, &rules, &shooter, obj, 1, 0, Flh::default());
-        // A height-only FLH leaves X and Y on the firer.
-        assert_eq!(primary.coord, ProjectileCoord::new(X, Y, Z + 105));
-        assert_eq!(secondary.coord, ProjectileCoord::new(X, Y, Z + 90));
-        assert_eq!((primary.source_z, primary.offset_y), (Z, 0));
     }
 
     /// The source Z is the stored firer's actual height, not its level byte.

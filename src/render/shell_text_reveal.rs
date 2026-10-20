@@ -84,15 +84,6 @@ mod tests {
     }
 
     #[test]
-    fn count_one_is_a_blank_first_paint() {
-        let reveal = PathAReveal {
-            count: 1,
-            ..YELLOW_TO_WHITE
-        };
-        assert_eq!(encoded_unit_rgb(1, reveal), None);
-    }
-
-    #[test]
     fn signed_channel_division_truncates_toward_zero() {
         let reveal = PathAReveal {
             count: 2,

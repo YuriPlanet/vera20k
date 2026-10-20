@@ -381,7 +381,7 @@ impl Simulation {
                 .frame_delay,
         );
         if matches!(requested, 9 | 10 | 18 | 19 | 23 | 32) {
-            rate = self.session.game_options.speed_normalize(rate);
+            rate = self.session.game_options().speed_normalize(rate);
         }
         //51D939/51D981: the admitted Deploy/Undeploy sound observes the
         // previous Doing and Stage. Refused actions do not emit this cue.
@@ -397,7 +397,7 @@ impl Simulation {
             .map_err(|error| format!("Do_Action wrote an invalid Doing: {error:?}"))?;
         //51D9D2..51DA44: every accepted class action writes Doing and
         // restarts its stage. The sequencer and draw share this exact state.
-        actor.restart_native_stage(0, self.session.binary_frame as i32, rate);
+        actor.restart_native_stage(0, self.session.binary_frame() as i32, rate);
         // `0x0051DA96..0x0051DAA1`: an accepted action at Health exactly 0
         // re-enters Stop_Driver, whose own Do_Action finds the action it
         // just wrote. The Can_Enter_Cell it runs reads no overlay here.
@@ -579,7 +579,7 @@ impl Simulation {
                         crate::sim::animation::snap_completion_facing(
                             &mut actor.body_facing,
                             facing,
-                            self.session.binary_frame,
+                            self.session.binary_frame(),
                         );
                     }
                     self.infantry_default_action(id, action, rules, effects);
@@ -767,7 +767,7 @@ impl Simulation {
         let moving_now = super::motion_query::is_really_moving_now(
             actor,
             Some(super::SpeedRules::new(rules, &self.interner, &self.houses)),
-            self.session.binary_frame,
+            self.session.binary_frame(),
         );
         let requested = if moving_now {
             let jumpjet_type = self

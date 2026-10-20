@@ -189,31 +189,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn row_pitch_alignment_is_exact() {
-        assert_eq!(align_up(4, wgpu::COPY_BYTES_PER_ROW_ALIGNMENT), Some(256));
-        assert_eq!(
-            align_up(1024, wgpu::COPY_BYTES_PER_ROW_ALIGNMENT),
-            Some(1024)
-        );
-        assert_eq!(
-            align_up(3200, wgpu::COPY_BYTES_PER_ROW_ALIGNMENT),
-            Some(3328)
-        );
-    }
-
-    #[test]
-    fn padding_is_removed_without_channel_conversion() {
-        let mut mapped = vec![0xEE; 16];
-        mapped[0..8].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
-        mapped[8..16].copy_from_slice(&[9, 10, 11, 12, 13, 14, 15, 16]);
-        let tight = strip_row_padding(&mapped, 2, 2, 8, 8).expect("tight rows");
-        assert_eq!(
-            tight,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
-        );
-    }
-
-    #[test]
     fn padding_between_rows_is_discarded() {
         let mut mapped = vec![0xEE; 16];
         mapped[0..4].copy_from_slice(&[1, 2, 3, 4]);

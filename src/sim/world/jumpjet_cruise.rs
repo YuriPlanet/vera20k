@@ -222,7 +222,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     fn cell_land_type(&self, xy: [i32; 2]) -> u8 {
         self.terrain().map_or(0, |terrain| {
             match terrain.native_cell_identity(self.cell_of(xy)) {
-                NativeCellIdentity::Real(index) => terrain.cells()[index].land_type(),
+                NativeCellIdentity::Real(index) => terrain.cells()[index].land_type,
                 NativeCellIdentity::Dummy => 0,
             }
         })
@@ -727,7 +727,7 @@ impl Simulation {
         {
             return Ok(None);
         }
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let trig = TrigTable::embedded();
         let stats = self.with_jumpjet_process(stable_id, |runtime, sim| {
             let entry_state = runtime.phase();
@@ -826,7 +826,7 @@ mod tests {
             let cell = sim
                 .resolved_terrain
                 .as_mut()
-                .and_then(|terrain| terrain.cell_mut(9, 10))
+                .and_then(|terrain| terrain.cell_mut_for_test(9, 10))
                 .expect("fixture cell");
             cell.level = 2;
             cell.slope_type = 1;
@@ -859,7 +859,7 @@ mod tests {
             // doubles and the bob zero, `+0x80` at `JumpjetHeight=`).
             let mut flight = runtime.flight();
             flight.facing_mut().snap(u16::from(body_facing) << 8, 0);
-            flight.set_target_height(500);
+            flight.set_target_height_for_test(500);
             *runtime = runtime
                 .clone()
                 .with_phase_for_test(STATE_TRANSLATE)
@@ -876,7 +876,7 @@ mod tests {
     /// gives it: the Cell NavCom (`0x004D9510`), then the Jumpjet's `Move_To`
     /// with the cell's coordinate (`0x004D965D`).
     fn order_east(sim: &mut Simulation) {
-        sim.session.binary_frame = 1001;
+        sim.session.set_binary_frame_for_test(1001);
         let request = crate::sim::movement::target_cell_coord(
             16,
             10,
@@ -907,15 +907,15 @@ mod tests {
             .place_overlay(10, 10, wood, 0);
         let owner = sim.interner.intern("Americans");
         let type_ref = sim.interner.intern("JUMPJETUNIT");
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
         let e = sim.substrate.entities.get_mut(1).unwrap();
         e.set_owner_for_test(owner);
         e.set_type_ref_for_test(type_ref);
         e.lifecycle.set_in_limbo_for_test(false);
-        e.lifecycle.set_cell_marked(true);
+        e.lifecycle.set_cell_marked_for_test(true);
         e.position.put_z(0);
         let runtime = e.locomotor.as_mut().unwrap().jumpjet_runtime_mut().unwrap();
         *runtime = runtime
@@ -1074,10 +1074,10 @@ mod tests {
              [OverlayTypes]\n239=WOOD\n[WOOD]\nCrate=yes\n",
         );
         let owner = sim.interner.intern("Americans");
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
         let building = sim
             .spawn_object("TESTG", "Americans", 15, 15, 0, &rules)
             .unwrap();
@@ -1096,7 +1096,7 @@ mod tests {
             .set_nav_com_for_test(Some(NavTargetRef::object(building)));
         let runtime = e.locomotor.as_mut().unwrap().jumpjet_runtime_mut().unwrap();
         let mut flight = runtime.flight();
-        flight.set_target_height(0);
+        flight.set_target_height_for_test(0);
         *runtime = runtime
             .clone()
             .with_phase_for_test(STATE_DESCEND)
@@ -1154,7 +1154,7 @@ mod tests {
             sim.set_object_height_unmarked(1, 0);
         }
         for frame in 0..frames {
-            sim.session.binary_frame = 1001 + frame;
+            sim.session.set_binary_frame_for_test(1001 + frame);
             sim.tick_air_movement_with_cell_lists_one(
                 1,
                 None,
@@ -1191,7 +1191,7 @@ mod tests {
         assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(10, 10), 0x20);
         order_east(&mut sim);
         for frame in 0..80 {
-            sim.session.binary_frame = 1001 + frame;
+            sim.session.set_binary_frame_for_test(1001 + frame);
             sim.tick_air_movement_with_cell_lists_one(
                 1,
                 None,
@@ -1313,7 +1313,7 @@ mod tests {
         let mut sim = hovering_jumpjet(body_facing);
         order_east(&mut sim);
         for (index, expected) in frames.iter().enumerate() {
-            sim.session.binary_frame = 1001 + index as u32;
+            sim.session.set_binary_frame_for_test(1001 + index as u32);
             let stats = sim
                 .tick_air_movement_with_cell_lists_one(
                     1,
@@ -1336,7 +1336,7 @@ mod tests {
                 "{name}: frame {index}"
             );
             assert_eq!(
-                u32::from(entity.body_facing_byte(sim.session.binary_frame)),
+                u32::from(entity.body_facing_byte(sim.session.binary_frame())),
                 (expected["body_facing"].as_u64().expect("body facing") >> 8) as u32,
                 "{name}: body facing, frame {index}"
             );
@@ -1382,7 +1382,7 @@ mod tests {
         {
             let jumpjet = sim.substrate.entities.get_mut(1).expect("jumpjet");
             jumpjet.lifecycle.set_in_limbo_for_test(false);
-            jumpjet.lifecycle.set_cell_marked(true);
+            jumpjet.lifecycle.set_cell_marked_for_test(true);
             jumpjet.position.set_sub_x_for_test(SimFixed::from_num(250));
             let runtime = jumpjet
                 .locomotor
@@ -1397,7 +1397,7 @@ mod tests {
                 .with_flight_for_test(flight);
         }
         sim.aircraft_tracker_add(1);
-        sim.session.binary_frame = 1001;
+        sim.session.set_binary_frame_for_test(1001);
         let stats = sim
             .tick_air_movement_with_cell_lists_one(
                 1,
@@ -1444,7 +1444,7 @@ mod tests {
         entity.lifecycle.set_in_limbo_for_test(false);
         order_east(&mut sim);
         for frame in 0..20 {
-            sim.session.binary_frame = 1001 + frame;
+            sim.session.set_binary_frame_for_test(1001 + frame);
             sim.tick_air_movement_with_cell_lists_one(
                 1,
                 None,
@@ -1479,7 +1479,7 @@ mod tests {
         assert!(here.0 < 16, "still on its way");
         sim.assign_null_destination(1, None, None, crate::sim::world::FrameEffects::default());
 
-        sim.session.binary_frame = 1021;
+        sim.session.set_binary_frame_for_test(1021);
         sim.tick_air_movement_with_cell_lists_one(
             1,
             None,
@@ -1501,7 +1501,7 @@ mod tests {
         assert!(entity.navigation.nav_com().is_none());
 
         for frame in 0..400 {
-            sim.session.binary_frame = 1022 + frame;
+            sim.session.set_binary_frame_for_test(1022 + frame);
             sim.tick_air_movement_with_cell_lists_one(
                 1,
                 None,
@@ -1562,7 +1562,7 @@ mod tests {
                         z: 0,
                     });
             }
-            sim.session.binary_frame = 1001;
+            sim.session.set_binary_frame_for_test(1001);
             fresh_oracle_seam::install(vec![code], Vec::new());
             sim.tick_air_movement_with_cell_lists_one(
                 1,
@@ -1674,7 +1674,7 @@ mod tests {
         let sim = &scenario.runtime.simulation;
         let mut orders = vec![CommandEnvelope::new(
             sim.interner.get("Americans").expect("house"),
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::Move {
                 entity_id: hawk,
                 target_rx: landing.0,
@@ -1712,7 +1712,7 @@ mod tests {
 
         let mut orders = vec![CommandEnvelope::new(
             sim.interner.get("Americans").expect("house"),
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::Move {
                 entity_id: tank,
                 target_rx: x + 12,
@@ -1789,7 +1789,7 @@ mod tests {
         );
         let mut orders = vec![CommandEnvelope::new(
             sim.interner.get("Americans").expect("house"),
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::Attack {
                 attacker_id: kirov,
                 target_id: reactor,
@@ -1814,8 +1814,8 @@ mod tests {
                 destroyed_at = Some((frame, off));
             }
             for (&id, bomb) in sim.projectiles.iter() {
-                if bomb.source_id == kirov {
-                    let here = [bomb.position.x, bomb.position.y];
+                if bomb.source_id() == kirov {
+                    let here = [bomb.position().x, bomb.position().y];
                     bombs.entry(id).or_insert_with(Vec::new).push(here);
                 }
             }
@@ -1891,7 +1891,7 @@ mod tests {
                 )
                 .expect("Kirov spawns");
             sim.resolve_type_handles(&resources.rules);
-            let now = sim.session.binary_frame;
+            let now = sim.session.binary_frame();
             sim.mission_assign_exact(kirov, MissionId::from_known(MissionType::Hunt), now)
                 .unwrap();
             (kirov, plant)
@@ -2000,7 +2000,7 @@ mod tests {
         let strength = sim.substrate.entities.get(tank).unwrap().health.current();
         let mut orders = vec![CommandEnvelope::new(
             sim.interner.get("Americans").expect("house"),
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::Attack {
                 attacker_id: disc,
                 target_id: tank,

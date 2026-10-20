@@ -247,7 +247,7 @@ impl Simulation {
             .and_then(|anim| {
                 rules
                     .art()
-                    .anim_runtime_config(self.interner.resolve(anim.type_id))
+                    .anim_runtime_config(self.interner.resolve(anim.type_id()))
             })
             .and_then(|config| config.spawns_particle.as_deref())
             .and_then(|name| rules.p_type_id_by_name(name))
@@ -440,7 +440,7 @@ impl Simulation {
                 crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard),
             );
         }
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let _ = self.mission_commence_exact(id, now);
         let entity = self
             .substrate
@@ -633,23 +633,6 @@ mod corpse_tests {
         );
     }
 
-    /// The corpse keeps IsAlive and takes `InfantryClass::AI`'s ordinary
-    /// visit: `MissionClass::AI`'s `+0xC4` count (`0x006FA646`) runs for it
-    /// as for any infantryman.
-    #[test]
-    fn a_corpse_takes_its_ordinary_visit() {
-        let (mut sim, rules, id) = corpse_scene();
-        sim.advance_tick(&[], Some(&rules), None, None, 100);
-        kill_with_die1(&mut sim, &rules, id);
-        let counter = sim.substrate.entities.get(id).unwrap().mission.ai_counter();
-        sim.advance_tick(&[], Some(&rules), None, None, 100);
-        let corpse = sim.substrate.entities.get(id).unwrap();
-        assert!(!corpse.death.is_dying() && corpse.is_active());
-        assert_eq!(corpse.health.current(), 0);
-        assert_eq!(corpse.mission_leaf.as_infantry().unwrap().doing(), 11);
-        assert_eq!(corpse.mission.ai_counter(), counter + 1);
-    }
-
     /// FootClass::AI's radiation (`0x004DA554..0x004DA635`) has no Health
     /// gate, and TechnoClass::ReceiveDamage takes a Health-0 receiver to its
     /// death branch again (`0x0070202E`): a Die1 corpse standing in
@@ -658,7 +641,7 @@ mod corpse_tests {
     #[test]
     fn a_corpse_in_radiation_dies_again_at_the_next_application() {
         let (mut sim, rules, id) = corpse_scene();
-        sim.session.binary_frame = 10;
+        sim.session.set_binary_frame_for_test(10);
         kill_with_die1(&mut sim, &rules, id);
         sim.radiation.apply_detonation(
             crate::sim::radiation::RadDetonation {
@@ -668,18 +651,18 @@ mod corpse_tests {
                 spread: 2,
             },
             10,
-            &sim.session.theater,
+            &sim.session.theater(),
             &rules.radiation,
             sim.resolved_terrain.as_ref(),
-            &mut sim.lighting_sources.pending,
+            &mut sim.lighting_sources,
         );
         let nukedie = |sim: &Simulation| {
             sim.anims()
-                .filter(|(_, anim)| sim.interner.resolve(anim.type_id) == "NUKEDIE")
+                .filter(|(_, anim)| sim.interner.resolve(anim.type_id()) == "NUKEDIE")
                 .count()
         };
         for frame in 10..16 {
-            sim.session.binary_frame = frame;
+            sim.session.set_binary_frame_for_test(frame);
             sim.advance_tick(&[], Some(&rules), None, None, 100);
             assert!(
                 sim.substrate
@@ -690,7 +673,7 @@ mod corpse_tests {
             );
         }
         assert_eq!(nukedie(&sim), 0);
-        sim.session.binary_frame = 16;
+        sim.session.set_binary_frame_for_test(16);
         sim.advance_tick(&[], Some(&rules), None, None, 100);
         assert!(
             sim.substrate

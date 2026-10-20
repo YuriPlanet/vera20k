@@ -1,5 +1,6 @@
 use super::*;
 use crate::sim::components::{DriveCoord, NavTargetRef};
+use crate::sim::house_state::HouseState;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::{FacingClass, locomotor::LocomotorState};
 
@@ -89,7 +90,7 @@ fn unit_refusals_match_native_and_leave_orders_and_rng_untouched() {
             // precedes the search, the setter and every write.
             let before = serde_json::to_value(&actor).unwrap();
             let mut sim = Simulation::new();
-            sim.session.binary_frame = now;
+            sim.session.set_binary_frame_for_test(now);
             sim.substrate.entities.insert(actor);
             let rng = sim.scenario_rng.state();
             assert!(
@@ -290,13 +291,6 @@ fn scatter_dispatch_gate_matches_the_native_disjunction() {
     assert!(!scatter_dispatch_allowed(stock, false, false, techno(1)));
 }
 
-#[test]
-fn scatter_eligibility_defaults_are_the_rules_constructor_values() {
-    let defaults = ScatterEligibility::default();
-    assert!(!defaults.player_scatter);
-    assert_eq!(defaults.iq_scatter, 3);
-}
-
 /// The original `Scatter_Objects` dispatch (tools/spatial_oracle/cell_scatter):
 /// each row's Techno list through the production walk; a non-Techno, which VERA
 /// never lists, through the gate's cell-wide terms alone.
@@ -340,7 +334,7 @@ fn cell_scatter_dispatch_matches_original_execution() {
         let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
         let mut interner = StringInterner::new();
         let mut entities = EntityStore::new();
-        let mut houses = BTreeMap::new();
+        let mut houses = crate::sim::houses::Houses::default();
         let bridge = flag(input, "bridge", false);
         let mut technos = Vec::new();
         let mut others = Vec::new();
@@ -373,8 +367,8 @@ fn cell_scatter_dispatch_matches_original_execution() {
                 .veterancy
                 .set_rank_for_test(object["rank"].as_u64().unwrap_or(0) as u16 * 100);
             let mut house = HouseState::new(owner, 0, None, true, 0, 10);
-            house.current_iq = object["iq"].as_i64().unwrap_or(0) as i32;
-            houses.insert(owner, house);
+            house.set_current_iq_for_test(object["iq"].as_i64().unwrap_or(0) as i32);
+            houses.register(house);
             entities.insert(entity);
             technos.push(id);
         }
@@ -440,14 +434,17 @@ fn unforced_walk_reads_house_iq_ability_elite_and_player_scatter() {
     man.set_category_for_test(EntityCategory::Infantry);
     let owner = man.owner();
     entities.insert(man);
-    let mut houses = BTreeMap::new();
-    houses.insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+    let mut houses = crate::sim::houses::Houses::default();
+    houses.register(HouseState::new(owner, 0, None, true, 0, 10));
     let interner = crate::sim::intern::test_interner();
-    let walk = |entities: &EntityStore, houses: &BTreeMap<_, _>, rules: &RuleSet, cell: &[u64]| {
+    let walk = |entities: &EntityStore,
+                houses: &crate::sim::houses::Houses,
+                rules: &RuleSet,
+                cell: &[u64]| {
         scatter_objects_admitted(cell, false, Some(rules), entities, houses, &interner)
     };
     for (iq, rank, expected) in [(1, 0, false), (2, 0, true), (1, 100, true)] {
-        houses.get_mut(&owner).unwrap().current_iq = iq;
+        houses.get_mut(&owner).unwrap().set_current_iq_for_test(iq);
         entities
             .get_mut(2)
             .unwrap()
@@ -459,7 +456,7 @@ fn unforced_walk_reads_house_iq_ability_elite_and_player_scatter() {
             "IQ={iq} rank={rank}"
         );
     }
-    houses.get_mut(&owner).unwrap().current_iq = 0;
+    houses.get_mut(&owner).unwrap().set_current_iq_for_test(0);
     entities.get_mut(2).unwrap().veterancy.set_rank_for_test(0);
     assert_eq!(walk(&entities, &houses, &rules(true), &[2]), vec![2]);
     let mut elite = GameEntity::test_default(3, "E1", "Soviet", 5, 5);
@@ -702,9 +699,13 @@ fn receive_damage_scatter_gates_match_original_execution() {
         let mut sim = Simulation::new();
         sim.interner = crate::sim::intern::test_interner();
         let mut house = HouseState::new(owner, 0, None, flag("human"), 0, 10);
-        house.player_control = flag("player_control");
-        sim.houses.insert(owner, house);
-        sim.session.game_mode_nonzero = input["game_mode_nonzero"].as_bool().unwrap_or(true);
+        house.set_player_control_for_test(flag("player_control"));
+        sim.houses.register(house);
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["game_mode_nonzero"].as_bool().unwrap_or(true),
+            ),
+        );
         sim.substrate.entities.insert(actor);
         let retaliation = match input["retaliation"].as_str().unwrap() {
             "accepted" => DamageRetaliation::Accepted,
@@ -800,7 +801,7 @@ fn unit_source_arm_matches_original_execution() {
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(at(0) as u16, at(1) as u16)
+                .cell_mut_for_test(at(0) as u16, at(1) as u16)
                 .unwrap();
             out.level = at(2) as u8;
             out.bridge_facts.raw_flags = at(3) as u32;
@@ -944,7 +945,7 @@ fn an_idle_tank_behind_a_cliff_scatters_every_sixty_four_frames() {
         .spawn_object("MTNK", "Americans", 10, 10, 0, &rules)
         .unwrap();
     let idle_scatter = |sim: &mut Simulation, frame: u32| {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         sim.foot_idle_scatter(
             tank,
             &rules,
@@ -964,7 +965,7 @@ fn an_idle_tank_behind_a_cliff_scatters_every_sixty_four_frames() {
     sim.resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(11, 11)
+        .cell_mut_for_test(11, 11)
         .unwrap()
         .level = 4;
     assert_eq!(idle_scatter(&mut sim, 126), None, "off the cadence");
@@ -983,7 +984,7 @@ fn an_idle_tank_behind_a_cliff_scatters_every_sixty_four_frames() {
         .navigation
         .set_nav_com_for_test(None);
     let rng = sim.scenario_rng.state();
-    sim.session.binary_frame = 127;
+    sim.session.set_binary_frame_for_test(127);
     let cell = sim.scatter_nearby_cell(tank, &rules).unwrap();
     assert_eq!(
         idle_scatter(&mut sim, 127),

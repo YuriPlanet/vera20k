@@ -69,7 +69,7 @@ fn waypoint_curtain_uses_ground_spread_order_including_warped_foot() {
         let (rules, mut sim, _) = world_with(rules(""), 64, &[((40, 40), 2)]);
         let terrain = sim.resolved_terrain.as_mut().unwrap();
         let index = terrain.index(40, 40).unwrap();
-        terrain.cells[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+        terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
         let offsets = [
             (0, 0),
             (1, -1),
@@ -131,10 +131,14 @@ fn waypoint_curtain_uses_ground_spread_order_including_warped_foot() {
         assert!(sim.entities().get(ordered[0]).unwrap().chrono_warp_latch());
         let anim = sim.substrate.anims.iter().next().unwrap().1;
         assert_eq!(
-            [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
+            [
+                anim.world_coord().x,
+                anim.world_coord().y,
+                anim.world_coord().z
+            ],
             [10368, 10368, 213]
         );
-        assert_eq!((anim.draw_flags, anim.z_adjust), (0x600, 0));
+        assert_eq!((anim.draw_flags(), anim.z_adjust()), (0x600, 0));
         assert!(!sim.sound_events.iter().any(|event| matches!(
             event,
             SimSoundEvent::SuperWeaponLaunched { .. } | SimSoundEvent::RadarEvent { .. }
@@ -320,7 +324,7 @@ fn the_launch_matches_native() {
             let (x, y) = at(bridge);
             let terrain = sim.resolved_terrain.as_mut().unwrap();
             let index = terrain.index(x as u16, y as u16).unwrap();
-            terrain.cells[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+            terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
         }
 
         // Prepended in reverse, each list ends in the row's order; a building
@@ -384,7 +388,7 @@ fn the_launch_matches_native() {
                 .is_ready = false;
         }
         sim.sound_events.clear();
-        let frame = sim.session.binary_frame as i32;
+        let frame = sim.session.binary_frame() as i32;
         let cell = (target.0 as u16, target.1 as u16);
         let paralysis_before: Vec<Option<(i32, i32)>> = ids
             .iter()
@@ -399,12 +403,12 @@ fn the_launch_matches_native() {
             .anims
             .iter()
             .map(|(_, anim)| anim)
-            .filter(|anim| anim.type_id == invoke)
+            .filter(|anim| anim.type_id() == invoke)
             .collect();
         let native_anims: Vec<&Value> = events(row, "anim").collect();
         assert_eq!(anims.len(), native_anims.len(), "{row}");
         if let (Some(anim), Some(native)) = (anims.first(), native_anims.first()) {
-            let world = anim.world_coord;
+            let world = anim.world_coord();
             assert_eq!(
                 [world.x, world.y, world.z],
                 [int(&native[2][0]), int(&native[2][1]), int(&native[2][2])],
@@ -412,7 +416,7 @@ fn the_launch_matches_native() {
             );
             // (delay, loopCount, drawFlags, zAdjust, reverse).
             assert_eq!(native[3], serde_json::json!([0, 1, 0x600, 0, 0]));
-            assert_eq!((anim.draw_flags, anim.z_adjust), (0x600, 0), "{row}");
+            assert_eq!((anim.draw_flags(), anim.z_adjust()), (0x600, 0), "{row}");
         }
 
         // PlayEVA, then CreateRadarEvent(13, cell).
@@ -530,7 +534,7 @@ fn the_overrides_match_native() {
         rules.general.iron_curtain_duration = int(&row["duration"]);
         let (rules, mut sim, owner) = world_with(rules, 64, &[]);
         let frame = int(&row["frame"]);
-        sim.session.binary_frame = frame as u32;
+        sim.session.set_binary_frame_for_test(frame as u32);
         let victim = sim
             .spawn_object_at_height(kind, "Americans", 40, 40, 0, 0, &rules)
             .unwrap_or_else(|| panic!("{kind} stands for {row}"));
@@ -781,7 +785,7 @@ fn retail_iron_curtain_through_production_frames() {
         .spawn_object_at_height("E2", "Russians", 41, 40, 0, 0, &rules)
         .unwrap();
     let sw_type = charge_super(&mut sim, russians, IRON_CURTAIN);
-    let launch_frame = sim.session.binary_frame as i32;
+    let launch_frame = sim.session.binary_frame() as i32;
     click(&mut sim, &rules, russians, IRON_CURTAIN, (40, 40));
 
     let launch: Vec<&SimSoundEvent> = sim

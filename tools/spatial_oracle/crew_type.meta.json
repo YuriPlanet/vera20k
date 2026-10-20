@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Whole Techno GetCrew707D20 signed Country side and Scenario RNG",
+  "assumptions": [
+    "Declared Crewed building and raw Country side; House planning side supplied as constructor4F6455..6490 leaves it (0/1/2 otherwise-1). Original707D20 and RNG65C7E0 execute."
+  ],
+  "substitutions": [
+    "Existing crew_fixture heap/world transport; IsArmed458DB0 is a declared bool via existing observe_crew. No RNG or GetCrew replacement."
+  ],
+  "entry_points": {
+    "get_crew": "0x00707D20",
+    "random_ranged": "0x0065C7E0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.building_sale --crew-type",
+  "payload_sha256": "4795072772000bd6b7e065d208f26bb6b50dc7b1d16ae599d86f92194854ce69"
+}

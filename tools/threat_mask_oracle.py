@@ -14,6 +14,10 @@ Sections, each executed in a fresh emulator per case:
 - cutoff: Evaluate_Candidate's distance cutoff 0x6F8049..0x6F8178, from the
   candidate's vt+0x54 through both GetCoords, Sqrt_Approx and ftol to the
   range-argument test.
+- disguise: Evaluate_Candidate's disguise arm 0x6F84B1..0x6F854B, from
+  IsDisguisedTo and DetectDisguise= through the candidate's +0x1EC/+0x1F4
+  blink, IsControlledByHuman and the Scenario RandomRanged(0, 99) against
+  DisabledDisguiseDetectionPercent= by the scanner house's +0x184.
 
 Control flow the rows do not vary (the ThreatAvoidance factor between the two
 quarry slices, dormant without a Supress= weapon) rests on instruction
@@ -27,7 +31,7 @@ from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX,
                                UC_X86_REG_ECX, UC_X86_REG_EDI, UC_X86_REG_ESI,
                                UC_X86_REG_ESP, UC_X86_REG_FPCW)
 
-from tools.ai_base_building_oracle import FAKE, RULES, STUBS, Emu, u32
+from tools.ai_base_building_oracle import FAKE, FRAME, RULES, STUBS, Emu, u32
 from tools.native_oracle import (NATIVE_FPCW, STACK_BASE, STACK_SIZE, finish_vectors,
                                  provenance, run_checked)
 
@@ -259,9 +263,72 @@ def cutoff():
     return rows
 
 
+# ---------------------------------------------------------------- disguise
+
+DISGUISE = 0x6F84B1
+DISGUISE_ACCEPT, DISGUISE_REJECT = 0x6F8551, 0x6F894F
+SCANNER_TYPE = FAKE + 0x406000
+PERCENTS = RULES + 0x2000
+STUB_DISGUISED_TO = STUBS + 0x260
+STUB_SCANNER_TYPE = STUBS + 0x270
+IS_CONTROLLED_BY_HUMAN = 0x50B730
+
+
+def disguise_row(*, disguised, detects, start, duration, frame, human, difficulty, roll):
+    emu = MaskEmu()
+    uc = emu.uc
+    scanner_house = HOUSES
+    emu.write32(SCANNER, SCANNER_VTABLE)
+    emu.write32(SCANNER_VTABLE + 0x84, STUB_SCANNER_TYPE)
+    emu.write32(SCANNER + 0x21C, scanner_house)
+    emu.write32(scanner_house + 0x184, difficulty)
+    emu.write8(SCANNER_TYPE + 0xD31, int(detects))
+    emu.write32(CANDIDATE, CANDIDATE_VTABLE)
+    emu.write32(CANDIDATE_VTABLE + 0xC8, STUB_DISGUISED_TO)
+    emu.write32(CANDIDATE + 0x1EC, start)
+    emu.write32(CANDIDATE + 0x1F4, duration)
+    emu.write32(FRAME, frame)
+    emu.write32(RULES + 0xE14, PERCENTS)
+    for index, percent in enumerate((15, 5, 2)):
+        emu.write32(PERCENTS + 4 * index, percent)
+    houses = []
+    emu.hook(STUB_DISGUISED_TO, lambda e: houses.append(e.arg(0)) or int(disguised), 4)
+    emu.hook(STUB_SCANNER_TYPE, lambda _e: SCANNER_TYPE, 0)
+    emu.hook(IS_CONTROLLED_BY_HUMAN, lambda e: int(human), 0)
+    emu.draws([roll])
+    uc.reg_write(UC_X86_REG_EDI, SCANNER)
+    uc.reg_write(UC_X86_REG_ESI, CANDIDATE)
+    stop = run_checked(uc, DISGUISE, (DISGUISE_ACCEPT, DISGUISE_REJECT), count=60)
+    if houses != [scanner_house]:
+        raise AssertionError(f'IsDisguisedTo asked {houses}')
+    return dict(disguised=disguised, detects=detects, start=start, duration=duration,
+                frame=frame, human=human, difficulty=difficulty, roll=roll,
+                draws=[event[1:4] for event in emu.events if event[0] == 'draw'],
+                admitted=stop == DISGUISE_ACCEPT)
+
+
+def disguise():
+    row = dict(disguised=True, detects=False, start=100, duration=15, frame=100, human=False,
+               difficulty=1, roll=5)
+    rows = [disguise_row(**{**row, 'disguised': disguised, 'detects': detects, 'roll': 99})
+            for disguised, detects in ((False, False), (False, True), (True, True))]
+    blinks = ((100, 15), (100, 0), (-1, 7), (-1, 0), (-1, -3), (90, 15), (85, 15),
+              (101, 15), (0x7FFFFFF0, 40), (100, -5))
+    for start, duration in blinks:
+        rows.append(disguise_row(**{**row, 'start': start, 'duration': duration, 'human': True,
+                                    'roll': 0}))
+        for difficulty in (0, 1, 2):
+            percent = (15, 5, 2)[difficulty]
+            for roll in (percent, percent + 1):
+                rows.append(disguise_row(**{**row, 'start': start, 'duration': duration,
+                                            'difficulty': difficulty, 'roll': roll}))
+    rows += [disguise_row(**{**row, 'roll': roll}) for roll in (0, 99)]
+    return rows
+
+
 def generate():
     return dict(flags=flags(), quarry_terms=quarry_terms(), enemy_bonus=enemy_bonus(),
-                cutoff=cutoff())
+                cutoff=cutoff(), disguise=disguise())
 
 
 if __name__ == '__main__':
@@ -270,7 +337,9 @@ if __name__ == '__main__':
                'and quarry terms over synthetic candidates, then its final acceptance; '
                'Calculate_Threat_Score\'s SpecialThreatValue term and EnemyHouseThreatBonus; '
                'Evaluate_Candidate\'s distance cutoff over coordinate offsets, the candidate\'s '
-               'high-flying answer and positive, zero and negative ranges.'),
+               'high-flying answer and positive, zero and negative ranges; Evaluate_Candidate\'s '
+               'disguise arm over disguise, DetectDisguise=, blink timers, attacker control, '
+               'difficulty and roll.'),
         assumptions=['x87 control word 0x0E7F (PC53, chop), the harness default.',
                      'Fixture objects carry only the fields the slices read.'],
         substitutions=['The candidate\'s WhatAmI (vt+0x2C), occupant count (vt+0x408) and '
@@ -279,7 +348,11 @@ if __name__ == '__main__':
                        'write the case\'s coordinates and the candidate\'s vt+0x54 answers its '
                        'high-flying flag; Sqrt_Approx and ftol run.',
                        'Between the quarry slices, the ThreatAvoidance factor '
-                       '(0x6F88BF..0x6F8926) is skipped: 1.0, no score change.'],
+                       '(0x6F88BF..0x6F8926) is skipped: 1.0, no score change.',
+                       'For the disguise arm, the candidate\'s IsDisguisedTo (vt+0xC8), the '
+                       'scanner\'s GetTechnoType (vt+0x84), IsControlledByHuman 0x50B730 and '
+                       'RandomRanged 0x65C7E0 answer from the case; the draw\'s stream and range '
+                       'are recorded. DisabledDisguiseDetectionPercent= holds retail 15,5,2.'],
         entry_points={'flags': FLAGS, 'quarry_terms': TERMS, 'finish': FINISH,
-                      'enemy_bonus': BONUS, 'cutoff': CUTOFF},
+                      'enemy_bonus': BONUS, 'cutoff': CUTOFF, 'disguise': DISGUISE},
     ))

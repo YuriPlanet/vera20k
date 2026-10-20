@@ -26,7 +26,7 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
     let model_coverage = sim.entities().values()
         .filter(|entity| entity.category() == crate::map::entities::EntityCategory::Aircraft)
         .map(|entity| {
-            let name = sim.interner.resolve(entity.type_ref());
+            let name = sim.interner().resolve(entity.type_ref());
             let frames = state.match_state.match_presentation.unit_atlas.as_ref()
                 .map(|atlas| atlas.frame_counts.iter().filter(|((model,_,_),_)| model == name)
                     .map(|((_,layer,turret),count)| json!({"layer": format!("{layer:?}"), "turret": turret, "frames": count}))
@@ -91,7 +91,7 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
         let shroud = state.match_state.match_presentation.shroud_buffer.as_ref();
         let input = &state.match_state.input;
         observations.push(json!({
-            "id": entity.stable_id(), "type": sim.interner.resolve(entity.type_ref()),
+            "id": entity.stable_id(), "type": sim.interner().resolve(entity.type_ref()),
             "display_layer": object.parent.layer.0,
             "pieces": object.pieces.iter().map(|piece| {
                 let sprite = &piece.instance;

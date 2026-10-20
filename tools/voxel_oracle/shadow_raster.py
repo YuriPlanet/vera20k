@@ -1,4 +1,4 @@
-"""Execute native single-section VXL shadow preparation and stencil writes.
+"""Execute native selected-section VXL shadow preparation and stencil writes.
 
 The renderer's inputs are immutable file bytes and a caller matrix. Only file
 vtable IO and allocation are substituted; original render instructions run.
@@ -20,8 +20,9 @@ def pack(*values):
     return struct.pack('<' + 'I' * len(values), *values)
 
 
-def render_shadow_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix, body_pixels=None):
-    """Original flat single-section core, optionally reading a supplied BSurface.
+def render_shadow_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix, body_pixels=None,
+                         *, considered_aircraft=False, shadow_index=0):
+    """Original selected-section core, optionally reading a supplied BSurface.
 
     Without an HVA it makes VoxelAnimClass::DrawIt's call (0x00749CBE..
     0x00749CE8): the caller matrix itself and the viewer identity at 0x887430.
@@ -135,7 +136,7 @@ def render_shadow_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix, body_pixe
     u.reg_write(UC_X86_REG_ESP, oracle.STACK_BASE + oracle.STACK_SIZE - 0x1000)
     oracle.run_checked(u, 0x52bddd, 0x52be0a, required_addresses=(0x5ae860, 0x754c00))
     write(INPUT, draw_matrix)
-    assert section_count == 1, 'This packet covers one ShadowIndex/frame-zero section'
+    assert 0 <= shadow_index < section_count
     invoke(0x753e00)
     mask_surface = 0
     mask_reader = None
@@ -149,16 +150,20 @@ def render_shadow_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix, body_pixe
         mask_reader = read32(read32(mask_surface) + 0x28)
     if hva_bytes is None:
         write(INTERMEDIATE, draw_matrix)
-        view_product = 0x887430
     else:
-        # 707280 takes frame-zero ShadowIndex HVA; this packet supplies index zero.
+        #707280 takes frame-zero ShadowIndex HVA, independently of body frame.
         invoke(0x5af980, ecx=INTERMEDIATE, edx=INPUT,
-               args=(read32(HVA_OBJECT + 0x0c),))
+               args=(read32(HVA_OBJECT + 0x0c) + shadow_index * 48,))
+    view_product = 0x887430
+    if hva_bytes is not None or considered_aircraft:
         invoke(0x5ae860, ecx=SECTION)
-        # Ordinary non-aircraft: original viewer identity times scale-one identity.
+        #707319..70732C: ConsideredAircraft scales the viewer, independently
+        #of the body/HVA matrix. Keep the original uniform-scale operation.
+        if considered_aircraft:
+            invoke(0x5aea10, ecx=SECTION, args=(0x3F000000,))
         view_product = BASE + 0x900
         invoke(0x5af980, ecx=view_product, edx=0x887430, args=(SECTION,))
-    invoke(0x753f90, ecx=VXL, edx=0,
+    invoke(0x753f90, ecx=VXL, edx=shadow_index,
            args=(0, view_product, INTERMEDIATE, 0x887420, mask_surface, 0, 0),
            required=(0x7564b0, 0x5afb80))
     quad_before = bytes(u.mem_read(0xb3ff78, 0x48))

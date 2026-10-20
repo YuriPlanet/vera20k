@@ -2,6 +2,7 @@
   "schema_version": "vera20k.map-observation-profile.v2",
   "launch": {
     "mode": {
+      "class": "Battle",
       "id": 1,
       "ui_name_key": "GUI:Battle",
       "tooltip_key": "STT:ModeBattle",
@@ -11,22 +12,35 @@
       "allies_allowed": true,
       "must_ally": false
     },
-    "player_name": "VERA-OBSERVER",
-    "local": {
-      "country": "Iraq",
-      "country_random": false,
-      "color_index": 0,
-      "color_random": false,
-      "start_position": {
-        "Position": 0
-      },
-      "team": {
-        "Team": 0
+    "selected_map_file": "XXmas.MAP",
+    "humans": [
+      {
+        "raw_slot_index": 0,
+        "name": "VERA-OBSERVER",
+        "slot": {
+          "country": 6,
+          "country_random": false,
+          "color_index": 0,
+          "color_random": false,
+          "start_position": {
+            "Position": 0
+          },
+          "team": {
+            "Team": 0
+          }
+        },
+        "role": {
+          "Player": {
+            "group": 0
+          }
+        }
       }
-    },
+    ],
+    "local_player_index": 0,
+    "ai_player_count": 1,
     "opponents": [
       {
-        "country": "America",
+        "country": 0,
         "country_random": false,
         "color_index": 2,
         "color_random": false,
@@ -36,30 +50,10 @@
         "team": {
           "Team": 1
         },
-        "difficulty": "Easy"
+        "difficulty": "Easy",
+        "raw_slot_index": 1
       }
     ],
-    "options": {
-      "starting_credits": 50000,
-      "unit_count": 0,
-      "tech_level": 10,
-      "game_speed": 1,
-      "default_ai_difficulty": 0,
-      "short_game": false,
-      "bases": true,
-      "bridges_destroyable": true,
-      "super_weapons": true,
-      "build_off_ally": true,
-      "crates": true,
-      "mcv_redeploy": true,
-      "fog_of_war": false,
-      "shroud": false,
-      "tiberium_grows": true,
-      "multi_engineer": false,
-      "harvester_truce": false,
-      "ally_change_allowed": true
-    },
-    "selected_map_file": "XXmas.MAP",
     "pre_fill_house_roster": {
       "human_nodes": [
         {
@@ -71,11 +65,11 @@
       "ai_slots": [
         {
           "slot_index": 0,
-          "valid": true
+          "valid": false
         },
         {
           "slot_index": 1,
-          "valid": false
+          "valid": true
         },
         {
           "slot_index": 2,
@@ -96,12 +90,36 @@
         {
           "slot_index": 6,
           "valid": false
+        },
+        {
+          "slot_index": 7,
+          "valid": false
         }
       ],
       "fixed_tail": [
         "Neutral",
         "Special"
       ]
+    },
+    "options": {
+      "starting_credits": 50000,
+      "unit_count": 0,
+      "tech_level": 10,
+      "game_speed": 1,
+      "default_ai_difficulty": 0,
+      "short_game": false,
+      "bases": true,
+      "bridges_destroyable": true,
+      "super_weapons": true,
+      "build_off_ally": true,
+      "crates": true,
+      "mcv_redeploy": true,
+      "fog_of_war": false,
+      "shroud": false,
+      "tiberium_grows": true,
+      "multi_engineer": false,
+      "harvester_truce": false,
+      "ally_change_allowed": true
     }
   },
   "seed": 305419896,

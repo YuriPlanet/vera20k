@@ -186,11 +186,12 @@ fn supplied_fixture(row: &Value) -> (Simulation, RuleSet, u64) {
     let before = &row["guard_before"];
     let rules = supplied_rules(input);
     let mut sim = Simulation::with_seed(input["seed"].as_u64().unwrap());
-    sim.session.binary_frame = input["now"].as_u64().unwrap() as u32;
-    sim.session.game_options.game_speed = signed(&input["game_speed_index"]);
+    sim.session
+        .set_binary_frame_for_test(input["now"].as_u64().unwrap() as u32);
+    sim.session.game_options_mut_for_test().game_speed = signed(&input["game_speed_index"]);
     let owner = sim.interner.intern("SuppliedHouse");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
+        .register(HouseState::new(owner, 0, None, false, 0, 10));
     let id = sim
         .construct_object_limbo_at_height(
             input["type_id"].as_str().unwrap(),
@@ -431,7 +432,7 @@ fn native_gi_reacquire_uses_deployed_weapon_range_and_clears_firing_latch() {
                 .mission
                 .dispatch_timer(),
             MissionDispatchTimer::from_raw(
-                sim.session.binary_frame as i32,
+                sim.session.binary_frame() as i32,
                 signed(&row["return_signed"])
             )
         );
@@ -580,7 +581,7 @@ fn native_deployed_guard_full_returns_match_state_cadence_and_three_rng_streams(
         assert_eq!(
             actor.mission.dispatch_timer(),
             MissionDispatchTimer::from_raw(
-                sim.session.binary_frame as i32,
+                sim.session.binary_frame() as i32,
                 signed(&row["return_signed"])
             ),
             "{name}: Mission dispatcher epilogue"

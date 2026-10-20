@@ -100,14 +100,14 @@ pub(super) fn native_fixture(
         16,
         Some((8, 8)),
     );
-    let base = zones.base_topology_mut();
+    let base = zones.base_topology_mut_for_test();
     for y in 0..16 {
         for x in 0..16 {
-            base.zone_ids[y * 16 + x] =
+            base.zone_ids_mut_for_test()[y * 16 + x] =
                 u16::from(row["split"].as_bool().unwrap_or(false) && x >= 8);
         }
     }
-    for row in &mut base.raw_zone_ids_by_row {
+    for row in base.raw_zone_ids_by_row_mut_for_test() {
         *row = vec![2, 3];
     }
     (terrain, zones, raw)

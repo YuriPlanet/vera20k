@@ -326,7 +326,7 @@ impl LocomotorState {
         if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
             (self.kind, &mut self.runtime_payload)
         {
-            state.set_head(head);
+            state.store_head(head);
         }
     }
 
@@ -461,12 +461,7 @@ impl LocomotorState {
         if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
             (self.kind, &mut self.runtime_payload)
         {
-            state.set_destination(coord.filter(|c| c.x != 0 || c.y != 0 || c.z != 0));
-            if state.destination().is_some() {
-                state.set_moving(true);
-            } else if state.head().is_none() {
-                state.set_moving(false);
-            }
+            state.assign_destination(coord);
         }
     }
 
@@ -487,9 +482,8 @@ impl LocomotorState {
     pub(crate) fn begin_walk_motion(&mut self) {
         if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
             (self.kind, &mut self.runtime_payload)
-            && state.head().is_some()
         {
-            state.set_animation_moving(true);
+            state.begin_motion();
         }
     }
 
@@ -502,7 +496,7 @@ impl LocomotorState {
         if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
             (self.kind, &mut self.runtime_payload)
         {
-            state.set_animation_moving(false);
+            state.stop_movement_animation();
         }
     }
 
@@ -510,13 +504,10 @@ impl LocomotorState {
     /// and dispatches the owner's +54C callback. The world receiver performs
     /// that dispatch before returning; this primitive returns its admission.
     pub(crate) fn stop_walk(&mut self) -> bool {
-        self.set_walk_destination(None);
         if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
             (self.kind, &mut self.runtime_payload)
-            && state.head().is_none()
         {
-            state.set_animation_moving(false);
-            return true;
+            return state.stop();
         }
         false
     }
@@ -529,8 +520,7 @@ impl LocomotorState {
         if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
             (self.kind, &mut self.runtime_payload)
         {
-            state.set_destination(None);
-            state.set_head(None);
+            state.lock();
         }
     }
 
@@ -659,8 +649,14 @@ impl LocomotorState {
         self.piggyback.as_mut()
     }
 
-    /// Store the suspended object (BEGIN).
-    pub(crate) fn set_piggyback(&mut self, piggyback: Option<StashedLocomotor>) {
+    /// BEGIN keeps the displaced object beneath the incoming one.
+    pub(crate) fn stash(&mut self, displaced: StashedLocomotor) {
+        self.piggyback = Some(displaced);
+    }
+
+    /// A fixture's suspended object.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_piggyback_for_test(&mut self, piggyback: Option<StashedLocomotor>) {
         self.piggyback = piggyback;
     }
 
@@ -711,10 +707,15 @@ impl LocomotorState {
         self.layer
     }
 
-    /// Store the Foot's layer: the piggyback swap's copy and fixtures, and
-    /// the unload writers in `transport_unload` until they move to
-    /// [`Self::store_ground_layer`].
-    pub fn set_layer(&mut self, layer: MovementLayer) {
+    /// END (`0x004AF930`) keeps the Foot's layer: the restored object takes
+    /// the released temporary's, since END does not move the Foot.
+    pub(crate) fn inherit_layer(&mut self, released: &LocomotorState) {
+        self.layer = released.layer;
+    }
+
+    /// A fixture's layer.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_layer_for_test(&mut self, layer: MovementLayer) {
         self.layer = layer;
     }
 

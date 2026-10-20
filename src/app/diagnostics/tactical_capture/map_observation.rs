@@ -7,7 +7,7 @@ use super::*;
 use crate::app::diagnostics::state::{MAP_PRESENTATION_CLOCK_POLICY, MAP_PRESENTATION_INTERVAL_MS};
 use crate::app::presentation::render::GameRenderTimes;
 use crate::audio::sfx::{PcmObservationConfig, PcmObservationContext, PcmObservationReport};
-use crate::skirmish_launch::{LaunchStartPosition, PreFillHouseRoster, SkirmishLaunchSession};
+use crate::skirmish_launch::{LaunchStartPosition, SkirmishLaunchSession};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -324,17 +324,17 @@ fn sidebar_tab_name(tab: crate::ui::sidebar::SidebarTab) -> &'static str {
 /// The observed House's Supers in interned-id order: the id a profile's
 /// `LaunchSuperWeapon` names and the state the sidebar reads.
 fn super_weapon_rows(sim: &crate::sim::world::Simulation, owner: &str) -> Value {
-    let frame = sim.session.binary_frame as i32;
-    sim.interner
+    let frame = sim.session().binary_frame() as i32;
+    sim.interner()
         .get(owner)
-        .and_then(|id| sim.super_weapons.get(&id))
+        .and_then(|id| sim.super_weapons().get(&id))
         .into_iter()
         .flatten()
         .map(|(&type_id, inst)| {
             let (fade_countdown, fade_coords) = inst.fade();
-            json!({"type": sim.interner.resolve(type_id), "interned_id": type_id.index(),
-                "granted": inst.is_active, "ready": inst.is_ready, "on_hold": inst.is_suspended,
-                "charge_start": inst.charge_start_tick, "charge_duration": inst.charge_duration,
+            json!({"type": sim.interner().resolve(type_id), "interned_id": type_id.index(),
+                "granted": inst.is_active(), "ready": inst.is_ready(), "on_hold": inst.is_suspended(),
+                "charge_start": inst.charge_start_tick(), "charge_duration": inst.charge_duration(),
                 "remaining": inst.charge_remaining(frame), "fade_countdown": fade_countdown,
                 "fade_coords": fade_coords})
         })
@@ -345,18 +345,18 @@ fn super_weapon_rows(sim: &crate::sim::world::Simulation, owner: &str) -> Value 
 /// names (`HouseClass+0x5788`), and the enemy its anger chose (`+0x5600`).
 fn diplomacy_row(sim: &crate::sim::world::Simulation, owner: &str) -> Value {
     let allies: Vec<&str> = sim
-        .session
-        .house_order
+        .houses()
+        .order()
         .iter()
-        .map(|&house| sim.interner.resolve(house))
+        .map(|&house| sim.interner().resolve(house))
         .filter(|house| {
             !house.eq_ignore_ascii_case(owner)
-                && crate::map::houses::is_allied_with(&sim.house_alliances, owner, house)
+                && crate::map::houses::is_allied_with(sim.house_alliances(), owner, house)
         })
         .collect();
-    let enemy = crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
-        .and_then(|house| house.enemy_house)
-        .map(|enemy| sim.interner.resolve(enemy));
+    let enemy = crate::sim::house_state::house_state_for_owner(sim.houses(), owner, sim.interner())
+        .and_then(|house| house.enemy_house())
+        .map(|enemy| sim.interner().resolve(enemy));
     json!({"allies": allies, "enemy": enemy})
 }
 
@@ -837,15 +837,25 @@ impl MapCaptureProfile {
             "map observation requires an explicit fixed Battle launch"
         );
         ensure!(
-            self.launch.pre_fill_house_roster
-                == PreFillHouseRoster::from_compact_skirmish(self.launch.opponents.len()),
+            self.launch.humans.len() == 1
+                && self.launch.local_player_index == 0
+                && self.launch.humans[0].raw_slot_index == Some(0)
+                && !self.launch.humans[0].is_observer()
+                && self.launch.ai_player_count == self.launch.opponents.len() as i32
+                && self
+                    .launch
+                    .opponents
+                    .iter()
+                    .enumerate()
+                    .all(|(index, opponent)| usize::from(opponent.raw_slot_index) == index + 1)
+                && self.launch.house_roster_is_consistent(),
             "map observation requires the ordinary one-human compact skirmish roster"
         );
         let mut starts = std::collections::BTreeSet::new();
         let mut colors = std::collections::BTreeSet::new();
         for (start, color) in std::iter::once((
-            self.launch.local.start_position,
-            self.launch.local.color_index,
+            self.launch.local_slot().start_position,
+            self.launch.local_slot().color_index,
         ))
         .chain(
             self.launch
@@ -994,11 +1004,11 @@ impl MapClock {
             .as_ref()
             .context("clock simulation absent")?
             .simulation
-            .session;
+            .session();
         Ok(Self {
-            simulation_tick: session.tick,
-            binary_frame: session.binary_frame,
-            total_simulation_ms: session.total_sim_ms,
+            simulation_tick: session.tick(),
+            binary_frame: session.binary_frame(),
+            total_simulation_ms: session.total_sim_ms(),
         })
     }
 }
@@ -1022,8 +1032,8 @@ fn sound_state(state: &AppState, profile: &MapCaptureProfile) -> Result<Value> {
         .simulation;
     let rng = sim.rng_views();
     let actors = sim.entities().iter_sorted().filter_map(|(id, entity)| {
-        let owner = sim.interner.resolve(entity.owner());
-        let type_id = sim.interner.resolve(entity.type_ref());
+        let owner = sim.interner().resolve(entity.owner());
+        let type_id = sim.interner().resolve(entity.type_ref());
         (profile.observe_owners().iter().any(|watch| watch == owner)
             && profile.observe_types.as_ref().is_none_or(|types| types.iter().any(|watch| watch == type_id)))
             .then(|| json!({"stable_id": id, "body_counter": entity.body_frame_counter,
@@ -1294,7 +1304,7 @@ impl MapLocalInputObservation {
             }),
             building_placement: Some(MapBuildingPlacementObservation::capture(
                 input,
-                &sim.interner,
+                sim.interner(),
             )),
             main_rng_cursor: [main_rng.index_a, main_rng.index_b],
             selection_voice_enabled: input.selection_voice_enabled,
@@ -1347,20 +1357,23 @@ impl MapInputObservation {
                 state.match_state.input.selection_order_pending,
             ),
             selection_pending: state.match_state.input.selection_order_pending,
-            target_line_remaining: lines.remaining_frames(sim.session.binary_frame),
-            target_line_active: lines.is_selected_action_active(sim.session.binary_frame),
+            target_line_remaining: lines.remaining_frames(sim.session().binary_frame()),
+            target_line_active: lines.is_selected_action_active(sim.session().binary_frame()),
             planning_active: state.match_state.input.planning.active(),
-            planning_paths: sim.session.current_house().map_or_else(Vec::new, |owner| {
-                sim.planning_paths(owner)
-                    .into_iter()
-                    .map(|path| MapPlanningPath {
-                        actor_id: path.actor_id,
-                        cells: path.cells,
-                        loop_start: path.loop_start,
-                        editing: path.editing,
-                    })
-                    .collect()
-            }),
+            planning_paths: sim
+                .session()
+                .current_house()
+                .map_or_else(Vec::new, |owner| {
+                    sim.planning_paths(owner)
+                        .into_iter()
+                        .map(|path| MapPlanningPath {
+                            actor_id: path.actor_id,
+                            cells: path.cells,
+                            loop_start: path.loop_start,
+                            editing: path.editing,
+                        })
+                        .collect()
+                }),
             local_input: local_input.then(|| MapLocalInputObservation::capture(state, sim)),
         })
     }
@@ -1626,7 +1639,7 @@ struct MapCommandBarThumbState {
     rect: [i32; 4],
     disabled: bool,
     current_house: Option<String>,
-    side_index: Option<u8>,
+    side_index: Option<i32>,
     local_player_defeated: bool,
     input_locked: bool,
     has_lost: Option<bool>,
@@ -1650,8 +1663,8 @@ impl MapCommandBarThumbState {
             .as_ref()
             .context("thumb observation requires a simulation")?
             .simulation;
-        let owner = sim.session.current_house();
-        let house = owner.and_then(|owner| sim.houses.get(&owner));
+        let owner = sim.session().current_house();
+        let house = owner.and_then(|owner| sim.houses().get(&owner));
         Ok(Self {
             closed: presentation.sidebar_gadget_state.command_bar_closed,
             pressed: button.is_pressed,
@@ -1660,10 +1673,10 @@ impl MapCommandBarThumbState {
             gadget_id: gadget.id,
             rect: [gadget.rect.x, gadget.rect.y, gadget.rect.w, gadget.rect.h],
             disabled: gadget.is_disabled,
-            current_house: owner.map(|owner| sim.interner.resolve(owner).to_owned()),
-            side_index: house.map(|house| house.side_index),
+            current_house: owner.map(|owner| sim.interner().resolve(owner).to_owned()),
+            side_index: house.map(|house| house.side_index()),
             local_player_defeated: sim.local_player_defeated(),
-            input_locked: sim.session.input_locked(),
+            input_locked: sim.session().input_locked(),
             has_lost: house.map(|house| house.has_lost()),
             exit_ready: house
                 .and_then(|house| house.outcome())
@@ -2018,7 +2031,7 @@ fn disguise_inputs(
     let sim = &runtime.simulation;
     let draw = if entity.category() == crate::map::entities::EntityCategory::Unit {
         let local = crate::app::input::commands::preferred_local_owner_name(state);
-        let local_id = local.as_deref().and_then(|name| sim.interner.get(name));
+        let local_id = local.as_deref().and_then(|name| sim.interner().get(name));
         let mut observer = instances::observer_draw_context(
             sim,
             entity,
@@ -2028,12 +2041,13 @@ fn disguise_inputs(
         );
         let chosen = instances::drawn_model_id(
             entity,
-            &sim.interner,
+            sim.interner(),
             state.rules(),
-            sim.session.binary_frame,
+            sim.session().binary_frame(),
             observer,
         );
-        let voxel = instances::drawn_type_uses_voxel(entity, &chosen, &sim.interner, state.rules());
+        let voxel =
+            instances::drawn_type_uses_voxel(entity, &chosen, sim.interner(), state.rules());
         observer.drawn_voxel = Some(voxel);
         let frame = (!voxel)
             .then(|| {
@@ -2041,7 +2055,7 @@ fn disguise_inputs(
                     state,
                     &chosen,
                     entity,
-                    sim.session.binary_frame,
+                    sim.session().binary_frame(),
                     None,
                 )
             })
@@ -2059,7 +2073,7 @@ fn disguise_inputs(
             });
         let decision = crate::render::draw_state::DrawState::for_entity(
             entity,
-            sim.session.binary_frame,
+            sim.session().binary_frame(),
             0,
             observer,
         );
@@ -2071,8 +2085,8 @@ fn disguise_inputs(
     };
     Ok(
         json!({"active": disguise.is_disguised(), "creation_frame": disguise.creation_frame(),
-        "type_id": disguise.type_id().map(|id| sim.interner.resolve(id)),
-        "house": disguise.house().map(|id| sim.interner.resolve(id)),
+        "type_id": disguise.type_id().map(|id| sim.interner().resolve(id)),
+        "house": disguise.house().map(|id| sim.interner().resolve(id)),
         "reveal_start": disguise.reveal_timer().start_frame(),
         "reveal_duration": disguise.reveal_timer().duration(), "draw": draw}),
     )
@@ -2167,7 +2181,7 @@ fn spawn_observation(
         return Ok(Value::Null);
     };
     let object = rules
-        .object(sim.interner.resolve(entity.type_ref()))
+        .object(sim.interner().resolve(entity.type_ref()))
         .context("spawn observation owner type absent")?;
     // Independent immutable owner reads. In particular current type capacity
     // is not the retained slot count, and diagnostics never run manager AI.
@@ -2180,7 +2194,7 @@ fn spawn_observation(
         })
         .collect();
     Ok(json!({"type_spawns_number": object.spawns_number,
-        "spawn_type": sim.interner.resolve(manager.spawn_type()),
+        "spawn_type": sim.interner().resolve(manager.spawn_type()),
         "count_docked": manager.count_docked_spawns(),
         "count_alive": manager.count_alive_spawns(), "mode": manager.mode(),
         "regen_rate": manager.regen_rate(), "reload_rate": manager.reload_rate(),
@@ -2230,7 +2244,7 @@ impl MapLaserObservation {
                 .disk_laser_observations()
                 .take(MAX_OBSERVATION_SAMPLES + 1)
                 .map(|shot| {
-                    let weapon = shot.weapon.map(|id| sim.interner.resolve(id));
+                    let weapon = shot.weapon.map(|id| sim.interner().resolve(id));
                     json!({"id": shot.id, "source": shot.source, "target": shot.target,
                         "weapon": weapon, "countdown": shot.countdown,
                         "start": shot.start, "step": shot.step, "damage": shot.damage})
@@ -2349,31 +2363,31 @@ impl MapElectricBoltObservation {
         let mut particle_systems = Vec::new();
         for (&id, system) in sim.particle_systems().iter() {
             count = count
-                .checked_add(1 + system.particles.len())
+                .checked_add(1 + system.particles().len())
                 .context("particle observation count overflow")?;
             ensure!(
                 count <= MAX_OBSERVATION_SAMPLES,
                 "particle observation exceeds sample budget"
             );
-            let particles: Vec<_> = system.particles.iter().map(|particle| json!({
+            let particles: Vec<_> = system.particles().iter().map(|particle| json!({
                 "stable_id": particle.stable_id(),
-                "native_id": particle.native_unique_id(), "type_id": rules.particle_type(particle.type_id).name,
+                "native_id": particle.native_unique_id(), "type_id": rules.particle_type(particle.type_id()).name,
                 "display_layer": sim.display_layers().layer_of(particle.stable_id()).map(|layer| layer.index()),
-                "coord": particle.coords.to_array(), "lifetime": particle.lifetime_remaining,
-                "damage_counter": particle.damage_counter, "marked_for_deletion": particle.marked_for_deletion,
-                "velocity_bits": particle.velocity().bits(), "origin": particle.origin.to_array(),
-                "drift": [particle.drift_x, particle.drift_y, particle.drift_z],
-                "animation_state": particle.animation_state, "state_ai_advance": particle.state_ai_advance,
-                "translucency": particle.translucency,
+                "coord": particle.coords().to_array(), "lifetime": particle.lifetime_remaining(),
+                "damage_counter": particle.damage_counter(), "marked_for_deletion": particle.marked_for_deletion(),
+                "velocity_bits": particle.velocity().bits(), "origin": particle.origin().to_array(),
+                "drift": [particle.drift_x(), particle.drift_y(), particle.drift_z()],
+                "animation_state": particle.animation_state(), "state_ai_advance": particle.state_ai_advance(),
+                "translucency": particle.translucency(),
             })).collect();
             particle_systems.push(json!({"stable_id": id, "native_id": system.native_unique_id(),
-                "type_id": rules.particle_system_type(system.type_id).name, "coord": system.coords.to_array(),
-                "lifetime": system.lifetime, "spawn_frames": system.spark_spawn_frames,
+                "type_id": rules.particle_system_type(system.type_id()).name, "coord": system.coords().to_array(),
+                "lifetime": system.lifetime(), "spawn_frames": system.spark_spawn_frames(),
                 "spawn_timer_bits": system.spawn_timer().bits(),
                 "in_limbo": system.in_limbo(),
                 "display_layer": sim.display_layers().layer_of(id).map(|layer| layer.index()),
-                "done_spawning": system.done_spawning, "in_logic_vector": system.in_logic_vector,
-                "owner_entity": system.owner_entity, "attached_entity": match system.target_ref { Some(crate::sim::combat::TargetKind::Entity(id)) => Some(id), _ => None },
+                "done_spawning": system.done_spawning(), "in_logic_vector": system.in_logic_vector(),
+                "owner_entity": system.owner_entity(), "attached_entity": match system.target_ref() { Some(crate::sim::combat::TargetKind::Entity(id)) => Some(id), _ => None },
                 "particles": particles}));
         }
         let rng = sim.rng_views();
@@ -2442,32 +2456,32 @@ impl MapEffectObservation {
         profile: &MapCaptureProfile,
     ) -> Result<Self> {
         let projectiles = (profile.observe_projectiles == Some(true)).then(|| {
-            sim.projectiles.iter().take(MAX_OBSERVATION_SAMPLES + 1).map(|(&id, bullet)| {
-                let weapon = bullet.payload.installed_weapon().map(|id| sim.interner.resolve(id));
-                let type_id = bullet.payload.projectile_type().map(|id| sim.interner.resolve(id));
-                json!({"stable_id": id, "native_id": bullet.native_unique_id,
-                    "weapon": weapon, "type_id": type_id, "source_id": bullet.source_id,
-                    "physical_leptons": [bullet.position.x, bullet.position.y, bullet.position.z],
-                    "in_logic_vector": bullet.in_logic_vector, "awaiting_anim": bullet.awaiting_anim(),
-                    "visual_frame": bullet.visual.runtime_frame,
-                    "visual_countdown": bullet.visual.runtime_countdown})
+            sim.projectiles().iter().take(MAX_OBSERVATION_SAMPLES + 1).map(|(&id, bullet)| {
+                let weapon = bullet.payload().installed_weapon().map(|id| sim.interner().resolve(id));
+                let type_id = bullet.payload().projectile_type().map(|id| sim.interner().resolve(id));
+                json!({"stable_id": id, "native_id": bullet.native_unique_id(),
+                    "weapon": weapon, "type_id": type_id, "source_id": bullet.source_id(),
+                    "physical_leptons": [bullet.position().x, bullet.position().y, bullet.position().z],
+                    "in_logic_vector": bullet.in_logic_vector(), "awaiting_anim": bullet.awaiting_anim(),
+                    "visual_frame": bullet.visual().runtime_frame,
+                    "visual_countdown": bullet.visual().runtime_countdown})
             }).collect::<Vec<_>>()
         });
         let animations = profile.observe_anim_types.as_ref().map(|types| {
             sim.anims().filter(|(_, anim)| types.iter().any(|name|
-                name.eq_ignore_ascii_case(sim.interner.resolve(anim.type_id))))
+                name.eq_ignore_ascii_case(sim.interner().resolve(anim.type_id()))))
                 .take(MAX_OBSERVATION_SAMPLES + 1).map(|(&id, anim)| {
                     let absolute = sim.anim_absolute_coord(id).map(|at| [at.x, at.y, at.z]);
-                    json!({"stable_id": id, "native_id": anim.native_unique_id,
-                        "type_id": sim.interner.resolve(anim.type_id),
-                        "stored_leptons": [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
-                        "physical_leptons": absolute, "owner_entity": anim.owner_entity,
-                        "in_logic_vector": anim.in_logic_vector, "completed": anim.completed(),
-                        "effective_end": anim.effective_end, "effective_loop_end": anim.effective_loop_end,
-                        "draw_flags": anim.draw_flags, "z_adjust": anim.z_adjust,
-                        "hidden": anim.draw_runtime.hidden,
-                        "translucency_ramp": anim.draw_runtime.translucency_ramp,
-                        "runtime": anim.runtime})
+                    json!({"stable_id": id, "native_id": anim.native_unique_id(),
+                        "type_id": sim.interner().resolve(anim.type_id()),
+                        "stored_leptons": [anim.world_coord().x, anim.world_coord().y, anim.world_coord().z],
+                        "physical_leptons": absolute, "owner_entity": anim.owner_entity(),
+                        "in_logic_vector": anim.in_logic_vector(), "completed": anim.completed(),
+                        "effective_end": anim.effective_end(), "effective_loop_end": anim.effective_loop_end(),
+                        "draw_flags": anim.draw_flags(), "z_adjust": anim.z_adjust(),
+                        "hidden": anim.draw_runtime().hidden,
+                        "translucency_ramp": anim.draw_runtime().translucency_ramp,
+                        "runtime": anim.runtime()})
                 }).collect::<Vec<_>>()
         });
         let rng = sim.rng_views().scenario;
@@ -2503,7 +2517,7 @@ struct MapCrateSlotObservation {
 
 impl MapCrateSlotObservation {
     fn capture(sim: &crate::sim::world::Simulation) -> Vec<Self> {
-        sim.crate_authority
+        sim.crate_authority()
             .slots()
             .iter()
             .enumerate()
@@ -2515,7 +2529,7 @@ impl MapCrateSlotObservation {
                     .ok()
                     .zip(u16::try_from(slot.cell_y).ok())
                     .and_then(|(x, y)| {
-                        let grid = sim.overlay_grid.as_ref()?;
+                        let grid = sim.overlay_grid()?;
                         (x < grid.width() && y < grid.height()).then(|| grid.cell(x, y))
                     })
                     .map(|cell| json!({"id": cell.overlay_id, "data": cell.overlay_data}));
@@ -2558,6 +2572,68 @@ struct MapFrameObservation {
     input: Option<MapInputObservation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     audio_state: Option<Value>,
+}
+
+/// Inputs retained by the ordinary terrain owners after this exact step's
+/// draw. This is not a GPU readback or proof that a fragment reached the target.
+/// In particular, a missing/out-of-view A sample remains null rather than
+/// claiming the shader's disabled/out-of-bounds neutral fallback was sampled.
+fn terrain_render_observation(state: &AppState, rx: u16, ry: u16) -> Value {
+    let presentation = &state.match_state.match_presentation;
+    let grid = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .and_then(|runtime| runtime.view().resolved_terrain());
+    let cell = grid.and_then(|grid| grid.cell(rx, ry));
+    let tactical_variant = grid.and_then(|grid| grid.tactical_draw_variant(rx, ry));
+    // Observe the same live key that terrain_instances::build_visible_instances
+    // requests, without calling Recalc, creating an atlas entry or substituting
+    // a pristine image when the exact selected key is absent.
+    let atlas_key = cell.and_then(|cell| {
+        let (tile_id, sub_tile) = grid?.presentation_tile(cell);
+        Some(crate::map::theater::TileKey {
+            tile_id,
+            sub_tile,
+            variant: tactical_variant.unwrap_or(cell.variant),
+        })
+    });
+    let uv = atlas_key.and_then(|key| presentation.tile_atlas.as_ref()?.get_uv(key));
+    let lighting = presentation.lighting.grid();
+    let palette_light = cell.and_then(|_| {
+        lighting.cell_light_at((rx, ry))?;
+        Some(crate::render::palette_light::PaletteLight::cell(lighting, (rx, ry), false).0)
+    });
+    let center = cell.map(|cell| {
+        let (x, y) = crate::map::terrain::iso_to_screen(rx, ry, cell.level);
+        [
+            x + crate::map::terrain::TILE_WIDTH / 2.0,
+            y + crate::map::terrain::TILE_HEIGHT / 2.0,
+        ]
+    });
+    let camera = [
+        state.match_state.input.camera_x,
+        state.match_state.input.camera_y,
+    ];
+    let a_source = (!state.match_state.sandbox_full_visibility)
+        .then_some(presentation.shroud_buffer.as_ref())
+        .flatten();
+    let a_center =
+        center.and_then(|point| a_source?.sample_world(point[0], point[1], camera[0], camera[1]));
+    json!({
+        "phase": "after_draw",
+        "variant": cell.map(|cell| cell.variant),
+        "tactical_variant": tactical_variant,
+        "atlas_key": atlas_key.map(|key| [u32::from(key.tile_id), u32::from(key.sub_tile), u32::from(key.variant)]),
+        "atlas_ready": presentation.tile_atlas.is_some(),
+        "exact_atlas_uv": uv.map(|uv| json!({"origin": uv.uv_origin, "size": uv.uv_size,
+            "pixel_size": uv.pixel_size, "draw_offset": uv.draw_offset})),
+        "palette_light": palette_light,
+        "cell_center_world": center,
+        "camera_top_left": camera,
+        "a_bound": a_source.is_some(),
+        "a_center": a_center,
+    })
 }
 
 #[derive(Debug, Serialize)]
@@ -3029,27 +3105,27 @@ impl TacticalCaptureSession {
                 .context("simulation absent")?
                 .simulation;
             ensure!(
-                sim.session.tick == 0
-                    && sim.session.total_sim_ms == 0
-                    && sim.session.binary_frame == 0
-                    && sim.session.seed == u64::from(profile.seed)
-                    && sim.input_delay_ticks == u64::from(profile.input_delay_ticks),
+                sim.session().tick() == 0
+                    && sim.session().total_sim_ms() == 0
+                    && sim.session().binary_frame() == 0
+                    && sim.session().seed() == u64::from(profile.seed)
+                    && sim.input_delay_ticks() == u64::from(profile.input_delay_ticks),
                 "live simulation is not the requested tick-zero state"
             );
             validate_game_options(sim, &profile.launch)?;
             let slots: Vec<_> = sim
-                .session
-                .start_slot_houses
+                .session()
+                .start_slot_houses()
                 .iter()
                 .map(|(slot, house_id)| {
-                    let house = sim.houses.get(house_id);
-                    json!({"slot": slot, "house": sim.interner.resolve(*house_id),
-                    "waypoint": sim.session.mp_start_waypoints.get(slot),
-                    "country": house.and_then(|h| h.country).map(|c| sim.interner.resolve(c)),
-                    "human": house.map(|h| h.is_human), "difficulty": house.map(|h| h.difficulty)})
+                    let house = sim.houses().get(house_id);
+                    json!({"slot": slot, "house": sim.interner().resolve(*house_id),
+                    "waypoint": sim.session().mp_start_waypoints().get(slot),
+                    "country": house.and_then(|h| h.country()).map(|c| sim.interner().resolve(c)),
+                    "human": house.map(|h| h.is_human()), "difficulty": house.map(|h| h.difficulty())})
                 })
                 .collect();
-            for start in std::iter::once(profile.launch.local.start_position).chain(
+            for start in std::iter::once(profile.launch.local_slot().start_position).chain(
                 profile
                     .launch
                     .opponents
@@ -3060,18 +3136,18 @@ impl TacticalCaptureSession {
                     bail!("unresolved start")
                 };
                 ensure!(
-                    sim.session
-                        .mp_start_waypoints
+                    sim.session()
+                        .mp_start_waypoints()
                         .contains_key(&u32::from(index))
                         && sim
-                            .session
-                            .start_slot_houses
+                            .session()
+                            .start_slot_houses()
                             .contains_key(&u32::from(index)),
                     "requested start {index} was not installed in the loaded map"
                 );
             }
-            let loaded_session = json!({"map_name": sim.session.map_name, "theater": sim.session.theater,
-                "options": sim.session.game_options, "start_slots": slots, "map_waypoints": sim.session.mp_start_waypoints});
+            let loaded_session = json!({"map_name": sim.session().map_name(), "theater": sim.session().theater(),
+                "options": sim.session().game_options(), "start_slots": slots, "map_waypoints": sim.session().mp_start_waypoints()});
             // Simulation::intern_rule_type_ids owns these handles. Observation
             // reads the rules-owned names and installed handles without adding
             // an interner entry or translating a production command.
@@ -3080,7 +3156,7 @@ impl TacticalCaptureSession {
             for (category, names) in production_type_names(rules) {
                 for name in names {
                     let handle = sim
-                        .interner
+                        .interner()
                         .get(name)
                         .with_context(|| format!("rule type {name:?} was not preinterned"))?;
                     rule_types.push(json!({"type_id": name, "interned_id": handle.index(),
@@ -3105,9 +3181,9 @@ impl TacticalCaptureSession {
                     .map(|command| command.owner.as_str()),
             ) {
                 ensure!(
-                    sim.interner
+                    sim.interner()
                         .get(owner)
-                        .is_some_and(|id| sim.houses.contains_key(&id)),
+                        .is_some_and(|id| sim.houses().contains_key(&id)),
                     "observation owner {owner:?} is absent from the loaded Houses"
                 );
             }
@@ -3271,8 +3347,8 @@ impl TacticalCaptureSession {
                 .as_ref()
                 .context("command simulation absent")?
                 .simulation
-                .session
-                .tick;
+                .session()
+                .tick();
             ensure!(
                 issued_tick == self.map_state()?.expected_clock(completed_steps, true).0,
                 "command issue is outside exact-step boundary"
@@ -3361,8 +3437,8 @@ impl TacticalCaptureSession {
                 .as_ref()
                 .context("gesture simulation absent")?
                 .simulation;
-            let issued_simulation_tick = sim.session.tick;
-            let issued_binary_frame = sim.session.binary_frame;
+            let issued_simulation_tick = sim.session().tick();
+            let issued_binary_frame = sim.session().binary_frame();
             let clock_before = MapClock::capture(state)?;
             let expected_clock = self.map_state()?.expected_clock(completed_steps, true);
             ensure!(
@@ -3635,8 +3711,8 @@ impl TacticalCaptureSession {
                 .simulation;
             ensure!(
                 scheduled.gesture.is_quickload()
-                    || (sim.session.tick == issued_simulation_tick
-                        && sim.session.binary_frame == issued_binary_frame),
+                    || (sim.session().tick() == issued_simulation_tick
+                        && sim.session().binary_frame() == issued_binary_frame),
                 "gesture advanced simulation outside the exact-step owner"
             );
             let pending_after = sim.pending_command_snapshot();
@@ -3652,7 +3728,7 @@ impl TacticalCaptureSession {
                     pending_before.len()
                 })
                 .map(|envelope| MapGestureCommandReceipt {
-                    owner: sim.interner.resolve(envelope.owner).to_owned(),
+                    owner: sim.interner().resolve(envelope.owner).to_owned(),
                     execute_tick: envelope.execute_tick,
                     payload: envelope.payload,
                 })
@@ -3726,8 +3802,8 @@ impl TacticalCaptureSession {
         let mut actors = Vec::new();
         if !profile.observe_owners().is_empty() {
             for (id, entity) in sim.entities().iter_sorted() {
-                let owner = sim.interner.resolve(entity.owner());
-                let type_name = sim.interner.resolve(entity.type_ref());
+                let owner = sim.interner().resolve(entity.owner());
+                let type_name = sim.interner().resolve(entity.type_ref());
                 if !map.observes_actor(profile, id, owner, type_name) {
                     continue;
                 }
@@ -3812,11 +3888,11 @@ impl TacticalCaptureSession {
                             "slot_cell_564": [slot_cell.0, slot_cell.1],
                             "spatial_bucket": entity.air_spatial_bucket(),
                             "spatial_enter_order": entity.air_spatial_enter_order(),
-                            "current_cell_slot_holder": sim.substrate.air_slots.holder(
+                            "current_cell_slot_holder": sim.air_slots().holder(
                                 entity.position.rx(), entity.position.ry()),
-                            "tracker_cell_slot_holder": sim.substrate.air_slots.holder(
+                            "tracker_cell_slot_holder": sim.air_slots().holder(
                                 tracker_cell.0 as u16, tracker_cell.1 as u16),
-                            "slot_cell_slot_holder": sim.substrate.air_slots.holder(
+                            "slot_cell_slot_holder": sim.air_slots().holder(
                                 slot_cell.0 as u16, slot_cell.1 as u16),
                         },
                         "walk_head_leptons": walk_head_leptons,
@@ -3830,8 +3906,8 @@ impl TacticalCaptureSession {
                 let unit = entity.mission_leaf.as_unit().map(|leaf| {
                     let animation = entity.deploy_anim().map(|anim_id| {
                         json!({"stable_id": anim_id, "live": sim.anim(anim_id).map(|anim| {
-                            json!({"type_id": sim.interner.resolve(anim.type_id),
-                                "frame": anim.runtime.current_frame, "owner_entity": anim.owner_entity})
+                            json!({"type_id": sim.interner().resolve(anim.type_id()),
+                                "frame": anim.runtime().current_frame, "owner_entity": anim.owner_entity()})
                         })})
                     });
                     json!({"deployed_6e0": leaf.deployed(),
@@ -3853,15 +3929,15 @@ impl TacticalCaptureSession {
                         .filter_map(|(slot, anim_id)| {
                             anim_id.map(|anim_id| {
                                 let animation = sim.anim(anim_id).map(|anim| {
-                                    json!({"stable_id": anim.stable_id,
-                                        "native_id": anim.native_unique_id,
-                                        "type_id": sim.interner.resolve(anim.type_id),
-                                        "interned_type_id": anim.type_id.index(),
-                                        "physical_leptons": [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
-                                        "in_logic_vector": anim.in_logic_vector,
-                                        "owner_entity": anim.owner_entity,
-                                        "building_slot": anim.building_slot,
-                                        "runtime": anim.runtime})
+                                    json!({"stable_id": anim.stable_id(),
+                                        "native_id": anim.native_unique_id(),
+                                        "type_id": sim.interner().resolve(anim.type_id()),
+                                        "interned_type_id": anim.type_id().index(),
+                                        "physical_leptons": [anim.world_coord().x, anim.world_coord().y, anim.world_coord().z],
+                                        "in_logic_vector": anim.in_logic_vector(),
+                                        "owner_entity": anim.owner_entity(),
+                                        "building_slot": anim.building_slot(),
+                                        "runtime": anim.runtime()})
                                 });
                                 json!({"slot": slot, "anim_id": anim_id, "animation": animation})
                             })
@@ -3875,8 +3951,8 @@ impl TacticalCaptureSession {
                     "last_operational": entity.building_last_operational,
                     "animation_slots": slots,
                     "voxel_gun": {
-                        "facing": entity.body_facing_current(sim.session.binary_frame),
-                        "elevation": entity.barrel_elevation().current(sim.session.binary_frame),
+                        "facing": entity.body_facing_current(sim.session().binary_frame()),
+                        "elevation": entity.barrel_elevation().current(sim.session().binary_frame()),
                         "hva_counter": entity.turret_anim_frame.frame(),
                         "recoil": entity.voxel_recoil().0,
                         "recoil_active": entity.voxel_recoil().1
@@ -3914,7 +3990,7 @@ impl TacticalCaptureSession {
                         snapshot["runtime"] = cloak_runtime_observation(
                             cloak,
                             entity.in_playfield(),
-                            sim.session.binary_frame as i32,
+                            sim.session().binary_frame() as i32,
                         );
                     }
                     Some(snapshot)
@@ -3958,7 +4034,7 @@ impl TacticalCaptureSession {
                     || profile.observe_electric_bolts == Some(true)
                 {
                     observation["prism"] =
-                        prism_observation(entity, sim.session.binary_frame as i32);
+                        prism_observation(entity, sim.session().binary_frame() as i32);
                 }
                 if profile.observe_electric_bolts == Some(true) {
                     observation["damage_smoke_system_id"] = json!(entity.damage_smoke_system_id);
@@ -3967,7 +4043,8 @@ impl TacticalCaptureSession {
                     || profile.observe_temporal == Some(true)
                     || profile.observe_cloak == Some(true)
                 {
-                    observation["fire"] = fire_observation(entity, sim.session.binary_frame as i32);
+                    observation["fire"] =
+                        fire_observation(entity, sim.session().binary_frame() as i32);
                 }
                 if profile.observe_temporal == Some(true) {
                     observation["temporal"] = temporal_observation(entity);
@@ -3994,20 +4071,20 @@ impl TacticalCaptureSession {
                         // off as native doubles. Native comparisons establish
                         // each getter before consuming these prepared inputs.
                         json!({
-                            "body_facing": entity.body_facing_current(sim.session.binary_frame),
+                            "body_facing": entity.body_facing_current(sim.session().binary_frame()),
                             "turret_facing": entity.barrel_facing.as_ref()
-                                .map(|facing| facing.current(sim.session.binary_frame)),
+                                .map(|facing| facing.current(sim.session().binary_frame())),
                             "locomotor": entity.locomotor.as_ref().map(|loco| loco.active_kind()),
                             "is_moving": crate::sim::movement::motion_query::is_moving(entity),
                             "applied_speed_fraction_fixed_bits": entity.foot_speed.applied_fraction().to_bits(),
                             "crate_speed_multiplier_f64_bits": entity.foot_speed.crate_multiplier().bits(),
                             "house_speed_bonus_f32_bits": crate::sim::movement::owner_speed_bonus(
-                                &sim.houses, entity, Some(object)).bits(),
+                                sim.houses(), entity, Some(object)).bits(),
                             "current_speed": crate::sim::movement::owner_current_speed(
-                                entity, Some(object), rules.general.veteran_speed, &sim.houses),
+                                entity, Some(object), rules.general.veteran_speed, sim.houses()),
                             "veterancy": entity.veterancy.rank(),
                             "current_weapon": crate::sim::combat::combat_weapon::current_weapon(
-                                entity, object, sim.entities(), rules, &sim.interner)
+                                entity, object, sim.entities(), rules, sim.interner())
                                 .map(|weapon| weapon.id.as_str()),
                             "turret_offset": crate::sim::combat::fire_coord::firer_art(rules, object)
                                 .map_or(0, |art| art.turret_offset),
@@ -4030,15 +4107,15 @@ impl TacticalCaptureSession {
             .iter()
             .map(|owner| {
                 let economy = crate::sim::house_state::house_state_for_owner(
-                    &sim.houses,
+                    sim.houses(),
                     owner,
-                    &sim.interner,
+                    sim.interner(),
                 )
                 .map(|house| {
                     json!({
-                        "credits": house.economy.credits(),
-                        "spent_credits": house.economy.spent_credits(),
-                        "score": house.economy.score(),
+                        "credits": house.economy().credits(),
+                        "spent_credits": house.economy().spent_credits(),
+                        "score": house.economy().score(),
                     })
                 });
                 // Missing Houses stay explicit rather than inventing a zero
@@ -4057,22 +4134,22 @@ impl TacticalCaptureSession {
         let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
         let local_visibility_owner = local_owner
             .as_deref()
-            .and_then(|owner| sim.interner.get(owner).map(|id| (owner, id)));
+            .and_then(|owner| sim.interner().get(owner).map(|id| (owner, id)));
         let terrain = profile.terrain_cells().iter().map(|&[rx, ry]| {
             // Immutable real-cell indexing only. A diagnostic lookup must not
             // stamp canonical Dummy or evaluate gameplay height/zone queries.
             let cell = grid.and_then(|grid| grid.cell(rx, ry));
             let at = (rx, ry);
-            let overlay = sim.overlay_grid.as_ref().map(|grid| grid.cell(rx, ry));
-            let terrain_object = sim.production.terrain_object_cells.get(&at)
-                .and_then(|id| sim.production.terrain_objects.get(id));
-            let animation = sim.production.terrain_animations.get(&at);
+            let overlay = sim.overlay_grid().map(|grid| grid.cell(rx, ry));
+            let terrain_object = sim.terrain_objects().cell_index().get(&at)
+                .and_then(|id| sim.terrain_objects().objects().get(id));
+            let animation = sim.terrain_objects().animations().get(&at);
             // Observe the same viewer plane consumed by drawing and picking;
             // never reveal a cell or create missing visibility state for capture.
             let local_visibility = local_visibility_owner.map(|(owner, id)| json!({
-                "owner": owner, "revealed": sim.fog.is_cell_revealed(id, rx, ry),
-                "visible": sim.fog.is_cell_visible(id, rx, ry),
-                "gap_covered": sim.fog.is_cell_gap_covered(id, rx, ry),
+                "owner": owner, "revealed": sim.fog().is_cell_revealed(id, rx, ry),
+                "visible": sim.fog().is_cell_visible(id, rx, ry),
+                "gap_covered": sim.fog().is_cell_gap_covered(id, rx, ry),
             }));
             // Borrow the current simulation projection at the point of use.
             // The existing `walkable` field below describes bridge terrain,
@@ -4085,7 +4162,7 @@ impl TacticalCaptureSession {
                 })),
                 "local_visibility": local_visibility,
                 "overlay": overlay.map(|overlay| json!({"id": overlay.overlay_id, "density": overlay.overlay_data})),
-                "terrain_object": terrain_object.map(|object| json!({"name": sim.interner.resolve(object.type_ref),
+                "terrain_object": terrain_object.map(|object| json!({"name": sim.interner().resolve(object.type_ref()),
                     "frame": animation.map(|animation| animation.current_frame()),
                     "active": animation.map(|animation| animation.is_active())})),
                 "final_tile_index": cell.map(|cell| cell.final_tile_index),
@@ -4095,13 +4172,14 @@ impl TacticalCaptureSession {
                 "raw_bridge_flags": cell.map(|cell| cell.bridge_facts.raw_flags),
                 "bridge_state": cell.map(|cell| cell.bridge_facts.state_byte),
                 "has_deck": cell.map(|cell| cell.has_bridge_deck), "deck_level": cell.map(|cell| cell.bridge_deck_level),
-                "walkable": cell.map(|cell| cell.bridge_walkable), "transition": cell.map(|cell| cell.bridge_transition)})
+                "walkable": cell.map(|cell| cell.bridge_walkable), "transition": cell.map(|cell| cell.bridge_transition),
+                "render": null})
         }).collect();
         let frame = MapFrameObservation {
             completed_steps: self.exact_step_receipts.len() as u64,
-            simulation_tick: sim.session.tick,
-            binary_frame: sim.session.binary_frame,
-            total_simulation_ms: sim.session.total_sim_ms,
+            simulation_tick: sim.session().tick(),
+            binary_frame: sim.session().binary_frame(),
+            total_simulation_ms: sim.session().total_sim_ms(),
             audio_state: profile
                 .observe_audio
                 .as_ref()
@@ -4186,7 +4264,7 @@ impl TacticalCaptureSession {
             .simulation;
         let step = self.exact_step_receipts.len() as u64;
         ensure!(
-            (sim.session.tick, sim.session.binary_frame)
+            (sim.session().tick(), sim.session().binary_frame())
                 == self.map_state()?.expected_clock(step, false),
             "map draw differs from committed exact-step receipts"
         );
@@ -4209,6 +4287,11 @@ impl TacticalCaptureSession {
                 )
             })
             .transpose()?;
+        let terrain_render: Vec<_> = profile
+            .terrain_cells()
+            .iter()
+            .map(|&[rx, ry]| terrain_render_observation(state, rx, ry))
+            .collect();
         let map = self.map_state_mut()?;
         if let Some(effects) = electric {
             map.sample_count = map
@@ -4225,8 +4308,8 @@ impl TacticalCaptureSession {
                 .push(MapElectricBoltDrawObservation {
                     ordinal: map.electric_bolt_draws.len(),
                     completed_steps: step,
-                    simulation_tick: sim.session.tick,
-                    binary_frame: sim.session.binary_frame,
+                    simulation_tick: sim.session().tick(),
+                    binary_frame: sim.session().binary_frame(),
                     effects,
                     particle_draws: output.particle_draws.clone(),
                 });
@@ -4244,8 +4327,8 @@ impl TacticalCaptureSession {
                 .push(MapRadiationBeamDrawObservation {
                     ordinal: map.radiation_beam_draws.len(),
                     completed_steps: step,
-                    simulation_tick: sim.session.tick,
-                    binary_frame: sim.session.binary_frame,
+                    simulation_tick: sim.session().tick(),
+                    binary_frame: sim.session().binary_frame(),
                     beams,
                 });
         }
@@ -4253,7 +4336,7 @@ impl TacticalCaptureSession {
             // The existing render/audio service keeps running during the tail.
             // These repeat draws do not manufacture extra exact-step receipts.
             ensure!(
-                output.times.radar_ms == sim.session.tick * MAP_PRESENTATION_INTERVAL_MS,
+                output.times.radar_ms == sim.session().tick() * MAP_PRESENTATION_INTERVAL_MS,
                 "audio-tail draw changed the diagnostic simulation clock"
             );
             map.audio_tail_draws = map.audio_tail_draws.saturating_add(1);
@@ -4261,6 +4344,15 @@ impl TacticalCaptureSession {
         }
         map.observe_draw(requested, step, output.times)?;
         map.draws.last_mut().expect("draw just observed").tooltip = tooltip;
+        if let Some(frame) = map
+            .frames
+            .last_mut()
+            .filter(|frame| frame.completed_steps == step)
+        {
+            for (cell, rendered) in frame.terrain.iter_mut().zip(terrain_render) {
+                cell["render"] = rendered;
+            }
+        }
         if let Some(frame) = map
             .sidebar_frames
             .last_mut()
@@ -4289,9 +4381,9 @@ impl TacticalCaptureSession {
             .context("simulation absent")?
             .simulation;
         Ok(json!(FinalFingerprint {
-            simulation_tick: sim.session.tick,
-            total_simulation_ms: sim.session.total_sim_ms,
-            binary_frame: sim.session.binary_frame,
+            simulation_tick: sim.session().tick(),
+            total_simulation_ms: sim.session().total_sim_ms(),
+            binary_frame: sim.session().binary_frame(),
             deterministic_state_hash: sim.state_hash()
         }))
     }
@@ -4489,14 +4581,14 @@ mod tests {
     #[test]
     fn crate_observation_preserves_occupied_slot_identity_without_mutating_simulation() {
         let mut sim = crate::sim::world::Simulation::new();
-        *sim.crate_authority.slot_mut(3) = crate::sim::crates::CrateSlot {
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(3) = crate::sim::crates::CrateSlot {
             start_frame: 50,
             aux: 777,
             duration: 100,
             cell_x: 10,
             cell_y: 12,
         };
-        *sim.crate_authority.slot_mut(7) = crate::sim::crates::CrateSlot {
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(7) = crate::sim::crates::CrateSlot {
             cell_x: -1,
             cell_y: 4,
             ..Default::default()
@@ -4668,36 +4760,6 @@ mod tests {
     }
 
     #[test]
-    fn bounded_pcm_and_literal_restore_options_require_explicit_profile_admission() {
-        let mut value = serde_json::to_value(example()).unwrap();
-        value["schema_version"] = json!(PROFILE_V2);
-        value["ticks"] = json!(3);
-        value["cursor_position"] = json!([720, 556]);
-        value["observe_audio"] = json!({"sound_ids": ["SquidMove"], "max_events": 2,
-            "max_samples_per_event": 262144, "completion_tail_ms": 4000});
-        value["gestures"] = json!([{"issue_after_step": 2,
-            "gesture": {"kind": "key", "key": "N", "modifiers": ["Ctrl", "Shift"]}}]);
-        assert!(
-            serde_json::from_value::<MapCaptureProfile>(value.clone())
-                .unwrap()
-                .validate()
-                .is_err()
-        );
-        value["allow_load_segments"] = json!(true);
-        serde_json::from_value::<MapCaptureProfile>(value.clone())
-            .unwrap()
-            .validate()
-            .unwrap();
-        value["observe_audio"]["max_samples_per_event"] = json!(262145);
-        assert!(
-            serde_json::from_value::<MapCaptureProfile>(value)
-                .unwrap()
-                .validate()
-                .is_err()
-        );
-    }
-
-    #[test]
     fn capture_rejects_missing_hud_update_or_any_wall_clock_sample() {
         assert!(
             MapObservation::default()
@@ -4740,70 +4802,29 @@ mod tests {
     }
 
     #[test]
-    fn example_preserves_existing_accepted_launch_and_allows_chosen_map() {
+    fn ordinary_capture_admission_uses_canonical_color_and_source_roster() {
         let mut profile = example();
+        profile.launch.local_slot_mut().color_index = 6;
+        profile.launch.rebuild_house_roster();
         profile.validate().unwrap();
-        let radar: super::super::super::profile::TacticalCaptureProfile =
-            serde_json::from_str(crate::test_fixture::text(
-                "tools/tactical_certification/profiles/soviet-radar-online-v3.json",
-            ))
-            .unwrap();
-        assert_eq!(profile.launch, radar.launch_session());
-        profile.launch.selected_map_file = Some("mp01t4.map".to_owned());
-        profile.validate().unwrap();
-        profile.ticks = 0;
-        profile.validate().unwrap();
-    }
-
-    #[test]
-    fn unresolved_launch_duplicate_slots_and_inconsistent_roster_fail() {
-        let mut profile = example();
-        profile.launch.local.start_position = LaunchStartPosition::Auto;
+        let baseline = profile;
+        let mut profile = baseline.clone();
+        profile.launch.humans[0].raw_slot_index = Some(2);
         assert!(profile.validate().is_err());
-        let mut profile = example();
-        profile.launch.opponents[0].color_index = profile.launch.local.color_index;
+        let mut profile = baseline.clone();
+        profile.launch.humans[0].role = crate::skirmish_launch::LaunchHumanRole::Observer;
+        profile.launch.rebuild_house_roster();
         assert!(profile.validate().is_err());
-        let mut profile = example();
-        profile.launch.opponents.clear();
+        let mut profile = baseline.clone();
+        profile.launch.opponents[0].raw_slot_index = 3;
+        profile.launch.rebuild_house_roster();
         assert!(profile.validate().is_err());
-    }
-
-    #[test]
-    fn invalid_budgets_and_unknown_request_fields_fail() {
-        let mut profile = example();
-        profile.timeout_seconds = 0;
+        let mut profile = baseline;
+        let mut remote = profile.launch.humans[0].clone();
+        remote.raw_slot_index = Some(2);
+        profile.launch.humans.push(remote);
+        profile.launch.rebuild_house_roster();
         assert!(profile.validate().is_err());
-        profile.timeout_seconds = 180;
-        profile.ticks = 100_001;
-        assert!(profile.validate().is_err());
-        let mut json = serde_json::to_value(example()).unwrap();
-        json["launch"]["ignored_option"] = json!(true);
-        assert!(serde_json::from_value::<MapCaptureProfile>(json).is_err());
-    }
-
-    #[test]
-    fn effect_filters_are_opt_in_case_insensitive_and_bounded() {
-        let mut profile = example();
-        assert!(!profile.observes_effects());
-        profile.observe_projectiles = Some(false);
-        assert!(profile.validate().is_err());
-        profile.schema_version = PROFILE_V2.to_owned();
-        profile.validate().unwrap();
-        assert!(!profile.observes_effects());
-        for names in [
-            vec![],
-            vec![String::new()],
-            vec!["TRAIL".into(), "trail".into()],
-            (0..=MAX_OBSERVED_TYPES)
-                .map(|index| index.to_string())
-                .collect(),
-        ] {
-            profile.observe_anim_types = Some(names);
-            assert!(profile.validate().is_err());
-        }
-        profile.observe_anim_types = Some(vec!["TRAIL".into()]);
-        profile.validate().unwrap();
-        assert!(profile.observes_effects());
     }
 
     #[test]
@@ -4823,9 +4844,9 @@ mod tests {
         let carrier = sim
             .spawn_object_at_height("HTNK", "Computer1", 11, 10, 0, 0, &rules)
             .unwrap();
-        sim.session.binary_frame = 17;
+        sim.session_mut_for_test().set_binary_frame_for_test(17);
         sim.bomb_attach(planter, Some(carrier), &rules);
-        let entity = sim.substrate.entities.get_mut(planter).unwrap();
+        let entity = sim.entities_mut_for_test().get_mut(planter).unwrap();
         entity.last_fire_frame.set_for_test(16);
         entity.body_frame_counter.set_for_test(u32::MAX);
         entity.rearm_timer.set_for_test(CdTimer::from_raw(16, 50));
@@ -4841,7 +4862,7 @@ mod tests {
         assert_eq!(snapshot.records[0].end_frame, 467);
         assert_eq!(bomb_sample_count(&snapshot), 3);
         assert_eq!(
-            fire_observation(sim.substrate.entities.get(planter).unwrap(), 17),
+            fire_observation(sim.entities().get(planter).unwrap(), 17),
             json!({"last_fire_frame": 16, "body_counter": u32::MAX, "stage_value": 0,
                 "rearm": {"start_frame": 16, "duration": 50, "remaining": 49}})
         );
@@ -4941,9 +4962,9 @@ mod tests {
             .unwrap();
         // Exercise a running owner timer without modelling the world admission
         // predicate here. World gameplay tests cover that independent input.
+        let mut rng = sim.scenario_rng_mut_for_test().clone();
         let cloak = sim
-            .substrate
-            .entities
+            .entities_mut_for_test()
             .get_mut(sub)
             .unwrap()
             .cloak
@@ -4951,11 +4972,12 @@ mod tests {
             .unwrap();
         cloak.tick(
             CloakTickFacts::new(17, true, true, false, true, 5, 18, 9, false, true, false),
-            &mut sim.scenario_rng,
+            &mut rng,
         );
+        *sim.scenario_rng_mut_for_test() = rng;
         let hash = sim.state_hash();
         let rng = sim.rng_state();
-        let actor = sim.substrate.entities.get(sub).unwrap();
+        let actor = sim.entities().get(sub).unwrap();
         let cloak = actor.cloak.as_ref().unwrap();
         let retained = *cloak;
         assert!(actor.in_playfield());
@@ -4994,8 +5016,7 @@ mod tests {
         // A diagnostic fixture exercises independent cargo order and the
         // existing target-head fixture, without modelling gunner callbacks.
         let cargo = sim
-            .substrate
-            .entities
+            .entities_mut_for_test()
             .get_mut(fv)
             .unwrap()
             .passenger_role
@@ -5003,14 +5024,13 @@ mod tests {
             .unwrap();
         cargo.board_forced_chain(&[(cleg, 1.0)]);
         cargo.board_forced_chain(&[(other, 1.0)]);
-        sim.substrate
-            .entities
+        sim.entities_mut_for_test()
             .get_mut(victim)
             .unwrap()
             .set_temporal_for_test(TemporalState::warped_by_for_test(cleg));
         let hash = sim.state_hash();
         let rng = sim.rng_state();
-        let snapshot = temporal_observation(sim.substrate.entities.get(fv).unwrap());
+        let snapshot = temporal_observation(sim.entities().get(fv).unwrap());
         assert_eq!(
             snapshot,
             json!({"has_link": false, "warp_target": null, "chain_head": null,
@@ -5020,11 +5040,11 @@ mod tests {
         assert_eq!(temporal_sample_count(&snapshot), 3);
         assert_eq!(temporal_sample_count(&Value::Null), 0);
         assert_eq!(
-            temporal_observation(sim.substrate.entities.get(cleg).unwrap()),
+            temporal_observation(sim.entities().get(cleg).unwrap()),
             json!({"has_link": true, "warp_target": null, "chain_head": null,
                 "inside_transport": null, "cargo": null})
         );
-        let target = temporal_observation(sim.substrate.entities.get(victim).unwrap());
+        let target = temporal_observation(sim.entities().get(victim).unwrap());
         assert_eq!(target["has_link"], false);
         assert_eq!(target["chain_head"], cleg);
         assert_eq!(sim.state_hash(), hash);
@@ -5047,9 +5067,9 @@ mod tests {
         ))
         .unwrap();
         let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Player");
-        let carrier_type = sim.interner.intern("CARRIER");
-        let hornet_type = sim.interner.intern("HORNET");
+        let owner = sim.intern("Player");
+        let carrier_type = sim.intern("CARRIER");
+        let hornet_type = sim.intern("HORNET");
         let mut entity = GameEntity::new_at_frame_zero_for_test(
             1,
             10,
@@ -5176,57 +5196,6 @@ mod tests {
     }
 
     #[test]
-    fn bomb_snapshots_charge_index_and_records_and_commit_only_within_budget() {
-        for available in [2, 3] {
-            let mut map = MapObservation {
-                sample_count: MAX_OBSERVATION_SAMPLES - available,
-                ..Default::default()
-            };
-            let snapshot = crate::sim::bomb::BombObservation {
-                carriers: vec![7],
-                records: vec![crate::sim::bomb::BombRecordObservation {
-                    carrier_id: 7,
-                    planter_id: None,
-                    planter_house: "Player".into(),
-                    start_frame: i32::MAX,
-                    end_frame: i32::MIN,
-                }],
-            };
-            let result = map.observe_frame(
-                MapFrameObservation {
-                    completed_steps: 0,
-                    simulation_tick: 0,
-                    binary_frame: 0,
-                    total_simulation_ms: 0,
-                    actors: vec![],
-                    houses: vec![],
-                    missing_actor_ids: vec![],
-                    terrain: vec![],
-                    effects: None,
-                    lasers: None,
-                    electric_bolts: None,
-                    radiation_beams: None,
-                    bombs: Some(snapshot),
-                    crates: None,
-                    input: None,
-                    audio_state: None,
-                },
-                BTreeSet::new(),
-            );
-            assert_eq!(result.is_ok(), available == 3);
-            assert_eq!(map.frames.len(), usize::from(available == 3));
-            assert_eq!(
-                map.sample_count,
-                if available == 3 {
-                    MAX_OBSERVATION_SAMPLES
-                } else {
-                    MAX_OBSERVATION_SAMPLES - available
-                }
-            );
-        }
-    }
-
-    #[test]
     fn effect_snapshot_reads_filtered_live_owner_without_advancing_state() {
         use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile, ruleset::RuleSet};
         use crate::sim::{
@@ -5248,7 +5217,7 @@ mod tests {
         };
         let mut selected = 0;
         for name in ["TRAIL", "OTHER"] {
-            let kind = sim.interner.intern(name);
+            let kind = sim.intern(name);
             let mut descriptor =
                 AnimClassSpawnDescriptor::new(kind, 0, 0, SimFixed::ZERO, SimFixed::ZERO, 0);
             descriptor.delay = 1;
@@ -5275,7 +5244,7 @@ mod tests {
         let live = sim.anims().find(|(id, _)| **id == selected).unwrap().1;
         assert_eq!(
             rows[0]["runtime"],
-            serde_json::to_value(&live.runtime).unwrap()
+            serde_json::to_value(&live.runtime()).unwrap()
         );
         assert_eq!(sim.state_hash(), hash);
         assert_eq!(sim.rng_state(), rng);
@@ -5468,226 +5437,6 @@ mod tests {
     }
 
     #[test]
-    fn keyboard_profile_preserves_literal_edges_and_rejects_command_or_chord_spellings() {
-        let mut value = serde_json::to_value(example()).unwrap();
-        value["schema_version"] = json!(PROFILE_V2);
-        value["cursor_position"] = json!([720, 556]);
-        value["gestures"] = json!([
-            {"issue_after_step": 0, "gesture": {"kind": "key", "key": "N"}},
-            {"issue_after_step": 0, "gesture": {"kind": "key", "key": "n"}},
-            {"issue_after_step": 0, "gesture": {"kind": "key", "key": "M"}},
-        ]);
-        let profile: MapCaptureProfile = serde_json::from_value(value.clone()).unwrap();
-        profile.validate().unwrap();
-        assert_eq!(profile.gesture_policy(), KEYBOARD_GESTURE_POLICY);
-        assert_eq!(serde_json::to_value(profile).unwrap(), value);
-        assert_eq!(literal_key("N").unwrap().0, winit::keyboard::KeyCode::KeyN);
-        assert_eq!(literal_key("n").unwrap().0, winit::keyboard::KeyCode::KeyN);
-        assert_eq!(
-            literal_key("9").unwrap().0,
-            winit::keyboard::KeyCode::Digit9
-        );
-        assert_eq!(
-            literal_key("Escape").unwrap().0,
-            winit::keyboard::KeyCode::Escape
-        );
-        for key in ["", "NextObject", "Ctrl+N", "NN", "é", " "] {
-            let mut invalid = value.clone();
-            invalid["gestures"][0]["gesture"]["key"] = json!(key);
-            let invalid: MapCaptureProfile = serde_json::from_value(invalid).unwrap();
-            assert!(invalid.validate().is_err(), "{key:?}");
-        }
-        for modifiers in [
-            json!(["Ctrl"]),
-            json!(["Shift"]),
-            json!(["Alt"]),
-            json!(["Super"]),
-            json!(["Ctrl", "Shift", "Alt", "Super"]),
-        ] {
-            let mut admitted = value.clone();
-            admitted["gestures"][0]["gesture"]["key"] = json!("M");
-            admitted["gestures"][0]["gesture"]["modifiers"] = modifiers;
-            let profile: MapCaptureProfile = serde_json::from_value(admitted.clone()).unwrap();
-            profile.validate().unwrap();
-            assert_eq!(serde_json::to_value(profile).unwrap(), admitted);
-        }
-        for modifiers in [
-            json!(["not-a-modifier"]),
-            json!(["Control"]),
-            json!(["Ctrl", "Ctrl"]),
-        ] {
-            let mut invalid = value.clone();
-            invalid["gestures"][0]["gesture"]["modifiers"] = modifiers;
-            let profile: MapCaptureProfile = serde_json::from_value(invalid).unwrap();
-            assert!(profile.validate().is_err());
-        }
-        for (key, extra) in [
-            ("repeat", json!(true)),
-            ("modifiers", json!("Ctrl")),
-            ("modifiers", Value::Null),
-        ] {
-            let mut invalid = value.clone();
-            invalid["gestures"][0]["gesture"][key] = extra;
-            assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-        }
-    }
-
-    #[test]
-    fn versioned_extension_fields_preserve_presence_and_reject_null_or_ignored_arguments() {
-        let original: Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.example.json",
-        ))
-        .unwrap();
-        assert_eq!(serde_json::to_value(example()).unwrap(), original);
-        let mut legacy = example();
-        legacy.commands = Some(Vec::new());
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_types = Some(vec!["CLEG".to_owned()]);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_action_line_inputs = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_tooltips = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_disguise_inputs = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_lasers = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_electric_bolts = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_radiation_beams = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_electric_bolt_steps = Some(vec![0]);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_bombs = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_temporal = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_cloak = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_spawns = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.cursor_position = Some([720, 556]);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.gestures = Some(Vec::new());
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_super_weapons = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_diplomacy = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_sidebar_steps = Some(Vec::new());
-        assert!(legacy.validate().is_err());
-        let mut modern = original;
-        modern["schema_version"] = json!(PROFILE_V2);
-        modern["commands"] = json!([{"issue_after_step": 0, "owner": "Computer1",
-            "payload": {"DeployMcv": {"entity_id": 1}}},
-            {"issue_after_step": 0, "owner": "Computer1", "payload": {"LaunchSuperWeapon":
-                {"sw_type_id": 5, "target_rx": 3, "target_ry": 4}}}]);
-        modern["observe_owners"] = json!(["Computer1"]);
-        modern["observe_types"] = json!(["CLEG"]);
-        modern["observe_projectiles"] = json!(true);
-        modern["observe_anim_types"] = json!(["BBBLELRG"]);
-        modern["observe_action_line_inputs"] = json!(true);
-        modern["observe_tooltips"] = json!(true);
-        modern["observe_disguise_inputs"] = json!(true);
-        modern["observe_lasers"] = json!(true);
-        modern["observe_electric_bolts"] = json!(true);
-        modern["observe_radiation_beams"] = json!(true);
-        modern["observe_electric_bolt_steps"] = json!([0]);
-        modern["observe_bombs"] = json!(true);
-        modern["observe_temporal"] = json!(true);
-        modern["observe_cloak"] = json!(true);
-        modern["observe_spawns"] = json!(true);
-        modern["observe_crates"] = json!(true);
-        modern["cursor_position"] = json!([720, 556]);
-        modern["gestures"] = json!([]);
-        modern["observe_super_weapons"] = json!(true);
-        modern["observe_diplomacy"] = json!(true);
-        modern["observe_sidebar_steps"] = json!([0]);
-        let profile: MapCaptureProfile = serde_json::from_value(modern.clone()).unwrap();
-        profile.validate().unwrap();
-        assert_eq!(serde_json::to_value(profile).unwrap(), modern);
-        for key in [
-            "commands",
-            "gestures",
-            "observe_owners",
-            "observe_types",
-            "observe_projectiles",
-            "observe_anim_types",
-            "observe_action_line_inputs",
-            "observe_tooltips",
-            "observe_disguise_inputs",
-            "observe_lasers",
-            "observe_electric_bolts",
-            "observe_radiation_beams",
-            "observe_electric_bolt_steps",
-            "observe_bombs",
-            "observe_temporal",
-            "observe_cloak",
-            "observe_spawns",
-            "observe_crates",
-            "camera_cell",
-            "cursor_position",
-            "terrain_cells",
-            "observe_super_weapons",
-            "observe_diplomacy",
-            "observe_sidebar_steps",
-        ] {
-            let mut invalid = modern.clone();
-            invalid[key] = Value::Null;
-            assert!(
-                serde_json::from_value::<MapCaptureProfile>(invalid).is_err(),
-                "{key}"
-            );
-        }
-        modern["observe_action_line_inputs"] = json!(false);
-        modern["observe_spawns"] = json!(false);
-        modern["observe_temporal"] = json!(false);
-        modern["observe_cloak"] = json!(false);
-        modern["observe_radiation_beams"] = json!(false);
-        let disabled: MapCaptureProfile = serde_json::from_value(modern.clone()).unwrap();
-        disabled.validate().unwrap();
-        assert_eq!(serde_json::to_value(disabled).unwrap(), modern);
-        for key in [
-            "observe_action_line_inputs",
-            "observe_spawns",
-            "observe_temporal",
-            "observe_cloak",
-            "observe_radiation_beams",
-        ] {
-            for value in [json!(0), json!(1), json!("true"), json!([])] {
-                let mut invalid = modern.clone();
-                invalid[key] = value;
-                assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-            }
-        }
-        for (key, value) in [("ignored", json!(true)), ("entity_id", json!(1.0))] {
-            let mut invalid = modern.clone();
-            invalid["commands"][0]["payload"]["DeployMcv"][key] = value;
-            assert!(
-                serde_json::from_value::<MapCaptureProfile>(invalid).is_err(),
-                "{key}"
-            );
-        }
-    }
-
-    #[test]
     fn effect_step_whitelist_preserves_selected_boundaries_and_rejects_bad_schedules() {
         let mut profile = example();
         profile.schema_version = PROFILE_V2.to_owned();
@@ -5710,80 +5459,6 @@ mod tests {
         assert!(profile.validate().is_err());
         profile.observe_electric_bolts = None;
         assert!(profile.validate().is_err());
-    }
-
-    #[test]
-    fn symbolic_commands_require_v3_preserve_source_and_bound_total_bindings() {
-        let mut value = serde_json::to_value(example()).unwrap();
-        value["schema_version"] = json!(PROFILE_V3);
-        value["ticks"] = json!(3);
-        value["commands"] = json!([
-            {"issue_after_step": 0, "owner": "Computer1",
-                "payload": {"QueueProduction": {"type_id": "MTNK"}}},
-            {"issue_after_step": 2, "owner": "Computer1",
-                "payload": {"Stop": {"entity_id": {
-                    "type_id": "MTNK", "owner": "Computer1", "cell": [10, 11]}}}}
-        ]);
-        let profile: MapCaptureProfile = serde_json::from_value(value.clone()).unwrap();
-        profile.validate().unwrap();
-        assert_eq!(serde_json::to_value(profile).unwrap(), value);
-        for version in [PROFILE_V1, PROFILE_V2] {
-            value["schema_version"] = json!(version);
-            let profile: MapCaptureProfile = serde_json::from_value(value.clone()).unwrap();
-            assert!(profile.validate().is_err());
-        }
-        value["schema_version"] = json!(PROFILE_V3);
-        let selector = json!({"type_id": "MTNK", "owner": "Computer1"});
-        let command = json!({"issue_after_step": 0, "owner": "Computer1",
-            "payload": {"Select": {"entity_ids": vec![selector; 256], "additive": false}}});
-        value["commands"] = json!(vec![command.clone(); 4]);
-        serde_json::from_value::<MapCaptureProfile>(value.clone())
-            .unwrap()
-            .validate()
-            .unwrap();
-        value["commands"] = json!(vec![command; 5]);
-        assert!(
-            serde_json::from_value::<MapCaptureProfile>(value)
-                .unwrap()
-                .validate()
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn cursor_position_requires_integer_screen_coordinates_away_from_the_outermost_pixel() {
-        let mut profile = example();
-        profile.schema_version = PROFILE_V2.to_owned();
-        for position in [[1, 1], [798, 598], [720, 556]] {
-            profile.cursor_position = Some(position);
-            profile.validate().unwrap();
-        }
-        for position in [
-            [0, 1],
-            [1, 0],
-            [799, 1],
-            [1, 599],
-            [800, 1],
-            [1, 600],
-            [u32::MAX, 1],
-        ] {
-            profile.cursor_position = Some(position);
-            assert!(profile.validate().is_err(), "{position:?}");
-        }
-        let original = serde_json::to_value(profile).unwrap();
-        for position in [
-            json!([]),
-            json!([1]),
-            json!([1, 1, 1]),
-            json!([true, 1]),
-            json!([1.0, 1]),
-            json!([-1, 1]),
-            json!([u64::from(u32::MAX) + 1, 1]),
-        ] {
-            let mut invalid = original.clone();
-            invalid["cursor_position"] = position;
-            assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-        }
     }
 
     #[test]
@@ -5848,145 +5523,6 @@ mod tests {
             let mut invalid = valid.clone();
             invalid["gestures"][0]["gesture"] = gesture;
             assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-        }
-    }
-
-    #[test]
-    fn literal_mouse_buttons_preserve_legacy_shape_and_share_profile_admission() {
-        let mut legacy = serde_json::to_value(example()).unwrap();
-        legacy["schema_version"] = json!(PROFILE_V2);
-        legacy["cursor_position"] = json!([720, 556]);
-        legacy["gestures"] = json!([
-            {"issue_after_step": 0, "gesture": {"kind": "click", "position": [10, 10]}},
-            {"issue_after_step": 0, "gesture": {"kind": "sidebar", "target": {"kind": "cameo", "type_id": "MTNK"}}}
-        ]);
-        for button in [None, Some("left"), Some("right")] {
-            let mut value = legacy.clone();
-            if let Some(button) = button {
-                for row in value["gestures"].as_array_mut().unwrap() {
-                    row["gesture"]["button"] = json!(button);
-                }
-            }
-            let profile: MapCaptureProfile = serde_json::from_value(value.clone()).unwrap();
-            profile.validate().unwrap();
-            assert_eq!(serde_json::to_value(&profile).unwrap(), value);
-            let right = button == Some("right");
-            assert_eq!(profile.observes_local_input(), right);
-            assert!(
-                profile
-                    .gestures()
-                    .iter()
-                    .all(|row| row.gesture.is_right_button() == right)
-            );
-            assert_eq!(
-                profile.gesture_policy(),
-                if right {
-                    RIGHT_BUTTON_GESTURE_POLICY
-                } else {
-                    SIDEBAR_GESTURE_POLICY
-                }
-            );
-        }
-    }
-
-    #[test]
-    fn literal_mouse_buttons_reject_unknown_values_other_edges_and_right_chrome() {
-        let mut value = serde_json::to_value(example()).unwrap();
-        value["schema_version"] = json!(PROFILE_V2);
-        value["cursor_position"] = json!([720, 556]);
-        value["gestures"] = json!([
-            {"issue_after_step": 0, "gesture": {"kind": "click", "position": [10, 10], "button": "right"}}
-        ]);
-        for button in [
-            json!("middle"),
-            json!("Right"),
-            json!(true),
-            json!(1),
-            json!([]),
-            json!({}),
-            Value::Null,
-        ] {
-            let mut invalid = value.clone();
-            invalid["gestures"][0]["gesture"]["button"] = button;
-            assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-        }
-        for gesture in [
-            json!({"kind":"drag", "from":[10,10], "to":[20,20]}),
-            json!({"kind":"key", "key":"P"}),
-            json!({"kind":"command_bar", "command":"Guard"}),
-        ] {
-            for button in ["left", "right"] {
-                let mut invalid = value.clone();
-                invalid["gestures"][0]["gesture"] = gesture.clone();
-                invalid["gestures"][0]["gesture"]["button"] = json!(button);
-                assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-            }
-        }
-        for target in [
-            json!({"kind":"tab", "tab":"building"}),
-            json!({"kind":"scroll_up"}),
-            json!({"kind":"scroll_down"}),
-            json!({"kind":"repair"}),
-            json!({"kind":"sell"}),
-        ] {
-            let mut invalid = value.clone();
-            invalid["gestures"][0]["gesture"] =
-                json!({"kind":"sidebar", "target":target, "button":"right"});
-            let profile: MapCaptureProfile = serde_json::from_value(invalid).unwrap();
-            assert!(profile.validate().is_err());
-        }
-    }
-
-    #[test]
-    fn sidebar_gestures_and_requested_frames_are_strict_opt_in_extensions() {
-        let mut value = serde_json::to_value(example()).unwrap();
-        value["schema_version"] = json!(PROFILE_V2);
-        value["cursor_position"] = json!([720, 556]);
-        value["ticks"] = json!(3);
-        value["observe_sidebar_steps"] = json!([0, 1, 3]);
-        value["gestures"] = json!([
-            {"issue_after_step": 0, "gesture": {"kind": "sidebar", "target": {"kind": "tab", "tab": "vehicle"}}},
-            {"issue_after_step": 0, "gesture": {"kind": "sidebar", "target": {"kind": "cameo", "type_id": "MTNK"}}},
-            {"issue_after_step": 2, "gesture": {"kind": "sidebar", "target": {"kind": "scroll_down"}}},
-            {"issue_after_step": 2, "gesture": {"kind": "sidebar", "target": {"kind": "scroll_up"}}}
-        ]);
-        let profile: MapCaptureProfile = serde_json::from_value(value.clone()).unwrap();
-        profile.validate().unwrap();
-        assert_eq!(profile.gesture_policy(), SIDEBAR_GESTURE_POLICY);
-        assert_eq!(serde_json::to_value(&profile).unwrap(), value);
-        let transcript = initialized_map().transcript(&profile);
-        assert_eq!(
-            transcript["sidebar"],
-            json!({"policy": SIDEBAR_POLICY, "frames": []})
-        );
-        assert!(
-            initialized_map()
-                .transcript(&example())
-                .get("sidebar")
-                .is_none()
-        );
-        for target in [
-            json!({"kind": "tab", "tab": "weapons"}),
-            json!({"kind": "cameo", "type_id": ""}),
-            json!({"kind": "scroll_down", "count": 2}),
-            Value::Null,
-        ] {
-            let mut invalid = value.clone();
-            invalid["gestures"][0]["gesture"]["target"] = target;
-            let profile = serde_json::from_value::<MapCaptureProfile>(invalid);
-            assert!(profile.is_err() || profile.unwrap().validate().is_err());
-        }
-        for steps in [
-            json!([1, 0]),
-            json!([1, 1]),
-            json!([4]),
-            json!([true]),
-            Value::Null,
-        ] {
-            let mut invalid = value.clone();
-            invalid["observe_sidebar_steps"] = steps;
-            let profile = serde_json::from_value::<MapCaptureProfile>(invalid);
-            assert!(profile.is_err() || profile.unwrap().validate().is_err());
         }
     }
 
@@ -6266,66 +5802,6 @@ mod tests {
     }
 
     #[test]
-    fn command_bar_gesture_rejects_absent_closed_or_unknown_control() {
-        let (mut layout, slots, mut gadgets) = command_bar_fixture();
-        let resolve =
-            |name,
-             layout,
-             slots: &[Option<usize>],
-             gadgets: &crate::app::input::gadget_input::InGameGadgets| {
-                MapCommandBarGestureReceipt::resolve(name, layout, slots, gadgets, [800, 600])
-            };
-        assert!(resolve("guard", layout, &slots, &gadgets).is_err());
-        assert!(resolve("GuardObject", layout, &slots, &gadgets).is_err());
-        assert!(resolve("Guard", layout, &[], &gadgets).is_err());
-        layout.tile_count = 0;
-        assert!(resolve("Guard", layout, &slots, &gadgets).is_err());
-        layout.tile_count = 10;
-        let handle = gadgets.command_bar.unwrap()[command_bar_index("Guard").unwrap()];
-        gadgets.list.get_mut(handle).unwrap().is_disabled = true;
-        assert!(resolve("Guard", layout, &slots, &gadgets).is_err());
-        gadgets.command_bar = None;
-        assert!(resolve("Guard", layout, &slots, &gadgets).is_err());
-    }
-
-    #[test]
-    fn profile_roundtrip_preserves_command_bar_target() {
-        let mut profile = example();
-        profile.schema_version = PROFILE_V2.to_owned();
-        profile.cursor_position = Some([720, 556]);
-        profile.gestures = Some(vec![MapScheduledGesture {
-            issue_after_step: 0,
-            gesture: MapGesture::CommandBar {
-                command: "Guard".to_owned(),
-            },
-        }]);
-        profile.validate().unwrap();
-        assert_eq!(profile.gesture_policy(), COMMAND_BAR_GESTURE_POLICY);
-        let value = serde_json::to_value(&profile).unwrap();
-        assert_eq!(
-            value["gestures"][0]["gesture"],
-            json!({"kind":"command_bar", "command":"Guard"})
-        );
-        serde_json::from_value::<MapCaptureProfile>(value.clone())
-            .unwrap()
-            .validate()
-            .unwrap();
-        for command in ["", "guard", "GuardObject", "G"] {
-            let mut bad = value.clone();
-            bad["gestures"][0]["gesture"]["command"] = json!(command);
-            assert!(
-                serde_json::from_value::<MapCaptureProfile>(bad)
-                    .unwrap()
-                    .validate()
-                    .is_err()
-            );
-        }
-        let mut bad = value;
-        bad["gestures"][0]["gesture"]["modifiers"] = json!(["Ctrl"]);
-        assert!(serde_json::from_value::<MapCaptureProfile>(bad).is_err());
-    }
-
-    #[test]
     fn actor_retask_snapshot_preserves_tagged_suspended_references() {
         use crate::sim::{combat::TargetKind, components::NavTargetRef, game_entity::GameEntity};
         let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 10, 20);
@@ -6467,45 +5943,6 @@ mod tests {
     }
 
     #[test]
-    fn type_filters_require_bounded_unique_names_from_the_exact_loaded_registry() {
-        let mut profile = example();
-        profile.schema_version = PROFILE_V2.to_owned();
-        for types in [
-            Vec::new(),
-            vec![String::new()],
-            vec!["CLEG".to_owned(), "CLEG".to_owned()],
-            (0..=MAX_OBSERVED_TYPES)
-                .map(|n| format!("TYPE{n}"))
-                .collect(),
-        ] {
-            profile.observe_types = Some(types);
-            assert!(profile.validate().is_err());
-        }
-        profile.observe_types = Some(
-            (0..MAX_OBSERVED_TYPES)
-                .map(|n| format!("TYPE{n}"))
-                .collect(),
-        );
-        profile.validate().unwrap();
-        profile.observe_types = Some(vec!["CLEG".to_owned(), "MTNK".to_owned()]);
-        profile.validate().unwrap();
-        let registry = vec![
-            json!({"type_id": "CLEG", "interned_id": 3, "category": "Infantry"}),
-            json!({"type_id": "MTNK", "interned_id": 7, "category": "Unit"}),
-        ];
-        profile.validate_observed_rule_types(&registry).unwrap();
-        assert!(
-            profile
-                .validate_observed_rule_types(&registry[..1])
-                .is_err()
-        );
-        profile.observe_types = Some(vec!["cleg".to_owned()]);
-        assert!(profile.validate_observed_rule_types(&registry).is_err());
-        profile.observe_types = None;
-        profile.validate_observed_rule_types(&[]).unwrap();
-    }
-
-    #[test]
     fn type_discovery_preserves_retained_identity_and_optional_transcript_presence() {
         let mut profile = example();
         profile.schema_version = PROFILE_V2.to_owned();
@@ -6631,65 +6068,6 @@ mod tests {
         assert!(profile.validate().is_err());
     }
 
-    #[test]
-    fn production_profile_reuses_typed_command_serde_without_name_translation() {
-        let mut value = serde_json::to_value(example()).unwrap();
-        value["schema_version"] = json!(PROFILE_V2);
-        value["commands"] = json!([
-            {"issue_after_step": 0, "owner": "Computer1",
-                "payload": {"QueueProduction": {"type_id": 41}}},
-            {"issue_after_step": 1, "owner": "Computer1",
-                "payload": {"PlaceReadyBuilding": {"type_id": 41, "rx": 87, "ry": 53}}},
-            {"issue_after_step": 2, "owner": "Computer1",
-                "payload": {"CaptureBuilding": {"engineer_id": 7, "target_building_id": 9}}},
-            {"issue_after_step": 2, "owner": "Computer1",
-                "payload": {"PlantC4": {"attacker_id": 7, "target_building_id": 9}}},
-            {"issue_after_step": 2, "owner": "Computer1",
-                "payload": {"ToggleRepair": {"entity_id": 9}}},
-            {"issue_after_step": 2, "owner": "Computer1",
-                "payload": {"EnterTransport": {"passenger_id": 7, "transport_id": 8}}},
-            {"issue_after_step": 2, "owner": "Computer1",
-                "payload": {"UnloadPassengers": {"transport_id": 8}}},
-            {"issue_after_step": 2, "owner": "Computer1",
-                "payload": {"RepairAtDepot": {"entity_id": 7, "depot_id": 9}}},
-            {"issue_after_step": 2, "owner": "Computer1",
-                "payload": {"SellBuilding": {"entity_id": 10}}},
-        ]);
-        let profile: MapCaptureProfile = serde_json::from_value(value.clone()).unwrap();
-        profile.validate().unwrap();
-        assert_eq!(serde_json::to_value(profile).unwrap(), value);
-        for invalid_id in [json!("GAPOWR"), json!(true), json!(1.5), json!(u64::MAX)] {
-            let mut invalid = value.clone();
-            invalid["commands"][0]["payload"]["QueueProduction"]["type_id"] = invalid_id;
-            assert!(
-                serde_json::from_value::<MapCaptureProfile>(invalid)
-                    .map_or(true, |profile| profile.validate().is_err())
-            );
-        }
-        for invalid_id in [json!("ENGINEER"), json!(true), json!(1.5), json!(-1)] {
-            let mut invalid = value.clone();
-            invalid["commands"][2]["payload"]["CaptureBuilding"]["engineer_id"] = invalid_id;
-            assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-        }
-        for (index, variant, fields) in [
-            (6, "RepairAtDepot", &["entity_id", "depot_id"][..]),
-            (7, "SellBuilding", &["entity_id"][..]),
-        ] {
-            for field in fields {
-                for invalid_id in [json!("HTNK"), json!(true), json!(1.5), json!(-1)] {
-                    let mut invalid = value.clone();
-                    invalid["commands"][index]["payload"][variant][*field] = invalid_id;
-                    assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-                }
-                let mut invalid = value.clone();
-                invalid["commands"][index]["payload"][variant]["ignored"] = json!(true);
-                assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-            }
-        }
-        value["commands"][1]["payload"]["PlaceReadyBuilding"]["ignored"] = json!(true);
-        assert!(serde_json::from_value::<MapCaptureProfile>(value).is_err());
-    }
-
     /// Every profile kept under `tools/` loads through the production reader,
     /// so a change to a command's wire shape has to migrate them. Each one
     /// names its schema in its first key.
@@ -6721,58 +6099,18 @@ mod tests {
         walk(&tools.unwrap(), &mut profiles);
         assert!(!profiles.is_empty());
         for path in profiles {
-            if let Err(error) = MapCaptureProfile::load(&path) {
-                panic!("{}: {error:#}", path.display());
-            }
+            let profile = MapCaptureProfile::load(&path)
+                .unwrap_or_else(|error| panic!("{}: {error:#}", path.display()));
+            let source: Value = serde_json::from_slice(&profile.bytes).unwrap();
+            // These maintained examples use the canonical serializer shape;
+            // legacy inputs remain supported only at the decoder boundary.
+            assert_eq!(
+                source["launch"],
+                serde_json::to_value(&profile.value.launch).unwrap(),
+                "{}",
+                path.display()
+            );
         }
-    }
-
-    #[test]
-    fn jumpjet_discovery_profile_preserves_verified_production_prefix_without_guessed_actor() {
-        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.jumpjet-instance.example.json",
-        ))
-        .unwrap();
-        profile.validate().unwrap();
-        let cmin: Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.cmin-instance.example.json",
-        ))
-        .unwrap();
-        let factory: Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.factory-tank-exit.example.json",
-        ))
-        .unwrap();
-        let value = serde_json::to_value(&profile).unwrap();
-        for key in ["launch", "seed", "input_delay_ticks", "ticks"] {
-            assert_eq!(value[key], cmin[key], "{key}");
-        }
-        let commands = value["commands"].as_array().unwrap();
-        let factory_commands = factory["commands"].as_array().unwrap();
-        assert_eq!(
-            &commands[..commands.len() - 1],
-            &factory_commands[..factory_commands.len() - 1]
-        );
-        assert_eq!(
-            commands.last().unwrap(),
-            &json!({"issue_after_step": 4600, "owner": "VERA-OBSERVER",
-                "payload": {"QueueProduction": {"type_id": 210}}})
-        );
-        assert!(profile.commands().iter().all(|command| {
-            matches!(
-                command.payload,
-                Command::DeployMcv { .. }
-                    | Command::QueueProduction { .. }
-                    | Command::PlaceReadyBuilding { .. }
-            )
-        }));
-        assert!(
-            profile
-                .observe_types
-                .as_ref()
-                .unwrap()
-                .iter()
-                .any(|name| name == "SHAD")
-        );
     }
 
     #[test]
@@ -6817,170 +6155,5 @@ mod tests {
         assert!(map.observe_frame(large, BTreeSet::new()).is_err());
         assert_eq!(map.frames.len(), 2);
         assert_eq!(map.sample_count, 0);
-    }
-
-    #[test]
-    fn anytown_discovery_example_is_an_accepted_ordinary_allied_ai_launch() {
-        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.bridge-response.example.json",
-        ))
-        .unwrap();
-        profile.validate().unwrap();
-        assert_eq!(
-            profile.launch.selected_map_file.as_deref(),
-            Some("XMP03T4.MAP")
-        );
-        assert_eq!(profile.launch.opponents.len(), 2);
-        assert_eq!(
-            profile.commands().len(),
-            0,
-            "discovery must not invent stable actor IDs"
-        );
-        assert_eq!(profile.ticks, 0);
-        assert_eq!(profile.observe_owners(), ["Computer1", "Computer2"]);
-    }
-
-    #[test]
-    fn barracks_output_example_preserves_opening_and_queues_two_gis_in_order() {
-        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.barracks-output.example.json",
-        ))
-        .unwrap();
-        let opening: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.building-opening.example.json",
-        ))
-        .unwrap();
-        profile.validate().unwrap();
-        assert_eq!(profile.launch, opening.launch);
-        assert_eq!(profile.seed, opening.seed);
-        assert_eq!(profile.input_delay_ticks, opening.input_delay_ticks);
-        assert_eq!(profile.observe_owners(), opening.observe_owners());
-        assert_eq!(profile.camera_cell, opening.camera_cell);
-        assert_eq!(profile.terrain_cells(), opening.terrain_cells());
-        assert!(profile.ticks > opening.ticks);
-        let previous = opening.commands();
-        let commands = profile.commands();
-        assert_eq!(commands.len(), previous.len() + 1);
-        for (observed, prior) in commands.iter().zip(previous) {
-            assert_eq!(
-                serde_json::to_value(observed).unwrap(),
-                serde_json::to_value(prior).unwrap()
-            );
-        }
-        let first_gi = previous.last().unwrap();
-        assert!(matches!(first_gi.payload, Command::QueueProduction { .. }));
-        assert_eq!(
-            serde_json::to_value(commands.last().unwrap()).unwrap(),
-            serde_json::to_value(first_gi).unwrap(),
-            "two equal-step ordinary PRODUCE commands preserve queue insertion order"
-        );
-        assert!(
-            commands
-                .iter()
-                .all(|command| !matches!(command.payload, Command::SetRally { .. })),
-            "the default route exercises the constructor-empty Archive path"
-        );
-    }
-
-    /// A skirmish never admits the human's authored Structures (`0x0044F8CB`),
-    /// so a computer scene's observer orders only build its base the native
-    /// way: deploy the starting MCV and place ordinary production.
-    fn assert_observer_only_builds(profile: &MapCaptureProfile) {
-        for command in profile.commands() {
-            assert_eq!(command.owner, "VERA-OBSERVER");
-            assert!(matches!(
-                command.payload,
-                Command::DeployMcv { .. }
-                    | Command::QueueProduction { .. }
-                    | Command::PlaceReadyBuilding { .. }
-            ));
-        }
-    }
-
-    #[test]
-    fn computer_nuclear_missile_example_leaves_the_launch_to_the_computer() {
-        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.ai-nuclear-missile.example.json",
-        ))
-        .unwrap();
-        profile.validate().unwrap();
-        // Every observed House's twelve Super rows would spend the sample
-        // budget long before the 9000-frame charge; the yard's health shows
-        // the strike.
-        assert_eq!(profile.observe_super_weapons, None);
-        // The observer deploys its starting MCV into the targeted yard; the
-        // computer's Strategy tick fires its charged silo.
-        let [deploy] = profile.commands() else {
-            panic!("one deploy");
-        };
-        assert_eq!(deploy.issue_after_step, 0);
-        assert!(matches!(deploy.payload, Command::DeployMcv { .. }));
-    }
-
-    #[test]
-    fn computer_psychic_dominator_example_leaves_the_launch_to_the_computer() {
-        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.ai-psychic-dominator.example.json",
-        ))
-        .unwrap();
-        profile.validate().unwrap();
-        assert_eq!(profile.observe_super_weapons, None);
-        // The computer's Strategy tick aims its charged Dominator.
-        assert!(profile.commands().is_empty());
-    }
-
-    #[test]
-    fn computer_team_superweapon_examples_leave_the_launch_to_the_computer() {
-        for path in [
-            "tools/map_observation.ai-iron-curtain.example.json",
-            "tools/map_observation.ai-chronosphere.example.json",
-        ] {
-            let profile: MapCaptureProfile =
-                serde_json::from_str(crate::test_fixture::text(path)).unwrap();
-            profile.validate().unwrap();
-            assert_eq!(profile.observe_super_weapons, None);
-            // A computer team's script fires the charged Super.
-            assert_observer_only_builds(&profile);
-        }
-    }
-
-    #[test]
-    fn computer_bombard_examples_leave_the_attack_to_the_computer() {
-        for path in [
-            "tools/map_observation.ai-v3-bombard.example.json",
-            "tools/map_observation.ai-dred-bombard.example.json",
-        ] {
-            let profile: MapCaptureProfile =
-                serde_json::from_str(crate::test_fixture::text(path)).unwrap();
-            profile.validate().unwrap();
-            // Soviet Bombard Medium is enabled for Normal only, Soviet Navy
-            // Bombard for Normal and Hard.
-            assert_eq!(
-                profile.launch.opponents[0].difficulty,
-                crate::skirmish_launch::AiDifficulty::Normal
-            );
-            // A computer team's script orders the spawners' attacks on the
-            // targets the observer builds.
-            assert_observer_only_builds(&profile);
-        }
-    }
-
-    #[test]
-    fn rally_profile_reuses_literal_command_serde_and_rejects_ignored_fields() {
-        let mut value: Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.barracks-output.example.json",
-        ))
-        .unwrap();
-        // Syntax-only supplied producer identity: the ordinary command owner
-        // still validates actual ownership/presence at runtime. No diagnostic
-        // Archive mutation or caller-specific rally setter is introduced.
-        let rally = json!({"issue_after_step": 1159, "owner": "VERA-OBSERVER",
-            "payload": {"SetRally": {"rx": 30, "ry": 86, "producer_ids": [17]}}});
-        value["commands"].as_array_mut().unwrap().insert(5, rally);
-        let profile: MapCaptureProfile = serde_json::from_value(value.clone()).unwrap();
-        profile.validate().unwrap();
-        assert_eq!(serde_json::to_value(profile).unwrap(), value);
-        value["commands"][5]["payload"]["SetRally"]["ignored"] = json!(true);
-        assert!(serde_json::from_value::<MapCaptureProfile>(value).is_err());
     }
 }

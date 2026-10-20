@@ -421,7 +421,7 @@ impl Simulation {
     }
 
     fn now_frame(&self) -> i32 {
-        self.session.binary_frame as i32
+        self.session.binary_frame() as i32
     }
 
     /// `TechnoClass::Init_Managers @ 0x006F4020..0x006F4077`: an `Enslaves=`
@@ -451,7 +451,7 @@ impl Simulation {
                     object.slave_reload_rate,
                     self.interner.resolve(parent.owner()).to_string(),
                     (parent.position.rx(), parent.position.ry()),
-                    parent.body_facing_byte(self.session.binary_frame),
+                    parent.body_facing_byte(self.session.binary_frame()),
                     parent.position.z(),
                 ))
             })
@@ -900,7 +900,7 @@ impl Simulation {
             master,
             MissionId::from_known(MissionType::Selling),
             0,
-            self.session.binary_frame,
+            self.session.binary_frame(),
             &crate::sim::mission::authority::LiveReadyInputProvider { rules },
         );
         self.set_manager_state(master, ManagerState::PackingUp, i32::MAX);
@@ -972,7 +972,7 @@ impl Simulation {
         if !self
             .houses
             .get(&owner.owner())
-            .is_some_and(|house| house.is_human)
+            .is_some_and(|house| house.is_human())
         {
             return true;
         }

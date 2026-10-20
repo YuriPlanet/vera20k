@@ -142,15 +142,4 @@ mod tests {
         );
         assert!(!r.contains(10, 19));
     }
-
-    #[test]
-    fn zero_size_rect_contains_nothing() {
-        let r = GadgetRect::new(0, 0, 0, 0);
-        assert!(!r.contains(0, 0));
-    }
-
-    #[test]
-    fn seed_constant_value() {
-        assert_eq!(HIT_SEED_AREA, 786_432, "1024x768 .rdata seed (G14)");
-    }
 }

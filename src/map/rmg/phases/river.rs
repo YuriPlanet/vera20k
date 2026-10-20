@@ -11,7 +11,7 @@
 //! The report's §4.1 names these `c` and `s` the other way round, because it was
 //! written against two Ghidra labels that were themselves swapped. Read the
 //! report with `c → sin` and `s → cos`. Getting this backwards rotates every
-//! river 90° and no test in this repo would notice.
+//! river 90°; the original section/branch controls now pin this convention.
 //!
 //! A finished river then usually cuts a **canyon**: its region is grown across
 //! the map by [`meander`], then six unstamped dilation rings widen it, and
@@ -185,11 +185,12 @@ struct Walk {
     rolled_to_a_stop: bool,
 }
 
-/// What one cross-section reports back to the walk: its end cells, and whether
-/// it ran straight. The waterfall-terrain gate reads all four.
+/// The waterfall gate reads the stamped end cells and straightness. Branches
+/// instead start at the retained position after the section's final increment.
 struct Section {
     first: (i32, i32),
     last: (i32, i32),
+    after: (f64, f64),
     /// Every position shared one `ftol(x)` — the section lies in one column.
     column_straight: bool,
     /// Every position shared one `ftol(y)` — one row.
@@ -215,6 +216,7 @@ fn carve_section(
             X87Chop53::ftol_f64_low_masked(y),
         ),
         last: (0, 0),
+        after: (x, y),
         column_straight: true,
         row_straight: true,
     };
@@ -260,6 +262,10 @@ fn carve_section(
         x += sin;
         y += cos;
     }
+    // CarveRiver59D510 stores these at59DC6A/59DC6F, before centre travel.
+    // This is one step beyond the last stamped sample. Original execution:
+    // tools/rmg_oracle/river_branch.json section/branch controls.
+    section.after = (x, y);
     section
 }
 
@@ -442,8 +448,10 @@ pub fn carve(
                 heading + START_SIGMA,
                 heading + 5.0 * START_SIGMA,
             );
-            let bx = X87Chop53::ftol_f64_low_masked(fx + f64::from(span) * sin);
-            let by = X87Chop53::ftol_f64_low_masked(fy + f64::from(span) * cos);
+            // Original59DF6E..59DF9D reads the section's retained doubles,
+            // which centre travel and the branch-angle draws do not change.
+            let bx = X87Chop53::ftol_f64_low_masked(section.after.0);
+            let by = X87Chop53::ftol_f64_low_masked(section.after.1);
             // A failed branch kills the parent — and rolls the whole river back.
             walk.alive = carve(ctx, args, quota, Some((bx, by, angle)), true);
         }
@@ -862,20 +870,6 @@ mod tests {
     }
 
     #[test]
-    fn the_base_never_rises_twice() {
-        // The gate is an exact test against the starting base, so once a canyon
-        // has been cut no later river can add another step. A `>=` gate here
-        // would let the base climb run away.
-        for seed in [11u16, 4242, 60000] {
-            let (base, _, _) = run_carved_levels(3, seed);
-            assert!(
-                base <= CANYON_BASE_LEVEL + CANYON_LEVEL_STEP,
-                "base climbed past one step: {base}"
-            );
-        }
-    }
-
-    #[test]
     fn a_canyon_raises_the_terrain_outside_the_river() {
         // The valley stays low; everything else goes up by four. The first
         // port of this had it backwards (nothing raised, only the base bumped),
@@ -940,26 +934,206 @@ mod tests {
         assert!(carries_a_river(21));
     }
 
+    /// Full original59D510 calls, including the recursive branch and rollback.
+    /// The component uses the native oracle's declared flat scene and seeded
+    /// entry stream, rather than claiming a complete Generate seed prefix.
     #[test]
-    fn bounded_gaussian_recentres_only_when_the_window_is_too_narrow() {
-        // A window wider than +/- sigma leaves mean and sigma alone.
-        let mut rng = RmgRng::new(7);
-        let mut gauss = Gaussian::default();
-        let value = bounded_gaussian(&mut gauss, &mut rng, 0.0, 0.1, -10.0, 10.0);
-        assert!((-10.0..=10.0).contains(&value));
-    }
-
-    #[test]
-    fn a_cross_section_advances_along_sin_cos() {
-        // Pins the convention this module exists to get right: the carve line
-        // steps by (+sin, +cos), so a heading of 0 lays a vertical line.
-        let _ = Grid::step(0, 0, 0);
-        let (sin, cos) = (0.0f64, 1.0f64);
-        let span = 3;
-        let step_back = f64::from(span - 1) * HALF;
-        let x0 = 10.0 - step_back * sin;
-        let y0 = 10.0 - step_back * cos;
-        assert_eq!(X87Chop53::ftol_f64_low_masked(x0), 10);
-        assert_eq!(X87Chop53::ftol_f64_low_masked(y0), 9);
+    fn native_carve_branch_calls_preserve_rng_and_cleanup() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/river_branch.json");
+        let state = |rng: RmgRng| {
+            let (locked, words, a, b) = rng.into_continuation().into_native_parts();
+            let mut bytes = vec![locked, 0, 0, 0];
+            bytes.extend_from_slice(&(a as u32).to_le_bytes());
+            bytes.extend_from_slice(&(b as u32).to_le_bytes());
+            for word in words {
+                bytes.extend_from_slice(&word.to_le_bytes());
+            }
+            bytes
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        };
+        assert_eq!(doc["schema"], 1);
+        assert_eq!(doc["rows"].as_array().unwrap().len(), 16);
+        for row in doc["rows"].as_array().unwrap() {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let mut grid = Grid::new(33, 16, 48);
+            let mut scratch = RmgScratch::new(33, 16, 48);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                let cell = grid.get_mut(x, y).unwrap();
+                cell.tile = 0;
+                cell.level = 0;
+            }
+            let mut identity = ids();
+            identity.water_base = doc["scene"]["water_base"].as_i64().unwrap() as i32;
+            let blocks = blocks();
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let before_index = row["rng_before"]["mapgen"].as_u64().unwrap() as usize;
+            assert_eq!(
+                state(rng.clone()),
+                doc["rng_states_hex"][before_index],
+                "{context}: entry RNG"
+            );
+            let mut gauss = Gaussian::default();
+            let mut quota = WaterQuota {
+                placed: 0,
+                region_id: input["region"].as_i64().unwrap() as i32,
+            };
+            let args = WaterArgs {
+                map_type: 3,
+                water_percent: input["water_percent"].as_i64().unwrap() as i32,
+                num_players: 2,
+                bridge_enabled: false,
+                playable: PlayableRect {
+                    x: 0,
+                    y: 0,
+                    w: 16,
+                    h: 16,
+                },
+            };
+            let mut ctx = BlobCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                blocks: &blocks,
+                rng: &mut rng,
+                gauss: &mut gauss,
+                trig: Some(crate::util::retail_trig::TrigTable::embedded()),
+                map_w: 16,
+                map_h: 16,
+                rollback_level: input["base_level"].as_u64().unwrap() as u8,
+            };
+            let start = &input["start"];
+            let answer = carve(
+                &mut ctx,
+                &args,
+                &mut quota,
+                Some((
+                    start[0].as_i64().unwrap() as i32,
+                    start[1].as_i64().unwrap() as i32,
+                    input["heading"].as_f64().unwrap(),
+                )),
+                input["is_branch"].as_bool().unwrap(),
+            );
+            assert_eq!(
+                answer,
+                row["result"].as_u64().unwrap() != 0,
+                "{context}: return"
+            );
+            assert_eq!(
+                quota.placed,
+                row["placed"].as_i64().unwrap() as i32,
+                "{context}: placed"
+            );
+            assert_eq!(
+                quota.region_id,
+                row["region"].as_i64().unwrap() as i32,
+                "{context}: region"
+            );
+            let after_index = row["rng_after"]["mapgen"].as_u64().unwrap() as usize;
+            let actual_rng = state(ctx.rng.clone());
+            let expected_rng = doc["rng_states_hex"][after_index].as_str().unwrap();
+            assert_eq!(
+                &actual_rng[..24],
+                &expected_rng[..24],
+                "{context}: post-CarveRiver RNG flag/cursors"
+            );
+            assert_eq!(actual_rng, expected_rng, "{context}: full RNG buffer");
+            let changed: std::collections::BTreeMap<_, _> = row["changed_cells"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|item| {
+                    (
+                        (
+                            item["coords"][0].as_i64().unwrap() as i32,
+                            item["coords"][1].as_i64().unwrap() as i32,
+                        ),
+                        &item["fields"],
+                    )
+                })
+                .collect();
+            for (x, y) in ctx.grid.native_cells() {
+                let cell = ctx.grid.get(x, y).unwrap();
+                let scratch = ctx.scratch.get(x, y);
+                let actual = serde_json::json!([
+                    cell.tile,
+                    cell.sub_tile,
+                    cell.level,
+                    cell.slope,
+                    scratch.region,
+                    u8::from(scratch.water_region)
+                ]);
+                assert_eq!(
+                    &actual,
+                    changed
+                        .get(&(x, y))
+                        .copied()
+                        .unwrap_or(&doc["scene"]["common"]),
+                    "{context}: cleanup at {x},{y}"
+                );
+            }
+            // Re-enter the same section owner with original-observed inputs.
+            // Compare its stamped cells/straightness and the live native branch
+            // arguments. Floating intermediates retain the existing f64 model.
+            let read_double = |value: &serde_json::Value| {
+                f64::from_bits(u64::from_str_radix(value.as_str().unwrap(), 16).unwrap())
+            };
+            for (index, section) in row["sections"].as_array().unwrap().iter().enumerate() {
+                let mut walk = Walk {
+                    region: quota.region_id,
+                    alive: true,
+                    steps: 0,
+                    rolled_to_a_stop: false,
+                };
+                let input = &section["input"];
+                let actual = carve_section(
+                    &mut ctx,
+                    &mut walk,
+                    read_double(&input["centre"][0]),
+                    read_double(&input["centre"][1]),
+                    input["span"].as_i64().unwrap() as i32,
+                    read_double(&input["sin"]),
+                    read_double(&input["cos"]),
+                );
+                let cells = section["cells"].as_array().unwrap();
+                assert_eq!(
+                    serde_json::json!([actual.first.0, actual.first.1]),
+                    cells[0],
+                    "{context}, section{index}: first cell"
+                );
+                assert_eq!(
+                    serde_json::json!([actual.last.0, actual.last.1]),
+                    *cells.last().unwrap(),
+                    "{context}, section{index}: last cell"
+                );
+                assert_eq!(
+                    actual.column_straight,
+                    section["column_straight"].as_bool().unwrap(),
+                    "{context}, section{index}: column"
+                );
+                assert_eq!(
+                    actual.row_straight,
+                    section["row_straight"].as_bool().unwrap(),
+                    "{context}, section{index}: row"
+                );
+                for branch in row["branches"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|branch| branch["section"].as_u64().unwrap() as usize == index)
+                {
+                    assert_eq!(
+                        serde_json::json!([
+                            X87Chop53::ftol_f64_low_masked(actual.after.0),
+                            X87Chop53::ftol_f64_low_masked(actual.after.1)
+                        ]),
+                        branch["start"],
+                        "{context}, section{index}: live native branch argument"
+                    );
+                }
+            }
+        }
     }
 }

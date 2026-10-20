@@ -258,7 +258,7 @@ impl Simulation {
                 id,
                 MissionId::from_known(MissionType::Attack),
                 0,
-                self.session.binary_frame,
+                self.session.binary_frame(),
                 &LiveReadyInputProvider { rules },
             );
             return true;

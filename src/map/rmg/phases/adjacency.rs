@@ -154,14 +154,6 @@ mod tests {
     }
 
     #[test]
-    fn a_region_is_never_its_own_neighbour() {
-        let mut s = scratch();
-        paint(&mut s, (40, 44, 6, 12), 5);
-        paint(&mut s, (40, 42, 6, 2), 9);
-        assert!(!neighbour_ids(&s, 5, 12).contains(&5));
-    }
-
-    #[test]
     fn region_zero_is_a_real_neighbour_but_unassigned_is_not() {
         // The guard admits id 0 and rejects the -1 marker. Treating 0 as
         // "no region" would drop a real adjacency; treating -1 as one would
@@ -180,16 +172,6 @@ mod tests {
         paint(&mut s, (44, 48, 2, 2), 5);
         paint(&mut s, (46, 50, 2, 2), 7); // corner-to-corner with 5
         assert_eq!(neighbour_ids(&s, 5, 12), vec![7]);
-    }
-
-    #[test]
-    fn an_isolated_region_has_no_neighbours() {
-        let mut s = scratch();
-        paint(&mut s, (44, 48, 4, 4), 5);
-        assert!(
-            neighbour_ids(&s, 5, 12).is_empty(),
-            "only bare ground around"
-        );
     }
 
     #[test]

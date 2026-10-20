@@ -67,7 +67,7 @@ impl Simulation {
         if !super::motion_query::is_moving(entity).unwrap_or(false)
             && entity
                 .navigation
-                .path_replay
+                .path_replay()
                 .remaining_directions()
                 .is_empty()
         {
@@ -126,7 +126,7 @@ impl Simulation {
                 entity,
                 coord,
                 terrain,
-                self.session.binary_frame,
+                self.session.binary_frame(),
             );
         }
         Ok(())

@@ -81,10 +81,8 @@ impl Simulation {
         if let Some(object) = rules.native_techno_type_exact(name) {
             self.type_tech_levels.set(object, value);
         }
-        for owner in self.session.house_order.iter().rev() {
-            if let Some(house) = self.houses.get_mut(owner) {
-                house.request_tech_recheck();
-            }
+        for house in self.houses.in_order_mut().rev() {
+            house.request_tech_recheck();
         }
     }
 

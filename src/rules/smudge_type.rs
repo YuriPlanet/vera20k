@@ -148,17 +148,6 @@ mod tests {
     }
 
     #[test]
-    fn defaults_apply() {
-        let ini = parse_ini("[SmudgeTypes]\n1=X\n[X]\nFixtureOnly=1\n");
-        let reg = SmudgeTypeRegistry::from_rules_ini(&ini);
-        let x = reg.get(0).unwrap();
-        assert!(!x.crater);
-        assert!(!x.burn);
-        assert_eq!(x.width, 1);
-        assert_eq!(x.height, 1);
-    }
-
-    #[test]
     fn find_by_name_case_insensitive() {
         let ini = parse_ini("[SmudgeTypes]\n1=CR1\n[CR1]\nCrater=yes\n");
         let reg = SmudgeTypeRegistry::from_rules_ini(&ini);

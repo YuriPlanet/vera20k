@@ -404,7 +404,7 @@ fn prepare_case(rules: &RuleSet, row: &Value) -> (Simulation, Actors) {
             signed(&row["initial"]["transport"]["turret_index"]),
         );
     install_temporal_boundary(&mut sim, &actors, &row["initial"]);
-    sim.session.binary_frame = frame as u32;
+    sim.session.set_binary_frame_for_test(frame as u32);
     sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
     assert_eq!(
         sim.scenario_rng.native_state_hex(),

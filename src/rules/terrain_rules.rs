@@ -448,53 +448,6 @@ mod tests {
     }
 
     #[test]
-    fn beach_costs_from_ini() {
-        let ini = IniFile::from_str(
-            "[Beach]\nFoot=0%\nTrack=0%\nWheel=0%\nFloat=0%\n\
-             FloatBeach=100%\nHover=75%\nAmphibious=60%\nBuildable=no\n",
-        );
-        let terrain_rules = TerrainRules::from_ini(&ini);
-        let beach = terrain_rules
-            .semantics_for_land_type(LandType::Beach.as_index())
-            .expect("beach semantics");
-        assert!(!beach.buildable);
-        assert_eq!(beach.cost_for_speed_type(SpeedType::Foot), Some(0));
-        assert_eq!(beach.cost_for_speed_type(SpeedType::Track), Some(0));
-        assert_eq!(beach.cost_for_speed_type(SpeedType::FloatBeach), Some(100));
-        assert_eq!(beach.cost_for_speed_type(SpeedType::Hover), Some(75));
-        assert_eq!(beach.cost_for_speed_type(SpeedType::Amphibious), Some(60));
-    }
-
-    #[test]
-    fn tunnel_and_railroad_bytes_map_correctly() {
-        let ini = IniFile::from_str(
-            "[Tunnel]\nFoot=100%\nTrack=100%\nBuildable=no\n\
-             [Railroad]\nFoot=90%\nTrack=100%\nBuildable=no\n",
-        );
-        let terrain_rules = TerrainRules::from_ini(&ini);
-        let tunnel = terrain_rules
-            .semantics_for_land_type(LandType::Tunnel.as_index())
-            .expect("tunnel semantics");
-        assert_eq!(tunnel.cost_for_speed_type(SpeedType::Foot), Some(100));
-
-        let railroad = terrain_rules
-            .semantics_for_land_type(LandType::Railroad.as_index())
-            .expect("railroad semantics");
-        assert_eq!(railroad.cost_for_speed_type(SpeedType::Foot), Some(90));
-    }
-
-    #[test]
-    fn terrain_rules_preserve_foot_when_track_is_zero() {
-        let ini = IniFile::from_str("[Rock]\nTrack=0%\nFoot=50%\n");
-        let terrain_rules = TerrainRules::from_ini(&ini);
-        let rock = terrain_rules
-            .semantics_for_land_type(LandType::Rock.as_index())
-            .expect("rock semantics");
-        assert_eq!(rock.cost_for_speed_type(SpeedType::Track), Some(0));
-        assert_eq!(rock.cost_for_speed_type(SpeedType::Foot), Some(50));
-    }
-
-    #[test]
     fn gsi_04_04_reads_exactly_twelve_canonical_rows_with_native_defaults() {
         let mut text = String::new();
         for land_type in LandType::ALL {

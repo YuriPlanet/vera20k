@@ -21,8 +21,8 @@ fn fixture(selector: i32) -> Simulation {
     // Native Scenario deserialization reseeds this RNG to zero. Using that
     // same initial seed isolates track persistence from the separate RNG rule.
     let mut sim = Simulation::with_seed(0);
-    sim.fog.width = 32;
-    sim.fog.height = 32;
+    sim.fog.set_width_for_test(32);
+    sim.fog.set_height_for_test(32);
     let turn = drive_track::turn_track_at(selector as usize).unwrap();
     let first = drive_track::raw_track_points(turn.normal_track)[0];
     let (dx, dy, facing) =
@@ -80,8 +80,8 @@ fn fixture(selector: i32) -> Simulation {
 }
 
 fn tick(sim: &mut Simulation, rules: &RuleSet, frame: u32) -> movement::MovementTickStats {
-    sim.session.tick = u64::from(frame);
-    sim.session.binary_frame = frame;
+    sim.session.set_tick_for_test(u64::from(frame));
+    sim.session.set_binary_frame_for_test(frame);
     // The track end's own-cell request searches; a reloaded save carries no
     // map inputs.
     crate::sim::arena_fixture::supply_native_map(sim);
@@ -192,7 +192,7 @@ fn every_bunker_selector_restores_before_first_point_midcurve_and_paid_sentinel(
                 crate::sim::movement::track_head::committed_track_head(entity).is_none()
                     || entity
                         .navigation
-                        .path_replay
+                        .path_replay()
                         .remaining_directions()
                         .is_empty()
             );

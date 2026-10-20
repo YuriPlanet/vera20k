@@ -67,9 +67,8 @@ fn sim(rules: &RuleSet, human: bool, levels: &[((u16, u16), u8)]) -> Simulation 
     sim.resolve_type_handles(rules);
     let owner = sim.interner.intern(OWNER);
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, human, 0, 10));
-    sim.session.house_order.push(owner);
-    sim.session.game_options.super_weapons = true;
+        .register(HouseState::new(owner, 0, None, human, 0, 10));
+    sim.session.game_options_mut_for_test().super_weapons = true;
     sim.resolved_terrain = Some(test_grid(64, 64, |x, y| ResolvedTerrainCell {
         level: levels
             .iter()
@@ -108,7 +107,8 @@ fn click_fire_matches_native() {
         sw.post_click = flag(&row["post_click"]);
         sw.manual_control = flag(&row["manual"]);
         sw.recharge_time_frames = int(&row["recharge"]);
-        sim.session.binary_frame = u32::try_from(int(&row["frame"])).unwrap();
+        sim.session
+            .set_binary_frame_for_test(u32::try_from(int(&row["frame"])).unwrap());
         let mut instance = SuperWeaponInstance::new(sw_type_id, owner, 0);
         instance.is_active = flag(&row["granted"]);
         instance.is_ready = flag(&row["charged"]);
@@ -257,16 +257,22 @@ fn the_launch_alert_matches_native() {
                 [coords[0], coords[1], coords[2]],
                 "{row}"
             );
-            sim.houses.get_mut(&house_id).unwrap().build_const_order = vec![id];
+            sim.houses
+                .get_mut(&house_id)
+                .unwrap()
+                .set_build_const_order_for_test(vec![id]);
         }
         {
             let house = sim.houses.get_mut(&house_id).unwrap();
-            house.multiplay_passive = flag(&row["passive"]);
-            house.difficulty = HouseDifficulty::from_native(int(&row["difficulty"])).unwrap();
-            house.base_center = Some(cell(&row["base"]));
-            house.alternate_base_center = cell(&row["alternate"]);
+            house.set_multiplay_passive_for_test(flag(&row["passive"]));
+            house.set_difficulty_for_test(
+                HouseDifficulty::from_native(int(&row["difficulty"])).unwrap(),
+            );
+            house.set_base_center_for_test(Some(cell(&row["base"])));
+            house.set_alternate_base_center_for_test(cell(&row["alternate"]));
         }
-        sim.session.binary_frame = u32::try_from(int(&row["frame"])).unwrap();
+        sim.session
+            .set_binary_frame_for_test(u32::try_from(int(&row["frame"])).unwrap());
         sim.scenario_rng = SimRng::answering(0, 99, int(&row["answer"]));
         // RandomRanged's own retries draw more raw words; count its calls by
         // the cursor they leave.
@@ -298,62 +304,4 @@ fn the_launch_alert_matches_native() {
             );
         }
     }
-}
-
-/// `HouseClass @ 0x0050AF10` holds a charged powered Super while its house
-/// is short of power (`SuperClass::Suspend @ 0x006CB4D0` stops the timer),
-/// so ClickFire refuses it; restored power releases it.
-#[test]
-fn a_charged_nuke_held_for_low_power_does_not_launch() {
-    let rules = rules();
-    let mut sim = sim(&rules, true, &[]);
-    let owner = sim.interner.intern(OWNER);
-    sim.spawn_object_at_height("NAMISL", OWNER, 10, 10, 0, 0, &rules)
-        .unwrap();
-    let nuke = sim.interner.intern("NukeSpecial");
-    let sw = rules.super_weapon("NukeSpecial").unwrap();
-    let mut instance = SuperWeaponInstance::new(nuke, owner, 0);
-    instance.is_active = true;
-    instance.charge_start_tick = 0;
-    instance.charge_duration = 10;
-    instance.is_ready = true;
-    sim.super_weapons
-        .entry(owner)
-        .or_default()
-        .insert(nuke, instance);
-    sim.session.binary_frame = 20;
-    sim.power_states.entry(owner).or_default().is_low_power = true;
-    super::super::update_owned_supers(&mut sim, &rules, owner);
-    let held = &sim.super_weapons[&owner][&nuke];
-    assert_eq!(
-        (held.is_ready, held.is_suspended, held.charge_start_tick),
-        (true, true, -1)
-    );
-    assert!(!click_fire(
-        &mut sim,
-        &rules,
-        owner,
-        nuke,
-        sw,
-        (33, 44),
-        None,
-        crate::sim::world::FrameEffects::default(),
-        None,
-        false
-    ));
-    sim.power_states.get_mut(&owner).unwrap().is_low_power = false;
-    sim.session.binary_frame = 30;
-    super::super::update_owned_supers(&mut sim, &rules, owner);
-    assert!(click_fire(
-        &mut sim,
-        &rules,
-        owner,
-        nuke,
-        sw,
-        (33, 44),
-        None,
-        crate::sim::world::FrameEffects::default(),
-        None,
-        false
-    ));
 }

@@ -14,14 +14,14 @@ fn retail_factories() -> Option<(RuleSet, Simulation, u64, u64)> {
     let mut sim = Simulation::with_seed(0x0044_8160);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let owner = sim.intern("Americans");
     let side = rules.country_side_index("Americans").unwrap().0;
     let mut house = HouseState::new(owner, side, Some(owner), true, 50_000, 10);
     house.project_country_mults(&rules, &sim.interner);
-    sim.houses.insert(owner, house);
-    sim.session.house_order.push(owner);
-    sim.session.current_house = Some(owner);
+    sim.houses.register(house);
+    sim.session.set_current_house_for_test(Some(owner));
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let first = sim.spawn_object("GAWEAP", "Americans", 6, 6, 0, &rules)?;
     let second = sim.spawn_object("GAWEAP", "Americans", 20, 6, 0, &rules)?;
@@ -379,7 +379,7 @@ fn assert_primary_native_state(
                 "{context}: native supplied empty queue slot"
             );
             assert!(
-                sim.production.factories.view(owner, category).is_none(),
+                sim.production.factories().view(owner, category).is_none(),
                 "{context}: queue unchanged"
             );
         }
@@ -407,7 +407,9 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
         let mut sim = Simulation::new();
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         let owners = [sim.intern("Americans"), sim.intern("Alliance")];
         for owner in owners {
@@ -418,10 +420,9 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
             let mut house = HouseState::new(owner, side, Some(owner), true, 50_000, 10);
             house.project_country_mults(&rules, &sim.interner);
             house.take_tech_recheck();
-            sim.houses.insert(owner, house);
-            sim.session.house_order.push(owner);
+            sim.houses.register(house);
         }
-        sim.session.current_house = Some(owners[0]);
+        sim.session.set_current_house_for_test(Some(owners[0]));
         let mut ids = Vec::new();
         for (index, (actor, kind)) in case["input"]["actors"]
             .as_array()
@@ -452,7 +453,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
             // claim about ordinary placement, occupancy or scene loading.
             supply_primary_actor_flags(&mut sim, id, &case["initial"]["actors"][index]["flags"]);
             let entity = sim.substrate.entities.get_mut(id).unwrap();
-            entity.lifecycle.set_cell_marked(true);
+            entity.lifecycle.set_cell_marked_for_test(true);
             entity.selection.set_selected_for_test(false);
             sim.append_house_base_building_for_test(id);
             if actor["primary"].as_u64() == Some(1) {
@@ -488,12 +489,13 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
         };
         assert_rng(&sim, &case["rng_before"]);
         assert_primary_native_state(&sim, &rules, &ids, &owners, &case["initial"], name);
-        let factories = sim.production.factories.clone();
+        let factories = sim.production.factories().clone();
         let mut issued = Vec::new();
         let (_, draws) = trace_draws(|| {
             for phase in case["phases"].as_array().unwrap() {
                 let input = &phase["input"];
-                sim.session.binary_frame = phase["frame"].as_u64().unwrap() as u32;
+                sim.session
+                    .set_binary_frame_for_test(phase["frame"].as_u64().unwrap() as u32);
                 let actor_index = input["actor"].as_u64().map(|id| id as usize - 1);
                 let id = actor_index.map_or(0x1234_5678, |index| ids[index]);
                 if let Some(changes) = input.get("changes") {
@@ -506,7 +508,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                 let mut houses_before = sim.houses.clone();
                 let edges_before: Vec<_> = owners
                     .iter()
-                    .map(|owner| sim.houses[owner].waypoint_edge)
+                    .map(|owner| sim.houses[owner].waypoint_edge())
                     .collect();
                 sim.sound_events.clear();
                 let mut event = None;
@@ -564,7 +566,8 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                 assert_primary_native_state(&sim, &rules, &ids, &owners, &phase["state"], &context);
                 assert_rng(&sim, &phase["rng"]);
                 assert_eq!(
-                    sim.production.factories, factories,
+                    *sim.production.factories(),
+                    factories,
                     "{context}: no allocation/relink/queue mutation"
                 );
                 assert!(
@@ -589,8 +592,10 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                     .any(|effect| effect["event"] == "determine_edge");
                 for owner in owners {
                     if has_edge {
-                        houses_before.get_mut(&owner).unwrap().waypoint_edge =
-                            sim.houses[&owner].waypoint_edge;
+                        houses_before
+                            .get_mut(&owner)
+                            .unwrap()
+                            .set_waypoint_edge_for_test(sim.houses[&owner].waypoint_edge());
                     }
                 }
                 assert_eq!(
@@ -602,7 +607,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                     assert_eq!(
                         owners
                             .iter()
-                            .map(|owner| sim.houses[owner].waypoint_edge)
+                            .map(|owner| sim.houses[owner].waypoint_edge())
                             .collect::<Vec<_>>(),
                         edges_before,
                         "{context}: no edge write"

@@ -68,7 +68,7 @@ Ares presentation; no pixel-level equivalence is claimed.
 
 The existing wallet, Super flags and processed rule source own persistence.
 Two-stage Super instances additionally retain a selection sequence and optional
-one-use ticket; no balance is duplicated. Snapshot schema 442 rejects older
+one-use ticket; no balance is duplicated. Snapshot schema 451 rejects older
 positional records rather than guessing missing fields. Nonzero
 resolved money settings participate in configuration hashing; default zero does
 not add a new hash input. Source INI identity is still hashed normally.

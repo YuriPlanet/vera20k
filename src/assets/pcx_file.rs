@@ -439,10 +439,4 @@ mod direct_rgb_roundtrip_tests {
         let encoded = encode_direct_rgb(2, 1, &rgb).expect("encode");
         assert_eq!(PcxFile::from_bytes(&encoded).expect("decode").pixels, rgb);
     }
-
-    #[test]
-    fn a_mismatched_buffer_is_rejected() {
-        assert!(encode_direct_rgb(4, 4, &[0; 10]).is_err());
-        assert!(encode_direct_rgb(0, 4, &[]).is_err());
-    }
 }

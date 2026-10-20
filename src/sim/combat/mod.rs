@@ -184,7 +184,7 @@ pub(crate) use receiver_fixture::{
 #[cfg(any(test, feature = "test-support"))]
 use techno_death::fire_death_weapon_payload;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use self::combat_targeting::{AttackerSnapshot, GarrisonSnapshot};
 use self::combat_weapon::WeaponSlot;

@@ -21,7 +21,7 @@ pub(super) fn mission_repair(
     registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) -> i32 {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     //44BA44 reads the live BuildingType+684 Ammo, not an instance cache.
     let type_ammo = sim
         .substrate

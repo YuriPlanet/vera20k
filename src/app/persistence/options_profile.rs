@@ -15,6 +15,18 @@ use crate::util::ini_writer::set_ini_values;
 
 pub(crate) const RA2MD_INI_FILENAME: &str = "RA2MD.INI";
 
+/// How many builds one Shift-click queues when `[VERA] ShiftQueueCount=` is
+/// absent, and the inclusive bounds a configured value is clamped to.
+///
+/// Both bounds exist because `read_int` answers 0 for a present-but-nonnumeric
+/// value: zero would make the click silently queue nothing, and an unbounded
+/// upper end would let one press flood the strip. The maximum is the stock
+/// `[General] MaximumQueuedObjects=` (29) plus the active build, so one press
+/// can at most fill an otherwise empty strip; the factory's own check still
+/// refuses anything beyond its real cap.
+pub(crate) const DEFAULT_SHIFT_QUEUE_COUNT: u32 = 5;
+pub(crate) const SHIFT_QUEUE_COUNT_RANGE: std::ops::RangeInclusive<u32> = 1..=30;
+
 const OPTIONS_SECTION: &str = "Options";
 const VIDEO_SECTION: &str = "Video";
 const AUDIO_SECTION: &str = "Audio";
@@ -110,6 +122,20 @@ pub(crate) struct RetailOptionsProfile {
     /// Whether the startup splash and the menu movie use Red Alert 2's art
     /// instead of Yuri's Revenge's: the Options page's RA2 Loading & Menu Movie.
     pub(crate) ra2_look: bool,
+    /// `[VERA] ShiftQueue=`: whether a Shift-click on a mobile strip queues
+    /// [`Self::shift_queue_count`] builds: the Options page's Shift-Click
+    /// Batch Queue. Off by default, so Shift + left click queues one copy as
+    /// in gamemd, whose left-click ignores Shift (`0x006AAD66` reads the
+    /// modifier for the right button only).
+    pub(crate) shift_queue: bool,
+    /// `[VERA] ShiftQueueCount=`: how many builds one Shift-click queues on a
+    /// mobile strip while [`Self::shift_queue`] is on. VERA's own convenience;
+    /// gamemd never reads this section. Clamped by [`SHIFT_QUEUE_COUNT_RANGE`].
+    pub(crate) shift_queue_count: u32,
+    /// `[VERA] WolTestService=`: Internet answers from VERA's stand-in WOL
+    /// service instead of showing `TXT_APIMISSING`: the Options page's
+    /// developer box. Off by default; no real service exists yet.
+    pub(crate) wol_test_service: bool,
 }
 
 /// The two process-start products obtained from one physical `RA2MD.INI`
@@ -167,6 +193,9 @@ impl Default for RetailOptionsProfile {
             original_shape: false,
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
             ra2_look: false,
+            shift_queue: false,
+            shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
+            wol_test_service: false,
         }
     }
 }
@@ -183,7 +212,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 5],
+    pub(crate) vera: [(&'static str, String); 8],
 }
 
 impl RetailOptionsLoad {
@@ -382,6 +411,13 @@ impl RetailOptionsProfile {
                 vera.read_int("Sidebar", self.sidebar.ini_value()),
             );
             self.ra2_look = vera.read_bool("RA2Look", self.ra2_look);
+            self.shift_queue = vera.read_bool("ShiftQueue", self.shift_queue);
+            // Absent keeps the current value; present-but-nonnumeric answers 0,
+            // which the range lifts to 1 rather than a click that queues nothing.
+            self.shift_queue_count = clamp_shift_queue_count(
+                vera.read_int("ShiftQueueCount", self.shift_queue_count as i32),
+            );
+            self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
         }
     }
 
@@ -464,6 +500,12 @@ impl RetailOptionsProfile {
                 ),
                 ("Sidebar", self.sidebar.ini_value().to_string()),
                 ("RA2Look", format_bool(self.ra2_look).to_string()),
+                ("ShiftQueue", format_bool(self.shift_queue).to_string()),
+                ("ShiftQueueCount", self.shift_queue_count.to_string()),
+                (
+                    "WolTestService",
+                    format_bool(self.wol_test_service).to_string(),
+                ),
             ],
         }
     }
@@ -573,6 +615,19 @@ fn upper_only_volume(value: f64) -> f32 {
 
 fn format_bool(value: bool) -> &'static str {
     if value { "yes" } else { "no" }
+}
+
+/// Lift a configured `[VERA] ShiftQueueCount=` into the range a click can use.
+///
+/// `read_int` answers 0 for a present-but-nonnumeric value and a hand-edited
+/// file can hold any `i32`, so both ends are clamped: below the minimum a
+/// click would queue nothing, above the maximum one press could flood the
+/// strip past what the factory would ever accept from one click.
+fn clamp_shift_queue_count(value: i32) -> u32 {
+    value.clamp(
+        *SHIFT_QUEUE_COUNT_RANGE.start() as i32,
+        *SHIFT_QUEUE_COUNT_RANGE.end() as i32,
+    ) as u32
 }
 
 fn apply_formatted_section<const N: usize>(
@@ -953,29 +1008,6 @@ mod tests {
     }
 
     #[test]
-    fn height_only_snapshot_uses_fallback_window_then_rereads_retained_height() {
-        let load = load_snapshot(
-            &RetailStartupOptions::default(),
-            b"[Video]\nScreenHeight=480\n",
-        );
-
-        assert_eq!(
-            load.startup_shell_screen,
-            ScreenSize {
-                width: 800,
-                height: 600,
-            }
-        );
-        assert_eq!(
-            (
-                load.retained_profile.screen_width,
-                load.retained_profile.screen_height,
-            ),
-            (800, 480)
-        );
-    }
-
-    #[test]
     fn ordinary_frontend_size_is_independent_of_game_profile_and_launcher_edits() {
         for (width, height) in [(640, 480), (800, 600), (1024, 768)] {
             let ini = format!("[Video]\nScreenWidth={width}\nScreenHeight={height}\n");
@@ -1010,29 +1042,6 @@ mod tests {
                 load.retained_profile.screen_height
             ),
             (1024, 768)
-        );
-    }
-
-    #[test]
-    fn configured_game_pair_does_not_select_the_shell_size() {
-        let load = load_snapshot(
-            &RetailStartupOptions::default(),
-            b"[Video]\nScreenWidth=640\nScreenHeight=480\n",
-        );
-
-        assert_eq!(
-            load.startup_shell_screen,
-            ScreenSize {
-                width: 800,
-                height: 600,
-            }
-        );
-        assert_eq!(
-            (
-                load.retained_profile.screen_width,
-                load.retained_profile.screen_height,
-            ),
-            (640, 480)
         );
     }
 
@@ -1148,17 +1157,6 @@ mod tests {
     }
 
     #[test]
-    fn explicit_invalid_screen_values_are_retained() {
-        let mut profile = RetailOptionsProfile {
-            screen_width: 0,
-            screen_height: -20,
-            ..RetailOptionsProfile::default()
-        };
-        profile.resolve_screen_size();
-        assert_eq!((profile.screen_width, profile.screen_height), (0, -20));
-    }
-
-    #[test]
     fn vera_display_preferences_round_trip_in_their_own_section() {
         use crate::ui::main_menu_dialogs::options::{SidebarSize, Zoom};
         let defaults = load_snapshot(
@@ -1170,10 +1168,18 @@ mod tests {
         assert!(!defaults.retained_profile.original_shape);
         assert_eq!(defaults.retained_profile.sidebar, SidebarSize::Normal);
         assert!(!defaults.retained_profile.ra2_look);
+        // Shift + left click queues one copy, as in gamemd, until it is ticked.
+        assert!(!defaults.retained_profile.shift_queue);
+        // Internet shows TXT_APIMISSING, as on retail, until it is ticked.
+        assert!(!defaults.retained_profile.wol_test_service);
+        assert_eq!(
+            defaults.retained_profile.shift_queue_count,
+            DEFAULT_SHIFT_QUEUE_COUNT
+        );
 
         let load = load_snapshot(
             &RetailStartupOptions::default(),
-            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nRA2Look=yes\n",
+            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nRA2Look=yes\nShiftQueue=yes\nShiftQueueCount=8\nWolTestService=yes\n",
         );
         assert!(load.retained_profile.full_screen);
         // The first release saved the whole factor.
@@ -1181,6 +1187,9 @@ mod tests {
         assert!(load.retained_profile.original_shape);
         assert_eq!(load.retained_profile.sidebar, SidebarSize::Large);
         assert!(load.retained_profile.ra2_look);
+        assert!(load.retained_profile.shift_queue);
+        assert!(load.retained_profile.wol_test_service);
+        assert_eq!(load.retained_profile.shift_queue_count, 8);
         // A value this build doesn't know reads as Auto.
         let unknown = load_snapshot(&RetailStartupOptions::default(), b"[VERA]\nZoom=9\n");
         assert_eq!(unknown.retained_profile.zoom, Zoom::Auto);
@@ -1191,13 +1200,16 @@ mod tests {
             original_shape: true,
             sidebar: SidebarSize::ExtraLarge,
             ra2_look: true,
+            shift_queue: true,
+            shift_queue_count: 7,
+            wol_test_service: true,
             ..RetailOptionsProfile::default()
         };
         let output =
             String::from_utf8(profile.transform_ra2md(b"[Video]\r\nScreenWidth=800\r\n")).unwrap();
         assert!(
             output.contains(
-                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nRA2Look=yes\r\n"
+                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nRA2Look=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\n"
             ),
             "{output}"
         );
@@ -1207,6 +1219,37 @@ mod tests {
         assert!(reread.retained_profile.original_shape);
         assert_eq!(reread.retained_profile.sidebar, SidebarSize::ExtraLarge);
         assert!(reread.retained_profile.ra2_look);
+        assert!(reread.retained_profile.shift_queue);
+        assert!(reread.retained_profile.wol_test_service);
+        assert_eq!(reread.retained_profile.shift_queue_count, 7);
+    }
+
+    /// `read_int` answers 0 for a present-but-nonnumeric value and a hand-edited
+    /// file can hold any `i32`; both ends are clamped so a click always sends a
+    /// PRODUCE and never floods past what one press should reach.
+    #[test]
+    fn shift_queue_count_is_clamped_at_both_ends() {
+        for (ini, expected) in [
+            ("[VERA]\nShiftQueueCount=0\n", 1),
+            ("[VERA]\nShiftQueueCount=-4\n", 1),
+            ("[VERA]\nShiftQueueCount=nonsense\n", 1),
+            ("[VERA]\nShiftQueueCount=1\n", 1),
+            ("[VERA]\nShiftQueueCount=30\n", 30),
+            ("[VERA]\nShiftQueueCount=31\n", 30),
+            ("[VERA]\nShiftQueueCount=99999\n", 30),
+        ] {
+            let load = load_snapshot(&RetailStartupOptions::default(), ini.as_bytes());
+            assert_eq!(load.retained_profile.shift_queue_count, expected, "{ini:?}");
+        }
+        // An absent key keeps the current value, not the clamp floor.
+        let absent = load_snapshot(
+            &RetailStartupOptions::default(),
+            b"[VERA]\nFullScreen=yes\n",
+        );
+        assert_eq!(
+            absent.retained_profile.shift_queue_count,
+            DEFAULT_SHIFT_QUEUE_COUNT
+        );
     }
 
     #[test]

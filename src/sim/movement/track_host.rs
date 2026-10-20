@@ -347,7 +347,7 @@ impl Simulation {
         let candidate_direction = self.substrate.entities.get(id).and_then(|entity| {
             entity
                 .navigation
-                .path_replay
+                .path_replay()
                 .remaining_directions()
                 .first()
                 .copied()
@@ -373,7 +373,7 @@ impl Simulation {
                 // before terminal coordinates/Mark, then retire the selector.
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     entity.foot_occupation_enabled.resume();
-                    entity.navigation.path_runtime.set_path_blocked(false);
+                    entity.navigation.path_runtime_mut().clear_blockage();
                 }
                 self.track_place(
                     id,
@@ -424,7 +424,7 @@ impl Simulation {
                 if reached {
                     let entity = self.substrate.entities.get_mut(id).unwrap();
                     entity.navigation.stop_moving();
-                    entity.navigation.path_replay.clear_live_head();
+                    entity.navigation.path_replay_mut().clear_live_head();
                     entity.navigation.settle_destination_setter();
                     if entity.mission.current().known() == Some(MissionType::Move) {
                         let returns = self.unit_enter_idle_mode(id, rules, false, effects);
@@ -456,7 +456,7 @@ impl Simulation {
                 // Ship `0x006A0CDA`).
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     entity.foot_occupation_enabled.suspend();
-                    entity.navigation.path_runtime.set_path_blocked(false);
+                    entity.navigation.path_runtime_mut().clear_blockage();
                 }
             }
             let Some((live, live_head, actual)) = self.track_state(id, family) else {
@@ -531,7 +531,7 @@ impl Simulation {
             {
                 entity
                     .body_facing
-                    .snap(u16::from(facing) << 8, self.session.binary_frame);
+                    .snap(u16::from(facing) << 8, self.session.binary_frame());
             }
             let Some((live, _, _)) = self.track_state(id, family) else {
                 return Ok(TrackPass::paid(moved));
@@ -755,7 +755,7 @@ impl Simulation {
             );
         }
         if let Some(target) = pre_entry_cell {
-            // Drive4B1999..4B19FA, after Mark(DOWN)4B1993 and before
+            // Drive4B1999..4B1A58, after Mark(DOWN)4B1993 and before
             // SetHeight/track continuation. Type+D2B is TiltsWhenCrushes;
             // target+44/+2A8 is the live overlay/Wall, not a navigation head.
             let wall = self
@@ -763,32 +763,67 @@ impl Simulation {
                 .overlay_id
                 .and_then(|overlay| registry?.flags(overlay))
                 .is_some_and(|flags| flags.wall);
-            let tilt = wall
-                && self.substrate.entities.get(id).is_some_and(|entity| {
+            let Some(entity) = self.substrate.entities.get(id) else {
+                return;
+            };
+            if entity
+                .locomotor
+                .as_ref()
+                .and_then(|loco| loco.drive_straight())
+                != Some(true)
+            {
+                return;
+            }
+            let Some(object) =
+                rules.and_then(|rules| self.interner.object_type(entity.type_ref(), rules))
+            else {
+                return;
+            };
+            //4B1A0F GetUnit(false) selects Ground and does not exclude self
+            //or filter health. Mark(DOWN) has already returned. This host
+            //models active gameplay (native GameActive=true); the separate
+            //loader/teardown query gate is not represented here.
+            //Original histories: unit_per_cell_overlay.drive_crush.json.
+            let slowdown = object.movement_zone
+                == crate::rules::locomotor_type::MovementZone::CrusherAll
+                && match target {
+                    crate::map::cell_index::NativeCellIdentity::Real(index) => {
+                        let cell = &self.resolved_terrain.as_ref().unwrap().cells()[index];
+                        self.substrate
+                            .occupancy
+                            .first_category_on_layer(
+                                cell.rx,
+                                cell.ry,
+                                MovementLayer::Ground,
+                                EntityCategory::Unit,
+                                &self.substrate.entities,
+                            )
+                            .is_some()
+                    }
+                    crate::map::cell_index::NativeCellIdentity::Dummy => false,
+                };
+            let tilt = object.tilts_when_crushes
+                && (slowdown
+                    || (wall
+                        && (object.crusher
+                            || crate::sim::combat::veterancy::has_weapon_ability(
+                                entity.veterancy.rank_kind(),
+                                object,
+                                crate::rules::object_type::Ability::Crusher,
+                            ))));
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
+                // A failed gate retains the flag; there is no per-frame clear.
+                if slowdown {
+                    entity.foot_speed.arm_crush_slowdown();
+                }
+                if tilt {
                     entity
-                        .locomotor
-                        .as_ref()
-                        .and_then(|loco| loco.drive_straight())
-                        == Some(true)
-                        && rules
-                            .and_then(|rules| self.interner.object_type(entity.type_ref(), rules))
-                            .is_some_and(|object| {
-                                object.tilts_when_crushes
-                                    && (object.crusher
-                                        || crate::sim::combat::veterancy::has_weapon_ability(
-                                            entity.veterancy.rank_kind(),
-                                            object,
-                                            crate::rules::object_type::Ability::Crusher,
-                                        ))
-                            })
-                });
-            if tilt && let Some(entity) = self.substrate.entities.get_mut(id) {
-                entity
-                    .rocking
-                    .get_or_insert_with(Default::default)
-                    .set_vel_forwards_native(crate::util::native_x87::NativeF32Bits::from_bits(
-                        0xbd4c_cccd,
-                    ));
+                        .rocking
+                        .get_or_insert_with(Default::default)
+                        .set_vel_forwards_native(
+                            crate::util::native_x87::NativeF32Bits::from_bits(0xbd4c_cccd),
+                        );
+                }
             }
         }
     }
@@ -1007,7 +1042,7 @@ impl Simulation {
         self.track_apply_occupation(id, family, true);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.foot_speed.set_speed_fraction(saved_speed);
-            super::path_markers::consume_path_replay(&mut entity.navigation.path_replay, 1);
+            entity.navigation.path_replay_mut().consume(1);
         }
         Ok(true)
     }
@@ -1151,7 +1186,7 @@ impl Simulation {
                     id,
                     MissionId::from_known(MissionType::Move),
                     0,
-                    self.session.binary_frame,
+                    self.session.binary_frame(),
                     &crate::sim::mission::authority::EntityReadyInputProvider,
                 );
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -1352,7 +1387,7 @@ impl Simulation {
                 id,
                 MissionId::from_known(selection),
                 0,
-                self.session.binary_frame,
+                self.session.binary_frame(),
                 &crate::sim::mission::authority::EntityReadyInputProvider,
             );
         }
@@ -1408,7 +1443,7 @@ fn unit_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> MissionTy
     let wide = sim
         .houses
         .get(&entity.owner())
-        .is_some_and(|house| house.current_iq >= rules.general.iq_guard_area)
+        .is_some_and(|house| house.current_iq() >= rules.general.iq_guard_area)
         || sim
             .object_type(entity.type_ref(), rules)
             .is_some_and(|object| {
@@ -1479,7 +1514,7 @@ fn harvester_idle_selection(
         && sim
             .houses
             .get(&entity.owner())
-            .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero));
+            .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
     let weeder = sim
         .object_type(entity.type_ref(), rules)
         .is_some_and(|obj| !obj.harvester && obj.weeder);
@@ -1509,6 +1544,6 @@ fn cell_land_type_is(
     sim.resolved_terrain.as_ref().is_some_and(|terrain| {
         terrain
             .cell(rx, ry)
-            .is_some_and(|cell| cell.land_type() == wanted.as_index())
+            .is_some_and(|cell| cell.land_type == wanted.as_index())
     })
 }

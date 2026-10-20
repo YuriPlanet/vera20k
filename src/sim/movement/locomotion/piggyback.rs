@@ -74,8 +74,9 @@ impl WalkRuntime {
         self.head
     }
 
-    /// Store the field.
-    pub(crate) fn set_head(&mut self, head: Option<crate::sim::components::DriveCoord>) {
+    /// Walk interface+24, the committed head: Process commits a fresh head
+    /// and retires a paid or refused one.
+    pub(crate) fn store_head(&mut self, head: Option<crate::sim::components::DriveCoord>) {
         self.head = head;
     }
 
@@ -84,12 +85,35 @@ impl WalkRuntime {
         self.destination
     }
 
-    /// Store the field.
-    pub(crate) fn set_destination(
-        &mut self,
-        destination: Option<crate::sim::components::DriveCoord>,
-    ) {
-        self.destination = destination;
+    /// MoveTo (`0x0075ACB0`) and Stop (`0x0075ADA0`): a null coordinate
+    /// clears the destination. IsMoving is set by a destination and survives
+    /// a null one while a paid head exists (`0x0075AD77` / `0x0075ADE9`).
+    pub(crate) fn assign_destination(&mut self, coord: Option<crate::sim::components::DriveCoord>) {
+        self.destination = coord.filter(|c| c.x != 0 || c.y != 0 || c.z != 0);
+        if self.destination.is_some() {
+            self.moving = true;
+        } else if self.head.is_none() {
+            self.moving = false;
+        }
+    }
+
+    /// Stop (`0x0075ADA0`): a null MoveTo, and with no head also clears
+    /// Is_Really_Moving_Now (`0x0075ADEC`). Answers whether it did, which
+    /// admits the owner's +54C callback.
+    pub(crate) fn stop(&mut self) -> bool {
+        self.assign_destination(None);
+        if self.head.is_none() {
+            self.animation_moving = false;
+            return true;
+        }
+        false
+    }
+
+    /// `Lock` (ILocomotion +0xB0, `0x0075CB30`) nulls the destination (+0x18)
+    /// and head (+0x24) and writes nothing else.
+    pub(crate) fn lock(&mut self) {
+        self.destination = None;
+        self.head = None;
     }
 
     /// See the field.
@@ -97,19 +121,48 @@ impl WalkRuntime {
         self.moving
     }
 
-    /// Store the field.
-    pub(crate) fn set_moving(&mut self, moving: bool) {
-        self.moving = moving;
-    }
-
     /// See the field.
     pub(crate) const fn animation_moving(&self) -> bool {
         self.animation_moving
     }
 
-    /// Store the field.
-    pub(crate) fn set_animation_moving(&mut self, animation_moving: bool) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_head_for_test(&mut self, head: Option<crate::sim::components::DriveCoord>) {
+        self.head = head;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_destination_for_test(
+        &mut self,
+        destination: Option<crate::sim::components::DriveCoord>,
+    ) {
+        self.destination = destination;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_moving_for_test(&mut self, moving: bool) {
+        self.moving = moving;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_animation_moving_for_test(&mut self, animation_moving: bool) {
         self.animation_moving = animation_moving;
+    }
+
+    /// Process sets Is_Really_Moving_Now on a fresh head (`0x0075BC2A`) and a
+    /// paid one (`0x0075BD25`), after a nonnull head is admitted.
+    pub(crate) fn begin_motion(&mut self) {
+        if self.head.is_some() {
+            self.animation_moving = true;
+        }
+    }
+
+    /// `Stop_Movement_Animation` (`0x0075CBC0`) clears +0x36 and keeps the
+    /// IsMoving byte, destination and head; Process makes the same write
+    /// after a failed path search (`0x0075AFD5`) and on a refused fresh head
+    /// (`0x0075B6A3`).
+    pub(crate) fn stop_movement_animation(&mut self) {
+        self.animation_moving = false;
     }
 }
 
@@ -227,7 +280,7 @@ fn begin_with(state: &mut LocomotorState, incoming: Option<LocomotorState>) -> B
         return BeginOutcome::RefusedNested;
     }
     let displaced = std::mem::replace(state, incoming);
-    state.set_piggyback(Some(StashedLocomotor(Box::new(displaced))));
+    state.stash(StashedLocomotor(Box::new(displaced)));
     BeginOutcome::Installed
 }
 
@@ -265,15 +318,8 @@ pub fn begin(state: &mut LocomotorState, kind: LocomotorKind, binary_frame: u32)
 pub fn end(state: &mut LocomotorState) -> Option<LocomotorState> {
     let stashed = state.take_piggyback()?;
     let released = std::mem::replace(state, *stashed.0);
-    state.set_layer(released.layer());
+    state.inherit_layer(&released);
     Some(released)
-}
-
-/// The nested-object save marker used by the clean-room snapshot seam.
-/// Serde persists the following boxed object only when this returns one.
-#[cfg(any(test, feature = "test-support"))]
-pub fn serialized_presence(state: &LocomotorState) -> u8 {
-    u8::from(state.piggyback().is_some())
 }
 
 #[cfg(test)]
@@ -365,7 +411,7 @@ mod tests {
     #[test]
     fn begin_and_end_keep_the_foot_layer() {
         let mut state = teleporter();
-        state.set_layer(MovementLayer::Bridge);
+        state.set_layer_for_test(MovementLayer::Bridge);
 
         assert_eq!(
             begin(&mut state, LocomotorKind::Drive, 0),
@@ -373,7 +419,7 @@ mod tests {
         );
         assert_eq!(state.layer(), MovementLayer::Bridge);
 
-        state.set_layer(MovementLayer::Ground);
+        state.set_layer_for_test(MovementLayer::Ground);
         let released = end(&mut state).expect("suspended object");
         assert_eq!(released.layer(), MovementLayer::Ground);
         assert_eq!(state.active_kind(), LocomotorKind::Teleport);
@@ -438,13 +484,5 @@ mod tests {
                 .map(|stashed| stashed.runtime_payload()),
             Some(&LocomotorRuntimePayload::Hover(hover.clone()))
         );
-    }
-
-    #[test]
-    fn serialized_presence_matches_the_single_suspended_object() {
-        let mut state = teleporter();
-        assert_eq!(serialized_presence(&state), 0);
-        begin(&mut state, LocomotorKind::Drive, 0);
-        assert_eq!(serialized_presence(&state), 1);
     }
 }

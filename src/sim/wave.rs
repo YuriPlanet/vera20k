@@ -155,34 +155,154 @@ pub struct WaveUpdateContext {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Wave {
-    pub id: u64,
+    id: u64,
     #[serde(skip)]
-    pub in_logic_vector: bool,
-    pub wave_type: u8,
-    pub owner_id: Option<u64>,
-    pub target_ref: Option<TargetKind>,
+    in_logic_vector: bool,
+    wave_type: u8,
+    owner_id: Option<u64>,
+    target_ref: Option<TargetKind>,
     /// Geometry's first endpoint (native +0xB4); the Wave's Location follows
     /// it (vt+0x1B4). FireAt's constructor seeds it with the target
     /// coordinate. Update_Wave then stores the owner's GetFLH here, except
     /// for a magnetic Unit target, which keeps the held Unit's centre.
-    pub source: ProjectileCoord,
+    source: ProjectileCoord,
     /// Geometry's second endpoint (+0xC0), including its native +50 Z: the
     /// launch source at birth, then the target (or the owner's GetFLH for a
     /// magnetic Unit target).
-    pub target: ProjectileCoord,
-    pub edge_geometry: WaveEdgeGeometry,
-    pub active_geometry: bool,
-    pub decaying: bool,
-    pub lifetime: i32,
-    pub type3_cycle_count: i32,
-    pub fade_in: NativeF64Bits,
-    pub fade_out: NativeF64Bits,
-    pub direction_octant: i32,
-    pub intensity: i32,
-    pub recorded_cells: Vec<WaveRecordedCell>,
+    target: ProjectileCoord,
+    edge_geometry: WaveEdgeGeometry,
+    active_geometry: bool,
+    decaying: bool,
+    lifetime: i32,
+    type3_cycle_count: i32,
+    fade_in: NativeF64Bits,
+    fade_out: NativeF64Bits,
+    direction_octant: i32,
+    intensity: i32,
+    recorded_cells: Vec<WaveRecordedCell>,
 }
 
 impl Wave {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_active_geometry_for_test(&mut self, value: bool) {
+        self.active_geometry = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_decaying_for_test(&mut self, value: bool) {
+        self.decaying = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_direction_octant_for_test(&mut self, value: i32) {
+        self.direction_octant = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_fade_in_for_test(&mut self, value: NativeF64Bits) {
+        self.fade_in = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_fade_out_for_test(&mut self, value: NativeF64Bits) {
+        self.fade_out = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_in_logic_vector_for_test(&mut self, value: bool) {
+        self.in_logic_vector = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_lifetime_for_test(&mut self, value: i32) {
+        self.lifetime = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_owner_id_for_test(&mut self, value: Option<u64>) {
+        self.owner_id = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_target_ref_for_test(&mut self, value: Option<TargetKind>) {
+        self.target_ref = value;
+    }
+
+    /// LogicClass membership: RegisterObject sets it (`0x0055BAC6`),
+    /// UnregisterObject clears it (`0x0055BB27`). Only the logic vector's
+    /// owner writes it, and a load rebuilds it from the saved vector.
+    pub(crate) fn mark_logic_membership(&mut self, member: bool) {
+        self.in_logic_vector = member;
+    }
+
+    pub const fn id(&self) -> u64 {
+        self.id
+    }
+
+    pub const fn in_logic_vector(&self) -> bool {
+        self.in_logic_vector
+    }
+
+    pub const fn wave_type(&self) -> u8 {
+        self.wave_type
+    }
+
+    pub const fn owner_id(&self) -> Option<u64> {
+        self.owner_id
+    }
+
+    pub const fn target_ref(&self) -> Option<TargetKind> {
+        self.target_ref
+    }
+
+    pub const fn source(&self) -> ProjectileCoord {
+        self.source
+    }
+
+    pub const fn target(&self) -> ProjectileCoord {
+        self.target
+    }
+
+    pub const fn edge_geometry(&self) -> WaveEdgeGeometry {
+        self.edge_geometry
+    }
+
+    pub const fn active_geometry(&self) -> bool {
+        self.active_geometry
+    }
+
+    pub const fn decaying(&self) -> bool {
+        self.decaying
+    }
+
+    pub const fn lifetime(&self) -> i32 {
+        self.lifetime
+    }
+
+    pub const fn type3_cycle_count(&self) -> i32 {
+        self.type3_cycle_count
+    }
+
+    pub const fn fade_in(&self) -> NativeF64Bits {
+        self.fade_in
+    }
+
+    pub const fn fade_out(&self) -> NativeF64Bits {
+        self.fade_out
+    }
+
+    pub const fn direction_octant(&self) -> i32 {
+        self.direction_octant
+    }
+
+    pub const fn intensity(&self) -> i32 {
+        self.intensity
+    }
+
+    pub fn recorded_cells(&self) -> &[WaveRecordedCell] {
+        &self.recorded_cells
+    }
+
     pub const DEFAULT_LIFETIME: i32 = 100;
     pub const DEFAULT_LASER_INTENSITY: i32 = 160;
 

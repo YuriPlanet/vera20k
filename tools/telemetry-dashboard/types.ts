@@ -1,8 +1,8 @@
 /**
- * Schema mirror of `src/sim/telemetry.rs` (v23); keep both in step.
+ * Schema mirror of `src/sim/telemetry.rs` (v26); keep both in step.
  */
 
-export const SCHEMA_VERSION = 23;
+export const SCHEMA_VERSION = 26;
 
 export type EntityCategory = "Unit" | "Infantry" | "Aircraft" | "Structure";
 
@@ -250,6 +250,62 @@ export interface FrameProfileReport {
   phases_ms: number[];
 }
 
+/** One 1 Hz whole-match sample (schema v25). Render and ledger readings are
+ *  absent by design: those are only measured while a client is attached. */
+export interface MatchHistorySample {
+  tick: number;
+  tick_ms: number;
+  peak_ms: number;
+  entities: number;
+  houses: number;
+  path_batch: PathBatchStats | null;
+}
+
+/** One house row of a report-grade sample. */
+export interface ReportHouseRow {
+  name: string;
+  is_human: boolean;
+  passive: boolean;
+  structures: number;
+  credits: number;
+  score: number;
+}
+
+/** A report-grade sample (schema v26): exactly what the match report reads. */
+export interface ReportPoint {
+  tick: number;
+  entities_total: number;
+  map_width: number;
+  map_height: number;
+  houses: ReportHouseRow[];
+  timing: TimingSample | null;
+  profile: FrameProfileReport | null;
+  render: RenderTimingReport | null;
+  path_batch: PathBatchStats | null;
+}
+
+/** The path batch pass's own accounting (schema v24). `null` while the
+ *  simulation searches serially, since then no pass runs. */
+export interface PathBatchStats {
+  /** Registrations waiting when the latest pass started. */
+  waiting: number;
+  /** Registrations it searched: after the per-pass cap, before the urgency-2 budget cut. */
+  searched: number;
+  /** Registrations it answered. */
+  answered: number;
+  /** Registrations the cap or the urgency-2 budget left for a later pass. */
+  left_out: number;
+  /** Cells every search of the latest pass expanded. */
+  steps: number;
+  /** Of those, the urgency-2 re-paths' share. */
+  urgency2_steps: number;
+  last_ms: number;
+  mean_ms: number;
+  peak_ms: number;
+  /** Passes the mean and peak cover. */
+  samples: number;
+}
+
 /** Per-phase means of one in-game render, in milliseconds (schema v14). */
 export interface RenderTimingReport {
   frames: number;
@@ -292,6 +348,14 @@ export interface TelemetrySnapshot {
   debug: DebugPanel | null;
   process: ProcessStats | null;
   profile: FrameProfileReport | null;
+  path_batch: PathBatchStats | null;
+  /** Whole-match 1 Hz samples; sent once, to a client that attached since the
+   *  last publish. `null` on every other snapshot. */
+  history: MatchHistorySample[] | null;
+  /** Report-grade samples; the whole ring once, on the same first publish. */
+  report_points: ReportPoint[] | null;
+  /** The newest report-grade sample, on every snapshot. */
+  report_point: ReportPoint | null;
   render: RenderTimingReport | null;
   logs: LogBatch | null;
   /** Absent in ordinary builds, including the read-only telemetry dashboard. */

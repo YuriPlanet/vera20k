@@ -196,7 +196,7 @@ fn pick_exit_octant(sim: &Simulation, entity: &GameEntity) -> Option<((u16, u16)
     let owner = sim.interner.resolve(entity.owner());
     let base = (entity.position.rx(), entity.position.ry());
     // `0x00740B9F..BAD`: the body's `Current()` (`+0x388`), full 16 bits.
-    let facing16 = entity.body_facing_current(sim.session.binary_frame);
+    let facing16 = entity.body_facing_current(sim.session.binary_frame());
     let rear16 = facing16.wrapping_add(0x7FFF);
     let rear8 = i32::from(round_facing16_to_8(rear16) as i8);
 
@@ -253,7 +253,7 @@ fn passenger_can_enter(
 }
 
 fn queue_guard(sim: &mut Simulation, id: u64) {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         id,
         MissionId::from_known(MissionType::Guard),
@@ -322,7 +322,7 @@ fn eject_head_passenger(
         transport_id,
         DepartureRoute::Vehicle,
         |sim, pax_id| {
-            let now = sim.session.binary_frame;
+            let now = sim.session.binary_frame();
             let (base, facing16, transport_z, height, leave_sound) = {
                 let transport = sim
                     .substrate
@@ -569,7 +569,7 @@ pub(crate) fn building_mission_unload_absorber(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) -> i32 {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let Some((base, facing16, building_owner, extra_power, height)) =
         sim.substrate.entities.get(id).and_then(|building| {
             let object = sim.object_type(building.type_ref(), rules)?;
@@ -768,7 +768,7 @@ pub(crate) fn unit_mission_unload(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) -> i32 {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get(id) else {
         return unload_epilogue(sim, rules, id);
     };
@@ -786,7 +786,7 @@ pub(crate) fn unit_mission_unload(
                 .resolved_terrain
                 .as_ref()
                 .and_then(|terrain| terrain.cell(entity.position.rx(), entity.position.ry()))
-                .is_some_and(|cell| cell.land_type() == LandType::Water.as_index());
+                .is_some_and(|cell| cell.land_type == LandType::Water.as_index());
             if entity.navigation.nav_com().is_none() && on_water {
                 // `PUSH 0x2` at `0x0073D790`: the search runs for speed-type
                 // index 2 — Wheel in the native `SpeedType` order (Foot 0,

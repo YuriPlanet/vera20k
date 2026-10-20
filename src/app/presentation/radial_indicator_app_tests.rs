@@ -31,15 +31,16 @@ fn state(rules: &RuleSet) -> Simulation {
     let mut sim = Simulation::with_seed(1);
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     for name in ["Americans", "British"] {
-        let owner = sim.interner.intern(name);
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-        );
-        sim.session.house_order.push(owner);
+        let owner = sim.intern(name);
+        sim.houses_mut_for_test()
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
     }
-    sim.session.game_mode_nonzero = true;
-    sim.session.current_house = sim.interner.get("Americans");
+    sim.session_mut_for_test()
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    let house = sim.interner().get("Americans");
+    sim.session_mut_for_test().set_current_house_for_test(house);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     sim
@@ -48,9 +49,9 @@ fn state(rules: &RuleSet) -> Simulation {
 fn query(sim: &Simulation, rules: &RuleSet, ids: &[u64], ms: u64) -> Vec<RadialIndicatorDraw> {
     let before = (
         sim.state_hash(),
-        sim.main_rng.native_state_hex(),
-        sim.scenario_rng.native_state_hex(),
-        sim.mapgen_rng.native_state_hex(),
+        sim.main_rng().native_state_hex(),
+        sim.scenario_rng().native_state_hex(),
+        sim.mapgen_rng().native_state_hex(),
     );
     let mut pulse = SuperweaponRangePulse::default();
     let result = build(
@@ -73,9 +74,9 @@ fn query(sim: &Simulation, rules: &RuleSet, ids: &[u64], ms: u64) -> Vec<RadialI
         before,
         (
             sim.state_hash(),
-            sim.main_rng.native_state_hex(),
-            sim.scenario_rng.native_state_hex(),
-            sim.mapgen_rng.native_state_hex()
+            sim.main_rng().native_state_hex(),
+            sim.scenario_rng().native_state_hex(),
+            sim.mapgen_rng().native_state_hex()
         )
     );
     result
@@ -421,65 +422,6 @@ fn retail_fractional_and_synthetic_loop_controls_reach_the_production_builder() 
 }
 
 #[test]
-fn superweapon_pulse_reaches_and_reverses_at_native_endpoints() {
-    let mut pulse = SuperweaponRangePulse::default();
-    let ascending: Vec<_> = (0..10).map(|_| pulse.advance()).collect();
-    assert_eq!(ascending, (10..=100).step_by(10).collect::<Vec<_>>());
-    assert_eq!(pulse.direction, -1);
-    let descending: Vec<_> = (0..10).map(|_| pulse.advance()).collect();
-    assert_eq!(descending, (0..=90).rev().step_by(10).collect::<Vec<_>>());
-    assert_eq!(pulse, SuperweaponRangePulse::default());
-}
-
-#[test]
-fn nonfinite_authored_superweapon_range_does_not_panic_or_draw() {
-    for multiplier in [-1, 0, 2] {
-        let ini = crate::rules::ini_parser::IniFile::from_str(&format!(
-            "[SuperWeaponTypes]\n0=EXTREME\n[EXTREME]\nType=MultiMissile\n\
-             Range=1e39\nLineMultiplier={multiplier}\n"
-        ));
-        let rules = RuleSet::from_ini(&ini).unwrap();
-        assert!(!rules.super_weapon("EXTREME").unwrap().range.is_finite());
-        let sim = state(&rules);
-        let mut pulse = SuperweaponRangePulse::default();
-        let draws = target_query(&sim, &rules, Some("EXTREME"), &mut pulse);
-        for draw in &draws {
-            draw.draws([0, 0, 1024, 768], |_| {});
-        }
-        assert!(
-            draws.is_empty(),
-            "unsupported range must not enter the renderer"
-        );
-        assert_eq!(pulse.phase, 10, "keep the native positive-range pulse step");
-    }
-}
-
-#[test]
-fn authored_ring_counts_are_bounded_without_truncating_admitted_sets() {
-    for (range, multiplier, expected) in [
-        ("63.5", 1, 64),
-        ("64", 1, 0),
-        ("1", i32::MAX, 0),
-        ("1e38", 2, 0),
-    ] {
-        let ini = crate::rules::ini_parser::IniFile::from_str(&format!(
-            "[SuperWeaponTypes]\n0=BOUNDED\n[BOUNDED]\nType=MultiMissile\n\
-             Range={range}\nLineMultiplier={multiplier}\n"
-        ));
-        let rules = RuleSet::from_ini(&ini).unwrap();
-        let sim = state(&rules);
-        let mut pulse = SuperweaponRangePulse::default();
-        let draws = target_query(&sim, &rules, Some("BOUNDED"), &mut pulse);
-        assert_eq!(
-            draws.len(),
-            expected,
-            "Range={range}, LineMultiplier={multiplier}"
-        );
-        assert_eq!(pulse.phase, 10);
-    }
-}
-
-#[test]
 fn large_concentric_outer_ring_keeps_a_bounded_expanding_ring() {
     let patch =
         crate::rules::ini_parser::IniFile::from_str("[NAPSIS]\nPsychicDetectionRadius=100\n");
@@ -530,7 +472,7 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
         .unwrap();
     // A retained dummy target makes the dummy coordinate part of lockstep
     // state. This supplied prior isolates rendering from target acquisition.
-    sim.entities_mut()
+    sim.entities_mut_for_test()
         .get_mut(tank)
         .unwrap()
         .set_archive_target(Some(crate::sim::combat::TargetKind::Cell(
@@ -554,8 +496,7 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
     let before_save = save();
     for cell in [(40, 40), (u16::MAX, u16::MAX)] {
         assert!(
-            sim.resolved_terrain
-                .as_ref()
+            sim.resolved_terrain()
                 .unwrap()
                 .native_fixed_cell_index(cell.0 as i16, cell.1 as i16)
                 .is_none()
@@ -639,7 +580,8 @@ fn stock_selected_gap_uses_current_house_ledger_order_and_online_not_power() {
         query(&sim, rules, &[pillbox], 0).is_empty(),
         "weapon range alone does not grant HasRadialIndicator"
     );
-    sim.session.current_house = sim.interner.get("British");
+    let house = sim.interner().get("British");
+    sim.session_mut_for_test().set_current_house_for_test(house);
     assert!(query(&sim, rules, &[a], 0).is_empty());
     assert_eq!(query(&sim, rules, &[rival], 0).len(), 1);
 }

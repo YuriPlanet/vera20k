@@ -303,7 +303,11 @@ pub(crate) fn install_world_presentation(
 /// owner suspends/resumes audio; the later Theme queue/Stop(true) belongs to
 /// apply_map_load_result (683E4D..683E66), after this movie returns.
 pub(crate) fn finish_fresh_scenario_read(state: &mut AppState, mut result: init::MapLoadResult) {
-    let action_movie = result.scenario.startup.campaign().and_then(|_| {
+    let action_movie = result.scenario.startup.campaign().and_then(|startup| {
+        // Start_Scenario683D9C tests its DL argument before the movie.
+        if !startup.plays_action_movie() {
+            return None;
+        }
         let name = result.scenario.basic.action.as_deref()?;
         let movies = state.process_assets.native_rules()?.movies();
         movies.name(movies.find_index(name)).map(str::to_owned)
@@ -340,7 +344,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     state.audio.cancel_scenario_theme_request();
     crate::app::reset_scenario_exit_runtime(state);
     let startup = result.scenario.startup;
-    let returns_scenario_rng_to_offline_shell = startup.launch_session().is_some();
+    let returns_scenario_rng_to_multiplayer_shell = startup.launch_session().is_some();
     // A loaded world is not timed until the launch handoff reaches InGame.
     state.match_state.scenario_elapsed_clock.reset();
     #[cfg(feature = "telemetry-dashboard")]
@@ -375,7 +379,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     }
     state.match_state.sim_runtime = incoming.map(|(mut simulation, rules)| {
         simulation.install_fresh_process_main(&state.frontend.frontend_main_rng);
-        simulation.session.set_started(true);
+        simulation.publish_scenario_started();
         simulation.batch_path_searches();
         simulation.batch_target_scans();
         crate::sim::runtime::SimRuntime {
@@ -514,18 +518,16 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                     .map(|rt| &rt.simulation),
                 matches!(state.frontend.screen, GameScreen::Loading),
             );
-            // GameExit::Victory restores the won mission's globals after
-            // Start_Scenario (`0x00685D7A`): CarryOver4C6210 writes each one
-            // through SetGlobal689670 in index order.
+            // GameExit::Victory (`0x00685D7A`), the restart (`0x00686506`)
+            // and the defeat retry (`0x0068639A`) write the carry-over record
+            // back after Start_Scenario through `0x004C6210`.
             if installed.is_ok()
-                && let Some(globals) = prepared.carried_globals()
+                && let Some(record) = prepared.carry_over()
                 && let Some(runtime) = state.match_state.sim_runtime.as_mut()
             {
-                for (index, &set) in globals.iter().enumerate() {
-                    runtime
-                        .simulation
-                        .set_trigger_variable(true, index as i32, set);
-                }
+                runtime
+                    .simulation
+                    .restore_campaign_carry_over(record, &runtime.resources.rules);
             }
             installed
         }
@@ -540,6 +542,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                 matches!(state.frontend.screen, GameScreen::Loading),
             )
         }
+        crate::app::match_bootstrap::LoadingStartup::Network(prepared) => {
+            state.match_state.session.assert_network_start(&prepared);
+            state.match_state.startup.clear();
+            Ok(())
+        }
         crate::app::match_bootstrap::LoadingStartup::UnverifiedLegacy { .. }
         | crate::app::match_bootstrap::LoadingStartup::Generic { .. } => {
             state.match_state.startup.clear();
@@ -550,12 +557,14 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         Ok(()) => {
             let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
             state.match_state.scenario_elapsed_clock.start(now_ms);
+            // Main_Game 0x0048CE7E: State_Machine's admission latch.
+            state.match_state.match_presentation.modal_latch = true;
             state.frontend.screen = GameScreen::InGame;
-            if returns_scenario_rng_to_offline_shell {
+            if returns_scenario_rng_to_multiplayer_shell {
                 state
                     .frontend
-                    .offline_skirmish_runtime
-                    .mark_gameplay_rng_return_pending();
+                    .multiplayer_shell_runtime
+                    .mark_gameplay_scenario_return_pending();
             }
             log::info!("Transitioned to InGame after scenario installation");
         }
@@ -639,10 +648,9 @@ mod game_speed_tests {
     #[test]
     fn loaded_lobby_speed_projection_includes_due_transition() {
         let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Local");
-        sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
-        sim.session.house_order.push(owner);
+        let owner = sim.intern("Local");
+        sim.houses_mut_for_test()
+            .register(HouseState::new(owner, 0, None, true, 0, 10));
         sim.queue_command(CommandEnvelope::new(
             owner,
             1,

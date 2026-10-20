@@ -342,7 +342,7 @@ fn harvest_looking(
         frame_effects,
     ) {
         snap.miner.harvesting = true;
-        arm_stage(sim, snap.entity_id, sim.session.binary_frame, 2);
+        arm_stage(sim, snap.entity_id, sim.session.binary_frame(), 2);
         snap.state = MinerState::Harvest;
         return;
     }
@@ -369,7 +369,7 @@ fn harvest_looking(
                 // `MOV byte ptr [ECX+0x242], 1` at `0x0073E911`, gated on
                 // `UnitType+0xE0E` (`Harvester=yes`) — true for every kind
                 // dispatched here (slave hosts never reach this handler).
-                house.harvester_no_ore = true;
+                house.note_harvester_no_ore();
             }
             snap.dispatch_delay = NO_ORE_DELAY;
             return;
@@ -434,7 +434,7 @@ fn harvest_cutting(
     snap: &mut MinerSnapshot,
     frame_effects: FrameEffects<'_>,
 ) {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     if sim
         .substrate
         .entities
@@ -532,7 +532,7 @@ fn harvest_ore_tick(
     snap: &mut MinerSnapshot,
 ) -> bool {
     let id = snap.entity_id;
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     if sim
         .substrate
         .entities
@@ -712,7 +712,7 @@ fn refinery_staging_cell(sim: &Simulation, rules: &RuleSet, bay: u64) -> Option<
 /// Mission_Harvest state 3 (`0x0073EE8A`): `Queue_Mission(Enter, 0); return
 /// 1`. UnitClass::AI's Ready/Commence step promotes it.
 fn handle_handoff(sim: &mut Simulation, snap: &MinerSnapshot) {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         snap.entity_id,
         MissionId::from_known(MissionType::Enter),
@@ -787,7 +787,7 @@ fn handle_going_to_idle(
     let human = sim
         .houses
         .get(&snap.owner)
-        .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero));
+        .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
     if !human {
         snap.state = MinerState::SearchOre;
         harvest_looking(sim, rules, overlay_registry, snap, frame_effects);
@@ -825,7 +825,7 @@ fn handle_going_to_idle(
 /// `Queue_Mission(Guard, 0)` from inside the Harvest handler (preamble and
 /// state 4). No Commence: the host's Ready-to-Commence step promotes it.
 fn queue_guard_from_harvest(sim: &mut Simulation, snap: &MinerSnapshot) {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         snap.entity_id,
         MissionId::from_known(MissionType::Guard),
@@ -849,7 +849,7 @@ fn house_owns_dock_instance(sim: &Simulation, rules: &RuleSet, snap: &MinerSnaps
         return true;
     };
     sim.houses.get(&snap.owner).is_some_and(|house| {
-        house.tracking.owns_any_building(
+        house.tracking().owns_any_building(
             harvester
                 .dock
                 .iter()
@@ -1010,7 +1010,7 @@ fn scan_docking_type(
     if sim
         .houses
         .get(&owner)?
-        .tracking
+        .tracking()
         .owned_count(EntityCategory::Structure, type_ref)
         == 0
     {
@@ -1018,7 +1018,12 @@ fn scan_docking_type(
     }
     // CAN_LOAD runs synchronously; retain the House's native scan order
     // without holding its projection across radio owner calls.
-    let buildings = sim.houses.get(&owner)?.base_projection.buildings().to_vec();
+    let buildings = sim
+        .houses
+        .get(&owner)?
+        .base_projection()
+        .buildings()
+        .to_vec();
     let mut found: Option<u64> = None;
     let mut nearest = -1_i32;
     for &sid in &buildings {
@@ -1275,10 +1280,10 @@ pub(crate) fn effective_purifier_count(
     else {
         return real;
     };
-    if house.is_human || !sim.session.game_mode_nonzero {
+    if house.is_human() || !sim.session.game_mode_nonzero() {
         return real;
     }
     let table = rules.general.ai_virtual_purifiers;
-    let virtual_count = table[house.difficulty.table_index()];
+    let virtual_count = table[house.difficulty().table_index()];
     real + virtual_count
 }

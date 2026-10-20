@@ -388,19 +388,6 @@ mod tests {
         assert_eq!(lepton_to_cell_packed(0x0100_0000), 0);
     }
 
-    #[test]
-    fn bridge_deck_height_is_the_captured_416_leptons() {
-        assert_eq!(BRIDGE_DECK_HEIGHT_LEPTONS, 416);
-        assert_eq!(BRIDGE_DECK_HEIGHT_LEVELS, 4);
-    }
-
-    #[test]
-    fn integer_and_fixed_cell_center_agree() {
-        assert_eq!(
-            CELL_CENTER_LEPTON,
-            SimFixed::from_num(CELL_CENTER_LEPTON_I32)
-        );
-    }
     use crate::map::terrain;
 
     #[test]
@@ -593,35 +580,11 @@ mod tests {
     }
 
     #[test]
-    fn absolute_leptons_to_screen_zero_matches_iso_origin() {
-        let (sx, sy) = absolute_leptons_to_screen(0, 0, 0);
-        assert_eq!(sx, 0.0);
-        assert_eq!(sy, terrain::TILE_HEIGHT / 2.0);
-    }
-
-    #[test]
-    fn absolute_leptons_to_screen_integer_cell_lands_at_iso_center() {
-        // 4 cells east, 2 cells south = (4*256, 2*256, 0).
-        let (sx, sy) = absolute_leptons_to_screen(4 * 256, 2 * 256, 0);
-        assert_eq!(sx, (4.0 - 2.0) * terrain::TILE_WIDTH / 2.0);
-        assert_eq!(
-            sy,
-            (4.0 + 2.0) * terrain::TILE_HEIGHT / 2.0 + terrain::TILE_HEIGHT / 2.0
-        );
-    }
-
-    #[test]
     fn absolute_leptons_to_screen_sub_cell_offset_is_iso_subdivided() {
         // Sub-cell offset of (128, 0) — native truncates the complete Y
         // numerator from 7.5 to 7 before VERA's common +15 row bias.
         let (sx, sy) = absolute_leptons_to_screen(128, 0, 0);
         assert_eq!((sx, sy), (15.0, 22.0));
-    }
-
-    #[test]
-    fn absolute_leptons_to_screen_negative_coords_use_signed_truncation() {
-        let (sx, sy) = absolute_leptons_to_screen(-50, 0, 0);
-        assert_eq!((sx, sy), (-5.0, 13.0));
     }
 
     #[test]

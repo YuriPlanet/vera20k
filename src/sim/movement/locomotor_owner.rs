@@ -183,12 +183,12 @@ impl crate::sim::world::Simulation {
             let computer = self
                 .houses
                 .get(&entity.owner())
-                .is_some_and(|house| !house.is_human);
+                .is_some_and(|house| !house.is_human());
             let gatherer = rules
                 .and_then(|rules| self.object_type(entity.type_ref(), rules))
                 .is_some_and(|object| object.resource_gatherer);
             if computer && gatherer {
-                let now = self.session.binary_frame;
+                let now = self.session.binary_frame();
                 let _ = self.mission_queue_exact(
                     id,
                     crate::sim::mission::MissionId::from_known(

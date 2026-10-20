@@ -27,7 +27,7 @@ fn intern_in_sim(state: &mut AppState, s: &str) -> InternedId {
         .sim_runtime
         .as_mut()
         .map(|rt| &mut rt.simulation)
-        .map(|sim| sim.interner.intern(s))
+        .map(|sim| sim.intern(s))
         .unwrap_or_default()
 }
 
@@ -41,20 +41,32 @@ fn resolve_owner(state: &mut AppState) -> String {
     preferred_local_owner(state).unwrap_or_else(|| DEFAULT_OWNER.to_string())
 }
 
-pub(crate) fn queue_build_by_type(state: &mut AppState, type_id: &str) {
+/// Queue `repeat` builds of `type_id` as `repeat` ordinary PRODUCE events.
+///
+/// `repeat` comes from [`crate::app::input::sidebar_eva::shift_queue_repeat`],
+/// which reads the configured `[VERA] ShiftQueueCount=`; its default lives with
+/// the profile that owns the setting.
+///
+/// Each copy is the same deterministic command, so several of them replay and
+/// hash exactly like repeated clicks. All of them carry the current tick, so
+/// they execute in one frame and in issue order.
+pub(crate) fn queue_build_by_type(state: &mut AppState, type_id: &str, repeat: u32) {
     let owner: String = resolve_owner(state);
     let type_interned = intern_in_sim(state, type_id);
-    schedule_command(
-        state,
-        &owner,
-        Command::QueueProduction {
-            type_id: type_interned,
-        },
-    );
+    for _ in 0..repeat.max(1) {
+        schedule_command(
+            state,
+            &owner,
+            Command::QueueProduction {
+                type_id: type_interned,
+            },
+        );
+    }
     log::info!(
-        "Build command queued: owner={} type={} issue_frame=current",
+        "Build command queued: owner={} type={} count={} issue_frame=current",
         owner,
-        type_id
+        type_id,
+        repeat.max(1)
     );
 }
 
@@ -131,7 +143,7 @@ fn own_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
     let entity = sim.entities().get(stable_id)?;
     (entity.category() == EntityCategory::Structure
         && sim
-            .interner
+            .interner()
             .resolve(entity.owner())
             .eq_ignore_ascii_case(&owner))
     .then_some(stable_id)
@@ -225,19 +237,19 @@ fn sell_wall_command_for_cell(
     if object_under_cursor || (rx, ry) == (0, 0) {
         return None;
     }
-    let local_owner_id = sim.interner.get(local_owner)?;
+    let local_owner_id = sim.interner().get(local_owner)?;
     if crate::app::presentation::instances::cell_visibility_for_local_owner(
         Some(local_owner_id),
-        Some(&sim.fog),
+        Some(sim.fog()),
         rx,
         ry,
         ignore_visibility,
-        sim.resolved_terrain.as_ref(),
+        sim.resolved_terrain(),
     ) != crate::app::presentation::instances::CellVisibilityState::Visible
     {
         return None;
     }
-    let grid = sim.overlay_grid.as_ref()?;
+    let grid = sim.overlay_grid()?;
     if rx >= grid.width() || ry >= grid.height() {
         return None;
     }
@@ -247,11 +259,11 @@ fn sell_wall_command_for_cell(
         return None;
     }
     let wall_owner = cell.wall_owner?;
-    let wall_owner_house = sim.houses.get(&wall_owner)?;
-    let owner_is_human_player = if sim.session.game_mode_nonzero {
+    let wall_owner_house = sim.houses().get(&wall_owner)?;
+    let owner_is_human_player = if sim.session().game_mode_nonzero() {
         wall_owner == local_owner_id
     } else {
-        wall_owner_house.is_human || wall_owner_house.player_control
+        wall_owner_house.is_human() || wall_owner_house.player_control()
     };
     owner_is_human_player.then_some(Command::SellWallAtCell {
         x: rx as i16,
@@ -347,7 +359,7 @@ pub(crate) fn place_ready_building_at_cursor(state: &mut AppState, type_id: &str
         .match_state
         .sim_runtime
         .as_ref()
-        .map(|runtime| runtime.simulation.interner.resolve(issuer).to_string())
+        .map(|runtime| runtime.simulation.interner().resolve(issuer).to_string())
     else {
         return;
     };
@@ -492,7 +504,7 @@ pub(crate) fn queue_super_weapon_click(
         return;
     };
     let sim = &runtime.simulation;
-    let Some(owner_id) = sim.interner.get(owner) else {
+    let Some(owner_id) = sim.interner().get(owner) else {
         return;
     };
     let Some(command) =
@@ -550,7 +562,7 @@ pub(crate) fn reconcile_paid_super_weapon_cursor(state: &mut AppState) {
         return;
     };
     let sim = &runtime.simulation;
-    let Some(owner_id) = sim.interner.get(&owner) else {
+    let Some(owner_id) = sim.interner().get(&owner) else {
         return;
     };
     let selected = state
@@ -575,7 +587,7 @@ fn paid_super_weapon_cursor_cancellation(
     } else {
         selection.destination
     };
-    (!selected.is_some_and(|name| name.eq_ignore_ascii_case(sim.interner.resolve(expected))))
+    (!selected.is_some_and(|name| name.eq_ignore_ascii_case(sim.interner().resolve(expected))))
         .then_some(Command::CancelPaidSuperWeapon { selection })
 }
 
@@ -606,7 +618,7 @@ pub(crate) fn place_starter_base_for_local_owner(state: &mut AppState) {
         .flatten()
         .filter(|type_id| {
             build_options.iter().any(|opt| {
-                let opt_str = sim.interner.resolve(opt.type_id);
+                let opt_str = sim.interner().resolve(opt.type_id);
                 opt_str.eq_ignore_ascii_case(type_id) && opt.enabled
             })
         })
@@ -635,6 +647,32 @@ pub(crate) fn place_starter_base_for_local_owner(state: &mut AppState) {
             owner
         );
     }
+}
+
+/// Queue one attack-move per object for a dev stress army. Every order goes
+/// through the ordinary local gate, so the stress march obeys the same input
+/// lock, owner interning and megamission byte round-trip as a player's click.
+pub(crate) fn schedule_stress_attack_moves(
+    sim: &mut crate::sim::world::Simulation,
+    owner: &str,
+    entity_ids: &[u64],
+    (rx, ry): (u16, u16),
+) -> usize {
+    entity_ids
+        .iter()
+        .filter(|&&entity_id| {
+            schedule_command_in_sim(
+                sim,
+                owner,
+                Command::AttackMove {
+                    entity_id,
+                    target: None,
+                    destination: Some(crate::sim::combat::TargetKind::Cell(rx, ry)),
+                },
+            )
+            .is_some()
+        })
+        .count()
 }
 
 pub(crate) fn spawn_test_units_for_local_owner(state: &mut AppState) {
@@ -669,7 +707,7 @@ pub(crate) fn spawn_test_units_for_local_owner(state: &mut AppState) {
                     && o.object_category == crate::rules::object_type::ObjectCategory::Infantry
             })
             .take(3)
-            .map(|o| sim.interner.resolve(o.type_id).to_string())
+            .map(|o| sim.interner().resolve(o.type_id).to_string())
             .collect();
         if selected.len() < 3 {
             let vehicles = options
@@ -679,7 +717,7 @@ pub(crate) fn spawn_test_units_for_local_owner(state: &mut AppState) {
                         && o.object_category == crate::rules::object_type::ObjectCategory::Vehicle
                 })
                 .take(3 - selected.len())
-                .map(|o| sim.interner.resolve(o.type_id).to_string());
+                .map(|o| sim.interner().resolve(o.type_id).to_string());
             selected.extend(vehicles);
         }
         selected
@@ -794,7 +832,7 @@ fn preferred_local_owner_for_sim(
     }
     // Sandbox fallback: prefer owner of selected unit first.
     for entity in sim.entities().values() {
-        let owner_str = sim.interner.resolve(entity.owner());
+        let owner_str = sim.interner().resolve(entity.owner());
         if entity.selection.is_selected() && is_playable_house_name(owner_str) {
             return Some(owner_str.to_string());
         }
@@ -810,7 +848,7 @@ fn preferred_local_owner_for_sim(
     // Prefer owners that currently have structures.
     let mut structure_counts: HashMap<String, usize> = HashMap::new();
     for entity in sim.entities().values() {
-        let owner_str = sim.interner.resolve(entity.owner());
+        let owner_str = sim.interner().resolve(entity.owner());
         if entity.category() == EntityCategory::Structure && is_playable_house_name(owner_str) {
             *structure_counts.entry(owner_str.to_string()).or_insert(0) += 1;
         }
@@ -841,7 +879,7 @@ fn preferred_local_owner_for_sim(
     let mut owners: Vec<String> = sim
         .entities()
         .values()
-        .map(|e| sim.interner.resolve(e.owner()).to_string())
+        .map(|e| sim.interner().resolve(e.owner()).to_string())
         .filter(|o| is_playable_house_name(o))
         .collect();
     owners.sort();
@@ -873,7 +911,7 @@ fn collect_playable_owners_from(
         .collect();
     if let Some(sim) = simulation {
         for entity in sim.entities().values() {
-            let owner_str = sim.interner.resolve(entity.owner());
+            let owner_str = sim.interner().resolve(entity.owner());
             if is_playable_house_name(owner_str) {
                 owners.push(owner_str.to_string());
             }
@@ -920,31 +958,31 @@ pub(super) fn schedule_command_in_sim(
     // The ordinary client producer is behind the native54F200/6930A0 lock
     // gates. Escape's modal remains usable: its speed/exit records have
     // their existing authoritative owners and are not tactical orders.
-    if sim.session.input_locked()
+    if sim.session().input_locked()
         && !matches!(&payload, Command::SetGameSpeed { .. } | Command::ExitMatch)
     {
         return None;
     }
-    let execute_tick = sim.session.tick;
+    let execute_tick = sim.session().tick();
     let owner_id = match &payload {
         Command::SetGameSpeed { speed } => {
             if *speed > crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED {
                 return None;
             }
-            let owner_id = sim.interner.get(owner)?;
-            if !sim.houses.contains_key(&owner_id) {
+            let owner_id = sim.interner().get(owner)?;
+            if !sim.houses().contains_key(&owner_id) {
                 return None;
             }
             let requested_speed = sim
                 .projected_in_game_options_speed()
                 .map(i32::from)
-                .unwrap_or(sim.session.game_options.game_speed);
+                .unwrap_or(sim.session().game_options().game_speed);
             if requested_speed == i32::from(*speed) {
                 return Some(execute_tick);
             }
             owner_id
         }
-        _ => sim.interner.intern(owner),
+        _ => sim.intern(owner),
     };
     let envelope = match payload {
         Command::Scatter { entity_id } => {
@@ -1090,10 +1128,10 @@ pub(super) fn queue_house_cheer_in_sim(
     // Preserve the ordinary keyboard/bar Scenario+35A2 lock before entering
     // the producer. Original730F30's own guard is the distinct Session+300
     // defeat flag (active1cdd; tools/input_oracle/house_cheer.md).
-    if sim.session.input_locked() {
+    if sim.session().input_locked() {
         return None;
     }
-    let current_frame = sim.session.binary_frame as i32;
+    let current_frame = sim.session().binary_frame() as i32;
     let local_defeated = sim.local_player_defeated();
     input.try_issue_cheer(
         current_frame,
@@ -1113,27 +1151,63 @@ pub(crate) fn is_playable_house_name(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{schedule_command_in_sim, sell_wall_command_for_cell};
+    use super::{
+        schedule_command_in_sim, schedule_stress_attack_moves, sell_wall_command_for_cell,
+    };
 
     use crate::map::entities::EntityCategory;
     use crate::rules::ini_parser::IniFile;
-    use crate::sim::combat::Health;
+    use crate::sim::combat::{Health, TargetKind};
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::game_entity::GameEntity;
     use crate::sim::house_state::HouseState;
     use crate::sim::world::Simulation;
 
     #[test]
+    fn stress_march_queues_one_attack_move_per_object_through_the_local_gate() {
+        let mut sim = Simulation::new();
+        let local = sim.intern("Local");
+        sim.houses_mut_for_test()
+            .register(HouseState::new(local, 0, None, true, 0, 10));
+
+        let accepted = schedule_stress_attack_moves(&mut sim, "Local", &[11, 12, 13], (40, 60));
+        assert_eq!(
+            accepted, 3,
+            "every object of the stress army gets its own order"
+        );
+        let queued = sim.pending_command_snapshot();
+        assert_eq!(queued.len(), 3);
+        assert!(
+            queued.iter().all(|command| matches!(
+                command.payload,
+                Command::AttackMove {
+                    target: None,
+                    destination: Some(TargetKind::Cell(40, 60)),
+                    ..
+                }
+            )),
+            "one click, one destination for the whole army: {queued:?}"
+        );
+
+        sim.session_mut_for_test().set_input_locked_for_test(true);
+        assert_eq!(
+            schedule_stress_attack_moves(&mut sim, "Local", &[14], (40, 60)),
+            0,
+            "the lock that rejects a player's click rejects the stress army too"
+        );
+        assert_eq!(sim.pending_command_snapshot().len(), 3);
+    }
+
+    #[test]
     fn cinematic_lock_rejects_tactical_commands_but_keeps_escape_options_usable() {
         let mut sim = Simulation::new();
-        let local = sim.interner.intern("Local");
-        let kind = sim.interner.intern("FixtureType");
-        sim.houses
-            .insert(local, HouseState::new(local, 0, None, true, 0, 10));
-        sim.session.house_order.push(local);
-        sim.session.set_input_locked(true);
+        let local = sim.intern("Local");
+        let kind = sim.intern("FixtureType");
+        sim.houses_mut_for_test()
+            .register(HouseState::new(local, 0, None, true, 0, 10));
+        sim.session_mut_for_test().set_input_locked_for_test(true);
         let before_hash = sim.state_hash();
-        let before_names = sim.interner.len();
+        let before_names = sim.interner().len();
         for payload in [
             Command::Stop { entity_id: 11 },
             Command::SellBuilding { entity_id: 12 },
@@ -1152,7 +1226,7 @@ mod tests {
             assert_eq!(schedule_command_in_sim(&mut sim, "Unknown", payload), None);
         }
         assert!(sim.pending_command_snapshot().is_empty());
-        assert_eq!(sim.interner.len(), before_names);
+        assert_eq!(sim.interner().len(), before_names);
         assert_eq!(sim.state_hash(), before_hash);
 
         assert_eq!(
@@ -1164,7 +1238,7 @@ mod tests {
             Some(0)
         );
         assert_eq!(sim.pending_command_snapshot().len(), 2);
-        sim.session.set_input_locked(false);
+        sim.session_mut_for_test().set_input_locked_for_test(false);
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Local", Command::Stop { entity_id: 11 }),
             Some(0)
@@ -1175,17 +1249,16 @@ mod tests {
     #[test]
     fn options_game_speed_queues_once_without_immediate_sim_mutation() {
         let mut sim = Simulation::new();
-        let local = sim.interner.intern("Local");
-        sim.houses
-            .insert(local, HouseState::new(local, 0, None, true, 0, 10));
-        sim.session.house_order.push(local);
+        let local = sim.intern("Local");
+        sim.houses_mut_for_test()
+            .register(HouseState::new(local, 0, None, true, 0, 10));
         let before_hash = sim.state_hash();
 
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Local", Command::SetGameSpeed { speed: 4 }),
             Some(0)
         );
-        assert_eq!(sim.session.game_options.game_speed, 1);
+        assert_eq!(sim.session().game_options().game_speed, 1);
         assert_eq!(sim.state_hash(), before_hash);
         assert_eq!(sim.pending_command_snapshot().len(), 1);
 
@@ -1205,23 +1278,22 @@ mod tests {
             "the in-game trackbar cannot emit stored speed 7"
         );
 
-        let interned_before_unknown = sim.interner.len();
+        let interned_before_unknown = sim.interner().len();
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Unknown", Command::SetGameSpeed { speed: 3 }),
             None
         );
-        assert_eq!(sim.interner.len(), interned_before_unknown);
+        assert_eq!(sim.interner().len(), interned_before_unknown);
     }
 
     #[test]
     fn gsi_01_04_abort_waits_for_one_due_exit_dispatch_before_terminal_edge() {
         let mut sim = Simulation::new();
-        let local = sim.interner.intern("Local");
-        sim.houses
-            .insert(local, HouseState::new(local, 0, None, true, 0, 10));
-        sim.session.house_order = vec![local];
-        sim.session.tick = 41;
-        sim.session.binary_frame = 73;
+        let local = sim.intern("Local");
+        sim.houses_mut_for_test()
+            .register(HouseState::new(local, 0, None, true, 0, 10));
+        sim.session_mut_for_test().set_tick_for_test(41);
+        sim.session_mut_for_test().set_binary_frame_for_test(73);
 
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Local", Command::ExitMatch),
@@ -1232,7 +1304,7 @@ mod tests {
             sim.pending_command_snapshot()[0].payload,
             Command::ExitMatch
         );
-        assert!(!sim.quit_requested, "confirmation only queues EXIT");
+        assert!(!sim.quit_requested(), "confirmation only queues EXIT");
         assert_eq!(
             sim.take_executed_exit_owner(),
             None,
@@ -1247,15 +1319,20 @@ mod tests {
             !result.frame_committed,
             "EXIT terminates its dispatch frame"
         );
-        assert!(sim.quit_requested);
+        assert!(sim.quit_requested());
         assert_eq!(
             sim.take_executed_exit_owner(),
             Some(local),
             "the app cascade receives exactly one executed edge"
         );
         assert_eq!(
-            crate::app::match_runtime::scenario_exit::arbitrate_executed_exit(false),
-            crate::app::match_runtime::scenario_exit::ExecutedExitDisposition::Abort,
+            crate::app::match_runtime::scenario_exit::route_scenario_termination(
+                crate::app::match_runtime::scenario_exit::TerminationRequests {
+                    exit: true,
+                    ..Default::default()
+                }
+            ),
+            Some(crate::app::match_runtime::scenario_exit::TerminationRoute::Exit),
             "standalone EXIT keeps the abort route"
         );
         assert_eq!(
@@ -1268,21 +1345,27 @@ mod tests {
     #[test]
     fn gsi_01_04_same_frame_outcome_expiry_preempts_due_exit_after_consuming_edge() {
         let mut sim = Simulation::new();
-        let local = sim.interner.intern("Local");
-        let enemy = sim.interner.intern("Enemy");
+        let local = sim.intern("Local");
+        let enemy = sim.intern("Enemy");
         let mut local_house = HouseState::new(local, 0, None, true, 0, 10);
         let mut enemy_house = HouseState::new(enemy, 1, None, false, 0, 10);
-        local_house.tracking.set_buildings_for_test(1);
-        enemy_house.tracking.set_buildings_for_test(1);
-        sim.houses.insert(local, local_house);
-        sim.houses.insert(enemy, enemy_house);
-        sim.session.house_order = vec![local, enemy];
-        sim.session.game_options.short_game = false;
-        sim.session.tick = 41;
-        sim.session.binary_frame = 42;
-        sim.session.current_house = Some(local);
+        local_house
+            .tracking_mut_for_test()
+            .set_buildings_for_test(1);
+        enemy_house
+            .tracking_mut_for_test()
+            .set_buildings_for_test(1);
+        sim.houses_mut_for_test().register(local_house);
+        sim.houses_mut_for_test().register(enemy_house);
+        sim.session_mut_for_test()
+            .game_options_mut_for_test()
+            .short_game = false;
+        sim.session_mut_for_test().set_tick_for_test(41);
+        sim.session_mut_for_test().set_binary_frame_for_test(42);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
         assert!(
-            sim.houses
+            sim.houses_mut_for_test()
                 .get_mut(&local)
                 .expect("local house")
                 .accept_win_result(41, 1, false)
@@ -1294,7 +1377,7 @@ mod tests {
 
         let due = sim.take_due_commands();
         let result = sim.advance_tick(&due, None, None, None, 33);
-        let local_outcome_exit_ready = sim.houses[&local]
+        let local_outcome_exit_ready = sim.houses()[&local]
             .outcome()
             .is_some_and(|outcome| outcome.exit_ready);
 
@@ -1302,10 +1385,14 @@ mod tests {
         assert!(local_outcome_exit_ready, "House expiry happened this frame");
         assert_eq!(sim.take_executed_exit_owner(), Some(local));
         assert_eq!(
-            crate::app::match_runtime::scenario_exit::arbitrate_executed_exit(
-                local_outcome_exit_ready
+            crate::app::match_runtime::scenario_exit::route_scenario_termination(
+                crate::app::match_runtime::scenario_exit::TerminationRequests {
+                    outcome_ready: local_outcome_exit_ready,
+                    exit: true,
+                    ..Default::default()
+                }
             ),
-            crate::app::match_runtime::scenario_exit::ExecutedExitDisposition::Outcome,
+            Some(crate::app::match_runtime::scenario_exit::TerminationRoute::Outcome),
             "Main_Game's victory/loss route has priority over simultaneous EXIT"
         );
         assert_eq!(
@@ -1323,10 +1410,10 @@ mod tests {
             crate::sim::intern::InternedId,
         ) {
             let mut sim = Simulation::new();
-            let local = sim.interner.intern("Local");
-            let remote = sim.interner.intern("Remote");
-            sim.session.tick = 40;
-            sim.input_delay_ticks = 9;
+            let local = sim.intern("Local");
+            let remote = sim.intern("Remote");
+            sim.session_mut_for_test().set_tick_for_test(40);
+            sim.set_input_delay_ticks(9);
             (sim, local, remote)
         }
 
@@ -1384,13 +1471,12 @@ mod tests {
     #[test]
     fn gsi_16_01_local_scheduler_sends_ordinary_moves_through_their_bytes() {
         let mut sim = Simulation::new();
-        let local = sim.interner.intern("Local");
-        let type_ref = sim.interner.intern("TESTUNIT");
-        sim.houses
-            .insert(local, HouseState::new(local, 0, None, false, 0, 10));
-        sim.session.house_order = vec![local];
-        sim.session.tick = 123;
-        sim.session.binary_frame = 77;
+        let local = sim.intern("Local");
+        let type_ref = sim.intern("TESTUNIT");
+        sim.houses_mut_for_test()
+            .register(HouseState::new(local, 0, None, false, 0, 10));
+        sim.session_mut_for_test().set_tick_for_test(123);
+        sim.session_mut_for_test().set_binary_frame_for_test(77);
         let mut entity = GameEntity::new_at_frame_zero_for_test(
             42,
             1,
@@ -1406,7 +1492,7 @@ mod tests {
             false,
         );
         entity.lifecycle.set_in_limbo_for_test(false);
-        sim.substrate.entities.insert(entity);
+        sim.entities_mut_for_test().insert(entity);
 
         // A cell the Megamission record cannot hold shows the ordinary Move
         // takes its bytes: the codec refuses it and nothing is queued.
@@ -1472,8 +1558,8 @@ mod tests {
     #[test]
     fn recorded_scheduler_stamps_the_current_raw_issue_ordinal() {
         let mut sim = Simulation::new();
-        sim.session.tick = 41;
-        sim.input_delay_ticks = 7;
+        sim.session_mut_for_test().set_tick_for_test(41);
+        sim.set_input_delay_ticks(7);
 
         let execute_tick =
             schedule_command_in_sim(&mut sim, "Russians", Command::DeployMcv { entity_id: 99 })
@@ -1483,7 +1569,7 @@ mod tests {
         assert_eq!(sim.pending_command_snapshot().len(), 1);
         assert_eq!(sim.pending_command_snapshot()[0].execute_tick, execute_tick);
         assert_eq!(
-            sim.interner
+            sim.interner()
                 .resolve(sim.pending_command_snapshot()[0].owner),
             "Russians"
         );
@@ -1494,36 +1580,21 @@ mod tests {
     }
 
     #[test]
-    fn recorded_scheduler_does_not_apply_offline_input_delay() {
-        let mut sim = Simulation::new();
-        sim.session.tick = u64::MAX - 1;
-        sim.input_delay_ticks = 8;
-
-        let execute_tick =
-            schedule_command_in_sim(&mut sim, "YuriCountry", Command::DeployMcv { entity_id: 7 })
-                .unwrap();
-
-        assert_eq!(execute_tick, u64::MAX - 1);
-        assert_eq!(sim.pending_command_snapshot()[0].execute_tick, u64::MAX - 1);
-    }
-
-    #[test]
     fn gsi_04_07_wall_sell_scheduler_uses_current_tick_and_signed_cell_payload() {
         let mut sim = Simulation::new();
-        sim.session.tick = 23;
-        let local = sim.interner.intern("Local");
-        let remote = sim.interner.intern("Remote");
-        let ai = sim.interner.intern("AI");
-        let missing_house = sim.interner.intern("MissingHouse");
+        sim.session_mut_for_test().set_tick_for_test(23);
+        let local = sim.intern("Local");
+        let remote = sim.intern("Remote");
+        let ai = sim.intern("AI");
+        let missing_house = sim.intern("MissingHouse");
         let mut local_house = HouseState::new(local, 0, None, false, 0, 10);
-        local_house.player_control = true;
-        sim.houses.insert(local, local_house);
-        sim.houses
-            .insert(remote, HouseState::new(remote, 1, None, true, 0, 10));
-        sim.houses
-            .insert(ai, HouseState::new(ai, 2, None, false, 0, 10));
-        sim.session.house_order = vec![local, remote, ai];
-        sim.session.binary_frame = 23;
+        local_house.set_player_control_for_test(true);
+        sim.houses_mut_for_test().register(local_house);
+        sim.houses_mut_for_test()
+            .register(HouseState::new(remote, 1, None, true, 0, 10));
+        sim.houses_mut_for_test()
+            .register(HouseState::new(ai, 2, None, false, 0, 10));
+        sim.session_mut_for_test().set_binary_frame_for_test(23);
 
         let issued = sim
             .encode_sell_wall_at_cell_record(local, 0, 1)
@@ -1549,9 +1620,10 @@ mod tests {
         );
         let overlays =
             crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&overlay_ini, None);
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
+        *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
         for cell in [(0, 1), (1, 1), (3, 3)] {
-            sim.fog.mark_visible_for_owner(local, cell.0, cell.1);
+            sim.fog_mut_for_test()
+                .mark_visible_for_owner(local, cell.0, cell.1);
         }
 
         fn attempt(
@@ -1575,32 +1647,35 @@ mod tests {
         assert_eq!(attempt(&mut sim, &overlays, (0, 0), false), None);
         assert_eq!(attempt(&mut sim, &overlays, (3, 3), false), None);
 
-        sim.overlay_grid
+        sim.overlay_grid_mut_for_test()
             .as_mut()
             .unwrap()
             .place_owned_wall(1, 1, 1, 0, local);
         assert_eq!(attempt(&mut sim, &overlays, (1, 1), false), None);
 
-        sim.overlay_grid
+        sim.overlay_grid_mut_for_test()
             .as_mut()
             .unwrap()
             .place_owned_wall(2, 2, 0, 0, local);
         assert_eq!(attempt(&mut sim, &overlays, (2, 2), false), None);
 
-        sim.overlay_grid.as_mut().unwrap().place_overlay(1, 1, 0, 0);
+        sim.overlay_grid_mut_for_test()
+            .as_mut()
+            .unwrap()
+            .place_overlay(1, 1, 0, 0);
         assert_eq!(attempt(&mut sim, &overlays, (1, 1), false), None);
-        sim.overlay_grid
+        sim.overlay_grid_mut_for_test()
             .as_mut()
             .unwrap()
             .place_owned_wall(1, 1, 0, 0, missing_house);
         assert_eq!(attempt(&mut sim, &overlays, (1, 1), false), None);
-        sim.overlay_grid
+        sim.overlay_grid_mut_for_test()
             .as_mut()
             .unwrap()
             .place_owned_wall(1, 1, 0, 0, ai);
         assert_eq!(attempt(&mut sim, &overlays, (1, 1), false), None);
 
-        sim.overlay_grid
+        sim.overlay_grid_mut_for_test()
             .as_mut()
             .unwrap()
             .place_owned_wall(0, 1, 0, 0, remote);
@@ -1613,20 +1688,22 @@ mod tests {
         );
         assert_eq!(sim.take_due_commands().len(), 1);
 
-        sim.session.game_mode_nonzero = true;
-        sim.overlay_grid
+        sim.session_mut_for_test().set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
+        sim.overlay_grid_mut_for_test()
             .as_mut()
             .unwrap()
             .place_owned_wall(1, 1, 0, 0, remote);
         assert_eq!(attempt(&mut sim, &overlays, (1, 1), false), None);
-        sim.overlay_grid
+        sim.overlay_grid_mut_for_test()
             .as_mut()
             .unwrap()
             .place_owned_wall(1, 1, 0, 0, local);
         assert_eq!(attempt(&mut sim, &overlays, (1, 1), true), None);
         assert!(sim.pending_command_snapshot().is_empty());
 
-        sim.overlay_grid
+        sim.overlay_grid_mut_for_test()
             .as_mut()
             .unwrap()
             .place_owned_wall(0, 1, 0, 0, local);

@@ -22,7 +22,10 @@ fn gsi_04_07_wall_sell_raw_lockstep_replay_converges_with_semantic_execution() {
         let (rules, overlays) = gsi_04_07_wall_sell_rules(false, false);
         let mut sim = Simulation::new();
         let (wall_owner, receiver) = gsi_04_07_wall_sell_seed_houses(&mut sim);
-        sim.houses.get_mut(&receiver).unwrap().player_control = true;
+        sim.houses
+            .get_mut(&receiver)
+            .unwrap()
+            .set_player_control_for_test(true);
         let mut grid = crate::sim::overlay_grid::OverlayGrid::new(3, 3);
         grid.place_owned_wall(1, 1, 2, 0, wall_owner);
         sim.overlay_grid = Some(grid);
@@ -77,8 +80,8 @@ fn gsi_04_07_wall_sell_raw_lockstep_replay_converges_with_semantic_execution() {
         ))
     );
     let dispatch_houses = raw
-        .session
-        .house_order
+        .houses
+        .order()
         .iter()
         .copied()
         .enumerate()
@@ -96,7 +99,7 @@ fn gsi_04_07_wall_sell_raw_lockstep_replay_converges_with_semantic_execution() {
         &dispatch_houses,
         |_, _| {},
         |_, command, _| {
-            if let Some(envelope) = command.decode_for_simulation(&raw, raw.session.tick) {
+            if let Some(envelope) = command.decode_for_simulation(&raw, raw.session.tick()) {
                 due.push(envelope);
             }
         },
@@ -108,7 +111,7 @@ fn gsi_04_07_wall_sell_raw_lockstep_replay_converges_with_semantic_execution() {
         &dispatch_houses,
         |_, _| {},
         |_, command, _| {
-            if let Some(envelope) = command.decode_for_simulation(&raw, raw.session.tick) {
+            if let Some(envelope) = command.decode_for_simulation(&raw, raw.session.tick()) {
                 due.push(envelope);
             }
         },
@@ -132,14 +135,14 @@ fn gsi_04_07_wall_sell_raw_lockstep_replay_converges_with_semantic_execution() {
     .unwrap();
     assert!(
         crate::net::lockstep::SynchronizedCommand::opaque(invalid_house)
-            .decode_for_simulation(&raw, raw.session.tick)
+            .decode_for_simulation(&raw, raw.session.tick())
             .is_none()
     );
     let invalid_opcode =
         crate::sim::command::CommandRecord::encode(0x16, 1, 0, &[1, 0, 1, 0]).unwrap();
     assert!(
         crate::net::lockstep::SynchronizedCommand::opaque(invalid_opcode)
-            .decode_for_simulation(&raw, raw.session.tick)
+            .decode_for_simulation(&raw, raw.session.tick())
             .is_none()
     );
 }
@@ -155,14 +158,14 @@ fn gsi_04_07_wall_sell_raw_signed_linear_coordinates_use_canonical_cell() {
     ) -> bool {
         let record = crate::sim::command::SellWallAtCellRecord {
             house_id: 1,
-            frame: sim.session.binary_frame,
+            frame: sim.session.binary_frame(),
             x,
             y,
         }
         .encode()
         .expect("wall-sale record");
         let envelope = crate::net::lockstep::SynchronizedCommand::opaque(record)
-            .decode_for_simulation(sim, sim.session.tick)
+            .decode_for_simulation(sim, sim.session.tick())
             .expect("registered receiver decodes");
         let receiver = sim.interner.resolve(envelope.owner).to_string();
         sim.apply_command_with_overlays(
@@ -225,7 +228,7 @@ fn two_instance_multiplayer_checksums_match_every_frame_and_catch_a_desync() {
     };
     use crate::rules::ini_parser::IniFile;
     use crate::sim::combat::TargetKind;
-    use crate::sim::world::{CommandQueueRoute, FrameEffects, TickLane};
+    use crate::sim::world::{FrameEffects, TickLane};
 
     const FRAMES: u32 = 150;
 
@@ -245,13 +248,18 @@ fn two_instance_multiplayer_checksums_match_every_frame_and_catch_a_desync() {
         sim.resolve_type_handles(&rules);
         for (index, (name, human)) in [("Local", true), ("Enemy", false)].into_iter().enumerate() {
             let owner = sim.interner.intern(name);
-            sim.houses.insert(
-                owner,
-                crate::sim::house_state::HouseState::new(owner, index as u8, None, human, 0, 10),
-            );
-            sim.session.house_order.push(owner);
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    owner,
+                    index as u8,
+                    None,
+                    human,
+                    0,
+                    10,
+                ));
         }
-        sim.session.current_house = sim.interner.get("Local");
+        sim.session
+            .set_current_house_for_test(sim.interner.get("Local"));
         let costs = rules
             .terrain_rules
             .semantics_for_land_type(crate::rules::terrain_rules::LandType::Clear.as_index())
@@ -287,7 +295,13 @@ fn two_instance_multiplayer_checksums_match_every_frame_and_catch_a_desync() {
         let actor = sim.spawn_object("E1", "Local", 10, 10, 0, &rules).unwrap();
         let guard = sim.spawn_object("E1", "Local", 10, 12, 0, &rules).unwrap();
         let enemy = sim.spawn_object("E1", "Enemy", 18, 10, 0, &rules).unwrap();
-        sim.set_command_queue_route(CommandQueueRoute::Multiplayer);
+        // A LAN session takes the multiplayer Queue_AI route. As a whole
+        // network session it has admitted timing, and ShortGame is off so these
+        // building-less houses are not blown up before the first order.
+        sim.session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+        sim.session.install_network_timing(10);
+        sim.session.game_options_mut_for_test().short_game = false;
         (sim, rules, actor, guard, enemy)
     }
 
@@ -329,9 +343,9 @@ fn two_instance_multiplayer_checksums_match_every_frame_and_catch_a_desync() {
     let mut live_history = MultiplayerChecksumHistory::new();
     let mut raw_history = MultiplayerChecksumHistory::new();
     for _ in 0..FRAMES {
-        let native_frame = live.session.binary_frame;
-        assert_eq!(raw.session.binary_frame, native_frame);
-        let execute_tick = live.session.tick + 1;
+        let native_frame = live.session.binary_frame();
+        assert_eq!(raw.session.binary_frame(), native_frame);
+        let execute_tick = live.session.tick() + 1;
         let mut live_commands = Vec::new();
         if let Some(order) = orders(native_frame) {
             let record = match order {
@@ -353,8 +367,8 @@ fn two_instance_multiplayer_checksums_match_every_frame_and_catch_a_desync() {
         }
         queue.transfer_single_player();
         let houses = raw
-            .session
-            .house_order
+            .houses
+            .order()
             .iter()
             .enumerate()
             .map(|(index, owner)| {
@@ -392,7 +406,11 @@ fn two_instance_multiplayer_checksums_match_every_frame_and_catch_a_desync() {
     }
     assert_eq!(live.state_hash(), raw.state_hash());
     let moved = &live.substrate.entities.get(actor).unwrap().position;
-    assert_ne!((moved.rx(), moved.ry()), (10, 10), "the Move order executed");
+    assert_ne!(
+        (moved.rx(), moved.ry()),
+        (10, 10),
+        "the Move order executed"
+    );
     assert!(
         live.substrate
             .entities
@@ -404,7 +422,7 @@ fn two_instance_multiplayer_checksums_match_every_frame_and_catch_a_desync() {
     // One extra Scenario RNG draw on one instance is a desync the next frame's
     // stored checksum exposes.
     let _ = raw.scenario_rng.next_u32();
-    let native_frame = live.session.binary_frame;
+    let native_frame = live.session.binary_frame();
     live_history.record(native_frame, frame(&mut live, &rules, &[]));
     raw_history.record(native_frame, frame(&mut raw, &rules, &[]));
     assert_ne!(

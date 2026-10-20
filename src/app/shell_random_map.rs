@@ -435,7 +435,7 @@ pub(super) fn spawn_random_map_generation_worker(
 /// mutates. The return value tells the caller whether deferred OK may now run.
 pub(super) fn finish_random_map_generation_owners(
     resident_simulation: Option<&mut crate::sim::world::Simulation>,
-    runtime: &mut crate::app::frontend::skirmish_session::OfflineSkirmishRuntime,
+    runtime: &mut crate::app::frontend::skirmish_session::MultiplayerShellRuntime,
     retention: &mut RandomMapGenerationRetention,
     modal: &mut crate::ui::skirmish_shell::RandomMapSetupModalState,
     mut generated: crate::map::rmg::GeneratedMap,
@@ -467,7 +467,7 @@ pub(super) fn finish_random_map_generation_owners(
 /// It is shared by the live App entry and the retail lifecycle harness so a
 /// repeated run always invalidates the same candidate and accepted launch.
 pub(super) fn begin_random_map_generation_owners(
-    runtime: &mut crate::app::frontend::skirmish_session::OfflineSkirmishRuntime,
+    runtime: &mut crate::app::frontend::skirmish_session::MultiplayerShellRuntime,
     retention: &mut RandomMapGenerationRetention,
     options: &crate::map::rmg::RmgOptions,
 ) {
@@ -539,7 +539,7 @@ fn dismiss_random_map_setup_owners(
 }
 
 pub(super) fn cancel_random_map_setup_owners(
-    runtime: &mut crate::app::frontend::skirmish_session::OfflineSkirmishRuntime,
+    runtime: &mut crate::app::frontend::skirmish_session::MultiplayerShellRuntime,
     modal: &mut Option<crate::ui::skirmish_shell::RandomMapSetupModalState>,
     retention: &mut RandomMapGenerationRetention,
     ra2_dir: Option<&std::path::Path>,
@@ -555,7 +555,7 @@ pub(super) fn cancel_random_map_setup_owners(
 /// Select the candidate, run common teardown, and return the normalized seed
 /// options that the accepted caller writes only afterward.
 pub(super) fn accept_random_map_setup_owners(
-    runtime: &mut crate::app::frontend::skirmish_session::OfflineSkirmishRuntime,
+    runtime: &mut crate::app::frontend::skirmish_session::MultiplayerShellRuntime,
     modal: &mut Option<crate::ui::skirmish_shell::RandomMapSetupModalState>,
     retention: &mut RandomMapGenerationRetention,
     ra2_dir: Option<&std::path::Path>,
@@ -631,7 +631,7 @@ impl App {
         // A second Generate makes the previous dialog result stale immediately,
         // even when setup cannot progress far enough to spawn the worker.
         begin_random_map_generation_owners(
-            &mut state.frontend.offline_skirmish_runtime,
+            &mut state.frontend.multiplayer_shell_runtime,
             &mut state.frontend.random_map_retention,
             options,
         );
@@ -761,7 +761,7 @@ impl App {
                 {
                     Some(modal) => finish_random_map_generation_owners(
                         resident_simulation,
-                        &mut frontend.offline_skirmish_runtime,
+                        &mut frontend.multiplayer_shell_runtime,
                         &mut frontend.random_map_retention,
                         modal,
                         generated,
@@ -840,7 +840,7 @@ impl App {
         state.frontend.random_map_generation = None;
         let frontend = &mut state.frontend;
         let _ = cancel_random_map_setup_owners(
-            &mut frontend.offline_skirmish_runtime,
+            &mut frontend.multiplayer_shell_runtime,
             &mut frontend.skirmish_shell_state.random_map_setup_modal,
             &mut frontend.random_map_retention,
             ra2_dir.as_deref(),
@@ -874,7 +874,7 @@ impl App {
         let options = {
             let frontend = &mut state.frontend;
             accept_random_map_setup_owners(
-                &mut frontend.offline_skirmish_runtime,
+                &mut frontend.multiplayer_shell_runtime,
                 &mut frontend.skirmish_shell_state.random_map_setup_modal,
                 &mut frontend.random_map_retention,
                 ra2_dir.as_deref(),
@@ -1523,7 +1523,7 @@ mod tests {
             rgba: vec![0x12, 0x34, 0x56, 0xFF],
         };
         let mut runtime =
-            crate::app::frontend::skirmish_session::OfflineSkirmishRuntime::initialize(
+            crate::app::frontend::skirmish_session::MultiplayerShellRuntime::initialize(
                 0x0412_959B,
                 None,
                 None,
@@ -1821,7 +1821,7 @@ mod tests {
             crate::ui::skirmish_shell::RandomMapSetupModalState::open(options, None, false);
         modal.begin_generate();
         let mut runtime =
-            crate::app::frontend::skirmish_session::OfflineSkirmishRuntime::initialize(
+            crate::app::frontend::skirmish_session::MultiplayerShellRuntime::initialize(
                 0x52FC_594C,
                 None,
                 None,

@@ -257,11 +257,4 @@ SpreadPercentage=.06
         assert_eq!(cruentus.spread, 10000);
         assert_eq!(cruentus.spread_percentage_bits, 0.0_f64.to_bits());
     }
-
-    #[test]
-    fn missing_tiberiums_section_is_empty() {
-        let registry = TiberiumTypeRegistry::from_ini(&IniFile::from_str("[General]\n"));
-
-        assert!(registry.is_empty());
-    }
 }

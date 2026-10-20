@@ -81,6 +81,7 @@ pub(crate) fn native_in_game_shell_active(state: &AppState) -> bool {
                 | crate::ui::pause_menu::InGameMenuState::Keyboard
                 | crate::ui::pause_menu::InGameMenuState::Options
                 | crate::ui::pause_menu::InGameMenuState::SavedGame(_)
+                | crate::ui::pause_menu::InGameMenuState::Diplomacy
         )
         && (matches!(
             state.match_state.match_presentation.in_game_menu,
@@ -309,6 +310,10 @@ pub(super) enum ShellFrameCursor {
 
 #[derive(Default)]
 pub(super) struct ShellFrameOverlay {
+    /// Shared ProgressScreen atlas draws, retained by the frontend owner.
+    pub progress_meter: Vec<SpriteInstance>,
+    /// Map thumbnail from the shared preview cache, below ordinary controls.
+    pub preview: Option<SpriteInstance>,
     pub controls: Vec<SpriteInstance>,
     pub texts: Vec<crate::render::shell_text::ShellTextDraw>,
 }
@@ -394,11 +399,16 @@ pub(super) fn render_shell_frame(
     );
     let background_buffer = batch.create_instance_buffer(gpu, &instances);
     let control_buffer = batch.create_instance_buffer(gpu, &controls);
+    let preview_buffer = overlay
+        .preview
+        .as_ref()
+        .and_then(|instance| batch.create_instance_buffer(gpu, &[*instance]));
     let text_buffers: Vec<_> = texts
         .iter()
         .map(|d| batch.create_instance_buffer(gpu, &d.instances))
         .collect();
     let overlay_buffer = batch.create_instance_buffer(gpu, &overlay.controls);
+    let progress_buffer = batch.create_instance_buffer(gpu, &overlay.progress_meter);
     let overlay_text_buffers: Vec<_> = overlay
         .texts
         .iter()
@@ -441,6 +451,12 @@ pub(super) fn render_shell_frame(
     {
         batch.draw_with_buffer_passthrough(&mut pass, background_texture, buffer, *count);
     }
+    if let (Some((buffer, count)), Some(preview)) = (
+        &preview_buffer,
+        state.frontend.skirmish_preview_texture.as_ref(),
+    ) {
+        batch.draw_with_buffer_passthrough(&mut pass, &preview.texture, buffer, *count);
+    }
     if let (Some((buffer, count)), Some(control_atlas)) = (&control_buffer, control_atlas) {
         batch.draw_with_buffer_passthrough(&mut pass, &control_atlas.texture, buffer, *count);
     }
@@ -464,6 +480,12 @@ pub(super) fn render_shell_frame(
     }
     pass.set_scissor_rect(0, 0, shell_width, shell_height);
     if let (Some((buffer, count)), Some(atlas)) = (&overlay_buffer, control_atlas) {
+        batch.draw_with_buffer_passthrough(&mut pass, &atlas.texture, buffer, *count);
+    }
+    if let (Some((buffer, count)), Some(atlas)) = (
+        &progress_buffer,
+        state.frontend.loading_screen_atlas.as_ref(),
+    ) {
         batch.draw_with_buffer_passthrough(&mut pass, &atlas.texture, buffer, *count);
     }
     for (draw, buffer) in overlay.texts.iter().zip(&overlay_text_buffers) {

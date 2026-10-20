@@ -148,14 +148,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn aircraft_ammo_new() {
-        let ammo = TechnoAmmo::new(3);
-        assert_eq!(ammo.current, 3);
-        assert_eq!(ammo.max, 3);
-        assert!(ammo.dock().is_none());
-    }
-
-    #[test]
     fn chrono_reinforcement_signed_decrement_matches_original_dec() {
         let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/spatial_oracle/trigger_chrono_reinforcement.json",

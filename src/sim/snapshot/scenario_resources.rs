@@ -147,6 +147,7 @@ impl SavedMapMetadata {
         elapsed_buckets: u32,
         local_player_name: Option<&str>,
         theme_slots: [i32; 2],
+        radar_pause_credit: bool,
     ) -> Self {
         Self {
             map_hash,
@@ -160,7 +161,7 @@ impl SavedMapMetadata {
             elapsed_buckets,
             local_player_name: local_player_name.map(str::to_owned),
             theme_slots,
-            radar_pause_credit: false,
+            radar_pause_credit,
         }
     }
 
@@ -197,9 +198,6 @@ impl SavedMapMetadata {
     }
     pub fn radar_pause_credit(&self) -> bool {
         self.radar_pause_credit
-    }
-    pub fn set_radar_pause_credit(&mut self, held: bool) {
-        self.radar_pause_credit = held;
     }
     pub fn theme_slots(&self) -> [i32; 2] {
         self.theme_slots
@@ -283,6 +281,7 @@ mod tests {
                 0,
                 None,
                 [-1, -1],
+                false,
             ),
         );
         // Exercise the production borrowed writer against the owning reader.

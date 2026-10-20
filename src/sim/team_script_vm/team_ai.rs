@@ -160,7 +160,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let current_frame = self.session.binary_frame as i32;
+        let current_frame = self.session.binary_frame() as i32;
         let Some(team) = self.team_script_vm.teams.get_mut(&team_id) else {
             return;
         };
@@ -211,7 +211,7 @@ impl Simulation {
         // `0x006E929B..0x006E9339`: an empty team that has been full, or
         // that could not fill before `DissolveUnfilledTeamDelay=` in a
         // multiplayer game, is destroyed.
-        let team_rules = TeamRules::new(&rules.general, self.session.game_mode_nonzero);
+        let team_rules = TeamRules::new(&rules.general, self.session.game_mode_nonzero());
         if team.dissolves(&team_rules, current_frame) {
             self.destroy_team(team_id, rules, frame_effects);
             return;
@@ -564,7 +564,7 @@ impl Simulation {
         let mut best_score = i32::MAX;
         if let Some(house) = self.houses.get(&owner) {
             // 6EA173 iterates the retained House Building array, in order.
-            for &building_id in house.base_projection.buildings() {
+            for &building_id in house.base_projection().buildings() {
                 let Some(building) = self.substrate.entities.get(building_id) else {
                     continue;
                 };

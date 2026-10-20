@@ -78,7 +78,7 @@ impl Simulation {
     fn gap_viewers(&self) -> Vec<InternedId> {
         self.houses
             .keys()
-            .chain(self.fog.by_owner.keys())
+            .chain(self.fog.by_owner().keys())
             .copied()
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
@@ -121,8 +121,8 @@ impl Simulation {
             .get(id)
             .and_then(|entity| self.power_states.get(&entity.owner()))
             .is_some_and(|state| {
-                state.blackout_remaining(self.session.binary_frame) > 0
-                    || state.has_drained_power_source
+                state.blackout_remaining(self.session.binary_frame()) > 0
+                    || state.has_drained_power_source()
             })
     }
 
@@ -243,14 +243,11 @@ impl Simulation {
             ry: entity.position.ry(),
             radius,
         };
-        // A normal scenario constructs its viewer Houses before Technos.
-        self.fog.by_owner.get_or_insert_with(viewer, || {
-            vision::OwnerVisibility::new(self.fog.width, self.fog.height)
-        });
+        self.fog.ensure_viewer(viewer);
         let spy_sat_active = self
             .houses
             .iter()
-            .filter_map(|(&owner, house)| house.spy_sat_active.then_some(owner))
+            .filter_map(|(&owner, house)| house.spy_sat_active().then_some(owner))
             .collect();
         vision::publish_gap_generator_event(
             &mut self.fog,

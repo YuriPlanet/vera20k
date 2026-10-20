@@ -31,7 +31,7 @@ use crate::rules::house_colors::HouseColorRamps;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use super::current_cell::CurrentRadarCellAuthority;
 use super::events::{ClientRadarEvents, RadarEventSource};
@@ -181,6 +181,7 @@ impl MinimapRenderer {
             &projection.base_rgba,
             MINIMAP_WIDTH,
             MINIMAP_HEIGHT,
+            wgpu::FilterMode::Nearest,
         );
         let white_texture: BatchTexture = create_white_texture(device, queue, batch);
         let rgba_scratch: Vec<u8> = vec![0u8; pixel_count];
@@ -257,8 +258,7 @@ impl MinimapRenderer {
         }
 
         let action40_rebuild = self.installed_playfield_authority.is_some();
-        let resolved_terrain =
-            runtime.and_then(|runtime| runtime.simulation.resolved_terrain.as_ref());
+        let resolved_terrain = runtime.and_then(|runtime| runtime.simulation.resolved_terrain());
         let current_cell_authority = runtime.map(CurrentRadarCellAuthority::from_runtime);
         let projection = MinimapPlayfieldProjection::derive(
             grid,
@@ -361,7 +361,7 @@ impl MinimapRenderer {
         queue: &wgpu::Queue,
         entities: &crate::sim::entity_store::EntityStore,
         logic_order: &[u64],
-        houses: &BTreeMap<InternedId, crate::sim::house_state::HouseState>,
+        houses: &crate::sim::houses::Houses,
         house_colors: &HouseColorMap,
         sim_tick: u64,
         binary_frame: u32,

@@ -11,8 +11,9 @@
 //! MapSelect writes the next map into Scenario+0x125C, the carry-over record
 //! `0x004C6180` saves the 50 globals, the mission counter Scenario+0x1254
 //! increments (`0x00685AAF`) and Start_Scenario `0x00683AB0` runs with the
-//! retained campaign index (`0x00685C47`). The record is written back by
-//! `0x004C6210` once Start_Scenario has read the next map.
+//! retained campaign index (`0x00685C47`). The record (globals and the
+//! player House's difficulty row) is written back by `0x004C6210` once
+//! Start_Scenario has read the next map; see `sim::campaign_carry_over`.
 //!
 //! Residuals, all inert on the retail campaign maps:
 //! - the Win movie (`+0x143C`, before StandaloneScore) is not played; retail
@@ -22,16 +23,14 @@
 //! - the record's money (`CarryOverMoney` x the House's money, capped by
 //!   `CarryOverCap`, also added to House+0x1DC) and the mission timer
 //!   (`TimerInherit`) are not carried; every retail map has
-//!   `CarryOverMoney=0.000000` and `TimerInherit=no`. Nor is the player's
-//!   handicap (House+0x184 through Assign_Handicap `0x004F6EC0`); the next
-//!   mission reads the same Options.Difficulty unless the player changed it.
+//!   `CarryOverMoney=0.000000` and `TimerInherit=no`.
 //! - the calls after the restore (`0x00685D7F..0x00685DAE`: `0x007241A0`,
 //!   `0x004F4480`, `0x004A3C30`) are not ported.
 //! - Session+0x3C0 bit 2 (`0x00685934`) skips the score, movies and
 //!   MapSelect and restarts Scenario+0x125C; VERA has no writer of that bit.
 //! - Show_Credits returns to the main menu with INTRO queued, as the shell's
 //!   credits do; the theme native plays when Main_Game returns is not traced.
-//! - the carried globals are written after installation and are not part of
+//! - the carry-over record is written after installation and is not part of
 //!   the startup the diagnostic replay records.
 //! - SkipMapSelect=yes (`0x005ADE20`) matches NextScenario against the stage
 //!   recorded in Scenario+0x35A0, which VERA does not track; such a map
@@ -195,7 +194,7 @@ impl App {
         let campaign = state.match_state.startup.installed_campaign()?;
         let runtime = state.match_state.sim_runtime.as_ref()?;
         let sim = &runtime.simulation;
-        let owner = sim.session.current_house?;
+        let owner = sim.session().current_house()?;
         let won = sim.ready_outcome_for_owner(owner).is_some_and(|outcome| {
             outcome.kind == crate::sim::house_state::HouseOutcomeKind::Victory
         });
@@ -227,14 +226,16 @@ impl App {
                         .map_err(|error| log::warn!("MapSelect: {error}"))
                         .ok()
                 });
-                let side = crate::sim::house_state::house_state_for_owner_id(&sim.houses, owner)
+                let side = crate::sim::house_state::house_state_for_owner_id(sim.houses(), owner)
                     .and_then(|house| {
                         runtime
                             .resources
                             .rules
-                            .side_name(crate::rules::ruleset::SideIdx(house.side_index))
+                            .side_name(crate::rules::ruleset::SideIdx(
+                                u8::try_from(house.side_index()).ok()?,
+                            ))
                     });
-                let current = sim.session.map_name.as_str();
+                let current = sim.session().map_name();
                 let scenario = match map_select(
                     mapsel.as_ref().map(|selected| &selected.ini),
                     side,
@@ -250,14 +251,14 @@ impl App {
                         None
                     }
                 };
-                match (scenario, sim.session.campaign_mission_counter()) {
+                match (scenario, sim.session().campaign_mission_counter()) {
                     (Some(scenario), Some(counter)) => {
                         VictoryEnd::NextMission(Box::new(campaign.next_mission(
                             scenario,
                             counter + 1,
                             state.persistence.options_profile.difficulty,
-                            sim.session.game_options.game_speed,
-                            sim.global_variables(),
+                            sim.session().game_options().game_speed,
+                            sim.save_campaign_carry_over(),
                             &mut crate::app::match_bootstrap::OrdinaryMatchSeedClock,
                         )))
                     }
@@ -433,7 +434,8 @@ Scenario=ALL03umd.MAP
         }
     }
 
-    /// Every retail YR campaign map leads to the next one through MAPSELMD.
+    /// Continue must retain the next map's MISSIONMD loading art and copy,
+    /// including MAPSELMD's mixed-case Scenario values.
     #[test]
     fn retail_mapselmd_chains_both_campaigns() {
         let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
@@ -441,15 +443,50 @@ Scenario=ALL03umd.MAP
         };
         let mapsel = crate::rules::retail_sources::select_ini(&assets, "MAPSELMD.INI")
             .expect("retail MAPSELMD.INI");
-        for (side, maps) in [("GDI", ALLIED), ("Nod", SOVIET)] {
+        let mission = crate::rules::retail_sources::select_ini(&assets, "MISSIONMD.INI")
+            .expect("retail MISSIONMD.INI");
+        let battle = crate::rules::retail_sources::select_ini(&assets, "BATTLEMD.INI")
+            .expect("retail BATTLEMD.INI");
+        let mut campaigns = crate::rules::campaigns::CampaignRegistry::default();
+        campaigns.apply_ini(&battle.ini, &crate::rules::movies::MovieRegistry::default());
+        let mut clock = crate::app::match_bootstrap::OrdinaryMatchSeedClock;
+        for (side, name, maps) in [("GDI", "ALL1", ALLIED), ("Nod", "SOV1", SOVIET)] {
+            let mut startup = crate::app::match_bootstrap::prepare_campaign_startup(
+                &campaigns, name, 1, None, None, &mut clock,
+            )
+            .expect("retail campaign");
             for pair in maps.windows(2) {
-                let current = format!("{}.MAP", pair[0]);
+                let current = startup.scenario().to_owned();
                 match map_select(Some(&mapsel.ini), Some(side), &current) {
                     MapSelectPick::Next(next) => {
                         assert!(
                             next.eq_ignore_ascii_case(&format!("{}.MAP", pair[1])),
                             "{current} -> {next}"
-                        )
+                        );
+                        startup = startup.next_mission(
+                            next,
+                            startup.mission_counter() + 1,
+                            1,
+                            3,
+                            crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                            &mut clock,
+                        );
+                        let mut metadata =
+                            crate::rules::campaign_loading::CampaignLoadingMetadata::default();
+                        metadata.apply_ini(&mission.ini, startup.scenario());
+                        for value in [
+                            metadata.background_name_640(),
+                            metadata.background_name_800(),
+                            metadata.background_palette_name(),
+                            metadata.load_message_key(),
+                            metadata.load_briefing_key(),
+                        ] {
+                            assert!(
+                                !value.is_empty(),
+                                "{} lost its loading presentation after {current}",
+                                startup.scenario()
+                            );
+                        }
                     }
                     other => panic!("{current}: {other:?}"),
                 }
