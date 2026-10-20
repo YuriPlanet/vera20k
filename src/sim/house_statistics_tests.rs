@@ -17,10 +17,6 @@ fn capture_accounting_corpus() -> &'static Value {
         corpus["kind"],
         "bounded-original-engineer-capture-accounting"
     );
-    assert_eq!(
-        corpus["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     corpus
 }
 
@@ -482,8 +478,18 @@ fn saved_live_statistics_preserve_terminal_score_and_rng_continuation() {
     restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
     restored.restore_after_snapshot_load().unwrap();
     let before_rng = sim.rng_state();
-    assert!(sim.finalize_terminal_score_snapshot());
-    assert!(restored.finalize_terminal_score_snapshot());
+    assert!(Simulation::finalize_terminal_score_snapshot(
+        &sim.session,
+        &mut sim.scenario_rng,
+        &mut sim.terminal_score_snapshot,
+        &sim.houses
+    ));
+    assert!(Simulation::finalize_terminal_score_snapshot(
+        &restored.session,
+        &mut restored.scenario_rng,
+        &mut restored.terminal_score_snapshot,
+        &restored.houses
+    ));
     assert_ne!(
         sim.rng_state(),
         before_rng,

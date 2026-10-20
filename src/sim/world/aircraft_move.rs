@@ -212,8 +212,16 @@ impl move_mission::MoveHost for WorldMove<'_> {
             Some((self.rules, &self.sim.interner)),
         )
         .expect("live aircraft NavCom coordinate");
-        self.sim
-            .aircraft_locomotor_move_to(self.id, coord, self.rules);
+        Simulation::aircraft_locomotor_move_to(
+            &mut self.sim.interner,
+            &self.sim.session,
+            &mut self.sim.substrate,
+            &mut self.sim.sound_events,
+            &self.sim.resolved_terrain,
+            self.id,
+            coord,
+            self.rules,
+        );
     }
 
     fn is_moving(&mut self) -> bool {

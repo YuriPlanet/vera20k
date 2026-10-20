@@ -1,7 +1,6 @@
 # Retained impact animation inputs and Type reset
 
-Native evidence uses original `gamemd.exe` SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+Native evidence uses original `gamemd.exe`.
 The adjacent Python harnesses execute the original instructions; the JSON files
 are native outputs, and the metadata records fixture substitutions.
 

@@ -1,5 +1,5 @@
 //! Real local loss -> AllToCheer refusal during the ordinary SavourDelay.
-//! Original1cdd730F30 reads Session+300/A8B538 before rate/Event/stamp;
+//! Original gamemd 730F30 reads Session+300/A8B538 before rate/Event/stamp;
 //! Scenario+35A2 is the distinct cinematic input-lock authority.
 
 use super::MatchInputState;

@@ -6,11 +6,10 @@ executable configured through VERA20K_GAMEMD_EXE or RA2_DIR):
     cargo test -p vera20k --lib completed_garrison_body_frames_match_native_oracle
 The first command checks native execution against body_frame.json without
 writing; the Rust test checks the production selector against that same file.
-body_frame.meta.json records binary identity, assumptions and coverage.
+body_frame.meta.json records assumptions and coverage.
 
 Native evidence, checked in Ghidra 2026-09-10: project testProsjekt,
-/gamemd.exe, x86:LE:32:default, image base 0x00400000. The shared oracle loader
-requires SHA256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c.
+/gamemd.exe, x86:LE:32:default, image base 0x00400000.
 
 BuildingClass+0x534 is the body animation state, NOT a health-derived damage
 flag. Earlier garrison reports missed its writers and incorrectly concluded

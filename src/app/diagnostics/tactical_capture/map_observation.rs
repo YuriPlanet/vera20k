@@ -4872,7 +4872,7 @@ mod tests {
             .spawn_object_at_height("HTNK", "Computer1", 11, 10, 0, 0, &rules)
             .unwrap();
         sim.session_mut_for_test().set_binary_frame_for_test(17);
-        sim.bomb_attach(planter, Some(carrier), &rules);
+        sim.bomb_attach_for_test(planter, Some(carrier), &rules);
         let entity = sim.entities_mut_for_test().get_mut(planter).unwrap();
         entity.last_fire_frame.set_for_test(16);
         entity.body_frame_counter.set_for_test(u32::MAX);

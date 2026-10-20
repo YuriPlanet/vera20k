@@ -16,10 +16,13 @@ use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
+use crate::sim::intern::StringInterner;
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::ground_pose;
 use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::power_system::PowerStates;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{FrameEffects, Simulation};
 use crate::util::direction::DIRECTION_DELTAS;
 use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
@@ -95,11 +98,17 @@ impl Simulation {
     /// Building4400F9..440196, after delayed fire and before repair/power.
     /// A changed TarCom can remain in the list until this visit, and +661
     /// remains stale even after pointer expiry until this visit samples it.
-    pub(crate) fn update_tesla_charge(&mut self, id: u64, rules: &RuleSet) {
-        let Some(building) = self.substrate.entities.get(id) else {
+    pub(crate) fn update_tesla_charge(
+        interner: &StringInterner,
+        substrate: &mut ObjectSubstrate,
+        power_states: &PowerStates,
+        id: u64,
+        rules: &RuleSet,
+    ) {
+        let Some(building) = substrate.entities.get(id) else {
             return;
         };
-        if !self
+        if !interner
             .object_type(building.type_ref(), rules)
             .is_some_and(|object| object.overpowerable)
         {
@@ -109,20 +118,13 @@ impl Simulation {
         // Reverse stable removal is native's order; no temporary list or
         // unconditional mutable store access is needed for unchanged chargers.
         for index in (0..count).rev() {
-            let charger = self
-                .substrate
-                .entities
-                .get(id)
-                .unwrap()
-                .tesla_charge
-                .chargers[index];
-            if !self
-                .substrate
+            let charger = substrate.entities.get(id).unwrap().tesla_charge.chargers[index];
+            if !substrate
                 .entities
                 .get(charger)
                 .is_some_and(|entity| entity.attack_target.target() == Some(TargetKind::Entity(id)))
             {
-                self.substrate
+                substrate
                     .entities
                     .get_mut(id)
                     .unwrap()
@@ -131,23 +133,20 @@ impl Simulation {
                     .remove(index);
             }
         }
-        let building = self.substrate.entities.get(id).unwrap();
+        let building = substrate.entities.get(id).unwrap();
         let count = building.tesla_charge.chargers.len();
         let overpowered = count >= 3
             || (count >= 1
                 && building.building_online()
-                && self
-                    .power_states
-                    .get(&building.owner())
-                    .is_none_or(|power| {
-                        let (output, drain) = power.effective_totals();
-                        X87::compare(
-                            crate::sim::power_system::native_power_ratio(output, drain),
-                            X87::load_f64(NativeF64Bits::ONE),
-                        ) == MaskedX87Ordering::Equal
-                    }));
+                && power_states.get(&building.owner()).is_none_or(|power| {
+                    let (output, drain) = power.effective_totals();
+                    X87::compare(
+                        crate::sim::power_system::native_power_ratio(output, drain),
+                        X87::load_f64(NativeF64Bits::ONE),
+                    ) == MaskedX87Ordering::Equal
+                }));
         if building.tesla_charge.overpowered != overpowered {
-            self.substrate
+            substrate
                 .entities
                 .get_mut(id)
                 .unwrap()

@@ -257,7 +257,14 @@ fn drop_passenger(
 
     #[cfg(any(test, feature = "test-support"))]
     observe(Observed::Subposition([x, y, z]));
-    let Some(spot) = sim.place_infantry_in_ground_cell(rules, point) else {
+    let Some(spot) = Simulation::place_infantry_in_ground_cell(
+        &sim.interner,
+        &mut sim.scenario_rng,
+        &sim.substrate,
+        &sim.resolved_terrain,
+        rules,
+        point,
+    ) else {
         return Err(DepartureFailure::Placement);
     };
     let spot_xy = walk_head::selected_head(point, spot, z, false);

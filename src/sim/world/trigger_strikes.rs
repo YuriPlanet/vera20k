@@ -15,7 +15,7 @@ use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 use crate::util::native_x87::NativeF64Bits;
 
 impl Simulation {
-    /// Execute96 -> ChemMissileAtWP6E38F0..6E3B13, Steam3e81a617..08600.
+    /// Execute96 -> ChemMissileAtWP6E38F0..6E3B13, Steam gamemd.
     /// Literal ChemLauncher (773030 only finds an already allocated type),
     /// null firer, speed20/Bright=false, ground+structural bridge target.
     /// Map586AC0's non-inset LocalSize edge supplies launch XY, Z=0.
@@ -91,7 +91,7 @@ impl Simulation {
         true
     }
 
-    /// Steam gamemd 3e81a617..08600, Execute95 at6DD9DA ->6E3410..6E35E2.
+    /// Steam gamemd, Execute95 at6DD9DA ->6E3410..6E35E2.
     /// Uses the literal NukePayload, not a Super or the numeric action value.
     /// Constructor speed50/Bright=false, height+20000 and velocity scale-100
     /// are independent of Weapon.Speed and BulletType.DetonationAltitude.

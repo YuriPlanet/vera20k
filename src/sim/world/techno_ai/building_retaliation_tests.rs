@@ -385,7 +385,15 @@ fn a_deployed_slave_miner_pings_the_ore_miner_line() {
         &rules,
         None,
     );
-    sim.dispatch_under_attack_events(&pings, &rules);
+    Simulation::dispatch_under_attack_events(
+        &sim.interner,
+        &sim.session,
+        &sim.house_alliances,
+        &mut sim.sound_events,
+        &sim.houses,
+        &pings,
+        &rules,
+    );
     assert_eq!(
         sim.sound_events
             .iter()

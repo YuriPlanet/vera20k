@@ -2,7 +2,7 @@
 
 `shroud.py/json/meta.json` execute the original reset, SHP access, cell-edge
 selection and tactical ABuffer producer against physical stock `SHROUD.SHP`.
-The sidecar records executable, emulator, source and payload identities. This
+The sidecar records emulator, source and payload identities. This
 is the ordinary `FogOfWar=no`, empty-AlphaShape-list route; it does not establish
 all vision lifecycle state or the wider fog/AlphaShape mechanisms.
 

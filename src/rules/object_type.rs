@@ -173,7 +173,7 @@ pub(crate) struct InfantryInfiltration {
 impl InfantryInfiltration {
     pub(crate) fn apply_pass(&mut self, section: &IniSection) {
         // InfantryTypeClass::ReadINI 5244A9/524545/524579/5245AD,
-        // then 52466E..52469A (retail gamemd.exe, Steam3e81a617..08600).
+        // then 52466E..52469A (retail gamemd.exe, Steam gamemd).
         self.infiltrate = section.read_bool("Infiltrate", self.infiltrate);
         self.c4 = section.read_bool("C4", self.c4);
         self.engineer = section.read_bool("Engineer", self.engineer);
@@ -207,7 +207,7 @@ pub enum FactoryType {
 impl FactoryType {
     /// Shared object/type aliases in Suggest_New_Object (4FBD80),
     /// IncrementFactoryCount (4FFA50), Recount (4FF980) and
-    /// GetFactoryCount (500910), Steam3e81a617..08600. Exact RTTI
+    /// GetFactoryCount (500910), Steam gamemd. Exact RTTI
     /// comparisons, including primary-factory grouping, must retain the raw value.
     pub(crate) const fn for_production_rtti(value: i32) -> Option<Self> {
         match value {
@@ -651,7 +651,7 @@ pub struct ObjectType {
     secret_lab: crate::rules::secret_lab::SecretLabRules,
     /// `DamageSound=` — `TechnoTypeClass+0x538`, the type's own struck cue.
     ///
-    /// Original gamemd (SHA2561cdd1180e490...) inherited constructor710AF0
+    /// Original gamemd inherited constructor710AF0
     /// stores the -1 default at710EE9;
     /// reader712EB7..712F07 passes literal84421C, empty889F64 and capacity128
     /// to ReadString528A10, then resolves through VocFindIndex7514D0.
@@ -1306,7 +1306,7 @@ pub struct ObjectType {
     /// BuildingType+EB8. Constructor45DD90 leaves0; ReadFactory474FF0 at
     /// 460529 stores any recognized raw RTTI, including object classes.
     /// Rules own this value; production categories are derived, never stored
-    /// as a second, lossy authority. Steam3e81a617..08600; native controls in
+    /// as a second, lossy authority. Steam gamemd; native controls in
     /// trigger_no_factories_events.json.
     factory_rtti: i32,
     /// Native BuildingType `WeaponsFactory=` classification used by Unit
@@ -1320,7 +1320,7 @@ pub struct ObjectType {
     /// it; ReadBool5295F0 at460B1D uses the current byte as its default.
     /// Source: building_construction.py and the sealed native barracks input
     /// contract in basic-factory-output-event-admission-research (retail
-    /// gamemd.exe SHA256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c).
+    /// gamemd.exe).
     gdi_barracks: bool,
     /// BuildingType+16E5, rules `NODBarracks=`: constructor45E1C8 clears
     /// it; ReadBool5295F0 at460B37 follows GDIBarracks with a live default.
@@ -1898,6 +1898,8 @@ pub struct ObjectType {
     /// Immutable projection of the native BuildingType light-field reader.
     /// The process registry owns retained integer defaults across Rules passes.
     building_light: crate::rules::building_light::BuildingLightRules,
+    /// Retained Rules-reader inputs for attached building upgrades.
+    building_upgrade: crate::rules::building_upgrade::BuildingUpgradeRules,
     /// `HasSpotlight=` — owns a map-presence-bound BuildingLight child.
     pub has_spotlight: bool,
 
@@ -2090,6 +2092,17 @@ impl ObjectType {
         light: crate::rules::building_light::BuildingLightRules,
     ) {
         self.building_light = light;
+    }
+
+    pub fn building_upgrade(&self) -> &crate::rules::building_upgrade::BuildingUpgradeRules {
+        &self.building_upgrade
+    }
+
+    pub(crate) fn project_building_upgrade(
+        &mut self,
+        upgrade: crate::rules::building_upgrade::BuildingUpgradeRules,
+    ) {
+        self.building_upgrade = upgrade;
     }
 
     pub(crate) const fn carries_crate(&self) -> bool {
@@ -3256,6 +3269,7 @@ impl ObjectType {
             // Rules' ordered processor publishes the retained reader result.
             // Merged text cannot reproduce missing-key /1000 truncation.
             building_light: Default::default(),
+            building_upgrade: Default::default(),
             has_spotlight: section.read_bool("HasSpotlight", false),
 
             // TechnoType particle effects. The Type references start null

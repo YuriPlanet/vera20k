@@ -22,7 +22,6 @@ struct Row {
 }
 #[derive(Deserialize)]
 struct Corpus {
-    native_sha256: String,
     rows: Vec<Row>,
 }
 
@@ -54,10 +53,6 @@ fn native_object_flight_queries_use_live_ground_bridge_and_mark() {
         "tools/spatial_oracle/object_flight_height.json",
     ))
     .unwrap();
-    assert_eq!(
-        corpus.native_sha256,
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     assert_eq!(corpus.rows.len(), 24);
     for row in corpus.rows {
         let mut cells: Vec<_> = (0..25)

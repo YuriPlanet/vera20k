@@ -1,4 +1,4 @@
-//! Whole native588750 and Building440580 wall continuation, gamemd SHA1cdd1180.
+//! Whole native588750 and Building440580 wall continuation, gamemd.
 //! Consumes building_death_anims --wall-autofill's original-code controls.
 //! The flat map/House are component priors; paid ingress has a separate retail
 //! regression. No Factory, native world bootstrap or callback-PC equivalence.

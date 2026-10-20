@@ -10,7 +10,7 @@ python -m tools.projectile_oracle.shared_collision --line-walk --check
 `--write` deliberately replaces the selected corpus and its provenance sidecar.
 The [shared fixture](collision_fixture.py) owns both layouts; neither producer
 uses a second map or a substituted collision decision. The sidecars record the
-actual executable hash, replay command, FPCW, assumptions and canonical payload
+replay command, FPCW, assumptions and canonical payload
 hash. They pin no repository source hashes.
 
 ## Retained Bullet height

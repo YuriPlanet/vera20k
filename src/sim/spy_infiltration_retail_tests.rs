@@ -89,7 +89,7 @@ fn stock_spy_blackout_preserves_paid_building_timers_through_recovery() {
         let sim = scene.sim();
         let initial_hash = sim.state_hash();
         let local = sim.session.current_house().unwrap();
-        let computer = sim.scenario_house_named("Computer").unwrap();
+        let computer = Simulation::scenario_house_named(&sim.houses, "Computer").unwrap();
         let actor = |kind: &str, owner, cell| {
             sim.entities()
                 .values()

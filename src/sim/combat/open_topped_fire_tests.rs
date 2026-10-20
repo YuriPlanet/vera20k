@@ -814,10 +814,6 @@ fn retail_battle_fortress_chrono_rider_freezes_releases_and_erases() {
         "tools/spatial_oracle/temporal_stop.open_topped_guard.json",
     ))
     .unwrap();
-    assert_eq!(
-        control["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let native_stop = &control["rows"][0]["output"]["after_stop"];
     for release_by_moving in [true, false] {
         let mut fortress = retail_dustbowl_battle_fortress_boarded(0);

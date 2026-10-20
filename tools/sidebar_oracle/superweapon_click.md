@@ -8,7 +8,7 @@ RA2_DIR=/path/to/yr python -m tools.sidebar_oracle.superweapon_click --check
 
 `superweapon_click.json` is native output, consumed by
 `sim::superweapon::can_fire_tests` and
-`app::input::superweapon_cameo::tests`. The sidecar records the executable hash,
+`app::input::superweapon_cameo::tests`. The sidecar records the
 entry points, supplied state and substitutions.
 
 The shared sidebar VM executes original `SuperClass::CanFire` (`6CC360`) and the

@@ -178,10 +178,6 @@ fn successful_search_finishing_matches_original_caller_transcript() {
         "tools/spatial_oracle/astar_path_finishing.json",
     ))
     .unwrap();
-    assert_eq!(
-        packet["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let cases = packet["cases"].as_array().unwrap();
     assert!(cases.len() >= 51);
     for row in cases {

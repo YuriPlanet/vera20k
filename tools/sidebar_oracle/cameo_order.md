@@ -256,8 +256,7 @@ The additive `ready_building_histories` family uses the existing physical
 [joined scene](../spatial_oracle/building_death_anims.py) and
 [Engineer admission/audio VM](../spatial_oracle/engineer_repair_admission.py).
 It keeps the earlier seven top-level payloads unchanged. The selected executable
-is the original active-retail `gamemd.exe`, SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+is the original active-retail `gamemd.exe`.
 No placement result, admission predicate or RNG result is computed in Python.
 
 `VERA20K_READY_BUILDING_ASSETS` selects the extracted retail cache already

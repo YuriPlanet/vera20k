@@ -9,7 +9,9 @@
 //! (`Simulation::visit_building_down`) runs `BuildingClass::Mission_Selling @
 //! 0x00449C30` ([`BuildingDown`], `sim::building_construction`):
 //! - stage 0 ([`sell_stage_zero`]): an undeploy's voice then `DeploySound=`, the bunker
-//!   release, RUN_AWAY to every contact and the damage fires put out;
+//!   release, then either the last installed upgrade refunded and removed
+//!   (remaining on stage 0) or RUN_AWAY to every contact and the damage fires
+//!   put out;
 //! - stage 1 ([`sell_stage_one`]): OVER_OUT to every contact, then (unless a
 //!   dock still tethers the building) its absorbed passengers, garrison and
 //!   crew leave (`sim::crew_survival`), the owner's player hears the sale,
@@ -35,8 +37,10 @@
 //!   does not dispatch tag event 0x21), the `PackupSound=` handle (`+0x6A0`, stopped
 //!   at a conversion `0x0044A1C8`) and stage 2's looping sound update
 //!   (`0x00750D40`).
-//! - Dormant in retail data: stage 0's upgrade sale (`+0x702`; no type sets
-//!   `PowersUpBuilding=`), its Artillary/TickTank arm, the LaserFencePost
+//! - A malformed upgrade stack whose last type is absent would be
+//!   dereferenced at `0x0044AAD4`. VERA safely leaves its count/types and
+//!   stage unchanged, with no refund; it does not compact sparse slots.
+//! - Dormant in retail data: stage 0's Artillary/TickTank arm, the LaserFencePost
 //!   recalc (`0x004533A0`), the sale's CloakGenerator arm (`Type+0x16C7`,
 //!   `0x0044A292`) and `BuildingClass::SetTarget`'s computer sale of a
 //!   `TickTank=`/`Artillary=` building (`Type+0x16C4`/`+0x16CA`, which
@@ -63,6 +67,10 @@ use crate::rules::foundation::foundation_dimensions;
 #[cfg(test)]
 #[path = "pack_voice_tests.rs"]
 mod pack_voice_tests;
+
+#[cfg(test)]
+#[path = "building_upgrade_sale_tests.rs"]
+mod building_upgrade_sale_tests;
 
 /// `TechnoTypeClass::GetRefund @ 0x00711F60` (type vtable `+0xB8`) for a live
 /// house (`RET 8`), in its x87 order under the chop control word:
@@ -125,7 +133,7 @@ pub(crate) fn techno_refund(sim: &Simulation, rules: &RuleSet, id: u64) -> Optio
         rules,
         object,
         sim.houses.get(&owner)?,
-        &sim.house_cost_factors(owner)?,
+        &Simulation::house_cost_factors(&sim.houses, owner)?,
         sim.session.game_mode_nonzero(),
         false,
     ))
@@ -334,23 +342,14 @@ fn qualifying_undeploy(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
 /// voice `vt+0x36C`, Building459C20/common708E00), a Tank
 /// Bunker's vehicle released (`+0x2E4`, `0x004593A0`), RUN_AWAY to every
 /// contact (`0x0044AB68`) and the damage-fire anims released (`+0x5C8`,
-/// `0x0044AB87..0x0044ABAA`).
+/// `0x0044AB87..0x0044ABAA`). With upgrades, refund and scalar-delete a
+/// temporary instance of the last type, then PowerDown and leave stage 0.
 pub fn sell_stage_zero(
     sim: &mut Simulation,
     rules: Option<&RuleSet>,
     id: u64,
     frame_effects: FrameEffects<'_>,
 ) {
-    //MissionSelling44AB0E/44AB1B, after the optional upgrade-sale work and
-    //before DeploySound/RUN_AWAY. Ordinary stage0 reaches both writers.
-    if let Some(owner) = sim
-        .substrate
-        .entities
-        .get(id)
-        .map(|building| building.owner())
-    {
-        Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, true);
-    }
     if let Some(rules) = rules
         && qualifying_undeploy(sim, rules, id)
     {
@@ -407,6 +406,68 @@ pub fn sell_stage_zero(
         .is_some()
     {
         crate::sim::docking::bunker_link::release_sell_destroy(sim, id, frame_effects);
+    }
+    if let Some((owner, upgrade_type)) = sim.substrate.entities.get(id).and_then(|building| {
+        let upgrades = building.building_upgrades();
+        (upgrades.count() != 0).then(|| {
+            let upgrade_type = usize::try_from(i32::from(upgrades.count()) - 1)
+                .ok()
+                .and_then(|slot| upgrades.types().get(slot))
+                .copied()
+                .flatten();
+            (building.owner(), upgrade_type)
+        })
+    }) {
+        // Steam gamemd:44AAC3..44AB03 constructs the last type, refunds it through70ADA0,
+        // scalar-deletes it, then calls PowerDown451690. Reuse the shared
+        // constructor/destructor transaction: ID/RNG remain spent, tracking
+        // is undone synchronously, and no UnInit/loss bookkeeping runs.
+        let (Some(rules), Some(upgrade_type)) = (rules, upgrade_type) else {
+            // Native dereferences malformed sparse/out-of-range top slots.
+            // Safe residual: keep the stack and sale stage without a refund.
+            return;
+        };
+        let type_name = sim.interner.resolve(upgrade_type).to_owned();
+        let owner_name = sim.interner.resolve(owner).to_owned();
+        let Some(temporary) = sim.construct_object_limbo_at_height(
+            &type_name,
+            &owner_name,
+            0,
+            0,
+            0,
+            0,
+            rules,
+            frame_effects,
+        ) else {
+            return;
+        };
+        let refund = techno_refund(sim, rules, temporary);
+        if let Some(refund) = refund {
+            crate::sim::credit_income::add_credits(&mut sim.houses, owner, refund);
+        }
+        sim.discard_constructed_limbo(temporary, Some(rules), frame_effects);
+        if refund.is_none() {
+            return;
+        }
+        sim.power_down_building_upgrade(id, rules);
+        //44AB0E/44AB1B: only the upgrade arm sets both dirty bytes here.
+        Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, true);
+        //44AB22..44AB36: the existing app receiver applies +41A's local-owner
+        // gate before playing EVA_StructureSold (literal819030).
+        sim.sound_events
+            .emit(SimSoundEvent::StructureSold { owner });
+        //44AB44 calls the real Queue5B35E0, whose Selling guard rejects
+        // Guard5,0. Preserve that shared decision: no forced Assign/Commence.
+        // The early return bypasses44ABAC's status=1, so another visit pops
+        // another upgrade until the ordinary host-sale path is reached.
+        let _ = sim.mission_queue_exact(
+            id,
+            MissionId::from_known(MissionType::Guard),
+            0,
+            sim.session.binary_frame(),
+            &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+        );
+        return;
     }
     crate::sim::radio::broadcast(
         sim,
@@ -615,12 +676,37 @@ pub fn sell_building_now_for_test(sim: &mut Simulation, rules: &RuleSet, id: u64
     }
     // This test-only immediate sale fixture has no resident overlay table.
     sim.visit_building_operational(id, rules, None, crate::sim::world::FrameEffects::default());
-    sell_stage_zero(
-        sim,
-        Some(rules),
-        id,
-        crate::sim::world::FrameEffects::default(),
-    );
+    // This fixture deliberately has no frame scheduler. Visit stage zero
+    // through its real owner until upgrades are drained, then once for the
+    // host. Calling the live visitor here would wait for its next-frame timer
+    // instead of providing this fixture's documented immediate sale.
+    loop {
+        let Some(before) = sim
+            .substrate
+            .entities
+            .get(id)
+            .map(|building| building.building_upgrades().count())
+        else {
+            return false;
+        };
+        sell_stage_zero(
+            sim,
+            Some(rules),
+            id,
+            crate::sim::world::FrameEffects::default(),
+        );
+        if before == 0 {
+            break;
+        }
+        if sim
+            .substrate
+            .entities
+            .get(id)
+            .is_none_or(|building| building.building_upgrades().count() >= before)
+        {
+            return false;
+        }
+    }
     sell_stage_one(
         sim,
         Some(rules),

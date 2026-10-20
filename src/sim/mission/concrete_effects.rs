@@ -10,8 +10,10 @@ use std::collections::BTreeMap;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::NavTargetRef;
 use crate::sim::entity_store::EntityStore;
+use crate::sim::intern::StringInterner;
 use crate::sim::terrain_object::TerrainObjectState;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
 #[cfg(test)]
@@ -407,7 +409,13 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                 actor.category() == crate::map::entities::EntityCategory::Structure
             })
         {
-            sim.set_building_destination(prepared.receiver, requested, self.rules);
+            Simulation::set_building_destination(
+                &sim.interner,
+                &mut sim.substrate,
+                prepared.receiver,
+                requested,
+                self.rules,
+            );
             return true;
         }
         if requested.is_none() {
@@ -521,12 +529,13 @@ impl Simulation {
     /// Selling/Construction, mode0/1, EMP) are in
     /// `tools/procedural_drawing_oracle/factory_destination.{py,json}`.
     pub(crate) fn set_building_destination(
-        &mut self,
+        interner: &StringInterner,
+        substrate: &mut ObjectSubstrate,
         receiver: u64,
         requested: Option<NavTargetRef>,
         rules: Option<&crate::rules::ruleset::RuleSet>,
     ) {
-        let Some(actor) = self.substrate.entities.get(receiver) else {
+        let Some(actor) = substrate.entities.get(receiver) else {
             return;
         };
         debug_assert_eq!(
@@ -539,10 +548,10 @@ impl Simulation {
         // Production callers carry rules. A bare-storage fixture without the
         // type cannot establish rally admission and leaves its archive alone.
         let archives = rules
-            .and_then(|rules| self.object_type(actor.type_ref(), rules))
+            .and_then(|rules| interner.object_type(actor.type_ref(), rules))
             .is_some_and(|kind| kind.has_rally_line() || kind.construction_yard);
         if archives {
-            self.substrate
+            substrate
                 .entities
                 .get_mut(receiver)
                 .expect("same Building destination receiver")

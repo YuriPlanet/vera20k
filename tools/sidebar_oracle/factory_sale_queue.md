@@ -13,9 +13,8 @@ python -B -m tools.sidebar_oracle.factory_loss --sale-queue --check
 ```
 
 `--write` deliberately regenerates `factory_sale_queue.json` and its provenance.
-The sidecar pins the actual executable, command and physical inputs, without
-repository-source hashes. The original image is SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+The sidecar pins the command and physical inputs, without executable or
+repository-source hashes.
 
 Start with the [ready-building physical cache](cameo_order.md#paid-ready-building-retained-placement).
 Add real Russian assets through `asset extract` or the existing

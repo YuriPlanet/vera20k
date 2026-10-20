@@ -3,8 +3,7 @@
 //! 688210 writes literal human/Computer names independently of display handles.
 //! BuildingReadINI44F8CB skips the noncampaign current House before its ctor;
 //! InfantryReadINI51FB00 has no corresponding current-House gate.
-//! Original gamemd SHA256:
-//! 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c.
+//! Original gamemd.
 
 use super::*;
 use crate::headless_scenario::{battle_session, load_session};

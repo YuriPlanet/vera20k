@@ -315,9 +315,11 @@ fn run_inner(
         let IniQuery::Accessor { section, key } = query else {
             unreachable!("validated art accessor")
         };
-        let art = select_ini(assets, "artmd.ini")?;
+        let art = select_ini(assets, assets.ini_roots().art())?;
         let layers = vec![layer("fixed_art", json!(art.source), Some(&art.ini), query)];
-        return assemble(&art.ini, section, key, options, layers);
+        let mut report = assemble(&art.ini, section, key, options, layers)?;
+        report["ini_roots"] = json!(assets.ini_roots());
+        return Ok(report);
     }
     let audio_definitions = crate::rules::audio_sources::AudioDefinitions::select(assets);
     let sources = RetailRulesSources::select(assets)?;
@@ -416,6 +418,7 @@ fn run_inner(
         IniQuery::Type { type_id } => assemble_type(&rules, type_id, layers)?,
     };
     report["mode_roster_source"] = json!(roster.source);
+    report["ini_roots"] = json!(assets.ini_roots());
     report["mode"] = json!({"id": mode.id, "class": format!("{:?}", mode.class), "override_file": mode.override_file});
     report["source_selection_route"] =
         json!("app_noncampaign_startup_then_shell_registration_then_map_then_theater_then_mode");
@@ -443,6 +446,38 @@ mod tests {
             default: (reader != "raw").then(|| default.into()),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn ini_roots_art_probe_reads_selected_mo_source_and_reports_choice() {
+        use crate::util::ini_roots::{IniProfile, IniRootConfig};
+        let dir = crate::map::source::test_support::TestDirectory::new("ini-roots-art-tool");
+        dir.write("rulesmo.ini", b"[General]\nBuildSpeed=.7\n");
+        dir.write("artmo.ini", b"[TEST]\nVoxel=yes\n");
+        dir.write("aimo.ini", b"[Marker]\nValue=MO\n");
+        dir.write("artmd.ini", b"[TEST]\nVoxel=no\n");
+        let mut assets = AssetManager::from_loose_root_for_test(dir.path())
+            .with_ini_roots(&IniRootConfig {
+                profile: IniProfile::Mo,
+                ..Default::default()
+            })
+            .unwrap();
+        let report = run(
+            &mut assets,
+            dir.path(),
+            IniQuery::Accessor {
+                section: "TEST",
+                key: "Voxel",
+            },
+            &options("bool", "false"),
+        )
+        .unwrap();
+        assert_eq!(report["ini_roots"]["art"], "artmo.ini");
+        assert_eq!(
+            report["authored_layers"][0]["source"]["logical_name"],
+            "artmo.ini"
+        );
+        assert_eq!(report["accessor_result"], serde_json::json!(true));
     }
 
     #[test]

@@ -122,7 +122,7 @@ fn scenario_hash(sim: &Simulation) -> String {
 fn legacy_storm_actions_match_original_empty_target_rng_and_countdown_gates() {
     use lightning_storm::LightningStorm;
     // Original Execute44/45, static EmptyCell initializer6DCF10, Start539EB0
-    // and Scenario RNG (Steam3e81a617..08600). Declared map/House priors reuse
+    // and Scenario RNG (Steam gamemd). Declared map/House priors reuse
     // the existing storm oracle fixture; no incoming-House attribution.
     for (seed, size, raw, duration, target, expected_rng) in [
         (

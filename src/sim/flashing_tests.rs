@@ -196,15 +196,39 @@ fn a_unit_disguised_without_a_house_stays_dark_to_the_enemy_player() {
             .get_or_insert_with(|| DisguiseRuntime::new(0))
             .acquire(0, worn, None);
     }
-    sim.flash_object(mirage, 7);
-    sim.flash_object(spy, 7);
+    Simulation::flash_object(
+        &sim.interner,
+        &sim.session,
+        &sim.fog,
+        &sim.house_alliances,
+        &mut sim.substrate,
+        mirage,
+        7,
+    );
+    Simulation::flash_object(
+        &sim.interner,
+        &sim.session,
+        &sim.fog,
+        &sim.house_alliances,
+        &mut sim.substrate,
+        spy,
+        7,
+    );
     assert_eq!(flash(&sim, mirage), 0);
     // Infantry's GetDisguiseHouse(1) falls back on the player's house.
     assert_eq!(flash(&sim, spy), 7);
 
     sim.session
         .set_current_house_for_test(Some(sim.interner.intern("Russians")));
-    sim.flash_object(mirage, 5);
+    Simulation::flash_object(
+        &sim.interner,
+        &sim.session,
+        &sim.fog,
+        &sim.house_alliances,
+        &mut sim.substrate,
+        mirage,
+        5,
+    );
     assert_eq!(flash(&sim, mirage), 5, "its owner sees through it");
 }
 
@@ -244,7 +268,15 @@ fn a_building_flashes_unless_its_raw_disguise_flag_is_up() {
         .register(HouseState::new(americans, 0, None, true, 0, 10));
     sim.session.set_current_house_for_test(Some(americans));
     let power = spawn(&mut sim, &rules, "GAPOWR", "Americans", 10, 10);
-    sim.flash_object(power, 7);
+    Simulation::flash_object(
+        &sim.interner,
+        &sim.session,
+        &sim.fog,
+        &sim.house_alliances,
+        &mut sim.substrate,
+        power,
+        7,
+    );
     assert_eq!(flash(&sim, power), 7);
     sim.substrate
         .entities
@@ -253,7 +285,15 @@ fn a_building_flashes_unless_its_raw_disguise_flag_is_up() {
         .disguise
         .get_or_insert_with(|| DisguiseRuntime::new(0))
         .acquire(0, None, Some(americans));
-    sim.flash_object(power, 3);
+    Simulation::flash_object(
+        &sim.interner,
+        &sim.session,
+        &sim.fog,
+        &sim.house_alliances,
+        &mut sim.substrate,
+        power,
+        3,
+    );
     assert_eq!(flash(&sim, power), 7);
 }
 

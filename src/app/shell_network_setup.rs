@@ -561,6 +561,12 @@ pub(crate) fn return_after_match(state: &mut AppState) {
     }
 }
 
+/// The WOL runner closes every dialog (`LAB_00787F98`) while C2/C9 runs:
+/// the setup is dropped through its owner without reopening a lobby.
+pub(crate) fn abandon_for_wol_runner(state: &mut AppState) {
+    leave_setup(state);
+}
+
 fn leave_setup(state: &mut AppState) -> SetupDialog {
     let dialog = dialog(state);
     if state

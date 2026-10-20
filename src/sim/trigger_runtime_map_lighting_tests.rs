@@ -345,6 +345,7 @@ fn retail_transylv_ambient_action_reaches_native_fade_and_large_flash_request() 
         .consume_outgoing_scenario_rules(
             sim.retire_object_type_tech_levels(),
             sim.session.lighting_mut().retire_ambient_change_inputs(),
+            sim.retire_building_upgrade_art_names(),
         )
         .unwrap();
     let next = owner
@@ -367,8 +368,7 @@ fn retail_transylv_ambient_action_reaches_native_fade_and_large_flash_request() 
 
 #[test]
 fn ambient_rate_and_step_match_original_action_bits_and_due_logic_rung() {
-    // Original Steam gamemd.exe SHA256:
-    // 3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600.
+    // Original Steam gamemd.exe.
     // ActionFixture executes ctor6DD000/read6DD5B0/Execute6DD8B0, then
     // Logic55B33D..55B4D7 with current60, target100, timer12/8 at frame20.
     // Relight/redraw are output sinks. These are native outputs, not Rust
@@ -675,6 +675,7 @@ fn ambient_action_values_survive_save_and_transfer_to_retained_rules_at_retireme
                 .session
                 .lighting_mut()
                 .retire_ambient_change_inputs(),
+            restored.retire_building_upgrade_art_names(),
         )
         .unwrap();
     assert_eq!(

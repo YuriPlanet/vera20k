@@ -15,8 +15,8 @@ original full reconstruction from the restored source facts. These ordered IDs
 and records still affect route selection; mere graph isomorphism is insufficient.
 
 [Instruction/byte evidence](anytown_navigation_restore.native_bytes.json)
-contains saved Ghidra excerpts and hashes independently checked against pinned
-retail binary `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+contains saved Ghidra excerpts and hashes independently checked against the
+retail binary.
 
 The [runner](anytown_navigation_restore.py) reuses the existing physical full-map
 [`Navigation`](anytown_damage/navigation.py) owner and its unchanged `run` driver.

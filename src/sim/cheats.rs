@@ -7,6 +7,7 @@
 //! rewrites Iron Curtain timers, and power keeps its real assessed totals.
 
 use crate::sim::intern::InternedId;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
 pub const MAX_MONEY_TARGET: i32 = 1_000_000_000;
@@ -221,7 +222,7 @@ impl Simulation {
 
     /// At the existing master-frame boundary; queued actions are consumed once.
     pub fn apply_debug_tools(&mut self, rules: Option<&crate::rules::ruleset::RuleSet>) {
-        self.refresh_debug_event_selection();
+        Self::refresh_debug_event_selection(&mut self.debug_tools, &mut self.substrate);
         let Ok(owner) = self.trainer_write_owner() else {
             if self.debug_tools.owner.is_some() || self.debug_tools.pending != 0 {
                 self.clear_debug_tools();
@@ -335,15 +336,19 @@ impl Simulation {
 
     pub fn set_debug_event_logging(&mut self, enabled: bool) {
         self.debug_tools.event_logging = enabled && self.trainer_available();
-        self.refresh_debug_event_selection();
+        Self::refresh_debug_event_selection(&mut self.debug_tools, &mut self.substrate);
     }
 
-    fn refresh_debug_event_selection(&mut self) {
-        if !self.debug_tools.event_logging && self.debug_tools.logged_entities.is_empty() {
+    fn refresh_debug_event_selection(
+        debug_tools: &mut DebugToolsState,
+        substrate: &mut ObjectSubstrate,
+    ) {
+        if !debug_tools.event_logging && debug_tools.logged_entities.is_empty() {
             return;
         }
-        let selected: Vec<_> = if self.debug_tools.event_logging {
-            self.entities()
+        let selected: Vec<_> = if debug_tools.event_logging {
+            substrate
+                .entities
                 .values()
                 .filter(|e| e.selection.is_selected())
                 .take(crate::sim::debug_event_log::DEBUG_EVENT_ENTITY_LIMIT)
@@ -352,19 +357,19 @@ impl Simulation {
         } else {
             Vec::new()
         };
-        if selected == self.debug_tools.logged_entities {
+        if selected == debug_tools.logged_entities {
             return;
         }
-        let old = std::mem::replace(&mut self.debug_tools.logged_entities, selected.clone());
+        let old = std::mem::replace(&mut debug_tools.logged_entities, selected.clone());
         for id in old {
             if !selected.contains(&id)
-                && let Some(entity) = self.substrate.entities.get_mut(id)
+                && let Some(entity) = substrate.entities.get_mut(id)
             {
                 entity.set_debug_logging(false);
             }
         }
         for id in selected {
-            if let Some(entity) = self.substrate.entities.get_mut(id) {
+            if let Some(entity) = substrate.entities.get_mut(id) {
                 entity.set_debug_logging(true);
             }
         }

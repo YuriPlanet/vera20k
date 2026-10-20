@@ -646,6 +646,19 @@ impl ProcessedRulesLayers {
             .map(|member| (member.native_stored_id.as_str(), member.building_light))
     }
 
+    /// BuildingType's retained upgrade inputs after the last reached Rules body.
+    pub(crate) fn building_upgrade_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, &crate::rules::building_upgrade::BuildingUpgradeRules)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Building)
+            .into_iter()
+            .flatten()
+            .map(|member| (member.native_stored_id.as_str(), &member.building_upgrade))
+    }
+
     /// BuildingType+EBC after each reached Rules body. Fixed ART never reads it.
     pub(crate) fn building_target_coord_offsets(&self) -> impl Iterator<Item = (&str, [i32; 3])> {
         self.native_type_construction_trace
@@ -1119,7 +1132,7 @@ impl ProcessedRulesLayers {
     }
 
     /// ReadGeneral670DE9/670E30/670E57, current scalar defaults across
-    /// layers and Type resets (original gamemd SHA2561cdd1180..84298c).
+    /// layers and Type resets (original gamemd).
     pub(crate) fn repair_service_inputs(&self) -> (i32, f64, f64) {
         let state = self.native_type_construction_trace.registry_state();
         (
@@ -1783,23 +1796,55 @@ impl NativeRulesRegistryState {
         let mut resolved = Vec::new();
         for (category, id, value) in updates {
             let family = RulesTypeFamily::from_object_category(category);
-            let mut matching = self
-                .families
-                .get(&family)
-                .into_iter()
-                .flatten()
-                .enumerate()
-                .filter(|(_, member)| member.native_stored_id == id);
-            let index = matching.next().map(|(index, _)| index);
-            if index.is_none() || matching.next().is_some() {
-                return Err(RulesError::InvalidSavedState(
+            let index = self
+                .exact_type_index(family, &id)
+                .ok_or(RulesError::InvalidSavedState(
                     "outgoing TechLevel does not identify one exact live TechnoType",
-                ));
-            }
-            resolved.push((family, index.expect("exact identity validated"), value));
+                ))?;
+            resolved.push((family, index, value));
         }
         for (family, index, value) in resolved {
             self.families.get_mut(&family).expect("validated family")[index].tech_level = value;
+        }
+        Ok(())
+    }
+
+    fn exact_type_index(&self, family: RulesTypeFamily, id: &str) -> Option<usize> {
+        let mut matching = self
+            .families
+            .get(&family)?
+            .iter()
+            .enumerate()
+            .filter(|(_, member)| member.native_stored_id == id);
+        let index = matching.next()?.0;
+        matching.next().is_none().then_some(index)
+    }
+
+    /// One retirement transaction for current Type fields. Validate upgrade
+    /// identities/slots first, then use TechLevel's existing atomic owner;
+    /// neither family of writes commits when either transfer is invalid.
+    pub(crate) fn consume_outgoing_type_runtime_fields(
+        &mut self,
+        tech_levels: impl IntoIterator<Item = (ObjectCategory, String, i32)>,
+        upgrade_art_names: impl IntoIterator<Item = (String, u8, String)>,
+    ) -> Result<(), RulesError> {
+        let mut resolved = Vec::new();
+        for (id, slot, name) in upgrade_art_names {
+            let index = (slot < 3)
+                .then(|| self.exact_type_index(RulesTypeFamily::Building, &id))
+                .flatten()
+                .ok_or(RulesError::InvalidSavedState(
+                    "outgoing PowerUp animation does not identify one exact live BuildingType slot",
+                ))?;
+            resolved.push((index, slot, name));
+        }
+        self.consume_outgoing_type_tech_levels(tech_levels)?;
+        for (index, slot, name) in resolved {
+            self.families
+                .get_mut(&RulesTypeFamily::Building)
+                .expect("validated BuildingType family")[index]
+                .building_upgrade
+                .set_normal_art_name(slot, name);
         }
         Ok(())
     }
@@ -2084,6 +2129,8 @@ struct ProcessedType {
     /// BuildingType ctor45DFDA=false; ReadBool45FEE5..45FF0D, current default.
     building_has_spotlight: bool,
     building_light: crate::rules::building_light::BuildingLightRules,
+    /// BuildingType+E88/+16FC/+14E0, retained by ReadINI460E17/464727.
+    building_upgrade: crate::rules::building_upgrade::BuildingUpgradeRules,
     secret_lab: crate::rules::secret_lab::SecretLabRules,
     /// Unit ctor747167..7471B2 and reached fixed-ART reader7477C1..747AAE.
     unit_shp: crate::rules::shp_vehicle_sequence::UnitShpReadState,
@@ -2436,7 +2483,7 @@ struct WeaponReadState {
     /// Weapon771C70 initializes +A4/+AC to zero/null. ReadINI7722D4..7722E8
     /// reads Damage with its current signed value;77294C..772981 only replaces
     /// the Warhead pointer after a nonempty ReadString128. Executed controls:
-    /// spatial_oracle/trigger_do_explosion.json (Steam3e81a617..08600).
+    /// spatial_oracle/trigger_do_explosion.json (Steam gamemd).
     damage: i32,
     warhead: Option<usize>,
     /// `Anim=` (`0x00772471`): ReadString128, then each `strtok` token's
@@ -2472,6 +2519,7 @@ impl ProcessedType {
             building_target_coord_offset: [0; 3],
             building_has_spotlight: false,
             building_light: Default::default(),
+            building_upgrade: Default::default(),
             secret_lab: Default::default(),
             unit_shp: Default::default(),
             unit_speed_type: SpeedType::Invalid,
@@ -3111,7 +3159,7 @@ impl RulesPassProcessor {
         // ReadGeneral66F30E..66F350: ReadInt5276D0, exact-case keys,
         // current +7B8/+7BC as defaults, in this order, without clamps.
         // Original: tools.native_inspect disasm0x66F30E --bytes66;
-        // ctor0x666163 --bytes20 (supported retail gamemd3e81a617...).
+        // ctor0x666163 --bytes20 (supported retail gamemd).
         self.rules_parachute_max_fall_rate =
             section.read_int("ParachuteMaxFallRate", self.rules_parachute_max_fall_rate);
         self.rules_no_parachute_max_fall_rate = section.read_int(
@@ -3120,7 +3168,7 @@ impl RulesPassProcessor {
         );
         // ReadGeneral670C13..670C6C: ReadInt5276D0 in side order, current
         // signed values as defaults, no clamp. Full_Init6876AC ->6686C0
-        // resets Types, not these RulesClass fields. Original SHA1cdd1180.
+        // resets Types, not these RulesClass fields. Original gamemd.
         for (value, key) in self.rules_survivor_divisors.iter_mut().zip([
             "AlliedSurvivorDivisor",
             "SovietSurvivorDivisor",
@@ -3682,6 +3730,9 @@ impl RulesPassProcessor {
                         member.building_has_spotlight =
                             raw.read_bool("HasSpotlight", member.building_has_spotlight);
                         member.building_light.read_pass(&raw);
+                        member
+                            .building_upgrade
+                            .read_pass(&raw, fixed_art.section_or_empty(&image));
                         member.building_target_coord_offset = raw
                             .read_coord3("TargetCoordOffset", member.building_target_coord_offset);
                         member.building_foundation =

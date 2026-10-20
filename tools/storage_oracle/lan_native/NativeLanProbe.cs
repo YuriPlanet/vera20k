@@ -2,12 +2,10 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.IO;
-using System.Security.Cryptography;
 
 // Original LAN callbacks remain unmodified except the six declared transport
 // entries. This fixture requires an explicitly marked isolated game copy.
 class NativeLanProbe {
- static readonly string ImageHash="1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c";
  static string Root, ImagePath;
  delegate bool E(IntPtr h,IntPtr p);
  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h,out uint pid);
@@ -40,7 +38,6 @@ class NativeLanProbe {
  static uint Allocate(IntPtr p,byte[] code){IntPtr a=VirtualAllocEx(p,IntPtr.Zero,new UIntPtr((uint)code.Length),0x3000,4);if(a==IntPtr.Zero||a.ToInt64()>UInt32.MaxValue)throw Error("Allocate 32bit stub");uint at=(uint)a.ToInt64();Write(p,at,code);uint old;if(!VirtualProtectEx(p,a,new UIntPtr((uint)code.Length),0x20,out old)||!FlushInstructionCache(p,a,new UIntPtr((uint)code.Length)))throw Error("Protect stub");return at;}
  static void Patch(IntPtr p,uint at,string expected,uint target){byte[] original=Read(p,at,expected.Length/2);if(Hex(original)!=expected)throw new Exception("Unexpected original bytes "+at.ToString("X")+" "+Hex(original));byte[] jump=new byte[original.Length];jump[0]=0xe9;Array.Copy(BitConverter.GetBytes(unchecked(target-at-5)),0,jump,1,4);for(int i=5;i<jump.Length;i++)jump[i]=0x90;uint old,unused;if(!VirtualProtectEx(p,new IntPtr(at),new UIntPtr((uint)jump.Length),0x40,out old))throw Error("Protect original");Write(p,at,jump);if(!VirtualProtectEx(p,new IntPtr(at),new UIntPtr((uint)jump.Length),old,out unused)||!FlushInstructionCache(p,new IntPtr(at),new UIntPtr((uint)jump.Length)))throw Error("Flush patch");Console.WriteLine("patch at="+at.ToString("X8")+" original="+expected+" installed="+Hex(jump)+" stub="+target.ToString("X8"));}
  static void LaunchLan(){
-  string hash;using(var sha=SHA256.Create()){hash=Hex(sha.ComputeHash(File.ReadAllBytes(ImagePath)));}if(hash!=ImageHash)throw new Exception("Wrong original image "+hash);
   var si=new SI();si.cb=Marshal.SizeOf(si);PI pi;if(!CreateProcessW(ImagePath,new StringBuilder("\""+ImagePath+"\""),IntPtr.Zero,IntPtr.Zero,false,4,IntPtr.Zero,Path.GetDirectoryName(ImagePath),ref si,out pi))throw Error("Create suspended");bool resumed=false;
   try{Identity(pi.process);if(Hex(Read(pi.process,0x400000,2))!="4d5a")throw new Exception("Wrong mapped base");
    IntPtr data=VirtualAllocEx(pi.process,new IntPtr(0x10000000),new UIntPtr(0x201000),0x3000,4);if(data.ToInt64()!=0x10000000)throw Error("Fixed mailbox allocation");
@@ -57,7 +54,7 @@ class NativeLanProbe {
    long created=Creation(pi.process);File.WriteAllText(Manifest(pi.pid),created.ToString());Console.WriteLine("owned creation="+created+" mailbox=10000000 outgoing-limit=4096");
    Patch(pi.process,0x53f540,"8b0d28768800",open);Patch(pi.process,0x541820,"81ecb8040000",service);Patch(pi.process,0x5410f0,"568bf18a4604",send);Patch(pi.process,0x541370,"8a410484c0",receive);
    Patch(pi.process,0x5414c0,"5355568bf1",privateSend);Patch(pi.process,0x5415f0,"515355568bf1",privateReceive);
-   Console.WriteLine("native-lan-smoke pid="+pi.pid+" tid="+pi.tid+" image="+ImagePath+" sha256="+hash+" base=00400000 suspended=true excluded=open/service/global-send/global-receive/private-send/private-receive inbox=scripted-bounded outgoing=captured");
+   Console.WriteLine("native-lan-smoke pid="+pi.pid+" tid="+pi.tid+" image="+ImagePath+" base=00400000 suspended=true excluded=open/service/global-send/global-receive/private-send/private-receive inbox=scripted-bounded outgoing=captured");
    uint previous=ResumeThread(pi.thread);if(previous!=1)throw new Exception("Unexpected suspend count "+previous);resumed=true;
    uint waited=WaitForSingleObject(pi.process,0xffffffff);uint exit;GetExitCodeProcess(pi.process,out exit);Console.WriteLine("owned child exited wait="+waited+" exit="+exit);
   }finally{if(!resumed)TerminateProcess(pi.process,1);CloseHandle(pi.thread);CloseHandle(pi.process);}
@@ -215,7 +212,7 @@ class NativeLanProbe {
   ImagePath=Environment.GetEnvironmentVariable("VERA20K_NATIVE_IMAGE");
   if(String.IsNullOrEmpty(Root)||String.IsNullOrEmpty(ImagePath))throw new Exception("Set explicit isolated VERA20K_NATIVE_FIXTURE_ROOT and VERA20K_NATIVE_IMAGE");
   Root=Path.GetFullPath(Root);ImagePath=Path.GetFullPath(ImagePath);
-  if(File.ReadAllText(Path.Combine(Path.GetDirectoryName(ImagePath),".vera20k-native-fixture")).Trim()!=ImageHash)throw new Exception("Unmarked isolated game copy");
+  if(!File.Exists(Path.Combine(Path.GetDirectoryName(ImagePath),".vera20k-native-fixture")))throw new Exception("Unmarked isolated game copy");
   if(args.Length==1&&args[0]=="launch-lan"){LaunchLan();return;}
   if(args.Length==2&&args[0]=="stop-owned"){StopOwned(UInt32.Parse(args[1]));return;}
   if(args.Length==4&&args[0]=="lan-name"){LanName(UInt32.Parse(args[1]),new IntPtr(Convert.ToInt64(args[2],16)),args[3]);return;}

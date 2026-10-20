@@ -15,8 +15,6 @@ The input roots follow [the existing mission owner](mission.md) and
 attack SHP dependencies. The additive emission receipt uses its separate physical
 GI/MGUN/PIFFPIFF root and extraction manifest, described below; the historical
 sparse roots retain their exact original asset coverage.
-The native image is SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 `--write` deliberately creates a new reference; it never derives outputs from
 Rust. The default mission, counter, interleaving and projected native corpora
 retain their bytes.
@@ -208,8 +206,7 @@ roll0 and performs no action or turn. Timer auxiliary words are raw stack values
 Stock physical E1 idle9/10 rows take no Main RNG/audio branch; excluded sound
 sinks still prevent extending that observation to other sequences or types.
 
-**Idle GameOptions input, executed 2026-09-30.** On the pinned native SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`, a fresh
+**Idle GameOptions input, executed 2026-09-30.** On the native image, a fresh
 existing `FootMissions` retained stored speed0 at GameOptions receiver `A8EB60`
 after bootstrap, after
 `initialize_companion()` and after the physical `rules_reader_receipts()`.

@@ -71,7 +71,7 @@ const STRTRIM_MAX: u8 = 0x20;
 const COMMA: &[char] = &[','];
 
 /// AbstractType_From_Name40DCE0's compiled table at816EE0, read from Steam
-/// gamemd3e81a617..08600. Values are explicit: Temporal precedes RadSite in
+/// gamemd. Values are explicit: Temporal precedes RadSite in
 /// the name table but their RTTI values are70 and69, respectively.
 const ABSTRACT_TYPES: &[(&str, i32)] = &[
     ("<none>", 0),
@@ -377,7 +377,7 @@ impl IniSection {
 
     /// ReadGeneral671E3B..671E81: unsigned current ticks * the native f32
     /// reciprocal of60, ReadDouble5283D0, then *60 and ftol low32. This runs
-    /// even for an omitted key on an admitted General pass. Steam3e81a617.
+    /// even for an omitted key on an admitted General pass. Steam gamemd.
     pub(crate) fn read_talk_bubble_time(&self, current: i32) -> i32 {
         let default = MaskedX87Chop53::mul(
             MaskedX87Chop53::load_f64(NativeF64Bits::from_bits(

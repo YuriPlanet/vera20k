@@ -12,9 +12,7 @@ parity.
 python -m tools.spatial_oracle.infantry_scatter_entry --priority --check
 ```
 
-Set `VERA20K_GAMEMD_EXE` to the active retail executable pinned by
-`tools/native_oracle.py`: SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+Set `VERA20K_GAMEMD_EXE` to the active retail executable.
 Unicorn is required. `--output` selects another file; `--write` deliberately
 records new native outputs and sidecar provenance.
 

@@ -68,7 +68,17 @@ fn world(rules: &RuleSet) -> Simulation {
 fn charge(sim: &mut Simulation, rules: &RuleSet, owner: &str) -> (InternedId, InternedId) {
     let owner = sim.interner.get(owner).unwrap();
     let sw = sim.interner.get("Delivery").unwrap();
-    assert!(trigger_grant_super(sim, rules, owner, sw, false));
+    assert!(trigger_grant_super(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &sim.houses,
+        &mut sim.super_weapons,
+        rules,
+        owner,
+        sw,
+        false
+    ));
     let instance = sim
         .super_weapons
         .map_mut_for_test()

@@ -1250,8 +1250,7 @@ impl Simulation {
     /// slot, followed by Map line 25/26 at `0x004D8A70..0x004D8B66`.
     /// Ordinary Fly ingress remains unproven.
     /// Agent Infantry54 follows1/59 at4D8A14..4D8A6B;53 is explicitly
-    /// deferred. RESIDUAL: Map zone24 (`0x004D8B66..0x004D8D99`), the
-    /// `+0x83` / `0x00586360` step (`0x004D8DA7..0x004D8DF5`), the
+    /// deferred. RESIDUAL: Map zone24 (`0x004D8B66..0x004D8D99`) and the
     /// planning-waypoint upkeep (`0x004D8DFF..0x004D8F1D`) are not ported.
     /// Trigger: every arrival. Effect: zone triggers and planning waypoints
     /// do not fire from movement. Risk: maps with those trigger families.
@@ -1283,7 +1282,12 @@ impl Simulation {
         if let Some(rules) = rules {
             self.spatial_threat_at_per_cell(id, rules);
         }
-        self.foot_neighbors_at_per_cell(id);
+        Self::foot_neighbors_at_per_cell(
+            &mut self.substrate,
+            &self.resolved_terrain,
+            &mut self.overlay_grid,
+            id,
+        );
         if let Some(rules) = rules {
             crate::sim::world::techno_ai_cloak::uncloak_on_sensor_neighbour_after_cell_entry(
                 self, id, rules,
@@ -1347,9 +1351,17 @@ impl Simulation {
             );
             return;
         }
+        // 0x004D8DA7..0x004D8DF5: another house's object arriving over the
+        // player's shroud leaves the selection.
+        self.deselect_over_player_shroud(id, Self::house_is_human_player);
         // `0x006F5090`'s head lets a held Temporal target go, then caches the
         // Cell of its GetCoords (`0x006F50B9..0x006F50F6`) for the tail.
-        self.temporal_release_if_warping(id);
+        Self::temporal_release_if_warping(
+            &mut self.substrate,
+            &mut self.houses,
+            &mut self.power_states,
+            id,
+        );
         let cell = self
             .substrate
             .entities

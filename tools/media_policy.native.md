@@ -2,7 +2,7 @@
 
 Read-only inspection at 2026-09-28T01:06:36.176354+00:00.
 Checkout HEAD: `0090b85ca1cfec6871c8075f1a3e2bda7bf10a63`.
-Native SHA-256: `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`; image base `0x00400000`; Capstone 5.0.7.
+Image base `0x00400000`; Capstone 5.0.7.
 
 ## Finding and owner boundary
 
@@ -14,7 +14,7 @@ Historical evidence leads, now checked against original bytes: commit 8c2e873b65
 
 ## Reproduce
 
-From the repository, select the pinned executable with VERA20K_GAMEMD_EXE (or RA2_DIR). On this host `source ~/Documents/vera20k-dev/env.sh` provided that selection and pinned Python dependencies. All commands below use the indexed `tools.native_inspect` owner; no private PE mapper or disassembler was used. Packet hashes are SHA-256 of the exact tool stdout bytes; instructions below are selected from those packets.
+From the repository, select the executable with VERA20K_GAMEMD_EXE (or RA2_DIR). On this host `source ~/Documents/vera20k-dev/env.sh` provided that selection and pinned Python dependencies. All commands below use the indexed `tools.native_inspect` owner; no private PE mapper or disassembler was used. Packet hashes are SHA-256 of the exact tool stdout bytes; instructions below are selected from those packets.
 
 ### Argument iteration and uppercase call
 

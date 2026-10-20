@@ -4,7 +4,7 @@
 adds 28 joined Object admission/projection/body controls in the same VM.
 The consumed JSON contains the physical inputs, native draw parameters,
 legacy body pixels before shadow and final pixels after each Object return.
-Its sidecar records the original binary identity, command and proof boundaries.
+Its sidecar records the command and proof boundaries.
 No VERA framebuffer, palette table or hand-computed pixel supplies a golden.
 
 From the repository root, with the configured retail `gamemd.exe` and Python

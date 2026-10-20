@@ -7,12 +7,18 @@ use std::ops::ControlFlow;
 
 use super::Simulation;
 use crate::map::entities::EntityCategory;
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::{DriveCoord, NavTargetRef};
+use crate::sim::intern::StringInterner;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::{DestinationTiming, air_movement, ground_pose};
 use crate::sim::radio::{self, RadioMessage, RadioPayload, RadioResponse};
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::world::FrameChannel;
+use crate::sim::world::ObjectSubstrate;
+use crate::sim::world::SimSoundEvent;
 
 impl Simulation {
     /// `AircraftClass::Assign_Destination @ 0x0041AA80` (vt+0x480), the
@@ -98,7 +104,16 @@ impl Simulation {
             Some((rules, &self.interner)),
         )
         .expect("live aircraft NavCom coordinate");
-        self.aircraft_locomotor_move_to(id, coord, rules);
+        Self::aircraft_locomotor_move_to(
+            &mut self.interner,
+            &self.session,
+            &mut self.substrate,
+            &mut self.sound_events,
+            &self.resolved_terrain,
+            id,
+            coord,
+            rules,
+        );
         // Accepted Foot setter resets both timers even when Fly MoveTo refuses
         // (e.g. powered off). Retry count is preserved.
         DestinationTiming::from_rules(self.session.binary_frame(), Some(rules))
@@ -335,27 +350,34 @@ impl Simulation {
     /// Mission_Move state 1 call it: a spawned missile's Rocket
     /// (`0x006632E0`), every other aircraft's Fly (`0x004CCC80`).
     pub(crate) fn aircraft_locomotor_move_to(
-        &mut self,
+        interner: &mut StringInterner,
+        session: &ScenarioSession,
+        substrate: &mut ObjectSubstrate,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
         coord: DriveCoord,
         rules: &RuleSet,
     ) {
-        let entity = self.substrate.entities.get(id).unwrap();
+        let entity = substrate.entities.get(id).unwrap();
         if entity
             .locomotor
             .as_ref()
             .is_some_and(|locomotor| locomotor.rocket_runtime().is_some())
         {
-            Self::rocket_move_to(
-                &self.interner,
-                &self.session,
-                &mut self.substrate,
+            Self::rocket_move_to(&*interner, session, substrate, id, coord, rules);
+        } else {
+            Self::move_air_coordinate(
+                interner,
+                session,
+                substrate,
+                sound_events,
+                resolved_terrain,
                 id,
                 coord,
-                rules,
+                None,
+                Some(rules),
             );
-        } else {
-            self.move_air_coordinate(id, coord, None, Some(rules));
         }
     }
 
@@ -392,13 +414,17 @@ impl Simulation {
     /// warping owner. `timing` is an enclosing Foot setter's tail, run on
     /// acceptance.
     pub(crate) fn move_air_coordinate(
-        &mut self,
+        interner: &mut StringInterner,
+        session: &ScenarioSession,
+        substrate: &mut ObjectSubstrate,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
         request: DriveCoord,
         timing: Option<DestinationTiming>,
         rules: Option<&RuleSet>,
     ) -> bool {
-        let Some(entity) = self.substrate.entities.get(id) else {
+        let Some(entity) = substrate.entities.get(id) else {
             return false;
         };
         if entity
@@ -412,13 +438,12 @@ impl Simulation {
             return false;
         }
         let flight_level =
-            air_movement::type_flight_level(entity, rules.map(|rules| (rules, &self.interner)));
+            air_movement::type_flight_level(entity, rules.map(|rules| (rules, &*interner)));
         let armed_flight_level = (entity.attack_target.target().is_some()
             && entity.ammo().is_some_and(|a| a.current() != 0))
         .then_some(flight_level);
         //4CCE1C..4CCE6E stores destination before landing-base/height reads.
-        if let Some(state) = self
-            .substrate
+        if let Some(state) = substrate
             .entities
             .get_mut(id)
             .and_then(|e| e.locomotor.as_mut())
@@ -428,13 +453,13 @@ impl Simulation {
                 ground_pose::ground_surface_z_at(
                     [request.x, request.y],
                     false,
-                    self.resolved_terrain.as_ref(),
+                    resolved_terrain.as_ref(),
                     None,
                 )
                 .unwrap_or(0)
             });
         }
-        let entity = self.substrate.entities.get(id).unwrap();
+        let entity = substrate.entities.get(id).unwrap();
         let begin_takeoff = entity
             .locomotor
             .as_ref()
@@ -442,21 +467,29 @@ impl Simulation {
             .is_some_and(|state| {
                 let base = crate::sim::aircraft::landing_base::landing_base(
                     entity,
-                    &self.substrate.entities,
-                    rules.map(|r| (r, &self.interner)),
+                    &substrate.entities,
+                    rules.map(|r| (r, &*interner)),
                 );
                 state.should_begin_takeoff(
                     entity.health.current(),
-                    || air_movement::current_fly_height(entity, self.resolved_terrain.as_ref()),
+                    || air_movement::current_fly_height(entity, resolved_terrain.as_ref()),
                     base,
                 )
             });
         if begin_takeoff {
-            self.begin_fly_takeoff(id, rules);
+            Self::begin_fly_takeoff(
+                interner,
+                session,
+                substrate,
+                sound_events,
+                resolved_terrain,
+                id,
+                rules,
+            );
         }
         //4CCED9 follows ALL BeginTakeoff effects. Its stored-destination ground
         // query must be last, including when both lookups stamp the Cell Dummy.
-        let entity = self.substrate.entities.get_mut(id).unwrap();
+        let entity = substrate.entities.get_mut(id).unwrap();
         let aircraft = entity.category() == crate::map::entities::EntityCategory::Aircraft;
         let ready = aircraft
             && entity
@@ -465,14 +498,14 @@ impl Simulation {
                 .is_some_and(|l| l.action_latch() != 0);
         let non_landable = aircraft
             && rules
-                .and_then(|r| self.interner.object_type(entity.type_ref(), r))
+                .and_then(|r| interner.object_type(entity.type_ref(), r))
                 .is_some_and(|o| !o.landable);
         if let Some(state) = entity.locomotor.as_mut().and_then(|l| l.fly_runtime_mut()) {
             let destination = state.destination();
             let ground = ground_pose::ground_surface_z_at(
                 [destination.x, destination.y],
                 false,
-                self.resolved_terrain.as_ref(),
+                resolved_terrain.as_ref(),
                 None,
             )
             .unwrap_or(0);
@@ -492,8 +525,16 @@ impl Simulation {
     ///4CF950: owner refusal gates precede flags, AirTracker admission, live type
     /// FlightLevel, ground-facing snap and AuxSound1. Power is a MoveTo gate,
     /// not a second BeginTakeoff gate.
-    pub(crate) fn begin_fly_takeoff(&mut self, id: u64, rules: Option<&RuleSet>) -> bool {
-        let Some(entity) = self.substrate.entities.get(id) else {
+    pub(crate) fn begin_fly_takeoff(
+        interner: &mut StringInterner,
+        session: &ScenarioSession,
+        substrate: &mut ObjectSubstrate,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+        rules: Option<&RuleSet>,
+    ) -> bool {
+        let Some(entity) = substrate.entities.get(id) else {
             return false;
         };
         if crate::sim::movement::locomotor_owner::owner_is_warping(entity)
@@ -505,9 +546,8 @@ impl Simulation {
         {
             return false;
         }
-        let level =
-            air_movement::type_flight_level(entity, rules.map(|rules| (rules, &self.interner)));
-        self.substrate
+        let level = air_movement::type_flight_level(entity, rules.map(|rules| (rules, &*interner)));
+        substrate
             .entities
             .get_mut(id)
             .unwrap()
@@ -515,7 +555,15 @@ impl Simulation {
             .as_mut()
             .unwrap()
             .begin_fly_takeoff(level);
-        self.finish_fly_takeoff_entry(id, rules);
+        Self::finish_fly_takeoff_entry(
+            interner,
+            session,
+            substrate,
+            sound_events,
+            resolved_terrain,
+            id,
+            rules,
+        );
         true
     }
 

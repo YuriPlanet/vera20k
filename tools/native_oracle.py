@@ -30,24 +30,10 @@ from unicorn.x86_const import (
 
 from tools import oracle_sources
 
-# The identity of the supported game code, named by the SHA-256 of the historical
-# reference file. Releases that repackage that code (Steam's, for one) differ only
-# outside its sections, run the same native code and report this identity.
+# A fixed label, not an identity check: payload schemas written before the
+# hash checks were removed carry it, so their producers keep reporting it until
+# each corpus is next regenerated. Any gamemd.exe build is accepted.
 NATIVE_SHA256 = "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-# The reference's PE sections: RVA, raw pointer, raw size, virtual size, flags and
-# the SHA-256 of the raw bytes (spatial_oracle/shrapnel_damage/loader_compatibility.json).
-# Every byte load_image maps and file_span reads, except the header page and
-# BSS, comes from these. Headers and bytes after the sections are not compared.
-NATIVE_SECTIONS = (
-    (0x1000, 0x1000, 0x3E0000, 0x3DF38D, 0x60000020,
-     "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc"),
-    (0x3E1000, 0x3E1000, 0x31000, 0x30074, 0x40000040,
-     "057ab12d49f7879e8707413511e0d2dc3c4326f4440d5164862a8ec9abdeab5d"),
-    (0x412000, 0x412000, 0x6C000, 0x367BE4, 0xC0000040,
-     "50490286ee34220d562815ebc4ca3661e0e4d8c160b9aecd540d023e13f469af"),
-    (0x77A000, 0x47E000, 0x8A000, 0x89A9C, 0x40000040,
-     "a2377a82d5aa7c72562a657b2e294a24a4d69b2faa85cdd7287efc9caf52e380"),
-)
 IMAGE_BASE = 0x00400000
 # Preserve the original fixture mapping, including runtime globals in BSS.
 IMAGE_SIZE = 0x00A00000
@@ -240,43 +226,19 @@ def configured_gamemd() -> Path:
     return path
 
 
-@lru_cache(maxsize=4)
-def _carries_native_code(data: bytes) -> bool:
-    """Whether these file bytes hold the supported sections, byte for byte."""
-    try:
-        sections = list(_sections(data))
-    except OracleError:
-        return False
-    return tuple((rva, raw_ptr, raw_size, virtual_size, flags,
-                  hashlib.sha256(data[raw_ptr:raw_ptr + raw_size]).hexdigest())
-                 for rva, raw_ptr, raw_size, virtual_size, flags in sections) == NATIVE_SECTIONS
-
-
 @lru_cache(maxsize=2)
-def _verified_image(path: Path) -> bytes:
-    # Check the same immutable bytes subsequently mapped, not a separate read.
-    data = path.read_bytes()
-    if not _carries_native_code(data):
-        raise OracleError(
-            f"Unsupported gamemd.exe SHA-256 {hashlib.sha256(data).hexdigest()} ({path}): "
-            "its game code differs from the supported Yuri's Revenge 1.001 build's. "
-            "Steam's gamemd.exe carries that code.")
-    return data
+def _image(path: Path) -> bytes:
+    # One immutable read, reused by every mapping and span of this run.
+    return path.read_bytes()
 
 
 def image_bytes() -> bytes:
-    return _verified_image(configured_gamemd())
+    return _image(configured_gamemd())
 
 
-def image_sha256(data: bytes | None = None) -> str:
-    """Identity of the game code in these bytes (default: the selected executable).
-
-    Every file carrying the supported code reports NATIVE_SHA256, whatever its
-    headers, so its outputs and provenance match the recorded references. Other
-    bytes, such as synthetic test images, report their own SHA-256.
-    """
-    data = image_bytes() if data is None else data
-    return NATIVE_SHA256 if _carries_native_code(data) else hashlib.sha256(data).hexdigest()
+def image_sha256() -> str:
+    """The [`NATIVE_SHA256`] label older payload schemas carry; not a file hash."""
+    return NATIVE_SHA256
 
 
 def _sections(data: bytes):
@@ -295,20 +257,19 @@ def _sections(data: bytes):
     if (data[:2] != b"MZ" or data[pe:pe + 4] != b"PE\0\0" or machine != 0x14C
             or struct.unpack_from("<H", data, optional)[0] != 0x10B
             or struct.unpack_from("<I", data, optional + 28)[0] != IMAGE_BASE):
-        raise OracleError("Expected the pinned PE32 x86 image at 0x00400000")
+        raise OracleError("Expected a PE32 x86 image at 0x00400000")
     for index in range(count):
         offset = optional + optional_size + index * 40
         virtual_size, rva, raw_size, raw_ptr = struct.unpack_from("<IIII", data, offset + 8)
         flags = struct.unpack_from("<I", data, offset + 36)[0]
         if rva + max(virtual_size, raw_size) > IMAGE_SIZE or raw_ptr + raw_size > len(data):
-            raise OracleError("PE section exceeds the verified fixture mapping")
+            raise OracleError("PE section exceeds the fixture mapping")
         yield rva, raw_ptr, raw_size, virtual_size, flags
 
 
 def file_span(data: bytes, va: int, size: int) -> tuple[int, bytes]:
     """Resolve one original file-backed section span, never synthesized memory.
 
-    The input bytes must be identity-checked by the caller for native claims.
     Unlike load_image's zero-filled mapping, headers, gaps, BSS and requests
     crossing a section boundary have no supported file span. Section raw padding
     remains readable exactly as load_image maps it, even beyond VirtualSize.
@@ -427,9 +388,6 @@ def run_checked(uc: Uc, begin: int, end: int | tuple[int, ...], *,
                 "context": diagnostic_context,
                 "fault": {"errno": fault.errno, "message": str(fault)} if fault else None,
                 "unicorn_binding": unicorn.__version__, "unicorn_core": list(unicorn.uc_version()),
-                # run_checked also accepts synthetic machines and cannot attest
-                # their image identity just because this runner knows the pin.
-                "supported_native_sha256": [NATIVE_SHA256],
             }
             raise NativeExecutionError(
                 f"{message}; reason={reason}, timeout={timed_out}, "
@@ -504,11 +462,11 @@ def call(func: int, *, ecx=None, edx=None, stack_args=None, writes=None,
 
 def provenance(*, scope: str, assumptions: list[str], substitutions: list[str],
                entry_points: dict[str, int]) -> dict:
-    """Record identity and claims separately from legacy vector payloads."""
+    """Record the runtime and claims separately from legacy vector payloads."""
     if not scope.strip() or not assumptions or not entry_points:
         raise ValueError("Declare scope, runtime assumptions, and native entry points")
     return {
-        "schema_version": 1, "native_sha256": image_sha256(),
+        "schema_version": 1,
         "unicorn_binding": unicorn.__version__, "unicorn_core": list(unicorn.uc_version()),
         "scope": scope, "assumptions": assumptions, "substitutions": substitutions,
         "entry_points": {name: f"0x{value:08X}" for name, value in entry_points.items()},

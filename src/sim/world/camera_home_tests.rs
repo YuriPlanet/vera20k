@@ -68,7 +68,7 @@ fn coord(sim: &Simulation, id: u64) -> [i32; 3] {
 fn home_uses_native_reverse_yard_primary_limbo_and_other_building_priorities() {
     // Original7315A0 controls: earliest_yard, primary_newer/older,
     // skip_limbo_primary, yard_ignores_health_alive and last_other.
-    // Steam3e81a617..08600. The original observes GetCoords ABI inputs;
+    // Steam gamemd. The original observes GetCoords ABI inputs;
     // these checks use actual production objects and their shared coordinate owner.
     let (mut sim, rules, _, houses) = fixture();
     let first = spawn(&mut sim, &rules, "YARD", "Local", 15, 15);

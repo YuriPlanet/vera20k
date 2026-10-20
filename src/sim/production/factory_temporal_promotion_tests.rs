@@ -361,7 +361,12 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                 wallet,
                 "{label}: frozen spend"
             );
-            runtime.simulation.temporal_let_go(attacker);
+            Simulation::temporal_let_go(
+                &mut runtime.simulation.substrate,
+                &mut runtime.simulation.houses,
+                &mut runtime.simulation.power_states,
+                attacker,
+            );
             for _ in 0..3 {
                 frame(&mut runtime, owner, &[]);
             }

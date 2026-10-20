@@ -24,7 +24,7 @@ python -B -m tools.procedural_drawing_oracle.rad_beam --check
 
 [`finish_vectors`](../native_oracle.py) creates `chrono_beam.json` and its
 `chrono_beam.meta.json` sidecar. With no `--output`, their paths are beside this
-document. It records the actual executable identity, canonical replay command
+document. It records the canonical replay command
 including `--chrono`, and canonical payload hash. It checks declared imported
 sources and the retained map for drift during execution; sidecars retain no
 repository source hashes. Generation does not copy C29 expected outputs or

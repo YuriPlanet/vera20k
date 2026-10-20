@@ -30,6 +30,7 @@ pub mod anim_class;
 pub mod arena_fixture;
 pub(crate) mod build_site;
 pub mod building_art;
+pub(crate) mod building_upgrades;
 pub(crate) mod building_power;
 pub(crate) mod building_entry;
 pub mod building_construction;

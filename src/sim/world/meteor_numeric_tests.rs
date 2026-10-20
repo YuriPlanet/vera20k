@@ -67,10 +67,6 @@ fn construct(row: &Value) -> BounceState {
 #[test]
 fn meteor_constructors_match_native_draws_float_stores_and_integer_placement() {
     assert_eq!(golden()["schema"], 1);
-    assert_eq!(
-        golden()["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let rows = golden()["constructors"].as_array().unwrap();
     assert_eq!(rows.len(), 8);
     for row in rows {

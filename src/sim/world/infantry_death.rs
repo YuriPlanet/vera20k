@@ -22,11 +22,17 @@
 
 use super::Simulation;
 use crate::map::entities::EntityCategory;
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::animation::SequenceKind;
+use crate::sim::intern::StringInterner;
 use crate::sim::movement::infantry_action::DO_PARADROP;
 use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::pathfinding::PathGrid;
+use crate::sim::rng::SimRng;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectSubstrate;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum InfantryDeathSequence {
@@ -333,8 +339,16 @@ impl Simulation {
     /// Native execution: `tools/superweapon_oracle.py` section
     /// `infantry_mutate_death`, replayed in
     /// `superweapon::genetic_converter_tests`.
-    fn infantry_mutation_admits(&mut self, id: u64, rules: &RuleSet) -> bool {
-        let Some(entity) = self.substrate.entities.get(id) else {
+    fn infantry_mutation_admits(
+        interner: &StringInterner,
+        scenario_rng: &mut SimRng,
+        substrate: &mut ObjectSubstrate,
+        path_grid: &Option<Arc<PathGrid>>,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+        rules: &RuleSet,
+    ) -> bool {
+        let Some(entity) = substrate.entities.get(id) else {
             return false;
         };
         let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
@@ -343,26 +357,17 @@ impl Simulation {
             y,
             z: crate::sim::movement::ground_pose::object_world_z_leptons(
                 entity,
-                self.resolved_terrain.as_ref(),
+                resolved_terrain.as_ref(),
             ),
         };
         let on_bridge = entity.on_bridge();
-        Self::object_raw_receiver_at(
-            &mut self.substrate,
-            &self.path_grid,
-            &self.resolved_terrain,
-            id,
-            location,
-            false,
-        );
+        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, location, false);
         let (rx, ry) = ((x / 256) as u16, (y / 256) as u16);
-        let building = self
-            .substrate
+        let building = substrate
             .occupancy
             .get(rx, ry)
             .is_some_and(|cell| cell.has_building_on(MovementLayer::Ground));
-        let footless = self
-            .resolved_terrain
+        let footless = resolved_terrain
             .as_ref()
             .and_then(|terrain| terrain.cell(rx, ry))
             .is_some_and(|cell| {
@@ -375,21 +380,20 @@ impl Simulation {
         if footless && !on_bridge {
             return false;
         }
-        if self
-            .place_infantry_in_ground_cell(rules, location)
-            .is_none()
+        if Self::place_infantry_in_ground_cell(
+            interner,
+            scenario_rng,
+            substrate,
+            resolved_terrain,
+            rules,
+            location,
+        )
+        .is_none()
             || building
         {
             return false;
         }
-        Self::object_raw_receiver_at(
-            &mut self.substrate,
-            &self.path_grid,
-            &self.resolved_terrain,
-            id,
-            location,
-            true,
-        );
+        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, location, true);
         true
     }
 
@@ -497,7 +501,15 @@ impl Simulation {
                 ReceiverDeathRecipe::Sequence
             }
             InfantryDeathArm::Table(INFANTRY_MUTATE_INF_DEATH) => {
-                if self.infantry_mutation_admits(id, rules) {
+                if Self::infantry_mutation_admits(
+                    &self.interner,
+                    &mut self.scenario_rng,
+                    &mut self.substrate,
+                    &self.path_grid,
+                    &self.resolved_terrain,
+                    id,
+                    rules,
+                ) {
                     ReceiverDeathRecipe::Mutate
                 } else {
                     self.begin_infantry_death_sequence(

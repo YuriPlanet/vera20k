@@ -1,7 +1,6 @@
 //! Stock Soviet recovery through the bound production runtime. Original bodies:
 //! CanMakeMoney4F6540, CheckBuildNeed4FD9A0, ManageBuildQueue4FDD10 and
-//! Strategy4FD500, gamemd SHA256
-//! 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c.
+//! Strategy4FD500, gamemd.
 //! Instruction reading establishes the gates, sale/abandon and mode changes;
 //! this regression exercises Rust, not an original executable or native timing.
 
@@ -170,7 +169,7 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
                 })
                 .expect("the earlier retained choice reached an actual Factory");
                 assert!(
-                    available_money(sim, owner) < owed,
+                    available_money(&sim.houses, owner) < owed,
                     "genuine poor held-production prior"
                 );
                 let held_candidates: Vec<_> = sim

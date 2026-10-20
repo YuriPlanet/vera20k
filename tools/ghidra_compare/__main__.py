@@ -99,7 +99,7 @@ def execute(args):
             raise ReadError(str(error)) from error
         frames = NativeFrames(rows, image, [int(a, 16) for a in args.noreturn])
         report = compare_frames(before, after, targets, frames)
-        report.update(native_binary_sha256=native.image_sha256(data), purge_changed=purge_changed,
+        report.update(purge_changed=purge_changed,
                       purge_callers=purge_callers, additional_noreturn=args.noreturn)
         if discovery_errors:
             report['read_errors'] += discovery_errors

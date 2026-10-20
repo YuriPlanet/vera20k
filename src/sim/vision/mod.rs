@@ -169,7 +169,7 @@ pub(crate) fn conceal_area_centre(coord: [i32; 3]) -> (i16, i16) {
 /// sight-height geometry, around [`conceal_area_centre`].
 /// DX is the outer loop and the strict signed squared-radius test wraps32.
 /// Executed geometry/counter controls: trigger_conceal_area.json (Steam
-/// 3e81a617); no RNG, timer or detach in this traversal.
+/// gamemd); no RNG, timer or detach in this traversal.
 pub(crate) fn conceal_area_cells(coord: [i32; 3], radius: i32) -> Vec<(u16, u16)> {
     let (x, y) = conceal_area_centre(coord);
     let lower = (-2i32).wrapping_sub(radius);
@@ -2405,7 +2405,7 @@ pub(crate) fn collect_reveal_cells(
 /// Original Map567DA0 ground-frame refresh geometry. Unlike RevealArea,
 /// height zero takes the whole clamped3..11 disc, without LOS. The selected
 /// frontier path uses finalarg0; nonzero skips the traversal. Executed table:
-/// original561910, tools' consumed reveal spiral corpus (Steam3e81a617).
+/// original561910, tools' consumed reveal spiral corpus (Steam gamemd).
 /// Its independent inner-height argument selects an inner ring; the ordinary
 /// Unlimbo caller passes0 even when source XYZ.Z is nonzero.
 pub(crate) fn sight_border_cells(

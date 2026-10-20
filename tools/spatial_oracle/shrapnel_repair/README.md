@@ -1,6 +1,6 @@
 # Physical Shrapnel ordinary low repair
 
-This packet executes original active-retail instructions over the stock Shrapnel Mountain broken low bridge. It is a bounded repair witness, not a native scenario loader or a whole-game comparison. The executable is validated against SHA256 `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c` before mapping; native instructions are never patched. CPU writes into `.text` fail and the complete mapped `.text` hash must remain unchanged.
+This packet executes original active-retail instructions over the stock Shrapnel Mountain broken low bridge. It is a bounded repair witness, not a native scenario loader or a whole-game comparison. Native instructions are never patched. CPU writes into `.text` fail and the complete mapped `.text` hash must remain unchanged.
 
 ## Inputs and limits
 

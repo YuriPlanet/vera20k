@@ -283,6 +283,105 @@ fn query(row: &Value, rules: &RuleSet) -> ObjectType {
     rules.object_in_category(class, "Q").unwrap().clone()
 }
 
+fn upgrade_prerequisite_world() -> (Simulation, RuleSet, InternedId) {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Countries]\n0=C1\n[VehicleTypes]\n0=Q\n\
+         [BuildingTypes]\n0=HOST\n1=UPGRADE\n2=OTHER\n\
+         [Q]\nTechLevel=1\nPrerequisite=UPGRADE\n\
+         [HOST]\nStrength=100\nUpgrades=3\n\
+         [UPGRADE]\nStrength=100\nPowersUpBuilding=HOST\n\
+         [OTHER]\nStrength=100\n",
+    ))
+    .unwrap();
+    let (mut sim, owner) = sim_for(&json!({}), &rules);
+    for (id, name, x) in [(1, "HOST", 10), (2, "OTHER", 14)] {
+        crate::sim::production::tests::spawn_structure(&mut sim, &rules, id, "H0", name, x, 10);
+    }
+    let upgrade = sim.interner.get("UPGRADE").unwrap();
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_building_upgrades_for_test(0, [None, None, Some(upgrade)]);
+    (sim, rules, owner)
+}
+
+/// Steam CanBuild4F7DF8..4F7E4E stops at the last eligible House building,
+/// even when an earlier host carries the prerequisite. Its fixed three-type
+/// scan does not read the upgrade count or compare PowersUpBuilding's name.
+#[test]
+fn upgrade_prerequisite_uses_house_order_and_all_three_type_slots() {
+    let (mut sim, rules, owner) = upgrade_prerequisite_world();
+    let product = rules.object("Q").unwrap();
+    assert_eq!(
+        can_build(&sim, &rules, owner, product, false, true),
+        CanBuild::No,
+        "the newer unrelated building hides the earlier installed upgrade"
+    );
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .base_projection_mut()
+        .replace_buildings_for_test(vec![2, 1]);
+    assert_eq!(
+        can_build(&sim, &rules, owner, product, false, true),
+        CanBuild::Yes,
+        "House order decides; the third type slot counts even with count zero"
+    );
+    let upgrade = sim.interner.get("UPGRADE").unwrap();
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .set_building_upgrades_for_test(0, [None, None, Some(upgrade)]);
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .base_projection_mut()
+        .replace_buildings_for_test(vec![1, 2]);
+    assert_eq!(
+        can_build(&sim, &rules, owner, product, false, true),
+        CanBuild::Yes,
+        "the selected building need not match the declared host type"
+    );
+}
+
+#[test]
+fn upgrade_prerequisite_skips_limbo_offline_and_both_selling_missions() {
+    use crate::sim::mission::MissionDispatchTimer;
+    use crate::sim::mission::state::MissionTestFixture;
+
+    let (mut sim, rules, owner) = upgrade_prerequisite_world();
+    let product = rules.object("Q").unwrap();
+    let guard = MissionId::from_known(MissionType::Guard);
+    let selling = MissionId::from_known(MissionType::Selling);
+    for (limbo, online, current, queued) in [
+        (true, true, guard, MissionId::NONE),
+        (false, false, guard, MissionId::NONE),
+        (false, true, selling, MissionId::NONE),
+        (false, true, guard, selling),
+    ] {
+        let latest = sim.substrate.entities.get_mut(2).unwrap();
+        latest.lifecycle.set_in_limbo_for_test(limbo);
+        latest.set_building_online_for_test(online);
+        latest.mission.apply_test_fixture(MissionTestFixture {
+            current,
+            suspended: MissionId::NONE,
+            queued,
+            movement_bypass_latch: 0,
+            handler_state: 0,
+            mission_start_frame: 0,
+            ai_counter: 0,
+            dispatch_timer: MissionDispatchTimer::at_frame(0),
+        });
+        assert_eq!(
+            can_build(&sim, &rules, owner, product, false, true),
+            CanBuild::Yes,
+            "skip latest building: limbo={limbo}, online={online}, current={current:?}, queued={queued:?}"
+        );
+    }
+}
+
 #[test]
 fn can_build_matches_the_original() {
     for row in rows("can_build") {

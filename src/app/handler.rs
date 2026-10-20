@@ -582,6 +582,19 @@ impl ApplicationHandler for App {
                     state.platform.window.request_redraw();
                     return;
                 }
+                // VERA's FPS readout toggle. Like the cursor lock it works on
+                // every screen and is consumed before retail key dispatch.
+                if let PhysicalKey::Code(KeyCode::KeyF) = event.physical_key
+                    && state.platform.live_modifiers.control_key()
+                    && state.platform.live_modifiers.alt_key()
+                {
+                    if event.state.is_pressed() && !event.repeat {
+                        let shown = state.renderer.fps_overlay.toggle();
+                        log::info!("FPS overlay: {}", if shown { "shown" } else { "hidden" });
+                        state.platform.window.request_redraw();
+                    }
+                    return;
+                }
                 // The wait loop pumps 0xEA without IsDialogMessage and polls
                 // no game keys while it is open (0x006497EC).
                 if state.match_state.network_wait.dialog_open() {

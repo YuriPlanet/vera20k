@@ -23,11 +23,6 @@
 //! - An infantry type with `VehicleThief=` also counts the house's units
 //!   that hold one of it (`UnitClass+0x338`); VERA has no hijacking, so the
 //!   count adds none.
-//! - Dormant in retail data: a prerequisite BuildingType with
-//!   `PowersUpBuilding=` (`+0xE88`) is met only when the house's last
-//!   building that is out of limbo, powered and not selling holds it as an
-//!   upgrade (`0x004F7DF8..0x004F7E4E`). VERA reads no upgrades and treats it
-//!   as any other BuildingType; no retail type sets the key.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{FactoryType, ObjectCategory, ObjectType};
@@ -35,8 +30,12 @@ use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_state::HouseState;
 use crate::sim::house_tracking::HouseTracking;
+use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
+use crate::sim::intern::StringInterner;
 use crate::sim::mission::{MissionId, MissionType};
+use crate::sim::production::ProductionState;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
 /// `HouseClass::CanBuild`'s answer.
@@ -163,8 +162,10 @@ pub(crate) fn can_build(
 /// `[General] Prerequisite*` list on the map (`HouseClass+0x5550` above
 /// zero), never by an empty list; `PROC` also by an on-map
 /// `PrerequisiteProcAlternate=` unit (`+0x5564`, `0x004F7DB0..0x004F7DCE`), a
-/// Slave Miner in retail. A BuildingType is met while its on-map count is not
-/// zero (`0x004F7E50..0x004F7E5E`).
+/// Slave Miner in retail. An ordinary BuildingType is met while its on-map
+/// count is not zero (`0x004F7E50..0x004F7E5E`). A BuildingType with nonempty
+/// `PowersUpBuilding=` instead asks only the last eligible House building's
+/// three installed types (`0x004F7DF8..0x004F7E4E`).
 fn prerequisite_on_map(
     sim: &Simulation,
     rules: &RuleSet,
@@ -172,7 +173,39 @@ fn prerequisite_on_map(
     entry: Prerequisite,
 ) -> bool {
     let group = match entry {
-        Prerequisite::Building(index) => return buildings_on_map(sim, rules, house, index) != 0,
+        Prerequisite::Building(index) => {
+            let Some(building_type) = rules.building_type_at(index) else {
+                return false;
+            };
+            if building_type.building_upgrade().host().is_none() {
+                return buildings_on_map(sim, rules, house, index) != 0;
+            }
+            let Some(type_id) = sim.interner.get(&building_type.id) else {
+                return false;
+            };
+            // Steam gamemd:4F7DF8..4F7E4E walks House+6C backwards, skips only limbo,
+            // offline and either Selling selector, then checks all three
+            // Building+5EC types. A miss stops; count/host type/HP are unread.
+            let selling = MissionId::from_known(MissionType::Selling);
+            return house
+                .base_projection()
+                .buildings()
+                .iter()
+                .rev()
+                .filter_map(|&id| sim.substrate.entities.get(id))
+                .find(|building| {
+                    !building.lifecycle.in_limbo()
+                        && building.building_online()
+                        && building.mission.current() != selling
+                        && building.mission.queued() != selling
+                })
+                .is_some_and(|building| {
+                    building
+                        .building_upgrades()
+                        .types()
+                        .contains(&Some(type_id))
+                });
+        }
         Prerequisite::Group(group) => group,
     };
     rules
@@ -431,14 +464,21 @@ pub fn find_factory(
 /// serialized ProductionCategory index represents recognized Type factories
 /// only; other raw Factory RTTIs still need their lifecycle/state migration.
 /// See https://github.com/YuriPlanet/vera20k/issues/1709.
-pub(crate) fn initialize_factory_primary(sim: &mut Simulation, id: u64, rules: &RuleSet) {
-    let Some(building) = sim.substrate.entities.get(id) else {
+pub(crate) fn initialize_factory_primary(
+    interner: &StringInterner,
+    production: &mut ProductionState,
+    substrate: &ObjectSubstrate,
+    houses: &Houses,
+    id: u64,
+    rules: &RuleSet,
+) {
+    let Some(building) = substrate.entities.get(id) else {
         return;
     };
     if building.category() != EntityCategory::Structure || building.lifecycle.in_limbo() {
         return;
     }
-    let Some(ty) = sim.object_type(building.type_ref(), rules) else {
+    let Some(ty) = interner.object_type(building.type_ref(), rules) else {
         return;
     };
     let Some(factory) = ty.factory_type() else {
@@ -450,37 +490,36 @@ pub(crate) fn initialize_factory_primary(sim: &mut Simulation, id: u64, rules: &
     let owner = building.owner();
     //4480B8..448114 walks House+6C, rather than choosing one retained ID.
     // A limbo primary does not prevent this admitted building becoming primary.
-    let keep = sim.houses.get(&owner).is_some_and(|house| {
+    let keep = houses.get(&owner).is_some_and(|house| {
         house
             .base_projection()
             .buildings()
             .iter()
             .any(|&candidate_id| {
-                sim.substrate
+                substrate
                     .entities
                     .get(candidate_id)
                     .is_some_and(|candidate| {
                         !candidate.lifecycle.in_limbo()
-                            && sim.production.is_primary_factory(candidate_id)
-                            && sim.object_type(candidate.type_ref(), rules).is_some_and(
-                                |candidate_type| {
+                            && production.is_primary_factory(candidate_id)
+                            && interner
+                                .object_type(candidate.type_ref(), rules)
+                                .is_some_and(|candidate_type| {
                                     candidate_type.factory_type() == Some(factory)
                                         && candidate_type.naval == ty.naval
-                                },
-                            )
+                                })
                     })
             })
     });
     if !keep {
-        sim.production.set_primary_factory(owner, category, id);
+        production.set_primary_factory(owner, category, id);
     }
 }
 
 /// Building WhatAction447210's ordinary factory self arm4472EC..447348.
 /// Techno7000B9..7000E8 owns the separate lone-selected/current-player gate.
 /// A current primary or InvisibleInGame factory answers Action0, not Action4.
-/// Source: original gamemd.exe SHA256
-/// 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c.
+/// Source: original gamemd.exe.
 pub fn can_select_factory_primary(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
     sim.substrate.entities.get(id).is_some_and(|building| {
         building.category() == EntityCategory::Structure
@@ -497,8 +536,7 @@ pub fn can_select_factory_primary(sim: &Simulation, rules: &RuleSet, id: u64) ->
 /// The receiver owns its live-Building gate. There is no owner, limbo, online,
 /// Selling or health admission in this native body. Returns control admission;
 /// the resulting native+3D3 value is the existing owner's per-ID query.
-/// Source: original gamemd.exe SHA256
-/// 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c;
+/// Source: original gamemd.exe;
 /// consumed controls: tools/spatial_oracle/building_manual_primary.json.
 pub(crate) fn toggle_factory_primary(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
     let Some((owner, factory, naval, category)) =

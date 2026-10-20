@@ -278,7 +278,7 @@ impl Simulation {
     /// asks the existing Head_To projection (514D10), then linked Foot+F4.
     /// Mode1 does nothing; neither mode changes the retained head. Foot Limbo
     /// calls this after Stop_Driver (4DB324), and Chrono Warp shares the slot.
-    /// Steam gamemd3e81a617..08600 executable controls:
+    /// Steam gamemd executable controls:
     /// tools/spatial_oracle/locomotor_force_track.hover_mark_all.{json,meta.json}.
     /// Ledger: no RNG draws, timer writes or detaches in this body/Unit744210.
     pub(crate) fn hover_mark_all_occupation_bits(

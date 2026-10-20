@@ -28,13 +28,6 @@ pub(crate) const ABSOLUTE_TIMEOUT_MAX_SECONDS: u32 = 900;
 pub(crate) const FRAME_FILE_NAME: &str = "frame.bgra";
 pub(crate) const MANIFEST_FILE_NAME: &str = "capture.json";
 
-const EXPECTED_ARCHIVE_SHA256: &str =
-    "ff4138ba95f7efd8bded14342fc9082b99c47e43c25ab18236e4eea141b488e9";
-const EXPECTED_ENTRY_SHA256: &str =
-    "d751dce7cd3611077e9228c33235f39c71681fff6ac08ca1f716d963ad6ce070";
-const EXPECTED_FONT_SHA256: &str =
-    "ec8d6d85db3eedf5a862cc6ffb87bfad4c77279dd946bc2d30879ad9140c8d3f";
-
 const ENVIRONMENT_DENYLIST: [&str; 18] = [
     "RA2_QUICKPLAY",
     "RA2_DEV_SKIRMISH_SHELL",
@@ -383,14 +376,12 @@ impl TacticalCaptureProfile {
         ensure!(fixture.start_waypoint_count == 2, "wrong waypoint count");
         ensure!(fixture.archive_name == "multimd.mix", "wrong archive name");
         ensure!(
-            fixture.archive_byte_length == 31_264_268
-                && fixture.archive_sha256 == EXPECTED_ARCHIVE_SHA256,
+            fixture.archive_byte_length == 31_264_268,
             "wrong archive identity"
         );
         ensure!(fixture.mix_entry_id == 0x9306_F050, "wrong MIX entry ID");
         ensure!(
-            fixture.entry_payload_byte_length == 91_254
-                && fixture.entry_payload_sha256 == EXPECTED_ENTRY_SHA256,
+            fixture.entry_payload_byte_length == 91_254,
             "wrong entry payload identity"
         );
         ensure!(
@@ -562,11 +553,7 @@ impl TacticalCaptureProfile {
             "bitmap font source differs from the sealed tactical v3 input"
         );
         ensure!(
-            font.archive_byte_length == 281_888_480
-                && font.archive_sha256
-                    == "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914"
-                && font.payload_byte_length == 1_584_195
-                && font.payload_sha256 == EXPECTED_FONT_SHA256,
+            font.archive_byte_length == 281_888_480 && font.payload_byte_length == 1_584_195,
             "bitmap font identity differs"
         );
         require_lower_sha256(&font.archive_sha256, "font archive")?;

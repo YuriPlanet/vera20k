@@ -272,8 +272,12 @@ impl BuildingDown {
     pub(crate) const fn undeploy_order(self) -> bool {
         self.undeploy_order
     }
-    pub(crate) fn visit(self, status: &mut u32, ready: bool) -> PackUpFrame {
+    pub(crate) fn visit(self, status: &mut u32, ready: bool, has_upgrades: bool) -> PackUpFrame {
         match *status {
+            // MissionSelling44AB4A returns before the ordinary44ABAC status
+            // write. QueueGuard is refused while Selling, so later visits
+            // remove the remaining levels before entering ordinary stage1.
+            0 if has_upgrades => PackUpFrame::StageZero,
             0 => {
                 *status = 1;
                 PackUpFrame::StageZero

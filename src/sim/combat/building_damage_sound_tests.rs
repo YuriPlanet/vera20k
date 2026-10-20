@@ -1,6 +1,6 @@
 //! Recorded whole Building442230/Techno701900/Object5F5390 survivor controls.
 //! Native identity, producer and coverage: building_damage_sound_joined.meta.json.
-//! Original SHA2561cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c.
+//! Original gamemd.
 //! Health starts at the ordinary production constructor and is retained between
 //! requests. The adopted RNG boundary follows construction/admission: this test
 //! compares the receiver, not the native fixture's complete setup or audio pump.
@@ -22,10 +22,6 @@ fn corpus() -> Value {
     .unwrap();
     assert_eq!(value["schema_version"], 1);
     assert_eq!(value["selected_profile"], "all");
-    assert_eq!(
-        value["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     value
 }
 

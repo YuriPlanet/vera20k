@@ -1070,6 +1070,26 @@ pub(crate) fn commit_entities(
         }
 
         if entered_techno_death {
+            // 0x00737D97: the dying unit's own bunker link (`+0x2E4`) names a
+            // building — `BuildingClass::ClearBunker @ 0x00459470` at the
+            // kill instant, ahead of the death-explosion gates
+            // (`0x00737DA7`) and the kill-site Death_Announcement calls. The
+            // despawn safety net clears the links later but leaves the walls
+            // up.
+            if fatal_category == EntityCategory::Unit
+                && let Some(bunker) = world
+                    .substrate
+                    .entities
+                    .get(target_id)
+                    .and_then(|entity| entity.bunker.link().installed_in())
+                && world
+                    .substrate
+                    .entities
+                    .get(bunker)
+                    .is_some_and(|building| building.category() == EntityCategory::Structure)
+            {
+                crate::sim::docking::bunker_link::clear_bunker(world, bunker, rules, run.effects());
+            }
             {
                 if callbacks_enabled(world) {
                     let attacker = killing_attacker(world, std::slice::from_ref(event), target_id);
@@ -1195,7 +1215,10 @@ pub(crate) fn commit_entities(
             .get(target_id)
             .is_some_and(|target| target.category() != EntityCategory::Structure)
         {
-            world.team_took_damage(
+            Simulation::team_took_damage(
+                &world.interner,
+                &world.substrate,
+                &mut world.team_script_vm,
                 target_id,
                 (attacker_id != RAD_NO_ATTACKER).then_some(attacker_id),
                 rules,
@@ -1776,7 +1799,7 @@ fn finish_concrete_death(
     if category == EntityCategory::Infantry {
         // `InfantryClass::ReceiveDamage` on result 4 (`0x00518077..0x0051808E`):
         // a dying slave leaves its master's node (RemoveSlave).
-        world.remove_slave(dead_id);
+        Simulation::remove_slave(&world.session, &mut world.substrate, dead_id);
         // The house InfDeath 8 and 9 give their anim (`0x0051887B`,
         // `0x00518A96`): the source's owner (`+0x21C`), else the house
         // argument.
@@ -2029,7 +2052,17 @@ fn run_special_detonation_arm(
         }
         SpecialDetonationAction::IvanBomb => {
             // 0x00469343..0x00469375: the bullet's owner plants on a Techno.
-            world.bomb_attach(owner, object, rules);
+            Simulation::bomb_attach(
+                &world.interner,
+                &world.session,
+                &mut world.substrate,
+                &mut world.sound_events,
+                &world.resolved_terrain,
+                &mut world.bombs,
+                owner,
+                object,
+                rules,
+            );
         }
         SpecialDetonationAction::BombDisarm => {
             // 0x004699C4..0x004699FE: a bombed Object target is defused.

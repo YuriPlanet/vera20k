@@ -9,9 +9,12 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::LandType;
 use crate::sim::combat::{TargetKind, combat_weapon};
+use crate::sim::intern::StringInterner;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
 /// Techno `+0x2A4`, a deployed infantryman's crush immunity, which the crush
@@ -394,7 +397,9 @@ impl Simulation {
     /// requests it for an admitted changed action; Unit739AC0/739CD0 request
     /// it on each admitted updater visit.
     pub(crate) fn emit_deploy_action_sound(
-        &mut self,
+        interner: &mut StringInterner,
+        substrate: &ObjectSubstrate,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
         id: u64,
         requested: i32,
         rules: &RuleSet,
@@ -402,12 +407,11 @@ impl Simulation {
         if !matches!(requested, 27 | 31) {
             return Ok(());
         }
-        let actor = self
-            .substrate
+        let actor = substrate
             .entities
             .get(id)
             .ok_or("deployment sound receiver retired")?;
-        let object = self
+        let object = interner
             .object_type(actor.type_ref(), rules)
             .ok_or("deployment sound requires the object type")?;
         let sound = if requested == 27 {
@@ -419,8 +423,8 @@ impl Simulation {
             return Ok(());
         };
         let (rx, ry) = (actor.position.rx(), actor.position.ry());
-        let sound_id = self.interner.intern(sound);
-        self.sound_events.emit(if requested == 27 {
+        let sound_id = interner.intern(sound);
+        sound_events.emit(if requested == 27 {
             SimSoundEvent::EntityDeployed {
                 deploy_sound_id: sound_id,
                 rx,

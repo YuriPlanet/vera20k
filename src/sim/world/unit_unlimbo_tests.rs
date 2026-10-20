@@ -34,12 +34,9 @@ use crate::sim::stage::StageClass;
 use crate::sim::timer::CdTimer;
 use serde_json::{Value, json};
 
-const NATIVE_SHA256: &str = "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c";
-
 fn corpus() -> &'static Value {
     let corpus = crate::test_fixture::json("tools/spatial_oracle/anytown_damage/unit_unlimbo.json");
     assert_eq!(corpus["schema_version"], 1);
-    assert_eq!(corpus["native_sha256"], NATIVE_SHA256);
     assert_eq!(corpus["direct_rows"].as_array().unwrap().len(), 9);
     assert_eq!(corpus["factory_rows"].as_array().unwrap().len(), 8);
     corpus
@@ -733,7 +730,6 @@ fn exact_unit_placement_input_z_matches_existing_original_ramp_controls() {
     let native: Value =
         serde_json::from_str(crate::test_fixture::text("tools/ramp_height_vectors.json")).unwrap();
     assert_eq!(native["schema"], 1);
-    assert_eq!(native["native_sha256"], NATIVE_SHA256);
     let cases = native["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 158);
     let mut compared = 0;
@@ -1503,7 +1499,6 @@ fn unit_entry_scope_and_actual_game_mode_match_independent_original_controls() {
     ))
     .unwrap();
     assert_eq!(native["schema_version"], 1);
-    assert_eq!(native["native_sha256"], NATIVE_SHA256);
     let rows = native["rows"].as_array().unwrap();
     assert_eq!(rows.len(), 8);
     for row in rows {

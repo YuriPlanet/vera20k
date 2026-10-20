@@ -29,8 +29,7 @@ readers, constructor defaults, layer order, input identities, bodies, callers,
 numeric results, timers and all 250 Scenario RNG words.
 [Expiry comparisons](building_slot_replacement.expiry.md) retain 64 expiry,
 2 readiness and 5 observer controls using six physical retail SHPs and 16
-AnimTypes. Both use original executable SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`,
+AnimTypes. Both use the original executable,
 Unicorn 2.1.4 and ambient x87 PC53/chop 0x0E7F. Original text and the actual
 vtables remain unchanged. Native output supplies the goldens.
 

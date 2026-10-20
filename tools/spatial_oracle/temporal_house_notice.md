@@ -5,9 +5,6 @@ This profile of the existing `temporal_initiate_warp.py` executes original
 then ordinary `LetGo71ABC0`. Its Rust consumer is `sim::temporal_tests`.
 It keeps the default Temporal corpus unchanged.
 
-Original binary SHA256:
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
-
 Stock CLEG's NeutronRifle/ChronoBeam starts a Temporal chain. Stock deployed
 Slave Miner YAREFN has `UndeploysInto=SMIN`, `ResourceGatherer=yes`, absent
 `Insignificant=` (false), absent `Warpable=` (true) and fixed ART Foundation2x2.

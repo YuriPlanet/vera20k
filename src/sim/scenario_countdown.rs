@@ -1,5 +1,5 @@
-//! Scenario countdown: original TAction23..27/103 and Event14. Steam gamemd
-//! SHA3e81a617..08600, Execute6DE418..6DE6DA, HasOccurred71EBE9 and shared
+//! Scenario countdown: original TAction23..27/103 and Event14. Steam gamemd:
+//! Execute6DE418..6DE6DA, HasOccurred71EBE9 and shared
 //! CdTimer426630/46B640. Captions retain the authored key, never localized
 //! app text, so language selection cannot affect synchronized state.
 

@@ -84,7 +84,7 @@ pub(crate) fn status_visibility(selected: bool, hovered: bool) -> (bool, bool) {
 
 /// Health-bar admission shared by building pips, mobile pips and their extras.
 ///
-/// Steam gamemd SHA3e81a617: Tactical6D907E/6D9111 marks a Display member for
+/// Steam gamemd: Tactical6D907E/6D9111 marks a Display member for
 /// Extras before drawing its body; 6D95D2..6D9789 dispatches that later sweep.
 /// Techno6F5E27/6F5E37..6F5E87 then admits selected / ordinary hovered objects
 /// to health-bar slot+44C (6F64A0). Neither arm retests the raw anchor's shroud

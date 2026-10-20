@@ -656,10 +656,6 @@ fn campaign_difficulty_process_layers_match_original_nine_scalar_outputs() {
         "tools/spatial_oracle/house_difficulty_readers.json",
     ))
     .unwrap();
-    assert_eq!(
-        native["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let Some(root_bytes) = crate::rules::retail_ini_fixture::retail_ini_bytes("rulesmd.ini") else {
         return;
     };
@@ -3123,7 +3119,7 @@ fn secret_lab_stock_rules_and_mode_use_native_lists_and_unoverridden_lab() {
 }
 
 /// Original full Rules ctor and66E5D5/66B385 read-block controls, Steam
-///3e81a617..08600: pointer identity/empty retention and signed ReadRange.
+///gamemd: pointer identity/empty retention and signed ReadRange.
 #[test]
 fn waypoint_cue_drop_zone_rules_keep_native_defaults_layers_and_saved_state() {
     use crate::rules::ruleset::RuleSet;

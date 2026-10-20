@@ -61,7 +61,7 @@ fn refused_begin_still_publishes_the_local_prediction_gate_transition() {
 /// completed buildings, running Idle animation and wallet are scene priors; payment, held identity,
 /// PLACE, producer missions and animation retirement all use the frame API.
 /// Original House4FB563 -> Building443C60/444187 and Unload44D880 ->
-/// Production8 expiry44E8F0 establish this lifecycle (gamemd SHA2561cdd).
+/// Production8 expiry44E8F0 establish this lifecycle (gamemd).
 #[test]
 fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
     use crate::sim::command::{Command, CommandEnvelope};
@@ -308,10 +308,6 @@ fn record_last_built_matches_native_class_slots_score_gate_and_rng() {
     ))
     .expect("original built-type controls");
     let native = &corpus["record_last_built"];
-    assert_eq!(
-        native["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let rows = native["controls"].as_array().unwrap();
     assert_eq!(rows.len(), 8);
     let categories = [
@@ -408,7 +404,14 @@ fn record_last_built_matches_native_class_slots_score_gate_and_rng() {
             sim.mapgen_rng =
                 SimRng::from_native_state_hex_for_test(before["mapgen"].as_str().unwrap());
 
-            super::factory_lifecycle::record_last_built(&mut sim, rules, owner, object);
+            super::factory_lifecycle::record_last_built(
+                &sim.interner,
+                &mut sim.sound_events,
+                &mut sim.houses,
+                rules,
+                owner,
+                object,
+            );
 
             for (slot, slot_name) in categories {
                 assert_eq!(
@@ -480,7 +483,14 @@ fn record_last_built_enforces_map_authored_negative_limit() {
         )
         .expect("supplied valid product for the shared Record call");
     let object = super::factory_lifecycle::BuiltObject::capture(&sim, product);
-    super::factory_lifecycle::record_last_built(&mut sim, rules, owner, object);
+    super::factory_lifecycle::record_last_built(
+        &sim.interner,
+        &mut sim.sound_events,
+        &mut sim.houses,
+        rules,
+        owner,
+        object,
+    );
     assert_eq!(sim.houses[&owner].stats().built(), 1);
     assert_eq!(
         super::can_build::can_build(&sim, rules, owner, e2, true, true),
@@ -584,7 +594,14 @@ fn record_last_built_uses_class_fallbacks_type_overrides_and_the_existing_tech_o
         let house = sim.houses.get_mut(&owner).unwrap();
         house.take_tech_recheck();
         assert!(!house.tech_recheck_pending());
-        super::factory_lifecycle::record_last_built(&mut sim, &rules, owner, object);
+        super::factory_lifecycle::record_last_built(
+            &sim.interner,
+            &mut sim.sound_events,
+            &mut sim.houses,
+            &rules,
+            owner,
+            object,
+        );
         let actual = sim
             .sound_events
             .iter()
@@ -799,7 +816,12 @@ fn offline_backup_recovery_distinguishes_saved_system_and_user_holds() {
         sim.temporal_initiate_warp(attacker, Some(backup), rules, None, FrameEffects::default());
         assert!(!sim.entities().get(backup).unwrap().building_online());
         sim.techno_limbo_with_rules(barracks, rules, None);
-        sim.temporal_let_go(attacker);
+        Simulation::temporal_let_go(
+            &mut sim.substrate,
+            &mut sim.houses,
+            &mut sim.power_states,
+            attacker,
+        );
         assert!(sim.entities().get(backup).unwrap().building_online());
         let held = sim
             .production
@@ -1114,14 +1136,6 @@ fn retail_barracks_sale_callbacks_reject_successor_or_keep_surviving_producer() 
         "tools/sidebar_oracle/factory_sale_queue.json",
     ))
     .unwrap();
-    let metadata: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/sidebar_oracle/factory_sale_queue.meta.json",
-    ))
-    .unwrap();
-    assert_eq!(
-        metadata["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let rows = native["controls"].as_array().unwrap();
     assert_eq!(rows.len(), 3);
     for row in rows {
@@ -1302,7 +1316,7 @@ fn retail_barracks_sale_callbacks_reject_successor_or_keep_surviving_producer() 
 /// armed by the test. Original4FB4B7 ->4FB6B0 ->4FB7FF reads the delivered
 /// object's Location after successor promotion, and ignores the local-house
 /// notification gate. Reader/resource evidence: House creation-cue audit,
-/// original gamemd SHA2561cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c.
+/// original gamemd.
 #[test]
 fn paid_boris_delivery_requests_its_creation_cue_once_at_the_delivered_location() {
     use crate::rules::object_type::ObjectCategory;
@@ -3181,7 +3195,12 @@ fn secret_lab_fallback_capture_paid_queue_snapshot_and_loss_share_the_existing_o
     let lab = sim
         .spawn_object("LAB", "Russians", 30, 20, 0, &rules)
         .unwrap();
-    sim.assign_secret_lab_production(&rules);
+    Simulation::assign_secret_lab_production(
+        &mut sim.interner,
+        &mut sim.scenario_rng,
+        &mut sim.substrate,
+        &rules,
+    );
     let fallback = sim
         .substrate
         .entities

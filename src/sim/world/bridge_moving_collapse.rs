@@ -1,6 +1,6 @@
 //! Cell487720..487941: post-driver damage to neighboring Foot objects whose
 //! active locomotor still targets the selected collapsed deck coordinate.
-//! Source: original gamemd1cdd1180, full546B/162instructions. This is separate
+//! Source: original gamemd, full546B/162instructions. This is separate
 //! from487A10: deck then ground, cached Next before damage, no admission7 gate.
 
 use crate::map::cell_index::NativeCellIdentity;

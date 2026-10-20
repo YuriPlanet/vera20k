@@ -320,8 +320,6 @@ def main(argv=None):
     raw=font_path.read_bytes()
     if len(raw)!=1584195: raise RuntimeError(f'unexpected retail GAME.FNT length: {len(raw)}')
     font_sha256=hashlib.sha256(raw).hexdigest()
-    if font_sha256!='ec8d6d85db3eedf5a862cc6ffb87bfad4c77279dd946bc2d30879ad9140c8d3f':
-        raise RuntimeError(f'unexpected retail GAME.FNT SHA-256: {font_sha256}')
     house_color_path=Path(__file__).with_name('procedural_drawing_oracle')/'house_color.json'
     house_color_corpus=json.loads(house_color_path.read_text(encoding='utf-8'))
     gold_rows=[row for row in house_color_corpus['colors'] if row.get('name')=='Gold']

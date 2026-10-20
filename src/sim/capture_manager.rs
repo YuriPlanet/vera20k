@@ -491,7 +491,7 @@ pub(crate) fn init_capture_manager(
 
 impl Simulation {
     /// House50D290 /50D2D0, reached by active TAction123/124 through
-    /// 6E0CA0/6E0D00 (Steam gamemd3e81a617..08600). Walk the current House
+    /// 6E0CA0/6E0D00 (Steam gamemd). Walk the current House
     /// building list backwards; ChangeOwner callbacks mutate that same list.
     /// No health/limbo/type filter and no independent ownership copy.
     pub(crate) fn control_house_buildings(
@@ -955,7 +955,12 @@ impl Simulation {
             self.leave_team(unit_id, false, Some(rules), frame_effects);
         }
         // 0x004723E4..0x004723F3: a unit holding a Temporal target lets go.
-        self.temporal_release_if_warping(unit_id);
+        Self::temporal_release_if_warping(
+            &mut self.substrate,
+            &mut self.houses,
+            &mut self.power_states,
+            unit_id,
+        );
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
         };
@@ -1059,7 +1064,7 @@ impl Simulation {
         rules: &RuleSet,
     ) -> CaptureReason {
         let mind_control = &rules.mind_control;
-        if crate::sim::credit_income::available_money(self, controller_owner)
+        if crate::sim::credit_income::available_money(&self.houses, controller_owner)
             < mind_control.ai_capture_low_money_mark
         {
             return CaptureReason::LowMoney;

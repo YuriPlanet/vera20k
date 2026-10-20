@@ -1,7 +1,6 @@
 # INI token readers: atoi, strtok, ReadString, ReadInt and ReadBool
 
-`ini_token_readers.py` executes original gamemd.exe SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+`ini_token_readers.py` executes original gamemd.exe.
 Its JSON results are native outputs, not values copied from Rust. The
 `.meta.json` file pins the payload, entry points and substitutions.
 

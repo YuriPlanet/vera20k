@@ -288,7 +288,17 @@ fn the_launch_alert_matches_native() {
             drawn.next_range_i32_inclusive(0, 99);
         }
         let before = sim.houses[&house_id].super_weapon_defense();
-        alert_super_weapon_defense(&mut sim, &rules, house_id, &sw, cell(&row["cell"]));
+        alert_super_weapon_defense(
+            &sim.session,
+            &mut sim.scenario_rng,
+            &sim.substrate,
+            &mut sim.houses,
+            &sim.resolved_terrain,
+            &rules,
+            house_id,
+            &sw,
+            cell(&row["cell"]),
+        );
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
             drawn.native_state_hex(),

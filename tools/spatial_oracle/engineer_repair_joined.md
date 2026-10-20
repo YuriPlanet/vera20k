@@ -3,8 +3,7 @@
 `engineer_repair_admission.py --joined` adds nine executable histories for an
 untagged ordinary `ENGINEER` approaching an already admitted damaged `GAPOWR`.
 The older 22 interior admission rows and metadata remain independent and
-unchanged. All expected results come from the pinned active-retail executable,
-SHA256 `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+unchanged. All expected results come from the active-retail executable.
 
 The harness composes the existing Construction arena/map/ART/Anim/RNG fixture,
 Sound and Reader input owners, and Mission GUID transport. Original instructions

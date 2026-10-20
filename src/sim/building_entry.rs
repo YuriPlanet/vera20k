@@ -215,8 +215,8 @@ fn garrison_seek_reissues(pick: u64, nav_com: Option<NavTargetRef>, mission: Mis
 }
 
 impl Simulation {
-    /// Foot PutInGrinder4DFA70..4DFB6D, original Steam gamemd
-    /// SHA2563e81a617..08600. No radio admission, latch or reissue gate:
+    /// Foot PutInGrinder4DFA70..4DFB6D, original Steam gamemd.
+    /// No radio admission, latch or reissue gate:
     /// walk House+98 backwards, keep the first strict nearest, set its
     /// destination, then Queue(Eaten9,0). Distance shares the existing port.
     pub(crate) fn foot_enter_grinder(
@@ -254,7 +254,7 @@ impl Simulation {
     /// building-entry arms. Unit additionally refunds cargo and its parasite.
     /// Effective Eaten and the first ground Building matching NavCom OR
     /// TarCom admit this transaction, even if its type is not Grinding.
-    /// Original Steam gamemd SHA2563e81a617..08600, instruction-level reading.
+    /// Original Steam gamemd, instruction-level reading.
     pub(crate) fn foot_per_cell_eaten(
         &mut self,
         id: u64,
@@ -571,8 +571,8 @@ impl Simulation {
         true
     }
 
-    /// Foot GarrisonStructure(vt+0x34C), original4DFE00..4DFF3F in Steam gamemd
-    /// SHA2563e81a617..08600. Admission457CE0 precedes each distance read;
+    /// Foot GarrisonStructure(vt+0x34C), original4DFE00..4DFF3F in Steam gamemd.
+    /// Admission457CE0 precedes each distance read;
     /// reverse Building registration order and strict comparison keep the
     /// later constructed building on a tie. This uses the shared admission,
     /// GetCoords, distance, destination, mission and occupy-latch owners.

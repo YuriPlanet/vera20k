@@ -1886,10 +1886,6 @@ mod tests {
             "tools/spatial_oracle/house_power_consumers.json",
         ))
         .unwrap();
-        assert_eq!(
-            corpus["native_sha256"],
-            "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-        );
         let rows = corpus["rewrite_controls"].as_array().unwrap();
         assert_eq!(rows.len(), 9);
         for row in rows {

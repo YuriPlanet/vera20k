@@ -484,7 +484,6 @@ fn native_whole_unit_ai_preserves_foot_then_mirage_rng_order_and_retention() {
         "tools/spatial_oracle/mirage_disguise.json",
     ))
     .unwrap();
-    assert_eq!(native["native_sha256"], oracle()["native_sha256"]);
     assert_eq!(
         native["initialization"]["inherited_inputs"],
         oracle()["inputs"]

@@ -7,10 +7,8 @@ It adds selected YTNK readers/trigger inputs and read-only observations, rather
 than a second native VM, codec, channel pool or worker driver. Reference values
 are original execution outputs or physical retail bytes.
 
-The exact executable identity, commands, field mapping, source seals and coverage
-limits are in [`gattling_loop.meta.json`](gattling_loop.meta.json). The fixed-address
-historical image is SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+The exact commands, field mapping, source seals and coverage
+limits are in [`gattling_loop.meta.json`](gattling_loop.meta.json).
 Its labels are leads; function entry and ABI below follow original instructions.
 
 ## Readers and trigger boundary

@@ -9,6 +9,16 @@ ra2_dir = "C:/Westwood/RA2"
 # Relative paths are resolved beside this config file. Assets stay in ra2_dir.
 # settings_dir = "."
 
+[ini]
+# Root-file selection only, not full MOD gameplay or a different MIX mount policy.
+# Default yr preserves the normal Yuri's Revenge path. mo requires all three MO
+# roots; auto accepts exactly one complete set with no partial alternate set.
+profile = "yr" # yr | mo | auto | custom
+# With profile = "custom", specify all three logical INI basenames:
+# rules = "my-rules.ini"
+# art = "my-art.ini"
+# ai = "my-ai.ini"
+
 [graphics]
 extra_animations = true   # cosmetic effects: water/ore sparkles (future: laser pulses, particle trails)
 # Full screen, zoom and the original 4:3 shape are on the Options page (saved in RA2MD.INI).

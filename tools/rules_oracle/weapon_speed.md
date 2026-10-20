@@ -1,7 +1,6 @@
 # Retained weapon speed and Rules pass order
 
-`weapon_speed.py` and `weapon_speed_order.py` execute original gamemd.exe
-SHA-256 `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+`weapon_speed.py` and `weapon_speed_order.py` execute original gamemd.exe.
 Their JSON results are native outputs, not calculations copied from Rust.
 The `.meta.json` files pin the payload and list supplied boundaries.
 

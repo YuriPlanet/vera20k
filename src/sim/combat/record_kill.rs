@@ -232,7 +232,7 @@ impl crate::sim::world::Simulation {
     /// Original virtual E0/E4 world entry, including Unit744720's E0 prefix.
     /// Base702D40/703230 captures CostOf after the Unit callbacks and before
     /// its own Tag callbacks; later owner/rank/Tag reads remain live.
-    /// Source/control flow: active Steam3e81a617 instruction bodies; existing
+    /// Source/control flow: active Steam gamemd instruction bodies; existing
     /// object_health/house_statistics/veterancy corpora own the arithmetic.
     /// No own RNG, timer or detach; nested Tag actions use their existing owners.
     pub(crate) fn record_the_kill(
@@ -252,7 +252,7 @@ impl crate::sim::world::Simulation {
                 .get(victim_id)
                 .is_some_and(|victim| victim.category() == EntityCategory::Unit)
         {
-            // Unit vt7F5C70+E0 ->744720..744797 (Steam3e81a617..08600).
+            // Unit vt7F5C70+E0 ->744720..744797 (Steam gamemd).
             // 744741 tests the incoming killer only for7;48 and29 follow
             // even for NULL. Each call re-reads Object+34, without Alive/HP
             // gates. This precedes the base CostOf and its6/4 callbacks.

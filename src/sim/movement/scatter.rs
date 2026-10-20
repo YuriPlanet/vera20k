@@ -635,7 +635,7 @@ impl Simulation {
             .as_ref()
             .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
         let Some(cell) = super::ground_pose::target_get_coords(target, self, cells.as_ref())
-            .and_then(|coord| self.map_coord_cell(coord.x, coord.y))
+            .and_then(|coord| Self::map_coord_cell(&self.resolved_terrain, coord.x, coord.y))
         else {
             return Ok(false);
         };

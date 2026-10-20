@@ -4,7 +4,7 @@
 executions, two separately bounded negative-frame controls and 28 direct
 `Cell4834A0` prerequisite controls against the shared
 `walk_move_admission.prepare_fixture` native Cell/zone grid.
-Binary identity, emulator version and payload
+The emulator version and payload
 hash are in the sidecar. No gameplay leaf is replaced. Only imported
 `timeGetTime` supplies zero for outgoing command wall timestamps.
 

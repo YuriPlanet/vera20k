@@ -704,8 +704,16 @@ impl Simulation {
                     let cell = NativeCellQuery::canonical(self.resolved_terrain.as_ref().unwrap())
                         .lookup_world(x, y);
                     // The empty coordinate is the origin.
-                    self.place_infantry_spot_in_cell(rules, cell, own)?
-                        .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 })
+                    Self::place_infantry_spot_in_cell(
+                        &self.interner,
+                        &mut self.scenario_rng,
+                        &self.substrate,
+                        &self.resolved_terrain,
+                        rules,
+                        cell,
+                        own,
+                    )?
+                    .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 })
                 } else {
                     DriveCoord::from(cell_center(radial.into(), 0))
                 };
@@ -1018,7 +1026,15 @@ impl Simulation {
         //4D5E99..5EC6: PlaceInfantryInCell(out, Target->Center, 0, 0, 1) on
         // this->GetCell().
         let cell = query_object_cell(&cells, location);
-        let spot = self.place_infantry_spot_in_cell(rules, cell, target_center)?;
+        let spot = Self::place_infantry_spot_in_cell(
+            &self.interner,
+            &mut self.scenario_rng,
+            &self.substrate,
+            &self.resolved_terrain,
+            rules,
+            cell,
+            target_center,
+        )?;
         //4D5ECB..5F25: the spot's distance to the Target's cell centre, the
         // empty coordinate's from the origin.
         let [x, y] = spot.map_or([0, 0], |spot| [spot.x, spot.y]);

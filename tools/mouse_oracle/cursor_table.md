@@ -10,8 +10,7 @@ py -3 -m tools.mouse_oracle.cursor_table --exe <gamemd.exe> --write
 py -3 -m tools.mouse_oracle.cursor_table --exe <gamemd.exe> --check
 ```
 
-A binary whose SHA-256 is not the stock one is refused unless `--accept-patched`
-is given; the sidecar then records the hash that was actually read.
+Any `gamemd.exe` is read; the five anchor checks below gate it.
 
 ## What it extracts
 
@@ -51,14 +50,12 @@ an immediate, and are recorded as such.
 
 ## Provenance of the committed fixture
 
-`cursor_table.meta.json` records `native_sha256` of the file that produced it.
-The committed fixture was extracted on a machine holding only
-launcher-patched copies, so it records that hash and `binary_is_stock: false`.
+The committed fixture was extracted from a launcher-patched copy. Its sidecar's
+legacy `native_sha256` and `binary_is_stock` fields are inert history; new
+sidecars record neither.
 It is usable because the tool refuses to read a binary until five anchor checks
 pass — the table-base `lea` at `0x005BDC95`, the dispatch `jmp` at `0x004AB453`,
 the `call [edx+0x48]` at `0x004AB43C`, and the Building vtable slots `+0x4E4`
 and `+0x444` — the last two being addresses this repository already recorded
 from stock analysis in [`../voxel_oracle/building_barrel.md`](../voxel_oracle/building_barrel.md).
-Regenerate against a stock `gamemd.exe` (SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`) to drop that
-dependency.
+Regenerate against an unpatched `gamemd.exe` to drop that dependency.

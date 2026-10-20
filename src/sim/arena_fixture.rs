@@ -2,9 +2,14 @@
 //! grid, for fixtures that order units around through `advance_tick`, and
 //! the native map inputs a component fixture's Foot Process reads.
 
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::bridge_state::BridgeRuntimeState;
 use crate::sim::pathfinding::PathGrid;
+use crate::sim::pathfinding::zone_map::ZoneGrid;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
+use std::sync::Arc;
 
 /// Explicit rules prior for a synthetic clear-ground component scene.
 /// Native LandType defaults are not buildable; an arena intended to host
@@ -121,7 +126,15 @@ fn flat_ground_with_size(sim: &mut Simulation, rules: &RuleSet, size: u16) -> Pa
     sim.install_resolved_terrain_for_new_map(clear_ground(size));
     sim.set_playfield_bounds_for_test(Some(OPEN_PLAYFIELD));
     sim.set_playfield_size_height_for_test(Some(20));
-    install_empty_arena_navigation(sim, rules, size);
+    install_empty_arena_navigation(
+        &sim.substrate,
+        &mut sim.zone_grid,
+        &mut sim.path_grid,
+        &sim.resolved_terrain,
+        &sim.bridge_state,
+        rules,
+        size,
+    );
     assert!(sim.rebuild_dynamic_navigation(rules));
     sim.path_grid_snapshot()
         .map(|grid| (*grid).clone())
@@ -134,16 +147,23 @@ fn flat_ground_with_size(sim: &mut Simulation, rules: &RuleSet, size: u16) -> Pa
 /// test process for each size and starting Dummy state. The rebuild keeps an
 /// installed copy because its path grid and movement classes still match. An
 /// arena that already holds objects, bridges or navigation builds its own.
-fn install_empty_arena_navigation(sim: &mut Simulation, rules: &RuleSet, size: u16) {
-    if !(sim.substrate.entities.is_empty()
-        && sim.bridge_state.is_none()
-        && sim.zone_grid.is_none()
-        && sim.path_grid.is_none())
+fn install_empty_arena_navigation(
+    substrate: &ObjectSubstrate,
+    zone_grid: &mut Option<ZoneGrid>,
+    path_grid: &mut Option<Arc<PathGrid>>,
+    resolved_terrain: &Option<ResolvedTerrainGrid>,
+    bridge_state: &Option<BridgeRuntimeState>,
+    rules: &RuleSet,
+    size: u16,
+) {
+    if !(substrate.entities.is_empty()
+        && bridge_state.is_none()
+        && zone_grid.is_none()
+        && path_grid.is_none())
     {
         return;
     }
-    let dummy = sim
-        .resolved_terrain
+    let dummy = resolved_terrain
         .as_ref()
         .expect("arena terrain")
         .shared_cell_dummy();
@@ -163,8 +183,8 @@ fn install_empty_arena_navigation(sim: &mut Simulation, rules: &RuleSet, size: u
         })
         .expect("arena navigation");
     dummy.adopt_prepared_load_state(&built);
-    sim.zone_grid = Some(zones);
-    sim.path_grid = Some(path);
+    *zone_grid = Some(zones);
+    *path_grid = Some(path);
 }
 
 /// A `size` x `size` grid of clear ground cells.

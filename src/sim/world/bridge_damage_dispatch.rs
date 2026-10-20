@@ -13,7 +13,7 @@ use std::hash::{Hash, Hasher};
 /// Map+D4's ordered packed-cell vector, independent of optional bridge geometry.
 /// Native5650E3/5651EB initializes it empty; MouseSave5BE8E1..927 and
 /// MouseLoad5BE598..61E retain the count and every coordinate, including duplicates.
-/// Source: original587180..58740E and47DDD5..47DE2B (gamemd1cdd1180).
+/// Source: original587180..58740E and47DDD5..47DE2B (gamemd).
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub(in crate::sim::world) struct PendingBridgeCells {
     cells: Vec<(i16, i16)>,

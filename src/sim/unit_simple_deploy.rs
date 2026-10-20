@@ -204,7 +204,14 @@ impl Simulation {
         }
         // The native updaters request these sounds on every admitted visit,
         // independently of whether this call finished or merely waited.
-        self.emit_deploy_action_sound(id, if deploying { 27 } else { 31 }, rules)
+        Self::emit_deploy_action_sound(
+            &mut self.interner,
+            &self.substrate,
+            &mut self.sound_events,
+            id,
+            if deploying { 27 } else { 31 },
+            rules,
+        )
     }
 
     fn start_unit_deploy_anim(

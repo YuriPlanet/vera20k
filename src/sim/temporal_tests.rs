@@ -31,6 +31,7 @@ C4Warhead=Super
 1=GACNST
 2=YAPOWR
 3=GAWEAP
+4=NATBNK
 [Warheads]
 0=ChronoBeam
 1=Super
@@ -93,6 +94,9 @@ Power=-50
 Strength=1000
 WeaponsFactory=yes
 Factory=UnitType
+[NATBNK]
+Strength=1000
+Bunker=yes
 [YAPOWR]
 Strength=1000
 Power=150
@@ -791,16 +795,31 @@ fn let_go_hands_over_progress_or_frees_the_target() {
     let c = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 12);
     chain(&mut sim, tank, &[a, b, c], 1234);
 
-    sim.temporal_let_go(b);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        b,
+    );
     assert_eq!((link(&sim, a).next, link(&sim, c).prev), (Some(c), Some(a)));
     assert_eq!(link(&sim, b), TemporalLink::default().with_remaining(0));
 
-    sim.temporal_let_go(a);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        a,
+    );
     assert_eq!(head_of(&sim, tank), Some(c));
     assert_eq!(link(&sim, c).warp_remaining, 1234, "progress inherited");
     assert_eq!(link(&sim, c).prev, None);
 
-    sim.temporal_let_go(c);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        c,
+    );
     assert_eq!(head_of(&sim, tank), None);
     assert!(!entity(&sim, tank).is_warped_out());
 }
@@ -871,7 +890,13 @@ fn the_ifv_borrows_its_gunners_beam() {
     assert_eq!(head_of(&sim, tank), Some(ifv));
     assert_eq!(link(&sim, partner).prev, Some(ifv));
 
-    sim.temporal_remove_gunner(ifv, cleg);
+    crate::sim::world::Simulation::temporal_remove_gunner(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        ifv,
+        cleg,
+    );
     assert!(!entity(&sim, ifv).temporal.has_link());
     assert!(entity(&sim, cleg).temporal.has_link());
     assert!(
@@ -920,7 +945,12 @@ fn a_warped_building_goes_offline() {
     assert_eq!(output(&mut sim), 0, "GetPowerOutput 0x0044E7C7");
     assert_eq!(sim.building_operational_state(plant, &rules), Some(false));
 
-    sim.temporal_let_go(cleg);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg,
+    );
     assert!(entity(&sim, plant).building_online());
     assert_eq!(output(&mut sim), 100);
     assert_eq!(sim.building_operational_state(plant, &rules), Some(true));
@@ -952,7 +982,12 @@ fn trigger_online_is_independent_of_temporal_and_corrupt_chain_clear_does_not_re
     loaded.resolve_type_handles(&rules);
     assert!(entity(&loaded, building).building_online());
     assert!(entity(&loaded, building).is_warped_out());
-    sim.temporal_let_go(cleg);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg,
+    );
     assert!(
         entity(&sim, building).building_online(),
         "71AC3D forces on without normal callbacks"
@@ -1020,7 +1055,12 @@ fn a_warped_superweapon_building_holds_its_super() {
     }
     assert_eq!(state(&sim), warped, "the time left stays");
 
-    sim.temporal_let_go(cleg);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg,
+    );
     step(&mut sim);
     let (active, held, start, duration) = state(&sim);
     assert!(active && !held && start != -1, "released");
@@ -1312,6 +1352,68 @@ fn a_chrono_legionnaire_erases_a_tank() {
     );
 }
 
+/// Issue #2231. `TemporalClass::Update`'s erase clears a bunkered target's
+/// bunker: `0x0071AA90` calls `BuildingClass::ClearBunker` (`0x00459470`)
+/// when the erased object's bunker link (`+0x2E4`) names a building, before
+/// FreeSlaves (`0x0071AA95`). A stock warp never holds an installed unit —
+/// the Temporal arm of the detonation (`0x0046946B..0x004694A5`) retargets
+/// the firer at its bunker — so the chain is admitted by fixture ([`chain`]);
+/// the erase itself is the production head update. After it the walls are
+/// down (one walls-down anim and sound), both links clear and the bunker
+/// runtime idles; without the call the UnInit safety net clears the links
+/// but leaves the walls up.
+#[test]
+fn erasing_a_bunkered_tank_clears_its_bunker() {
+    use crate::sim::docking::bunker_install::{BunkerRuntime, BunkerState};
+
+    let rules = rules();
+    let (mut sim, _grid) = arena(11, &rules);
+    let bunker = spawn(&mut sim, &rules, "NATBNK", "Americans", 10, 10);
+    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 11, 10);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 12, 10);
+    if let Some(building) = sim.substrate.entities.get_mut(bunker) {
+        building.bunker_runtime = Some(BunkerRuntime::idle());
+    }
+    // Occupied walls, as UpdateBunker's install leaves them.
+    crate::sim::docking::bunker_link::install_bunker_link(&mut sim, bunker, tank, &rules);
+    crate::sim::docking::bunker_link::emit_bunker_wall_anim(&mut sim, bunker, true, &rules);
+    assert_eq!(entity(&sim, bunker).bunker.occupant(), Some(tank));
+    assert_eq!(
+        entity(&sim, tank).bunker.link(),
+        crate::sim::docking::bunker_link::BunkerLink::Installed(bunker)
+    );
+    sim.sound_events.clear_for_test();
+
+    // One step of Damage 8 erases (Strength is not consulted; the chain's
+    // remaining warp is the fixture's).
+    chain(&mut sim, tank, &[cleg], 8);
+    sim.temporal_update_head(cleg, &rules, None, FrameEffects::default());
+
+    assert!(erased(&sim, tank), "the bunkered tank is erased");
+    let building = entity(&sim, bunker);
+    assert_eq!(building.bunker.occupant(), None);
+    assert_eq!(
+        building.bunker_runtime.map(|runtime| runtime.state()),
+        Some(BunkerState::Idle)
+    );
+    assert_eq!(
+        sim.bunker_wall_events
+            .iter()
+            .filter(|event| !event.up && event.building_id == bunker)
+            .count(),
+        1,
+        "one walls-down anim on the erase"
+    );
+    assert_eq!(
+        sim.sound_events
+            .iter()
+            .filter(|event| matches!(event, SimSoundEvent::BunkerWallsDown { .. }))
+            .count(),
+        1,
+        "ClearBunker plays the walls-down sound once"
+    );
+}
+
 /// Infantry51BF59 admits its Inviso Bullet into the live Logic list. Fire
 /// 468670 places it at the target; its later Bullet AI detonates it, after
 /// both pre-existing objects have had their turns. The target's next Temporal
@@ -1532,7 +1634,12 @@ fn a_warp_in_progress_survives_a_snapshot() {
     assert_ne!(
         {
             let mut other = restored;
-            other.temporal_let_go(b);
+            crate::sim::world::Simulation::temporal_let_go(
+                &mut other.substrate,
+                &mut other.houses,
+                &mut other.power_states,
+                b,
+            );
             other.state_hash()
         },
         hash,
@@ -1646,7 +1753,12 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
         "no bill"
     );
     // Released, the building repairs again.
-    sim.temporal_let_go(cleg2);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg2,
+    );
     sim.object_ai_visit_one(plant, Some(&rules), ctx);
     assert!(entity(&sim, plant).health.current() > 300);
 }
@@ -1817,7 +1929,12 @@ fn a_released_mover_does_not_resume_its_order() {
         "the order ends"
     );
     let frozen_at = entity(&sim, tank).position.rx();
-    sim.temporal_let_go(cleg);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg,
+    );
     for _ in 0..150 {
         step(&mut sim);
     }
@@ -2022,7 +2139,12 @@ fn a_warped_building_cannot_be_captured() {
         ),
         "refusal clears the building destination and scatters away"
     );
-    sim.temporal_let_go(cleg);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg,
+    );
     enter(&mut sim);
     assert_eq!(entity(&sim, plant).owner(), russians, "captured once free");
     assert!(
@@ -2072,8 +2194,18 @@ fn a_warped_transport_admits_no_one() {
     );
     assert!(!admits(&sim, fortress), "a warped Unit transport");
     assert!(!admits(&sim, reactor), "a warped absorber");
-    sim.temporal_let_go(cleg);
-    sim.temporal_let_go(cleg2);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg,
+    );
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg2,
+    );
     assert!(admits(&sim, fortress));
     assert!(admits(&sim, reactor));
 }
@@ -2518,8 +2650,18 @@ fn native_first_head_building_warning_and_release_corpus() {
                     None,
                     FrameEffects::default(),
                 ),
-                "release_firer" => sim.temporal_let_go(attackers[0]),
-                "release_original_head" => sim.temporal_let_go(attackers[1]),
+                "release_firer" => crate::sim::world::Simulation::temporal_let_go(
+                    &mut sim.substrate,
+                    &mut sim.houses,
+                    &mut sim.power_states,
+                    attackers[0],
+                ),
+                "release_original_head" => crate::sim::world::Simulation::temporal_let_go(
+                    &mut sim.substrate,
+                    &mut sim.houses,
+                    &mut sim.power_states,
+                    attackers[1],
+                ),
                 other => panic!("{name}: unknown native phase {other}"),
             }
             let state = &phase["state"];

@@ -341,12 +341,15 @@ impl crate::sim::world::Simulation {
     /// ParasiteClass::GetReleaseCoords (`0x0062ADE9`), SpawnSurvivors
     /// (`0x00443182`) and Mission_Selling's crew (`0x0044A6ED`) ask it so.
     pub(crate) fn place_infantry_in_ground_cell(
-        &mut self,
+        interner: &StringInterner,
+        scenario_rng: &mut SimRng,
+        substrate: &ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
         rules: &crate::rules::ruleset::RuleSet,
         point: DriveCoord,
     ) -> Option<u8> {
         use crate::sim::occupancy::RawCellKey;
-        let key = match self.resolved_terrain.as_ref() {
+        let key = match resolved_terrain.as_ref() {
             Some(terrain) => RawCellKey::from_native(
                 terrain,
                 crate::map::resolved_terrain::NativeCellQuery::canonical(terrain)
@@ -354,14 +357,7 @@ impl crate::sim::world::Simulation {
             ),
             None => RawCellKey::Real((point.x / 256) as u16, (point.y / 256) as u16),
         };
-        Self::place_infantry_in_ground_key(
-            &self.interner,
-            &mut self.scenario_rng,
-            &self.substrate,
-            rules,
-            key,
-            point,
-        )
+        Self::place_infantry_in_ground_key(interner, scenario_rng, substrate, rules, key, point)
     }
 
     /// PlaceInfantryInCell with useCellCoords (`0x00481212`) on `cell`, the
@@ -371,20 +367,22 @@ impl crate::sim::world::Simulation {
     /// spot's offset, and its Z the ground at `request` (`0x00578080` at
     /// `0x0048146E`). `None` is the empty coordinate.
     pub(crate) fn place_infantry_spot_in_cell(
-        &mut self,
+        interner: &StringInterner,
+        scenario_rng: &mut SimRng,
+        substrate: &ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
         rules: &crate::rules::ruleset::RuleSet,
         cell: crate::map::cell_index::NativeCellIdentity,
         request: DriveCoord,
     ) -> Result<Option<DriveCoord>, String> {
-        let terrain = self
-            .resolved_terrain
+        let terrain = resolved_terrain
             .as_ref()
             .ok_or("PlaceInfantryInCell requires map cells")?;
         let key = crate::sim::occupancy::RawCellKey::from_native(terrain, cell);
         let Some(slot) = Self::place_infantry_in_ground_key(
-            &self.interner,
-            &mut self.scenario_rng,
-            &self.substrate,
+            interner,
+            scenario_rng,
+            substrate,
             rules,
             key,
             request,
@@ -392,7 +390,7 @@ impl crate::sim::world::Simulation {
             return Ok(None);
         };
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(
-            self.resolved_terrain.as_ref().unwrap(),
+            resolved_terrain.as_ref().unwrap(),
         );
         let [x, y] = cell_kernel::native_cell_own_xy(cell, &cells);
         let z = super::ground_pose::query_ground_height(&cells, request)?;

@@ -57,6 +57,11 @@ fn run(cli: Cli) -> Result<(), ErrorReport> {
     let source_only = matches!(cli.verb, Verb::IniExpand { .. }) && cli.ini_source_only;
     let manager = if source_only {
         root::open_ini_probe_manager(&ra2_dir, cli.all_mixes)
+    } else if matches!(
+        cli.verb,
+        Verb::IniGet { .. } | Verb::IniType { .. } | Verb::IniRoots
+    ) {
+        root::open_ini_manager(&ra2_dir, cli.all_mixes, cli.ini_roots.as_ref())
     } else {
         root::open_manager(&ra2_dir, cli.all_mixes)
     };
@@ -70,6 +75,21 @@ fn run(cli: Cli) -> Result<(), ErrorReport> {
 
     match cli.verb {
         Verb::Help => unreachable!("handled before dispatch"),
+        Verb::IniRoots => {
+            let sources = manager.ini_roots().names().into_iter().map(|name| {
+                vera20k::rules::retail_sources::select_ini(&manager, name).map(|selected| selected.source)
+            }).collect::<Result<Vec<_>, _>>().map_err(|error| ErrorReport {
+                error, hint: Some("Check the complete selected root triplet; missing roots do not fall back to YR.".into()),
+            })?;
+            println!(
+                "{}",
+                to_json(&serde_json::json!({
+                    "ini_roots": manager.ini_roots(), "sources": sources,
+                    "scope": if cli.all_mixes { "tooling_all_mixes" } else { "game_archive_stack" },
+                    "limits": "Root selection only; this is not MO gameplay acceptance or arbitrary game MIX mounting."
+                }))
+            );
+        }
         Verb::IniExpand { name } => {
             let report = verb_ini_expand::run(
                 &manager,

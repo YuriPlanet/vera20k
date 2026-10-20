@@ -347,7 +347,17 @@ fn a_bombed_bridge_hut_drops_its_bridge() {
             .unwrap();
         sim.session.set_binary_frame_for_test(100);
         if bombed {
-            sim.bomb_attach(ivan, Some(hut), &rules);
+            Simulation::bomb_attach(
+                &sim.interner,
+                &sim.session,
+                &mut sim.substrate,
+                &mut sim.sound_events,
+                &sim.resolved_terrain,
+                &mut sim.bombs,
+                ivan,
+                Some(hut),
+                &rules,
+            );
         }
         if killed {
             let super_wh = sim.interner.intern("Super");

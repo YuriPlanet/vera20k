@@ -5,6 +5,12 @@
 use super::{SimSoundEvent, Simulation};
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::houses::Houses;
+use crate::sim::intern::StringInterner;
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::world::FrameChannel;
+use crate::sim::world::MainRng;
+use crate::sim::world::ObjectSubstrate;
 
 /// Foot+0x53C and signed dword+0x540. The sound may have finished (or playback
 /// may have been rejected) while the latch remains set. Device state must
@@ -43,12 +49,17 @@ impl Simulation {
     /// sound and spend a Main draw wrongly.
     /// Held locomotor routes retain their existing moving-now/cadence limits.
     pub(super) fn tick_move_sound_after_process(
-        &mut self,
+        interner: &StringInterner,
+        session: &ScenarioSession,
+        main_rng: &MainRng,
+        substrate: &mut ObjectSubstrate,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
+        houses: &Houses,
         stable_id: u64,
         body_frame_before_process: u32,
         rules: Option<&RuleSet>,
     ) {
-        let Some(entity) = self.substrate.entities.get(stable_id) else {
+        let Some(entity) = substrate.entities.get(stable_id) else {
             return;
         };
         if entity.category() == EntityCategory::Structure || entity.locomotor.is_none() {
@@ -57,30 +68,28 @@ impl Simulation {
         let changed_or_moving = body_frame_before_process != entity.body_frame_counter.get()
             || crate::sim::movement::motion_query::is_moving_now(
                 entity,
-                rules.map(|rules| {
-                    crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses)
-                }),
-                self.session.binary_frame(),
+                rules.map(|rules| crate::sim::movement::SpeedRules::new(rules, interner, houses)),
+                session.binary_frame(),
             );
         // Native +8D/+425. A retained parachute object alone is not this gate.
         let falling_or_crashing = entity.is_falling_down() || entity.crash.is_crashing();
         let state = entity.move_sound;
         if changed_or_moving && !falling_or_crashing {
             let sounds = rules
-                .and_then(|rules| self.object_type(entity.type_ref(), rules))
+                .and_then(|rules| interner.object_type(entity.type_ref(), rules))
                 .map_or(&[][..], |object| object.move_sound.as_slice());
             let mut started = false;
             if !state.active && !sounds.is_empty() {
                 let world = Self::movement_sound_world(entity);
                 // 0x4DAA91 hard-stops any prior sound on the shared Foot handle,
                 // then 0x4DAACB draws Main once even for a singleton vector.
-                self.sound_events.emit(SimSoundEvent::AnimationStopped {
+                sound_events.emit(SimSoundEvent::AnimationStopped {
                     anim_id: stable_id,
                     stop_sound_id: None,
                     world,
                 });
-                let index = self.main_rng.next_u32() as usize % sounds.len();
-                self.sound_events.emit(SimSoundEvent::AnimationStarted {
+                let index = main_rng.next_u32() as usize % sounds.len();
+                sound_events.emit(SimSoundEvent::AnimationStarted {
                     anim_id: stable_id,
                     sound_id: sounds[index].clone(),
                     world,
@@ -88,17 +97,16 @@ impl Simulation {
                 // 0x4DAAE7 does not depend on PlayAt's device/admission result.
                 started = true;
             }
-            let entity = self.substrate.entities.get_mut(stable_id).unwrap();
+            let entity = substrate.entities.get_mut(stable_id).unwrap();
             entity.move_sound.active = state.active || started;
             // 0x4DAA87 reaches this even when the configured vector is empty.
             entity.move_sound.countdown = 3;
         } else if state.active {
-            let entity = self.substrate.entities.get_mut(stable_id).unwrap();
+            let entity = substrate.entities.get_mut(stable_id).unwrap();
             if state.countdown == 0 || falling_or_crashing {
                 // 0x4DAB2B Release (0x406060) lets a one-shot play out. It is distinct
                 // from the Stop405D40 before a new selection and Limbo405FD0.
-                self.sound_events
-                    .emit(SimSoundEvent::ObjectSoundReleased { owner: stable_id });
+                sound_events.emit(SimSoundEvent::ObjectSoundReleased { owner: stable_id });
                 entity.move_sound = MoveSoundState::default();
             } else {
                 entity.move_sound.countdown = state.countdown.wrapping_sub(1);

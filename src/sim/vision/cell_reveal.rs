@@ -575,7 +575,7 @@ impl FogState {
 }
 
 impl FogState {
-    /// Display::GrowShroud4ACAC0, Steam gamemd3e81a617..08600. Both
+    /// Display::GrowShroud4ACAC0, Steam gamemd. Both
     /// passes scan the fixed512-square map in y-major order, admitting only
     /// In_Bounds568300. Capture every8&&!10 cell before any neighbor loses10.
     /// Existing pending140/20 bits participate too. Unlike578100, the
@@ -780,7 +780,7 @@ impl FogState {
     /// ground and fog edge channels. Fresh and changed are distinct: the
     /// receiver5865F0 runs only on changed, with the original fresh argument.
     /// Original leaf/frontier execution: tools/spatial_oracle/
-    /// trigger_forced_map.{json,meta.json}, Steam3e81a617. Its active caller
+    /// trigger_forced_map.{json,meta.json}, Steam gamemd. Its active caller
     /// is Execute16 at6DE3A8 through Map653810.
     /// The unrepresented Cell140 bit40 is cleared natively; no represented
     /// counter/pending20 substitutes for that bit. First initialization's

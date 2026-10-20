@@ -32,7 +32,7 @@ points; the exhaustive oracle/tool inventory remains tracked in issue #746.
 | Replay a recorded annotation pass onto another copy of the Ghidra database | [Ghidra annotation passes](ghidra_pass.md), `ApplyGhidraPass.java` |
 | Reproduce Foot coordinates and bridge source-layer / reachability queries | [checked Foot bridge-layer oracle](spatial_oracle/foot_bridge_layer.md) |
 | Run pinned native executable comparisons | [native oracle runner](native_oracle.md) |
-| Reproduce occupied-Building weapon/foundation queries and the scan-bound slice | [garrison queries](garrison_oracle/weapon_range.py), with JSON goldens and identity/coverage sidecar |
+| Reproduce occupied-Building weapon/foundation queries and the scan-bound slice | [garrison queries](garrison_oracle/weapon_range.py), with JSON goldens and coverage sidecar |
 | Preserve failed native execution context and diagnose timeouts | [native failure reports](native_oracle.md#investigating-a-failed-native-run) |
 | Compare shell captures | `python -m tools.shell_capture_diff --help` |
 | Capture and certify shell routes | [shell certification](shell_certification/README.md) |
@@ -219,8 +219,12 @@ This does not restore lost symbols or claim complete debugging support.
 
 Mach-O inspection reads every N_OSO/N_AST reference directly from every symbol
 table/universal slice, including missing inputs that dsymutil's debug-map output
-omits. ELF embedded DWARF uses GNU `readelf`; external/split debug information,
-thin archives and PE/PDB dependency closure remain unsupported and stop trimming.
+omits. ELF embedded DWARF uses GNU `readelf`. PE32/PE32+ images without a debug
+directory are checked directly; embedded PE DWARF uses GNU `objdump`. Both DWARF
+readers disable link following and debuginfod servers. PE debug directories
+(including CodeView/PDB and legacy DBG),
+external/split/compressed DWARF and thin archives remain unsupported and stop
+trimming. PE executables and PDBs remain protected, with no new deletion candidacy.
 Malformed inputs, links, unknown formats and inspector failures still block deletion.
 
 Inspection results and preserved SHA checks are reused only while executable

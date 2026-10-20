@@ -4,8 +4,6 @@
 refinery chain. Its seven legacy arrays retain all 50 rows and the canonical
 SHA-256 `0c09972becd0dbae19513665f9629a251bf443efe5cff0117aa9724541f84879`.
 Generation refuses a changed legacy payload before adding `instance_controls`.
-The executable identity is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 
 The three additive histories use the existing fixture, observer, original-call
 helper and FootAI END helper. They cover ordinary fresh/reused/repeated Move;

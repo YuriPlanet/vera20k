@@ -4113,8 +4113,8 @@ mod tests {
             })
         );
 
-        sim.bomb_attach(ivan, Some(near), &rules);
-        sim.bomb_attach(ivan, Some(far), &rules);
+        sim.bomb_attach_for_test(ivan, Some(near), &rules);
+        sim.bomb_attach_for_test(ivan, Some(far), &rules);
         assert_eq!(
             action(&sim, ivan, near, false),
             AttackAction::NoMove,
@@ -4213,7 +4213,7 @@ mod tests {
         *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(16, 16);
         sim.fog_mut_for_test()
             .reveal_cells_for_owner(owner, (0..16).flat_map(|y| (0..16).map(move |x| (x, y))));
-        sim.bomb_attach(ivan, Some(tank), &rules);
+        sim.bomb_attach_for_test(ivan, Some(tank), &rules);
         let overlays = crate::rules::overlay_types::OverlayTypeRegistry::empty();
         for actor in [ivan, dog] {
             assert_eq!(
@@ -5784,10 +5784,10 @@ mod tests {
         assert!(disarm_bomb_engineers(&sim, &rules, &selected, own_tank, americans).is_empty());
         assert!(!ivan_cannot_bomb(&sim, &rules, ivan, own_tank));
 
-        sim.bomb_attach(ivan, Some(own_tank), &rules);
-        sim.bomb_attach(enemy_ivan, Some(far_tank), &rules);
-        sim.bomb_list_update(&rules);
-        sim.bomb_list_update(&rules);
+        sim.bomb_attach_for_test(ivan, Some(own_tank), &rules);
+        sim.bomb_attach_for_test(enemy_ivan, Some(far_tank), &rules);
+        sim.bomb_list_update_for_test(&rules);
+        sim.bomb_list_update_for_test(&rules);
 
         assert_eq!(
             disarm_bomb_engineers(&sim, &rules, &selected, own_tank, americans),
@@ -5809,9 +5809,9 @@ mod tests {
         assert!(!ivan_cannot_bomb(&sim, &rules, engineer, own_tank));
 
         // The Engineer carrying a bomb itself is no target of its own click.
-        sim.bomb_attach(ivan, Some(engineer), &rules);
-        sim.bomb_list_update(&rules);
-        sim.bomb_list_update(&rules);
+        sim.bomb_attach_for_test(ivan, Some(engineer), &rules);
+        sim.bomb_list_update_for_test(&rules);
+        sim.bomb_list_update_for_test(&rules);
         assert!(disarm_bomb_engineers(&sim, &rules, &[engineer], engineer, americans).is_empty());
     }
     /// Supplies the ordinary object-route prerequisites, through production

@@ -1220,8 +1220,10 @@ use crate::util::save_codec;
 // 456 -> 457: the retained type registry stores Warhead+0xA0 after each
 // reached ReadINI, including its per-layer literal default; its positional
 // payload and the effective rules configuration hash change.
-// 458 is reserved by the independent building-upgrade change (#2295).
-// 457 -> 459: retain the build's extension capability in Rules and the save
+// 457 -> 458: retained upgrade rules, host-owned installed type slots and
+// scenario-owned mutable BuildingType upgrade animation names. Temporary
+// upgrade objects no longer retain a competing authored-building identity.
+// 458 -> 459: retain the build's extension capability in Rules and the save
 // header; reject cross-capability saves before deserializing Simulation.
 const SNAPSHOT_VERSION: u32 = 459;
 
@@ -3137,9 +3139,14 @@ impl Simulation {
                 entity.parasite.restart_timers_after_load(frame);
             }
         }
-        self.rebuild_logic_membership();
+        Self::rebuild_logic_membership(
+            &mut self.terrain_objects,
+            &mut self.substrate,
+            &mut self.projectiles,
+            &mut self.waves,
+        );
         self.substrate.rebuild_building_anim_slot_indices();
-        self.rebuild_bomb_carriers();
+        Self::rebuild_bomb_carriers(&self.substrate, &mut self.bombs);
         // The kamikaze tracker's Load (`0x0054E7B0`) follows its Clear.
         self.kamikaze
             .restart_after_load(self.session.binary_frame());
@@ -3895,7 +3902,12 @@ mod tests {
         // monotonic allocators. Rebuild their substrate caches directly; the
         // production path uses `restore_after_snapshot_load`.
         sim.substrate.entities.rebuild_class_registries();
-        sim.rebuild_logic_membership();
+        Simulation::rebuild_logic_membership(
+            &mut sim.terrain_objects,
+            &mut sim.substrate,
+            &mut sim.projectiles,
+            &mut sim.waves,
+        );
         sim.substrate
             .occupancy
             .restore_memberships(&sim.substrate.entities)
@@ -4951,13 +4963,20 @@ mod tests {
     }
 
     #[test]
-    fn techno_constructor_word_and_upgrade_link_roundtrip_without_a_draw_and_hash() {
+    fn techno_constructor_word_and_installed_upgrades_roundtrip_without_a_draw_and_hash() {
         let mut sim = Simulation::new();
         let mut entity =
             crate::sim::game_entity::GameEntity::test_default(1, "UP1", "Americans", 4, 5);
         entity.set_techno_ctor_random_word_for_test(0xA55A);
-        entity.link_structure_upgrade(77, 2);
+        let upgrade_type = sim.interner.intern("UP1");
+        entity.set_building_upgrades_for_test(3, [None, None, Some(upgrade_type)]);
         sim.substrate.entities.insert(entity);
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[BuildingTypes]\n0=UP1\n[UP1]\nUpgrades=3\n",
+            ))
+            .unwrap();
+        sim.set_building_upgrade_art_name(upgrade_type, 0, "ART_UP", &rules);
         // Native load resets Scenario RNG to Seed(0); align the source before
         // comparing persistence/hash state unrelated to that separate rule.
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
@@ -4969,27 +4988,30 @@ mod tests {
         let restored_entity = restored.substrate.entities.get(1).unwrap();
         assert_eq!(restored.scenario_rng.logical_state(), source_rng);
         assert_eq!(restored_entity.techno_ctor_random_word(), 0xA55A);
+        assert_eq!(restored_entity.building_upgrades().count(), 3);
         assert_eq!(
-            restored_entity.structure_upgrade_link(),
-            Some(crate::sim::game_entity::StructureUpgradeLink::for_test(
-                77, 2
-            ))
+            restored_entity.building_upgrades().types(),
+            &[None, None, Some(upgrade_type)]
         );
         assert_eq!(restored.state_hash(), source_hash);
+        assert_eq!(
+            restored.building_upgrade_art_names().name(upgrade_type, 0),
+            Some("ART_UP")
+        );
 
         let mut changed_word = GameSnapshot::load(&bytes).unwrap().sim;
         let entity = changed_word.substrate.entities.get_mut(1).unwrap();
         entity.set_techno_ctor_random_word_for_test(entity.techno_ctor_random_word() ^ 1);
         assert_ne!(changed_word.state_hash(), source_hash);
 
-        let mut changed_link = restored;
-        changed_link
+        let mut changed_upgrade = restored;
+        changed_upgrade
             .substrate
             .entities
             .get_mut(1)
             .unwrap()
-            .link_structure_upgrade(77, 1);
-        assert_ne!(changed_link.state_hash(), source_hash);
+            .set_building_upgrades_for_test(2, [None, Some(upgrade_type), None]);
+        assert_ne!(changed_upgrade.state_hash(), source_hash);
     }
 
     #[test]
@@ -9082,7 +9104,10 @@ mod tests {
         restored
             .restore_after_snapshot_load()
             .expect("mixed admitted and additionally registered Houses restore");
-        assert_eq!(restored.scenario_house_named("Russians"), Some(hostile));
+        assert_eq!(
+            Simulation::scenario_house_named(&restored.houses, "Russians"),
+            Some(hostile)
+        );
         assert_eq!(
             restored.houses[&hostile].native_scenario_name(),
             Some("Russians")
@@ -9219,7 +9244,12 @@ mod tests {
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);
         let mut restored = GameSnapshot::load(&bytes).expect("load should succeed").sim;
-        restored.rebuild_logic_membership();
+        Simulation::rebuild_logic_membership(
+            &mut restored.terrain_objects,
+            &mut restored.substrate,
+            &mut restored.projectiles,
+            &mut restored.waves,
+        );
 
         let member = restored.substrate.entities.get(1).expect("member restored");
         assert!(member.in_logic_vector.is_member());
@@ -10206,7 +10236,8 @@ mod tests {
         // 454 -> 455: BunkerState::WallsUp.
         // 455 -> 456: saved paid two-stage selections and ticketed commands.
         // 456 -> 457: retained per-pass Warhead Verses table.
-        // 458 belongs to #2295; 459 retains the Rules/build capability.
+        // 457 -> 458: host-owned installed upgrades and shared type art.
+        // 458 -> 459: the retained Rules/build extension capability.
         assert_eq!(super::SNAPSHOT_VERSION, 459);
     }
 }

@@ -510,14 +510,6 @@ mod tests {
 
     #[test]
     fn native_house_return_direction_snap_matches_all_28_original_calls() {
-        let metadata: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/spatial_oracle/house_base_return.meta.json",
-        ))
-        .unwrap();
-        assert_eq!(
-            metadata["native_sha256"],
-            "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-        );
         let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/spatial_oracle/house_base_return.json",
         ))

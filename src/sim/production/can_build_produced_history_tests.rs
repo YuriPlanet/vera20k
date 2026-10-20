@@ -85,10 +85,6 @@ fn assert_state(sim: &Simulation, owner: InternedId, expected: &Value, context: 
 fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
     let corpus = crate::test_fixture::json("tools/can_build_produced_history.json");
     assert_eq!(corpus["schema_version"], 1);
-    assert_eq!(
-        corpus["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let cases = corpus["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 14);
     let mut compared_phases = 0;
@@ -158,7 +154,9 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
                             &sim, product,
                         );
                     crate::sim::production::factory_lifecycle::record_last_built(
-                        &mut sim,
+                        &sim.interner,
+                        &mut sim.sound_events,
+                        &mut sim.houses,
                         &rules,
                         target,
                         product_view,

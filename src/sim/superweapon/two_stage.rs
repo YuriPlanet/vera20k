@@ -51,6 +51,15 @@ pub(super) fn destination_for_source(
     })
 }
 
+impl SuperWeapons {
+    /// `owner`'s paid selection sequence, if one of its supers holds one.
+    pub(crate) fn paid_selection(&self, owner: InternedId) -> Option<PaidSuperWeaponSelection> {
+        self.get(&owner)?
+            .values()
+            .find_map(|instance| instance.paid_selection)
+    }
+}
+
 impl Simulation {
     pub(crate) fn validate_paid_super_weapon_selections(&self) -> Result<(), &'static str> {
         for (owner, weapons) in self.super_weapons.iter() {
@@ -98,10 +107,7 @@ impl Simulation {
         }
         #[cfg(feature = "ares")]
         {
-            self.super_weapons
-                .get(&owner)?
-                .values()
-                .find_map(|instance| instance.paid_selection)
+            self.super_weapons.paid_selection(owner)
         }
     }
 
@@ -171,12 +177,18 @@ impl Simulation {
     }
 
     #[cfg(feature = "ares")]
-    pub(super) fn retire_paid_selections(&mut self, rules: &RuleSet, owner: InternedId) {
-        if let Some(selection) = self.paid_super_weapon_selection(owner) {
+    pub(super) fn retire_paid_selections(
+        substrate: &mut ObjectSubstrate,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
+        super_weapons: &mut SuperWeapons,
+        rules: &RuleSet,
+        owner: InternedId,
+    ) {
+        if let Some(selection) = super_weapons.paid_selection(owner) {
             Self::cancel_paid_super_weapon_selection(
-                &mut self.substrate,
-                &mut self.sound_events,
-                &mut self.super_weapons,
+                substrate,
+                sound_events,
+                super_weapons,
                 rules,
                 owner,
                 selection,

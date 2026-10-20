@@ -1,7 +1,6 @@
 # Retained General projectile controls
 
-`guided_controls.py` executes original gamemd.exe SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+`guided_controls.py` executes original gamemd.exe.
 The JSON preserves original binary64 bits and signed altitude values. Its
 metadata pins the payload and fixture boundaries.
 

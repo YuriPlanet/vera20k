@@ -333,7 +333,7 @@ class IdentityAndReferenceTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.target = Path(self.directory.name) / "vectors.json"
-        self.metadata = {"native_sha256": "synthetic-test-only", "unicorn_core": [2, 1, 0]}
+        self.metadata = {"scope": "synthetic-test-only", "unicorn_core": [2, 1, 0]}
         # The recorded command depends on how the suite was launched.
         replay = patch.object(oracle.oracle_sources, "replay_command", return_value=None)
         replay.start()
@@ -354,45 +354,26 @@ class IdentityAndReferenceTests(unittest.TestCase):
     def sidecar(self, suffix=".meta.json"):
         return json.loads(self.target.with_suffix(suffix).read_text(encoding="utf-8"))
 
-    def test_wrong_executable_is_rejected_explicitly(self):
-        self.target.write_bytes(b"not the original executable")
-        with self.assertRaisesRegex(oracle.OracleError, "Unsupported gamemd.exe"):
-            oracle._verified_image(self.target)
+    def test_any_executable_loads_without_an_identity_check(self):
+        for data in (pe_image(), b"any gamemd.exe build"):
+            with self.subTest(size=len(data)):
+                self.target.write_bytes(data)
+                oracle._image.cache_clear()
+                self.addCleanup(oracle._image.cache_clear)
+                self.assertEqual(oracle._image(self.target), data)
+        self.assertEqual(oracle.image_sha256(), oracle.NATIVE_SHA256)
+        metadata = oracle.provenance(scope="synthetic", assumptions=["not native evidence"],
+                                     substitutions=[], entry_points={"test": CODE})
+        self.assertNotIn("native_sha256", metadata)
 
-    def test_any_file_carrying_the_native_sections_loads_under_the_native_identity(self):
-        reference = pe_image()
-        sections = tuple((rva, raw, size, virtual_size, flags,
-                          hashlib.sha256(reference[raw:raw + size]).hexdigest())
-                         for rva, raw, size, virtual_size, flags in oracle._sections(reference))
-        repackaged = bytearray(reference)
-        repackaged[0x80 + 8] ^= 0xFF  # PE timestamp: a header outside the sections
-        repackaged += b"release-specific trailer"
-        changed_code = bytearray(reference)
-        changed_code[0x200] ^= 0x01
-        self.addCleanup(oracle._verified_image.cache_clear)
-        self.addCleanup(oracle._carries_native_code.cache_clear)
-        with patch.object(oracle, "NATIVE_SECTIONS", sections):
-            oracle._carries_native_code.cache_clear()
-            for data in (reference, bytes(repackaged)):
-                with self.subTest(size=len(data)):
-                    self.target.write_bytes(data)
-                    oracle._verified_image.cache_clear()
-                    self.assertEqual(oracle._verified_image(self.target), data)
-                    self.assertEqual(oracle.image_sha256(data), oracle.NATIVE_SHA256)
-            self.target.write_bytes(bytes(changed_code))
-            oracle._verified_image.cache_clear()
-            with self.assertRaisesRegex(oracle.OracleError, "game code differs"):
-                oracle._verified_image(self.target)
-
-    def test_bytes_without_the_native_code_report_their_own_hash(self):
-        data = b"synthetic execution bytes"
-        with patch.object(oracle, "image_bytes", return_value=data):
-            actual = hashlib.sha256(data).hexdigest()
-            self.assertEqual(oracle.image_sha256(), actual)
-            self.assertNotEqual(actual, oracle.NATIVE_SHA256)
-            metadata = oracle.provenance(scope="synthetic", assumptions=["not native evidence"],
-                                         substitutions=[], entry_points={"test": CODE})
-            self.assertEqual(metadata["native_sha256"], actual)
+    def test_check_ignores_and_write_drops_a_legacy_native_hash(self):
+        self.finish({"value": 42}, "--write")
+        sidecar = self.target.with_suffix(".meta.json")
+        legacy = dict(self.sidecar(), native_sha256="recorded-by-an-older-runner")
+        sidecar.write_text(json.dumps(legacy))
+        self.assertIn("PASS", self.finish({"value": 42}))
+        self.finish({"value": 42}, "--write")
+        self.assertNotIn("native_sha256", self.sidecar())
 
     def test_explicit_missing_path_does_not_fall_back(self):
         (self.target.parent / "gamemd.exe").write_bytes(b"fallback must not be selected")
@@ -491,7 +472,7 @@ class IdentityAndReferenceTests(unittest.TestCase):
         self.finish(data, "--write", projection=projection)
         sidecar = self.target.with_suffix(".raw.meta.json")
         metadata = json.loads(sidecar.read_text())
-        metadata["native_sha256"] = "altered-only-in-raw-receipt"
+        metadata["scope"] = "altered-only-in-raw-receipt"
         sidecar.write_text(json.dumps(metadata))
         with self.assertRaisesRegex(oracle.OracleError, "Full raw archive provenance mismatch"):
             self.finish(data, projection=projection)

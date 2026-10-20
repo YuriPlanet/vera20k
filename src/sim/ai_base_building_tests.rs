@@ -156,7 +156,16 @@ fn the_production_mode_steps_as_native() {
         let draws: Vec<&Value> = row["draws"].as_array().unwrap().iter().collect();
         let expected = expect_draws(&mut sim, &draws, 0, 1);
 
-        economy_state_machine(&mut sim, &rules, owner, int(&row["kind"]) == 6);
+        economy_state_machine(
+            &sim.interner,
+            &sim.session,
+            &mut sim.scenario_rng,
+            &mut sim.houses,
+            &sim.power_states,
+            &rules,
+            owner,
+            int(&row["kind"]) == 6,
+        );
 
         assert_eq!(
             i64::from(sim.houses[&owner].ai_production().mode()),

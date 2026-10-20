@@ -293,7 +293,11 @@ mod tests {
                 crate::sim::scenario_bootstrap::initialize_map_roster_houses(
                     sim, &roster, None, None,
                 );
-                crate::sim::scenario_bootstrap::initialize_campaign_current_house(sim, &map.ini);
+                crate::sim::scenario_bootstrap::initialize_campaign_current_house(
+                    &mut sim.session,
+                    &mut sim.houses,
+                    &map.ini,
+                );
             },
         )
         .expect("staged map-roster construction");

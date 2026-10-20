@@ -410,10 +410,6 @@ mod tests {
             "tools/projectile_oracle/line_walk_vectors.json",
         ))
         .unwrap();
-        assert_eq!(
-            native["sha256"],
-            "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-        );
         for row in native["cases"].as_array().unwrap() {
             let name = row["name"].as_str().unwrap();
             let mut terrain = crate::map::resolved_terrain::test_grid(

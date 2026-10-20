@@ -65,8 +65,7 @@ to the connected corpora rather than copying VERA-interpreted fields.
 ## Physical asset identity
 
 `bridge_render_inputs.json` pins file lengths, SHA-256 hashes, source lines,
-the complete48-byte120MM input and its palette indices. Native binary identity
-is1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c.
+the complete48-byte120MM input and its palette indices.
 
 - RULESMD is the743215-byte expandmd01.mix entry8218F9F4; fixed ARTMD is336535
   bytes. MPBattleMD is295 bytes. Hills is the144458-byte inner INI of loose

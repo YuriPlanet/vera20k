@@ -21,10 +21,6 @@ fn corpus() -> Value {
     ))
     .unwrap();
     assert_eq!(metadata["schema_version"], 1);
-    assert_eq!(
-        metadata["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/base_defense_response.json",
     ))

@@ -3,7 +3,7 @@
 //! retains its acquired ScenarioPause credit. Vox owns selected EVA completion;
 //! AppAudioRuntime owns the separate movie stream hold.
 //!
-//! Native evidence: Steam3e81a617..08600,653963/6578F0/6579E0 and the executed
+//! Native evidence: Steam gamemd,653963/6578F0/6579E0 and the executed
 //! prerequisite/lifecycle controls in the ALL01 native evidence packet.
 //! Queued pause transitions: original657BFA/657C7D controls in
 //! tools/scenario_pause.json; the sidecar records the executable identity.

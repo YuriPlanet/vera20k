@@ -4,8 +4,7 @@
 //! buckets (timeGetTime >> 4). GameGetMinFrameRate55AF60 owns the hysteresis
 //! shared by Anim and LaserDraw. This state does not affect simulation.
 //! Executed controls: tools/spatial_oracle/building_prism.{py,json,meta.json},
-//! `laser_fps` and `laser_detail_selection`; binary SHA256
-//! 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c.
+//! `laser_fps` and `laser_detail_selection`; gamemd binary.
 
 use crate::rules::ruleset::DetailRules;
 use crate::sim::timer::CdTimer;

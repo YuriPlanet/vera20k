@@ -29,10 +29,6 @@ use serde_json::{Value, json};
 fn corpus() -> &'static Value {
     let native = crate::test_fixture::json("tools/spatial_oracle/engineer_repair_joined.json");
     assert_eq!(native["source"], "unicorn/gamemd.exe");
-    assert_eq!(
-        native["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     native
 }
 

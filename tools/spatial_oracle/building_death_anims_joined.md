@@ -89,10 +89,9 @@ separate and unchanged.
 
 `building_death_anims.py --joined` adds four original-executable controls. It
 preserves the existing primitive `building_death_anims.json` and its sidecar.
-The binary is active-retail `gamemd.exe`, SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+The binary is active-retail `gamemd.exe`.
 Unicorn executes the original instructions; executable PE sections are checked
-against the pinned binary before accepting each route. Goldens are not
+against the loaded file before accepting each route. Goldens are not
 produced from Rust.
 
 The main route is one ready, faced, targeted MTNK firing its production-read

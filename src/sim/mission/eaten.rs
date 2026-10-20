@@ -1,5 +1,5 @@
 //! Foot Mission_Eaten4D4CB0..4D4DB8, inherited by Infantry and Unit.
-//! Original Steam gamemd SHA2563e81a617..08600; dispatcher5B332C calls
+//! Original Steam gamemd; dispatcher5B332C calls
 //! vt+218 (both class tables contain4D4CB0). Arrival belongs to PerCell.
 
 use crate::map::entities::EntityCategory;

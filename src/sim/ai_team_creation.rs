@@ -502,7 +502,7 @@ fn condition_holds(
         }
         4 => compare(
             &trigger.comparison_mask,
-            crate::sim::credit_income::available_money(sim, enemy),
+            crate::sim::credit_income::available_money(&sim.houses, enemy),
         ),
         5 => super_weapon_nearly_ready(sim, rules, owner, SuperWeaponKind::IronCurtain),
         6 => super_weapon_nearly_ready(sim, rules, owner, SuperWeaponKind::ChronoSphere),

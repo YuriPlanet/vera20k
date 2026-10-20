@@ -116,8 +116,11 @@ pub(crate) enum WolServiceEvent {
     Api(WolApiStatus),
     /// The credential store's slots.
     Credentials(Vec<WolCredential>),
-    /// Event 9's status `[0xB77DE8]`.
-    ServerStatus(u32),
+    /// The NetStatus sink `0x007AA6D0`. During the server-list wait
+    /// (`0x00797669` holds `[0xB77DC0]` at 1) it is event 9's status
+    /// `[0xB77DE8]`; while connected, [`NET_STATUS_LOST`] is a lost
+    /// connection.
+    NetStatus(u32),
     /// Event 1 (server sink `0x007A41C0`), or its negative result (event 0
     /// with `TXT_NO_SERV_LIST`).
     ServerList(Result<WolServerList, ()>),
@@ -172,10 +175,26 @@ pub(crate) enum WolServiceEvent {
         name: String,
         locale: i32,
     },
+    /// The kick sink `0x007AB670`: `user` (flagged
+    /// [`crate::ui::wol_lobby::MEMBER_LOCAL`] for this user) was kicked out
+    /// of `channel` by `by`.
+    Kicked {
+        channel: WolChannel,
+        user: WolMember,
+        by: WolMember,
+    },
+    /// The ban sink `0x007AB3C0`: `name` banned from, or unbanned in, the
+    /// current channel.
+    ChannelBan {
+        name: String,
+        banned: bool,
+    },
 }
 
-/// The server status that completes the list wait with event 1.
+/// The server status that completes the list wait with event 1, and that
+/// means a lost connection outside it.
 const SERVER_STATUS_READY: u32 = 0x0004_012F;
+pub(crate) const NET_STATUS_LOST: u32 = SERVER_STATUS_READY;
 
 /// What the flow waits for.
 #[derive(Debug, Clone, Default)]
@@ -291,14 +310,19 @@ impl WolVisit {
                     );
                     return WolStep::Welcome;
                 }
-                // 0x00786390 resets the WOL globals (0x00780110), including
-                // [0xB77AD0], the selected record and the ladder and locale
-                // tables.
-                self.api = true;
-                self.last_error = None;
-                self.selected_server = 0;
-                self.ladder_ranks.clear();
-                self.locales.clear();
+                // 0x00786390 creates the object once per visit ([0xB77E75]);
+                // only then does it reset the WOL globals (0x00780110),
+                // including [0xB77AD0], the selected record and the ladder
+                // and locale tables, and set [0xB77DC0] (0x00786485) until a
+                // connect clears it.
+                if !self.api {
+                    self.api = true;
+                    self.last_error = None;
+                    self.selected_server = 0;
+                    self.ladder_ranks.clear();
+                    self.locales.clear();
+                    self.connected = false;
+                }
                 self.requests.push(WolServiceRequest::ListCredentials);
                 self.requests
                     .push(WolServiceRequest::FetchServers { flags: 0x2900 });
@@ -308,7 +332,7 @@ impl WolVisit {
                 };
                 WolStep::Wait("TXT_FETCHING_SERVLIST")
             }
-            (Awaiting::Servers { ready, list }, WolServiceEvent::ServerStatus(status)) => {
+            (Awaiting::Servers { ready, list }, WolServiceEvent::NetStatus(status)) => {
                 if server_status_fails(status) {
                     // The box shows from inside 0x00797640, which returns 1.
                     return WolStep::Message {
@@ -332,9 +356,15 @@ impl WolVisit {
             (Awaiting::Connect, WolServiceEvent::Login(Ok(accepted))) => {
                 self.motd = Some(accepted.motd);
                 self.authenticated = true;
+                // The connect clears [0xB77DC0] (0x007867E6) and the login
+                // sink [0xB77DC2] (0x007A559D).
+                self.connected = true;
+                self.disconnected = false;
                 WolStep::Accepted
             }
             (Awaiting::Connect, WolServiceEvent::Login(Err(code))) => {
+                // The login sink sets [0xB77DC0] (0x007A52A0).
+                self.connected = false;
                 self.last_login_result = Some(code);
                 self.last_error = Some(login_error_key(code));
                 self.failed_login_box()
@@ -465,6 +495,23 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             super::lobby::located(state, result);
             return;
         }
+        WolServiceEvent::NetStatus(status)
+            if !matches!(
+                state.frontend.wol.as_ref().expect("checked").awaiting,
+                Awaiting::Servers { .. }
+            ) =>
+        {
+            super::lobby::net_status(state, status);
+            return;
+        }
+        WolServiceEvent::Kicked { channel, user, by } => {
+            super::lobby::kicked(state, channel, user, by);
+            return;
+        }
+        WolServiceEvent::ChannelBan { name, banned } => {
+            super::lobby::channel_ban(state, &name, banned);
+            return;
+        }
         WolServiceEvent::LadderRank { name, rank } => {
             let visit = state.frontend.wol.as_mut().expect("checked");
             visit.ladder_ranks.insert(name.to_ascii_lowercase(), rank);
@@ -506,6 +553,11 @@ pub(super) fn wait_box(state: &AppState, key: &str) -> WolWaitBox {
 
 /// `0x005E2CD0`'s box over the shell: `0xD0` (OK) or `0x126` (Yes/No).
 pub(super) fn message_box(state: &AppState, key: &str, yes_no: bool) -> WolMessageBox {
+    message_box_text(state, resolve(state, key), yes_no)
+}
+
+/// The same box with an already formatted body.
+pub(super) fn message_box_text(state: &AppState, body: String, yes_no: bool) -> WolMessageBox {
     let buttons = if yes_no {
         WolBoxButtons::YesNo {
             yes: resolve(state, "GUI:Yes"),
@@ -514,10 +566,7 @@ pub(super) fn message_box(state: &AppState, key: &str, yes_no: bool) -> WolMessa
     } else {
         WolBoxButtons::Ok(resolve(state, "GUI:OK"))
     };
-    WolMessageBox {
-        body: resolve(state, key),
-        buttons,
-    }
+    WolMessageBox { body, buttons }
 }
 
 fn apply(state: &mut AppState, step: WolStep) {
@@ -586,11 +635,22 @@ fn accept_login(state: &mut AppState) {
             .multiplayer_shell_runtime
             .persist_local_preferences();
     }
-    // The login flow returned 1: the mode-loop pass (0x0077B402) applies
-    // before the lobby runner. wolinfoMD.ini is absent from retail: no
-    // auto-login query 0x112.
-    super::apply_wol_preferences(state);
-    super::open_lobby(state, false);
+    // wolinfoMD.ini is absent from retail: no auto-login query 0x112.
+    // A re-login on runner entry (0x007879B6) continues that runner;
+    // otherwise the login flow returned 1 to WOL_Main, whose mode-loop pass
+    // applies before the runner.
+    match state
+        .frontend
+        .wol
+        .as_mut()
+        .and_then(|visit| visit.relogin.take())
+    {
+        Some(postmatch) => super::open_lobby(state, postmatch),
+        None => {
+            super::apply_wol_preferences(state);
+            super::open_lobby(state, false);
+        }
+    }
 }
 
 /// A box or wait-box button released.
@@ -734,18 +794,18 @@ mod tests {
         );
         // Other statuses are ignored.
         assert_eq!(
-            visit.reduce(WolServiceEvent::ServerStatus(0x8004_0066)),
+            visit.reduce(WolServiceEvent::NetStatus(0x8004_0066)),
             WolStep::Stay
         );
         assert_eq!(
-            visit.reduce(WolServiceEvent::ServerStatus(SERVER_STATUS_READY)),
+            visit.reduce(WolServiceEvent::NetStatus(SERVER_STATUS_READY)),
             WolStep::OpenLogin
         );
         assert_eq!(visit.connect_server().unwrap().name, "irc:Server2");
 
         let mut visit = visit_waiting_servers();
         assert_eq!(
-            visit.reduce(WolServiceEvent::ServerStatus(SERVER_STATUS_READY)),
+            visit.reduce(WolServiceEvent::NetStatus(SERVER_STATUS_READY)),
             WolStep::Stay
         );
         assert_eq!(
@@ -777,7 +837,7 @@ mod tests {
         );
         let mut visit = visit_waiting_servers();
         assert_eq!(
-            visit.reduce(WolServiceEvent::ServerStatus(0x8004_0068)),
+            visit.reduce(WolServiceEvent::NetStatus(0x8004_0068)),
             WolStep::Message {
                 key: "TXT_CANT_CONNECT",
                 yes_no: false,
@@ -798,7 +858,7 @@ mod tests {
     fn a_single_record_list_cannot_connect() {
         let mut visit = visit_waiting_servers();
         visit.reduce(WolServiceEvent::ServerList(Ok(servers(1, 0))));
-        visit.reduce(WolServiceEvent::ServerStatus(SERVER_STATUS_READY));
+        visit.reduce(WolServiceEvent::NetStatus(SERVER_STATUS_READY));
         assert_eq!(visit.connect_server(), None);
         // [0xB77AD0] is empty after 0x00780110: no box, the welcome again.
         assert_eq!(visit.failed_login_box(), WolStep::Welcome);

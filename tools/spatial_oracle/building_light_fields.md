@@ -8,7 +8,7 @@ python -m tools.spatial_oracle.building_body_rules --lights --check
 ```
 
 `--write` deliberately regenerates `building_light_fields.json` and its metadata
-sidecar. The sidecar records the actual executable SHA-256 and coverage limits.
+sidecar. The sidecar records coverage limits.
 No executable bytes or game assets are distributed.
 
 Original constructor stores `45DE12..45DE39` initialize visibility to5000,

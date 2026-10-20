@@ -5,8 +5,6 @@ The existing [Foot oracle](foot_navigation_coordinate.py) owns the separate
 [metadata](base_defense_response.meta.json) record original code execution,
 supplied state, physical input identities and comparison limits. They contain
 no VERA-calculated expected scores, reader results, sort order or RNG values.
-The executable SHA-256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 
 ```sh
 export VERA20K_BASE_RESPONSE_ASSETS=/path/to/extracted/retail/inputs

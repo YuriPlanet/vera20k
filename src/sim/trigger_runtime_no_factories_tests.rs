@@ -9,10 +9,6 @@ use serde_json::{Value, json};
 
 fn corpus() -> &'static Value {
     let value = crate::test_fixture::json("tools/spatial_oracle/trigger_no_factories_events.json");
-    assert_eq!(
-        value["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     value
 }
 

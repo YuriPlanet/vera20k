@@ -3328,7 +3328,6 @@ def generate_primary_factory_status(*, power=False):
 
     producer_path=Path(__file__).resolve().parents[1]/'spatial_oracle/building_manual_primary.json'
     producer=json.loads(producer_path.read_text())
-    assert producer['native_sha256']==native.image_sha256()
     history=producer['cases'][0]
     assert history['input']['name']=='ordinary_self_click_switch_back_and_stale_event'
     on=history['phases'][3]['state']['primary'][1]

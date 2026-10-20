@@ -155,7 +155,7 @@ fn funds_event_runs_from_house_rung_after_a_spend() {
         );
     }
     assert_eq!(
-        crate::sim::credit_income::available_money(&sim, houses[0]),
+        crate::sim::credit_income::available_money(&sim.houses, houses[0]),
         10000
     );
     assert!(sim.trigger_runtime.tag_order.is_empty());
@@ -419,7 +419,7 @@ fn delete_tag_returns_safely_through_its_active_dispatcher() {
             let active = sim.shared_trigger_tag(active_type);
             let other_type = sim.trigger_runtime.definitions.tag_type("OTHER").unwrap();
             let other = sim.shared_trigger_tag(other_type);
-            let cell = sim.trigger_cell_identity((15, 15));
+            let cell = Simulation::trigger_cell_identity(&sim.resolved_terrain, (15, 15));
             sim.trigger_runtime
                 .replace_cell_trigger_tag(cell, Some(active));
             assert_eq!(sim.trigger_runtime.tag(active).unwrap().refs, 1);
@@ -478,7 +478,7 @@ fn retail_sov01_boris_tag_delete_is_immediate_and_releases_attachments() {
         .tag_type("0C47FB1C")
         .unwrap();
     let unrelated = sim.construct_trigger_tag(unrelated_type);
-    let cell = sim.trigger_cell_identity((50, 60));
+    let cell = Simulation::trigger_cell_identity(&sim.resolved_terrain, (50, 60));
     sim.trigger_runtime
         .replace_cell_trigger_tag(cell, Some(first));
     let linked = sim.trigger_runtime.tag(first).unwrap().triggers.clone();
@@ -1789,7 +1789,7 @@ fn line_arrival_rereads_later_cell_attachments_after_real_tag_cleanup() {
         (1..5).flat_map(|y| (1..5).map(move |x| (x, y))),
     );
     sim.resolved_terrain = Some(terrain);
-    let first = sim.trigger_cell_identity((3, 2));
+    let first = Simulation::trigger_cell_identity(&sim.resolved_terrain, (3, 2));
     let tag = sim.trigger_runtime.cell_tags[&first];
     sim.per_cell_process(
         actor,
@@ -1805,7 +1805,7 @@ fn line_arrival_rereads_later_cell_attachments_after_real_tag_cleanup() {
         sim.trigger_runtime.cell_tags.is_empty(),
         "repeat0 removes every attachment of the shared Tag while the row scan is active"
     );
-    let later = sim.trigger_cell_identity((3, 3));
+    let later = Simulation::trigger_cell_identity(&sim.resolved_terrain, (3, 3));
     assert_ne!(
         sim.resolved_terrain
             .as_ref()
@@ -3411,7 +3411,7 @@ fn cell_tags_split_by_ini_format_and_keep_the_first_tag_per_cell() {
         ));
         sim.initialize_trigger_definitions(&map, &Default::default(), None, None);
         sim.install_authored_cell_trigger_tags(&map);
-        let identity = sim.trigger_cell_identity((5, 6));
+        let identity = Simulation::trigger_cell_identity(&sim.resolved_terrain, (5, 6));
         let tag = sim.trigger_runtime.cell_tags[&identity];
         let type_index = sim.trigger_runtime.tag(tag).unwrap().type_index;
         let definitions = &sim.trigger_runtime.definitions;

@@ -112,10 +112,13 @@ use crate::map::entities::EntityCategory;
 use crate::rules::object_type::FactoryType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
+use crate::sim::intern::StringInterner;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::occupancy::RawCellKey;
 use crate::sim::rng::SimRng;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{
     FrameEffects, PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, Simulation,
     UninitContext,
@@ -277,20 +280,27 @@ impl Simulation {
     /// the Engineer roll, which only a `Factory=BuildingType` yard can win,
     /// then falls to GetCrew. A garrison's IsArmed arm (`0x00458DD0`) is
     /// false here: its occupants were ejected before the death effects.
-    fn building_crew_type(&mut self, rules: &RuleSet, building_id: u64) -> Option<String> {
-        let entity = self.substrate.entities.get(building_id)?;
-        let object = self.object_type(entity.type_ref(), rules)?;
+    fn building_crew_type(
+        interner: &StringInterner,
+        scenario_rng: &mut SimRng,
+        substrate: &ObjectSubstrate,
+        houses: &Houses,
+        rules: &RuleSet,
+        building_id: u64,
+    ) -> Option<String> {
+        let entity = substrate.entities.get(building_id)?;
+        let object = interner.object_type(entity.type_ref(), rules)?;
         if !object.crewed {
             return None;
         }
         let captured = entity.has_been_captured.is_set();
         let armed = crate::sim::combat::combat_weapon::is_armed(entity, object);
         let yard = object.factory_type() == Some(FactoryType::BuildingType);
-        let side = self.houses.get(&entity.owner())?.side_index();
-        if !captured && self.scenario_rng.next_range_u32_inclusive(0, 99) < 25 && yard {
+        let side = houses.get(&entity.owner())?.side_index();
+        if !captured && scenario_rng.next_range_u32_inclusive(0, 99) < 25 && yard {
             return rules.general.engineer_infantry.clone();
         }
-        techno_crew_type(&mut self.scenario_rng, rules, side, armed)
+        techno_crew_type(scenario_rng, rules, side, armed)
     }
 
     /// `BuildingClass::How_Many_Survivors @ 0x00451330`: zero when
@@ -324,7 +334,7 @@ impl Simulation {
         } else {
             divisor
         };
-        let Some(factors) = self.house_cost_factors(entity.owner()) else {
+        let Some(factors) = Self::house_cost_factors(&self.houses, entity.owner()) else {
             return 0;
         };
         let refund = crate::sim::production::type_refund(
@@ -390,7 +400,14 @@ impl Simulation {
                 .is_some_and(|house| house.is_to_die())
                 && count > 0
                 && self.scenario_rng.next_range_u32_inclusive(0, chance_max) == 1
-                && let Some(crew) = self.building_crew_type(rules, building_id)
+                && let Some(crew) = Self::building_crew_type(
+                    &self.interner,
+                    &mut self.scenario_rng,
+                    &self.substrate,
+                    &self.houses,
+                    rules,
+                    building_id,
+                )
                 && self.spawn_building_survivor(
                     rules, registry, &crew, owner, cell, c4_source, effects,
                 )
@@ -1052,7 +1069,11 @@ impl Simulation {
                     // SpawnSurvivors (`0x00443182`) and Mission_Selling
                     // (`0x0044A6ED`): GetCellAt, then PlaceInfantryInCell
                     // (0, 0, 0) on that cell's ground.
-                    let Some(spot) = self.place_infantry_in_ground_cell(
+                    let Some(spot) = Self::place_infantry_in_ground_cell(
+                        &self.interner,
+                        &mut self.scenario_rng,
+                        &self.substrate,
+                        &self.resolved_terrain,
                         rules,
                         crate::sim::components::DriveCoord {
                             x: (i32::from(cell.0) << 8).wrapping_add(request.0.to_num::<i32>()),
@@ -1173,11 +1194,25 @@ impl Simulation {
         let mut engineer_picked = false;
         let mut spawned = false;
         for _ in 0..count {
-            let Some(mut crew) = self.building_crew_type(rules, building_id) else {
+            let Some(mut crew) = Self::building_crew_type(
+                &self.interner,
+                &mut self.scenario_rng,
+                &self.substrate,
+                &self.houses,
+                rules,
+                building_id,
+            ) else {
                 continue;
             };
             while engineer_picked && is_engineer(&crew) {
-                match self.building_crew_type(rules, building_id) {
+                match Self::building_crew_type(
+                    &self.interner,
+                    &mut self.scenario_rng,
+                    &self.substrate,
+                    &self.houses,
+                    rules,
+                    building_id,
+                ) {
                     Some(next) => crew = next,
                     None => break,
                 }

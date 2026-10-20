@@ -2,8 +2,7 @@
 
 `building_death_anims.py --constructed-cancellation --check` reuses the existing
 physical readers and full joined Fixture. Its separate JSON/meta preserve the
-primitive and joined fatal payloads. Native binary SHA256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+primitive and joined fatal payloads.
 
 The five controls are human Factory cancellation, whole noncurrent-human House
 cancellation, AI-owner Factory cancellation, an explicit equal-sample control,

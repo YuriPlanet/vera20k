@@ -23,6 +23,8 @@ use crate::sim::command::{
     Command, CommandEnvelope, CommandRecord, ExitRecord, GameSpeedRecord, MegaMissionOrder,
     MegaMissionRecord, MegaMissionTarget, ScatterRecord, SellWallAtCellRecord,
 };
+use crate::sim::house_diplomacy::HouseAlliances;
+use crate::sim::intern::StringInterner;
 use crate::sim::mission::MissionType;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::overlay_grid::{
@@ -33,6 +35,9 @@ use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::zone_incremental::ZoneRepairKind;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
 use crate::sim::production;
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::vision::FogState;
+use crate::sim::world::ObjectSubstrate;
 
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,7 +117,7 @@ impl MegaMissionExecution {
 }
 
 impl Simulation {
-    /// HouseClass::Cheer50C8C0, original1cdd1180. Trigger113 and Event2D
+    /// HouseClass::Cheer50C8C0, original gamemd. Trigger113 and Event2D
     /// share this owner. Capture the initial Techno count; re-read each live
     /// ordinal and delegate admission to virtual388/Infantry522C00. There is
     /// no House-level selected, alive, limbo, health or local-player test.
@@ -1858,7 +1863,7 @@ impl Simulation {
                 }
                 // Infantry51F190 -> Foot4D76F8 ->6FFBE0 carries the clicked
                 // object as Destination for Enter7, as Unit738902 does
-                // (Steam3e81a617): Enter7, NULL Target. Event4C747C hands it
+                // (Steam gamemd): Enter7, NULL Target. Event4C747C hands it
                 // to the class setter, which samples its live +4C through the
                 // shared coordinate owner after its prelude
                 // (foot_navigation_coordinate corpus). An object without that
@@ -1933,7 +1938,12 @@ impl Simulation {
                             rules,
                             frame_effects,
                         );
-                        self.flash_order_object(
+                        Self::flash_order_object(
+                            &self.interner,
+                            &self.session,
+                            &self.fog,
+                            &self.house_alliances,
+                            &mut self.substrate,
                             *transport_id,
                             Some(combat::TargetKind::Entity(*transport_id)),
                             None,
@@ -2448,7 +2458,7 @@ impl Simulation {
     }
 
     /// Commit an input-admitted Techno selection through Object5F4520, then
-    /// its successful Techno6FBFD0..6FBFE4 Event33 callback (Steam3e81a617..08600).
+    /// its successful Techno6FBFD0..6FBFE4 Event33 callback (Steam gamemd).
     /// The app's picking/navigation owner admits discovery+41B and House50B6F0
     /// before emitting the ordered Select command. Keep the graphical-client
     /// B73550 gate there: replaying this command must not depend on a renderer.
@@ -2688,7 +2698,11 @@ impl Simulation {
     /// token, so a Cell destination flashes nothing. It runs after the
     /// actor/token refusals and the repeated-Enter exit, before the setters.
     fn flash_order_object(
-        &mut self,
+        interner: &StringInterner,
+        session: &ScenarioSession,
+        fog: &FogState,
+        house_alliances: &HouseAlliances,
+        substrate: &mut ObjectSubstrate,
         actor_id: u64,
         target: Option<combat::TargetKind>,
         destination: Option<combat::TargetKind>,
@@ -2696,18 +2710,26 @@ impl Simulation {
         let Some(combat::TargetKind::Entity(flashed)) = destination.or(target) else {
             return;
         };
-        let Some(player) = self.session.current_house() else {
+        let Some(player) = session.current_house() else {
             return;
         };
-        if self.substrate.entities.get(actor_id).is_some_and(|actor| {
+        if substrate.entities.get(actor_id).is_some_and(|actor| {
             combat::combat_weapon::is_ally_by_object(
-                Some(self.house_alliances.as_map()),
-                &self.interner,
+                Some(house_alliances.as_map()),
+                interner,
                 player,
                 actor.owner(),
             )
         }) {
-            self.flash_object(flashed, 7);
+            Self::flash_object(
+                interner,
+                session,
+                fog,
+                house_alliances,
+                substrate,
+                flashed,
+                7,
+            );
         }
     }
 
@@ -2807,7 +2829,16 @@ impl Simulation {
             let Some(rules) = rules else {
                 return MegaMissionExecution::Refused;
             };
-            self.flash_order_object(entity_id, target, destination);
+            Self::flash_order_object(
+                &self.interner,
+                &self.session,
+                &self.fog,
+                &self.house_alliances,
+                &mut self.substrate,
+                entity_id,
+                target,
+                destination,
+            );
             if !crate::sim::docking::bunker_link::can_auto_deploy_here(self, entity_id, rules) {
                 return MegaMissionExecution::Refused;
             }
@@ -2852,7 +2883,16 @@ impl Simulation {
             rules,
             frame_effects,
         );
-        self.flash_order_object(entity_id, target, destination);
+        Self::flash_order_object(
+            &self.interner,
+            &self.session,
+            &self.fog,
+            &self.house_alliances,
+            &mut self.substrate,
+            entity_id,
+            target,
+            destination,
+        );
         // The setters take what the tokens resolve to.
         let (target, destination) = (
             self.resolve_event_token(target),

@@ -24,10 +24,8 @@ VERA20K_NATIVE_FIXTURE_ROOT=C:\lan-fixture
 VERA20K_NATIVE_IMAGE=C:\isolated-game\gamemd.exe
 ```
 
-The helper requires `.vera20k-native-fixture` beside that copied executable,
-containing its supported SHA256:
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
-It verifies that image before launch and checks path, creation time and mailbox
+The helper requires a `.vera20k-native-fixture` marker file beside that copied
+executable. It checks path, creation time and mailbox
 identity before controlling an existing process. It never stops a Wine prefix.
 
 Compile the C# source into the scratch fixture root with the available Framework

@@ -210,7 +210,15 @@ impl DamageConsequences {
                 ry,
             });
         }
-        world.dispatch_under_attack_events(&effects.under_attack_events, rules);
+        Simulation::dispatch_under_attack_events(
+            &world.interner,
+            &world.session,
+            &world.house_alliances,
+            &mut world.sound_events,
+            &world.houses,
+            &effects.under_attack_events,
+            rules,
+        );
         world.dispatch_unit_lost_events(&effects.unit_lost_events);
         debug_assert!(effects.smudge_spawn_requests.is_empty());
         if ordinary {

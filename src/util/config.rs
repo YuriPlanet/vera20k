@@ -21,6 +21,8 @@ const CONFIG_FILE_NAME: &str = "config.toml";
 /// Add new sections here as features are implemented (audio, game speed, etc.).
 #[derive(Debug)]
 pub struct GameConfig {
+    /// Root INI selection only; does not change archive or gameplay compatibility.
+    pub ini: crate::util::ini_roots::IniRootConfig,
     /// File system paths (RA2 install directory).
     pub paths: PathsConfig,
     /// Graphics/window settings (all optional — sensible defaults provided).
@@ -198,6 +200,7 @@ impl GameConfig {
         let mut graphics = GraphicsConfig::default();
         let mut gameplay = GameplayConfig::default();
         let mut profile = ProfileConfig::default();
+        let mut ini = crate::util::ini_roots::IniRootConfig::default();
         let mut section = "";
         let mut seen = std::collections::HashSet::new();
         let contents = contents.strip_prefix('\u{feff}').unwrap_or(contents);
@@ -242,12 +245,21 @@ impl GameConfig {
                     parse_bool(value).map(|on| gameplay.pause_on_focus_loss = on)
                 }
                 ("profile", "name") => parse_string(value).map(|name| profile.name = Some(name)),
+                ("ini", "profile") => parse_string(value).and_then(|name| {
+                    ini.profile = name.parse().map_err(anyhow::Error::msg)?;
+                    Ok(())
+                }),
+                ("ini", "rules") => parse_string(value).map(|name| ini.rules = Some(name)),
+                ("ini", "art") => parse_string(value).map(|name| ini.art = Some(name)),
+                ("ini", "ai") => parse_string(value).map(|name| ini.ai = Some(name)),
                 _ => Ok(()),
             };
             read.with_context(|| format!("line {line_number}: [{section}] {key}"))?;
         }
         let ra2_dir = ra2_dir.context("missing `ra2_dir` in [paths]")?;
+        ini.validate().map_err(anyhow::Error::msg)?;
         Ok(Self {
+            ini,
             paths: PathsConfig {
                 ra2_dir,
                 settings_dir,
@@ -260,6 +272,7 @@ impl GameConfig {
 
     fn from_retail_asset_root(ra2_dir: PathBuf) -> Self {
         Self {
+            ini: Default::default(),
             paths: PathsConfig {
                 ra2_dir,
                 settings_dir: None,
@@ -370,6 +383,42 @@ fn retail_asset_root_from_executable(executable: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ini_roots_config_defaults_and_profiles_are_explicit() {
+        let base = "[paths]\nra2_dir='retail'\n";
+        assert_eq!(
+            GameConfig::parse(base).unwrap().ini.profile,
+            crate::util::ini_roots::IniProfile::Yr
+        );
+        for (name, expected) in [
+            ("mo", crate::util::ini_roots::IniProfile::Mo),
+            ("auto", crate::util::ini_roots::IniProfile::Auto),
+        ] {
+            let config = GameConfig::parse(&format!("{base}[ini]\nprofile='{name}'\n")).unwrap();
+            assert_eq!(config.ini.profile, expected);
+        }
+        let custom = GameConfig::parse(&format!(
+            "{base}[ini]\nprofile='custom'\nrules='r.ini'\nart='a.ini'\nai='i.ini'\n"
+        ))
+        .unwrap();
+        assert_eq!(
+            custom.ini.resolve(|_| true).unwrap().names(),
+            ["r.ini", "a.ini", "i.ini"]
+        );
+        for bad in [
+            "profile='other'",
+            "profile='custom'\nrules='r.ini'",
+            "profile='mo'\nai='aimd.ini'",
+            "profile=mo",
+            "profile='custom'\nrules='../r.ini'\nart='a.ini'\nai='i.ini'",
+        ] {
+            assert!(
+                GameConfig::parse(&format!("{base}[ini]\n{bad}\n")).is_err(),
+                "{bad}"
+            );
+        }
+    }
 
     struct ConfigFixture(PathBuf);
 

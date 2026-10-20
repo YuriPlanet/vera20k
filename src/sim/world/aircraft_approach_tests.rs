@@ -33,7 +33,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     );
     sim.substrate.entities.insert(manager);
     sim.set_next_stable_object_id_for_test(1000);
-    sim.initialize_airstrike(999, &manager_rules);
+    Simulation::initialize_airstrike(&sim.interner, &mut sim.substrate, 999, &manager_rules);
     let flh = input.get("flh").cloned().unwrap_or(json!([0, 0, 0]));
     let elite = input.get("elite_flh").unwrap_or(&flh);
     rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str(&format!(

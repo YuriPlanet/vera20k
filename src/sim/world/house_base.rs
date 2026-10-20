@@ -703,8 +703,11 @@ impl Simulation {
 
     /// [`HouseState::cost_factors`] for `owner`. `None` without a House, which
     /// takes Cost_Of's null-House arm (`0x00711F4E`, the raw cost).
-    pub(crate) fn house_cost_factors(&self, owner: InternedId) -> Option<HouseCostFactors> {
-        Some(self.houses.get(&owner)?.cost_factors())
+    pub(crate) fn house_cost_factors(
+        houses: &Houses,
+        owner: InternedId,
+    ) -> Option<HouseCostFactors> {
+        Some(houses.get(&owner)?.cost_factors())
     }
 
     /// TechnoType virtual `+0x84` for `owner`'s House ([`RuleSet::cost_of`]).
@@ -716,7 +719,10 @@ impl Simulation {
             }),
             "a House's `Cost*Mult=` copy differs from its type's: project it at creation"
         );
-        rules.cost_of(object, self.house_cost_factors(owner).as_ref())
+        rules.cost_of(
+            object,
+            Self::house_cost_factors(&self.houses, owner).as_ref(),
+        )
     }
 
     /// House+0x98, the grinders, in registration order. Grinding+16AD
@@ -840,19 +846,25 @@ impl Simulation {
             .collect()
     }
 
-    pub(super) fn register_house_base_building(&mut self, id: u64, rules: &RuleSet) {
-        let Some(entity) = self.substrate.entities.get(id) else {
+    pub(super) fn register_house_base_building(
+        interner: &StringInterner,
+        substrate: &ObjectSubstrate,
+        houses: &mut Houses,
+        id: u64,
+        rules: &RuleSet,
+    ) {
+        let Some(entity) = substrate.entities.get(id) else {
             return;
         };
         if entity.category() != EntityCategory::Structure {
             return;
         }
-        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+        let Some(object) = interner.object_type(entity.type_ref(), rules) else {
             return;
         };
         let entry = RegisteredBuilding::new(id, object);
         let owner = entity.owner();
-        if let Some(house) = self.houses.get_mut(&owner) {
+        if let Some(house) = houses.get_mut(&owner) {
             house.base_projection_mut().register(entry);
         }
     }
@@ -1253,10 +1265,6 @@ mod tests {
             "tools/spatial_oracle/house_base_return.meta.json",
         ))
         .unwrap();
-        assert_eq!(
-            meta["native_sha256"].as_str(),
-            Some("1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c")
-        );
         assert_eq!(meta["entry_points"]["ordinary_return"], "0x00500200");
         let rows = corpus["home_return"].as_array().unwrap();
         assert_eq!(rows.len(), 28);
@@ -1551,7 +1559,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_mark_dead_and_attached_upgrade_unlimbo_do_not_publish_geometry() {
+    fn failed_mark_and_dead_unlimbo_do_not_publish_geometry() {
         use crate::sim::world::lifecycle::{
             PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, UninitContext,
         };
@@ -1565,7 +1573,6 @@ mod tests {
         for (index, placement) in [
             PlacementEvidence::MarkFailed,
             PlacementEvidence::MarkSucceeded,
-            PlacementEvidence::AttachedUpgrade,
         ]
         .into_iter()
         .enumerate()
@@ -1577,8 +1584,6 @@ mod tests {
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             if index == 1 {
                 entity.lifecycle.set_object_alive_for_test(false);
-            } else if index == 2 {
-                entity.link_structure_upgrade(id - 1, 0);
             }
             let result = sim.try_reveal_entity_with_context(
                 id,

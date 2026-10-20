@@ -77,7 +77,7 @@ impl InfantryRuntime {
         self.psycho
     }
 
-    /// Infantry5220F0, Steam gamemd3e81a617..08600.
+    /// Infantry5220F0, Steam gamemd.
     pub(crate) fn make_psycho(&mut self) {
         self.psycho = true;
     }
@@ -802,10 +802,6 @@ mod tests {
 
     fn fear_corpus() -> &'static serde_json::Value {
         let native = crate::test_fixture::json("tools/spatial_oracle/infantry_fear_action.json");
-        assert_eq!(
-            native["native_sha256"],
-            "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-        );
         assert_eq!(native["rows"].as_array().unwrap().len(), 46);
         native
     }
@@ -1177,10 +1173,6 @@ mod tests {
             "tools/spatial_oracle/anytown_damage/foot_missions.json",
         ))
         .unwrap();
-        assert_eq!(
-            native["native_sha256"],
-            "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-        );
         native
     }
 

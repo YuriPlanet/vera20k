@@ -63,6 +63,7 @@ use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
 use super::ResourceType;
+use crate::sim::intern::StringInterner;
 use crate::sim::rng::SimRng;
 
 /// The type whose model a harvester shows while its unload latch
@@ -110,7 +111,7 @@ pub(crate) fn mission_unload(
     // A 0x0073DEE0: without any radio contact the unload is abandoned.
     if entity.radio_contacts.is_empty() {
         sim.unit_enter_idle_mode(id, Some(rules), false, effects);
-        set_unload_latch(sim, rules, id, false);
+        set_unload_latch(&mut sim.interner, &mut sim.substrate, rules, id, false);
         stop_if_moving(&mut sim.substrate, id);
         commence_if_ready(sim, rules, id);
         return 1;
@@ -135,7 +136,7 @@ pub(crate) fn mission_unload(
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.restart_native_stage(0, now as i32, 1);
         }
-        set_unload_latch(sim, rules, id, true);
+        set_unload_latch(&mut sim.interner, &mut sim.substrate, rules, id, true);
         if let Some(building) = unload_building(sim, id) {
             crate::sim::world::building_anim::start_refinery_unload(sim, rules, building);
         }
@@ -239,7 +240,7 @@ fn unload_finishing(
     {
         return 1;
     }
-    set_unload_latch(sim, rules, id, false);
+    set_unload_latch(&mut sim.interner, &mut sim.substrate, rules, id, false);
     if new_order_pending(sim, id) {
         stop_if_moving(&mut sim.substrate, id);
         commence_if_ready(sim, rules, id);
@@ -326,21 +327,27 @@ pub(crate) fn per_cell_release_dock_contact(
 
 /// Unit+0x6D1 with the image it selects: `UnitClass::Draw` (`0x0073D2BA`)
 /// draws `UnloadingClass=` while the latch is set.
-fn set_unload_latch(sim: &mut Simulation, rules: &RuleSet, id: u64, active: bool) {
+fn set_unload_latch(
+    interner: &mut StringInterner,
+    substrate: &mut ObjectSubstrate,
+    rules: &RuleSet,
+    id: u64,
+    active: bool,
+) {
     if !active {
-        clear_unload_latch(&mut sim.substrate, id);
+        clear_unload_latch(substrate, id);
         return;
     }
-    let image = sim
-        .substrate
+    let image = substrate
         .entities
         .get(id)
         .and_then(|entity| {
-            sim.object_type(entity.type_ref(), rules)
+            interner
+                .object_type(entity.type_ref(), rules)
                 .and_then(|object| object.unloading_class.clone())
         })
-        .map(|name| sim.interner.intern(&name));
-    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+        .map(|name| interner.intern(&name));
+    let Some(entity) = substrate.entities.get_mut(id) else {
         return;
     };
     if let Some(miner) = entity.miner.as_mut() {

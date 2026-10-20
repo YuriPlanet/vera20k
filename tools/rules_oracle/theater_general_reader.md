@@ -5,11 +5,8 @@ for all 56 `[General]` integer reads inside `Read_Theater_TileSets_INI`
 (`545150`), preserving the caller's defaults, read order and result stores.
 [Native outputs](theater_general_reader.json) contain 34 synthetic input cases,
 six physical theater files and seven ordinal-publication controls.
-[Provenance](theater_general_reader.meta.json) records the executable identity,
-Unicorn version, execution boundaries and fixture substitutions.
+[Provenance](theater_general_reader.meta.json) records the Unicorn version, execution boundaries and fixture substitutions.
 
-Original executable SHA256:
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 Explicit generation followed by an independent check passed on 2026-09-27.
 This is bounded native evidence; Rust replay and production theater loading are
 separate validation obligations.

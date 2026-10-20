@@ -6,7 +6,7 @@ consumed by the production rules, simulation, damage, observer, radar and Unit
 SHP-route tests. It is bounded evidence for this path, not whole MGTK, movement,
 Spy, scenario startup, save-stream or rendered-scene parity.
 
-The native VM, PE identity checks, map/type setup, locomotors, allocation and
+The native VM, PE mapping, map/type setup, locomotors, allocation and
 platform transport remain with their existing owners. This producer adds original
 calls and observations. It does not compute disguise, timer, RNG, frame-selection
 or radar answers in Python. Native `.text` and inherited vtables are checked

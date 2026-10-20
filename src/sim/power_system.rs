@@ -54,7 +54,7 @@ impl PowerHealthSample {
 }
 
 /// Per-House power totals retained until native House+5778 is invalidated.
-/// Original gamemd.exe (SHA2561cdd1180e490...) exposes these same retained
+/// Original gamemd.exe exposes these same retained
 /// values through its IHouse interface, rather than reassessing on a query.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PowerState {
@@ -503,18 +503,35 @@ fn recalculate_power_for_owner(
         }
 
         // Numeric comparison corpus: tools/spatial_oracle/power_health.json.
-        // Still-open native lifecycle inputs: attached upgrade slots and
-        // House campaign registration. The independent Tesla weapon latch
-        // (+661) is not the power-output multiplier at +668.
+        // House campaign registration remains a separate lifecycle input.
+        // The independent Tesla weapon latch (+661) is not the power-output
+        // multiplier at +668.
         // Producer branch: base = max(Power, 0), plus ExtraPower × occupants
         // for InfantryAbsorb/UnitAbsorb buildings (gate is strict on all
         // three conditions, matching gamemd's GetPowerOutput).
         let mut output_contribution: i32 = obj.power.max(0);
+        let mut drain_contribution = native_building_power_drain(obj.power);
         if obj.absorbs_passengers() && obj.extra_power > 0 {
             let occupants = entity.passenger_role.cargo().map_or(0, |c| c.count()) as i32;
             if occupants > 0 {
                 output_contribution =
                     output_contribution.wrapping_add(obj.extra_power.wrapping_mul(occupants));
+            }
+        }
+        // Original44E826..44E84D and44E8B5..44E8DA (Steam gamemd):
+        // a nonzero count admits all three installed Type slots, including
+        // sparse slots beyond the count. Sum before scaling the host's HP;
+        // installed upgrades do not own independent power contributors.
+        // Native controls: spatial_oracle/building_upgrades.json `power`.
+        let upgrades = entity.building_upgrades();
+        if upgrades.count() != 0 {
+            for type_ref in upgrades.types().iter().flatten() {
+                let Some(upgrade) = interner.object_type(*type_ref, rules) else {
+                    continue;
+                };
+                output_contribution = output_contribution.wrapping_add(upgrade.power.max(0));
+                drain_contribution =
+                    drain_contribution.wrapping_add(native_building_power_drain(upgrade.power));
             }
         }
         if output_contribution > 0 {
@@ -534,7 +551,7 @@ fn recalculate_power_for_owner(
 
         // Drain branch: always full rated value regardless of health.
         // Parser46108A NEG and House508D16 ADD both consume dwords.
-        drained = drained.wrapping_add(native_building_power_drain(obj.power));
+        drained = drained.wrapping_add(drain_contribution);
     }
 
     //508D4A stores the assessment byte;508D79 forces output to zero for
@@ -1012,6 +1029,60 @@ BuildSpeed=0.02
             compared += 1;
         }
         assert_eq!(compared, 422);
+    }
+
+    #[test]
+    fn native_installed_upgrade_power_scales_once_with_host_health() {
+        let corpus = crate::test_fixture::json("tools/spatial_oracle/building_upgrades.json");
+        let rows = corpus["power"].as_array().unwrap();
+        assert_eq!(rows.len(), 6);
+        for row in rows {
+            let input = &row["inputs"];
+            let value = |key: &str| i32::try_from(input[key].as_i64().unwrap()).unwrap();
+            // The oracle seeds native +EE0/+EE4 separately. These controls
+            // use mutually exclusive output/drain so the production Rules
+            // reader can express exactly the same BuildingType with Power=.
+            let power = |output: &str, drain: &str| {
+                let (output, drain) = (value(output), value(drain));
+                assert!(output == 0 || drain == 0);
+                if drain == 0 { output } else { -drain }
+            };
+            let rules = rules_from_ini(&format!(
+                "[BuildingTypes]\n0=HOST\n1=UPGRADE\n2=OTHER\n\
+                 [HOST]\nStrength={}\nPower={}\nUpgrades=3\n\
+                 [UPGRADE]\nPower={}\nPowersUpBuilding=HOST\n\
+                 [OTHER]\nPower=70\nPowersUpBuilding=HOST\n",
+                value("strength"),
+                power("host_power", "host_drain"),
+                power("upgrade_power", "upgrade_drain"),
+            ));
+            let mut host = make_building(1, "HOST", "Owner", value("hp"));
+            host.set_building_upgrades_for_test(
+                i8::try_from(value("count")).unwrap(),
+                [
+                    Some(intern::test_intern("UPGRADE")),
+                    None,
+                    input["other_slot"]
+                        .as_bool()
+                        .unwrap()
+                        .then(|| intern::test_intern("OTHER")),
+                ],
+            );
+            let owner = host.owner();
+            let mut entities = EntityStore::new();
+            entities.insert(host);
+            let mut state = PowerState::default();
+            recalculate_power_for_owner(&mut state, &entities, &rules, owner, &test_interner(), 0);
+            assert_eq!(
+                (state.total_output(), state.total_drain()),
+                (
+                    row["output"].as_i64().unwrap() as i32,
+                    row["drain"].as_i64().unwrap() as i32,
+                ),
+                "{}",
+                row["name"]
+            );
+        }
     }
 
     #[test]

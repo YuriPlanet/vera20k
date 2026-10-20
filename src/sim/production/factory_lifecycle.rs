@@ -19,6 +19,7 @@ use super::production_types::ProductionCategory;
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::ai_unit_choice::UnitChoiceKind;
+use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
 use crate::sim::movement::ground_pose::Position;
@@ -157,7 +158,7 @@ pub fn enqueue_by_type(
         // still links/returns0. Source: factory_hold_resume.md.
         let time_to_build = time_to_build(&time_to_build_inputs(sim, rules, owner_id, obj));
         let frame = sim.session.binary_frame();
-        let money = crate::sim::credit_income::available_money(sim, owner_id);
+        let money = crate::sim::credit_income::available_money(&sim.houses, owner_id);
         sim.production.factories_mut().resume(
             FactoryHolder::House(owner_id, category),
             time_to_build,
@@ -278,7 +279,7 @@ pub(super) fn start_active_production(
     }
     let time_to_build = time_to_build(&time_to_build_inputs(sim, rules, owner_id, obj));
     let frame = sim.session.binary_frame();
-    let money = crate::sim::credit_income::available_money(sim, owner_id);
+    let money = crate::sim::credit_income::available_money(&sim.houses, owner_id);
     sim.production
         .factories_mut()
         .resume(holder, time_to_build, frame, held_start, money);
@@ -619,7 +620,14 @@ pub(in crate::sim) fn release_delivered_mobile(
     // successfully delivered type at4FB4B7. Never score the promoted type.
     if let Some(product) = product {
         let object = BuiltObject::capture(sim, product);
-        record_last_built(sim, rules, owner, object);
+        record_last_built(
+            &sim.interner,
+            &mut sim.sound_events,
+            &mut sim.houses,
+            rules,
+            owner,
+            object,
+        );
     }
 }
 
@@ -664,13 +672,15 @@ impl BuiltObject {
 /// House+246 and its90-frame timer (4F8DD3..4F8E21) remain a separate
 /// documented raw-save residual.
 pub(super) fn record_last_built(
-    sim: &mut Simulation,
+    interner: &StringInterner,
+    sound_events: &mut FrameChannel<SimSoundEvent>,
+    houses: &mut Houses,
     rules: &RuleSet,
     owner: InternedId,
     object: BuiltObject,
 ) {
     let type_id = object.type_id;
-    let Some(ty) = sim.object_type(type_id, rules) else {
+    let Some(ty) = interner.object_type(type_id, rules) else {
         return;
     };
     let (category, scores) = (ty.category, !ty.dont_score);
@@ -684,19 +694,18 @@ pub(super) fn record_last_built(
         })
         .map(str::to_owned);
     let type_index = rules
-        .type_array_index(category, sim.interner.resolve(type_id))
+        .type_array_index(category, interner.resolve(type_id))
         .expect("a produced object belongs to its class Type registry");
-    if let Some(house) = sim.houses.get_mut(&owner) {
+    if let Some(house) = houses.get_mut(&owner) {
         house.record_built_type(category, type_index);
         if scores {
             house.record_scored_production(category, type_index);
         }
     }
     if let Some(sound) = sound {
-        sim.sound_events
-            .emit(SimSoundEvent::voc_at(sound, &object.location));
+        sound_events.emit(SimSoundEvent::voc_at(sound, &object.location));
     }
-    if let Some(house) = sim.houses.get_mut(&owner) {
+    if let Some(house) = houses.get_mut(&owner) {
         house.request_tech_recheck();
     }
 }
@@ -736,18 +745,27 @@ impl ReadyFactoryObject {
         self.entity_id
     }
 
-    /// Building Unlimbo/build-up/superweapon effects precede factory release.
-    pub(super) fn release_after_placement(
+    /// Factory::CompletedProduction4CA1A0 precedes the placed object's radio C.
+    pub(super) fn complete_placement(
+        &self,
+        production: &mut ProductionState,
+        session: &ScenarioSession,
+    ) {
+        production.factories_mut().complete_production(
+            self.owner,
+            self.category,
+            session.binary_frame(),
+        );
+    }
+
+    /// HousePlace4FB2C7 abandons only AFTER radio C4FB2AD. A consumed upgrade
+    /// or wall still follows this tail; its pending object stays resolvable.
+    pub(super) fn abandon_after_placement(
         self,
         sim: &mut Simulation,
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
-        sim.production.factories_mut().complete_production(
-            self.owner,
-            self.category,
-            sim.session.binary_frame(),
-        );
         // HousePlace4FB2C7 retains its original nonnegative index. Let
         // HouseAbandon's shared BuildCat0/NULL-held admission decide retention,
         // including a consumed wall whose entity has already expired.
@@ -767,21 +785,6 @@ impl ReadyFactoryObject {
             false,
             effects,
         );
-    }
-
-    /// Primary and autofill Unlimbos have queued their constructors. Release
-    /// Factory's retained completion token; the shared drain owns deletion.
-    /// Return the original facts so HousePlace can record after BuildingSlam and BREAK
-    /// (`0x004FB314`, `0x004FB4A6`, `0x004FB4B7`).
-    pub(super) fn release_consumed_wall(
-        self,
-        sim: &mut Simulation,
-        rules: &RuleSet,
-        effects: FrameEffects<'_>,
-    ) -> BuiltObject {
-        let object = BuiltObject::capture(sim, self.entity_id);
-        self.release_after_placement(sim, rules, effects);
-        object
     }
 }
 
@@ -986,7 +989,7 @@ pub(in crate::sim) fn update_factory_queue(
         {
             let time_to_build = time_to_build(&time_to_build_inputs(sim, rules, owner, object));
             let frame = sim.session.binary_frame();
-            let money = crate::sim::credit_income::available_money(sim, owner);
+            let money = crate::sim::credit_income::available_money(&sim.houses, owner);
             sim.production.factories_mut().resume(
                 FactoryHolder::House(owner, category),
                 time_to_build,

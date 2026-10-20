@@ -217,7 +217,15 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
     fly.set_current_speed_for_test(SimFixed::from_num(input["speed"].as_f64().unwrap_or(1.0)));
     Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, AIRCRAFT);
     sim.add_entity_occupancy(AIRCRAFT);
-    sim.submit_entity_display(AIRCRAFT, Some(&rules), None);
+    Simulation::submit_entity_display(
+        &sim.interner,
+        &sim.terrain_objects,
+        &mut sim.substrate,
+        &sim.resolved_terrain,
+        AIRCRAFT,
+        Some(&rules),
+        None,
+    );
 
     let owner = sim.substrate.entities.get(AIRCRAFT).unwrap().owner();
     if input["target"].is_array() {

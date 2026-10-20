@@ -73,7 +73,10 @@ fn padded_ai_handle_does_not_turn_an_enemy_refinery_into_an_allied_target() {
     let teammate = sim.interner.get("Computer2").unwrap();
     assert_ne!(player, computer);
     assert_ne!(player, teammate);
-    assert_eq!(sim.scenario_house_named("Computer"), Some(computer));
+    assert_eq!(
+        crate::sim::world::Simulation::scenario_house_named(&sim.houses, "Computer"),
+        Some(computer)
+    );
     assert_eq!(
         sim.houses[&player].native_scenario_name(),
         Some("<human player>")

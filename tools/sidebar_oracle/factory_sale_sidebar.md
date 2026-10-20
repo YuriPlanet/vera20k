@@ -13,9 +13,8 @@ python -B -m tools.sidebar_oracle.factory_loss --sale-sidebar --check
 ```
 
 `--write` regenerates `factory_sale_sidebar.json` and its sidecar. Provenance pins
-the binary, command and physical input hashes, without repository-source hashes.
-The supported original image is SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+the command and physical input hashes, without executable or repository-source
+hashes.
 Add physical DARKEN.SHP from language.mix/cameo.mix and Soviet GCLOCK2.SHP from
 ra2.mix/sidec02.mix to the sale-queue cache using the existing MIX selector. The
 Soviet clock header contains 55 frames. Native LoadFileFromMIX5B40B0 and

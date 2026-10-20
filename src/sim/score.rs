@@ -14,7 +14,10 @@
 //! registration order is that array's order. Presentation never advances the
 //! gameplay Scenario stream directly.
 
+use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
+use crate::sim::rng::SimRng;
+use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::Simulation;
 
 /// One sim-owned row before localization, colour selection, or display sorting.
@@ -69,31 +72,33 @@ impl Simulation {
     /// [`Simulation::terminal_score_snapshot`]. The first call consumes
     /// Scenario RNG once for each surviving positive-score contender; later
     /// calls are no-ops so the cursor cannot advance twice.
-    pub(super) fn finalize_terminal_score_snapshot(&mut self) -> bool {
-        if self.terminal_score_snapshot.snapshot().is_some() {
+    pub(super) fn finalize_terminal_score_snapshot(
+        session: &ScenarioSession,
+        scenario_rng: &mut SimRng,
+        terminal_score_snapshot: &mut TerminalScore,
+        houses: &Houses,
+    ) -> bool {
+        if terminal_score_snapshot.snapshot().is_some() {
             return false;
         }
 
         // Houses[] order, without passive types or the observer House.
-        let observer = self.session.observer_house();
-        let contenders: Vec<InternedId> = self
-            .houses
+        let observer = session.observer_house();
+        let contenders: Vec<InternedId> = houses
             .in_order()
             .filter(|house| !house.multiplay_passive() && Some(house.name()) != observer)
             .map(|house| house.name())
             .collect();
         let mut rows = Vec::with_capacity(contenders.len());
         for owner in contenders {
-            let Some((country, survived, stats, raw_score)) =
-                self.houses.get(&owner).map(|house| {
-                    (
-                        house.country(),
-                        !house.is_defeated(),
-                        house.stats(),
-                        house.economy().score(),
-                    )
-                })
-            else {
+            let Some((country, survived, stats, raw_score)) = houses.get(&owner).map(|house| {
+                (
+                    house.country(),
+                    !house.is_defeated(),
+                    house.stats(),
+                    house.economy().score(),
+                )
+            }) else {
                 continue;
             };
             // 0x005C99EB..0x005C99F5 adds only a positive score to the zeroed
@@ -103,9 +108,7 @@ impl Simulation {
             let base = raw_score.max(0);
             let score = if survived && base > 0 {
                 let half = base / 2;
-                let bonus = self
-                    .scenario_rng
-                    .next_range_u32_inclusive(half as u32, base as u32);
+                let bonus = scenario_rng.next_range_u32_inclusive(half as u32, base as u32);
                 base.wrapping_add(half).wrapping_add(bonus as i32)
             } else {
                 base
@@ -123,7 +126,7 @@ impl Simulation {
         }
 
         let snapshot = TerminalScoreSnapshot { rows };
-        self.terminal_score_snapshot.latch(snapshot);
+        terminal_score_snapshot.latch(snapshot);
         true
     }
 }
@@ -245,7 +248,12 @@ mod tests {
         let alpha_score = 100 + 50 + expected_rng.next_range_u32_inclusive(50, 100) as i32;
         let before_hash = sim.state_hash();
 
-        assert!(sim.finalize_terminal_score_snapshot());
+        assert!(Simulation::finalize_terminal_score_snapshot(
+            &sim.session,
+            &mut sim.scenario_rng,
+            &mut sim.terminal_score_snapshot,
+            &sim.houses
+        ));
         let snapshot = sim
             .terminal_score_snapshot()
             .expect("terminal score snapshot")
@@ -307,7 +315,12 @@ mod tests {
         sim.houses.reorder_for_test(&owners);
         let cursor = sim.clone_scenario_rng().state();
 
-        assert!(sim.finalize_terminal_score_snapshot());
+        assert!(Simulation::finalize_terminal_score_snapshot(
+            &sim.session,
+            &mut sim.scenario_rng,
+            &mut sim.terminal_score_snapshot,
+            &sim.houses
+        ));
         let snapshot = sim.terminal_score_snapshot().expect("snapshot");
         for row in &snapshot.rows {
             assert_eq!(row.raw_score, -40);
@@ -345,7 +358,12 @@ mod tests {
         let mut one_draw = sim.clone_scenario_rng();
         one_draw.next_range_u32_inclusive(25, 50);
 
-        assert!(sim.finalize_terminal_score_snapshot());
+        assert!(Simulation::finalize_terminal_score_snapshot(
+            &sim.session,
+            &mut sim.scenario_rng,
+            &mut sim.terminal_score_snapshot,
+            &sim.houses
+        ));
         let snapshot = sim.terminal_score_snapshot().expect("snapshot");
         assert_eq!(
             snapshot

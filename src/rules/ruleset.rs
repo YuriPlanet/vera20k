@@ -621,7 +621,7 @@ pub struct GeneralRules {
     /// ReadAI672AE0). Constructor666E09/666E1A stores the literal double
     /// 0.016; each reached AI pass retains its prior value as the default.
     /// Team Script16 uses the signed global frame modulo ftol(value*900),
-    /// without a clamp or a per-team timer. Source: Steam gamemd3e81a617..08600,
+    /// without a clamp or a per-team timer. Source: Steam gamemd,
     /// tools/team_recruit_oracle.py --patrol.
     pub patrol_scan_minutes: NativeF64Bits,
     /// `[General] AITriggerSuccessWeightDelta=` (`Rules+0xC0`, ReadDouble at
@@ -1077,7 +1077,7 @@ pub struct GeneralRules {
     pub building_die_sound: Option<String>,
     /// Struck-building cue from `[AudioVisual] BuildingDamageSound=` (stock
     /// `BuildingDamaged`), stored at `Rules+0x714`.
-    /// Original gamemd (SHA2561cdd1180e490...) ctor665650 stores -1 at666045;
+    /// Original gamemd ctor665650 stores -1 at666045;
     /// ReadAudioVisual6691E0's block66AC98..66ACDD passes literal83A460,
     /// empty889F64 and capacity128 to ReadString528A10, then7514D0.
     /// The fixed-catalog process binder retains earlier valid references for
@@ -2255,7 +2255,7 @@ impl PrismSupportRules {
 }
 
 /// RulesClass665650, stores667371/66737B/667385 at+14F8/+14FC/+1500.
-/// Original gamemd SHA1cdd1180; ReadGeneral670C13..670C6C keeps prior values.
+/// Original gamemd; ReadGeneral670C13..670C6C keeps prior values.
 pub(crate) const DEFAULT_SURVIVOR_DIVISORS: [i32; 3] = [200, 100, 300];
 /// RulesClass665D92 initializes retained General.MaximumCheerRate (+580).
 pub(crate) const DEFAULT_MAXIMUM_CHEER_RATE: i32 = 1;
@@ -3150,7 +3150,7 @@ impl GeneralRules {
         let audio_visual = ini.section_or_empty("AudioVisual");
         let message_delay_minutes =
             audio_visual.read_double_bits("MessageDelay", defaults.message_delay_minutes);
-        // Steam3e81a617..08600: AudioVisual66B478..66B498 reads SavourDelay
+        // Steam gamemd: AudioVisual66B478..66B498 reads SavourDelay
         // into Rules+14C8; Process668F56 reaches it independently of General.
         let savour_delay_minutes =
             audio_visual.read_double("SavourDelay", defaults.savour_delay_minutes);
@@ -4543,6 +4543,15 @@ impl RuleSet {
                 building.project_building_light(light);
             }
         }
+        for (name, upgrade) in processed.building_upgrade_states() {
+            if let Some(building) = rules
+                .object_list
+                .iter_mut()
+                .find(|o| o.category == ObjectCategory::Building && o.id == name)
+            {
+                building.project_building_upgrade(upgrade.clone());
+            }
+        }
         for (name, offset) in processed.building_target_coord_offsets() {
             if let Some(building) = rules
                 .object_list
@@ -5737,10 +5746,15 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        // v28: include the Warhead Verses table retained across reached reads,
-        // which can differ for identical current source text.
-        b"rules-simulation-config-v28".hash(&mut hasher);
+        // v29: BuildingType upgrade inputs retain prior Rules-pass values.
+        b"rules-simulation-config-v29".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        self.object_list
+            .iter()
+            .filter(|object| object.category == ObjectCategory::Building)
+            .map(|object| (object.id.to_ascii_uppercase(), object.building_upgrade()))
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         // The process registry is admitted only when its retained capability
         // matches this binary. Include that immutable build identity even if
         // the selected INIs contain no extension keys.
@@ -6414,7 +6428,16 @@ impl RuleSet {
             let mut slots = self
                 .art_registry
                 .resolve_metadata_entry(&object.id, &object.image)
-                .map(|entry| entry.building_anims.iter().collect::<Vec<_>>())
+                .map(|entry| {
+                    entry
+                        .building_anims
+                        .iter()
+                        //0..2 are immutable asset declarations here. The
+                        // consumed PowerUp records live on BuildingUpgradeRules
+                        // and are hashed once with that retained Type state.
+                        .filter(|config| config.native_slot >= 3)
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default();
             slots.sort_by_key(|config| config.native_slot);
             slots.hash(hasher);
@@ -11308,6 +11331,14 @@ Projectile=Invisible
             make("[UNUSED]\nGateStages=99\n").simulation_config_hash(),
             original.simulation_config_hash(),
             "missing metadata and explicit constructor defaults are equivalent"
+        );
+        assert_eq!(
+            make(&format!(
+                "[BODY]\n{defaults}PowerUp1Anim=UNCONSUMED\nPowerUp1LocXX=123\n"
+            ))
+            .simulation_config_hash(),
+            original.simulation_config_hash(),
+            "flat PowerUp declarations cannot replace the retained Type inputs"
         );
         for changed in [
             "GateStages=-1\n",

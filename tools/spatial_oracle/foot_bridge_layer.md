@@ -13,9 +13,7 @@ python -m tools.spatial_oracle.foot_navigation_coordinate --bridge-layers --chec
 Configure the original executable with `VERA20K_GAMEMD_EXE` or `RA2_DIR` as
 described in [native_oracle.md](../native_oracle.md). `--check` does not write;
 `--bridge-layers --write` deliberately replaces only the new bridge golden
-and its metadata. The shared oracle checks SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`
-before mapping those same bytes. The sidecar also pins the payload and Unicorn
+and its metadata. The sidecar pins the payload and Unicorn
 binding/core.
 
 ## Executed original bodies

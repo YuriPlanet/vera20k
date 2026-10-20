@@ -1,12 +1,9 @@
 # Foot ScoldSound latch: native boundaries
 
-Original `gamemd.exe` SHA256:
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
-
 `foot_scold_latch.py` executes the original constructor, rules/sound readers,
 raw-load and reconstruction boundaries, and selected Walk/Drive/Ship response
 fragments. `foot_scold_latch.json` contains native outputs;
-`foot_scold_latch.meta.json` records substitutions and binary identity.
+`foot_scold_latch.meta.json` records substitutions.
 It does not establish an ordinary gameplay producer that arms Foot `+0x68A`.
 
 From the repository, using the shared native environment:

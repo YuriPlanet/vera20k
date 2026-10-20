@@ -5,8 +5,6 @@ concrete target and navigation setters it calls. Its corpus is a bounded native
 comparison for stock IVAN/IvanBomber and ENGINEER/DefuseKit continuations. It does
 not execute command admission, the preceding shot, bomb attach/defuse or Team AI.
 
-The binary identity is SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 The [sidecar](fire_once.meta.json) records entry points, reader layers, physical
 file identities, source seals, field layouts, substitutions and exclusions.
 The [shared runner](../native_oracle.md) verifies the executable and bounds each

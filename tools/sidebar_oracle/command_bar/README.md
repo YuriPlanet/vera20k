@@ -9,7 +9,7 @@ reconstruct every word of this rectangle.
 
 `layout-native.json` records complete original `72FC60` execution at four
 screen sizes, with a successful 16-byte allocation substituted. Source canvas
-headers and the executable hash are recorded in the packet. Actual layout
+headers are recorded in the packet. Actual layout
 entry is `72FC60`; older `72FF00` references point inside that body.
 
 `mapping-frame-native.json` executes original `674650` mapping/gadget setup
@@ -34,8 +34,7 @@ existing action owners; PlanningMode/Beacon/Cheer retain their existing gameplay
 limitations. The captured pixel proof covers the ordinary Allied open bar.
 
 The user thumb branches in original `SidebarInput6D0680` are separate from
-programmatic `6D1610`/`6D1660`. Original image SHA256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+programmatic `6D1610`/`6D1660`.
 F1 checks Session+300 at `6D08F5` before `GUIOpenSound`, bar state or gadget
 changes. F0 has no defeat guard. Accepted F0/F1 call `750920` at
 `6D0860`/`6D091A` with Rules+198/+194 before testing the existing open bit.

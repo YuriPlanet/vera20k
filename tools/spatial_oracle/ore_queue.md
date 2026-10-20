@@ -9,7 +9,7 @@ run original instructions. `ore_queue.json` contains 128 body cases: the retaine
 `TiberiumClass::GrowthProcessor` callers, 47 full natural `SpreadProcessor` calls,
 16 complete `SpreadDriver_AllTypes` histories, and five growth-before-spread
 driver histories. Sixteen selected constructor/INI reader rows independently
-establish signed timer values and stock percentages. The sidecar records executable identity,
+establish signed timer values and stock percentages. The sidecar records the
 Unicorn version, payload hash and fixture boundaries.
 
 ```sh
@@ -158,7 +158,7 @@ map lookup `0x005657A0`, before source refusal. Both finish with dummy coordinat
 zero. The other observed dummy fields stay zero in this fixture. The source is
 reinserted once at zero priority, giving array count 2 and heap index 1. These
 controls expose the lookup effect without a successful Mark's later neighbor
-queries masking it. They use the same pinned executable, Size4x4 diamond,
+queries masking it. They use the same retail executable, Size4x4 diamond,
 GameActive1, seed1/frame100 and supplied first raw word zero as the surrounding
 natural rows; the original lookup, admission and RNG instructions execute.
 
@@ -309,7 +309,7 @@ its payload stayed byte-identical (SHA-256 recorded in the receipt).
 The native active caller is `LogicClass::Update @ 0x0055AFB0`, reached by
 `Main_Tick @ 0x0055DC9E`: it calls GrowthDriver at `0x0055B4D7`, then
 SpreadDriver at `0x0055B4DC`, before live-object AI. Original bytes were checked
-against the pinned executable. `GameActive` is established by session preparation
+against the retail executable. `GameActive` is established by session preparation
 (`0x0052D9D7`); this is an active YR path.
 
 The existing `OreGrowthState` driver now uses only the Basic growth gate, leaving

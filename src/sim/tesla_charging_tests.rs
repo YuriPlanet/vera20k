@@ -286,7 +286,13 @@ fn operational_power_and_overpowered_weapon_use_different_thresholds() {
             f.sim.building_operational_state(f.coil, &f.rules),
             Some(operational)
         );
-        f.sim.update_tesla_charge(f.coil, &f.rules);
+        crate::sim::world::Simulation::update_tesla_charge(
+            &f.sim.interner,
+            &mut f.sim.substrate,
+            &f.sim.power_states,
+            f.coil,
+            &f.rules,
+        );
         assert_eq!(
             f.charge().is_overpowered(),
             overpowered,
@@ -337,7 +343,13 @@ fn retarget_waits_for_building_turn_and_both_expiry_controls_remove_indexed_char
         let a = f.troopers[0];
         f.assign(a, Some(f.coil));
         f.hit(a, f.coil);
-        f.sim.update_tesla_charge(f.coil, &f.rules);
+        crate::sim::world::Simulation::update_tesla_charge(
+            &f.sim.interner,
+            &mut f.sim.substrate,
+            &f.sim.power_states,
+            f.coil,
+            &f.rules,
+        );
         assert!(f.charge().is_overpowered());
         // No other Building reference names a: the derived expiry index must
         // discover this listener from the new charger list alone.
@@ -349,7 +361,13 @@ fn retarget_waits_for_building_turn_and_both_expiry_controls_remove_indexed_char
         }
         assert!(f.charge().chargers().is_empty());
         assert!(f.charge().is_overpowered(), "expiry does not write +661");
-        f.sim.update_tesla_charge(f.coil, &f.rules);
+        crate::sim::world::Simulation::update_tesla_charge(
+            &f.sim.interner,
+            &mut f.sim.substrate,
+            &f.sim.power_states,
+            f.coil,
+            &f.rules,
+        );
         assert!(!f.charge().is_overpowered());
     }
     let Some(mut f) = Fixture::new() else { return };
@@ -358,11 +376,23 @@ fn retarget_waits_for_building_turn_and_both_expiry_controls_remove_indexed_char
         f.hit(source, f.coil);
     }
     f.set_power(0, 100);
-    f.sim.update_tesla_charge(f.coil, &f.rules);
+    crate::sim::world::Simulation::update_tesla_charge(
+        &f.sim.interner,
+        &mut f.sim.substrate,
+        &f.sim.power_states,
+        f.coil,
+        &f.rules,
+    );
     f.assign(f.troopers[1], None);
     assert_eq!(f.charge().chargers(), &f.troopers);
     assert!(f.charge().is_overpowered());
-    f.sim.update_tesla_charge(f.coil, &f.rules);
+    crate::sim::world::Simulation::update_tesla_charge(
+        &f.sim.interner,
+        &mut f.sim.substrate,
+        &f.sim.power_states,
+        f.coil,
+        &f.rules,
+    );
     assert_eq!(f.charge().chargers(), &[f.troopers[0], f.troopers[2]]);
     assert!(!f.charge().is_overpowered());
 }
@@ -375,7 +405,13 @@ fn snapshot_preserves_order_intent_and_stale_latch_then_rejects_invalid_referenc
         f.hit(source, f.coil);
     }
     f.hit(f.troopers[0], f.coil);
-    f.sim.update_tesla_charge(f.coil, &f.rules);
+    crate::sim::world::Simulation::update_tesla_charge(
+        &f.sim.interner,
+        &mut f.sim.substrate,
+        &f.sim.power_states,
+        f.coil,
+        &f.rules,
+    );
     for source in f.troopers {
         f.assign(source, None);
     }
@@ -402,7 +438,13 @@ fn snapshot_preserves_order_intent_and_stale_latch_then_rejects_invalid_referenc
             .tesla_charger
             .is_active()
     );
-    loaded.update_tesla_charge(f.coil, &f.rules);
+    crate::sim::world::Simulation::update_tesla_charge(
+        &loaded.interner,
+        &mut loaded.substrate,
+        &loaded.power_states,
+        f.coil,
+        &f.rules,
+    );
     assert!(
         loaded
             .substrate
@@ -716,7 +758,13 @@ fn freezing_a_retail_charger_clears_its_intent_before_release() {
             .acquire_adjacent_tesla_coil(source, &f.rules, None, FrameEffects::default(),)
     );
     f.hit(source, f.coil);
-    f.sim.update_tesla_charge(f.coil, &f.rules);
+    crate::sim::world::Simulation::update_tesla_charge(
+        &f.sim.interner,
+        &mut f.sim.substrate,
+        &f.sim.power_states,
+        f.coil,
+        &f.rules,
+    );
     assert!(f.charge().is_overpowered());
     f.assign(cleg, Some(source));
     f.sim
@@ -730,11 +778,22 @@ fn freezing_a_retail_charger_clears_its_intent_before_release() {
     // Infantry51BBEF calls its concrete +3C8 setter, whose reached tail
     // clears +68E at51B33F before the frozen object returns from AI.
     assert!(!actor.tesla_charger.is_active());
-    f.sim.update_tesla_charge(f.coil, &f.rules);
+    crate::sim::world::Simulation::update_tesla_charge(
+        &f.sim.interner,
+        &mut f.sim.substrate,
+        &f.sim.power_states,
+        f.coil,
+        &f.rules,
+    );
     assert!(f.charge().chargers().is_empty());
     assert!(!f.charge().is_overpowered());
 
-    f.sim.temporal_let_go(cleg);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut f.sim.substrate,
+        &mut f.sim.houses,
+        &mut f.sim.power_states,
+        cleg,
+    );
     assert!(!f.sim.substrate.entities.get(source).unwrap().ai_frozen());
     f.dispatch(source, MissionType::Attack);
     assert!(
@@ -786,7 +845,13 @@ fn retail_fireat_charges_low_power_coil_and_pruning_disables_it_again() {
         f.sim.building_operational_state(f.coil, &f.rules),
         Some(true)
     );
-    f.sim.update_tesla_charge(f.coil, &f.rules);
+    crate::sim::world::Simulation::update_tesla_charge(
+        &f.sim.interner,
+        &mut f.sim.substrate,
+        &f.sim.power_states,
+        f.coil,
+        &f.rules,
+    );
     assert!(
         !f.charge().is_overpowered(),
         "two at low power supply normal firing only"
@@ -797,7 +862,13 @@ fn retail_fireat_charges_low_power_coil_and_pruning_disables_it_again() {
         Some(true),
         "retained list is sampled before its later prune"
     );
-    f.sim.update_tesla_charge(f.coil, &f.rules);
+    crate::sim::world::Simulation::update_tesla_charge(
+        &f.sim.interner,
+        &mut f.sim.substrate,
+        &f.sim.power_states,
+        f.coil,
+        &f.rules,
+    );
     assert_eq!(
         f.sim.building_operational_state(f.coil, &f.rules),
         Some(false)

@@ -11,10 +11,9 @@ python -m tools.input_oracle.campaign_start --scenario-names --check
 ```
 
 `--write` deliberately regenerates `campaign_house_names.json` and its
-`.meta.json`. The sidecar records executable identity, command, scope and
+`.meta.json`. The sidecar records the command, scope and
 substitutions; it pins no repository-source hashes. Source freezing guards
-generation only. This corpus uses original SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+generation only.
 No physical asset is requested; the supplied directory is preferably empty.
 
 Three original copy regions produce `<human player>` and two `Computer`

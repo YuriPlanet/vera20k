@@ -43,11 +43,12 @@ impl GameEntity {
     /// read (`0x00449C99`) and stage 0's clear (`0x0044AB61`).
     pub(crate) fn advance_building_down(&mut self, status: &mut u32) -> PackUpFrame {
         let ready = self.building_ready_latch() != 0;
+        let has_upgrades = self.building_upgrades().count() != 0;
         let visit = self
             .building_sale
             .unwrap_or_else(|| BuildingDown::commenced(0, false))
-            .visit(status, ready);
-        if visit == PackUpFrame::StageZero {
+            .visit(status, ready, has_upgrades);
+        if visit == PackUpFrame::StageZero && !has_upgrades {
             self.mission_leaf.set_building_ready_latch(0);
         }
         visit

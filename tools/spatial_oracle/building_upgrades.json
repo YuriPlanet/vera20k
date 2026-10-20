@@ -1,0 +1,712 @@
+{
+  "admission_and_install": [
+    {
+      "admitted": true,
+      "inputs": {},
+      "install": {
+        "admitted": true,
+        "calls": [
+          {
+            "call": "power_up",
+            "count": 0,
+            "hp": 100
+          },
+          {
+            "call": "house_refresh",
+            "receiver": 537001984
+          },
+          {
+            "call": "temporary_upgrade_uninit",
+            "receiver": 536936448
+          }
+        ],
+        "count": 1,
+        "house_flags": {
+          "0x1fc": 1,
+          "0x5778": 1,
+          "0x5779": 1
+        },
+        "hp": 100,
+        "preceding_field": 0,
+        "replacements": [
+          {
+            "damaged": 0,
+            "extra": 0,
+            "garrisoned": 0,
+            "name": "POWERUPIMAGE",
+            "retained_flag": 0,
+            "slot": 0
+          }
+        ],
+        "slots": [
+          536944640,
+          0,
+          0
+        ]
+      },
+      "name": "first"
+    },
+    {
+      "admitted": true,
+      "inputs": {
+        "count": 1
+      },
+      "install": {
+        "admitted": true,
+        "calls": [
+          {
+            "call": "power_up",
+            "count": 1,
+            "hp": 100
+          },
+          {
+            "call": "house_refresh",
+            "receiver": 537001984
+          },
+          {
+            "call": "temporary_upgrade_uninit",
+            "receiver": 536936448
+          }
+        ],
+        "count": 2,
+        "house_flags": {
+          "0x1fc": 1,
+          "0x5778": 1,
+          "0x5779": 1
+        },
+        "hp": 100,
+        "preceding_field": 0,
+        "replacements": [
+          {
+            "damaged": 0,
+            "extra": 0,
+            "garrisoned": 0,
+            "name": "POWERUPIMAGE",
+            "retained_flag": 0,
+            "slot": 1
+          }
+        ],
+        "slots": [
+          0,
+          536944640,
+          0
+        ]
+      },
+      "name": "next"
+    },
+    {
+      "admitted": false,
+      "inputs": {
+        "count": 3
+      },
+      "install": {
+        "admitted": false,
+        "calls": [],
+        "count": 3,
+        "house_flags": {
+          "0x1fc": 0,
+          "0x5778": 0,
+          "0x5779": 0
+        },
+        "hp": 100,
+        "preceding_field": 0,
+        "replacements": [],
+        "slots": [
+          0,
+          0,
+          0
+        ]
+      },
+      "name": "full"
+    },
+    {
+      "admitted": true,
+      "inputs": {
+        "slots": 0
+      },
+      "install": {
+        "admitted": true,
+        "calls": [
+          {
+            "call": "power_up",
+            "count": 0,
+            "hp": 100
+          },
+          {
+            "call": "house_refresh",
+            "receiver": 537001984
+          },
+          {
+            "call": "temporary_upgrade_uninit",
+            "receiver": 536936448
+          }
+        ],
+        "count": 0,
+        "house_flags": {
+          "0x1fc": 1,
+          "0x5778": 1,
+          "0x5779": 1
+        },
+        "hp": 100,
+        "preceding_field": 536944640,
+        "replacements": [],
+        "slots": [
+          0,
+          0,
+          0
+        ]
+      },
+      "name": "zero_slots_first"
+    },
+    {
+      "admitted": false,
+      "inputs": {
+        "count": 1,
+        "slots": 0
+      },
+      "install": {
+        "admitted": false,
+        "calls": [],
+        "count": 1,
+        "house_flags": {
+          "0x1fc": 0,
+          "0x5778": 0,
+          "0x5779": 0
+        },
+        "hp": 100,
+        "preceding_field": 0,
+        "replacements": [],
+        "slots": [
+          0,
+          0,
+          0
+        ]
+      },
+      "name": "zero_slots_after_first"
+    },
+    {
+      "admitted": true,
+      "inputs": {
+        "level": 1
+      },
+      "install": {
+        "admitted": true,
+        "calls": [
+          {
+            "call": "power_up",
+            "count": 0,
+            "hp": 100
+          },
+          {
+            "call": "house_refresh",
+            "receiver": 537001984
+          },
+          {
+            "call": "temporary_upgrade_uninit",
+            "receiver": 536936448
+          }
+        ],
+        "count": 1,
+        "house_flags": {
+          "0x1fc": 1,
+          "0x5778": 1,
+          "0x5779": 1
+        },
+        "hp": 100,
+        "preceding_field": 0,
+        "replacements": [
+          {
+            "damaged": 0,
+            "extra": 0,
+            "garrisoned": 0,
+            "name": "POWERUPIMAGE",
+            "retained_flag": 0,
+            "slot": 0
+          }
+        ],
+        "slots": [
+          536944640,
+          0,
+          0
+        ]
+      },
+      "name": "explicit_one_first"
+    },
+    {
+      "admitted": true,
+      "inputs": {
+        "level": 3
+      },
+      "install": {
+        "admitted": true,
+        "calls": [
+          {
+            "call": "power_up",
+            "count": 0,
+            "hp": 100
+          },
+          {
+            "call": "power_up",
+            "count": 1,
+            "hp": 100
+          },
+          {
+            "call": "power_up",
+            "count": 2,
+            "hp": 100
+          },
+          {
+            "call": "house_refresh",
+            "receiver": 537001984
+          },
+          {
+            "call": "temporary_upgrade_uninit",
+            "receiver": 536936448
+          }
+        ],
+        "count": 3,
+        "house_flags": {
+          "0x1fc": 1,
+          "0x5778": 1,
+          "0x5779": 1
+        },
+        "hp": 100,
+        "preceding_field": 0,
+        "replacements": [
+          {
+            "damaged": 0,
+            "extra": 0,
+            "garrisoned": 0,
+            "name": "POWERUPIMAGE",
+            "retained_flag": 0,
+            "slot": 0
+          }
+        ],
+        "slots": [
+          0,
+          0,
+          536944640
+        ]
+      },
+      "name": "explicit_three_first"
+    },
+    {
+      "admitted": true,
+      "inputs": {
+        "hp": 25,
+        "level": 3,
+        "slots": 1
+      },
+      "install": {
+        "admitted": true,
+        "calls": [
+          {
+            "call": "power_up",
+            "count": 0,
+            "hp": 25
+          },
+          {
+            "call": "power_up",
+            "count": 1,
+            "hp": 100
+          },
+          {
+            "call": "power_up",
+            "count": 1,
+            "hp": 100
+          },
+          {
+            "call": "house_refresh",
+            "receiver": 537001984
+          },
+          {
+            "call": "temporary_upgrade_uninit",
+            "receiver": 536936448
+          }
+        ],
+        "count": 1,
+        "house_flags": {
+          "0x1fc": 1,
+          "0x5778": 1,
+          "0x5779": 1
+        },
+        "hp": 100,
+        "preceding_field": 0,
+        "replacements": [
+          {
+            "damaged": 0,
+            "extra": 0,
+            "garrisoned": 0,
+            "name": "POWERUPIMAGE",
+            "retained_flag": 0,
+            "slot": 0
+          }
+        ],
+        "slots": [
+          536944640,
+          0,
+          0
+        ]
+      },
+      "name": "explicit_three_small_host"
+    },
+    {
+      "admitted": false,
+      "inputs": {
+        "count": 1,
+        "level": 3
+      },
+      "install": {
+        "admitted": false,
+        "calls": [],
+        "count": 1,
+        "house_flags": {
+          "0x1fc": 0,
+          "0x5778": 0,
+          "0x5779": 0
+        },
+        "hp": 100,
+        "preceding_field": 0,
+        "replacements": [],
+        "slots": [
+          0,
+          0,
+          0
+        ]
+      },
+      "name": "explicit_three_after_first"
+    },
+    {
+      "admitted": false,
+      "inputs": {
+        "level": 0
+      },
+      "install": {
+        "admitted": false,
+        "calls": [],
+        "count": 0,
+        "house_flags": {
+          "0x1fc": 0,
+          "0x5778": 0,
+          "0x5779": 0
+        },
+        "hp": 100,
+        "preceding_field": 0,
+        "replacements": [],
+        "slots": [
+          0,
+          0,
+          0
+        ]
+      },
+      "name": "level_zero"
+    },
+    {
+      "admitted": false,
+      "inputs": {
+        "level": 4
+      },
+      "install": {
+        "admitted": false,
+        "calls": [],
+        "count": 0,
+        "house_flags": {
+          "0x1fc": 0,
+          "0x5778": 0,
+          "0x5779": 0
+        },
+        "hp": 100,
+        "preceding_field": 0,
+        "replacements": [],
+        "slots": [
+          0,
+          0,
+          0
+        ]
+      },
+      "name": "level_four"
+    },
+    {
+      "admitted": false,
+      "inputs": {
+        "level": -2
+      },
+      "install": {
+        "admitted": false,
+        "calls": [],
+        "count": 0,
+        "house_flags": {
+          "0x1fc": 0,
+          "0x5778": 0,
+          "0x5779": 0
+        },
+        "hp": 100,
+        "preceding_field": 0,
+        "replacements": [],
+        "slots": [
+          0,
+          0,
+          0
+        ]
+      },
+      "name": "level_negative_two"
+    },
+    {
+      "admitted": false,
+      "inputs": {
+        "same_owner": false
+      },
+      "install": {
+        "admitted": false,
+        "calls": [],
+        "count": 0,
+        "house_flags": {
+          "0x1fc": 0,
+          "0x5778": 0,
+          "0x5779": 0
+        },
+        "hp": 100,
+        "preceding_field": 0,
+        "replacements": [],
+        "slots": [
+          0,
+          0,
+          0
+        ]
+      },
+      "name": "other_owner"
+    },
+    {
+      "admitted": false,
+      "inputs": {
+        "requested": "OTHER"
+      },
+      "install": {
+        "admitted": false,
+        "calls": [],
+        "count": 0,
+        "house_flags": {
+          "0x1fc": 0,
+          "0x5778": 0,
+          "0x5779": 0
+        },
+        "hp": 100,
+        "preceding_field": 0,
+        "replacements": [],
+        "slots": [
+          0,
+          0,
+          0
+        ]
+      },
+      "name": "name_mismatch"
+    },
+    {
+      "admitted": true,
+      "inputs": {
+        "hp": 25,
+        "requested": "pOwEr"
+      },
+      "install": {
+        "admitted": true,
+        "calls": [
+          {
+            "call": "power_up",
+            "count": 0,
+            "hp": 25
+          },
+          {
+            "call": "house_refresh",
+            "receiver": 537001984
+          },
+          {
+            "call": "temporary_upgrade_uninit",
+            "receiver": 536936448
+          }
+        ],
+        "count": 1,
+        "house_flags": {
+          "0x1fc": 1,
+          "0x5778": 1,
+          "0x5779": 1
+        },
+        "hp": 100,
+        "preceding_field": 0,
+        "replacements": [
+          {
+            "damaged": 0,
+            "extra": 0,
+            "garrisoned": 0,
+            "name": "POWERUPIMAGE",
+            "retained_flag": 0,
+            "slot": 0
+          }
+        ],
+        "slots": [
+          536944640,
+          0,
+          0
+        ]
+      },
+      "name": "name_case_fold"
+    }
+  ],
+  "power": [
+    {
+      "drain": 0,
+      "inputs": {
+        "count": 1,
+        "host_drain": 0,
+        "host_power": 300,
+        "hp": 100,
+        "other_slot": false,
+        "strength": 100,
+        "upgrade_drain": 0,
+        "upgrade_power": 200
+      },
+      "name": "full",
+      "output": 500
+    },
+    {
+      "drain": 0,
+      "inputs": {
+        "count": 1,
+        "host_drain": 0,
+        "host_power": 300,
+        "hp": 50,
+        "other_slot": false,
+        "strength": 100,
+        "upgrade_drain": 0,
+        "upgrade_power": 200
+      },
+      "name": "damaged",
+      "output": 250
+    },
+    {
+      "drain": 0,
+      "inputs": {
+        "count": 1,
+        "host_drain": 0,
+        "host_power": 300,
+        "hp": 100,
+        "other_slot": true,
+        "strength": 100,
+        "upgrade_drain": 0,
+        "upgrade_power": 200
+      },
+      "name": "sparse_all_three_slots",
+      "output": 570
+    },
+    {
+      "drain": 0,
+      "inputs": {
+        "count": 0,
+        "host_drain": 0,
+        "host_power": 300,
+        "hp": 100,
+        "other_slot": true,
+        "strength": 100,
+        "upgrade_drain": 0,
+        "upgrade_power": 200
+      },
+      "name": "count_zero_ignores_slots",
+      "output": 300
+    },
+    {
+      "drain": 0,
+      "inputs": {
+        "count": 1,
+        "host_drain": 0,
+        "host_power": 3,
+        "hp": 1,
+        "other_slot": false,
+        "strength": 3,
+        "upgrade_drain": 0,
+        "upgrade_power": 2
+      },
+      "name": "fractional_truncation",
+      "output": 1
+    },
+    {
+      "drain": 80,
+      "inputs": {
+        "count": 1,
+        "host_drain": 50,
+        "host_power": 0,
+        "hp": 100,
+        "other_slot": false,
+        "strength": 100,
+        "upgrade_drain": 30,
+        "upgrade_power": 0
+      },
+      "name": "drain_only",
+      "output": 0
+    }
+  ],
+  "removal": [
+    {
+      "calls": [
+        {
+          "call": "remove_animation",
+          "slot": 0
+        }
+      ],
+      "count": 0,
+      "initial_count": 1,
+      "initial_type_slot": 0,
+      "name": "first",
+      "slots": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "calls": [
+        {
+          "call": "remove_animation",
+          "slot": 2
+        }
+      ],
+      "count": 2,
+      "initial_count": 3,
+      "initial_type_slot": 2,
+      "name": "explicit_three_sparse",
+      "slots": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "calls": [
+        {
+          "call": "remove_animation",
+          "slot": 1
+        }
+      ],
+      "count": 1,
+      "initial_count": 2,
+      "initial_type_slot": 0,
+      "name": "null_last_slot",
+      "slots": [
+        536944640,
+        0,
+        0
+      ]
+    },
+    {
+      "calls": [],
+      "count": 0,
+      "initial_count": 0,
+      "initial_type_slot": null,
+      "name": "empty",
+      "slots": [
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "schema_version": 1
+}

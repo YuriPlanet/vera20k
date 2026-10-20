@@ -6,9 +6,6 @@ LANGRULE is absent, and MPBattleMD/Hills have no Engineer section. Native0
 therefore remains the final value. The captured production Engineer had Track1;
 that default was a required input correction for ordinary Engineer movement.
 
-Native binary SHA256:
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
-
 ## Executed boundary
 
 `infantry_speed_type.py` executes the complete original InfantryType constructor

@@ -1,7 +1,7 @@
 # MapGen bridge variant draw
 
 `mapgen_range.py` executes original `598030`, `65C780` and `7C5F00` from
-gamemd SHA256 `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+`gamemd.exe`.
 The 91 cases retain all 250 RNG words, both cursors, disabled byte, padding,
 incoming/cached FPU controls, raw draws and rejected candidates. No measured
 gameplay callable or returned answer is substituted.

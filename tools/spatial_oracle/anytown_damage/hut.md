@@ -38,8 +38,6 @@ and a zeroed TacticalDisplay object are supplied. Original map startup
 `561710/5617A0/5617C0/5617E0`, after the inherited CRT/WinMain FPU setup,
 derives `ABDE88=104`; animation Z is the signed cell level times that value.
 
-The executable SHA256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 Every measured call asserts the entire mapped original `.text` remains SHA256
 `4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc`.
 No instruction is patched. The metadata pins every imported repository Python
@@ -92,7 +90,7 @@ are not asserted to be a Boolean success contract for `574000` or the walker.
 
 The frozen external `caller_startup.asm` contains original instruction slices,
 without relying on the current Ghidra names. [`hut_callsite_bytes.json`](hut_callsite_bytes.json)
-checks 15 critical call targets directly against the pinned original PE. The concrete caller addresses are **Bomb `438982`**
+checks 15 critical call targets directly against the original PE. The concrete caller addresses are **Bomb `438982`**
 and **Building update `44031B`**, both calling `574000`. The nearby `43896A`
 and `440301` call **wood/low `574C20`**, not the concrete driver.
 

@@ -951,7 +951,7 @@ pub(crate) fn direct_greatest_threat(
 ) -> Option<u64> {
     // These callers explicitly copy Object+9C..A4, not virtual GetCoords.
     // Preserve the shared direct-call owner for all of them. Original Steam
-    // gamemd3e81a617..08600:6ED132,6ECDEF,6F0222 and414B3D.
+    // gamemd:6ED132,6ECDEF,6F0222 and414B3D.
     let coord = crate::sim::movement::ground_pose::object_location(
         sim.substrate.entities.get(scanner)?,
         sim.resolved_terrain.as_ref(),

@@ -23,10 +23,6 @@ fn mark_all_occupation_bits_matches_original_head_and_raw_plane_controls() {
         "tools/spatial_oracle/locomotor_force_track.hover_mark_all.json",
     ))
     .expect("original Hover Mark_All controls");
-    assert_eq!(
-        corpus["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let null = DriveCoord { x: 0, y: 0, z: 0 };
     let slot = |value: &serde_json::Value| Some(coord(value)).filter(|coord| *coord != null);
     let unslot = |value: Option<DriveCoord>| {

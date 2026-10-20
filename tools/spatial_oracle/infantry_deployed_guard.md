@@ -16,8 +16,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python -m tools.spatial_oracle.infantry_a
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python -m tools.spatial_oracle.infantry_deploy_action --mission-unload --check
 ```
 
-These execute active-retail `gamemd.exe` SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+These execute active-retail `gamemd.exe`.
 The entire resident original `.text` at401000, length3E0000, retains SHA256
 `4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc`
 for every row. Original Infantry, Cell and constructor-installed Walk vtables are
@@ -27,7 +26,7 @@ metadata. The only inherited support is OS interlocked operations.
 The mechanism owner saved and read back bounded labels/comments in the explicit
 `gamemd.exe` Ghidra program on2026-09-30:521320
 `InfantryClass__DeployedGuardShim` and522510 `InfantryClass__IsDeployedDoing`.
-The first48 original bytes matched the pinned image; the predicate's false/true
+The first48 original bytes matched the loaded image; the predicate's false/true
 returns are52252C/522532. Those annotations distinguish native returns, the
 pre6FDD50 stop, callback tails and impact-time RadSite arming. Annotations are
 navigation aids; the executable receipts establish the claims above.

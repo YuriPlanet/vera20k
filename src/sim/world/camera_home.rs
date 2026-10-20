@@ -8,7 +8,7 @@ use crate::sim::movement::ground_pose::object_get_coords;
 const NO_COORD: [i32; 3] = [0, 0, 0];
 
 impl Simulation {
-    /// Native Home7315A0 (Steam gamemd3e81a617..08600). The current
+    /// Native Home7315A0 (Steam gamemd). The current
     /// player's live House Building list is walked backwards: the first
     /// primary ConstructionYard wins, else the earliest remaining yard;
     /// the last other Building is retained as a fallback. Only when both

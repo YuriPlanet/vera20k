@@ -420,6 +420,40 @@ pub(super) fn push_label_draw(
     );
 }
 
+/// A caption whose glyphs stay laid out on `rect` but which is visible only in
+/// `visible` pieces. The open dropdown's panel is blitted before the text pass,
+/// so a covered caption must not paint under it.
+fn push_clipped_label_draw(
+    out: &mut Vec<ShellTextDraw>,
+    state: &AppState,
+    label: &str,
+    rect: RectPx,
+    visible: &[RectPx],
+    depth: f32,
+    scale: f32,
+) {
+    let text = rect_to_text_rect(rect);
+    for piece in visible {
+        let mut draw = shell_text::draw_in_rect_scaled(
+            &state.renderer.bit_font,
+            label,
+            text,
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            [0.0, 0.0],
+            depth,
+            scale,
+        );
+        draw.scissor = shell_text::ScissorRect {
+            x: piece.x.max(0) as u32,
+            y: piece.y.max(0) as u32,
+            w: piece.w.max(0) as u32,
+            h: piece.h.max(0) as u32,
+        };
+        out.push(draw);
+    }
+}
+
 fn rects_intersect(a: RectPx, b: RectPx) -> bool {
     a.w > 0
         && a.h > 0
@@ -678,11 +712,16 @@ pub(super) fn build_shell_text_draws(
     for checkbox in layout.checkboxes {
         let (key, fallback) = checkbox_label(checkbox.id);
         let label = localized_label(state, key, fallback);
-        push_label_draw(
+        let text_rect = checkbox_text_rect(checkbox.rect, scale);
+        // The dropdown panel is blitted in the sprite pass, before every
+        // caption, so trim each caption to the parts the open popup leaves
+        // visible. Its glyphs stay laid out on the whole row.
+        push_clipped_label_draw(
             &mut shell_draws,
             state,
             &label,
-            checkbox_text_rect(checkbox.rect, scale),
+            text_rect,
+            &text_rect.outside(&covering_overlays),
             SHELL_CONTROL_TEXT_DEPTH,
             scale.factor(),
         );
@@ -1652,6 +1691,40 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A list hinged at the fifth player row reaches the checkbox column; the
+    /// caption under it must keep only the strip the popup leaves outside.
+    #[test]
+    fn checkbox_caption_under_an_ai_type_list_keeps_only_the_uncovered_strip() {
+        use crate::ui::shell::combobox::ComboPopup;
+        use crate::ui::skirmish_shell::{
+            SkirmishComboId, SkirmishShellState, combo_face_rect, combo_items, compute_layout,
+        };
+
+        let maps: &[crate::map::scenario_menu::MapMenuEntry] = &[];
+        let shell = SkirmishShellState::default();
+        let layout = compute_layout(640, 480);
+        let item_count = combo_items(&shell, maps, SkirmishComboId::AiType(4)).len();
+        let list = ComboPopup::new(
+            combo_face_rect(layout.rows.ai_type_combos[4], layout.scale),
+            layout.scale,
+            item_count,
+            0,
+            0,
+        )
+        .rect;
+        let short_game = layout.checkboxes[0];
+        let text = checkbox_text_rect(short_game.rect, layout.scale);
+
+        assert_eq!(list, RectPx::new(59, 214, 150, 92));
+        assert_eq!(text, RectPx::new(97, 286, 124, 16));
+        assert_eq!(
+            text.outside(&[list]),
+            vec![RectPx::new(209, 286, 12, 16)],
+            "the caption's tail is the only part left beside the popup"
+        );
+        assert!(text.outside(&[]).contains(&text));
     }
 
     #[test]

@@ -198,7 +198,7 @@ impl Simulation {
     /// UnitClass::What_Action_OnObject73FD7C..73FE43, after the base self/
     /// Shift action. Reproducible original control/weapon/health/display
     /// and ClickedAction witnesses: spatial_oracle/bunker_attack_action.json
-    /// repair_rows (Steam gamemd 3e81a617). This is producer-side admission;
+    /// repair_rows (Steam gamemd). This is producer-side admission;
     /// a delivered Attack event must not repeat it after cargo/health changes.
     pub fn unit_repair_action(
         &self,
@@ -610,7 +610,7 @@ impl Simulation {
             return false;
         };
         if actor.category() == EntityCategory::Structure {
-            // Steam gamemd 3e81a617: Building44F5C0, complete original control
+            // Steam gamemd: Building44F5C0, complete original control
             // vectors in procedural_drawing_oracle/factory_destination.py --control.
             // EMP+504 still has no runtime producer; this is its ctor-zero subset.
             // HasRallyPoint455DA0 bypasses the ConYard and House50B730 tests.

@@ -18,8 +18,6 @@ Set `RA2_DIR` or `VERA20K_GAMEMD_EXE` as described in
 archive input owner. No asset extraction directory or Rust output is required.
 `--write` records a new reference only after original execution succeeds.
 
-The pinned executable SHA-256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 `bridge_shadow_render.meta.json` records execution boundaries, substitutions
 and the payload digest. Archive, INI, palette and shape hashes are in the data.
 

@@ -418,8 +418,7 @@ fn scatter_occupy_cell_objects(
 }
 
 /// Building459069..4590F9 reads both virtual GetCoords, computes the full
-/// facing word and adds0x7FFF before Facing::Set. Steam gamemd SHA256
-/// 3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600;
+/// facing word and adds0x7FFF before Facing::Set. Steam gamemd;
 /// executed controls: tools/spatial_oracle/locomotor_force_track.bunker_install.json.
 /// The shared coordinate and direction owners retain sub-cell/foundation
 /// offsets; matching raw cells (or matching coordinates) do not skip the turn.
@@ -1206,6 +1205,162 @@ mod tests {
             sim.substrate.entities.get(tank).unwrap().bunker.link(),
             BunkerLink::Installed(bunker)
         );
+    }
+
+    /// Issue #2231. `UnitClass::ReceiveDamage`'s death arm (result 4,
+    /// `0x00737D69`) clears the dying occupant's bunker before anything else
+    /// in the arm: the unit's bunker link (`+0x2E4`) names a building →
+    /// `BuildingClass::ClearBunker @ 0x00459470`, call site `0x00737D97`,
+    /// ahead of the death-explosion gates (`0x00737DA7`) and the kill-site
+    /// `Death_Announcement` calls (`0x00737DC9`/`0x00737E39`/`0x00737E68`).
+    /// The kill reaches the installed tank through retail `[Super]`
+    /// (`PenetratesBunker=yes`) over the receiver's bunker gate; at the kill
+    /// instant the walls must fall (slots 10/11 cleared, the closing 12/13
+    /// set), the down sound play, both links clear and the bunker runtime
+    /// idle — the despawn safety net alone clears the links but keeps the
+    /// walls up.
+    #[test]
+    fn retail_bunkered_tank_killed_in_place_clears_the_bunkers_walls() {
+        use crate::sim::combat::world_receiver::{ReceiverRun, commit_entities};
+        use crate::sim::combat::{EntityDamageEvent, ReceiverCallFlags};
+        use crate::sim::command::{Command, CommandEnvelope};
+        use crate::sim::world::SimSoundEvent;
+
+        let Some(mut rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
+        else {
+            return;
+        };
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+        let wall_names = [
+            "NATBNK_A",
+            "NATBNK_B",
+            "NATBNK_AD",
+            "NATBNK_BD",
+            "NATBNK_A2",
+            "NATBNK_B2",
+            "NATBNK_A2D",
+            "NATBNK_B2D",
+        ]
+        .map(str::to_owned);
+        assert_eq!(
+            rules.bind_anim_class_assets(&wall_names, &assets, "TEM", "TEMPERATE"),
+            0
+        );
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x459470);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        sim.set_input_delay_ticks(0);
+        sim.session.set_binary_frame_for_test(1);
+        let bunker = sim
+            .spawn_object("NATBNK", "Americans", 10, 10, 0, &rules)
+            .unwrap();
+        let tank = sim
+            .spawn_object("LTNK", "Americans", 6, 10, 0, &rules)
+            .unwrap();
+        let owner = sim.interner.intern("Americans");
+        sim.queue_command(CommandEnvelope::new(
+            owner,
+            sim.session.tick() + 1,
+            Command::EnterBunker {
+                unit_id: tank,
+                bunker_id: bunker,
+            },
+        ));
+        for _ in 0..600 {
+            let commands = sim.take_due_commands();
+            let grid = sim.path_grid_snapshot();
+            sim.advance_tick(&commands, Some(&rules), grid.as_deref(), None, 33);
+            if rt(&sim, bunker).state() == BunkerState::Occupied {
+                break;
+            }
+        }
+        {
+            let building = sim.substrate.entities.get(bunker).unwrap();
+            assert_eq!(rt(&sim, bunker).state(), BunkerState::Occupied);
+            assert_eq!(building.bunker.occupant(), Some(tank));
+            assert!(
+                building.building_art.anim_slots()[10].is_some(),
+                "front wall up"
+            );
+            assert!(
+                building.building_art.anim_slots()[11].is_some(),
+                "rear wall up"
+            );
+        }
+        sim.sound_events.clear_for_test();
+
+        // The killing blow: retail [Super] penetrates the receiver's bunker
+        // gate (the installed-target arm of TechnoClass::ReceiveDamage).
+        let attacker = sim.spawn_object("E1", "Russians", 9, 9, 0, &rules).unwrap();
+        let source_house = sim
+            .substrate
+            .entities
+            .get(attacker)
+            .map(|entity| entity.owner());
+        let warhead = sim.interner.intern("Super");
+        let event = EntityDamageEvent::direct_receiver(
+            tank,
+            600,
+            0,
+            attacker,
+            source_house,
+            warhead,
+            ReceiverCallFlags {
+                ignore_defenses: false,
+                arg6: false,
+            },
+        );
+        let _ = commit_entities(
+            &mut sim,
+            &mut ReceiverRun::default(),
+            &[event],
+            None,
+            &rules,
+            None,
+        );
+
+        let building = sim.substrate.entities.get(bunker).unwrap();
+        assert_eq!(
+            building.bunker.occupant(),
+            None,
+            "occupant cleared at the kill instant"
+        );
+        assert_eq!(rt(&sim, bunker).state(), BunkerState::Idle);
+        assert!(
+            building.building_art.anim_slots()[10].is_none(),
+            "front wall down"
+        );
+        assert!(
+            building.building_art.anim_slots()[11].is_none(),
+            "rear wall down"
+        );
+        assert!(
+            building.building_art.anim_slots()[12].is_some(),
+            "front wall closing anim"
+        );
+        assert!(
+            building.building_art.anim_slots()[13].is_some(),
+            "rear wall closing anim"
+        );
+        assert_eq!(
+            sim.substrate.entities.get(tank).unwrap().bunker.link(),
+            BunkerLink::None,
+            "the dying unit's link clears before its death frame"
+        );
+        assert_eq!(
+            sim.sound_events
+                .iter()
+                .filter(|event| matches!(event, SimSoundEvent::BunkerWallsDown { .. }))
+                .count(),
+            1,
+            "ClearBunker plays the walls-down sound once"
+        );
+        assert_eq!(sim.bunker_wall_events.len(), 1);
+        assert!(!sim.bunker_wall_events[0].up);
+        assert_eq!(sim.bunker_wall_events[0].building_id, bunker);
     }
 
     #[test]

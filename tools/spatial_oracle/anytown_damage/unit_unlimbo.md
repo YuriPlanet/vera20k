@@ -9,10 +9,8 @@ controls. Additive `factory_unload_rows[1]` records the original common human
 GAWEAP/MTNK no-rally continuation, including nineteen shared Door controls and
 all twenty-two original Foundation exit-list startup rows;
 `factory_miner_per_cell_rows[2]` records contained Harvester/Weeder primary
-clearance branches. They execute identity-checked retail
-`gamemd.exe`, SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`,
-with the existing Mission and Unit entry fixtures. These are bounded native
+clearance branches. They execute retail
+`gamemd.exe` with the existing Mission and Unit entry fixtures. These are bounded native
 executions; the Python checks alone do not establish Rust parity.
 
 ## Reproduction and source identity
@@ -436,8 +434,8 @@ for that counter. New explicit fields separate these values, and the old
 boundary corpus retains identical inputs/results with corrected metadata.
 
 The [2026-10-03 static crosswalk](unit_unlimbo_counter_crosswalk-20261003.json)
-rechecks these gates through the RE corpus's existing `PEImage` reader. Steam
-image `3e81a617…` has the same documented `.text` hash `4cd5557a…` and matches
+rechecks these gates through the RE corpus's existing `PEImage` reader. The Steam
+image has the same documented `.text` hash `4cd5557a…` and matches
 the saved 212-byte Unit and 160-byte Infantry oracle spans. This establishes
 the boundary/crate distinction, not a new whole-image runtime qualification.
 The combined snapshot regression in

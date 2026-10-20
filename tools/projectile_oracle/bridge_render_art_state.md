@@ -7,7 +7,7 @@ BulletType constructor46BBC0 and full reader46BEE0, including ObjectType5F92D0,
 integer/bool/string readers, Animation FindOrAllocate428B80 and the original SHP
 filename/header consumer. It supplies no VERA-derived scalar expectations.
 
-The binary SHA-256 and Unicorn versions are in
+The Unicorn versions are in
 [the sidecar](bridge_render_art_state.meta.json); exact results and file hashes
 are in [the corpus](bridge_render_art_state.json). The inherited physical asset
 provenance and extraction instructions are in [bridge_render_inputs.md](bridge_render_inputs.md).

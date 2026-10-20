@@ -78,7 +78,7 @@ Boundaries required to interpret this evidence:
   probes. The script adapts only Python fixture setup statements in memory; it
   never patches original executable instructions.
 
-The companion metadata pins original executable identity and the saved payload.
+The companion metadata pins the saved payload.
 `--check` independently executes without writing; `--write` regenerates. Shared
 harness imports use only repository files. Both asset roots may be relocated;
 the input payload retains physical hashes. The stock crop path is repository

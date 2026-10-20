@@ -1,7 +1,6 @@
 # Jumpjet Process and synchronous Unit destination evidence
 
-`jumpjet_states.py` executes the original `gamemd.exe`, SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+`jumpjet_states.py` executes the original `gamemd.exe`.
 The schema-2 payload keeps the ten former rows in `legacy_rows` and adds sixteen
 `composed_controls`. The old canonical subtree SHA256 is
 `43c492a0299ab35088312e4706f956eba2346f37a0c64ba7b54e9ed8f8b56d21`;

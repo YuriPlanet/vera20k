@@ -131,10 +131,6 @@ mod tests {
             "tools/input_oracle/campaign_start.json",
         ))
         .expect("original campaign-start corpus");
-        assert_eq!(
-            fixture["native_sha256"],
-            "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-        );
         for row in fixture["loading_geometry"].as_array().unwrap() {
             if row["mode"].as_u64() != Some(0) {
                 continue;

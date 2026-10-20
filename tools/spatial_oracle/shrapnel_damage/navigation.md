@@ -1,7 +1,7 @@
 # Shrapnel wooden bridge navigation
 
 `navigation.py` reuses the shared `anytown_damage/navigation.py` builder and
-`navigation_inputs.py` readers. It executes original code from the SHA-pinned
+`navigation_inputs.py` readers. It executes original code from
 retail `gamemd.exe`; no Rust class, slope, height, zone ID or graph is supplied.
 The selected physical map is `XShrapnel.MAP` (SHA256
 `c32e412e938e1b9a0b29f89ff9bc0e6f410f75bc76701fb4acef6581fd19b438`).

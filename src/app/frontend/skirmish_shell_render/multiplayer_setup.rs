@@ -149,8 +149,8 @@ pub(crate) fn render_multiplayer_setup(
     let font = &state.renderer.bit_font;
     let mut art =
         super::launcher_options::launcher_background_instances(atlas, width, height, scale);
-    //72CF40 installs Cooperative setup art for BC/BD. WOL C2/C9 take the
-    // user's intentional RA2 art, as offline Skirmish does.
+    // LAN BC/BD and WOL C2/C9 take the user's intentional RA2 art, as offline
+    // Skirmish does, instead of72CF40's Cooperative setup art.
     if let Some(background) = atlas.lan_background(
         view.page().dialog.0,
         if scale.is_retail() { width } else { 800 },

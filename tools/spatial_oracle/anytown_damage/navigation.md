@@ -1,6 +1,6 @@
 # Native Anytown navigation composition
 
-This packet executes the SHA-pinned original `gamemd.exe` for the physical `XMP03T4.MAP` navigation state before damage, after the first concrete-low damage phase, after collapse, and after repair. It derives the class/height inputs through original readers, constructors, terrain placement and Cell recalculation. It supplies no VERA class planes, graph IDs, graph edges or CanEnter answers. The independent replay receipt is in `navigation_receipt.json`. `navigation_comparison.json` records full production equality for loaded, first-damaged, collapsed and repaired states in the `concrete-v8` exports.
+This packet executes the original `gamemd.exe` for the physical `XMP03T4.MAP` navigation state before damage, after the first concrete-low damage phase, after collapse, and after repair. It derives the class/height inputs through original readers, constructors, terrain placement and Cell recalculation. It supplies no VERA class planes, graph IDs, graph edges or CanEnter answers. The independent replay receipt is in `navigation_receipt.json`. `navigation_comparison.json` records full production equality for loaded, first-damaged, collapsed and repaired states in the `concrete-v8` exports.
 
 ## Reproduce
 
@@ -16,7 +16,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python -m tools.spatial_oracle.anytown_da
 
 `--check` is also the default. `--write` is explicit and still rejects any change to the independently frozen original payload. The original and published payload hashes are pinned in `navigation_promotion.json`; its original external receipt is preserved. The shared compressed-publication owner is used with a navigation-specific promotion sidecar, leaving the existing six-witness manifest untouched until its owner refreshes it.
 
-`navigation_inputs.py` uses the package input/theater helpers, the shared MAP pack decoder and the existing sidebar stock MIX reader. Original emulation depends only on repository helpers and explicit local retail inputs. No external research Python import is needed. `navigation_receipt.json` records source and artifact hashes. `navigation.json.gz` is deterministic-gzip canonical JSON; metadata records the payload hash, original executable identity, Unicorn version, boundaries and original entry addresses. Original `.text` is checked after initialization and every bridge stage. No native code is replaced. The payload contains numeric authored input projections and native output tables, not original MAP/TMP/INI file bodies or copied lexical INI dictionaries; the existing shared publication projection is still applied.
+`navigation_inputs.py` uses the package input/theater helpers, the shared MAP pack decoder and the existing sidebar stock MIX reader. Original emulation depends only on repository helpers and explicit local retail inputs. No external research Python import is needed. `navigation_receipt.json` records source and artifact hashes. `navigation.json.gz` is deterministic-gzip canonical JSON; metadata records the payload hash, Unicorn version, boundaries and original entry addresses. Original `.text` is checked after initialization and every bridge stage. No native code is replaced. The payload contains numeric authored input projections and native output tables, not original MAP/TMP/INI file bodies or copied lexical INI dictionaries; the existing shared publication projection is still applied.
 
 To repeat the saved production comparison after producing compatible exports:
 
@@ -28,7 +28,6 @@ The comparator reads only the native reference, the three `PREFIX.{loaded,damage
 
 ## Physical input identity and construction
 
-* Original executable SHA256: `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 * Original mapped `.text` SHA256: `4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc`.
 * Physical map SHA256: `7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e`, `multimd.mix` entry `CD0DDEF2`, 156269 bytes. Size `80,85`, LocalSize `5,5,70,73`, NewINIFormat 4, TEMPERATE. The map contains 13515 allocated diamond cells, 573 Terrain entries, and no Tube or CellTag entries.
 * The primary TEMPERATE TMP bytes come from physical `ra2.mix/isotemp.mix`. The packet records both archive hashes and all 838 requested file names, MIX hashes, byte counts and content hashes. All 266 reached native primary TMP heads have resident physical data. The reader asserts no requested primary `.tem` name in the eight selected override archives recorded in `assets.selected_override_checks`, or as a loose asset. This is a bounded physical cache projection, not execution of the entire native archive loader or every presentation variant.

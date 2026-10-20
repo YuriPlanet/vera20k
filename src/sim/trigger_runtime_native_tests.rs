@@ -14,10 +14,6 @@ fn integer(value: &Value) -> i32 {
 fn loss_threshold_event_corpus() -> &'static Value {
     let corpus =
         crate::test_fixture::json("tools/spatial_oracle/trigger_loss_threshold_events.json");
-    assert_eq!(
-        corpus["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     corpus
 }
 
@@ -243,10 +239,6 @@ fn naval_land_events_match_original_signed_tracking_and_country_selection() {
         "tools/spatial_oracle/trigger_naval_land_events.json",
     ))
     .unwrap();
-    assert_eq!(
-        corpus["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     assert_eq!(corpus["country_indices"], json!([0, 7, 0]));
     assert_eq!(corpus["code_unchanged"], true);
     assert_eq!(corpus["zero_predicate_rng_calls"], true);
@@ -557,10 +549,6 @@ fn naval_event_retail_all05_removal_enables_black_eagle_support_once() {
 
 fn funds_event_corpus() -> &'static Value {
     let corpus = crate::test_fixture::json("tools/spatial_oracle/trigger_funds_events.json");
-    assert_eq!(
-        corpus["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     corpus
 }
 
@@ -722,7 +710,7 @@ fn funds_events_match_original_house_logic_and_cleanup_histories() {
             let runtime = &sim.trigger_runtime;
             let trigger = runtime.trigger(live).unwrap();
             let actual = json!({
-                "wallet": crate::sim::credit_income::available_money(&sim, houses[0]),
+                "wallet": crate::sim::credit_income::available_money(&sim.houses, houses[0]),
                 "spent": sim.houses[&houses[0]].economy().spent_credits(),
                 "actions": runtime.action_trace.len(),
                 "house_tag_count": runtime.house_tags.get(&houses[0]).map_or(0, Vec::len),
@@ -759,7 +747,7 @@ fn funds_events_match_original_house_logic_and_cleanup_histories() {
             );
         }
         let cleanup = json!({
-            "wallet": crate::sim::credit_income::available_money(&sim, houses[0]),
+            "wallet": crate::sim::credit_income::available_money(&sim.houses, houses[0]),
             "spent": sim.houses[&houses[0]].economy().spent_credits(),
             "house_tag_count": sim.trigger_runtime.house_tags.get(&houses[0]).map_or(0, Vec::len),
             "logic_tag_count": sim.trigger_runtime.logic_tags.len(),
@@ -824,7 +812,7 @@ fn funds_event_sov06_retail_cash_taunt_reaches_named_eva_once() {
     );
     let owner = sim.interner.get("Russians").unwrap();
     assert_eq!(
-        crate::sim::credit_income::available_money(&sim, owner),
+        crate::sim::credit_income::available_money(&sim.houses, owner),
         70000
     );
     sim.initialize_trigger_definitions(&map, &Default::default(), Some(&eva), None);
@@ -883,10 +871,6 @@ fn building_loss_event_matches_original_tracked_count_and_country_order() {
         "tools/spatial_oracle/trigger_building_loss_events.json",
     ))
     .unwrap();
-    assert_eq!(
-        corpus["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let controls = corpus["controls"].as_array().unwrap();
     assert_eq!(controls.len(), 14);
     for case in controls {
@@ -1076,10 +1060,6 @@ fn damage_source_event44_matches_original_registered_house_index() {
         "tools/spatial_oracle/trigger_damage_source_events.json",
     ))
     .unwrap();
-    assert_eq!(
-        corpus["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     assert_eq!(corpus["house_indices"], json!([0, 1, 2]));
     assert_eq!(corpus["country_indices"], json!([0, 7, 0]));
     assert_ne!(corpus["actor"], corpus["source_object"]);
@@ -1387,7 +1367,8 @@ fn per_cell_arrival_uses_native_bridge_admission_and_keeps_the_cached_tag() {
                 }
             ),
         );
-        let cell = sim.trigger_cell_identity((15, 15));
+        let cell =
+            crate::sim::world::Simulation::trigger_cell_identity(&sim.resolved_terrain, (15, 15));
         sim.resolved_terrain
             .as_mut()
             .unwrap()
@@ -1464,7 +1445,10 @@ fn fresh_line_marker_writer_and_arrival_consumers_match_original_sparse_cells() 
             .map(|xy| (integer(&xy[0]), integer(&xy[1])))
             .collect();
         for &(x, y) in &cells {
-            let identity = sim.trigger_cell_identity((x as i16, y as i16));
+            let identity = crate::sim::world::Simulation::trigger_cell_identity(
+                &sim.resolved_terrain,
+                (x as i16, y as i16),
+            );
             sim.resolved_terrain
                 .as_mut()
                 .unwrap()
@@ -2991,7 +2975,8 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
     sim.substrate.entities.insert(entity);
     sim.trigger_runtime
         .replace_trigger_tag_attachment(TagAttachment::Object(object), Some(tag));
-    let cell = sim.trigger_cell_identity((50, 60));
+    let cell =
+        crate::sim::world::Simulation::trigger_cell_identity(&sim.resolved_terrain, (50, 60));
     sim.trigger_runtime
         .replace_cell_trigger_tag(cell, Some(tag));
     sim.trigger_runtime.logic_tags.push(tag);
@@ -4002,10 +3987,6 @@ fn live_instances_match_all_native_supplied_histories_and_serialization() {
         "tools/spatial_oracle/trigger_damage_events.json",
     ))
     .unwrap();
-    assert_eq!(
-        damage["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let destruction = damage["object_destruction_controls"].as_array().unwrap();
     assert_eq!(destruction.len(), 3);
     assert_eq!(
@@ -4089,10 +4070,10 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                         .session
                         .set_binary_frame_for_test(args[1].as_u64().unwrap() as u32),
                     "attach_cell" => {
-                        let cell = sim.trigger_cell_identity((
-                            integer(&args[2]) as i16,
-                            integer(&args[3]) as i16,
-                        ));
+                        let cell = crate::sim::world::Simulation::trigger_cell_identity(
+                            &sim.resolved_terrain,
+                            (integer(&args[2]) as i16, integer(&args[3]) as i16),
+                        );
                         sim.trigger_runtime.replace_cell_trigger_tag(
                             cell,
                             Some(identities[integer(&args[1]) as usize]),

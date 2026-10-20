@@ -2,8 +2,7 @@
 
 Run `python -m tools.rmg_oracle.gen_rng_vectors --check`; use `--write` only
 to regenerate the original-executable corpus and metadata. Configure retail
-through [`native_oracle`](../native_oracle.md). The accepted executable SHA-256
-is `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+through [`native_oracle`](../native_oracle.md).
 
 Historical `cases` and `ranged_cases` retain the five seeded streams and seven
 retained mixed raw/ranged histories. Original Seed `0x65C6D0`, Next `0x65C780`

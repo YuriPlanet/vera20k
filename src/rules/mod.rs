@@ -111,6 +111,7 @@ pub mod art_data;
 pub mod bridge_warheads;
 pub mod building_light;
 pub mod building_rubble;
+pub mod building_upgrade;
 pub mod buildup_asset_catalog;
 pub mod campaign_loading;
 #[cfg(test)]

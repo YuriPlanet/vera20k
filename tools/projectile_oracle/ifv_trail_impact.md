@@ -32,7 +32,7 @@ notification remains a separate mismatch tracked in
 [#1257](https://github.com/YuriPlanet/vera20k/issues/1257). The baseline's single
 impact animation still runs its complete original lifetime afterward.
 
-The companion metadata records original binary identity and payload hash.
+The companion metadata records the payload hash.
 `--check` executes without writing; `--write` explicitly regenerates. No temporary
 script is imported. This establishes one successful admitted producer and normal
 impact/destructor path; it does not establish failed/re-Fire paths, subsequent

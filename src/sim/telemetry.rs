@@ -65,7 +65,12 @@ use crate::sim::world::Simulation;
 /// v26: `report_points` — report-grade samples (5 s) carrying exactly the
 /// fields the dashboard's match report reads, so a past point can render the
 /// full report. Spots, logs, debug and production detail stay out.
-pub const TELEMETRY_SCHEMA_VERSION: u32 = 26;
+/// v27: `terrain` — the map's elevation grid, sent once per map so the
+/// dashboard builds a real terrain surface instead of a flat plane.
+/// v28: `terrain` gained per-cell land type, ramp slope and bridge deck rise,
+/// so the dashboard can tell water from land, slope a ramp instead of walling
+/// it, and lift a high bridge deck off its ground.
+pub const TELEMETRY_SCHEMA_VERSION: u32 = 28;
 
 /// One house row of a [`ReportPoint`]: just what the report's party table and
 /// pie captions read.
@@ -250,6 +255,36 @@ pub struct EntitySpot {
     /// Index into `TelemetrySnapshot::houses`; u16::MAX when the entity's
     /// owner has no house row.
     pub owner_index: u16,
+}
+
+/// The map's elevation grid, sent once per map so the dashboard can displace a
+/// real terrain surface instead of drawing a flat plane. The four per-cell
+/// grids are the same elevation bytes the engine's height map holds, flattened
+/// row-major. App-filled: the simulation owns no map grid, the presentation
+/// layer does, so this stays out of every other publish.
+///
+/// Every grid is lowercase hex with two characters per cell, row-major, so a
+/// cell `(rx, ry)` sits at `(ry * width + rx) * 2`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TerrainGrid {
+    pub width: u16,
+    pub height: u16,
+    /// `width * height` elevation levels: the per-cell ground height the
+    /// terraces stack on. Hex avoids a bulky numeric JSON array for the
+    /// one-per-map payload while needing no extra dependency.
+    pub levels: String,
+    /// `width * height` `CellClass+0xEC` land types (`rules::terrain_rules::
+    /// LandType`, `2` = Water). Lets the dashboard paint water apart from land.
+    pub land_types: String,
+    /// `width * height` TMP slope types: `0` is a flat cell's top, `1..=16` a
+    /// ramp tile whose surface tilts toward its lower neighbour. The dashboard
+    /// slopes those cells instead of dropping a step face.
+    pub slope_types: String,
+    /// `width * height` bridge deck rises: the extra levels a structural
+    /// bridge deck sits above the cell's own ground level (`0` when the cell
+    /// carries no raised deck, which includes low, ground-level bridges). The
+    /// dashboard lifts those cells' tops by this much and draws their sides.
+    pub deck_rises: String,
 }
 
 /// Frame-timing sample, filled by the app layer (the simulation never
@@ -572,6 +607,10 @@ pub struct TelemetrySnapshot {
     /// Map dimensions in cells; frames the dashboard's ground plane.
     pub map_width: u16,
     pub map_height: u16,
+    /// The map's elevation grid; app-filled and sent once per map (first
+    /// publish after a client attaches, and again after a map loads), so the
+    /// dashboard can build real terrain. `None` on every other publish.
+    pub terrain: Option<TerrainGrid>,
     /// Every entity stored in the entity store, limbo (cargo, paradrop)
     /// included. The sum of house counts is lower only when an entity names
     /// an owner with no house row — a data anomaly the dashboard should
@@ -820,6 +859,7 @@ impl Simulation {
             binary_frame: self.session.binary_frame(),
             map_width: self.session.map_width(),
             map_height: self.session.map_height(),
+            terrain: None,
             entities_total,
             houses,
             spots,

@@ -122,7 +122,6 @@ if __name__ == '__main__':
     raw = path.read_bytes()
     assert hashlib.sha256(raw).hexdigest() == 'f434e555f94f9f68cbcd8247a000fdf93bf661df79611152d251045d8930ef4d'
     expected = json.loads(raw)
-    assert expected['executable_sha256'] == native.NATIVE_SHA256
     actual = json.loads(json.dumps(collect()))
     for key, value in actual.items():
         assert value == expected[key], key

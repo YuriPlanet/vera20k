@@ -179,8 +179,21 @@ pub fn load_with_launch(
     seed: u32,
     launch: crate::sim::scenario_bootstrap::MatchLaunchDescriptor,
 ) -> Result<HeadlessScenario, String> {
-    let mut assets =
-        AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL).map_err(|error| {
+    load_with_launch_and_ini(retail_dir, map_file_name, seed, launch, &Default::default())
+}
+
+/// Explicit host policy for non-YR callers; no hidden cwd/config reread.
+/// Rules, fixed Art and AI all consume the one resolved provider choice.
+pub fn load_with_launch_and_ini(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    launch: crate::sim::scenario_bootstrap::MatchLaunchDescriptor,
+    ini: &crate::util::ini_roots::IniRootConfig,
+) -> Result<HeadlessScenario, String> {
+    let mut assets = AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL)
+        .and_then(|assets| assets.with_ini_roots(ini))
+        .map_err(|error| {
             format!(
                 "open retail MIX archives in {}: {error}",
                 retail_dir.display()

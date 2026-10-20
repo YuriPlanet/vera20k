@@ -668,7 +668,7 @@ mod map_wall_owner_candidate_tests {
                 lamp.lifecycle.set_in_limbo_for_test(false);
                 lamp.lifecycle.set_cell_marked_for_test(true);
                 sim.entities_mut_for_test().insert(lamp);
-                sim.allocate_building_light(id, &rules);
+                sim.allocate_building_light_for_test(id, &rules);
                 id += 1;
             }
         }
@@ -1395,7 +1395,7 @@ mod map_wall_owner_candidate_tests {
         lamp.install_building_up(BuildingUp::completing_in_ticks(9, 0), 0);
         sim.entities_mut_for_test().insert(lamp);
         sim.add_entity_occupancy(41);
-        sim.allocate_building_light(41, rules);
+        sim.allocate_building_light_for_test(41, rules);
         owner
     }
 
@@ -1442,7 +1442,7 @@ mod map_wall_owner_candidate_tests {
         let disabled = derive_lighting_view(&config, Some(&sim), 2);
         assert!(disabled.point_lights.is_empty());
         // Repeated allocation/construction must not reactivate an existing614.
-        sim.allocate_building_light(41, &rules);
+        sim.allocate_building_light_for_test(41, &rules);
         assert!(
             derive_lighting_view(&config, Some(&sim), 2)
                 .point_lights

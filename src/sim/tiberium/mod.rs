@@ -1519,7 +1519,16 @@ SpreadPercentage=.06
         assert!(sim.rebuild_dynamic_navigation(&rules));
         let before = sim.path_grid_snapshot().unwrap();
 
-        let outcome = sim.reduce_tiberium_at_with_native_context(
+        let outcome = crate::sim::world::Simulation::reduce_tiberium_at_with_native_context(
+            &sim.terrain_objects,
+            &sim.ore_growth_config,
+            &mut sim.ore_growth_state,
+            &sim.session,
+            &mut sim.scenario_rng,
+            &sim.substrate,
+            &mut sim.resolved_terrain,
+            &mut sim.overlay_grid,
+            &mut sim.dirty_cells,
             (0, 0),
             4,
             Some(&rules),

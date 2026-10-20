@@ -1,9 +1,8 @@
 # Native palette oracle
 
-This tool executes original x86 instructions from the enrolled `gamemd.exe` in
+This tool executes original x86 instructions from the configured `gamemd.exe` in
 Unicorn. It neither starts the game nor modifies the executable or Ghidra.
-The executable is supplied locally and must match SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+The executable is supplied locally.
 No retail assets or executable bytes are included here; fixtures use a synthetic
 palette whose channels each enumerate every byte value.
 
@@ -26,7 +25,7 @@ Source and historical provenance identities are captured before replay and must
 remain unchanged through the publication gate. The verifier alone checks hashes, not native execution.
 Direct-script entry points remain supported with the same flags.
 
-The shared `tools.native_oracle` owns binary identity, PE mapping and completion
+The shared `tools.native_oracle` owns executable selection, PE mapping and completion
 checks for every native region/function. Early stops, instruction/time exhaustion
 and faults abort; comparison gates remain active under `python -O`. Live and cached
 x87 state retain their original chronology. All 14 historical fixture bytes,

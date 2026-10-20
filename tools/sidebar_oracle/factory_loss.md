@@ -3,8 +3,6 @@
 `factory_loss.py` extends the existing `ReadyBuildingFixture` and its physical
 readers/VM. The consuming stock Battle regression is
 `sim::production::lifecycle_tests::retail_prerequisite_loss_refunds_after_the_factory_charge_sweep`.
-The supported active-retail executable SHA256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 
 ```sh
 VERA20K_GAMEMD_EXE=/absolute/path/gamemd.exe \
@@ -18,7 +16,7 @@ The additional cache contains the twelve physical files in `EXTRA_ASSETS`:
 temperate GAWEAP/GATECH SHPs plus RTNK VXL/HVA. Obtain these through the
 existing asset extractor. Both caches may be the same directory; omit
 `VERA20K_FACTORY_LOSS_ASSETS` in that case. Retail bytes are not distributed.
-The sidecar records native identity, command, physical input hashes and bounds,
+The sidecar records the command, physical input hashes and bounds,
 without repository-source hashes. `--write` deliberately regenerates the small
 reference; default/`--check` compares it.
 

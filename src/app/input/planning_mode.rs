@@ -51,7 +51,7 @@ impl PlanningInputState {
     /// The single PlanMgr6379C0/637A10 transition, also reached by
     /// House4FC1EE. Return the native OutList event to the caller's existing
     /// scheduler; a House visit must admit it before this frame's dispatch.
-    /// Original1cdd controls: tools/spatial_oracle/planning_local_defeat.
+    /// Original gamemd controls: tools/spatial_oracle/planning_local_defeat.
     pub(crate) fn set_active(
         &mut self,
         active: bool,

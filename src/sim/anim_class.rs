@@ -50,6 +50,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::art_data::AnimTypeRuntimeConfig;
 use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::ruleset::RuleSet;
@@ -58,6 +59,7 @@ use crate::sim::components::AnimClassSpawnDescriptor;
 use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::{RawCellKey, RawCellOccupationGrid, infantry_raw_occupation_mask};
+use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::timer::CdTimer;
 use crate::sim::touch_log::{TouchLogs, Touched};
@@ -1082,9 +1084,18 @@ impl Simulation {
     /// stored Location, called directly: InfantryClass::ReceiveDamage's
     /// InfDeath 9 arm marks its new InfantryMutate anim (`0x00518B26`),
     /// whatever the anim's `MakeInfantry=`.
-    pub(crate) fn anim_mark_cell_occupancy(&mut self, id: AnimId) {
-        if let Some(location) = self.anim(id).map(|anim| anim.world_coord) {
-            self.apply_make_infantry_raw_occupation(location, AnimOccupationOperation::Mark);
+    pub(crate) fn anim_mark_cell_occupancy(
+        substrate: &mut ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: AnimId,
+    ) {
+        if let Some(location) = substrate.anims.get(id).map(|anim| anim.world_coord) {
+            Self::apply_make_infantry_raw_occupation(
+                substrate,
+                resolved_terrain,
+                location,
+                AnimOccupationOperation::Mark,
+            );
         }
     }
 
@@ -1093,7 +1104,8 @@ impl Simulation {
     /// (`0x004810A0`), the cell through Map[coord] (`0x00565730`), whose miss
     /// is the shared dummy cell, and the floor there (`0x00578080`).
     fn apply_make_infantry_raw_occupation(
-        &mut self,
+        substrate: &mut ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
         location: AnimWorldCoord,
         operation: AnimOccupationOperation,
     ) {
@@ -1101,7 +1113,7 @@ impl Simulation {
             SimFixed::from_num(location.x & 0xff),
             SimFixed::from_num(location.y & 0xff),
         );
-        let (key, ground_z, live_structural_bridge) = match self.resolved_terrain.as_ref() {
+        let (key, ground_z, live_structural_bridge) = match resolved_terrain.as_ref() {
             Some(terrain) => {
                 let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
                 let cell = cells.lookup_world(location.x, location.y);
@@ -1124,14 +1136,15 @@ impl Simulation {
                 )
             }
             None => {
-                let Some((rx, ry)) = self.map_coord_cell(location.x, location.y) else {
+                let Some((rx, ry)) = Self::map_coord_cell(resolved_terrain, location.x, location.y)
+                else {
                     return;
                 };
                 (RawCellKey::Real(rx, ry), 0, false)
             }
         };
         apply_anim_raw_occupation(
-            &mut self.substrate.raw_cell_occupation,
+            &mut substrate.raw_cell_occupation,
             key,
             mask,
             location.z,
@@ -1327,7 +1340,7 @@ impl Simulation {
         }
     }
 
-    /// Execute58 MeteorShower6E2C40..6E2E12 (Steam3e81a617). Literal types
+    /// Execute58 MeteorShower6E2C40..6E2E12 (Steam gamemd). Literal types
     /// are find-only; raw signed XY remainders precede each constructor, whose
     /// launch/Start draws are visible to the following selection. 842AFC holds
     /// [1,5,9,15]. No House, SuperWeapon, no-effects flag or per-piece delay.
@@ -1561,7 +1574,7 @@ impl Simulation {
                 }
             }
         };
-        let rate_reload = self.anim_rate(&config, draws.random_rate);
+        let rate_reload = Self::anim_rate(&self.session, &config, draws.random_rate);
         let frame_timer =
             CdTimer::started(self.session.binary_frame() as i32, i32::from(rate_reload));
         let registered = self
@@ -1695,8 +1708,7 @@ impl Simulation {
                     }
                 }
             }
-            None => self
-                .map_coord_cell(location.x, location.y)
+            None => Self::map_coord_cell(&self.resolved_terrain, location.x, location.y)
                 .and_then(grid_fields)
                 .unwrap_or_else(|| self.effective_shared_cell_dummy().overlay_fields()),
         };
@@ -1754,7 +1766,12 @@ impl Simulation {
         // visibility, and frame-timer gates. Repeated visits OR the same raw
         // bit; there is deliberately no contributor count.
         if config.make_infantry != -1 {
-            self.apply_make_infantry_raw_occupation(location, AnimOccupationOperation::Mark);
+            Self::apply_make_infantry_raw_occupation(
+                &mut self.substrate,
+                &self.resolved_terrain,
+                location,
+                AnimOccupationOperation::Mark,
+            );
         }
         if inactive {
             self.destroy_anim(id, rules);
@@ -1818,7 +1835,7 @@ impl Simulation {
             .as_deref()
             .is_some_and(|name| name.eq_ignore_ascii_case(&type_name))
             && self.anim_absolute_coord(id).is_some_and(|world| {
-                self.map_coord_cell(world.x, world.y)
+                Self::map_coord_cell(&self.resolved_terrain, world.x, world.y)
                     .and_then(|(x, y)| {
                         self.substrate.occupancy.first_building_on_layer(
                             x,
@@ -1996,7 +2013,12 @@ impl Simulation {
         else {
             return true;
         };
-        self.apply_make_infantry_raw_occupation(location, AnimOccupationOperation::Clear);
+        Self::apply_make_infantry_raw_occupation(
+            &mut self.substrate,
+            &self.resolved_terrain,
+            location,
+            AnimOccupationOperation::Clear,
+        );
         let kinds = &rules.general.anim_to_infantry;
         if i64::from(make_infantry) > kinds.len() as i64 {
             return true;
@@ -2642,17 +2664,25 @@ impl Simulation {
         }
     }
 
-    fn choose_anim_rate(&mut self, config: &AnimTypeRuntimeConfig) -> u16 {
-        let drawn = anim_random_rate(config, &mut self.scenario_rng);
-        self.anim_rate(config, drawn)
+    fn choose_anim_rate(
+        session: &ScenarioSession,
+        scenario_rng: &mut SimRng,
+        config: &AnimTypeRuntimeConfig,
+    ) -> u16 {
+        let drawn = anim_random_rate(config, scenario_rng);
+        Self::anim_rate(session, config, drawn)
     }
 
     /// The frame delay from `Rate=` or a drawn `RandomRate=` pick, normalized
     /// to the game speed for `Normalized=` types.
-    fn anim_rate(&self, config: &AnimTypeRuntimeConfig, random_rate: Option<u16>) -> u16 {
+    fn anim_rate(
+        session: &ScenarioSession,
+        config: &AnimTypeRuntimeConfig,
+        random_rate: Option<u16>,
+    ) -> u16 {
         let delay = random_rate.unwrap_or(config.rate_logic_frames);
         if config.normalized {
-            self.session.game_options().normalized_anim_delay(delay)
+            session.game_options().normalized_anim_delay(delay)
         } else {
             delay
         }
@@ -2750,7 +2780,7 @@ impl Simulation {
         // Map[coord] (`0x004239E5`); VERA keeps no objects on the dummy cell.
         let (Some(warhead_name), Some((rx, ry))) = (
             config.warhead.as_deref(),
-            self.map_coord_cell(position.x, position.y),
+            Self::map_coord_cell(&self.resolved_terrain, position.x, position.y),
         ) else {
             return false;
         };
@@ -3219,7 +3249,7 @@ impl Simulation {
             return;
         };
         let type_id = self.interner.intern(next);
-        let rate_reload = self.choose_anim_rate(&config);
+        let rate_reload = Self::choose_anim_rate(&self.session, &mut self.scenario_rng, &config);
         let frame_timer =
             CdTimer::started(self.session.binary_frame() as i32, i32::from(rate_reload));
         let stop_sound_id = config
@@ -5059,7 +5089,12 @@ mod tests {
             };
             // Original Infantry5217C0's center (128,128) occupies slot0:
             // walk_head_occupation.json raw[94]/[98], deck8 -> deck9.
-            sim.apply_make_infantry_raw_occupation(world, AnimOccupationOperation::Mark);
+            Simulation::apply_make_infantry_raw_occupation(
+                &mut sim.substrate,
+                &sim.resolved_terrain,
+                world,
+                AnimOccupationOperation::Mark,
+            );
             assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(x, y), 0);
             assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(x, y), 0x01);
 
@@ -5067,9 +5102,19 @@ mod tests {
                 .as_mut()
                 .unwrap()
                 .write_native_cell_flags(cell, flags & !0x100);
-            sim.apply_make_infantry_raw_occupation(world, AnimOccupationOperation::Clear);
+            Simulation::apply_make_infantry_raw_occupation(
+                &mut sim.substrate,
+                &sim.resolved_terrain,
+                world,
+                AnimOccupationOperation::Clear,
+            );
             assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(x, y), 0);
-            sim.apply_make_infantry_raw_occupation(world, AnimOccupationOperation::Mark);
+            Simulation::apply_make_infantry_raw_occupation(
+                &mut sim.substrate,
+                &sim.resolved_terrain,
+                world,
+                AnimOccupationOperation::Mark,
+            );
             assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(x, y), 0x01);
             assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(x, y), 0);
         }
@@ -5100,13 +5145,29 @@ mod tests {
             y: 5 * 256 + 128,
             z: 0,
         };
-        sim.apply_make_infantry_raw_occupation(world, AnimOccupationOperation::Mark);
+        Simulation::apply_make_infantry_raw_occupation(
+            &mut sim.substrate,
+            &sim.resolved_terrain,
+            world,
+            AnimOccupationOperation::Mark,
+        );
         assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(0, 5), 0x01);
-        sim.apply_make_infantry_raw_occupation(world, AnimOccupationOperation::Clear);
+        Simulation::apply_make_infantry_raw_occupation(
+            &mut sim.substrate,
+            &sim.resolved_terrain,
+            world,
+            AnimOccupationOperation::Clear,
+        );
         assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(0, 5), 0);
 
-        assert_eq!(sim.map_coord_cell(-128 - 256, world.y), None);
-        assert_eq!(sim.map_coord_cell(512 * 256 + 128, world.y), Some((0, 6)));
+        assert_eq!(
+            Simulation::map_coord_cell(&sim.resolved_terrain, -128 - 256, world.y),
+            None
+        );
+        assert_eq!(
+            Simulation::map_coord_cell(&sim.resolved_terrain, 512 * 256 + 128, world.y),
+            Some((0, 6))
+        );
     }
 
     /// `AnimClass::MarkCellOccupancy` (`0x00426270`) stores the anim's owner
@@ -5140,11 +5201,21 @@ mod tests {
             y: 3 * 256 + 128,
             z: 0,
         };
-        sim.apply_make_infantry_raw_occupation(on_map, AnimOccupationOperation::Mark);
+        Simulation::apply_make_infantry_raw_occupation(
+            &mut sim.substrate,
+            &sim.resolved_terrain,
+            on_map,
+            AnimOccupationOperation::Mark,
+        );
         let raw = &sim.substrate.raw_cell_occupation;
         assert_eq!(raw.ground_bits(3, 3), 0x05);
         assert_eq!(raw.occupant_at(RawCellKey::Real(3, 3), ground).1, None);
-        sim.apply_make_infantry_raw_occupation(on_map, AnimOccupationOperation::Clear);
+        Simulation::apply_make_infantry_raw_occupation(
+            &mut sim.substrate,
+            &sim.resolved_terrain,
+            on_map,
+            AnimOccupationOperation::Clear,
+        );
         let raw = &sim.substrate.raw_cell_occupation;
         assert_eq!(raw.ground_bits(3, 3), 0x04);
         assert_eq!(raw.occupant_at(RawCellKey::Real(3, 3), ground).1, None);
@@ -5163,11 +5234,21 @@ mod tests {
             y: 3 * 256 + 128,
             z: 0,
         };
-        sim.apply_make_infantry_raw_occupation(off_map, AnimOccupationOperation::Mark);
+        Simulation::apply_make_infantry_raw_occupation(
+            &mut sim.substrate,
+            &sim.resolved_terrain,
+            off_map,
+            AnimOccupationOperation::Mark,
+        );
         let raw = &sim.substrate.raw_cell_occupation;
         assert_eq!(raw.bits_at(RawCellKey::Dummy, ground), 0x09);
         assert_eq!(raw.occupant_at(RawCellKey::Dummy, ground).1, None);
-        sim.apply_make_infantry_raw_occupation(off_map, AnimOccupationOperation::Clear);
+        Simulation::apply_make_infantry_raw_occupation(
+            &mut sim.substrate,
+            &sim.resolved_terrain,
+            off_map,
+            AnimOccupationOperation::Clear,
+        );
         let raw = &sim.substrate.raw_cell_occupation;
         assert_eq!(raw.bits_at(RawCellKey::Dummy, ground), 0x08);
         assert_eq!(raw.occupant_at(RawCellKey::Dummy, ground).1, None);
@@ -6318,7 +6399,12 @@ mod tests {
         let bytes = crate::util::save_codec::serialize(&sim).expect("serialize sim with AnimStore");
         let mut restored: Simulation =
             crate::util::save_codec::deserialize(&bytes).expect("deserialize AnimStore");
-        restored.rebuild_logic_membership();
+        Simulation::rebuild_logic_membership(
+            &mut restored.terrain_objects,
+            &mut restored.substrate,
+            &mut restored.projectiles,
+            &mut restored.waves,
+        );
         assert_eq!(restored.live_object_order_snapshot(), expected_order);
         assert_eq!(restored.state_hash(), expected_hash);
         assert!(restored.sound_events.is_empty());

@@ -69,5 +69,5 @@ online latch still blocks insertion. Previously retained cameos survive;
 release permits the new option on the next House pass. Ordinary insufficient
 House power does not establish that online latch.
 
-The metadata pins the original executable identity, replay command, bounded
+The metadata pins the replay command, bounded
 entry points and supplied seams. It contains no repository-source hashes.

@@ -755,7 +755,7 @@ fn refresh_radar_animation_source(state: &mut AppState) {
     }
 }
 
-/// Original gamemd.exe SHA256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c:
+/// Original gamemd.exe:
 /// Full_Init @ 0x006877C9..0x0068781F resolves Basic.Player with 0x0050C170,
 /// reads House.Country+0x34 -> Country.Side+0xBC, then installs that side for
 /// InitSideMixFiles @ 0x00534FA0. Radar @ 0x00652E90 and resource selection

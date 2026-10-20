@@ -1,5 +1,4 @@
-//! Execute96/109 integration. Native96 controls execute gamemd.exe SHA256
-//! 3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600,
+//! Execute96/109 integration. Native96 controls execute gamemd.exe,
 //! reusing trigger_action_values::nuke_strike_dispatch_case's ABI transport.
 //! Edge/velocity literals below are observed native outputs, not Rust results.
 use super::*;

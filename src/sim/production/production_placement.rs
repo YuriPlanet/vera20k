@@ -77,21 +77,35 @@ pub fn placement_preview_for_owner_with_overlays(
                     !crate::sim::vision::cell_is_shrouded(&sim.fog, query, viewer, (cx, cy))
                 });
                 all_unshrouded &= unshrouded;
-                let clear = (!obj.wall || wall_overlay_id.is_some())
-                    && crate::sim::build_site::is_clear_to_build(
-                        sim,
-                        rules,
-                        overlay_registry,
-                        query.lookup((cx as i16, cy as i16)),
-                        crate::sim::build_site::building_speed_type(obj),
-                        Some(obj),
-                        owner_id,
-                        Some(query),
-                        None,
-                    );
+                let upgrade = obj.building_upgrade().host().is_some();
+                let clear = if upgrade {
+                    // Per-cell preview47EE61 is separate from ordinary
+                    // Cell47C620. An admitted host jumps straight to the
+                    // valid frame; an absent/invalid host stays red even on
+                    // clear ground. It bypasses proximity, never shroud.
+                    owner_id.is_some_and(|owner| {
+                        sim.building_upgrade_host_at((cx, cy), true)
+                            .is_some_and(|host| {
+                                sim.can_install_building_upgrade(host, obj, owner, rules)
+                            })
+                    })
+                } else {
+                    (!obj.wall || wall_overlay_id.is_some())
+                        && crate::sim::build_site::is_clear_to_build(
+                            sim,
+                            rules,
+                            overlay_registry,
+                            query.lookup((cx as i16, cy as i16)),
+                            crate::sim::build_site::building_speed_type(obj),
+                            Some(obj),
+                            owner_id,
+                            Some(query),
+                            None,
+                        )
+                };
                 cells.push(BuildingPlacementCell {
                     coord: (cx, cy),
-                    valid: in_build_area && unshrouded && clear,
+                    valid: (upgrade || in_build_area) && unshrouded && clear,
                     level: level as i8,
                     slope,
                 });
@@ -364,7 +378,7 @@ pub(crate) fn place_production_with_overlays(
         Some(rules),
         effects,
     );
-    if obj.wall {
+    let new_sid = if obj.wall {
         if evaluate_building_placement(sim, rules, owner, type_id, rx, ry, overlay_registry, None)
             .reason
             .is_some()
@@ -398,99 +412,85 @@ pub(crate) fn place_production_with_overlays(
             return false;
         }
         wall_placement::autofill_walls(sim, rules, registry, obj, (rx, ry), owner_id, effects);
-        // UnInit already expired Factory's pointer; keep the admission token
-        // captured before entry. Physical deletion belongs to725C70.
-        let object = held.release_consumed_wall(sim, rules, effects);
-        sim.sound_events
-            .emit(crate::sim::world::SimSoundEvent::BuildingPlaced { owner: owner_id });
-        sim.lifecycle_outputs.emit(
-            crate::sim::world::LifecycleOutput::BuildingPlacementSucceeded { owner: owner_id },
-        );
-        crate::sim::radio::transmit_to_contact(
-            sim,
-            yard,
-            crate::sim::radio::RadioMessage::Break,
-            Some(rules),
-            effects,
-        );
-        // A consumed wall skips selection, but still reaches BuildingSlam
-        // (4FB2E6 ->4FB2FD..4FB314) and BREAK before Record4FB4B7.
-        super::factory_lifecycle::record_last_built(sim, rules, owner_id, object);
-        return true;
-    }
-    let foundation_str: String = rules
-        .object(type_id)
-        .map(|o| o.foundation.clone())
-        .unwrap_or_else(|| "?".to_string());
-    let z: u8 = sim.terrain_cell_level(rx, ry).unwrap_or(0);
-    log::info!(
-        "Placing building {} at ({},{}) z={} foundation={}",
-        type_id,
-        rx,
-        ry,
-        z,
-        foundation_str,
-    );
-    // Event::Execute4C70E1..4C710B passes an admitted PLACE straight to
-    // House4FB0E0. Its placement refusal occurs after HELLO4FB1F1, and
-    // still reaches the yard's FirstContact BREAK4FB4A6.
-    if evaluate_building_placement(sim, rules, owner, type_id, rx, ry, overlay_registry, None)
-        .reason
-        .is_some()
-    {
-        failed_building_unlimbo(sim, rules, owner_id, yard, effects);
-        return false;
-    }
-    let Some(new_sid) = sim.reveal_constructed_object_at_height(
-        held.entity_id(),
-        rx,
-        ry,
-        0,
-        z,
-        crate::sim::world::PlacementEvidence::EvaluateMark,
-        rules,
-        effects,
-    ) else {
-        // The failed placement reaches the same4FB4A6 FirstContact teardown;
-        // its retained limbo object remains in the house factory for retry.
-        failed_building_unlimbo(sim, rules, owner_id, yard, effects);
-        return false;
-    };
-    // `0x004452FA`/`0x004FB252`: a placed building's slave manager (a Slave
-    // Miner refinery's) takes the hand-off once its Unlimbo succeeds.
-    sim.slave_manager_hand_off(new_sid, rules, effects);
-    // Log screen position for debugging placement alignment.
-    if let Some(ge) = sim.substrate.entities.get(new_sid) {
-        let (fw, fh) = foundation_dimensions(&foundation_str);
-        // The entity anchor — the projection of the building's own coordinate,
-        // which is its north-west cell's diamond centre. The drawn art sits half
-        // a tile above this (render's building render-coordinate lift); this is
-        // a debug log, and sim/ cannot call render/ to apply it.
-        let screen = crate::util::lepton::lepton_to_screen(
-            ge.position.rx(),
-            ge.position.ry(),
-            ge.position.sub_x(),
-            ge.position.sub_y(),
-            ge.position.z(),
-        );
+        // The native4FB240..4FB2C7 completion/radio/abandon tail also runs
+        // for an UnInit'ed object; only local selection tests its alive byte.
+        held.entity_id()
+    } else {
+        let foundation_str: String = rules
+            .object(type_id)
+            .map(|o| o.foundation.clone())
+            .unwrap_or_else(|| "?".to_string());
+        let z: u8 = sim.terrain_cell_level(rx, ry).unwrap_or(0);
         log::info!(
-            "  → spawned sid={} screen=({:.0},{:.0}) foundation_cells: ({},{})..({},{})",
-            new_sid,
-            screen.0,
-            screen.1,
+            "Placing building {} at ({},{}) z={} foundation={}",
+            type_id,
             rx,
             ry,
-            rx + fw - 1,
-            ry + fh - 1,
+            z,
+            foundation_str,
         );
-    }
-    // The placed building's Unlimbo queued Construction
-    // (`Simulation::building_enter_idle_mode`); the HELLO above kept its
-    // cell-put discovery from opening it. A computer house's yard places its
-    // own through `sim::ai_base_building::exit_building`.
-    // Shared Building Unlimbo requested the owner's native1FC House tail.
+        // Event::Execute4C70E1..4C710B passes an admitted PLACE straight to
+        // House4FB0E0. Its placement refusal occurs after HELLO4FB1F1, and
+        // still reaches the yard's FirstContact BREAK4FB4A6.
+        if evaluate_building_placement(sim, rules, owner, type_id, rx, ry, overlay_registry, None)
+            .reason
+            .is_some()
+        {
+            failed_building_unlimbo(sim, rules, owner_id, yard, effects);
+            return false;
+        }
+        let Some(new_sid) = sim.reveal_constructed_object_at_height(
+            held.entity_id(),
+            rx,
+            ry,
+            0,
+            z,
+            crate::sim::world::PlacementEvidence::EvaluateMark,
+            rules,
+            effects,
+        ) else {
+            // The failed placement reaches the same4FB4A6 FirstContact teardown;
+            // its retained limbo object remains in the house factory for retry.
+            failed_building_unlimbo(sim, rules, owner_id, yard, effects);
+            return false;
+        };
+        // Log screen position for debugging placement alignment.
+        if let Some(ge) = sim.substrate.entities.get(new_sid) {
+            let (fw, fh) = foundation_dimensions(&foundation_str);
+            // The entity anchor — the projection of the building's own coordinate,
+            // which is its north-west cell's diamond centre. The drawn art sits half
+            // a tile above this (render's building render-coordinate lift); this is
+            // a debug log, and sim/ cannot call render/ to apply it.
+            let screen = crate::util::lepton::lepton_to_screen(
+                ge.position.rx(),
+                ge.position.ry(),
+                ge.position.sub_x(),
+                ge.position.sub_y(),
+                ge.position.z(),
+            );
+            log::info!(
+                "  → spawned sid={} screen=({:.0},{:.0}) foundation_cells: ({},{})..({},{})",
+                new_sid,
+                screen.0,
+                screen.1,
+                rx,
+                ry,
+                rx + fw - 1,
+                ry + fh - 1,
+            );
+        }
+        // The placed building's Unlimbo queued Construction
+        // (`Simulation::building_enter_idle_mode`); the HELLO above kept its
+        // cell-put discovery from opening it. A computer house's yard places its
+        // own through `sim::ai_base_building::exit_building`.
+        // Shared Building Unlimbo requested the owner's native1FC House tail.
 
-    held.release_after_placement(sim, rules, effects);
+        new_sid
+    };
+    // House4FB240..4FB252 tests RTTI, not the alive byte: the common
+    // successful tail includes a temporary consumed by an upgrade or wall.
+    sim.slave_manager_hand_off(new_sid, rules, effects);
+    held.complete_placement(&mut sim.production, &sim.session);
     crate::sim::radio::transmit(
         sim,
         new_sid,
@@ -500,6 +500,7 @@ pub(crate) fn place_production_with_overlays(
         Some(rules),
         effects,
     );
+    held.abandon_after_placement(sim, rules, effects);
     // `0x004FB2CC..0x004FB314`: BuildingSlam follows every successful
     // Unlimbo, before the yard's FirstContact BREAK, whatever the release.
     sim.sound_events
@@ -516,7 +517,14 @@ pub(crate) fn place_production_with_overlays(
     // Original4FB4B7 records the successful build after FirstContact BREAK,
     // not during CompletedProduction4FB2A1 or its C message4FB2AD.
     let object = super::factory_lifecycle::BuiltObject::capture(sim, new_sid);
-    super::factory_lifecycle::record_last_built(sim, rules, owner_id, object);
+    super::factory_lifecycle::record_last_built(
+        &sim.interner,
+        &mut sim.sound_events,
+        &mut sim.houses,
+        rules,
+        owner_id,
+        object,
+    );
     true
 }
 
@@ -562,7 +570,19 @@ fn evaluate_building_placement(
     native_cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> BuildingPlacementEvaluation {
     let obj = rules.object(type_id);
-    let in_build_area = obj.is_some_and(|obj| is_within_build_area(sim, rules, owner, obj, rx, ry));
+    // Display4ABA94 asks452670 for the selected host, independently of the
+    // ordinary foundation query. Actual upgrade Unlimbo also returns before
+    // Techno/Object clear-to-build, through the same installation predicate.
+    let upgrade_host = obj
+        .zip(sim.interner.get(owner))
+        .is_some_and(|(obj, owner)| {
+            obj.building_upgrade().host().is_some()
+                && sim
+                    .building_upgrade_host_at((rx, ry), true)
+                    .is_some_and(|host| sim.can_install_building_upgrade(host, obj, owner, rules))
+        });
+    let in_build_area =
+        upgrade_host || obj.is_some_and(|obj| is_within_build_area(sim, rules, owner, obj, rx, ry));
     let reason = (|| {
         let Some(obj) = obj else {
             return Err(BuildingPlacementError::NotBuilding);
@@ -580,6 +600,9 @@ fn evaluate_building_placement(
             });
         if !ready {
             return Err(BuildingPlacementError::NotReady);
+        }
+        if upgrade_host {
+            return Ok(());
         }
         if obj.wall
             && overlay_registry

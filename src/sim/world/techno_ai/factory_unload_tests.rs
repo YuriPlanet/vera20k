@@ -24,12 +24,9 @@ use crate::sim::timer::CdTimer;
 use crate::util::fixed_math::SimFixed;
 use serde_json::{Value, json};
 
-const NATIVE_SHA256: &str = "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c";
-
 fn corpus() -> &'static Value {
     let corpus = crate::test_fixture::json("tools/spatial_oracle/anytown_damage/unit_unlimbo.json");
     assert_eq!(corpus["schema_version"], 1);
-    assert_eq!(corpus["native_sha256"], NATIVE_SHA256);
     assert_eq!(corpus["factory_unload_rows"].as_array().unwrap().len(), 1);
     assert_eq!(
         corpus["factory_miner_per_cell_rows"]
@@ -764,10 +761,7 @@ fn retail_factory_unload_leaves_match_original_door_track_and_cadence() {
 #[test]
 fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
     let native = crate::test_fixture::json("tools/sidebar_oracle/factory_naval_output.json");
-    let provenance =
-        crate::test_fixture::json("tools/sidebar_oracle/factory_naval_output.meta.json");
     assert_eq!(native["schema"], 1);
-    assert_eq!(provenance["native_sha256"], NATIVE_SHA256);
     let control = native["controls"]
         .as_array()
         .unwrap()

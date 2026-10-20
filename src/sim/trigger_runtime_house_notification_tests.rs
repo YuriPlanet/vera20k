@@ -23,7 +23,7 @@ fn install(sim: &mut Simulation, rules: &RuleSet, kind: i32, country: i32) -> (u
 #[test]
 fn house_notification_predicates_replay_twenty_original_controls() {
     // Original HasOccurred71E940/71EC9A/71F069/71F0E1/71F0FB and502D30,
-    // Steam gamemd SHA2563e81a617..08600. Twenty original calls through
+    // Steam gamemd. Twenty original calls through
     // PowerEventControls/FlagsFixture, with counted TEvent readers, supplied
     // House flags, unchanged code and no gameplay/scene substitution claim.
     // Expected result pairs are [event3,event5]; raised None means that kind.

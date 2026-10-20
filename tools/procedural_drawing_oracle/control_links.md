@@ -2,7 +2,7 @@
 
 `control_links.json` contains original Techno704E40 pixels for fifteen supplied
 endpoint/color/clock/clip inputs, plus twelve original GetFLH6F3AD0 negative-index
-controls. `control_links.meta.json` pins the executable identity and scope.
+controls. `control_links.meta.json` pins the scope.
 
 The pixel producer reuses `rally.Rally` and original BSurface storage/draw bodies;
 only DirectDraw storage/locking and OS GetTickCount are supplied. The separate

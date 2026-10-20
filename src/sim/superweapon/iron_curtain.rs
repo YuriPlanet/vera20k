@@ -182,7 +182,7 @@ pub(crate) fn launch(
     true
 }
 
-/// Execute109 -> IronCurtainAtWP6E36E0..6E37E4 (Steam3e81a617..08600).
+/// Execute109 -> IronCurtainAtWP6E36E0..6E37E4 (Steam gamemd).
 /// GetWaypoint68BCC0, Cell486840 GetCoords +5, then the first nine entries
 /// of CellSpread ABD490 (count7ED3D4). Unlike the Super, it reads only +E4,
 /// passes (duration, NULL, 0), and does not test a Foot's +27C warp latch.

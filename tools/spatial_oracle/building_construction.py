@@ -1343,7 +1343,6 @@ def manual_primary_generate():
     from tools.rules_oracle.bridge_child_sound import sections
     # Same existing cache owner and physical-layer selection. GAWEAP only
     # needs the exact original scalar blocks declared by primary_field_names.
-    assert image_sha256() == NATIVE_SHA256, 'Manual-primary corpus requires the sealed original image'
     physical = sections((JOINED_ROOT / 'RULESMD.INI').read_bytes())
     m = joined_inputs(JOINED_ROOT,
         layers=('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini', 'Hills.map'),

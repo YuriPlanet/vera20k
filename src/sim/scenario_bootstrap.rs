@@ -43,9 +43,11 @@ use crate::sim::find_nearby_cell::{
     NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell, map_owned_radius_cap,
 };
 use crate::sim::house_state::{HouseDifficulty, HouseState, determine_waypoint_edge};
+use crate::sim::houses::Houses;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::rng::{SimRng, SimRngLogicalState};
 use crate::sim::scenario_session::ScenarioDescriptor;
+use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::{PlacementEvidence, Simulation};
 use crate::skirmish_launch::{
     LaunchCountry, LaunchStartPosition, LaunchTeam, PreFillHouseRoster, SkirmishLaunchSession,
@@ -2566,7 +2568,11 @@ impl ScenarioBootstrapRng {
                     Some(rules),
                     Some(&map_data.ini),
                 );
-                initialize_campaign_current_house(&mut simulation, &map_data.ini);
+                initialize_campaign_current_house(
+                    &mut simulation.session,
+                    &mut simulation.houses,
+                    &map_data.ini,
+                );
                 simulation
                     .native_unique_ids
                     .as_mut()
@@ -2736,7 +2742,8 @@ impl Simulation {
 /// Empty dev substrates retain unavailable identity; this is not a claim that
 /// native can launch an empty House array.
 pub fn initialize_campaign_current_house(
-    sim: &mut Simulation,
+    session: &mut ScenarioSession,
+    houses: &mut Houses,
     ini: &crate::rules::ini_parser::IniFile,
 ) {
     let requested = ini
@@ -2745,17 +2752,13 @@ pub fn initialize_campaign_current_house(
         .unwrap_or_default();
     // Interning folds lookup case and preserves the first spelling it saw.
     // The native strcmp reads the retained raw House name instead.
-    let current_house = sim
-        .scenario_house_named(&requested)
-        .or_else(|| sim.houses.order().first().copied());
-    sim.session.install_current_house(current_house);
-    if let Some(owner) = sim.session.current_house() {
+    let current_house = Simulation::scenario_house_named(houses, &requested)
+        .or_else(|| houses.order().first().copied());
+    session.install_current_house(current_house);
+    if let Some(owner) = session.current_house() {
         // Original 68AD0C/68AD18 set the selected House's +1EC/+1ED.
         // This is scenario construction, never a snapshot/viewer rebind.
-        let house = sim
-            .houses
-            .get_mut(&owner)
-            .expect("registered current House");
+        let house = houses.get_mut(&owner).expect("registered current House");
         house.make_campaign_player();
     }
 }
@@ -3186,7 +3189,8 @@ mod tests {
             ("Player=Alpha              suffix", second),
         ] {
             initialize_campaign_current_house(
-                &mut sim,
+                &mut sim.session,
+                &mut sim.houses,
                 &IniFile::from_str(&format!("[Basic]\n{input}\n")),
             );
             assert_eq!(sim.session.current_house(), Some(expected));

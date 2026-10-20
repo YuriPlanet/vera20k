@@ -1,6 +1,5 @@
 //! Hospital arm of Building::MissionRepairAndProduce44B780,44B870..44BA79.
-//! Original Steam gamemd.exe SHA256
-//! 3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600.
+//! Original Steam gamemd.exe.
 //! Instruction-level reading. It uses the
 //! building's existing StageClass, Techno RepairTick and ExitObject owners.
 use crate::rules::overlay_types::OverlayTypeRegistry;

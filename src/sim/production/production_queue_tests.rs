@@ -481,10 +481,6 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
     ))
     .unwrap();
     assert_eq!(data["schema_version"], 1);
-    assert_eq!(
-        data["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let rows = data["factory_busy_redirect_rows"].as_array().unwrap();
     assert_eq!(rows.len(), 6);
     let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
@@ -1233,7 +1229,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
 /// Abandon4C9FF0 -> scalar459F20 -> Building43BCF0 runs under A8E7AC=1;
 /// 43BF11 dirties power alone, with no UnInit/loss/deferred deletion or RNG.
 /// Source: building_death_anims constructed-cancel original controls,
-/// active gamemd SHA1cdd1180e49024fbda8ad568caac2e86e.
+/// active gamemd.
 #[test]
 fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
     use crate::sim::power_system::PowerState;

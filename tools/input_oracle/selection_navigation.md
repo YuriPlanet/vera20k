@@ -9,8 +9,8 @@ VERA20K_SELECTION_SOUND_INPUTS=/path/to/physical/fixed/sound \
 python -m tools.input_oracle.selection_navigation --check
 ```
 
-Explicit `--write` regenerates the JSON and identity/coverage sidecar. The shared
-native runner verifies executable identity, checked return boundaries and unchanged
+Explicit `--write` regenerates the JSON and coverage sidecar. The shared
+native runner verifies checked return boundaries and unchanged
 original code. No executable is distributed. Inputs are initialized memory, not a
 native scenario load or whole constructor/lifecycle proof.
 

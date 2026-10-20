@@ -7,7 +7,7 @@
 //! (`reconcile_civilian_garrison_owner_for_building`) and a building's Unload
 //! mission (`techno_ai::building_missions`).
 //! AllToHunt501400 uses the same owner with SellBuilding(1,0).
-//! Steam3e81a617..08600 controls: trigger_action_values --all-to-hunt;
+//! Steam gamemd controls: trigger_action_values --all-to-hunt;
 //! Unlimbo/Team/UnInit remain declared dependencies in that corpus.
 
 #[cfg(any(test, feature = "test-support"))]
@@ -55,7 +55,7 @@ fn garrison_sellbuilding_exit_cells(rx: u16, ry: u16, width: u16, height: u16) -
     for y in (north..=south).rev() {
         push_nonnegative_cell(&mut cells, east, y);
     }
-    // Steam3e81a617..08600, SellBuilding457DE0: second edge starts at east-1.
+    // Steam gamemd, SellBuilding457DE0: second edge starts at east-1.
     // The first edge already tested the southeast corner.
     for x in (west..east).rev() {
         push_nonnegative_cell(&mut cells, x, south);

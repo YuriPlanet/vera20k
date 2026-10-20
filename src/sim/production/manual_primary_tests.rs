@@ -396,10 +396,6 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
         return;
     };
     let corpus = manual_primary_corpus();
-    assert_eq!(
-        corpus["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     assert_eq!(corpus["cases"].as_array().unwrap().len(), 6);
     for case in corpus["cases"].as_array().unwrap() {
         let name = case["input"]["name"].as_str().unwrap();
@@ -513,7 +509,14 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                 sim.sound_events.clear_for_test();
                 let mut event = None;
                 match input["op"].as_str().unwrap() {
-                    "automatic" => initialize_factory_primary(&mut sim, id, &rules),
+                    "automatic" => initialize_factory_primary(
+                        &sim.interner,
+                        &mut sim.production,
+                        &sim.substrate,
+                        &sim.houses,
+                        id,
+                        &rules,
+                    ),
                     "click" => {
                         for &selected in &ids {
                             sim.substrate

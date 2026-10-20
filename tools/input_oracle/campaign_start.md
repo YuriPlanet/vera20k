@@ -6,8 +6,6 @@ INI parser, VM, decoder, allocator or simulation. Native scalar readers,
 constructors, RNG and numeric instructions execute unchanged. Each case compares
 every executable PE section with the original file after execution.
 
-The accepted `gamemd.exe` SHA256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 No executable, complete retail INI/map or rendered capture is included.
 
 ## Reproduction and source seals

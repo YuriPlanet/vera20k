@@ -8,7 +8,7 @@ python -m tools.procedural_drawing_oracle.shroud --frontier --check
 ```
 
 Use `--write` only to deliberately regenerate the reference from the original
-binary. The sidecar pins its binary hash and replay command, without repository
+binary. The sidecar pins its replay command, without executable or repository
 source hashes. The Rust consumers live in the existing sight/vision tests and
 `tmp_clear_gpu_tests`; a reference row alone does not certify the whole engine.
 

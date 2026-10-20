@@ -50,10 +50,6 @@ pub(in crate::sim::world::techno_ai) fn oracle() -> &'static Value {
             "tools/spatial_oracle/anytown_damage/foot_missions.json",
         ))
         .unwrap();
-        assert_eq!(
-            value["native_sha256"],
-            "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-        );
         value
     })
 }

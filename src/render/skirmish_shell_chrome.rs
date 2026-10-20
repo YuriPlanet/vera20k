@@ -2,9 +2,9 @@
 //!
 //! Packs the shared native shell art into one GPU texture. Screen-specific
 //! entries require active caller evidence and are selected by that screen.
-//! Skirmish setup and the WOL Custom Match setup dialogs C2/C9 intentionally
-//! use RA2's MNSCRNS/MNSCRNL backgrounds through SHELL.PAL as a presentation
-//! preference; LAN setup BC/BD keeps YR's Cooperative setup art.
+//! Skirmish setup, LAN setup BC/BD and the WOL Custom Match setup dialogs
+//! C2/C9 intentionally use RA2's MNSCRNS/MNSCRNL backgrounds through SHELL.PAL
+//! as a presentation preference, instead of YR's Cooperative setup art.
 //! User-requested YR parity exception: preserve these RA2 backgrounds during
 //! future parity work unless the user explicitly asks to change them.
 //! Nothing in this atlas follows the YR Loading & Menu Movie option; that
@@ -81,8 +81,6 @@ const WOL_SETUP_PCX_NAMES: [&str; 5] = [
     "wodact.pcx",
     "wouact.pcx",
 ];
-const LAN_SETUP_SHAPE: &str = "MnScrnLCoopGameSetup.shp";
-const LAN_SETUP_PALETTE: &str = "MnScrnLCoopGameSetup.PAL";
 
 #[derive(Debug, Clone, Copy)]
 pub struct SkirmishShellChromeEntry {
@@ -120,7 +118,6 @@ pub struct SkirmishShellChromeAtlas {
     pub generic_background_640_mnscrns_shell: Option<SkirmishShellChromeEntry>,
     /// Generic common-shell large background, decoded through SHELL.PAL.
     pub generic_background_large_mnscrnl_shell: Option<SkirmishShellChromeEntry>,
-    lan_setup_backgrounds: [Option<SkirmishShellChromeEntry>; 2],
     lan_icons: [Option<SkirmishShellChromeEntry>; 4],
     wol_setup_icons: [Option<SkirmishShellChromeEntry>; 5],
     pub lower_side_640_lwscrns: Option<SkirmishShellChromeEntry>,
@@ -225,21 +222,16 @@ pub struct ControlChrome {
 }
 
 impl SkirmishShellChromeAtlas {
-    /// Original 60CF00 assigns BB the generic shell art, BC/BD the setup art.
-    /// Loader72CF40 (called by LAN5DCE93/5E0963) loads the large shape only
-    /// at800; small MNSCRNS uses that same setup palette. Native72CF90 frees
-    /// the setup pair on return. This retained atlas shares app-owned assets
-    /// and does not change the intentional RA2 offline-skirmish selection.
+    /// Original 60CF00 assigns BB the generic shell art, and LAN BC/BD and WOL
+    /// C2/C9 the 72D030 Cooperative setup art (MnScrnLCoopGameSetup.shp/.PAL),
+    /// which loader72CF40 (LAN5DCE93/5E0963) loads at800 and72CF90 frees.
     ///
-    /// User-requested exception: 60CF00 gives WOL C2/C9 the same 72D030 setup
-    /// art as BC/BD, but VERA paints them with BB's generic RA2 MNSCRNS/MNSCRNL
-    /// through SHELL.PAL, matching the offline Skirmish screen.
+    /// User-requested exception: VERA paints BC/BD/C2/C9 with BB's generic RA2
+    /// MNSCRNS/MNSCRNL through SHELL.PAL, matching the offline Skirmish screen.
     pub fn lan_background(&self, dialog_id: u16, width: u32) -> Option<SkirmishShellChromeEntry> {
         match (dialog_id, width) {
-            (0xBB | 0xC2 | 0xC9, 640) => self.generic_background_640_mnscrns_shell,
-            (0xBB | 0xC2 | 0xC9, _) => self.generic_background_large_mnscrnl_shell,
-            (0xBC | 0xBD, 640) => self.lan_setup_backgrounds[0],
-            (0xBC | 0xBD, 800) => self.lan_setup_backgrounds[1],
+            (0xBB | 0xBC | 0xBD | 0xC2 | 0xC9, 640) => self.generic_background_640_mnscrns_shell,
+            (0xBB | 0xBC | 0xBD | 0xC2 | 0xC9, _) => self.generic_background_large_mnscrnl_shell,
             _ => None,
         }
     }
@@ -368,7 +360,6 @@ impl ControlChrome {
 enum ShellAssetRole {
     VerifiedParentBackground,
     VerifiedChooseMapBackground,
-    VerifiedLanSetupBackground,
     VerifiedLanIcon,
     VerifiedOfflineStartMarker,
     AssignedPlayerMarker,
@@ -555,21 +546,6 @@ pub fn build_skirmish_shell_chrome_atlas(
         );
     }
 
-    // 72CF40/72D030 and 60CF00: native BC/BD use the setup palette for
-    // both sizes. BB reuses the generic entries above, without another atlas.
-    if let Some(palette) = load_named_palette(assets, LAN_SETUP_PALETTE) {
-        for (name, label) in [
-            ("MNSCRNS.SHP", "mnscrns.shp#lansetup"),
-            (LAN_SETUP_SHAPE, "mnscrnlcoopgamesetup.shp"),
-        ] {
-            push_optional(
-                &mut rendered,
-                render_shp_entry_labeled(assets, name, label, &palette, 0),
-                name,
-            );
-        }
-    }
-
     if let Some(choose_map_background_palette) = choose_map_background_palette.as_ref() {
         push_optional(
             &mut rendered,
@@ -733,10 +709,6 @@ pub fn build_skirmish_shell_chrome_atlas(
             .copied(),
         generic_background_640_mnscrns_shell: by_label.get("mnscrns.shp#shell").copied(),
         generic_background_large_mnscrnl_shell: by_label.get("mnscrnl.shp#shell").copied(),
-        lan_setup_backgrounds: [
-            by_label.get("mnscrns.shp#lansetup").copied(),
-            by_label.get("mnscrnlcoopgamesetup.shp").copied(),
-        ],
         lan_icons: LAN_PCX_NAMES.map(|name| by_label.get(name).copied()),
         wol_setup_icons: WOL_SETUP_PCX_NAMES.map(|name| by_label.get(name).copied()),
         lower_side_640_lwscrns: by_label.get("lwscrns.shp").copied(),
@@ -837,7 +809,6 @@ fn classify_shell_asset(name: &str) -> ShellAssetRole {
     match name.to_ascii_lowercase().as_str() {
         "mnscrns.shp" | "mnscrnl.shp" => ShellAssetRole::VerifiedParentBackground,
         "mnscrnlcustomizebattle.shp" => ShellAssetRole::VerifiedChooseMapBackground,
-        "mnscrnlcoopgamesetup.shp" => ShellAssetRole::VerifiedLanSetupBackground,
         "wolnob.pcx" | "wolob.pcx" | "wolhost.pcx" | "wolacpt.pcx" => {
             ShellAssetRole::VerifiedLanIcon
         }
@@ -1355,10 +1326,6 @@ mod tests {
             ShellAssetRole::VerifiedParentBackground
         );
         assert_eq!(
-            classify_shell_asset("MnScrnLCoopGameSetup.shp"),
-            ShellAssetRole::VerifiedLanSetupBackground
-        );
-        assert_eq!(
             classify_shell_asset("STARTBUT.SHP"),
             ShellAssetRole::VerifiedOfflineStartMarker
         );
@@ -1651,23 +1618,8 @@ mod tests {
 
     #[test]
     #[ignore = "requires the configured stock retail RA2/YR install"]
-    fn retail_lan_art_uses_native_setup_shape_and_player_glyphs() {
+    fn retail_lan_player_glyphs_match_their_pcx_headers() {
         let assets = retail_assets();
-        let palette = load_named_palette(&assets, super::LAN_SETUP_PALETTE)
-            .expect("native72CF40 setup palette in NTRLMD.MIX");
-        let setup = render_shp_entry(&assets, super::LAN_SETUP_SHAPE, &palette, 0)
-            .expect("native BC/BD setup shape");
-        // Original retail SHP header, NTRLMD.MIX. BB's generic background
-        // retains its independently loaded SHELL.PAL entry.
-        assert_eq!((setup.width, setup.height), (632, 568));
-        let generic = render_shp_entry(
-            &assets,
-            "MNSCRNL.SHP",
-            &load_named_palette(&assets, "SHELL.PAL").unwrap(),
-            0,
-        )
-        .unwrap();
-        assert_ne!(setup.rgba, generic.rgba);
         for (name, width) in [
             ("wolnob.pcx", 14),
             ("wolob.pcx", 14),

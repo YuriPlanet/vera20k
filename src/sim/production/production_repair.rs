@@ -362,7 +362,7 @@ pub(crate) fn update_repair_and_power(
         && !entity.constructing_or_selling()
         && can_repair_building(sim, rules, id);
     if admitted {
-        if available_money(sim, owner) < rules.general.credit_reserve {
+        if available_money(&sim.houses, owner) < rules.general.credit_reserve {
             low_credit_sale(sim, rules, id, registry, effects);
         } else {
             auto_repair_start(sim, rules, id);
@@ -497,7 +497,7 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     };
     let (strength, cost) = (object.strength, repair_step_cost(rules, object));
     let owner = entity.owner();
-    if available_money(sim, owner) < cost {
+    if available_money(&sim.houses, owner) < cost {
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.repairing.on = false;
         }
@@ -516,5 +516,5 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         entity.repairing.on = false;
     }
     sim.refresh_building_damage_state(id, rules);
-    sim.retire_damage_smoke_after_heal(id, rules);
+    Simulation::retire_damage_smoke_after_heal(&sim.interner, &mut sim.substrate, id, rules);
 }

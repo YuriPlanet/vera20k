@@ -60,9 +60,14 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::NavTargetRef;
+use crate::sim::houses::Houses;
+use crate::sim::intern::StringInterner;
 use crate::sim::mission::MissionType;
 use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::rng::SimRng;
+use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::timer::CdTimer;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{FrameAdvanceError, FrameEffects, Simulation};
 
 /// Shared per-building C4 / PostMortem detonation timer.
@@ -268,7 +273,16 @@ impl Simulation {
         if !refused {
             if target.pending_c4_detonation.pending().is_some() {
                 self.assign_null_destination(id, Some(rules), registry, effects);
-                self.rearm_c4_planter(id, building, rules);
+                Self::rearm_c4_planter(
+                    &self.interner,
+                    &self.session,
+                    &mut self.scenario_rng,
+                    &mut self.substrate,
+                    &self.houses,
+                    id,
+                    building,
+                    rules,
+                );
                 self.scatter_from_building(id, building, rules, registry, effects)?;
                 return Ok(true);
             }
@@ -282,7 +296,16 @@ impl Simulation {
             infantry.navigation.stop_moving();
         }
         crate::sim::combat::world_fire::start_uncloaking_to_fire(self, rules, id);
-        self.rearm_c4_planter(id, building, rules);
+        Self::rearm_c4_planter(
+            &self.interner,
+            &self.session,
+            &mut self.scenario_rng,
+            &mut self.substrate,
+            &self.houses,
+            id,
+            building,
+            rules,
+        );
         self.scatter_from_building(id, building, rules, registry, effects)?;
         Ok(true)
     }
@@ -297,20 +320,29 @@ impl Simulation {
     /// GetROF's Spark arm reads the same actual +308 link as FireAt.
     /// RESIDUAL: Fire/Railgun retained links remain unported. No retail
     /// planter's slot-1 weapon has those flags.
-    fn rearm_c4_planter(&mut self, id: u64, building: u64, rules: &RuleSet) {
-        let Some(planter) = self.substrate.entities.get(id) else {
+    fn rearm_c4_planter(
+        interner: &StringInterner,
+        session: &ScenarioSession,
+        scenario_rng: &mut SimRng,
+        substrate: &mut ObjectSubstrate,
+        houses: &Houses,
+        id: u64,
+        building: u64,
+        rules: &RuleSet,
+    ) {
+        let Some(planter) = substrate.entities.get(id) else {
             return;
         };
-        let Some(obj) = self.object_type(planter.type_ref(), rules) else {
+        let Some(obj) = interner.object_type(planter.type_ref(), rules) else {
             return;
         };
         let weapon = crate::sim::combat::combat_weapon::get_weapon(
             planter,
             obj,
             1,
-            &self.substrate.entities,
+            &substrate.entities,
             rules,
-            &self.interner,
+            interner,
         );
         let snap = crate::sim::combat::build_attacker_snapshot(
             planter,
@@ -323,9 +355,9 @@ impl Simulation {
             ..Default::default()
         };
         let rof = crate::sim::combat::world_fire::snapshot_get_rof(
-            &mut self.scenario_rng,
-            &self.substrate,
-            &self.houses,
+            scenario_rng,
+            &*substrate,
+            houses,
             rules,
             &snap,
             obj,
@@ -333,8 +365,8 @@ impl Simulation {
             live,
             burst_index,
         );
-        let frame = self.session.binary_frame() as i32;
-        if let Some(planter) = self.substrate.entities.get_mut(id) {
+        let frame = session.binary_frame() as i32;
+        if let Some(planter) = substrate.entities.get_mut(id) {
             planter.rearm_timer.start(frame, rof);
         }
     }

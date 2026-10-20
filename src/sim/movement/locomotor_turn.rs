@@ -2,7 +2,7 @@
 //! class body delegates to the existing FacingClass state owner; this adapter
 //! selects which controller and whether Set or SetCurrent is called.
 //!
-//! Original Steam gamemd3e81a617..08600: Drive4B0EF0, Ship6A05C0,
+//! Original Steam gamemd: Drive4B0EF0, Ship6A05C0,
 //! Hover516370 and Teleport7192C0 Set PrimaryFacing; Walk75AE00 and
 //! Jumpjet54B6E0 SetCurrent PrimaryFacing; Fly4CFC10 SetCurrent
 //! SecondaryFacing. Rocket's active interface table7F0B1C+4C names the

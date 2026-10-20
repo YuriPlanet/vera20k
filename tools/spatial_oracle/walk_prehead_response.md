@@ -10,8 +10,6 @@ FindPath answers are **supplied**, not outputs of
 Infantry `0x0051BF90` or AStar. This corpus establishes the caller's response to
 those answers; it cannot establish that an actual map produces them.
 
-The original binary SHA-256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 The canonical payload SHA-256 is
 `a33d873bff26c7c32ee337d39ec4791eec771369763c2bd2931ccfd9c6672c07`.
 Unicorn binding 2.1.4/core 2.1.33621247 produced the checked output. The JSON

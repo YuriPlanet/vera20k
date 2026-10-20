@@ -131,7 +131,10 @@ fn foot_mark_refresh_is_immediate_and_does_not_reenter_techno_mark() {
         actor.lifecycle.set_cell_marked_for_test(marked);
         let before = serde_json::to_value(sim.substrate.entities.get(1).unwrap()).unwrap();
         let rng_before = sim.rng_state();
-        assert!(sim.mark_entity_refresh(1));
+        assert!(crate::sim::world::Simulation::mark_entity_refresh(
+            &sim.substrate,
+            1
+        ));
         assert_eq!(
             radio::transmit(
                 &mut sim,

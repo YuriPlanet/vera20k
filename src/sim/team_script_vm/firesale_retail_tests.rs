@@ -1,5 +1,5 @@
 //! Authored skirmish Script30 through real recruitment and House Strategy.
-//! Original1cdd:6E9FEC ->6E99E1 writes House+250 and Team+80 only;
+//! Original gamemd:6E9FEC ->6E99E1 writes House+250 and Team+80 only;
 //! due House4F9015/4FD7A0 consumes it through5013A0 then501400.
 //! This is a supported map route, not an unchanged-stock AI frequency claim.
 
@@ -106,7 +106,8 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
         assert!(rules.object("NAHAND").unwrap().has_factory());
         assert!(rules.has_buildup("NAHAND") && rules.has_buildup("NAPOWR"));
         let sim = scene.sim();
-        let computer = sim.scenario_house_named("Computer").unwrap();
+        let computer =
+            crate::sim::world::Simulation::scenario_house_named(&sim.houses, "Computer").unwrap();
         let local = sim.session.current_house().unwrap();
         let team_type = sim.interner.get("F0520001").unwrap();
         let script = sim.interner.get("F0520002").unwrap();

@@ -1,6 +1,6 @@
 # Ordinary Tesla electric bolt
 
-`electric_bolt.py` executes the original SHA-256-pinned YR image. It extends the
+`electric_bolt.py` executes the original YR image. It extends the
 existing Building, cached-INI, palette and RGB565 surface fixtures. Python
 records inputs and native outputs; it contains no bolt subdivision, RNG,
 projection, Spark, line raster or light-mask implementation.
@@ -12,7 +12,7 @@ python -m tools.procedural_drawing_oracle.electric_bolt --check
 ```
 
 `--write` regenerates the corpus and provenance sidecar. Changes to those native
-references require review. The sidecar records the binary identity, producer
+references require review. The sidecar records the producer
 sources, command, original entry points and supplied boundaries.
 
 ## Corpus boundaries

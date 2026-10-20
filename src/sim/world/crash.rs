@@ -40,6 +40,12 @@ use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::{NativeF64Bits, X87Chop53};
 
 use super::{Simulation, UninitContext};
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::sim::houses::Houses;
+use crate::sim::intern::StringInterner;
+use crate::sim::world::FrameChannel;
+use crate::sim::world::ObjectSubstrate;
+use crate::sim::world::SimSoundEvent;
 
 /// `0x007E9280`, the spread of the sideways spin rate.
 const SIDEWAYS_SPREAD: NativeF64Bits = NativeF64Bits::from_bits(0x3fc3_3333_3333_3333);
@@ -270,7 +276,15 @@ impl Simulation {
                 &self.interner,
             );
             self.mark_entity_put(id, context);
-            self.submit_entity_display(id, rules, None);
+            Self::submit_entity_display(
+                &self.interner,
+                &self.terrain_objects,
+                &mut self.substrate,
+                &self.resolved_terrain,
+                id,
+                rules,
+                None,
+            );
         }
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -299,7 +313,14 @@ impl Simulation {
         self.set_object_height(id, 0, Some(rules), overlay_registry, frame_effects);
         let bridge_state_changed =
             self.fire_death_weapon(id, rules, overlay_registry, frame_effects);
-        self.play_crash_impact_sound(id, rules);
+        Self::play_crash_impact_sound(
+            &self.interner,
+            &self.substrate,
+            &mut self.sound_events,
+            &self.resolved_terrain,
+            id,
+            rules,
+        );
         self.uninit_with_context(
             id,
             UninitContext::new(Some(rules), overlay_registry).with_effects(frame_effects),
@@ -535,18 +556,24 @@ impl Simulation {
     /// `ImpactWaterSound=` else `[AudioVisual] ImpactWaterSound=`, elsewhere
     /// `ImpactLandSound=` likewise, played at the object's Location with no
     /// sound handle.
-    fn play_crash_impact_sound(&mut self, id: u64, rules: &RuleSet) {
-        let Some(entity) = self.substrate.entities.get(id) else {
+    fn play_crash_impact_sound(
+        interner: &StringInterner,
+        substrate: &ObjectSubstrate,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+        rules: &RuleSet,
+    ) {
+        let Some(entity) = substrate.entities.get(id) else {
             return;
         };
-        let water = self
-            .resolved_terrain
+        let water = resolved_terrain
             .as_ref()
             .and_then(|terrain| terrain.cell(entity.position.rx(), entity.position.ry()))
             .is_some_and(|cell| {
                 cell.land_type == crate::rules::terrain_rules::LandType::Water.as_index()
             });
-        let object = self.object_type(entity.type_ref(), rules);
+        let object = interner.object_type(entity.type_ref(), rules);
         let sound = if water {
             object
                 .and_then(|object| object.impact_water_sound.clone())
@@ -558,7 +585,7 @@ impl Simulation {
         };
         if let Some(sound_id) = sound {
             let event = super::SimSoundEvent::voc_at(sound_id, &entity.position);
-            self.sound_events.emit(event);
+            sound_events.emit(event);
         }
     }
 
@@ -571,8 +598,15 @@ impl Simulation {
     /// Nothing on the Fly path lowers the latch; besides the constructor only
     /// the Jumpjet Descend touchdown clears it (`0x0054CA12`, a Magnetron drop
     /// that lands).
-    pub(crate) fn crash_edge_sounds(&mut self, id: u64, rules: &RuleSet) {
-        let Some(entity) = self.substrate.entities.get(id) else {
+    pub(crate) fn crash_edge_sounds(
+        interner: &StringInterner,
+        substrate: &mut ObjectSubstrate,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
+        houses: &Houses,
+        id: u64,
+        rules: &RuleSet,
+    ) {
+        let Some(entity) = substrate.entities.get(id) else {
             return;
         };
         if entity.crash.crashing == entity.crash.seen {
@@ -581,40 +615,34 @@ impl Simulation {
         if entity.crash.crashing {
             // Foot4DAD01 releases the shared handle even if its MoveSound
             // latch was already cleared by the preceding tail.
-            self.sound_events
-                .emit(super::SimSoundEvent::ObjectSoundReleased { owner: id });
-            let entity = self.substrate.entities.get(id).expect("checked above");
+            sound_events.emit(super::SimSoundEvent::ObjectSoundReleased { owner: id });
+            let entity = substrate.entities.get(id).expect("checked above");
             let owner = entity.owner();
-            let object = self.object_type(entity.type_ref(), rules);
+            let object = interner.object_type(entity.type_ref(), rules);
             let voice = object.and_then(|object| object.voice_crashing.clone());
             let crashing_sound = object.and_then(|object| object.crashing_sound.clone());
-            let human = self
-                .houses
-                .get(&owner)
-                .is_some_and(|house| house.is_human());
+            let human = houses.get(&owner).is_some_and(|house| house.is_human());
             if let Some(voice) = voice
                 && human
             {
                 let event =
                     super::SimSoundEvent::voc_at_for(voice, Some([owner, owner]), &entity.position);
-                self.sound_events.emit(event);
+                sound_events.emit(event);
             }
             if let Some(sound) = crashing_sound {
                 let world = Self::movement_sound_world(entity);
-                self.sound_events
-                    .emit(super::SimSoundEvent::AnimationStarted {
-                        anim_id: id,
-                        sound_id: sound,
-                        world,
-                    });
+                sound_events.emit(super::SimSoundEvent::AnimationStarted {
+                    anim_id: id,
+                    sound_id: sound,
+                    world,
+                });
             }
         }
-        if let Some(entity) = self.substrate.entities.get_mut(id) {
+        if let Some(entity) = substrate.entities.get_mut(id) {
             // Falling crash edge4DADA9..4DADB7 leaves an active MoveSound's
             // shared handle alone; otherwise it releases the crash sound.
             if !entity.crash.crashing && !entity.move_sound.is_active() {
-                self.sound_events
-                    .emit(super::SimSoundEvent::ObjectSoundReleased { owner: id });
+                sound_events.emit(super::SimSoundEvent::ObjectSoundReleased { owner: id });
             }
             entity.crash.seen = entity.crash.crashing;
         }

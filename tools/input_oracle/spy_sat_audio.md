@@ -6,10 +6,8 @@ joined input/runtime fixtures, `VoiceHistory`, `NativeAudioPlatform` and
 Map reveal/reshroud. Historical GI, feedback, slave-miner and radar payloads
 retain their existing schemas and preparation.
 
-The supported original `gamemd.exe` SHA256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
-The generated sidecar records the binary and reproduction command, not source
-hashes or validation results.
+The generated sidecar records the reproduction command, not the executable's
+hash, source hashes or validation results.
 
 ## Retail inputs and original readers
 

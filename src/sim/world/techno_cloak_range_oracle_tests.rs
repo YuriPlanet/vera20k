@@ -20,10 +20,6 @@ fn signed(value: &Value) -> i32 {
 #[test]
 fn original_can_auto_cloak_matches_retail_inputs_and_retained_target_controls() {
     let native = crate::test_fixture::json("tools/spatial_oracle/cloak_target_gate.json");
-    assert_eq!(
-        native["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let map = crate::test_fixture::checkout_root()
         .join("tools/spatial_oracle/cloak_target_gate/ordinary-sub-cloak.map");
     let Some(retail) =

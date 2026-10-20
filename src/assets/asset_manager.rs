@@ -200,6 +200,8 @@ pub struct AssetManager {
     loose_files: HashMap<String, LooseAsset>,
     /// Selected at AudioSystem::Init, before later bulk/theater mounts.
     audio_pair: SelectedAudioPair,
+    /// Frozen root-file policy shared by Rules, Art, AI and tooling.
+    ini_roots: crate::util::ini_roots::IniRoots,
     /// Currently registered theater identity and its archive names.
     active_theater: Option<String>,
     active_theater_archives: Vec<String>,
@@ -227,6 +229,7 @@ impl Clone for AssetManager {
             ),
             loose_files: self.loose_files.clone(),
             audio_pair: self.audio_pair.clone(),
+            ini_roots: self.ini_roots.clone(),
             active_theater: self.active_theater.clone(),
             active_theater_archives: self.active_theater_archives.clone(),
             ra2_dir: self.ra2_dir.clone(),
@@ -301,6 +304,35 @@ const KNOWN_NESTED_MIX_NAMES: &[&str] = &[
 ];
 
 impl AssetManager {
+    /// Consume a newly assembled provider, then freeze one root choice before
+    /// consumers receive it. This never mounts an archive or changes a winner.
+    pub fn with_ini_roots(
+        mut self,
+        config: &crate::util::ini_roots::IniRootConfig,
+    ) -> Result<Self, AssetError> {
+        self.ini_roots = config
+            .resolve(|name| {
+                self.resolve_ref(name)
+                    .is_some_and(|source| !source.bytes.is_empty())
+            })
+            .map_err(|detail| AssetError::ParseError {
+                format: "INI root selection".into(),
+                detail,
+            })?;
+        log::info!("Selected INI roots: {:?}", self.ini_roots);
+        Ok(self)
+    }
+
+    /// Recovery preserves the already resolved names, not a fresh Auto probe.
+    pub fn with_selected_ini_roots(mut self, roots: crate::util::ini_roots::IniRoots) -> Self {
+        self.ini_roots = roots;
+        self
+    }
+
+    pub fn ini_roots(&self) -> &crate::util::ini_roots::IniRoots {
+        &self.ini_roots
+    }
+
     /// Read-only INI tooling without a complete retail installation. No game
     /// archives are implicitly registered; the probe may explicitly use the
     /// existing load_all_disk_mixes widening. Not a gameplay constructor.
@@ -312,6 +344,7 @@ impl AssetManager {
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: Self::open_loose_root(ra2_dir)?,
             audio_pair: SelectedAudioPair::default(),
+            ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
             ra2_dir: ra2_dir.to_path_buf(),
@@ -334,6 +367,7 @@ impl AssetManager {
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: Self::open_loose_root(ra2_dir)?,
             audio_pair: SelectedAudioPair::default(),
+            ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
             ra2_dir: ra2_dir.to_path_buf(),
@@ -1388,6 +1422,7 @@ mod tests {
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: AssetManager::open_loose_root(ra2_dir).expect("open loose test root"),
             audio_pair: SelectedAudioPair::default(),
+            ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
             ra2_dir: ra2_dir.to_path_buf(),
@@ -1756,6 +1791,7 @@ mod tests {
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
             audio_pair: SelectedAudioPair::default(),
+            ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
@@ -1837,6 +1873,7 @@ mod tests {
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
             audio_pair: SelectedAudioPair::default(),
+            ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
@@ -1908,6 +1945,7 @@ mod tests {
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
             audio_pair: SelectedAudioPair::default(),
+            ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
@@ -1947,6 +1985,7 @@ mod tests {
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
             audio_pair: SelectedAudioPair::default(),
+            ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
@@ -1984,6 +2023,7 @@ mod tests {
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
             audio_pair: SelectedAudioPair::default(),
+            ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
@@ -2022,6 +2062,7 @@ mod tests {
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
             audio_pair: SelectedAudioPair::default(),
+            ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
@@ -2055,6 +2096,7 @@ mod tests {
                 },
             )]),
             audio_pair: SelectedAudioPair::default(),
+            ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
@@ -2109,6 +2151,7 @@ mod tests {
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
             audio_pair: SelectedAudioPair::default(),
+            ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
             ra2_dir: PathBuf::new(),

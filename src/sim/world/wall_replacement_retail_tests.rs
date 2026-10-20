@@ -1,6 +1,6 @@
 //! Building 0x44065C replaces a same-ToOverlay owned wall through House 0x4FCE80
 //! before new Mark. House 0x4FD018 runs the shared Cell 0x70D4A0 targeting sweep.
-//! Original gamemd SHA256 1cdd1180; ordinary paid production and MTNK/AP damage only.
+//! Original gamemd; ordinary paid production and MTNK/AP damage only.
 
 use crate::sim::combat::TargetKind;
 use crate::sim::command::{Command, CommandEnvelope};

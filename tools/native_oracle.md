@@ -74,13 +74,13 @@ and explicit direct-Limbo/Attach boundary are documented with the
 
 For original byte reads, disassembly and whole-code scans, use the indexed
 [native inspection tool](native_inspect.md). It shares this runner's executable
-identity and PE owner; static inspection is separate from checked execution.
+selection and PE owner; static inspection is separate from checked execution.
 
 Native comparison guidance; adapt as useful and distinguish findings from hypotheses.
 
 Use original `gamemd.exe` instructions to produce reference outputs, then compare
 the Rust function used by the engine against them. The shared Python runner handles
-executable identity, bounded execution, fresh function-call state, diagnostics, and
+executable selection, bounded execution, fresh function-call state, diagnostics, and
 reference-file checks. It does not establish that a chosen function or fixture
 represents the game's active path.
 
@@ -103,48 +103,35 @@ cargo test -p vera20k-core --lib rules::color_scheme::tests::hsv_to_rgb_matches_
 ```
 
 `RA2_DIR` is an alternative; an explicit executable path takes precedence and never
-silently falls back. The loader checks the same immutable bytes it maps: it accepts
-any `gamemd.exe` whose four PE sections, layout and bytes, equal those of the
-historical reference build
-(`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`), including
-under optimized Python. Releases that repackage that code differ only in headers
-and trailing bytes and are accepted, Steam's
-(`3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`) among them.
-A build whose code differs is refused.
+silently falls back. The loader maps whichever `gamemd.exe` that selects, with no
+identity check or refusal: every copy (the original 1.001, Steam and other releases)
+is treated as the same game.
 
 No executable is distributed here.
-This restriction belongs to these comparison tools alone, because their harnesses
-run code at fixed addresses of that build. The game reads no `gamemd.exe` bytes.
-The Rust table checks read the `RA2_DIR` executable's math tables at the same
+The harnesses run code at fixed retail addresses, so a copy whose code differs
+there produces different outputs and fails `--check`. The game reads no `gamemd.exe`
+bytes. The Rust table checks read the `RA2_DIR` executable's math tables at the same
 retail addresses and compare every byte, without checking the file hash.
 
 ### Evidence identity
 
-`NATIVE_SECTIONS` holds the reference's sections as sealed in
-[`loader_compatibility.json`](spatial_oracle/shrapnel_damage/loader_compatibility.json).
-Every byte `load_image` maps and `file_span` reads, apart from the header page and
-BSS, comes from them, so every accepted file produces the same native outputs. The
-check does not cover PE headers or bytes after the sections, and it does not
-establish Windows startup, imports, DRM or complete game behavior. Compare another
-release's sections with `python -m tools.native_inspect sections`.
-
-`image_sha256()` names the game code, not the file: it reports `NATIVE_SHA256` for
-every accepted executable, and payloads, `provenance()` sidecars and static
-inspection record that identity. A reference made with one accepted release
-therefore checks on any other. Bytes without the supported code, such as synthetic
-test images, report their own SHA-256.
-Ghidra annotation ledgers also remain tied to their own `program_sha256`; a Steam
-program needs a ledger authored for that program.
+New reference sidecars record no executable hash; `replay_command` records how the
+payload was made. `--check` ignores a legacy `native_sha256` in an older sidecar and
+`--write` drops it. Older JSON evidence keeps its hash fields as inert history until
+it is regenerated. `image_sha256()` returns `NATIVE_SHA256`, a fixed label that older
+payload schemas carry; it is not a hash of the selected file. To compare two
+releases' code, use `python -m tools.native_inspect sections`.
+Ghidra annotation ledgers replay on any `gamemd.exe` program; a legacy
+`program_sha256` in an older ledger is ignored.
 
 The factory packet's registered helper profiles and inspection-owner seal are
-unchanged. Its public historical replay admission checks the recorded code identity,
-including the direct consumer/gate routes. Only the explicitly unregistered candidate helper
+unchanged. Only the explicitly unregistered candidate helper
 map is refreshed for the changed shared sources; it is not a compatibility verdict.
 Saved-receipt unit tests validate retained profile claims against the sealed
 registration independently of today's source admission. Native factory controls
 have not been replayed or rebaselined by this change.
 
-Any accepted release checks the committed references directly:
+Any `gamemd.exe` checks the committed references directly:
 
 ```powershell
 $env:VERA20K_GAMEMD_EXE = 'C:/Games/RA2/gamemd.exe'
@@ -353,7 +340,7 @@ PerCell (`0x54C8CB..0x54C8F0`), then calls the class NULL setter unconditionally
 The no-target production regression is in `world/per_cell_object_turn_tests.rs`;
 the shared NULL corpus provides the timer arithmetic comparison.
 
-Sidecars identify the executable, Unicorn Python binding and native core versions,
+Sidecars identify the Unicorn Python binding and native core versions,
 entries, fixture assumptions, substitutions, coverage, and canonical payload hash.
 Metadata changes fail checks even if outputs match, prompting review of the changed
 environment. Existing references without sidecars remain checkable, with an explicit
@@ -449,9 +436,8 @@ Context must be a JSON object and is frozen before execution. `call` accepts the
 same argument and adds a reserved `call` object containing ECX/EDX, stack
 arguments, FPCW, observation mode and fixture write ranges. Reports do not copy
 the full heap, pointed-to data or executable and cannot restore an emulator.
-Include the fixture selectors needed to reproduce the case. The recorded
-`supported_native_sha256` names the accepted code identity, not an attestation of a
-custom machine: `run_checked` also accepts synthetic tests.
+Include the fixture selectors needed to reproduce the case. `run_checked` also
+accepts synthetic tests.
 
 The shared `Reader.invoke(..., context=...)` forwards this context. Anytown
 `Mission.setup` supplies its fixture class, phase/frame, continuation inputs and
@@ -504,7 +490,8 @@ python -m unittest tools.test_native_oracle -v
 
 These test runner behavior, not retail behavior. The tests cover limits, faults,
 premature stops, alternate exits, missing paths, fresh state, FSTP completion,
-executable identity, reference preservation, provenance mismatches, and diagnostics.
+executable selection, legacy `native_sha256` handling, reference preservation,
+provenance mismatches, and diagnostics.
 
 ## Saved-map browser comparisons
 

@@ -8,7 +8,9 @@ use std::collections::BTreeMap;
 
 use crate::map::lighting::{PointLight, point_light_from_object};
 use crate::rules::ruleset::RuleSet;
+use crate::sim::intern::StringInterner;
 use crate::sim::scenario_session::{ScenarioLightingProfile, ScenarioLightingState};
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
 /// The palette operation that accompanies a global cell refresh. Native
@@ -141,7 +143,13 @@ impl Simulation {
             .map(|entity| entity.stable_id())
             .collect();
         for id in ids {
-            self.allocate_building_light(id, rules);
+            Self::allocate_building_light(
+                &self.interner,
+                &self.substrate,
+                &mut self.lighting_sources,
+                id,
+                rules,
+            );
             // This eager compatibility projection must retain saved6EA.
             // Temporal660 alone does not disable614; DisableStuff does.
             if self
@@ -158,17 +166,23 @@ impl Simulation {
     /// Successful Unlimbo440DFD / construction446767 allocates only when614
     /// is null, then calls554A60(0). Parameter conversion is the same existing
     /// map-light conversion; its floating inputs have presentation-only use.
-    pub fn allocate_building_light(&mut self, id: u64, rules: &RuleSet) {
-        if self.lighting_sources.buildings.contains_key(&id) {
+    pub fn allocate_building_light(
+        interner: &StringInterner,
+        substrate: &ObjectSubstrate,
+        lighting_sources: &mut LightingSources,
+        id: u64,
+        rules: &RuleSet,
+    ) {
+        if lighting_sources.buildings.contains_key(&id) {
             return;
         }
-        let Some(entity) = self.entities().get(id) else {
+        let Some(entity) = substrate.entities.get(id) else {
             return;
         };
         if entity.category() != crate::map::entities::EntityCategory::Structure {
             return;
         }
-        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+        let Some(object) = interner.object_type(entity.type_ref(), rules) else {
             return;
         };
         let Some(source) = point_light_from_object(
@@ -180,8 +194,8 @@ impl Simulation {
         ) else {
             return;
         };
-        self.lighting_sources.buildings.insert(id, source.clone());
-        self.lighting_sources.pending.push(LightingEvent::Building {
+        lighting_sources.buildings.insert(id, source.clone());
+        lighting_sources.pending.push(LightingEvent::Building {
             id,
             source: Some(source),
         });

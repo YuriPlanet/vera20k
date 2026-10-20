@@ -120,8 +120,15 @@ impl RocketHost for RocketProcessHost<'_> {
         }
     }
     fn submit_display(&mut self) {
-        self.sim
-            .submit_entity_display(self.id, Some(self.rules), None);
+        Simulation::submit_entity_display(
+            &self.sim.interner,
+            &self.sim.terrain_objects,
+            &mut self.sim.substrate,
+            &self.sim.resolved_terrain,
+            self.id,
+            Some(self.rules),
+            None,
+        );
     }
     fn tracker_cell(&self) -> (i16, i16) {
         self.owner().air_tracker_cell()

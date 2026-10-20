@@ -1,6 +1,5 @@
 //! Full original LightConvert556090 RGB565 controls and live trigger consumers.
-//! Steam gamemd.exe SHA256
-//! 3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600.
+//! Steam gamemd.exe.
 //! Native controls use tools.palette_oracle's machine/call at556090 with
 //! declared N27/N53 objects, RGB(i,i*73 mod256,255-i), MMX and liveCW0E7F.
 //! Rows0/middle/last, indices64/128/200. No scene/GPU parity claim.

@@ -6,6 +6,7 @@
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::resolved_terrain::NativeCellQuery;
 
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 #[cfg(any(test, feature = "test-support"))]
 use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 use crate::util::lepton::{GROUND_LEVEL_HEIGHT_LEPTONS, ground_height_leptons};
@@ -149,8 +150,12 @@ impl crate::sim::world::Simulation {
     /// which truncates toward zero and wraps by row: the real cell, or `None`
     /// for the shared dummy cell off the map, which holds no object. Without
     /// resolved terrain, the truncated cell.
-    pub(crate) fn map_coord_cell(&self, x: i32, y: i32) -> Option<(u16, u16)> {
-        let (rx, ry) = match self.resolved_terrain.as_ref() {
+    pub(crate) fn map_coord_cell(
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        x: i32,
+        y: i32,
+    ) -> Option<(u16, u16)> {
+        let (rx, ry) = match resolved_terrain.as_ref() {
             Some(terrain) => {
                 let cells = NativeCellQuery::canonical(terrain);
                 let cell = cells.lookup_world(x, y);

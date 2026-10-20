@@ -453,7 +453,17 @@ fn generic_warhead_uses_the_same_gate_before_damage_and_charge() {
     let target = spawn(&mut sim, &rules, "GAMERC", OTHER, 15);
     let owner = sim.interner.get(OWNER).unwrap();
     let id = sim.interner.get(NORMAL).unwrap();
-    assert!(trigger_grant_super(&mut sim, &rules, owner, id, true));
+    assert!(trigger_grant_super(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &sim.houses,
+        &mut sim.super_weapons,
+        &rules,
+        owner,
+        id,
+        true
+    ));
     ready(&mut sim, NORMAL);
     sim.sound_events.clear_for_test();
     let before = sim.state_hash();

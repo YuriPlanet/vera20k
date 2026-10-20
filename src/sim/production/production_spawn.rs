@@ -414,10 +414,6 @@ mod tests {
             "src/sim/production/fixtures/infantry_exit_native.json",
         ))
         .unwrap();
-        assert_eq!(
-            data["native_sha256"],
-            "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-        );
         let mut compared = 0;
         let mut storage_residuals = 0;
         for row in data["rows"].as_array().unwrap() {

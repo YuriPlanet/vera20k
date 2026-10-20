@@ -8,8 +8,7 @@ read-only observation hooks; it contains no accounting or capture algorithm.
 The primitive Engineer and Construction payloads, and both joined corpora,
 are independent inputs and are not rewritten by this companion.
 
-The active-retail executable is `gamemd.exe`, image base `00400000`, SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+The active-retail executable is `gamemd.exe`, image base `00400000`.
 The `.meta.json` records the Unicorn versions, native entries, supplied
 boundaries, inherited fixture provenance and the canonical payload hash. The JSON records retail file hashes
 and selected native reader outputs, not retail executable or asset bytes.
@@ -49,7 +48,7 @@ the tested calls, native requested draws and underlying raw advances, the
 existing owner's call/lifecycle trace, observed accounting stores, original
 instruction bytes at the visited accounting sites, instruction count and
 ordered/unique PC hashes. The existing fixture checks every executable section
-against the pinned original PE before execution; the companion requires those
+against the original PE file before execution; the companion requires those
 sections unchanged after each control and no unfinished RNG call. Runtime
 `AC13C8`/`AC13BC` values are observed after the inherited original Object CRT
 startup. They are not supplied accounting answers.

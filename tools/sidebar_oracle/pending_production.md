@@ -14,10 +14,8 @@ python -B -m tools.sidebar_oracle.factory_loss --pending-production --check
 ```
 
 Use `--write` deliberately to regenerate this corpus and its sidecar. The
-sidecar records the actual original binary hash, replay command and physical
-input hashes, without repository-source hashes. The image used for these
-controls is SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+sidecar records the replay command and physical input hashes, without
+executable or repository-source hashes.
 The physical cache is the existing [sale-sidebar](factory_sale_sidebar.md)
 cache. It is an explicit file-service boundary, not a complete scenario,
 Rules::Process or VFS winner proof. Existing setup executes the selected native

@@ -496,7 +496,7 @@ impl HouseTracking {
             EntityCategory::Structure | EntityCategory::Unit => {
                 self.vehicles = self.vehicles.wrapping_add(delta);
                 if facts.naval_combatant() {
-                    // Steam 3e81a617..08600: 4FF8C0 INC / 4FF6C8 DEC.
+                    // Steam gamemd: 4FF8C0 INC / 4FF6C8 DEC.
                     // tools/spatial_oracle/house_tracking.py (36 controls),
                     // replayed by tag_lifecycle.py --naval-land-events.
                     self.navy = self.navy.wrapping_add(delta);
@@ -844,7 +844,7 @@ impl HouseTracking {
     }
 
     /// TEvent9 / DestroyedUnitsAll (`71F12F..71F187`, Steam
-    /// `3e81a617..08600`) reads the two CounterClass totals independently.
+    /// gamemd) reads the two CounterClass totals independently.
     /// Aircraft and tracked/limbo units do not participate; a negative total
     /// is accepted rather than canceling a positive total of the other class.
     /// Source: tools/spatial_oracle/tag_lifecycle.py --destroyed-house-events.

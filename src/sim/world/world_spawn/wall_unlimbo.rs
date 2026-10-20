@@ -1,5 +1,5 @@
 //! Building440580's ordinary ToOverlay wall arm, before generic live Reveal.
-//! Original gamemd SHA1cdd1180; whole588750/constructor/Unlimbo controls:
+//! Original gamemd; whole588750/constructor/Unlimbo controls:
 //! tools/spatial_oracle/building_death_anims.py --wall-autofill.
 //! HousePlace4FB1F7..4FB22E and588750 supply centered XY/Z0. The transient
 //! Overlay owner retains those requested coordinates; the Building stays at

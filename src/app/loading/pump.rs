@@ -1171,6 +1171,7 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
             native_rules_owner.consume_outgoing_scenario_rules(
                 runtime.simulation.retire_object_type_tech_levels(),
                 runtime.simulation.retire_ambient_change_inputs(),
+                runtime.simulation.retire_building_upgrade_art_names(),
             )?;
         }
         let load_result = {
@@ -1335,13 +1336,12 @@ fn ensure_session_job_asset_manager(
                 );
             }
             process_assets.note_lease_ended_without_return();
-            AssetManager::new(
+            process_assets.reconstruct_manager(
                 session
                     .job
                     .ra2_dir
                     .as_deref()
                     .expect("RA2 directory was initialized above"),
-                process_assets.media_archive_mode(),
             )?
         };
         session.job.asset_manager = Some(asset_manager);

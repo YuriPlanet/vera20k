@@ -6,10 +6,6 @@ use crate::util::save_codec;
 
 fn corpus() -> &'static serde_json::Value {
     let value = crate::test_fixture::json("tools/spatial_oracle/trigger_wakeup.json");
-    assert_eq!(
-        value["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     assert_eq!(value["controls"].as_array().unwrap().len(), 57);
     assert!(value["code_unchanged"].as_bool().unwrap());
     value

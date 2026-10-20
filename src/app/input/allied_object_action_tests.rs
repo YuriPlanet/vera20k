@@ -208,7 +208,7 @@ fn allied_object_ivan_bomb_refusal_matches_native_consumer() {
         };
         let (mut sim, actor, target) = object_pair(&battle.rules, "IVAN", "ally");
         if input["has_bomb"] == true {
-            sim.bomb_attach(actor, Some(target), &battle.rules);
+            sim.bomb_attach_for_test(actor, Some(target), &battle.rules);
         }
         let entity = sim.entities().get(target).unwrap();
         // Compare this shared refusal leaf only: a previously attached bomb

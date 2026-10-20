@@ -3348,11 +3348,11 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 
         // The Ivan plants on the enemy tank and on the own tank; a Soviet Ivan
         // plants on a Soviet tank nobody American stands near.
-        sim.bomb_attach(ivan, Some(enemy_tank), &rules);
-        sim.bomb_attach(ivan, Some(own_tank), &rules);
-        sim.bomb_attach(enemy_ivan, Some(far_tank), &rules);
-        sim.bomb_list_update(&rules);
-        sim.bomb_list_update(&rules);
+        sim.bomb_attach_for_test(ivan, Some(enemy_tank), &rules);
+        sim.bomb_attach_for_test(ivan, Some(own_tank), &rules);
+        sim.bomb_attach_for_test(enemy_ivan, Some(far_tank), &rules);
+        sim.bomb_list_update_for_test(&rules);
+        sim.bomb_list_update_for_test(&rules);
 
         assert_eq!(
             bomb_hover(&sim, &rules, ivan, EnemyUnit, enemy_tank),

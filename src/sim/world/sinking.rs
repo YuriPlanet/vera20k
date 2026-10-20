@@ -13,8 +13,11 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::AnimClassSpawnDescriptor;
+use crate::sim::intern::StringInterner;
 use crate::sim::movement::ground_pose::{ground_surface_z_at, position_world_coord};
+use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectSubstrate;
 
 /// Native callers of a living, still-marked hull's sink transition.
 pub(crate) enum LivingSinkTrigger {
@@ -111,8 +114,14 @@ impl Simulation {
     /// Foot4DABC7..4DACD7: voice first (no local-player gate), then the type
     /// SinkingSound or Rules+208 on Foot's existing sound handle. The falling
     /// edge releases that handle only when MoveSoundActive+53C is clear.
-    pub(crate) fn sinking_edge_sounds(&mut self, id: u64, rules: &RuleSet) {
-        let Some(entity) = self.substrate.entities.get(id) else {
+    pub(crate) fn sinking_edge_sounds(
+        interner: &StringInterner,
+        substrate: &mut ObjectSubstrate,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
+        id: u64,
+        rules: &RuleSet,
+    ) {
+        let Some(entity) = substrate.entities.get(id) else {
             return;
         };
         let state = entity.sinking;
@@ -120,14 +129,14 @@ impl Simulation {
             return;
         }
         if state.active {
-            let object = self.object_type(entity.type_ref(), rules);
+            let object = interner.object_type(entity.type_ref(), rules);
             let voice = object.and_then(|object| object.voice_sinking.clone());
             let sound = object
                 .and_then(|object| object.sinking_sound.clone())
                 .or_else(|| rules.general.sinking_sound.clone());
             let coord = position_world_coord(&entity.position);
             if let Some(sound_id) = voice {
-                self.sound_events.emit(SimSoundEvent::VocAt {
+                sound_events.emit(SimSoundEvent::VocAt {
                     sound_id,
                     audible_to: None,
                     rx: entity.position.rx(),
@@ -138,7 +147,7 @@ impl Simulation {
                 });
             }
             if let Some(sound) = sound {
-                self.sound_events.emit(SimSoundEvent::AnimationStarted {
+                sound_events.emit(SimSoundEvent::AnimationStarted {
                     anim_id: id,
                     sound_id: sound,
                     world: AnimWorldCoord {
@@ -149,10 +158,9 @@ impl Simulation {
                 });
             }
         } else if !entity.move_sound.is_active() {
-            self.sound_events
-                .emit(SimSoundEvent::ObjectSoundReleased { owner: id });
+            sound_events.emit(SimSoundEvent::ObjectSoundReleased { owner: id });
         }
-        if let Some(entity) = self.substrate.entities.get_mut(id) {
+        if let Some(entity) = substrate.entities.get_mut(id) {
             entity.sinking.sound_edge_seen = state.active;
         }
     }

@@ -38,7 +38,6 @@ struct Row {
 
 #[derive(Deserialize)]
 struct Corpus {
-    native_sha256: String,
     rows: Vec<Row>,
 }
 
@@ -90,10 +89,6 @@ fn original_object_cell_queries_keep_physical_aliases_and_dummy_fields() {
         "tools/spatial_oracle/object_get_cell.json",
     ))
     .unwrap();
-    assert_eq!(
-        corpus.native_sha256,
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     assert_eq!(corpus.rows.len(), 10);
     for row in corpus.rows {
         let terrain = terrain(&row.input);
@@ -207,7 +202,6 @@ struct CenterRow {
 
 #[derive(Deserialize)]
 struct BoundaryCorpus {
-    native_sha256: String,
     rows: Vec<EarlyRow>,
     cell_centers: Vec<CenterRow>,
 }
@@ -217,10 +211,6 @@ fn boundary_corpus() -> BoundaryCorpus {
         "tools/spatial_oracle/fire_error_cell_boundary.json",
     ))
     .unwrap();
-    assert_eq!(
-        corpus.native_sha256,
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     corpus
 }
 

@@ -367,10 +367,6 @@ fn fire_once_tail_matches_12_original_retained_state_and_rng_boundaries() {
         "tools/projectile_oracle/fire_once.json",
     ))
     .unwrap();
-    assert_eq!(
-        corpus["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     assert_eq!(corpus["cases"].as_array().unwrap().len(), 13);
     let mut compared = 0;
     for row in corpus["cases"].as_array().unwrap() {

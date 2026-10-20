@@ -3,8 +3,7 @@
 `python -m tools.spatial_oracle.native_id_snapshot --check` executes the pinned
 original `gamemd.exe`; `--write` explicitly regenerates the corpus and sidecar.
 Configure `RA2_DIR` or `VERA20K_GAMEMD_EXE` through
-[`native_oracle`](../native_oracle.md). The accepted SHA-256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+[`native_oracle`](../native_oracle.md).
 
 The seven historical `cases` retain their schema and observations: original
 Scenario Save `0x689310`, Load `0x689470`, post-read `0x683560`, then numeric ID

@@ -7,8 +7,6 @@ JSON and metadata are the installed controls consumed by
 `sim::world::wall_autofill_oracle_tests`; replay into scratch and compare before
 replacing them. Existing modes and corpus paths retain their defaults.
 
-The selected original binary is SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 Original whole Map autofill `588750..588952` calls BuildingType `45E880`, whole
 Building constructor `43B740` and Building Unlimbo `440580` for each gap. The
 native caller does not test the Unlimbo result. The wall arm constructs a

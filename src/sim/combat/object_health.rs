@@ -128,7 +128,7 @@ pub(super) trait ObjectHealthHost {
     fn invoke(&mut self, callback: HealthCallback);
 }
 
-/// Object5F5390, Steam3e81a617: the threshold/first-damage Tags precede Kill
+/// Object5F5390, Steam gamemd: the threshold/first-damage Tags precede Kill
 /// and Destroy; every synchronous return can change HP, Type, Alive or Tag.
 /// Executed bodies and callback mutations: tag_lifecycle --damage-events.
 /// No own RNG, timers or detach; the invoked owners retain those effects.

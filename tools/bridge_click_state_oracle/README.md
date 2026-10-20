@@ -1,9 +1,9 @@
 # Live cell levels and bridge flags in tactical picking
 
 `python -m tools.bridge_click_state_oracle --check` executes 104 calls to the
-original retail Tactical inverse `0x006D6590` using the same fixture and binary
-verification as `tools/bridge_click_oracle.py`. `vectors.meta.json` records the
-binary hash and assumptions. `--write` explicitly regenerates the references.
+original retail Tactical inverse `0x006D6590` using the same fixture and image
+loader as `tools/bridge_click_oracle.py`. `vectors.meta.json` records the
+assumptions. `--write` explicitly regenerates the references.
 
 The original caller resolves each scan candidate through `Get_CellClass`
 `0x006D674C → 0x005657A0`. It reads the returned cell's live flag word at

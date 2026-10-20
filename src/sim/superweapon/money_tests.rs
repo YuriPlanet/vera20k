@@ -62,7 +62,15 @@ fn ready(
 ) -> InternedId {
     let id = sim.interner.get(name).unwrap();
     assert!(superweapon::trigger_grant_super(
-        sim, rules, owner, id, once
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &sim.houses,
+        &mut sim.super_weapons,
+        rules,
+        owner,
+        id,
+        once
     ));
     sim.super_weapons
         .map_mut_for_test()

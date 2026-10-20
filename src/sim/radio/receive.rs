@@ -1755,7 +1755,7 @@ fn techno_receive(
             }
         }
         RadioMessage::RepairTick => techno_repair_tick(sim, techno, rules, effects),
-        RadioMessage::Reload => techno_reload(sim, techno, rules),
+        RadioMessage::Reload => techno_reload(&sim.interner, &mut sim.substrate, techno, rules),
         // 0x1A, 0x1B and 0x1E have no represented sender; neither has 0x1D
         // to anything but an aircraft, which answers it itself.
         RadioMessage::SecondaryLockSet
@@ -1768,18 +1768,22 @@ fn techno_receive(
 
 /// RELOAD, Techno case 0x1F (`0x006F4C9C`): Ammo at the type's `Ammo=`
 /// answers NEGATORY; otherwise one round more and ROGER.
-fn techno_reload(sim: &mut Simulation, techno: u64, rules: Option<&RuleSet>) -> RadioResponse {
+fn techno_reload(
+    interner: &StringInterner,
+    substrate: &mut ObjectSubstrate,
+    techno: u64,
+    rules: Option<&RuleSet>,
+) -> RadioResponse {
     let Some(type_ammo) = rules.and_then(|rules| {
-        sim.substrate
+        substrate
             .entities
             .get(techno)
-            .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+            .and_then(|entity| interner.object_type(entity.type_ref(), rules))
             .map(|object| object.ammo)
     }) else {
         return RadioResponse::None;
     };
-    let Some(ammo) = sim
-        .substrate
+    let Some(ammo) = substrate
         .entities
         .get_mut(techno)
         .and_then(|entity| entity.ammo_mut())
@@ -1830,7 +1834,7 @@ fn techno_repair_tick(
     };
     let heal = heal.max(1);
     let owner = entity.owner();
-    if crate::sim::credit_income::available_money(sim, owner) < cost {
+    if crate::sim::credit_income::available_money(&sim.houses, owner) < cost {
         return RadioResponse::InsufficientFunds;
     }
     if cost != 0 {
@@ -1852,7 +1856,13 @@ fn techno_repair_tick(
     }
     // Radio6F4DAB..6F4DE5 uses the same two-clause health/height gate as
     // SelfHeal6FA75A. Its existing owner retires the retained smoke system.
-    sim.retire_damage_smoke_after_self_heal(techno, rules);
+    Simulation::retire_damage_smoke_after_self_heal(
+        &sim.interner,
+        &mut sim.substrate,
+        &sim.resolved_terrain,
+        techno,
+        rules,
+    );
     let Some(entity) = sim.substrate.entities.get_mut(techno) else {
         return RadioResponse::None;
     };
@@ -2005,7 +2015,7 @@ fn radio_receive(
                         ),
                     )
                 });
-            let accepted = sim.mark_entity_refresh(receiver);
+            let accepted = Simulation::mark_entity_refresh(&sim.substrate, receiver);
             #[cfg(any(test, feature = "test-support"))]
             super::record_test_event(super::RadioTestEvent::ObjectMarkRefresh {
                 receiver_sid: receiver,
@@ -2467,7 +2477,7 @@ mod tests {
         let before = serde_json::to_value(sim.substrate.entities.get(2).unwrap()).unwrap();
         let rng_before = sim.rng_state();
         let lifecycle_before = sim.lifecycle_test_events_for_test().to_vec();
-        assert!(!sim.mark_entity_refresh(2));
+        assert!(!Simulation::mark_entity_refresh(&sim.substrate, 2));
         assert_eq!(
             transmit(
                 &mut sim,

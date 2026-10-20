@@ -9,6 +9,9 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::{PlacementEvidence, Simulation};
 
 use crate::rules::foundation::foundation_dimensions;
+use crate::sim::houses::Houses;
+use crate::sim::intern::StringInterner;
+use crate::sim::scenario_session::ScenarioSession;
 
 /// Native primary FreeUnit facing byte. Under the project facing convention,
 /// 0xC0 is west.
@@ -120,7 +123,14 @@ fn try_spawn_building_free_unit(
         rules,
         effects,
     ) else {
-        let refund = refund_free_unit(sim, rules, owner, &free_unit_type);
+        let refund = refund_free_unit(
+            &sim.interner,
+            &sim.session,
+            &mut sim.houses,
+            rules,
+            owner,
+            &free_unit_type,
+        );
         log::warn!(
             "Completed refinery {} could not construct free unit {}; refunded {} to {}",
             building_type_id,
@@ -187,7 +197,14 @@ fn try_spawn_building_free_unit(
     }
 
     // gamemd refunds before uninitializing the constructed UnitClass.
-    let refund = refund_free_unit(sim, rules, owner, &free_unit_type);
+    let refund = refund_free_unit(
+        &sim.interner,
+        &sim.session,
+        &mut sim.houses,
+        rules,
+        owner,
+        &free_unit_type,
+    );
     sim.uninit_with_context(
         free_unit_id,
         crate::sim::world::UninitContext::new(Some(rules), overlay_registry).with_effects(effects),
@@ -239,26 +256,33 @@ fn try_place_free_unit(
 /// `full` set ([`super::type_refund`]; `0x00446E71..0x00446E8F`,
 /// `0x00446EB9..0x00446EDD`) through `HouseClass::Add_Credits @ 0x004F9950`.
 /// Returns the amount credited.
-fn refund_free_unit(sim: &mut Simulation, rules: &RuleSet, owner: &str, unit_type: &str) -> i32 {
-    let Some(owner_id) = sim.interner.get(owner) else {
+fn refund_free_unit(
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    houses: &mut Houses,
+    rules: &RuleSet,
+    owner: &str,
+    unit_type: &str,
+) -> i32 {
+    let Some(owner_id) = interner.get(owner) else {
         return 0;
     };
     let refund = match (
         rules.object(unit_type),
-        sim.houses.get(&owner_id),
-        sim.house_cost_factors(owner_id),
+        houses.get(&owner_id),
+        Simulation::house_cost_factors(houses, owner_id),
     ) {
         (Some(object), Some(house), Some(factors)) => super::type_refund(
             rules,
             object,
             house,
             &factors,
-            sim.session.game_mode_nonzero(),
+            session.game_mode_nonzero(),
             true,
         ),
         _ => return 0,
     };
-    crate::sim::credit_income::add_credits(&mut sim.houses, owner_id, refund);
+    crate::sim::credit_income::add_credits(houses, owner_id, refund);
     refund
 }
 

@@ -499,7 +499,7 @@ fn gsi_06_13_selected_curve_starts_at_the_movers_own_cell_centre() {
 
 /// Every `TURN_TRACKS` and `RAW_TRACKS` entry, as gamemd.exe stores them.
 ///
-/// Read from the retail binary (SHA-256 `1cdd1180...4298c`) at `0x007E7B28`
+/// Read from the retail binary at `0x007E7B28`
 /// (72 entries of 12 bytes) and `0x007E7A28` (16 entries of 16 bytes). Native
 /// layout: TurnTrack byte +0x00 normal track, +0x01 short track, dword +0x04
 /// target facing, dword +0x08 flags; RawTrack dword +0x00 points pointer,

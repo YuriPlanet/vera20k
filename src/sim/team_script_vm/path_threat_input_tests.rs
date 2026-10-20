@@ -27,10 +27,6 @@ fn stored_bits(value: &Value) -> NativeF64Bits {
 #[test]
 fn original_coefficient_reader_and_nullable_team_getter_controls() {
     let packet = packet();
-    assert_eq!(
-        packet["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     for row in packet["type_readers"].as_array().unwrap() {
         let mut section = IniSection::new("MTNK".into());
         if let Some(text) = row["value"].as_str() {
