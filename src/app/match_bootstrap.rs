@@ -141,6 +141,20 @@ impl CampaignLaunchOptions {
     }
 }
 
+/// StartScenario683B26..683B62 copies Scenario+125C and uppercases it via
+/// 7DCFC4 before the exact-case MISSIONMD reads (original gamemd.exe).
+/// Keep the supplied physical spelling for case-sensitive loose-file lookup.
+fn prepare_campaign_scenario(
+    scenario: &str,
+    launch_options: Option<&CampaignLaunchOptions>,
+) -> (String, Option<String>) {
+    let logical_name = scenario.to_ascii_uppercase();
+    let source = launch_options
+        .and_then(|options| options.loose_scenario_file(scenario))
+        .or_else(|| (logical_name != scenario).then(|| scenario.to_owned()));
+    (logical_name, source)
+}
+
 /// Start_Scenario683AB0's immutable campaign-array selection, separate from
 /// multiplayer slot staging. Full_Init686B6A uses Options.Difficulty literally.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -151,8 +165,8 @@ pub struct PreparedCampaignStartup {
     /// the campaign's Scenario (`0x00683AF8`); a won mission passes the map
     /// MapSelect chose (`0x00685C4E`).
     scenario: String,
-    /// Derived physical source for a loose external mission. The logical
-    /// scenario above remains authoritative for metadata and continuation.
+    /// Physical source spelling when it differs from the logical name, or
+    /// the resolved external path. Metadata and continuation use `scenario`.
     scenario_file: Option<String>,
     /// Scenario+0x1254 for this start. A new campaign starts after
     /// BattleControlTerminated6865B0, whose reset matches the ctor's 1; a won
@@ -218,13 +232,12 @@ impl PreparedCampaignStartup {
         carried_globals: [bool; SCENARIO_GLOBAL_COUNT],
         clock: &mut impl MatchSeedClock,
     ) -> Self {
+        let (scenario, scenario_file) =
+            prepare_campaign_scenario(&scenario, self.launch_options.as_ref());
         Self {
             campaign_index: self.campaign_index,
             campaign: self.campaign.clone(),
-            scenario_file: self
-                .launch_options
-                .as_ref()
-                .and_then(|options| options.loose_scenario_file(&scenario)),
+            scenario_file,
             scenario,
             mission_counter,
             difficulty,
@@ -251,14 +264,15 @@ pub fn prepare_campaign_startup(
 ) -> Option<PreparedCampaignStartup> {
     let campaign_index = campaigns.find_index(name)?;
     let campaign = campaigns.get(campaign_index)?.clone();
-    let scenario = scenario.unwrap_or_else(|| campaign.scenario()).to_owned();
+    let (scenario, scenario_file) = prepare_campaign_scenario(
+        scenario.unwrap_or_else(|| campaign.scenario()),
+        launch_options.as_ref(),
+    );
     Some(PreparedCampaignStartup {
         campaign_index,
         // External mission selectors can enter a later authored scenario while
         // retaining the selected campaign's final movie and continuation identity.
-        scenario_file: launch_options
-            .as_ref()
-            .and_then(|options| options.loose_scenario_file(&scenario)),
+        scenario_file,
         scenario,
         campaign,
         mission_counter: 1,
@@ -734,7 +748,7 @@ mod tests {
             &campaigns,
             "ALL1",
             2,
-            Some("ALL04UMD.MAP"),
+            Some("ALL04uMd.map"),
             Some(CampaignLaunchOptions {
                 game_speed: 2,
                 build_off_ally: false,
@@ -744,6 +758,7 @@ mod tests {
         )
         .expect("campaign admission");
         assert_eq!(startup.scenario(), "ALL04UMD.MAP");
+        assert_eq!(startup.selected_map_file(), "ALL04uMd.map");
         assert_eq!(startup.campaign().scenario(), "ALL01UMD.MAP");
         assert_eq!(startup.campaign().id(), "ALL1");
         assert_eq!(startup.campaign().cd(), 2);
@@ -753,7 +768,7 @@ mod tests {
         assert_eq!(startup.seed.value, 731);
         assert_eq!(clock.reads, 1);
         let next = startup.next_mission(
-            "ALL05UMD.MAP".into(),
+            "ALL05uMd.map".into(),
             2,
             2,
             4,
@@ -763,6 +778,7 @@ mod tests {
         assert_eq!(next.campaign_index(), startup.campaign_index());
         assert_eq!(next.campaign(), startup.campaign());
         assert_eq!(next.scenario(), "ALL05UMD.MAP");
+        assert_eq!(next.selected_map_file(), "ALL05uMd.map");
         assert_eq!(next.game_options().unwrap().game_speed, 4);
         assert!(!next.game_options().unwrap().build_off_ally);
     }
@@ -955,5 +971,4 @@ mod tests {
         }
         assert!(accepted_tick_is_admitted(None, None));
     }
-
 }

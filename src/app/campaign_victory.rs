@@ -435,7 +435,8 @@ Scenario=ALL03umd.MAP
         }
     }
 
-    /// Every retail YR campaign map leads to the next one through MAPSELMD.
+    /// Continue must retain the next map's MISSIONMD loading art and copy,
+    /// including MAPSELMD's mixed-case Scenario values.
     #[test]
     fn retail_mapselmd_chains_both_campaigns() {
         let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
@@ -443,15 +444,50 @@ Scenario=ALL03umd.MAP
         };
         let mapsel = crate::rules::retail_sources::select_ini(&assets, "MAPSELMD.INI")
             .expect("retail MAPSELMD.INI");
-        for (side, maps) in [("GDI", ALLIED), ("Nod", SOVIET)] {
+        let mission = crate::rules::retail_sources::select_ini(&assets, "MISSIONMD.INI")
+            .expect("retail MISSIONMD.INI");
+        let battle = crate::rules::retail_sources::select_ini(&assets, "BATTLEMD.INI")
+            .expect("retail BATTLEMD.INI");
+        let mut campaigns = crate::rules::campaigns::CampaignRegistry::default();
+        campaigns.apply_ini(&battle.ini, &crate::rules::movies::MovieRegistry::default());
+        let mut clock = crate::app::match_bootstrap::OrdinaryMatchSeedClock;
+        for (side, name, maps) in [("GDI", "ALL1", ALLIED), ("Nod", "SOV1", SOVIET)] {
+            let mut startup = crate::app::match_bootstrap::prepare_campaign_startup(
+                &campaigns, name, 1, None, None, &mut clock,
+            )
+            .expect("retail campaign");
             for pair in maps.windows(2) {
-                let current = format!("{}.MAP", pair[0]);
+                let current = startup.scenario().to_owned();
                 match map_select(Some(&mapsel.ini), Some(side), &current) {
                     MapSelectPick::Next(next) => {
                         assert!(
                             next.eq_ignore_ascii_case(&format!("{}.MAP", pair[1])),
                             "{current} -> {next}"
-                        )
+                        );
+                        startup = startup.next_mission(
+                            next,
+                            startup.mission_counter() + 1,
+                            1,
+                            3,
+                            [false; crate::sim::trigger_runtime::SCENARIO_GLOBAL_COUNT],
+                            &mut clock,
+                        );
+                        let mut metadata =
+                            crate::rules::campaign_loading::CampaignLoadingMetadata::default();
+                        metadata.apply_ini(&mission.ini, startup.scenario());
+                        for value in [
+                            metadata.background_name_640(),
+                            metadata.background_name_800(),
+                            metadata.background_palette_name(),
+                            metadata.load_message_key(),
+                            metadata.load_briefing_key(),
+                        ] {
+                            assert!(
+                                !value.is_empty(),
+                                "{} lost its loading presentation after {current}",
+                                startup.scenario()
+                            );
+                        }
                     }
                     other => panic!("{current}: {other:?}"),
                 }
