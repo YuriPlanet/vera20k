@@ -1,4 +1,4 @@
-// Original4BEAC0/4BDF00/4BFD30/760190: packed operations, strict u16 Z.
+// Original4BEAC0/4BDF00/4BFD30/760190/75EDF0: packed operations, strict u16 Z.
 // Signed shifts use WGSL arithmetic shift: https://www.w3.org/TR/WGSL/#bit-expr
 @group(0) @binding(0) var old_words: texture_2d<u32>;
 @group(0) @binding(1) var old_depth: texture_2d<f32>;
@@ -31,18 +31,25 @@ fn fs_main(input: Output) -> @location(0) vec4f {
     var touched = false;
     for(var i = input.span.x; i < input.span.x + input.span.y; i += 1u) {
         let op = operations[i];
-        //Wave3: native760190 reads a displaced packed word.7602E0 admits
+        //Wave0/3: native75EDF0/760190 read displaced packed words. Both admit
         //strictly unsigned candidate<stored, never queries A and never WriteZ.
         //CPU preparation fences each Wave and includes its source footprint.
-        if op.mode == 7u {
+        if op.mode == 7u || op.mode == 9u {
             if op.z < old_z {
                 let source = textureLoad(old_words,vec2i(op.source_x,op.source_y),0).r;
                 let red = i32((source >> 11u) & 31u) << 3u;
-                let green = (source >> 5u) & 63u;
+                let green = i32((source >> 5u) & 63u) << 2u;
                 let blue = i32(source & 31u) << 3u;
-                let r = min(255,red + (((op.strength / 2) * red) >> 8u));
-                let b = min(255,blue + (((op.strength * blue) << 2u) >> 8u));
-                word = u32((r >> 3u) << 11u) | (green << 5u) | u32(b >> 3u);
+                if op.mode == 9u {
+                    //Sonic75EEB2..75EF19 preserves red and brightens G/B.
+                    let g = min(255,green + ((op.strength * green) >> 8u));
+                    let b = min(255,blue + ((op.strength * blue) >> 8u));
+                    word = u32((red >> 3u) << 11u) | u32((g >> 2u) << 5u) | u32(b >> 3u);
+                } else {
+                    let r = min(255,red + (((op.strength / 2) * red) >> 8u));
+                    let b = min(255,blue + (((op.strength * blue) << 2u) >> 8u));
+                    word = u32((r >> 3u) << 11u) | u32((green >> 2u) << 5u) | u32(b >> 3u);
+                }
                 touched = true;
             }
             continue;

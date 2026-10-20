@@ -358,7 +358,7 @@ mod tests {
         entity.set_type_ref_for_test(sim.intern("MTNK"));
         entity.set_owner_for_test(sim.intern("Americans"));
         sim.substrate.entities.insert(entity);
-        sim.substrate.next_stable_object_id = 2;
+        sim.set_next_stable_object_id_for_test(2);
         sim.reveal(1);
         assert_eq!(
             sim.substrate

@@ -1018,7 +1018,7 @@ impl Simulation {
                             .is_some_and(|rules| rules.general.ally_reveal)
                         && self.session.current_house().is_some_and(|viewer| {
                             crate::map::houses::is_allied_with(
-                                &self.house_alliances,
+                                self.house_alliances.as_map(),
                                 self.interner.resolve(entity.owner()),
                                 self.interner.resolve(viewer),
                             )
@@ -1318,7 +1318,7 @@ impl Simulation {
         };
         let viewers: std::sync::Arc<[_]> = match only_viewer {
             Some(viewer) => vision::reveal_admits(
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 entity.owner(),
                 viewer,
                 config,
@@ -1329,7 +1329,7 @@ impl Simulation {
             .collect(),
             None => self.reveal_viewers.direct(
                 &self.fog,
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 entity.owner(),
                 config,
                 &self.interner,
@@ -1498,7 +1498,7 @@ impl Simulation {
             Some(viewer) => std::sync::Arc::from([viewer]),
             None => self.reveal_viewers.direct(
                 &self.fog,
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 entity.owner(),
                 &config,
                 &self.interner,
@@ -1584,7 +1584,7 @@ impl Simulation {
         }
         let viewers = self.reveal_viewers.direct(
             &self.fog,
-            &self.house_alliances,
+            self.house_alliances.as_map(),
             entity.owner(),
             &config,
             &self.interner,
@@ -1775,7 +1775,7 @@ impl Simulation {
             && entity.category() == EntityCategory::Structure
             && entity.owner() != viewer
             && vision::reveal_admits(
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 entity.owner(),
                 viewer,
                 config,
@@ -1962,7 +1962,7 @@ impl Simulation {
         };
         let viewers = self.reveal_viewers.direct(
             &self.fog,
-            &self.house_alliances,
+            self.house_alliances.as_map(),
             current,
             &config,
             &self.interner,
@@ -2034,7 +2034,7 @@ impl Simulation {
         };
         let viewers = self.reveal_viewers.direct(
             &self.fog,
-            &self.house_alliances,
+            self.house_alliances.as_map(),
             current,
             &config,
             &self.interner,
@@ -2092,7 +2092,7 @@ impl Simulation {
             .reveal_viewers
             .direct(
                 &self.fog,
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 current,
                 &config,
                 &self.interner,
@@ -2113,7 +2113,7 @@ impl Simulation {
                     .reveal_viewers
                     .direct(
                         &self.fog,
-                        &self.house_alliances,
+                        self.house_alliances.as_map(),
                         entity.owner(),
                         &config,
                         &self.interner,
@@ -2172,7 +2172,7 @@ impl Simulation {
         //does not admit this event or mutate this viewer's countdown.
         let viewers = self.reveal_viewers.allied(
             &self.fog,
-            &self.house_alliances,
+            self.house_alliances.as_map(),
             entity.owner(),
             &self.interner,
         );

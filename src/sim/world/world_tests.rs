@@ -1539,6 +1539,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     assert!(sim.path_grid.as_deref().unwrap().is_walkable(5, 4));
     let projected = PathGrid::from_resolved_terrain_with_bridges(
         sim.resolved_terrain.as_ref().expect("terrain"),
+        sim.overlay_grid.as_ref(),
     );
     assert_eq!(
         sim.path_grid.as_deref().unwrap().diff_cells(&projected),
@@ -1741,15 +1742,17 @@ fn dynamic_navigation_publication_composes_structures_bibs_and_bridges() {
         cell.bridge_walkable = true;
         cell.has_bridge_deck = true;
         cell.bridge_deck_level = 4;
-        // A legacy deck (no bit0x100) is intact while its +44 decodes.
-        cell.bridge_facts.overlay_id = Some(0xCD);
     }
+    // A legacy deck (no bit0x100) is intact while its +44 decodes.
+    let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(16, 16);
+    overlays.cell_mut_for_test(2, 1).overlay_id = Some(0xCD);
 
     let mut sim = Simulation::new();
     sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain(
         &terrain, true, 10,
     ));
     sim.resolved_terrain = Some(terrain);
+    sim.overlay_grid = Some(overlays);
     let mut building = make_test_entity("GAREFN", EntityCategory::Structure);
     building.cell_x = 8;
     building.cell_y = 8;
@@ -1781,13 +1784,7 @@ fn dynamic_navigation_publication_composes_structures_bibs_and_bridges() {
         "canonical publication must assign a reachable ground cell"
     );
 
-    sim.resolved_terrain
-        .as_mut()
-        .expect("bridge terrain")
-        .cell_mut_for_test(2, 1)
-        .expect("bridge body cell")
-        .bridge_facts
-        .overlay_id = Some(0xE8);
+    sim.overlay_cell_mut_for_test(2, 1).overlay_id = Some(0xE8);
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let collapsed_grid = sim.path_grid().expect("collapsed navigation publication");
     assert!(
@@ -2741,6 +2738,7 @@ fn gsi_04_10_in_tick_refresh_updates_the_tail_path_before_consumers() {
     mark_terrain_occupation(&tree, sim.resolved_terrain.as_mut());
     let mut input_path_grid = PathGrid::from_resolved_terrain_with_bridges(
         sim.resolved_terrain.as_ref().expect("resolved terrain"),
+        sim.overlay_grid.as_ref(),
     );
     input_path_grid.set_blocked(1, 0, true);
     assert!(!input_path_grid.is_walkable(0, 0));
@@ -2782,6 +2780,7 @@ fn gsi_04_10_zero_occupation_removal_forces_ground_zone_with_same_walkability() 
     );
     let input_path_grid = PathGrid::from_resolved_terrain_with_bridges(
         sim.resolved_terrain.as_ref().expect("resolved terrain"),
+        sim.overlay_grid.as_ref(),
     );
     assert!(input_path_grid.is_walkable(0, 0));
     sim.rebuild_zone_grid_full(&input_path_grid);
@@ -2860,8 +2859,13 @@ fn install_rectangular_test_map(sim: &mut Simulation, width: u16, height: u16) {
 
 /// Structural deck fixture for the576BA0 ->47E040 damage path, matching
 /// bridge_body_publication's native anchor25/state15 collapse input.
-/// All four deck slots come from the actual direction6 flag stamp.
-fn structural_bridge_for_damage_dispatch() -> (ResolvedTerrainGrid, BridgeRuntimeState) {
+/// All four deck slots come from the actual direction6 flag stamp; their
+/// overlay fields come back in the returned grid.
+fn structural_bridge_for_damage_dispatch() -> (
+    ResolvedTerrainGrid,
+    BridgeRuntimeState,
+    crate::sim::overlay_grid::OverlayGrid,
+) {
     use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
     let mut terrain = ResolvedTerrainGrid::from_cells(
         10,
@@ -2874,13 +2878,15 @@ fn structural_bridge_for_damage_dispatch() -> (ResolvedTerrainGrid, BridgeRuntim
         BridgeFlagStamp::new((5, 5), 6, true),
         BridgeStampFamily::Nesw,
     );
-    let anchor = terrain.native_cell_identity((5, 5));
-    terrain.write_native_cell_state(anchor, 15);
-    terrain
-        .cell_mut_for_test(5, 5)
-        .unwrap()
-        .bridge_facts
-        .overlay_id = Some(25);
+    // The constructing setter's four slot visits store state 9 (direction
+    // 6); the anchor then carries overlay 25 at state 15.
+    let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(10, 10);
+    for x in [3, 4, 6] {
+        overlays.cell_mut_for_test(x, 5).overlay_data = 9;
+    }
+    let anchor = overlays.cell_mut_for_test(5, 5);
+    anchor.overlay_id = Some(25);
+    anchor.overlay_data = 15;
     let state = BridgeRuntimeState::from_resolved_terrain(&terrain, true, 15);
     for x in 3..=6 {
         assert!(
@@ -2891,13 +2897,13 @@ fn structural_bridge_for_damage_dispatch() -> (ResolvedTerrainGrid, BridgeRuntim
                 .has_structural_bridge()
         );
     }
-    (terrain, state)
+    (terrain, state, overlays)
 }
 
 /// The direction6 structural deck over water: every cell takes
 /// `water_terrain`'s ground, the deck spans (3..=6, 5).
 fn water_under_structural_bridge() -> (ResolvedTerrainGrid, BridgeRuntimeState) {
-    let (mut terrain, _) = structural_bridge_for_damage_dispatch();
+    let (mut terrain, _, _) = structural_bridge_for_damage_dispatch();
     let water = water_terrain(1, 1).cells()[0].clone();
     for cell in terrain.cells_mut_for_test() {
         cell.land_type = water.land_type;
@@ -2920,7 +2926,7 @@ fn structural_bridge_for_fallout(
     water_below: bool,
 ) -> (ResolvedTerrainGrid, BridgeRuntimeState) {
     use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
-    let (mut terrain, _) = structural_bridge_for_damage_dispatch();
+    let (mut terrain, _, _) = structural_bridge_for_damage_dispatch();
     for x in 3..=6 {
         let cell = terrain.cell_mut_for_test(x, 5).unwrap();
         cell.level = ground_level;
@@ -2948,7 +2954,10 @@ fn assert_structural_bridge_collapsed(sim: &Simulation) {
     for x in 3..=6 {
         let cell = sim.resolved_terrain.as_ref().unwrap().cell(x, 5).unwrap();
         assert_eq!(cell.bridge_facts.raw_flags, 0x400, "collapsed cell({x},5)");
-        assert_eq!(cell.bridge_facts.state_byte, 0);
+        assert_eq!(
+            sim.overlay_grid.as_ref().unwrap().cell(x, 5).overlay_data,
+            0
+        );
         assert!(!cell.has_bridge_deck);
         assert!(!cell.bridge_walkable);
         assert!(!cell.bridge_transition);
@@ -2958,13 +2967,7 @@ fn assert_structural_bridge_collapsed(sim: &Simulation) {
         assert!(!published.transition);
     }
     assert_eq!(
-        sim.resolved_terrain
-            .as_ref()
-            .unwrap()
-            .cell(5, 5)
-            .unwrap()
-            .bridge_facts
-            .overlay_id,
+        sim.overlay_grid.as_ref().unwrap().cell(5, 5).overlay_id,
         None,
         "the structural body clears its anchor overlay"
     );
@@ -4193,7 +4196,7 @@ fn one_way_alliance_does_not_end_the_game() {
         let b = insert_house_with_counts(&mut sim, "Russians", 1, 1);
         let opponent = insert_house_with_counts(&mut sim, "YuriCountry", 1, 0);
         sim.session.set_current_house_for_test(Some(a));
-        sim.house_alliances = if mutual {
+        *sim.house_alliances_mut_for_test() = if mutual {
             directed_alliances(&[("Americans", "Russians"), ("Russians", "Americans")])
         } else {
             directed_alliances(&[("Americans", "Russians")])
@@ -4603,11 +4606,6 @@ fn assert_concrete_damage_result(sim: &Simulation, native: &serde_json::Value) {
         let expected = row[2].as_u64().unwrap() as u8;
         let cell = sim.resolved_terrain.as_ref().unwrap().cell(x, y).unwrap();
         assert_eq!(
-            cell.bridge_facts.overlay_id,
-            Some(expected),
-            "cell ({x}, {y})"
-        );
-        assert_eq!(
             sim.overlay_grid.as_ref().unwrap().cell(x, y).overlay_id,
             Some(expected)
         );
@@ -4620,7 +4618,6 @@ fn assert_concrete_damage_result(sim: &Simulation, native: &serde_json::Value) {
         assert!(cell.has_bridge_deck);
         let layer = cell.bridge_layer.as_ref().unwrap();
         assert_eq!(layer.direction, BridgeDirection::Low);
-        assert_eq!(layer.overlay_id, expected);
         assert_eq!(layer.deck_level, cell.level);
         assert_eq!(cell.bridge_deck_level, cell.level);
         assert!(!cell.bridge_walkable);
@@ -4671,9 +4668,10 @@ fn test_bridge_walker_collapses_full_3_cell_strip_on_single_hit() {
 #[test]
 fn test_structural_bridge_collapse_preserves_dynamic_navigation_and_snapshot() {
     let mut sim = Simulation::new();
-    let (resolved, bridge_state) = structural_bridge_for_damage_dispatch();
+    let (resolved, bridge_state, overlays) = structural_bridge_for_damage_dispatch();
     sim.resolved_terrain = Some(resolved);
     sim.bridge_state = Some(bridge_state);
+    sim.overlay_grid = Some(overlays);
     crate::sim::arena_fixture::supply_native_map(&mut sim);
 
     // This navigation fixture supplies a foundation at the native (0,0)
@@ -9129,7 +9127,7 @@ fn deferred_voxel_delivery_keeps_constructor_identity_without_spending_again() {
     assert_ne!(adjacent, native_id);
     let cursor = sim.native_identity_cursor();
     let rng = sim.scenario_rng.logical_state();
-    let stable_cursor = sim.substrate.next_stable_object_id;
+    let stable_cursor = sim.next_stable_object_id();
     sim.admit_death_debris(packets);
     assert_eq!(
         sim.voxel_anims().get(id).unwrap().native_unique_id(),
@@ -9137,7 +9135,7 @@ fn deferred_voxel_delivery_keeps_constructor_identity_without_spending_again() {
     );
     assert_eq!(sim.native_identity_cursor(), cursor);
     assert_eq!(sim.scenario_rng.logical_state(), rng);
-    assert_eq!(sim.substrate.next_stable_object_id, stable_cursor);
+    assert_eq!(sim.next_stable_object_id(), stable_cursor);
     assert_eq!(sim.live_object_order_snapshot(), [id]);
     sim.debug_assert_logic_membership_consistent();
 }

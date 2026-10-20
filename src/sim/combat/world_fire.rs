@@ -243,7 +243,7 @@ fn admit_attacker_fire<'r>(
             world,
             &world.interner,
             world.resolved_terrain.as_ref(),
-            fog_enabled.then_some(&world.house_alliances),
+            fog_enabled.then_some(world.house_alliances.as_map()),
         ) else {
             out.remove_attack.push(snap.stable_id);
             return None;
@@ -291,7 +291,7 @@ fn admit_attacker_fire<'r>(
                 world,
                 rules,
                 overlay_registry,
-                fog: fog_enabled.then(|| world.fog.fire_view(&world.house_alliances)),
+                fog: fog_enabled.then(|| world.fog.fire_view(world.house_alliances.as_map())),
                 firer,
                 obj,
                 target: Some(snap.target),
@@ -495,13 +495,13 @@ fn admit_attacker_fire<'r>(
             world,
             &world.interner,
             world.resolved_terrain.as_ref(),
-            fog_enabled.then_some(&world.house_alliances),
+            fog_enabled.then_some(world.house_alliances.as_map()),
         )?;
         let code = fire_error_world::FireSubject {
             world,
             rules,
             overlay_registry,
-            fog: fog_enabled.then(|| world.fog.fire_view(&world.house_alliances)),
+            fog: fog_enabled.then(|| world.fog.fire_view(world.house_alliances.as_map())),
             firer: actor,
             obj,
             target,
@@ -719,7 +719,7 @@ pub(super) fn retaliation_reaches(
         world,
         rules,
         overlay_registry,
-        fog: Some(world.fog.fire_view(&world.house_alliances)),
+        fog: Some(world.fog.fire_view(world.house_alliances.as_map())),
         firer: victim,
         obj: victim_type,
         target: Some(TargetKind::Entity(source_id)),
@@ -1182,7 +1182,7 @@ pub(super) fn emit_admitted_fire(
             .retain_frame_notifications(&mut out.effects);
         return None;
     }
-    if weapon.is_sonic && world.active_wave_links.contains_key(&snap.stable_id) {
+    if weapon.is_sonic && world.active_wave_id(snap.stable_id).is_some() {
         return None;
     }
     // 6FDE36..6FDE48: direct FireAt callers also refuse a flagged weapon
@@ -2332,7 +2332,7 @@ pub(crate) fn visit_fire(
                     &snapshot,
                     fog_enabled,
                     world.session.binary_frame(),
-                    world.active_wave_links.contains_key(&id),
+                    world.active_wave_id(id).is_some(),
                     emit,
                     run.effects(),
                 );
@@ -2362,7 +2362,7 @@ pub(crate) fn visit_fire(
                         &snap,
                         fog_enabled,
                         world.session.binary_frame(),
-                        world.active_wave_links.contains_key(&id),
+                        world.active_wave_id(id).is_some(),
                         emit,
                         run.effects(),
                     )
@@ -2383,7 +2383,7 @@ pub(crate) fn visit_fire(
                     &snap,
                     fog_enabled,
                     world.session.binary_frame(),
-                    world.active_wave_links.contains_key(&id),
+                    world.active_wave_id(id).is_some(),
                     emit,
                     run.effects(),
                 );

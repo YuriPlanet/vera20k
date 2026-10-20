@@ -103,6 +103,15 @@ impl Simulation {
             .is_some_and(|house| house.flag_to_die(self.session.binary_frame() as i32))
     }
 
+    /// `0x005E2BA0`: the human (`+0x1EC`), undefeated (`+0x1F5`) Houses other
+    /// than `owner`.
+    pub(crate) fn other_undefeated_humans(&self, owner: InternedId) -> usize {
+        self.houses
+            .iter()
+            .filter(|(id, house)| **id != owner && house.is_human() && !house.is_defeated())
+            .count()
+    }
+
     /// The house rung with its defeat pass: see [`Self::house_rung`].
     #[cfg(any(test, feature = "test-support"))]
     pub(super) fn check_defeat(
@@ -398,7 +407,7 @@ impl Simulation {
             alive.iter().all(|right| {
                 left == right
                     || crate::map::houses::are_houses_mutually_allied(
-                        &self.house_alliances,
+                        self.house_alliances.as_map(),
                         self.interner.resolve(*left),
                         self.interner.resolve(*right),
                     )

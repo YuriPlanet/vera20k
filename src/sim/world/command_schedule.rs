@@ -92,6 +92,11 @@ impl Simulation {
         self.executed_exit_owner.take()
     }
 
+    /// Drain the remote EXIT senders the executor recorded.
+    pub fn take_departed_owners(&mut self) -> Vec<InternedId> {
+        std::mem::take(&mut self.departed_owners)
+    }
+
     /// Drain commands that are due for the next tick from `pending_commands`.
     /// Returns owned commands; remaining commands stay queued.
     pub fn take_due_commands(&mut self) -> Vec<CommandEnvelope> {

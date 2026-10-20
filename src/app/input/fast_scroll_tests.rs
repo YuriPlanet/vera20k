@@ -237,6 +237,8 @@ fn a_drag_between_offline_polls_remains_a_cancel_click() {
             menu_open: false,
             session_mode: SessionMode::from_game_mode(mode),
             pacer_timing_admits: false,
+            network_wait: false,
+            network_dialog_open: false,
         });
         assert_eq!(
             usize::from(decision.scroll_input),

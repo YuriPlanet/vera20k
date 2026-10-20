@@ -2448,7 +2448,7 @@ fn native_first_head_building_warning_and_release_corpus() {
             ),
         );
         if input["allied"].as_bool() == Some(true) {
-            sim.house_alliances
+            sim.house_alliances_mut_for_test()
                 .entry("ALLIES2".into())
                 .or_default()
                 .insert("AMERICANS".into());

@@ -230,7 +230,7 @@ impl Simulation {
             let heights = self.sight_height_grid(&config);
             let viewers = self.reveal_viewers.direct(
                 &self.fog,
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 owner,
                 &config,
                 &self.interner,

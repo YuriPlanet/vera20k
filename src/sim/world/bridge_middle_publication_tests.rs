@@ -67,6 +67,7 @@ fn retail_middle_perpendicular_live_tiles_match_original_sequences() {
                 let after = &change["after"];
                 let p = coord(&after["coord"]);
                 let cell = live.terrain().cell(p.0, p.1).unwrap();
+                let overlay = live.sim.overlay_grid.as_ref().unwrap().cell(p.0, p.1);
                 let context = format!("{axis:?}/{phase:?}/{p:?}");
                 assert_eq!(
                     cell.final_tile_index,
@@ -79,12 +80,12 @@ fn retail_middle_perpendicular_live_tiles_match_original_sequences() {
                     "{context}"
                 );
                 assert_eq!(
-                    cell.bridge_facts.state_byte,
+                    overlay.overlay_data,
                     after["state"].as_u64().unwrap() as u8,
                     "{context}"
                 );
                 assert_eq!(
-                    cell.bridge_facts.overlay_id.map_or(-1, i32::from),
+                    overlay.overlay_id.map_or(-1, i32::from),
                     after["overlay"].as_i64().unwrap() as i32,
                     "{context}"
                 );

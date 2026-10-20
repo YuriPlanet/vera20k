@@ -813,12 +813,12 @@ pub(crate) fn tick_movement_with_grids(
     sim.scenario_rng = rng.clone();
     sim.session.set_tick_for_test(sim_tick);
     sim.session.set_binary_frame_for_test(native_frame);
-    sim.house_alliances = alliances.clone();
+    *sim.house_alliances_mut_for_test() = alliances.clone();
     sim.path_grid = path_grid.cloned().map(std::sync::Arc::new);
     sim.zone_grid = zone_grid.cloned();
     sim.resolved_terrain = resolved_terrain.cloned();
-    sim.playfield_bounds = playfield_bounds;
-    sim.terrain_speed_config = terrain_speed_config.clone();
+    sim.set_playfield_bounds_for_test(playfield_bounds);
+    sim.set_terrain_speed_config_for_test(terrain_speed_config.clone());
     let order = live_order
         .map(<[u64]>::to_vec)
         .unwrap_or_else(|| sim.substrate.entities.keys_sorted());
@@ -901,7 +901,7 @@ impl PendingMovementPass {
         let grids = PassGrids {
             path_grid: sim.path_grid.as_deref(),
             resolved_terrain: sim.resolved_terrain.as_ref(),
-            playfield_bounds: sim.playfield_bounds,
+            playfield_bounds: sim.playfield_bounds(),
         };
         let (entity_id, entry) = match reentry {
             MoverReentry::FootPath(request) => (

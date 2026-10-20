@@ -24,30 +24,37 @@ DIALOG = 0x73
 DEDICATED = (0x694, 0x423, 0x695)
 
 
-def generate():
+def template_layout(dialog, dedicated):
+    """One RT_DIALOG's controls with their help labels, and the complete
+    `0x0060B7A0` placement of every child outside `dedicated` at three
+    resolutions. Callers establish which children are ordinary."""
     uc = Uc(UC_ARCH_X86, UC_MODE_32)
     load_image(uc)
     controls = []
     cases = []
-    for control in parse_template(Image(uc).dialog_template(DIALOG)):
+    for control in parse_template(Image(uc).dialog_template(dialog)):
         control_id = control["id"] & 0xFFFF
         x, y, w, h = control["template"]
         controls.append({
             "control_id": control_id, "class": control["class"],
             "style": control["style"], "dlu_rect": [x, y, w, h],
             "caption": control["caption"],
-            "help": None if control_id == 0xFFFF else help_label(DIALOG, control_id),
+            "help": None if control_id == 0xFFFF else help_label(dialog, control_id),
         })
-        if control_id in DEDICATED:
+        if control_id in dedicated:
             continue
         pixels = [(x * 6 + 2) // 4, (y * 13 + 4) // 8,
                   (w * 6 + 2) // 4, (h * 13 + 4) // 8]
         for width, height in ((640, 480), (800, 600), (1024, 768)):
             case = native_child_case(control_id, pixels, width, height)
-            case["dialog_id"] = DIALOG
+            case["dialog_id"] = dialog
             cases.append(case)
-    return {"source": "unicorn/gamemd.exe", "controls": controls, "cases": cases}
+    return controls, cases
 
+
+def generate():
+    controls, cases = template_layout(DIALOG, DEDICATED)
+    return {"source": "unicorn/gamemd.exe", "controls": controls, "cases": cases}
 
 if __name__ == "__main__":
     finish_vectors(generate, Path(__file__).with_suffix(".json"),

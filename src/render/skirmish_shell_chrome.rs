@@ -46,13 +46,15 @@ const TRACKBAR_FRAME_BORDER: i32 = 2;
 /// one pixel wider and taller than the template conversion
 /// (`ui::shell::geom::child_window`): Skirmish `0x102` and the Options audio
 /// sliders 129x22, Generate Map's Players 226x22, the Options plain sliders
-/// 181x22. The in-game B8 and BBB sliders keep their 263x21 and 192x21.
-pub const TRACKBAR_FRAMES: [(i32, i32, i32); 5] = [
+/// 181x22, the shell's Sound Options `0xD6` volumes 261x22. The in-game B8
+/// and BBB sliders keep their 263x21 and 192x21.
+pub const TRACKBAR_FRAMES: [(i32, i32, i32); 6] = [
     (129, 22, 50),
     (226, 22, 50),
     (263, 21, 50),
     (181, 22, 0),
     (192, 21, 0),
+    (261, 22, 50),
 ];
 const SKIRMISH_FLAG_PCX_NAMES: [&str; 12] = [
     "usai.pcx", "japi.pcx", "frai.pcx", "geri.pcx", "gbri.pcx", "djbi.pcx", "arbi.pcx", "lati.pcx",

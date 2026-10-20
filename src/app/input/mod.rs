@@ -6,6 +6,7 @@ pub(crate) mod camera;
 pub(crate) mod commands;
 pub(crate) mod context_order;
 pub(crate) mod cursor;
+pub(crate) mod connection;
 pub(crate) mod diplomacy;
 pub(crate) mod dispatch;
 pub(crate) mod entity_pick;

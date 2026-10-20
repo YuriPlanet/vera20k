@@ -120,7 +120,7 @@ impl RestartCapture {
         match target {
             RestartTarget::AbortShown | RestartTarget::AbortRestarted => {
                 let choice =
-                    (target == RestartTarget::AbortRestarted).then_some(AbortButton::Restart);
+                    (target == RestartTarget::AbortRestarted).then_some(AbortButton::Secondary);
                 capture.abort = Some(abort_return::AbortReturnInput::begin_choosing(
                     state, route, frame, choice,
                 )?);
@@ -313,7 +313,7 @@ impl RestartCapture {
                     && state.match_state.match_presentation.in_game_menu
                         == crate::ui::pause_menu::InGameMenuState::AbortConfirm
                     && crate::app::input::abort::current_abort_layout(state)
-                        .is_some_and(|layout| layout.restart.is_some())
+                        .is_some_and(|layout| layout.secondary.is_some())
             }
             RestartTarget::DefeatPrompt => {
                 self.step == Step::Settling(0) && state.frontend.shell_message_box.is_some()

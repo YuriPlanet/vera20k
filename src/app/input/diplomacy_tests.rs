@@ -58,8 +58,14 @@ fn fixture() -> Fixture {
     let mut house = |name: &str, country: &str, human: bool| {
         let name = sim.intern(name);
         let country = sim.intern(country);
-        sim.houses_mut_for_test()
-            .register(HouseState::new(name, 0, Some(country), human, 0, 10));
+        let mut state = HouseState::new(name, 0, Some(country), human, 0, 10);
+        // CreateHouses' UI names: the human's handle, TXT_COMPUTER for AI.
+        state.set_ui_name_for_test(if human {
+            crate::sim::house_state::HouseUiName::handle("[New Player]")
+        } else {
+            crate::sim::house_state::HouseUiName::Computer
+        });
+        sim.houses_mut_for_test().register(state);
         name
     };
     let first_ai = house("Computer1", "Americans", false);
@@ -96,7 +102,7 @@ fn rows(fixture: &Fixture, switches: DiplomacyRules) -> ResolvedRows {
         &fixture.rules,
         switches,
         &HouseUiSources {
-            handle: Some("[New Player]"),
+            csf: None,
             computer: "Computer",
             schemes: &fixture.schemes,
             colors: &fixture.colors,

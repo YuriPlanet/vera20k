@@ -404,8 +404,7 @@ pub(crate) fn place_tiberium(
         // 4872A0: the identity store already registered the cell mutation.
         // Write the exact raw byte, even when Mark refused the identity,
         // without creating a second deferred overlay-dirty item.
-        ctx.overlay_grid
-            .write_cell_data(None, cell.0, cell.1, amount);
+        ctx.overlay_grid.write_cell_data(cell.0, cell.1, amount);
         if let Some(dirty) = ctx.dirty_cells.as_deref_mut() {
             dirty.mark_tactical_once(cell);
             dirty.mark_radar([cell]);
@@ -513,8 +512,7 @@ struct PlaceTiberiumMarkUnsupported(&'static str);
 
 /// [`OverlayMarkHost`] on the batched ore placement's borrows: the
 /// OverlayGrid, the shared CellClass array and the live occupation planes.
-/// Identity and data writes go through the OverlayGrid owner without the
-/// terrain bridge cache, which this batch holds shared (#722). Recalc of the
+/// Identity and data writes go through the OverlayGrid owner. Recalc of the
 /// stamped cells is published by the caller before Logic's next object:
 /// the TiberiumClass drivers after their batch (`publish_tiberium_cells`),
 /// a Terrain AI slot before it returns. Within a batch, admission refuses a
@@ -601,7 +599,7 @@ impl OverlayMarkHost for PlaceTiberiumMarkHost<'_, '_> {
     fn write_data(&mut self, cell: NativeCellIdentity, data: u8) -> Result<(), Self::Error> {
         match self.real_coord(cell) {
             Some((x, y)) => {
-                self.grid.write_cell_data(None, x, y, data);
+                self.grid.write_cell_data(x, y, data);
             }
             None => self.terrain.shared_cell_dummy().write_overlay_state(data),
         }

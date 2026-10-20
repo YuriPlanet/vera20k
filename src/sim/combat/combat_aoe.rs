@@ -83,6 +83,7 @@ pub(crate) trait AoECellPrelude {
     fn wall_navigation_step(
         &mut self,
         _terrain: &ResolvedTerrainGrid,
+        _overlays: &OverlayGrid,
         _cell: (u16, u16),
         _navigation_changed: bool,
         _repair: ZoneRepairKind,
@@ -110,12 +111,13 @@ impl WallDamageTransactionHost for AoEWallDamageHost<'_, '_> {
     fn navigation_step(
         &mut self,
         terrain: &ResolvedTerrainGrid,
+        overlays: &OverlayGrid,
         cell: (u16, u16),
         navigation_changed: bool,
         repair: ZoneRepairKind,
     ) {
         if let Some(prelude) = self.prelude.as_deref_mut() {
-            prelude.wall_navigation_step(terrain, cell, navigation_changed, repair);
+            prelude.wall_navigation_step(terrain, overlays, cell, navigation_changed, repair);
         }
     }
 
@@ -3843,17 +3845,17 @@ mod tests {
             world.substrate.raw_cell_occupation = raw;
             world.interner = interner;
             world.resolved_terrain = Some(terrain);
-            world.playfield_bounds = Some(
+            world.set_playfield_bounds_for_test(Some(
                 crate::sim::cell_rect::PlayfieldBounds::from_normalized_local_size(
                     16, -16, -16, 64, 64,
                 ),
-            );
+            ));
             if fixture.outside {
-                world.playfield_bounds = Some(
+                world.set_playfield_bounds_for_test(Some(
                     crate::sim::cell_rect::PlayfieldBounds::from_normalized_local_size(
                         16, 0, 0, 1, 1,
                     ),
-                );
+                ));
             }
             world.session.set_binary_frame_for_test(100);
             world.main_rng = SimRng::new(7).into();

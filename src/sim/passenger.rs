@@ -634,7 +634,7 @@ pub fn can_enter_transport(
     // no one.
     transport_obj.passengers > 0
         && crate::sim::combat::combat_weapon::is_ally_by_object(
-            Some(&sim.house_alliances),
+            Some(sim.house_alliances.as_map()),
             &sim.interner,
             passenger.owner(),
             transport.owner(),
@@ -676,7 +676,7 @@ pub fn can_dock_occupier_garrison(
     );
     if !crate::sim::cell_rect::cell_is_in_playfield_leptons(
         (coord.x, coord.y, coord.z),
-        sim.playfield_bounds,
+        sim.playfield_bounds(),
         sim.resolved_terrain.as_ref(),
     ) {
         return false;

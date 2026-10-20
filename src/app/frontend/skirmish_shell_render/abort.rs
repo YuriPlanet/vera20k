@@ -1,5 +1,6 @@
-//! Full-screen B6, campaign mode0 (Restart712 shown) and Skirmish mode5
-//! (712 hidden). Original4F1840/4F18B0 and 60C540→621FB1→72F540; no modal
+//! Full-screen B6: campaign mode0 (Restart712 shown), Skirmish mode5
+//! (712 hidden) and LAN/WOL (Observe712 or hidden). Original4F1840/4F18B0
+//! and 60C540→621FB1→72F540; no modal
 //! card and no title694.
 
 use super::in_game_shell::{self, InGameShellFrame};
@@ -37,7 +38,7 @@ pub(crate) fn render_abort_shell(
         if let Some(entry) = atlas.in_game_shell.buttons[frame].or(atlas.in_game_shell.buttons[0]) {
             in_game_shell::push_art(&mut art, entry, rect, RectPx::new(0, 0, width, height));
         }
-        let (key, fallback) = button.label();
+        let (key, fallback) = button.label(layout.secondary_kind);
         push_text_draw(
             &mut texts,
             state,
@@ -62,7 +63,7 @@ pub(crate) fn render_abort_shell(
         1.0,
     );
     if let Some(button) = interaction.hovered {
-        let (key, fallback) = button.help();
+        let (key, fallback) = button.help(layout.secondary_kind);
         push_text_draw(
             &mut texts,
             state,

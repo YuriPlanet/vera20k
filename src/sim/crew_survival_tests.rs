@@ -312,15 +312,17 @@ fn survivor_count_divides_the_refund_by_the_side_divisor() {
             .has_been_captured
             .set_for_test(captured);
         assert_eq!(
-            sim.building_survivor_count(&rules, id, false),
+            sim.building_survivor_count(&rules, id),
             expected,
             "{kind} owned by {owner}, captured {captured}"
         );
-        assert_eq!(
-            sim.building_survivor_count(&rules, id, true),
-            0,
-            "NoSurvivor"
-        );
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .no_survivor
+            .set_for_test(true);
+        assert_eq!(sim.building_survivor_count(&rules, id), 0, "NoSurvivor");
     }
 }
 
@@ -383,7 +385,6 @@ fn phase_b_interleaves_each_cells_roll_with_its_mark() {
             &rules,
             None,
             yard,
-            false,
             |world, cell| {
                 marks.push((cell, world.scenario_rng.state()));
             },
@@ -451,7 +452,6 @@ fn a_captured_yard_rolls_one_in_nine_without_the_engineer_draw() {
         &rules,
         None,
         yard,
-        false,
         |world, cell| {
             marks.push((cell, world.scenario_rng.state()));
         },
@@ -499,7 +499,6 @@ fn pending_house_death_skips_crew_rolls_but_retains_every_cell_mark() {
             &rules,
             None,
             yard,
-            false,
             |world, cell| {
                 if pending || marks.is_empty() {
                     // The native unflagged first roll is2, so it reaches the mark
@@ -533,12 +532,17 @@ fn a_building_owing_no_survivor_draws_and_marks_nothing() {
     let uncrewed = spawn(&mut sim, &rules, "GASAND", "Americans", 20, 10);
     let allied = spawn(&mut sim, &rules, "GAPOWR", "Americans", 30, 10);
     for (id, no_survivor) in [(neutral, false), (uncrewed, false), (allied, true)] {
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .no_survivor
+            .set_for_test(no_survivor);
         let before = sim.scenario_rng.state();
         sim.spawn_building_survivors(
             &rules,
             None,
             id,
-            no_survivor,
             |_, cell| panic!("no mark expected at {cell:?}"),
             crate::sim::world::FrameEffects::default(),
         );
@@ -573,7 +577,6 @@ fn survivors_of_a_c4_charged_building_attack_an_enemy_planter() {
                 &rules,
                 None,
                 plant,
-                false,
                 |world, cell| {
                     marks.push((cell, world.scenario_rng.state()));
                 },
@@ -626,7 +629,6 @@ fn a_human_owners_survivors_move() {
             &rules,
             None,
             plant,
-            false,
             |_, _| {},
             crate::sim::world::FrameEffects::default(),
         );
@@ -689,7 +691,6 @@ fn a_bio_reactor_releases_its_absorbed_infantry_before_its_crew() {
         &rules,
         None,
         reactor,
-        false,
         |world, cell| {
             marks.push((cell, world.scenario_rng.state()));
         },
@@ -738,11 +739,16 @@ fn no_survivor_uninits_the_absorbed_infantry() {
     let reactor = spawn(&mut sim, &rules, "YAPOWR", "Americans", 10, 10);
     let absorbed = load_absorbed(&mut sim, &rules, reactor, 2);
     let mut replay = sim.scenario_rng.clone();
+    sim.substrate
+        .entities
+        .get_mut(reactor)
+        .unwrap()
+        .no_survivor
+        .set_for_test(true);
     sim.spawn_building_survivors(
         &rules,
         None,
         reactor,
-        true,
         |_, cell| panic!("no mark expected at {cell:?}"),
         crate::sim::world::FrameEffects::default(),
     );
@@ -1324,9 +1330,9 @@ fn retail_rules_crew_the_power_plant_and_the_mcv() {
         let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 10, 10);
         let soviet_plant = spawn(&mut sim, &rules, "NAPOWR", "Russians", 30, 10);
         let yard = spawn(&mut sim, &rules, "GACNST", "Americans", 40, 10);
-        assert_eq!(sim.building_survivor_count(&rules, plant, false), 1);
-        assert_eq!(sim.building_survivor_count(&rules, soviet_plant, false), 2);
-        assert_eq!(sim.building_survivor_count(&rules, yard, false), 5);
+        assert_eq!(sim.building_survivor_count(&rules, plant), 1);
+        assert_eq!(sim.building_survivor_count(&rules, soviet_plant), 2);
+        assert_eq!(sim.building_survivor_count(&rules, yard), 5);
         let mcv = spawn(&mut sim, &rules, "AMCV", "Americans", 20, 10);
         let before = sim.substrate.entities.keys_sorted();
         kill_with(&mut sim, &rules, None, plant, "Super", ORDINARY);
@@ -1546,7 +1552,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
                     (y - 2..=y + 2).all(|cy| {
                         crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                             (i32::from(cx), i32::from(cy)),
-                            sim.playfield_bounds,
+                            sim.playfield_bounds(),
                             Some(terrain),
                         ) && terrain.cell(cx, cy).is_some_and(|cell| cell.level == level)
                             && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)

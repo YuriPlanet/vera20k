@@ -42,6 +42,24 @@
       "0x7A3": "STT:WOLTournament",
       "0x7A6": "STT:WOLNews"
     },
+    "0x2BC": {
+      "0x1": "STT:WOLOptionsOk",
+      "0x2": "STT:WOLOptionsCancel",
+      "0x5F5": "STT:WOLOptionsPage",
+      "0x5F6": "STT:WOLOptionsLanguageFilter",
+      "0x5F7": "STT:WOLOptionsFind",
+      "0x5F8": "STT:WOLOptionsMusic",
+      "0x5F9": "STT:WOLOptionsShowAllInLobby",
+      "0x5FA": "STT:WOLOptionFilterAsian",
+      "0x5FB": "STT:WOLOptionFilterNonAsian",
+      "0x5FC": null,
+      "0x63A": "STT:WOLOptionsSoundOptions",
+      "0x694": null,
+      "0x695": null,
+      "0x71C": null,
+      "0x774": "STT:WOLOptionFilterBuddies",
+      "0x775": "STT:WOLOptionFilterClan"
+    },
     "0xC2": {
       "0x2": "STT:WOLNewGameCancel",
       "0x3E8": "STT:HostCBoxRedeploys",
@@ -254,6 +272,15 @@
       "0x793": null,
       "0x794": null,
       "0x796": null
+    },
+    "0xD6": {
+      "0x52F": null,
+      "0x532": null,
+      "0x536": null,
+      "0x686": null,
+      "0x694": null,
+      "0x695": null,
+      "0x71C": null
     },
     "0xE1": {
       "0x1": null,
@@ -3023,6 +3050,1067 @@
                 6,
                 104,
                 10
+              ]
+            }
+          },
+          "dialog": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      }
+    },
+    "0x2BC": {
+      "kind": "page",
+      "sizes": {
+        "1024x768": {
+          "controls": {
+            "0x1": {
+              "caption": "GUI:OK",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                756,
+                283,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                424,
+                111,
+                108,
+                23
+              ]
+            },
+            "0x2": {
+              "caption": "GUI:Cancel",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B350",
+                "0x0060B950"
+              ],
+              "rect": [
+                756,
+                619,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                423,
+                251,
+                108,
+                23
+              ]
+            },
+            "0x5F5": {
+              "caption": "GUI:AllowPages",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                111,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                68,
+                221,
+                15
+              ]
+            },
+            "0x5F6": {
+              "caption": "GUI:FilterBadLan",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                140,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                86,
+                221,
+                15
+              ]
+            },
+            "0x5F7": {
+              "caption": "GUI:AllowFinding",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                169,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                104,
+                221,
+                15
+              ]
+            },
+            "0x5F8": {
+              "caption": "GUI:PlayMusic",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                197,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                121,
+                221,
+                15
+              ]
+            },
+            "0x5F9": {
+              "caption": "GUI:ShowAllInLobby",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                228,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                140,
+                221,
+                15
+              ]
+            },
+            "0x5FA": {
+              "caption": "GUI:FilterAsianMessages",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                257,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                158,
+                221,
+                15
+              ]
+            },
+            "0x5FB": {
+              "caption": "GUI:FilterNonAsianMessages",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                286,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                176,
+                221,
+                15
+              ]
+            },
+            "0x5FC": {
+              "caption": "GUI:Observe",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                374,
+                333,
+                25
+              ],
+              "style": 1207992323,
+              "template": [
+                97,
+                230,
+                221,
+                15
+              ]
+            },
+            "0x63A": {
+              "caption": "GUI:SoundOptions",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                756,
+                325,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                423,
+                140,
+                108,
+                23
+              ]
+            },
+            "0x694": {
+              "caption": "GUI:WOLOptions",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                747,
+                93,
+                163,
+                19
+              ],
+              "style": 1342308353,
+              "template": [
+                424,
+                4,
+                108,
+                11
+              ]
+            },
+            "0x695": {
+              "caption": "GUI:Blank",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B550",
+                "0x0060B950"
+              ],
+              "rect": [
+                122,
+                662,
+                475,
+                21
+              ],
+              "style": 1342308352,
+              "template": [
+                2,
+                355,
+                316,
+                12
+              ]
+            },
+            "0x71C": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 37,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                782,
+                131,
+                93,
+                55
+              ],
+              "style": 1342177287,
+              "template": [
+                447,
+                29,
+                61,
+                33
+              ]
+            },
+            "0x774": {
+              "caption": "GUI:FilterBuddies",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                315,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                194,
+                221,
+                15
+              ]
+            },
+            "0x775": {
+              "caption": "GUI:FilterClan",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                345,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                212,
+                221,
+                15
+              ]
+            }
+          },
+          "dialog": [
+            0,
+            0,
+            1024,
+            768
+          ]
+        },
+        "640x480": {
+          "controls": {
+            "0x1": {
+              "caption": "GUI:OK",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                484,
+                199,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                424,
+                111,
+                108,
+                23
+              ]
+            },
+            "0x2": {
+              "caption": "GUI:Cancel",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B350",
+                "0x0060B950"
+              ],
+              "rect": [
+                484,
+                409,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                423,
+                251,
+                108,
+                23
+              ]
+            },
+            "0x5F5": {
+              "caption": "GUI:AllowPages",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                111,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                68,
+                221,
+                15
+              ]
+            },
+            "0x5F6": {
+              "caption": "GUI:FilterBadLan",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                140,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                86,
+                221,
+                15
+              ]
+            },
+            "0x5F7": {
+              "caption": "GUI:AllowFinding",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                169,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                104,
+                221,
+                15
+              ]
+            },
+            "0x5F8": {
+              "caption": "GUI:PlayMusic",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                197,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                121,
+                221,
+                15
+              ]
+            },
+            "0x5F9": {
+              "caption": "GUI:ShowAllInLobby",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                228,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                140,
+                221,
+                15
+              ]
+            },
+            "0x5FA": {
+              "caption": "GUI:FilterAsianMessages",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                257,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                158,
+                221,
+                15
+              ]
+            },
+            "0x5FB": {
+              "caption": "GUI:FilterNonAsianMessages",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                286,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                176,
+                221,
+                15
+              ]
+            },
+            "0x5FC": {
+              "caption": "GUI:Observe",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                374,
+                333,
+                25
+              ],
+              "style": 1207992323,
+              "template": [
+                97,
+                230,
+                221,
+                15
+              ]
+            },
+            "0x63A": {
+              "caption": "GUI:SoundOptions",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                484,
+                241,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                423,
+                140,
+                108,
+                23
+              ]
+            },
+            "0x694": {
+              "caption": "GUI:WOLOptions",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                475,
+                9,
+                163,
+                19
+              ],
+              "style": 1342308353,
+              "template": [
+                424,
+                4,
+                108,
+                11
+              ]
+            },
+            "0x695": {
+              "caption": "GUI:Blank",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B550",
+                "0x0060B950"
+              ],
+              "rect": [
+                10,
+                458,
+                475,
+                21
+              ],
+              "style": 1342308352,
+              "template": [
+                2,
+                355,
+                316,
+                12
+              ]
+            },
+            "0x71C": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 37,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                510,
+                47,
+                93,
+                55
+              ],
+              "style": 1342177287,
+              "template": [
+                447,
+                29,
+                61,
+                33
+              ]
+            },
+            "0x774": {
+              "caption": "GUI:FilterBuddies",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                315,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                194,
+                221,
+                15
+              ]
+            },
+            "0x775": {
+              "caption": "GUI:FilterClan",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                345,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                212,
+                221,
+                15
+              ]
+            }
+          },
+          "dialog": [
+            0,
+            0,
+            640,
+            480
+          ]
+        },
+        "800x600": {
+          "controls": {
+            "0x1": {
+              "caption": "GUI:OK",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                644,
+                199,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                424,
+                111,
+                108,
+                23
+              ]
+            },
+            "0x2": {
+              "caption": "GUI:Cancel",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B350",
+                "0x0060B950"
+              ],
+              "rect": [
+                644,
+                535,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                423,
+                251,
+                108,
+                23
+              ]
+            },
+            "0x5F5": {
+              "caption": "GUI:AllowPages",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                111,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                68,
+                221,
+                15
+              ]
+            },
+            "0x5F6": {
+              "caption": "GUI:FilterBadLan",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                140,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                86,
+                221,
+                15
+              ]
+            },
+            "0x5F7": {
+              "caption": "GUI:AllowFinding",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                169,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                104,
+                221,
+                15
+              ]
+            },
+            "0x5F8": {
+              "caption": "GUI:PlayMusic",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                197,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                121,
+                221,
+                15
+              ]
+            },
+            "0x5F9": {
+              "caption": "GUI:ShowAllInLobby",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                228,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                140,
+                221,
+                15
+              ]
+            },
+            "0x5FA": {
+              "caption": "GUI:FilterAsianMessages",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                257,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                158,
+                221,
+                15
+              ]
+            },
+            "0x5FB": {
+              "caption": "GUI:FilterNonAsianMessages",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                286,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                176,
+                221,
+                15
+              ]
+            },
+            "0x5FC": {
+              "caption": "GUI:Observe",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                374,
+                333,
+                25
+              ],
+              "style": 1207992323,
+              "template": [
+                97,
+                230,
+                221,
+                15
+              ]
+            },
+            "0x63A": {
+              "caption": "GUI:SoundOptions",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                644,
+                241,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                423,
+                140,
+                108,
+                23
+              ]
+            },
+            "0x694": {
+              "caption": "GUI:WOLOptions",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                635,
+                9,
+                163,
+                19
+              ],
+              "style": 1342308353,
+              "template": [
+                424,
+                4,
+                108,
+                11
+              ]
+            },
+            "0x695": {
+              "caption": "GUI:Blank",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B550",
+                "0x0060B950"
+              ],
+              "rect": [
+                10,
+                578,
+                475,
+                21
+              ],
+              "style": 1342308352,
+              "template": [
+                2,
+                355,
+                316,
+                12
+              ]
+            },
+            "0x71C": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 37,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                670,
+                47,
+                93,
+                55
+              ],
+              "style": 1342177287,
+              "template": [
+                447,
+                29,
+                61,
+                33
+              ]
+            },
+            "0x774": {
+              "caption": "GUI:FilterBuddies",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                315,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                194,
+                221,
+                15
+              ]
+            },
+            "0x775": {
+              "caption": "GUI:FilterClan",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                146,
+                345,
+                333,
+                25
+              ],
+              "style": 1342210051,
+              "template": [
+                97,
+                212,
+                221,
+                15
               ]
             }
           },
@@ -16308,6 +17396,683 @@
         }
       }
     },
+    "0xD6": {
+      "kind": "page",
+      "sizes": {
+        "1024x768": {
+          "controls": {
+            "0x52F": {
+              "caption": "Slider1",
+              "class": "msctls_trackbar32",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                267,
+                229,
+                261,
+                22
+              ],
+              "style": 1342242840,
+              "template": [
+                178,
+                141,
+                173,
+                13
+              ]
+            },
+            "0x532": {
+              "caption": "Slider2",
+              "class": "msctls_trackbar32",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                267,
+                267,
+                261,
+                22
+              ],
+              "style": 1342242840,
+              "template": [
+                178,
+                164,
+                173,
+                13
+              ]
+            },
+            "0x536": {
+              "caption": "Slider2",
+              "class": "msctls_trackbar32",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                267,
+                302,
+                261,
+                22
+              ],
+              "style": 1342242840,
+              "template": [
+                178,
+                186,
+                173,
+                13
+              ]
+            },
+            "0x686": {
+              "caption": "GUI:Back",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B350",
+                "0x0060B950"
+              ],
+              "rect": [
+                756,
+                619,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                433,
+                257,
+                108,
+                23
+              ]
+            },
+            "0x694": {
+              "caption": "GUI:SoundOptions",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                747,
+                93,
+                163,
+                18
+              ],
+              "style": 1342308353,
+              "template": [
+                433,
+                1,
+                108,
+                10
+              ]
+            },
+            "0x695": {
+              "caption": "GUI:Blank",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B550",
+                "0x0060B950"
+              ],
+              "rect": [
+                122,
+                662,
+                456,
+                21
+              ],
+              "style": 1342177792,
+              "template": [
+                2,
+                355,
+                303,
+                12
+              ]
+            },
+            "0x71C": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 37,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                782,
+                131,
+                93,
+                55
+              ],
+              "style": 1342177287,
+              "template": [
+                457,
+                29,
+                61,
+                33
+              ]
+            },
+            "0xFFFF": {
+              "caption": "GUI:MusicVolume",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                126,
+                228,
+                132,
+                25
+              ],
+              "style": 1342308866,
+              "template": [
+                84,
+                140,
+                87,
+                15
+              ]
+            },
+            "0xFFFF#1": {
+              "caption": "GUI:SoundVolume",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                126,
+                265,
+                132,
+                25
+              ],
+              "style": 1342308866,
+              "template": [
+                84,
+                163,
+                87,
+                15
+              ]
+            },
+            "0xFFFF#2": {
+              "caption": "GUI:VoiceVolume",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                126,
+                301,
+                132,
+                25
+              ],
+              "style": 1342308866,
+              "template": [
+                84,
+                185,
+                87,
+                15
+              ]
+            }
+          },
+          "dialog": [
+            0,
+            0,
+            1024,
+            768
+          ]
+        },
+        "640x480": {
+          "controls": {
+            "0x52F": {
+              "caption": "Slider1",
+              "class": "msctls_trackbar32",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                267,
+                229,
+                261,
+                22
+              ],
+              "style": 1342242840,
+              "template": [
+                178,
+                141,
+                173,
+                13
+              ]
+            },
+            "0x532": {
+              "caption": "Slider2",
+              "class": "msctls_trackbar32",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                267,
+                267,
+                261,
+                22
+              ],
+              "style": 1342242840,
+              "template": [
+                178,
+                164,
+                173,
+                13
+              ]
+            },
+            "0x536": {
+              "caption": "Slider2",
+              "class": "msctls_trackbar32",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                267,
+                302,
+                261,
+                22
+              ],
+              "style": 1342242840,
+              "template": [
+                178,
+                186,
+                173,
+                13
+              ]
+            },
+            "0x686": {
+              "caption": "GUI:Back",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B350",
+                "0x0060B950"
+              ],
+              "rect": [
+                484,
+                409,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                433,
+                257,
+                108,
+                23
+              ]
+            },
+            "0x694": {
+              "caption": "GUI:SoundOptions",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                475,
+                9,
+                163,
+                18
+              ],
+              "style": 1342308353,
+              "template": [
+                433,
+                1,
+                108,
+                10
+              ]
+            },
+            "0x695": {
+              "caption": "GUI:Blank",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B550",
+                "0x0060B950"
+              ],
+              "rect": [
+                10,
+                458,
+                456,
+                21
+              ],
+              "style": 1342177792,
+              "template": [
+                2,
+                355,
+                303,
+                12
+              ]
+            },
+            "0x71C": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 37,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                510,
+                47,
+                93,
+                55
+              ],
+              "style": 1342177287,
+              "template": [
+                457,
+                29,
+                61,
+                33
+              ]
+            },
+            "0xFFFF": {
+              "caption": "GUI:MusicVolume",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                126,
+                228,
+                132,
+                25
+              ],
+              "style": 1342308866,
+              "template": [
+                84,
+                140,
+                87,
+                15
+              ]
+            },
+            "0xFFFF#1": {
+              "caption": "GUI:SoundVolume",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                126,
+                265,
+                132,
+                25
+              ],
+              "style": 1342308866,
+              "template": [
+                84,
+                163,
+                87,
+                15
+              ]
+            },
+            "0xFFFF#2": {
+              "caption": "GUI:VoiceVolume",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                126,
+                301,
+                132,
+                25
+              ],
+              "style": 1342308866,
+              "template": [
+                84,
+                185,
+                87,
+                15
+              ]
+            }
+          },
+          "dialog": [
+            0,
+            0,
+            640,
+            480
+          ]
+        },
+        "800x600": {
+          "controls": {
+            "0x52F": {
+              "caption": "Slider1",
+              "class": "msctls_trackbar32",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                267,
+                229,
+                261,
+                22
+              ],
+              "style": 1342242840,
+              "template": [
+                178,
+                141,
+                173,
+                13
+              ]
+            },
+            "0x532": {
+              "caption": "Slider2",
+              "class": "msctls_trackbar32",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                267,
+                267,
+                261,
+                22
+              ],
+              "style": 1342242840,
+              "template": [
+                178,
+                164,
+                173,
+                13
+              ]
+            },
+            "0x536": {
+              "caption": "Slider2",
+              "class": "msctls_trackbar32",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                267,
+                302,
+                261,
+                22
+              ],
+              "style": 1342242840,
+              "template": [
+                178,
+                186,
+                173,
+                13
+              ]
+            },
+            "0x686": {
+              "caption": "GUI:Back",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B350",
+                "0x0060B950"
+              ],
+              "rect": [
+                644,
+                535,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                433,
+                257,
+                108,
+                23
+              ]
+            },
+            "0x694": {
+              "caption": "GUI:SoundOptions",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                635,
+                9,
+                163,
+                18
+              ],
+              "style": 1342308353,
+              "template": [
+                433,
+                1,
+                108,
+                10
+              ]
+            },
+            "0x695": {
+              "caption": "GUI:Blank",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B550",
+                "0x0060B950"
+              ],
+              "rect": [
+                10,
+                578,
+                456,
+                21
+              ],
+              "style": 1342177792,
+              "template": [
+                2,
+                355,
+                303,
+                12
+              ]
+            },
+            "0x71C": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 37,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                670,
+                47,
+                93,
+                55
+              ],
+              "style": 1342177287,
+              "template": [
+                457,
+                29,
+                61,
+                33
+              ]
+            },
+            "0xFFFF": {
+              "caption": "GUI:MusicVolume",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                126,
+                228,
+                132,
+                25
+              ],
+              "style": 1342308866,
+              "template": [
+                84,
+                140,
+                87,
+                15
+              ]
+            },
+            "0xFFFF#1": {
+              "caption": "GUI:SoundVolume",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                126,
+                265,
+                132,
+                25
+              ],
+              "style": 1342308866,
+              "template": [
+                84,
+                163,
+                87,
+                15
+              ]
+            },
+            "0xFFFF#2": {
+              "caption": "GUI:VoiceVolume",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                126,
+                301,
+                132,
+                25
+              ],
+              "style": 1342308866,
+              "template": [
+                84,
+                185,
+                87,
+                15
+              ]
+            }
+          },
+          "dialog": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      }
+    },
     "0xE1": {
       "background_mode": 2,
       "kind": "popup",
@@ -16653,6 +18418,18 @@
         "0x7A6"
       ]
     },
+    "0x2BC": {
+      "bottom": [
+        "0x2"
+      ],
+      "d5": 0,
+      "d6": 0,
+      "d7": 0,
+      "top": [
+        "0x1",
+        "0x63A"
+      ]
+    },
     "0xC2": {
       "bottom": [
         "0x2"
@@ -16677,6 +18454,15 @@
         "0x59F",
         "0x5C2"
       ]
+    },
+    "0xD6": {
+      "bottom": [
+        "0x686"
+      ],
+      "d5": 0,
+      "d6": 0,
+      "d7": 0,
+      "top": []
     }
   },
   "source": "unicorn/gamemd.exe",

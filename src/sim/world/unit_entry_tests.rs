@@ -483,13 +483,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
             cell.final_sub_tile = input["subtile"].as_u64().unwrap_or(0) as u8;
         }
         if let Some(overlay) = input["overlay"].as_u64() {
-            sim.resolved_terrain
-                .as_mut()
-                .unwrap()
-                .cell_mut_for_test(11, 10)
-                .unwrap()
-                .bridge_facts
-                .overlay_id = Some(overlay as u8);
+            sim.overlay_cell_mut_for_test(11, 10).overlay_id = Some(overlay as u8);
         }
         sim.session.set_binary_frame_for_test(100);
         // The legacy corpus name seeds A8E7AC, not A8B238.

@@ -99,12 +99,11 @@ fn ore_rung_publishes_native_cell_attributes_before_live_object_turns() {
     );
     for &(x, y) in marked {
         let cell = sim.resolved_terrain.as_ref().unwrap().cell(x, y).unwrap();
-        assert!(
-            sim.path_grid
-                .as_ref()
-                .unwrap()
-                .resolved_cell_is_current(cell, false)
-        );
+        assert!(sim.path_grid.as_ref().unwrap().resolved_cell_is_current(
+            cell,
+            sim.overlay_grid.as_ref(),
+            false
+        ));
     }
 }
 

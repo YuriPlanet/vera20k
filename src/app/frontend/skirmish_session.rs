@@ -465,6 +465,31 @@ impl MultiplayerShellRuntime {
         self.lan_observer_mode = i32::from(observer);
     }
 
+    /// `0x5EE190`: `[MultiPlayer] ObserverMode` from the process RA2MD.INI
+    /// object (ReadInt, default 0), as `WOL_Main`'s settings reader ends
+    /// (`0x0077DED0`). An unsaved lobby toggle reverts here.
+    pub(crate) fn reload_observer_mode(&mut self) {
+        let ini = IniFile::from_bytes(&self.settings_ini).unwrap_or_else(|_| IniFile::from_str(""));
+        self.lan_observer_mode = ini
+            .section_or_empty("MultiPlayer")
+            .read_int("ObserverMode", 0);
+    }
+
+    /// `0x5EE1B0` alone: write `[MultiPlayer] ObserverMode` and save, as WOL
+    /// Options' writer ends (`0x0077DFD0`).
+    pub(crate) fn persist_observer_mode(&mut self) {
+        self.persist_preferences(|runtime, existing| {
+            crate::util::ini_writer::set_ini_values(
+                existing,
+                "MultiPlayer",
+                &[(
+                    "ObserverMode",
+                    runtime.lan_observer_mode.to_string().as_str(),
+                )],
+            )
+        });
+    }
+
     /// BB Main Menu saves ObserverMode through 5EE1B0; this is separate from
     /// the six-field SessionClass writer and does not change Skirmish settings.
     pub(crate) fn persist_lan_preferences(&mut self) {

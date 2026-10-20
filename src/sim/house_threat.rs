@@ -181,7 +181,7 @@ impl Simulation {
         for (&owner, house) in &mut self.houses {
             if owner == source
                 || is_allied_with(
-                    &self.house_alliances,
+                    self.house_alliances.as_map(),
                     self.interner.resolve(owner),
                     source_name,
                 )
@@ -389,7 +389,7 @@ impl Simulation {
                     || actor.owner() == owner
                     || (controlled
                         && is_allied_with(
-                            &self.house_alliances,
+                            self.house_alliances.as_map(),
                             self.interner.resolve(owner),
                             self.interner.resolve(actor.owner()),
                         ))

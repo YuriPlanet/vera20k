@@ -593,14 +593,11 @@ fn test_path_grid_rebuild_closes_destroyed_bridge_deck() {
     );
     let mut terrain = terrain;
     // Legacy decks (no bit0x100) stay intact while their +44 identity decodes.
+    let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(5, 1);
     for rx in 1..=3 {
-        terrain
-            .cell_mut_for_test(rx, 0)
-            .unwrap()
-            .bridge_facts
-            .overlay_id = Some(0x18);
+        overlays.cell_mut_for_test(rx, 0).overlay_id = Some(0x18);
     }
-    let intact_grid = PathGrid::from_resolved_terrain_with_bridges(&terrain);
+    let intact_grid = PathGrid::from_resolved_terrain_with_bridges(&terrain, Some(&overlays));
     assert!(
         intact_grid.is_walkable_on_layer(2, 0, MovementLayer::Bridge),
         "intact deck stays open on the bridge layer"
@@ -608,11 +605,14 @@ fn test_path_grid_rebuild_closes_destroyed_bridge_deck() {
 
     // Destroy only the body cell (rx=2) with 47E040's destroyed stamp: state
     // 0, bit0x100 clear and bit0x400 set. The bridgeheads keep their state.
-    let body = &mut terrain.cell_mut_for_test(2, 0).unwrap().bridge_facts;
-    body.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_DESTROYED_OR_RAMP;
-    body.state_byte = 0;
+    terrain
+        .cell_mut_for_test(2, 0)
+        .unwrap()
+        .bridge_facts
+        .raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_DESTROYED_OR_RAMP;
+    overlays.cell_mut_for_test(2, 0).overlay_data = 0;
 
-    let destroyed_grid = PathGrid::from_resolved_terrain_with_bridges(&terrain);
+    let destroyed_grid = PathGrid::from_resolved_terrain_with_bridges(&terrain, Some(&overlays));
     assert!(
         !destroyed_grid.is_walkable_on_layer(2, 0, MovementLayer::Bridge),
         "the rebuild closes the destroyed deck"
@@ -666,7 +666,7 @@ fn test_pathcell_bridge_walkable_preserved_for_bridgeheads_across_rebuild() {
     // Multiple rebuilds: in production each fires from a non-bridge event
     // (unit spawn, ownership change, destroyed structure).
     for _ in 0..3 {
-        let grid = PathGrid::from_resolved_terrain_with_bridges(&terrain);
+        let grid = PathGrid::from_resolved_terrain_with_bridges(&terrain, None);
         let pc1 = grid.cell(1, 0).expect("bridgehead cell exists");
         let pc3 = grid.cell(3, 0).expect("bridgehead cell exists");
         assert!(

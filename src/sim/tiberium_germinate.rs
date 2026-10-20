@@ -102,7 +102,7 @@ pub fn run_generated_final_cell_attributes(
             continue;
         };
         // Direct `CellClass+0x11E` write: no runtime dirtiness on a fresh load.
-        overlay_grid.write_cell_data(None, rx, ry, density);
+        overlay_grid.write_cell_data(rx, ry, density);
         receipt.germinated_cells += 1;
         receipt.tiberium_value_total = receipt.tiberium_value_total.wrapping_add(value);
     }

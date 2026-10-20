@@ -74,7 +74,7 @@ pub(crate) fn request_gate_open_for_cell(
             continue;
         }
         if crate::map::houses::is_allied_with(
-            &sim.house_alliances,
+            sim.house_alliances.as_map(),
             sim.interner.resolve(candidate.owner()),
             sim.interner.resolve(mover_owner),
         ) {

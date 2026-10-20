@@ -436,23 +436,6 @@ pub(super) fn dispatch_draw_passes(
     let mut pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
     pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
 
-    if let (Some(overlay), Some((buffer, count))) = (
-        state
-            .match_state
-            .match_presentation
-            .selection_overlay
-            .as_ref(),
-        pool.get("weapon_waves"),
-    ) {
-        state.renderer.batch_renderer.draw_passthrough_range(
-            &mut pass,
-            overlay.white_texture(),
-            buffer,
-            0,
-            count,
-        );
-    }
-
     // (There is no separate building-turret pass. gamemd draws a building's
     // voxel turret inside the building's retained Display slot, after the
     // body. Atlas page changes preserve that parent and its piece order.)

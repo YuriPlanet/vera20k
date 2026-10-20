@@ -140,7 +140,7 @@ impl Simulation {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(None);
         };
-        let Some(bounds) = self.playfield_bounds else {
+        let Some(bounds) = self.playfield_bounds() else {
             return Ok(None);
         };
         let navigation = super::foot_coordinate::navigation_coordinate(foot, Some(terrain))?;

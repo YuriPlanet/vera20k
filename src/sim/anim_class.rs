@@ -1336,7 +1336,7 @@ impl Simulation {
         let config = self.sight_reveal_config(Some(rules));
         let viewers = self.reveal_viewers.direct(
             &self.fog,
-            &self.house_alliances,
+            self.house_alliances.as_map(),
             owner,
             &config,
             &self.interner,
@@ -2466,7 +2466,7 @@ impl Simulation {
     ) -> bool {
         if anim.owner_house.is_some_and(|house| {
             crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(&self.house_alliances),
+                Some(self.house_alliances.as_map()),
                 &self.interner,
                 viewer,
                 house,
@@ -3037,7 +3037,7 @@ impl Simulation {
                 if let Some(grid) = self.overlay_grid.as_mut() {
                     //424155: like Place487190's post-constructor store, a
                     //literal Cell+11E write even when no overlay was installed.
-                    grid.write_cell_data(self.resolved_terrain.as_mut(), cell.0, cell.1, density);
+                    grid.write_cell_data(cell.0, cell.1, density);
                 }
                 self.dirty_cells.mark_tactical_once(cell);
                 //Anim's ore arm does not call AddToGrowthQueue or radar6551C0.
@@ -4967,10 +4967,13 @@ mod tests {
             let cell = terrain.native_cell_identity((x as i16, y as i16));
             let flags = native["flags"].as_u64().unwrap() as u32;
             terrain.write_native_cell_flags(cell, flags);
-            terrain.write_native_cell_state(cell, native["state"].as_u64().unwrap() as u8);
-            assert_eq!(terrain.cell(x, y).unwrap().bridge_facts.overlay_id, None);
+            // Native -1 identity with the corpus state byte.
+            let mut overlays =
+                crate::sim::overlay_grid::OverlayGrid::new(terrain.width(), terrain.height());
+            overlays.cell_mut_for_test(x, y).overlay_data = native["state"].as_u64().unwrap() as u8;
             let mut sim = Simulation::new();
             sim.resolved_terrain = Some(terrain);
+            sim.overlay_grid = Some(overlays);
             assert!(sim.bridge_state.is_none());
             let world = AnimWorldCoord {
                 x: i32::from(x) * 256 + 128,
@@ -6374,7 +6377,7 @@ mod tests {
             );
             building.health.set(0); //Native Cell47C520 has no Health/Alive admission.
             sim.substrate.entities.insert(building);
-            sim.substrate.next_stable_object_id = 101;
+            sim.set_next_stable_object_id_for_test(101);
             sim.substrate.occupancy.add(
                 10,
                 10,

@@ -1,83 +1,51 @@
-//! Wave3's packed-surface raster and the separate legacy Sonic outline.
+//! Sonic and magnetic WaveClass raster on the shared packed destination.
 //!
-//! Magnetic world geometry belongs to `sim::wave`; this module consumes its
+//! Wave world geometry belongs to `sim::wave`; this module consumes its
 //! projected polygon. Original controls: procedural_drawing_oracle/magnetic_wave.
 
-use crate::render::batch::SpriteInstance;
 use crate::util::native_x87::{NativeF64Bits, X87Chop53 as X};
 use std::sync::OnceLock;
 
-/// Lower projected WaveClass polygon edges to the existing white-pixel batch primitive.
-pub fn build_wave_instances(
-    projected_points: &[[f32; 2]],
-    tint: [f32; 3],
-    alpha: f32,
-    depth: f32,
-) -> Vec<SpriteInstance> {
-    let mut instances = Vec::new();
-    if projected_points.len() < 2 {
-        return instances;
-    }
-    for edge in projected_points
-        .iter()
-        .zip(projected_points.iter().cycle().skip(1))
-        .take(projected_points.len())
-    {
-        emit_line(&mut instances, *edge.0, *edge.1, tint, alpha, depth);
-    }
-    instances
-}
-
-fn emit_line(
-    out: &mut Vec<SpriteInstance>,
-    start: [f32; 2],
-    end: [f32; 2],
-    tint: [f32; 3],
-    alpha: f32,
-    depth: f32,
-) {
-    let dx = end[0] - start[0];
-    let dy = end[1] - start[1];
-    let steps = dx.abs().max(dy.abs()).ceil() as usize;
-    for index in 0..steps.max(1) {
-        let fraction = index as f32 / steps.max(1) as f32;
-        out.push(SpriteInstance {
-            position: [
-                (start[0] + dx * fraction).round(),
-                (start[1] + dy * fraction).round(),
-            ],
-            size: [1.0, 1.0],
-            uv_size: [1.0, 1.0],
-            tint,
-            alpha,
-            depth,
-            ..Default::default()
-        });
-    }
-}
-
-/// Native7602E0 has different clipping at its contiguous and ring-wrapped Z
+/// Native7602E0/75FA90 have different clipping at its contiguous and ring-wrapped Z
 /// branches. The screen-texture renderer uses Fast; Fallback exists only in
 /// tests, for the original component controls, without inventing simulation
 /// ring state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MagneticClipPath {
+pub(crate) enum WaveClipPath {
     Fast,
     #[cfg(test)]
     Fallback,
 }
 
+/// The two native Wave polygon bodies have different vertex counts, with one
+/// shared63F080/63F2E0 scan conversion owner. The shape also selects its native
+/// sine table and packed-color operation; it is derived presentation input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WavePolygon {
+    Magnetic([[i32; 2]; 4]),
+    Sonic([[i32; 2]; 6]),
+}
+
+impl WavePolygon {
+    pub(crate) fn points(&self) -> &[[i32; 2]] {
+        match self {
+            Self::Magnetic(points) => points,
+            Self::Sonic(points) => points,
+        }
+    }
+}
+
 /// All XY values are integer, unzoomed screen pixels after the same camera
 /// translation. `source_point` is the projection of native B4/CC, not a corner.
-/// No renderer reconstructs the sim-owned762070 polygon or its direction.
+/// No renderer reconstructs the sim-owned761640/762070 polygon or direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct MagneticWaveDraw {
-    pub polygon: [[i32; 2]; 4],
+pub(crate) struct WaveDraw {
+    pub polygon: WavePolygon,
     pub source_point: [i32; 2],
     pub source_z: i32,
     pub phase: i32,
     pub direction: u8,
-    pub clip_path: MagneticClipPath,
+    pub clip_path: WaveClipPath,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,10 +54,10 @@ pub(crate) struct PolygonSpans {
     pub rows: Vec<[i32; 2]>,
 }
 
-/// Original polygon63F080 and edge63F2E0. Native Wave3 supplies a convex
-/// four-point polygon. Top-chain orientation, initial skip and the right-side
+/// Original polygon63F080 and edge63F2E0. Wave0/3 supply convex six-/
+/// four-point polygons. Top-chain orientation, initial skip and the right-side
 /// minus-one are preserved before clipping; GPU triangulation would differ.
-pub(crate) fn polygon_spans(points: &[[i32; 2]; 4]) -> PolygonSpans {
+pub(crate) fn polygon_spans(points: &[[i32; 2]]) -> PolygonSpans {
     let mut minimum = 0;
     let mut maximum = 0;
     for i in 1..points.len() {
@@ -235,14 +203,14 @@ fn span_edge(start: [i32; 2], end: [i32; 2], skip: bool, mut emit: impl FnMut(i3
 
 /// Immutable75F020 derived tables. Numeric kernels remain owned by the shared
 /// native x87/trig modules; only this Wave-specific initialization lives here.
-pub(crate) struct MagneticTables {
+pub(crate) struct WaveTables {
     pub distance: Vec<u16>,
     pub magnetic: [i16; 496],
     pub sonic: [i16; 500],
     pub brightness: [i32; 13],
 }
 
-impl MagneticTables {
+impl WaveTables {
     ///7601D1 reads a raw linear address. The initialized adjacent window is
     ///mag496, six zero-coordinate shorts (75E8F0), then Sonic500 (75F020).
     ///Do not replace an index beyond495 by a clamp or a periodic sine lookup.
@@ -268,8 +236,8 @@ fn wave_sine_table<const N: usize>(frequency: NativeF64Bits) -> [i16; N] {
     })
 }
 
-pub(crate) fn magnetic_tables() -> &'static MagneticTables {
-    static TABLES: OnceLock<MagneticTables> = OnceLock::new();
+pub(crate) fn wave_tables() -> &'static WaveTables {
+    static TABLES: OnceLock<WaveTables> = OnceLock::new();
     TABLES.get_or_init(|| {
         let distance = (0..300_i32)
             .flat_map(|y| {
@@ -281,7 +249,7 @@ pub(crate) fn magnetic_tables() -> &'static MagneticTables {
                 })
             })
             .collect();
-        MagneticTables {
+        WaveTables {
             distance,
             magnetic: wave_sine_table(NativeF64Bits::from_bits(0x3fb9_9999_9999_999a)),
             sonic: wave_sine_table(NativeF64Bits::from_bits(0x3fc0_0000_0000_0000)),
@@ -291,7 +259,7 @@ pub(crate) fn magnetic_tables() -> &'static MagneticTables {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct MagneticPixel {
+pub(crate) struct WavePixel {
     pub point: [i32; 2],
     pub source: [i32; 2],
     pub candidate_z: u16,
@@ -303,7 +271,7 @@ pub(crate) struct MagneticPixel {
 /// These are unsupported native memory domains, never a request to clamp or
 /// substitute an empty pixel. Production must surface the exact offending draw.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MagneticRasterError {
+pub(crate) enum WaveRasterError {
     Surface { size: [i32; 2], pitch_words: i32 },
     Direction(u8),
     DistanceIndex(i32),
@@ -312,8 +280,8 @@ pub(crate) enum MagneticRasterError {
     SourceWord(i32),
 }
 
-impl MagneticWaveDraw {
-    ///7602E0/760190: native traversal order, strict-depth candidates and exact
+impl WaveDraw {
+    ///7602E0/75FA90: native traversal order, strict-depth candidates and exact
     /// displaced reads. The caller alone owns live color/Z; this emits no A
     /// query and never writes Z. `pitch_words` includes declared native padding.
     pub(crate) fn rasterize(
@@ -322,24 +290,24 @@ impl MagneticWaveDraw {
         size: [i32; 2],
         pitch_words: i32,
         z_origin_y: i32,
-        mut emit: impl FnMut(MagneticPixel),
-    ) -> Result<(), MagneticRasterError> {
+        mut emit: impl FnMut(WavePixel),
+    ) -> Result<(), WaveRasterError> {
         if size[0] <= 1 || size[1] <= 0 || pitch_words < size[0] {
-            return Err(MagneticRasterError::Surface { size, pitch_words });
+            return Err(WaveRasterError::Surface { size, pitch_words });
         }
         let forward = match self.direction {
             2..=5 => true,
             0 | 1 | 6 | 7 => false,
-            other => return Err(MagneticRasterError::Direction(other)),
+            other => return Err(WaveRasterError::Direction(other)),
         };
-        let spans = polygon_spans(&self.polygon);
+        let spans = polygon_spans(self.polygon.points());
         if spans.rows.is_empty() {
             return Ok(());
         }
         let inset = match self.clip_path {
-            MagneticClipPath::Fast => 3,
+            WaveClipPath::Fast => 3,
             #[cfg(test)]
-            MagneticClipPath::Fallback => 2,
+            WaveClipPath::Fallback => 2,
         };
         let last_y = spans
             .top
@@ -350,7 +318,7 @@ impl MagneticWaveDraw {
             return Ok(());
         }
         let adjust_z = crate::util::native_x87::adjust_for_z_standard(self.source_z);
-        let mut row = |y: i32| -> Result<(), MagneticRasterError> {
+        let mut row = |y: i32| -> Result<(), WaveRasterError> {
             if y < clip[1].wrapping_add(inset)
                 || y > clip[1].wrapping_add(clip[3]).wrapping_sub(inset)
             {
@@ -369,7 +337,7 @@ impl MagneticWaveDraw {
             let [left, right] = spans.rows[y.wrapping_sub(spans.top) as usize];
             let left = left.max(clip[0].wrapping_add(inset));
             let right = right.min(clip[0].wrapping_add(clip[2]).wrapping_sub(inset));
-            let mut pixel = |x: i32| -> Result<(), MagneticRasterError> {
+            let mut pixel = |x: i32| -> Result<(), WaveRasterError> {
                 emit(self.pixel_operation([x, y], size, pitch_words, candidate_z)?);
                 Ok(())
             };
@@ -395,8 +363,8 @@ impl MagneticWaveDraw {
         }
         Ok(())
     }
-    /// Original Pixel760190 lookup/displacement operation, shared with the
-    /// whole7602E0 raster. The supplied depth belongs to its caller; this
+    /// Original Pixel760190/75EDF0 lookup/displacement, shared with the
+    /// whole7602E0/75FA90 raster. The supplied depth belongs to its caller; this
     /// leaf performs no depth/A read or packed-color store on the CPU.
     pub(crate) fn pixel_operation(
         self,
@@ -404,7 +372,7 @@ impl MagneticWaveDraw {
         size: [i32; 2],
         pitch_words: i32,
         candidate_z: u16,
-    ) -> Result<MagneticPixel, MagneticRasterError> {
+    ) -> Result<WavePixel, WaveRasterError> {
         let [x, y] = point;
         let steps = [
             pitch_words.wrapping_neg(),
@@ -418,10 +386,10 @@ impl MagneticWaveDraw {
         ];
         let step = *steps
             .get(usize::from(self.direction))
-            .ok_or(MagneticRasterError::Direction(self.direction))?;
-        let tables = magnetic_tables();
+            .ok_or(WaveRasterError::Direction(self.direction))?;
+        let tables = wave_tables();
         if x < 0 || y < 0 || x >= size[0] || y >= size[1] {
-            return Err(MagneticRasterError::Destination([x, y]));
+            return Err(WaveRasterError::Destination([x, y]));
         }
         let distance_index = y
             .wrapping_sub(self.source_point[1])
@@ -432,29 +400,38 @@ impl MagneticWaveDraw {
             .ok()
             .and_then(|i| tables.distance.get(i))
             .copied()
-            .ok_or(MagneticRasterError::DistanceIndex(distance_index))?;
+            .ok_or(WaveRasterError::DistanceIndex(distance_index))?;
         let sine_index = i32::from(distance).wrapping_add(self.phase);
-        let sine = tables
-            .magnetic_sine(sine_index)
-            .ok_or(MagneticRasterError::SineIndex(sine_index))?;
-        let magnitude = i32::from(sine).abs().min(9) as usize;
+        let sine = match self.polygon {
+            WavePolygon::Magnetic(_) => tables.magnetic_sine(sine_index),
+            WavePolygon::Sonic(_) => usize::try_from(sine_index)
+                .ok()
+                .and_then(|i| tables.sonic.get(i).copied()),
+        }
+        .ok_or(WaveRasterError::SineIndex(sine_index))?;
+        let magnitude = match self.polygon {
+            WavePolygon::Magnetic(_) => i32::from(sine).abs().min(9),
+            WavePolygon::Sonic(_) => i32::from(sine).abs(),
+        } as usize;
         let multiple = match magnitude {
             0..=1 => 0,
             2..=6 => 1,
-            _ => 2,
+            7..=9 => 2,
+            10..=12 => 3,
+            _ => return Err(WaveRasterError::SineIndex(sine_index)),
         };
         let source_word = y
             .wrapping_mul(pitch_words)
             .wrapping_add(x)
             .wrapping_add(step.wrapping_mul(multiple));
         if source_word < 0 || source_word >= pitch_words.wrapping_mul(size[1]) {
-            return Err(MagneticRasterError::SourceWord(source_word));
+            return Err(WaveRasterError::SourceWord(source_word));
         }
         let source = [source_word % pitch_words, source_word / pitch_words];
         if source[0] >= size[0] {
-            return Err(MagneticRasterError::SourceWord(source_word));
+            return Err(WaveRasterError::SourceWord(source_word));
         }
-        Ok(MagneticPixel {
+        Ok(WavePixel {
             point: [x, y],
             source,
             candidate_z,

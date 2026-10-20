@@ -144,6 +144,8 @@ pub(crate) fn collect_area(
         .receiver_fixture
         .as_ref()
         .is_none_or(|fixture| fixture.terrain_collection);
+    let playfield_bounds = world.playfield_bounds();
+    let rule_handles = world.resolved_rule_handles();
     let mut prelude = crate::sim::world::simulation_area_damage_cell_prelude(
         rules,
         warhead,
@@ -159,7 +161,7 @@ pub(crate) fn collect_area(
         &mut world.zone_grid,
         &mut world.path_grid,
         world.bridge_state.as_ref(),
-        world.playfield_bounds,
+        playfield_bounds,
     );
     #[cfg(test)]
     let mut deferred_prelude = world.receiver_fixture.as_mut().map(|fixture| {
@@ -186,7 +188,7 @@ pub(crate) fn collect_area(
         warhead,
         rules,
         &world.interner,
-        world.rule_handles,
+        rule_handles,
         origin,
         combat_aoe::AoELayerContext {
             occupancy: Some(&world.substrate.occupancy),
@@ -270,6 +272,7 @@ pub(crate) fn apply_area_damage_in_run(
         origin,
     );
     let mut effects = DeathEffects::default();
+    #[cfg(test)]
     append_fixture_tiberium(world, &mut effects.tiberium_reduction_requests);
     #[cfg(any(test, feature = "test-support"))]
     effects.wall_mutations.extend(area.aoe.wall_mutations);
@@ -752,7 +755,7 @@ pub(crate) fn commit_entities(
             rules,
             &world.interner,
             &world.houses,
-            &world.house_alliances,
+            world.house_alliances.as_map(),
             scenario_no_damage,
             current_tick,
             world.resolved_terrain.as_ref(),
@@ -1090,8 +1093,28 @@ pub(crate) fn commit_entities(
                 fatal_category,
                 EntityCategory::Unit | EntityCategory::Structure
             ) {
-                {
-                    if callbacks_enabled(world) {
+                // Case 4 UnInits a building, and runs AfterDestruction
+                // (`0x0044269A`, `0x004426A2`), only while its death fuse has
+                // time left (`0x0044266B..0x00442690`). One that outlives the
+                // blow stays alive at Health 0 until its Update retires it
+                // (`0x00440072..0x004400F1`); its bunker is still released.
+                let frame = world.session.binary_frame() as i32;
+                let outlives = fatal_category == EntityCategory::Structure
+                    && world
+                        .substrate
+                        .entities
+                        .get(target_id)
+                        .is_some_and(|building| {
+                            !building.pending_c4_detonation.has_time_left(frame)
+                        });
+                if callbacks_enabled(world) {
+                    if outlives {
+                        crate::sim::docking::bunker_link::release_sell_destroy(
+                            world,
+                            target_id,
+                            run.effects(),
+                        );
+                    } else {
                         world.apply_fatal_lifecycle_stage(
                             rules,
                             FatalLifecycleStage::AfterDeathEffects,
@@ -1101,7 +1124,7 @@ pub(crate) fn commit_entities(
                                 .with_registry(overlay_registry)
                                 .with_effects(run.effects()),
                         );
-                    };
+                    }
                 }
                 if callbacks_enabled(world) {
                     nested
@@ -1149,17 +1172,12 @@ pub(crate) fn commit_entities(
         // runs after the IsAlive re-test (`0x00442905`; `+0x90` is
         // `object_alive`); result 5 returned at `0x0044247D`. Case 4 calls
         // `DestructionEffects` (slot `+0x4EC` = `0x004415F0`, which never
-        // writes `+0x90`) and then, for the stock timer (`+0x530` = 8),
+        // writes `+0x90`) and then, for a fuse with time left (`+0x530` = 8),
         // `ObjectClass::UnInit` (`0x005F65F0`, clears `+0x90` at `0x005F6625`),
-        // so a killing blow skips the block. RESIDUAL: `DestructionEffects`
-        // arms a zero timer for `Explodes=` types (TechnoType `+0xD15`,
-        // ReadINI `0x007122BE..0x007122D2`: stock GAYARD, NAYARD, YAYARD,
-        // NANRCT, AMMOCRAT, CAOILD, CAMISC01/02, YAPPPT) and for a building
-        // whose current mission is Selling (0x13), leaving `+0x90` set and the
-        // block live on their killing blow; VERA UnInits them at once (see
-        // `crew_survival` for the second SpawnSurvivors this skips). Every
-        // retail `Explodes=` type is unarmed and Selling stops the block after
-        // its ping, so the missing ping is the whole effect.
+        // so a killing blow skips the block. The zero fuse of an `Explodes=`
+        // type (TechnoType `+0xD15`: stock GAYARD, NAYARD, YAYARD, NANRCT,
+        // AMMOCRAT, CAOILD, CAMISC01/02, YAPPPT) or a building dying while
+        // Selling leaves `+0x90` set and the block live on its killing blow.
         // `FootClass::ReceiveDamage @ 0x004D7442..0x004D7453`: a team member
         // whose hit returned other than none (0) or gone (5) reports it to
         // its team; a killed member has already left it.
@@ -1836,7 +1854,10 @@ fn finish_concrete_death(
         // Logic/display slot.
         effects.despawned_ids.push(dead_id);
     } else {
-        effects.immediate_uninit_ids.push(dead_id);
+        // A building's UnInit waits for its DestructionEffects below.
+        if category != EntityCategory::Structure {
+            effects.immediate_uninit_ids.push(dead_id);
+        }
         effects.despawned_ids.push(dead_id);
     }
     // The receiver owns the recursion boundary; each concrete owner consumes
@@ -1851,14 +1872,15 @@ fn finish_concrete_death(
                 postlude.commit(world, rules, effects, uninit);
             }
             ConcreteDeathSmudgePlan::Building => {
-                // DestructionEffects (`0x004415F0`): the building's own anims
-                // and centre mark, then SpawnSurvivors (`0x00441F1B`), which
-                // interleaves each foundation cell's survivor roll with that
-                // cell's own mark.
+                // DestructionEffects (`0x004415F0`): the building's own anims,
+                // centre mark, death fuse and NoSurvivor, then SpawnSurvivors
+                // (`0x00441F1B`), which interleaves each foundation cell's
+                // survivor roll with that cell's own mark.
                 let deferred = &mut effects.smudge_spawn_requests;
-                world.building_destruction_anims(
+                world.building_destruction_effects(
                     rules,
                     dead_id,
+                    ignore_defenses,
                     &mut effects.explosion_effects,
                     |world, request| {
                         commit_smudges(world, rules, overlay_registry, vec![request], deferred);
@@ -1870,7 +1892,6 @@ fn finish_concrete_death(
                         rules,
                         overlay_registry,
                         dead_id,
-                        ignore_defenses,
                         |world, (cell_rx, cell_ry)| {
                             commit_smudges(
                                 world,
@@ -1885,6 +1906,18 @@ fn finish_concrete_death(
                 }
             }
         }
+    }
+    // Case 4 UnInits a building only while the fuse DestructionEffects armed
+    // has time left (`0x0044266B..0x00442690`).
+    let frame = world.session.binary_frame() as i32;
+    if category == EntityCategory::Structure
+        && world
+            .substrate
+            .entities
+            .get(dead_id)
+            .is_some_and(|building| building.pending_c4_detonation.has_time_left(frame))
+    {
+        effects.immediate_uninit_ids.push(dead_id);
     }
 }
 
@@ -2154,7 +2187,7 @@ pub(crate) fn area_routes_to_wall(
                 grid.cell(rx as u16, ry as u16).overlay_id
             }
             crate::map::cell_index::NativeCellIdentity::Dummy => {
-                u8::try_from(query.overlay_identity(identity)).ok()
+                u8::try_from(query.dummy_overlay_identity()).ok()
             }
         }
     } else {
@@ -2205,11 +2238,7 @@ fn continue_area_damage(
         ry: context.cell.1,
         damage: context.damage,
         warhead_ref: context.warhead_ref,
-        is_ion_cannon: context.warhead_ref
-            == world
-                .rule_handles
-                .expect("Simulation::resolve_type_handles must run before combat")
-                .ion_cannon,
+        is_ion_cannon: context.warhead_ref == world.rule_handles().ion_cannon,
         impact_z_leptons: context.impact.z,
     };
     crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(
@@ -2329,6 +2358,7 @@ fn emit_detonation_receivers<'r>(
                     detonation.payload.warhead,
                 ),
             );
+            #[cfg(test)]
             append_fixture_tiberium(world, &mut out.effects.tiberium_reduction_requests);
             #[cfg(any(test, feature = "test-support"))]
             out.effects.wall_mutations.extend(area.aoe.wall_mutations);
@@ -2812,11 +2842,10 @@ pub(super) fn radiation_enabled(_world: &Simulation) -> bool {
     true
 }
 
-#[inline]
-fn append_fixture_tiberium(_world: &mut Simulation, _out: &mut Vec<TiberiumReductionRequest>) {
-    #[cfg(test)]
-    if let Some(fixture) = _world.receiver_fixture.as_mut() {
-        _out.append(&mut fixture.deferred_tiberium);
+#[cfg(test)]
+fn append_fixture_tiberium(world: &mut Simulation, out: &mut Vec<TiberiumReductionRequest>) {
+    if let Some(fixture) = world.receiver_fixture.as_mut() {
+        out.append(&mut fixture.deferred_tiberium);
     }
 }
 

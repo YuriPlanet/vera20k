@@ -171,9 +171,10 @@ pub(crate) fn resolve_rows(
             chat_header = true;
         }
         // RESIDUAL: the chat mask 0xA8D108 has no VERA owner; it holds its
-        // Init_Game value 1 for every House, and the House+0x248 hide is
-        // not ported. Only LAN/WOL human rows show the box.
-        let chat = (row > 0 && human).then_some(DiplomacyChatBox {
+        // Init_Game value 1 for every House. Only LAN/WOL human rows show
+        // the box, and 0x00658525 hides it once the House sent EXIT
+        // (House+0x248).
+        let chat = (row > 0 && human && !state.left_game()).then_some(DiplomacyChatBox {
             checked: true,
             enabled: !switches.local_inactive,
         });

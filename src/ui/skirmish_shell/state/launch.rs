@@ -135,6 +135,15 @@ pub fn pack_launch_session_without_start_validation(
     options.build_off_ally = state.build_off_ally;
     options.crates = state.crates;
     options.mcv_redeploy = state.mcv_redeploy;
+    // Then SkirmishDialog's Start/Back packing (`0x006AD88F..0x006AD8A4`)
+    // forces four session bytes whatever the rules default: Fog of War
+    // (`0x00A8B31F`) off, Bridge Destruction (`0x00A8B260`) on, Harvester
+    // Truce (`0x00A8B31D`) off and MultiEngineer (`0x00A8B26C`) off. Only the
+    // network setup dialogs offer the last three.
+    options.fog_of_war = false;
+    options.bridges_destroyable = true;
+    options.harvester_truce = false;
+    options.multi_engineer = false;
 
     let mut session = SkirmishLaunchSession {
         mode: SkirmishLaunchMode::from_game_mode(selected_mode),

@@ -122,6 +122,7 @@ impl HeadlessScenario {
             is_human: true,
             observer: false,
             source_human_index: None,
+            handle: None,
             difficulty: crate::sim::house_state::HouseDifficulty::Normal,
         };
         let runtime = &mut self.runtime;
@@ -719,7 +720,7 @@ mod retail_construction_tests {
             );
         }
         assert!(
-            a.sim().rule_handles.is_some(),
+            a.sim().resolved_rule_handles().is_some(),
             "headless combat rule bindings"
         );
         assert_eq!(rules.general.metallic_debris.len(), 15);
@@ -763,7 +764,7 @@ mod retail_construction_tests {
             "bridge runtime state must be constructed by the funnel"
         );
         assert!(
-            a.sim().authored_tiberium_value_total.is_some(),
+            a.sim().authored_tiberium_value_total().is_some(),
             "authored Full_Init stores the value-only InitCellAttributes(0) total"
         );
 

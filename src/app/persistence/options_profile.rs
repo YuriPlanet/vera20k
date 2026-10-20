@@ -101,11 +101,10 @@ pub(crate) struct RetailOptionsProfile {
     pub(crate) network_send_delay: bool,
     pub(crate) network_port: i32,
 
-    // [WOnline] LobMusic: read by `WOL_Main`'s settings reader `0x0077DED0`
-    // (`ReadInt`, default 1) from the same RA2MD.INI object into
-    // `[0x00B7690C]`, outside OptionsClass. Read-only here; this route never
-    // writes it back.
-    pub(crate) wol_lobby_music: i32,
+    // [WOnline]'s nine WOL preferences, outside OptionsClass: the same
+    // RA2MD.INI object `WOL_Main`'s reader `0x0077DED0` reads at every WOL
+    // entry and WOL Options' writer `0x0077DFD0` writes.
+    pub(crate) wol_preferences: crate::ui::wol_options::WolPreferences,
 
     // [VERA]: VERA's display preferences, not part of OptionsClass.
     /// Whether the window opens full screen. While the game runs the window
@@ -187,7 +186,7 @@ impl Default for RetailOptionsProfile {
             network_destination: String::new(),
             network_send_delay: false,
             network_port: 0,
-            wol_lobby_music: 1,
+            wol_preferences: Default::default(),
             full_screen: false,
             zoom: crate::ui::main_menu_dialogs::options::Zoom::Auto,
             original_shape: false,
@@ -397,9 +396,7 @@ impl RetailOptionsProfile {
         let multiplayer = ini.section_or_empty("MultiPlayer");
         self.network_send_delay = multiplayer.read_bool("SendDelay", false);
         self.network_port = multiplayer.read_int("PortNumberOverride", 0);
-        if let Some(wonline) = ini.section(WONLINE_SECTION) {
-            self.wol_lobby_music = wonline.read_int("LobMusic", self.wol_lobby_music);
-        }
+        self.wol_preferences = read_wol_preferences(ini.section_or_empty(WONLINE_SECTION));
 
         if let Some(vera) = ini.section(VERA_SECTION) {
             self.full_screen = vera.read_bool("FullScreen", self.full_screen);
@@ -565,6 +562,37 @@ impl RetailOptionsProfile {
         )
     }
 
+    /// WOL Options' writer `0x0077DFD0`: the nine `[WOnline]` keys in the
+    /// reader's order, `WriteInt` decimal then `WriteBool` yes/no, and then
+    /// `INIClass::Save`. Every other section and key is left as it is.
+    pub(crate) fn commit_wol_preferences(&self, ra2_dir: &Path) -> io::Result<()> {
+        commit_transformed_profile(
+            ra2_dir,
+            |path| std::fs::read(path),
+            |path, bytes| std::fs::write(path, bytes),
+            |input| self.transform_wol_preferences(input),
+        )
+    }
+
+    fn transform_wol_preferences(&self, input: &[u8]) -> Vec<u8> {
+        let p = &self.wol_preferences;
+        apply_formatted_section(
+            input,
+            WONLINE_SECTION,
+            &[
+                ("AllowPage", p.allow_page.to_string()),
+                ("AllowFind", p.allow_find.to_string()),
+                ("LangFilter", p.lang_filter.to_string()),
+                ("LobMusic", p.lobby_music.to_string()),
+                ("ShowAll", p.show_all.to_string()),
+                ("DisplayAsian", p.display_asian.to_string()),
+                ("DisplayLatin", p.display_latin.to_string()),
+                ("DisplayBuddies", format_bool(p.display_buddies).to_owned()),
+                ("DisplayClan", format_bool(p.display_clan).to_owned()),
+            ],
+        )
+    }
+
     fn transform_network_options(&self, input: &[u8]) -> Vec<u8> {
         apply_formatted_section(
             input,
@@ -605,6 +633,24 @@ fn commit_transformed_profile(
         Err(error) => return Err(error),
     };
     write(&path, &transform(&input))
+}
+
+/// `0x0077DED0`: ReadInt `0x5276D0` for seven keys and ReadBool `0x5295F0`
+/// for two, each with a constant default (not the retained value), no clamps.
+fn read_wol_preferences(
+    wonline: &crate::rules::ini_parser::IniSection,
+) -> crate::ui::wol_options::WolPreferences {
+    crate::ui::wol_options::WolPreferences {
+        allow_page: wonline.read_int("AllowPage", 1),
+        allow_find: wonline.read_int("AllowFind", 1),
+        lang_filter: wonline.read_int("LangFilter", 1),
+        lobby_music: wonline.read_int("LobMusic", 1),
+        show_all: wonline.read_int("ShowAll", 1),
+        display_asian: wonline.read_int("DisplayAsian", 1),
+        display_latin: wonline.read_int("DisplayLatin", 1),
+        display_buddies: wonline.read_bool("DisplayBuddies", false),
+        display_clan: wonline.read_bool("DisplayClan", false),
+    }
 }
 
 fn upper_only_volume(value: f64) -> f32 {
@@ -881,14 +927,68 @@ mod tests {
     }
 
     #[test]
-    fn wol_lobby_music_reads_wonline_lobmusic_as_readint_default_one() {
+    fn wol_preferences_read_with_constant_defaults_and_write_in_native_order() {
+        use crate::ui::wol_options::WolPreferences;
         let mut profile = RetailOptionsProfile::default();
         profile.apply_ini(&IniFile::from_str("[WOnline]\nNick=x\n"));
-        assert_eq!(profile.wol_lobby_music, 1, "absent key keeps the default");
-        profile.apply_ini(&IniFile::from_str("[WOnline]\nLobMusic=0\n"));
-        assert_eq!(profile.wol_lobby_music, 0);
-        profile.apply_ini(&IniFile::from_str("[WOnline]\nLobMusic=$2\n"));
-        assert_eq!(profile.wol_lobby_music, 2, "ReadInt takes $ hex");
+        assert_eq!(profile.wol_preferences, WolPreferences::default());
+        profile.apply_ini(&IniFile::from_str(
+            "[WOnline]\nLobMusic=$2\nAllowPage=0\nDisplayClan=yes\n",
+        ));
+        assert_eq!(
+            profile.wol_preferences,
+            WolPreferences {
+                allow_page: 0,
+                lobby_music: 2,
+                display_clan: true,
+                ..WolPreferences::default()
+            },
+            "ReadInt takes $ hex; ReadBool takes yes"
+        );
+        // An absent key reads its constant default again, not the retained value.
+        profile.apply_ini(&IniFile::from_str("[WOnline]\n"));
+        assert_eq!(profile.wol_preferences, WolPreferences::default());
+
+        profile.wol_preferences = WolPreferences {
+            allow_page: 0,
+            display_buddies: true,
+            ..WolPreferences::default()
+        };
+        let written = profile.transform_wol_preferences(
+            b"[WOnline]\r\nNick=x\r\nLobMusic=$2\r\n[MultiPlayer]\r\nObserverMode=1\r\n",
+        );
+        let ini = IniFile::from_bytes(&written).unwrap();
+        let wonline = ini.section("WOnline").unwrap();
+        assert_eq!(wonline.get_for_test("Nick"), Some("x"));
+        assert_eq!(wonline.get_for_test("AllowPage"), Some("0"));
+        assert_eq!(wonline.get_for_test("LobMusic"), Some("1"));
+        assert_eq!(wonline.get_for_test("DisplayBuddies"), Some("yes"));
+        assert_eq!(wonline.get_for_test("DisplayClan"), Some("no"));
+        assert_eq!(
+            ini.section("MultiPlayer")
+                .unwrap()
+                .get_for_test("ObserverMode"),
+            Some("1")
+        );
+        // New keys append in the writer's order.
+        let fresh = profile.transform_wol_preferences(b"[WOnline]\r\nNick=x\r\n");
+        let text = String::from_utf8_lossy(&fresh);
+        let order: Vec<_> = [
+            "Nick",
+            "AllowPage",
+            "AllowFind",
+            "LangFilter",
+            "LobMusic",
+            "ShowAll",
+            "DisplayAsian",
+            "DisplayLatin",
+            "DisplayBuddies",
+            "DisplayClan",
+        ]
+        .iter()
+        .map(|key| text.find(&format!("{key}=")).unwrap())
+        .collect();
+        assert!(order.windows(2).all(|pair| pair[0] < pair[1]), "{text}");
     }
 
     #[test]

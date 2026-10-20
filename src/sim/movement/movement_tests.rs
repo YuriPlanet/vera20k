@@ -875,7 +875,7 @@ fn walk_arrival_keeps_list_order_and_snapshot_continuation() {
                 assert!(loaded.zone_grid.as_ref().unwrap().is_native_load_pending());
                 loaded.rebuild_caches_after_load(
                     terrain.clone(),
-                    sim.terrain_speed_config.clone(),
+                    sim.terrain_speed_config().clone(),
                     &rules,
                 );
                 assert!(loaded.rebuild_dynamic_navigation(&rules));

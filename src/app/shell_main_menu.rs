@@ -1312,6 +1312,16 @@ impl App {
             ShellExitThen::WolCreateAccepted { observe } => {
                 crate::app::shell_wol::lobby::commit_create(state, observe)
             }
+            ShellExitThen::WolOptionsOpen => crate::app::shell_wol::options::commit_open(state),
+            ShellExitThen::WolOptionsClose(staged) => {
+                crate::app::shell_wol::options::commit_close(state, staged)
+            }
+            ShellExitThen::WolSoundOptionsOpen => {
+                crate::app::shell_wol::options::commit_open_sound(state)
+            }
+            ShellExitThen::WolSoundOptionsBack => {
+                crate::app::shell_wol::options::commit_sound_back(state)
+            }
         }
     }
 

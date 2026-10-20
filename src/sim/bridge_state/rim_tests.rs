@@ -17,6 +17,9 @@ struct SuppliedCell {
     tile: i32,
     subtile: u8,
     facts: BridgeCellFacts,
+    /// Native +44 (None is -1) and +11E.
+    overlay: Option<u8>,
+    state: u8,
     // Native +2C is a pointer, not the derived self relation in BridgeCellFacts.
     anchor: Option<RimCoord>,
 }
@@ -24,8 +27,8 @@ struct SuppliedCell {
 impl SuppliedCell {
     fn snapshot(&self) -> Value {
         json!({"coord": self.coord, "flags": self.facts.raw_flags,
-            "overlay": self.facts.overlay_id.map_or(-1, i32::from),
-            "state": self.facts.state_byte, "anchor": self.anchor})
+            "overlay": self.overlay.map_or(-1, i32::from),
+            "state": self.state, "anchor": self.anchor})
     }
 }
 
@@ -80,6 +83,8 @@ impl SuppliedHost {
                 tile: -1,
                 subtile: 0,
                 facts: BridgeCellFacts::default(),
+                overlay: None,
+                state: 0,
                 anchor: None,
             },
         };
@@ -107,10 +112,10 @@ impl SuppliedHost {
                     subtile,
                     facts: BridgeCellFacts {
                         raw_flags: flags,
-                        state_byte: state,
-                        overlay_id: overlay,
                         ..Default::default()
                     },
+                    overlay,
+                    state,
                     anchor: anchor.filter(|_| flags & 0x80 == 0),
                 },
             );
@@ -277,6 +282,9 @@ impl HighBridgeRimHost for SuppliedHost {
                     | BridgeStampSlot::Forward2
                     | BridgeStampSlot::Opposite
             ) {
+                // 47E040 stores +11E = 0 on each destroyed slot before its
+                // fallout, as the live publication's finish_slot does.
+                cell.state = 0;
                 let snapshot = cell.snapshot();
                 let coord = cell.coord;
                 self.calls
@@ -288,8 +296,8 @@ impl HighBridgeRimHost for SuppliedHost {
     }
     fn clear_overlay_and_mark_radar(&mut self, handle: SuppliedHandle) {
         let cell = self.by_handle_mut(handle);
-        cell.facts.state_byte = 0;
-        cell.facts.overlay_id = None;
+        cell.state = 0;
+        cell.overlay = None;
         let coord = cell.coord;
         self.calls
             .push(json!({"kind": "radar_sink", "coord": coord}));

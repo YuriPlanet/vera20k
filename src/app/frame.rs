@@ -115,6 +115,17 @@ impl App {
             && state.match_state.scenario_outcome.is_none()
         {
             let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+            // Wait_For_Players runs inside the frame's network service, ahead
+            // of the frame it holds back.
+            if crate::app::match_runtime::network_match::service_wait(state, now_ms)
+                == crate::app::match_runtime::network_match::WaitPass::Leave
+            {
+                // Result 8 clears GameActive without an EXIT event, so
+                // Main_Game returns past the router without 0x00686570's
+                // EVA and fades (0x0064806C..0x006482A6, 0x0055D347).
+                Self::return_to_main_menu(state);
+                return false;
+            }
             sim_tick::advance_in_game_runtime(state, now_ms);
             // EventClass EXIT is dispatched at the simulation tail. Consume
             // its terminal edge before any outcome route can claim teardown.
@@ -327,7 +338,9 @@ impl App {
         let mut game_render_output: Option<crate::app::presentation::render::GameRenderOutput> =
             None;
 
-        if state.match_state.match_presentation.in_game_menu.is_open() {
+        if state.match_state.match_presentation.in_game_menu.is_open()
+            || state.match_state.network_wait.dialog_open()
+        {
             Self::ensure_skirmish_shell_chrome(state);
         }
         Self::update_saved_game_browser(state, false);
@@ -538,6 +551,10 @@ impl App {
                         transitions::clear_screen(&mut encoder, &view);
                     }
                 }
+            }
+            GameScreen::InGame if crate::app::frontend::skirmish_shell_render::connection_shell_drawable(state) => {
+                // 0xEA is pushed over whatever the game shows.
+                crate::app::frontend::skirmish_shell_render::render_connection_shell(state, &mut encoder, &output.texture)?;
             }
             GameScreen::InGame if crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(state) => {
                 // 621FCE -> 72F540 clears and paints a complete active-game shell.

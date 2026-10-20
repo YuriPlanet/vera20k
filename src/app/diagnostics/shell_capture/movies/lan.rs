@@ -83,6 +83,35 @@ pub enum LanTarget {
     GuestGo,
     TransferGo,
     HostAbortReturn,
+    /// Tab opens Diplomacy over a two-human LAN match: each row shows its
+    /// own House's UI name.
+    HostDiplomacy,
+    /// The peer sends EXIT during a two-human LAN match: its House is
+    /// marked, its connection dropped and `TXT_LEFT_GAME` posted, while the
+    /// match runs on and Diplomacy hides that row's chat box.
+    HostPeerLeft,
+    /// The peer's frames stop in a two-human LAN match: the wait freezes
+    /// the world and opens 0xEA after 420 buckets, with its rows, countdown
+    /// and list.
+    ConnectionWait,
+    /// Quit Game on 0xEA returns to BB without an EXIT event or the abort
+    /// fade.
+    ConnectionLeave,
+    /// The stall outlasts the 2400-bucket timeout: the peer is dropped with
+    /// `TXT_CONNECTION_LOST`, 0xEA closes and REMOVEPLAYER kills its House.
+    ConnectionTimeout,
+    /// The local vote on the peer's row reaches nodeCount−1 and kicks it.
+    KickVote,
+    /// The peer's frames arrive again: 0xEA closes and the world runs on.
+    ConnectionResume,
+    /// The peer's vote against the local player reaches nodeCount−1: every
+    /// other node is dropped with error 0 (`TXT_LEFT_GAME`, no REMOVEPLAYER).
+    Outvoted,
+    /// B6 Observe in a two-human LAN match, through the executed DESTRUCT and
+    /// the local defeat to the re-armed menu and its Observe-less B6.
+    HostObserve,
+    /// The same three-human match stopped on B6 with Observe offered.
+    HostObserveOffered,
     GuestAbortReturn,
     RemoteLoadingProgress,
     HostObserver,
@@ -137,6 +166,22 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("lan-guest-loading-first", LanTarget::GuestGo),
     ("lan-transfer-loading-first", LanTarget::TransferGo),
     ("lan-host-abort-return", LanTarget::HostAbortReturn),
+    ("lan-host-diplomacy", LanTarget::HostDiplomacy),
+    ("lan-ingame-peer-left", LanTarget::HostPeerLeft),
+    ("lan-ingame-connection-wait", LanTarget::ConnectionWait),
+    (
+        "lan-ingame-connection-leave-return",
+        LanTarget::ConnectionLeave,
+    ),
+    (
+        "lan-ingame-connection-timeout",
+        LanTarget::ConnectionTimeout,
+    ),
+    ("lan-ingame-kick-vote", LanTarget::KickVote),
+    ("lan-ingame-connection-resume", LanTarget::ConnectionResume),
+    ("lan-ingame-outvoted", LanTarget::Outvoted),
+    ("lan-host-observe", LanTarget::HostObserve),
+    ("lan-host-observe-offered", LanTarget::HostObserveOffered),
     (
         "lan-loading-timeout-return",
         LanTarget::LoadingTimeoutReturn,
@@ -226,6 +271,31 @@ enum LanPhase {
     RemoteProgress,
     AbortInput,
     Leaving,
+    /// After Observe: the match runs on until the local House is defeated.
+    Observing,
+    /// The re-armed menu's route to B6, which stops when B6 presents.
+    ObservedAbort,
+    /// A controlled peer EXIT was delivered: waiting for its execution.
+    PeerLeaving {
+        tick: u64,
+    },
+    /// A controlled peer stall was delivered at `tick`: waiting for 0xEA.
+    Stalled {
+        tick: u64,
+        since: Instant,
+    },
+    /// Quit Game was released: waiting for BB.
+    ConnectionLeft,
+    /// The peer resumed at `tick`: waiting for 0xEA to close and a frame.
+    Resumed {
+        tick: u64,
+    },
+    /// The peer is being dropped (timeout or vote): waiting for the wait to
+    /// end and REMOVEPLAYER to kill its House.
+    ConnectionGone {
+        since: Instant,
+        closed: bool,
+    },
     Settle(u32),
 }
 
@@ -268,11 +338,19 @@ impl LanCapture {
     pub(super) fn timeout(&self) -> Duration {
         // Original peer wait is3600 wall-clock buckets (57.6s). Only this
         // diagnostic budget grows; loading retains its production timer.
-        Duration::from_secs(if self.target == LanTarget::LoadingTimeoutReturn {
-            120
-        } else {
-            60
-        })
+        Duration::from_secs(
+            if matches!(
+                self.target,
+                LanTarget::LoadingTimeoutReturn
+                    | LanTarget::HostObserve
+                    | LanTarget::HostObserveOffered
+                    | LanTarget::ConnectionTimeout
+            ) {
+                120
+            } else {
+                60
+            },
+        )
     }
     fn event(&mut self, frame: u32, action: &str) {
         log::debug!("LAN capture {:?} frame {frame}: {action}", self.target);
@@ -1057,13 +1135,45 @@ impl LanCapture {
                         self.settle(state);
                     }
                     _ => {
+                        if self.observe() {
+                            // Observe needs a third live House; the default
+                            // map seats two. Commit a larger one through the
+                            // production Use Map owner.
+                            let mode_id = state
+                                .match_state
+                                .session
+                                .network_setup()
+                                .context("BC")?
+                                .mode
+                                .id;
+                            let index = state
+                                .frontend
+                                .scenario_catalog
+                                .shell_maps()
+                                .iter()
+                                .position(|map| map.player_capacity >= 3)
+                                .context("a map for three players")?;
+                            crate::app::shell_network_setup::commit_map_selection(
+                                state, mode_id, index,
+                            )?;
+                            let file = state
+                                .match_state
+                                .session
+                                .network_setup()
+                                .and_then(|launch| launch.selected_map_file.clone());
+                            self.route.push(json!({"frame":frame,
+                                "action":"three-player map committed through Use Map","map":file}));
+                        }
                         setup::service_event(
                             state,
                             NetworkSetupEvent::ParticipantJoined(self.human(false)?),
                         )?;
                         if matches!(
                             self.target,
-                            LanTarget::HostObserverGo | LanTarget::ParticipantLeft
+                            LanTarget::HostObserverGo
+                                | LanTarget::ParticipantLeft
+                                | LanTarget::HostObserve
+                                | LanTarget::HostObserveOffered
                         ) {
                             let mut second = self.human(false)?;
                             second.name = self.inputs["observer_peer"]["name"]
@@ -1091,6 +1201,9 @@ impl LanCapture {
                                 .session
                                 .network_setup()
                                 .context("observer roster")?;
+                            // Observe needs a third live House, so its
+                            // second peer plays; elsewhere the host observes.
+                            let players = if self.observe() { 3 } else { 2 };
                             ensure!(
                                 launch.humans.len() == 3
                                     && launch
@@ -1098,7 +1211,7 @@ impl LanCapture {
                                         .iter()
                                         .filter(|human| !human.is_observer())
                                         .count()
-                                        == 2
+                                        == players
                                     && launch
                                         .humans
                                         .iter()
@@ -1195,10 +1308,15 @@ impl LanCapture {
                         if self.target == LanTarget::HostMissingMap {
                             self.settle(state);
                         } else {
+                            let requests = self.drain_requests(state);
                             ensure!(
-                                self.drain_requests(state)
-                                    .contains(&NetworkSetupRequest::RequestAcceptance),
-                                "host did not request readiness"
+                                requests.contains(&NetworkSetupRequest::RequestAcceptance),
+                                "host did not request readiness: {requests:?}; chat {:?}",
+                                state
+                                    .frontend
+                                    .multiplayer_setup
+                                    .as_ref()
+                                    .map(|setup| &setup.chat.lines)
                             );
                             if self.target == LanTarget::HostReadiness {
                                 self.settle(state);
@@ -1218,7 +1336,7 @@ impl LanCapture {
                         accepted: true,
                     },
                 )?;
-                if self.target == LanTarget::HostObserverGo {
+                if self.target == LanTarget::HostObserverGo || self.observe() {
                     setup::service_event(
                         state,
                         NetworkSetupEvent::PlayerReady {
@@ -2041,20 +2159,15 @@ impl LanCapture {
                             &launch.humans[peer].name,
                         )],
                     );
-                    let actual = state
-                        .match_state
-                        .match_presentation
-                        .message_list
-                        .messages()
-                        .iter()
-                        .map(|message| message.text.as_str())
-                        .collect::<Vec<_>>()
-                        .join(" ");
+                    let squash = |text: &str| text.split_whitespace().collect::<String>();
                     ensure!(
-                        actual
-                            .split_whitespace()
-                            .collect::<String>()
-                            .contains(&text.split_whitespace().collect::<String>()),
+                        state
+                            .match_state
+                            .match_presentation
+                            .message_list
+                            .messages()
+                            .iter()
+                            .any(|message| squash(&message.text) == squash(&text)),
                         "production connection-lost message missing"
                     );
                     self.route.push(json!({"frame":frame,"action":"native peer wait expired and runtime installed",
@@ -2077,10 +2190,76 @@ impl LanCapture {
                 self.observed_runtime = Some(json!({"mode":"Lan", "tick":sim.session().tick(),
                     "current_house":sim.session().current_house().map(|id|sim.interner().resolve(id)),
                     "map":sim.session().map_name(),"host":state.match_state.session.host()}));
-                self.abort_input = Some(abort_return::AbortReturnInput::begin(
+                if self.target == LanTarget::HostPeerLeft {
+                    crate::app::match_runtime::network_match::service_event(
+                        state,
+                        crate::app::match_runtime::network_match::NetworkMatchEvent::PeerExit {
+                            source_index: 1,
+                        },
+                    )?;
+                    let tick = sim_tick(state)?;
+                    self.route
+                        .push(json!({"frame":frame,"action":"controlled peer EXIT","tick":tick}));
+                    self.phase = LanPhase::PeerLeaving { tick };
+                    return Ok(());
+                }
+                if matches!(
+                    self.target,
+                    LanTarget::ConnectionWait
+                        | LanTarget::ConnectionLeave
+                        | LanTarget::ConnectionTimeout
+                        | LanTarget::KickVote
+                        | LanTarget::ConnectionResume
+                        | LanTarget::Outvoted
+                ) {
+                    crate::app::match_runtime::network_match::service_event(
+                        state,
+                        crate::app::match_runtime::network_match::NetworkMatchEvent::PeerStalled {
+                            source_index: 1,
+                        },
+                    )?;
+                    let tick = sim_tick(state)?;
+                    self.route
+                        .push(json!({"frame":frame,"action":"controlled peer stall","tick":tick}));
+                    self.phase = LanPhase::Stalled {
+                        tick,
+                        since: Instant::now(),
+                    };
+                    return Ok(());
+                }
+                if self.target == LanTarget::HostDiplomacy {
+                    super::super::skirmish::press_diplomacy_tab(state)?;
+                    let view = crate::app::input::diplomacy::view(state);
+                    let names: Vec<String> = view
+                        .rows
+                        .iter()
+                        .flatten()
+                        .map(|row| row.name.clone())
+                        .collect();
+                    let expected = ["host_name", "peer_name"]
+                        .map(|key| self.inputs[key].as_str().unwrap_or_default().to_string());
+                    ensure!(
+                        expected
+                            .iter()
+                            .all(|name| names.iter().filter(|row| *row == name).count() == 1),
+                        "Diplomacy rows {names:?} do not name each human by its own handle {expected:?}"
+                    );
+                    self.route.push(
+                        json!({"frame":frame,"action":"Tab","dialog":0x73,"row_names":names}),
+                    );
+                    self.phase = LanPhase::Settle(2);
+                    return Ok(());
+                }
+                let choice = match self.target {
+                    LanTarget::HostObserve => Some(crate::ui::shell::abort::AbortButton::Secondary),
+                    LanTarget::HostObserveOffered => None,
+                    _ => Some(crate::ui::shell::abort::AbortButton::Leave),
+                };
+                self.abort_input = Some(abort_return::AbortReturnInput::begin_choosing(
                     state,
                     &mut self.route,
                     frame,
+                    choice,
                 )?);
                 self.phase = LanPhase::AbortInput;
             }
@@ -2091,8 +2270,478 @@ impl LanCapture {
                     .context("LAN abort input")?
                     .after_present(state, &mut self.route, frame)?
                 {
-                    self.phase = LanPhase::Leaving;
+                    self.phase = match self.target {
+                        LanTarget::HostObserve => LanPhase::Observing,
+                        LanTarget::HostObserveOffered => {
+                            let layout = crate::app::input::abort::current_abort_layout(state)
+                                .context("B6 geometry")?;
+                            ensure!(
+                                layout.secondary_kind
+                                    == crate::ui::shell::abort::AbortSecondary::Observe,
+                                "three live humans were not offered Observe"
+                            );
+                            LanPhase::Settle(2)
+                        }
+                        _ => LanPhase::Leaving,
+                    };
                 }
+            }
+            LanPhase::Observing => {
+                let sim = &state
+                    .match_state
+                    .sim_runtime
+                    .as_ref()
+                    .context("Observe lost its installed runtime")?
+                    .simulation;
+                ensure!(
+                    state.match_state.scenario_exit.is_none() && !sim.quit_requested(),
+                    "Observe ended the match"
+                );
+                if sim.local_player_defeated() {
+                    let tick = sim.session().tick();
+                    let destructs_pending = sim.pending_command_snapshot().iter().any(|command| {
+                        matches!(command.payload, crate::sim::command::Command::Destruct)
+                    });
+                    ensure!(!destructs_pending, "defeat preceded the DESTRUCT execution");
+                    // MPlayer_Defeated's local line (4FC271..4FC2DB) names the
+                    // House by its own +0x1602A, the host's handle.
+                    let template =
+                        App::csf_label(state, "TXT_PLAYER_DEFEATED", "TXT_PLAYER_DEFEATED");
+                    let line = crate::assets::csf_file::format_csf(
+                        &template,
+                        &[crate::assets::csf_file::CsfArg::Str(
+                            self.inputs["host_name"].as_str().unwrap_or_default(),
+                        )],
+                    );
+                    let rows: Vec<String> = state
+                        .match_state
+                        .match_presentation
+                        .message_list
+                        .messages()
+                        .iter()
+                        .map(|message| message.text.clone())
+                        .collect();
+                    let squash = |text: &str| text.split_whitespace().collect::<String>();
+                    ensure!(
+                        rows.iter().any(|row| squash(row) == squash(&line)),
+                        "the local defeat line {line:?} is missing from {rows:?}"
+                    );
+                    self.route.push(
+                        json!({"frame":frame,"action":"local House defeated after DESTRUCT",
+                        "tick":tick,"latch":state.match_state.match_presentation.modal_latch,
+                        "message_rows":rows}),
+                    );
+                    self.abort_input = Some(abort_return::AbortReturnInput::begin_choosing(
+                        state,
+                        &mut self.route,
+                        frame,
+                        None,
+                    )?);
+                    self.phase = LanPhase::ObservedAbort;
+                }
+            }
+            LanPhase::ObservedAbort => {
+                if self
+                    .abort_input
+                    .as_mut()
+                    .context("LAN observed abort input")?
+                    .after_present(state, &mut self.route, frame)?
+                {
+                    let layout = crate::app::input::abort::current_abort_layout(state)
+                        .context("B6 geometry after defeat")?;
+                    ensure!(
+                        layout.secondary_kind == crate::ui::shell::abort::AbortSecondary::Hidden,
+                        "a defeated House was offered Observe"
+                    );
+                    self.phase = LanPhase::Settle(2);
+                }
+            }
+            LanPhase::PeerLeaving { tick } => {
+                let sim = &state
+                    .match_state
+                    .sim_runtime
+                    .as_ref()
+                    .context("the peer's EXIT lost the runtime")?
+                    .simulation;
+                ensure!(
+                    state.match_state.scenario_exit.is_none() && !sim.quit_requested(),
+                    "a peer's EXIT ended the local match"
+                );
+                let peer_name = self.inputs["peer_name"].as_str().unwrap_or_default();
+                let peer = state
+                    .match_state
+                    .session
+                    .network_source_owner(1)
+                    .and_then(|owner| sim.interner().get(&owner))
+                    .context("the peer's House")?;
+                if !sim.houses()[&peer].left_game() {
+                    return Ok(());
+                }
+                // Wait a few frames past the execution: the match runs on.
+                if sim.session().tick() < tick + 8 {
+                    return Ok(());
+                }
+                ensure!(
+                    !sim.houses()[&peer].is_to_die() && !sim.houses()[&peer].is_defeated(),
+                    "the departed House was killed while the local human is alive"
+                );
+                ensure!(
+                    state.match_state.session.network_connected_source_indices() == [0],
+                    "the peer's connection was not dropped"
+                );
+                let template = App::csf_label(state, "TXT_LEFT_GAME", "TXT_LEFT_GAME");
+                let line = crate::assets::csf_file::format_csf(
+                    &template,
+                    &[crate::assets::csf_file::CsfArg::Str(peer_name)],
+                );
+                let rows: Vec<String> = state
+                    .match_state
+                    .match_presentation
+                    .message_list
+                    .messages()
+                    .iter()
+                    .map(|message| message.text.clone())
+                    .collect();
+                ensure!(
+                    rows.iter().filter(|row| **row == line).count() == 1,
+                    "the left-game line {line:?} is not in {rows:?} exactly once"
+                );
+                let ticked = sim.session().tick();
+                super::super::skirmish::press_diplomacy_tab(state)?;
+                let view = crate::app::input::diplomacy::view(state);
+                let peer_row = view
+                    .rows
+                    .iter()
+                    .flatten()
+                    .find(|row| row.name == peer_name)
+                    .context("the peer's Diplomacy row")?;
+                ensure!(
+                    peer_row.chat.is_none(),
+                    "Diplomacy kept the departed House's chat box"
+                );
+                self.route
+                    .push(json!({"frame":frame,"action":"peer EXIT executed",
+                    "tick":ticked,"message_rows":rows,"connected":[0],"dialog":0x73}));
+                self.phase = LanPhase::Settle(2);
+            }
+            LanPhase::Stalled { tick, since } => {
+                ensure!(
+                    sim_tick(state)? == tick,
+                    "a frame ran while waiting for the stalled peer"
+                );
+                ensure!(
+                    state.match_state.network_wait.waiting(),
+                    "the stall did not start Wait_For_Players"
+                );
+                let Some(page) = state.match_state.network_wait.page().cloned() else {
+                    return Ok(());
+                };
+                let waited = since.elapsed();
+                ensure!(
+                    waited >= Duration::from_millis(419 * 16),
+                    "0xEA opened after {waited:?}, before 420 buckets"
+                );
+                let names = [
+                    self.inputs["host_name"].as_str().unwrap_or_default(),
+                    self.inputs["peer_name"].as_str().unwrap_or_default(),
+                ];
+                ensure!(page.rows == names, "0xEA rows {:?}", page.rows);
+                let label = |key: &str| App::csf_label(state, key, key);
+                let countdown = page.countdown.clone().unwrap_or_default();
+                ensure!(
+                    (30..=33).any(|seconds| countdown
+                        == crate::assets::csf_file::format_csf(
+                            &label("TXT_TIME_ALLOWED"),
+                            &[crate::assets::csf_file::CsfArg::Int(seconds)],
+                        )),
+                    "0xEA countdown {countdown:?}"
+                );
+                let squash = |text: &str| text.split_whitespace().collect::<String>();
+                let expected = [
+                    crate::assets::csf_file::format_csf(
+                        &label("TXT_RECONNECTING_TO"),
+                        &[crate::assets::csf_file::CsfArg::Str(names[1])],
+                    ),
+                    format!(
+                        "{} {}",
+                        label("TXT_RECONNECT_HELP2"),
+                        label("TXT_RECONNECT_HELP4")
+                    ),
+                    label("TXT_RECONNECT_HELP5"),
+                    label("TXT_RECONNECT_HELP1"),
+                ]
+                .concat();
+                let listed: Vec<String> = page
+                    .lines
+                    .iter()
+                    .map(|line| String::from_utf16_lossy(&line.text))
+                    .collect();
+                ensure!(
+                    squash(&listed.concat()) == squash(&expected),
+                    "0xEA list {listed:?}"
+                );
+                let layout =
+                    crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
+                        state,
+                    )
+                    .map(|shell| {
+                        crate::ui::shell::connection::connection_layout(
+                            shell.width,
+                            shell.height,
+                            shell.layout,
+                            shell.button_size,
+                        )
+                    })
+                    .context("0xEA has no loaded hit geometry")?;
+                self.route.push(json!({"frame":frame,"action":"0xEA opened",
+                    "waited_ms":waited.as_millis(),"tick":tick,"rows":page.rows,
+                    "countdown":countdown,"list":listed}));
+                let vote_template = label("TXT_RECONNECT_KICK_RECEIVED");
+                match self.target {
+                    LanTarget::ConnectionLeave => {
+                        let point = set_window_pointer_to_rect_center(state, layout.quit);
+                        crate::app::input::dispatch::handle_cursor_moved_in_game(state);
+                        for edge in [
+                            winit::event::ElementState::Pressed,
+                            winit::event::ElementState::Released,
+                        ] {
+                            crate::app::input::dispatch::handle_mouse_input(
+                                state,
+                                MouseButton::Left,
+                                edge,
+                            );
+                        }
+                        self.route
+                            .push(json!({"frame":frame,"action":"Quit Game","point":point}));
+                        self.phase = LanPhase::ConnectionLeft;
+                    }
+                    LanTarget::KickVote => {
+                        let point = set_window_pointer_to_rect_center(state, layout.players[1]);
+                        crate::app::input::dispatch::handle_cursor_moved_in_game(state);
+                        for edge in [
+                            winit::event::ElementState::Pressed,
+                            winit::event::ElementState::Released,
+                        ] {
+                            crate::app::input::dispatch::handle_mouse_input(
+                                state,
+                                MouseButton::Left,
+                                edge,
+                            );
+                        }
+                        let vote = crate::assets::csf_file::format_csf(
+                            &vote_template,
+                            &[
+                                crate::assets::csf_file::CsfArg::Str(names[0]),
+                                crate::assets::csf_file::CsfArg::Str(names[1]),
+                            ],
+                        );
+                        let listed: Vec<String> = state
+                            .match_state
+                            .network_wait
+                            .page()
+                            .context("0xEA closed on the vote")?
+                            .lines
+                            .iter()
+                            .map(|line| String::from_utf16_lossy(&line.text))
+                            .collect();
+                        ensure!(
+                            squash(&listed.concat()).ends_with(&squash(&vote)),
+                            "the vote line is missing from {listed:?}"
+                        );
+                        let requests = state.match_state.session.take_network_loading_requests();
+                        ensure!(
+                            requests
+                                .contains(&NetworkLoadingRequest::ProposeKick { target_source: 1 }),
+                            "no kick proposal was sent: {requests:?}"
+                        );
+                        self.route
+                            .push(json!({"frame":frame,"action":"vote on peer row",
+                            "point":point,"line":vote}));
+                        self.phase = LanPhase::ConnectionGone {
+                            since,
+                            closed: false,
+                        };
+                    }
+                    LanTarget::ConnectionTimeout => {
+                        self.phase = LanPhase::ConnectionGone {
+                            since,
+                            closed: false,
+                        };
+                    }
+                    LanTarget::ConnectionResume => {
+                        crate::app::match_runtime::network_match::service_event(
+                            state,
+                            crate::app::match_runtime::network_match::NetworkMatchEvent::PeerResumed {
+                                source_index: 1,
+                            },
+                        )?;
+                        self.route
+                            .push(json!({"frame":frame,"action":"controlled peer resume"}));
+                        self.phase = LanPhase::Resumed { tick };
+                    }
+                    LanTarget::Outvoted => {
+                        crate::app::match_runtime::network_match::service_event(
+                            state,
+                            crate::app::match_runtime::network_match::NetworkMatchEvent::KickVote {
+                                voter: 1,
+                                target: 0,
+                            },
+                        )?;
+                        self.route.push(
+                            json!({"frame":frame,"action":"peer votes to kick the local player"}),
+                        );
+                        self.phase = LanPhase::ConnectionGone {
+                            since,
+                            closed: false,
+                        };
+                    }
+                    _ => {
+                        MoviesCapture::restore_neutral_pointer(state);
+                        self.phase = LanPhase::Settle(SETTLE_FRAMES);
+                    }
+                }
+            }
+            LanPhase::ConnectionLeft => {
+                ensure!(
+                    state.match_state.scenario_exit.is_none(),
+                    "Quit Game started the EXIT teardown"
+                );
+                if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+                    ensure!(
+                        !runtime.simulation.quit_requested()
+                            && !runtime.simulation.pending_command_snapshot().iter().any(
+                                |command| matches!(
+                                    command.payload,
+                                    crate::sim::command::Command::ExitMatch
+                                )
+                            ),
+                        "Quit Game queued or executed an EXIT"
+                    );
+                }
+                if rendered == PresentedShell::LanLobby && lobby_settled(state) {
+                    ensure!(
+                        state.match_state.session.mode() == SessionMode::Lan
+                            && state.frontend.loading_session.is_none()
+                            && !state.match_state.network_wait.waiting(),
+                        "0xEA leave cleanup incomplete"
+                    );
+                    self.route
+                        .push(json!({"frame":frame,"action":"returned to BB without EXIT"}));
+                    self.phase = LanPhase::Returned;
+                }
+            }
+            LanPhase::Resumed { tick } => {
+                if state.match_state.network_wait.waiting() || sim_tick(state)? <= tick {
+                    return Ok(());
+                }
+                ensure!(
+                    state.match_state.session.network_connected_source_indices() == [0, 1],
+                    "a resumed peer was dropped"
+                );
+                let lost = App::csf_label(state, "TXT_CONNECTION_LOST", "TXT_CONNECTION_LOST");
+                let prefix = lost.split("%s").next().unwrap_or_default().to_owned();
+                ensure!(
+                    !state
+                        .match_state
+                        .match_presentation
+                        .message_list
+                        .messages()
+                        .iter()
+                        .any(|message| !prefix.is_empty() && message.text.contains(&prefix)),
+                    "a resumed peer posted a connection-lost line"
+                );
+                self.route
+                    .push(json!({"frame":frame,"action":"0xEA closed and frames run",
+                    "tick":sim_tick(state)?}));
+                MoviesCapture::restore_neutral_pointer(state);
+                self.phase = LanPhase::Settle(SETTLE_FRAMES);
+            }
+            LanPhase::ConnectionGone { since, closed } => {
+                if state.match_state.network_wait.waiting() {
+                    return Ok(());
+                }
+                let peer_name = self.inputs["peer_name"].as_str().unwrap_or_default();
+                let sim = &state
+                    .match_state
+                    .sim_runtime
+                    .as_ref()
+                    .context("the kick lost the runtime")?
+                    .simulation;
+                let peer = state
+                    .match_state
+                    .session
+                    .network_source_owner(1)
+                    .and_then(|owner| sim.interner().get(&owner))
+                    .context("the peer's House")?;
+                if !closed {
+                    let waited = since.elapsed();
+                    if self.target == LanTarget::ConnectionTimeout {
+                        ensure!(
+                            waited >= Duration::from_millis(2399 * 16),
+                            "the peer was dropped after {waited:?}, before 2400 buckets"
+                        );
+                    }
+                    ensure!(
+                        state.match_state.session.network_connected_source_indices() == [0],
+                        "the peer's connection was not dropped"
+                    );
+                    // Error 0 for an outvoted local node, error 1 otherwise.
+                    let key = if self.target == LanTarget::Outvoted {
+                        "TXT_LEFT_GAME"
+                    } else {
+                        "TXT_CONNECTION_LOST"
+                    };
+                    let line = crate::assets::csf_file::format_csf(
+                        &App::csf_label(state, key, key),
+                        &[crate::assets::csf_file::CsfArg::Str(peer_name)],
+                    );
+                    let rows: Vec<String> = state
+                        .match_state
+                        .match_presentation
+                        .message_list
+                        .messages()
+                        .iter()
+                        .map(|message| message.text.clone())
+                        .collect();
+                    ensure!(
+                        rows.iter().filter(|row| **row == line).count() == 1,
+                        "the connection-lost line {line:?} is not in {rows:?} exactly once"
+                    );
+                    self.route.push(json!({"frame":frame,"action":"0xEA closed",
+                        "waited_ms":waited.as_millis(),"message_rows":rows}));
+                    self.phase = LanPhase::ConnectionGone {
+                        since,
+                        closed: true,
+                    };
+                    return Ok(());
+                }
+                if self.target == LanTarget::Outvoted {
+                    // Error 0 queues no REMOVEPLAYER: the House stays.
+                    let ticked = sim.session().tick();
+                    if ticked < 8 + since_tick(&self.route) {
+                        return Ok(());
+                    }
+                    ensure!(
+                        !sim.houses()[&peer].is_to_die() && !sim.houses()[&peer].is_defeated(),
+                        "an error-0 drop killed the peer's House"
+                    );
+                    self.route
+                        .push(json!({"frame":frame,"action":"peer dropped, House kept",
+                        "tick":ticked}));
+                    MoviesCapture::restore_neutral_pointer(state);
+                    self.phase = LanPhase::Settle(SETTLE_FRAMES);
+                    return Ok(());
+                }
+                // REMOVEPLAYER executes once frames run again.
+                if !sim.houses()[&peer].is_to_die() && !sim.houses()[&peer].is_defeated() {
+                    return Ok(());
+                }
+                self.route.push(
+                    json!({"frame":frame,"action":"REMOVEPLAYER killed the peer",
+                    "tick":sim.session().tick()}),
+                );
+                MoviesCapture::restore_neutral_pointer(state);
+                self.phase = LanPhase::Settle(SETTLE_FRAMES);
             }
             LanPhase::Leaving => {
                 if state.match_state.scenario_exit.is_some() && !self.observed_exit_cascade {
@@ -2141,10 +2790,27 @@ impl LanCapture {
         }
         Ok(())
     }
+    /// The three-human Observe captures.
+    fn observe(&self) -> bool {
+        matches!(
+            self.target,
+            LanTarget::HostObserve | LanTarget::HostObserveOffered
+        )
+    }
     fn abort_return(&self) -> bool {
         matches!(
             self.target,
             LanTarget::HostAbortReturn
+                | LanTarget::HostDiplomacy
+                | LanTarget::HostPeerLeft
+                | LanTarget::ConnectionWait
+                | LanTarget::ConnectionLeave
+                | LanTarget::ConnectionTimeout
+                | LanTarget::KickVote
+                | LanTarget::ConnectionResume
+                | LanTarget::Outvoted
+                | LanTarget::HostObserve
+                | LanTarget::HostObserveOffered
                 | LanTarget::GuestAbortReturn
                 | LanTarget::LoadingTimeoutReturn
         )
@@ -2377,4 +3043,25 @@ mod tests {
         fs::remove_file(&path).unwrap();
         fs::remove_dir(root).unwrap();
     }
+}
+
+/// The stall's tick from the route's "controlled peer stall" entry.
+fn since_tick(route: &[Value]) -> u64 {
+    route
+        .iter()
+        .rev()
+        .find(|entry| entry["action"] == "controlled peer stall")
+        .and_then(|entry| entry["tick"].as_u64())
+        .unwrap_or_default()
+}
+
+fn sim_tick(state: &AppState) -> Result<u64> {
+    Ok(state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .context("installed LAN runtime")?
+        .simulation
+        .session()
+        .tick())
 }

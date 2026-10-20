@@ -507,14 +507,14 @@ pub(super) fn install_infantry_delivery_fixture_map(sim: &mut Simulation) {
     sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
         64,
     ));
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 16,
         off_fc: -64,
         off_100: -64,
         off_104: 128,
         off_108: 128,
-    });
-    sim.playfield_size_height = Some(64);
+    }));
+    sim.set_playfield_size_height_for_test(Some(64));
     sim.session.set_map_width_for_test(16);
     sim.session.set_map_height_for_test(64);
     sim.session
@@ -572,8 +572,8 @@ pub(super) fn spawn_structure(
     sim.update_house_tracking(sid, |tracking, entity| {
         tracking.increment_factory_count(entity)
     });
-    if sim.substrate.next_stable_object_id <= sid {
-        sim.substrate.next_stable_object_id = sid + 1;
+    if sim.next_stable_object_id() <= sid {
+        sim.set_next_stable_object_id_for_test(sid + 1);
     }
 }
 
@@ -736,14 +736,14 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
         let grid = PathGrid::from_resolved_terrain(&terrain);
         sim.install_fixture_path_grid(Some(&grid));
         sim.resolved_terrain = Some(terrain);
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 32,
             off_fc: -100,
             off_100: -100,
             off_104: 200,
             off_108: 200,
-        });
-        sim.playfield_size_height = Some(32);
+        }));
+        sim.set_playfield_size_height_for_test(Some(32));
         sim.session.set_binary_frame_for_test(37);
 
         spawn_structure(&mut sim, &rules, 1, "Americans", "GAYARD", 20, 20);
@@ -863,14 +863,14 @@ fn mixed_land_and_naval_factories_bind_independent_vehicle_and_ship_slots() {
     let grid = PathGrid::test_all_passable(40, 40);
     sim.install_fixture_path_grid(Some(&grid));
     sim.resolved_terrain = Some(terrain);
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 40,
         off_fc: -100,
         off_100: -100,
         off_104: 200,
         off_108: 200,
-    });
-    sim.playfield_size_height = Some(40);
+    }));
+    sim.set_playfield_size_height_for_test(Some(40));
     sim.session.set_map_width_for_test(40);
     sim.session.set_map_height_for_test(40);
 
@@ -1053,14 +1053,14 @@ fn naval_delivery_nonzero_canenter_refunds_without_trying_second_producer() {
     let grid = PathGrid::from_resolved_terrain(&terrain);
     sim.install_fixture_path_grid(Some(&grid));
     sim.resolved_terrain = Some(terrain);
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 40,
         off_fc: -100,
         off_100: -100,
         off_104: 200,
         off_108: 200,
-    });
-    sim.playfield_size_height = Some(40);
+    }));
+    sim.set_playfield_size_height_for_test(Some(40));
     sim.session.set_binary_frame_for_test(37);
 
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAYARD", 10, 10);
@@ -1190,14 +1190,14 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     let grid = PathGrid::from_resolved_terrain(&terrain);
     sim.install_fixture_path_grid(Some(&grid));
     sim.resolved_terrain = Some(terrain);
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 40,
         off_fc: -100,
         off_100: -100,
         off_104: 200,
         off_108: 200,
-    });
-    sim.playfield_size_height = Some(40);
+    }));
+    sim.set_playfield_size_height_for_test(Some(40));
     sim.session.set_map_width_for_test(40);
     sim.session.set_map_height_for_test(40);
     let americans = sim.interner.intern("Americans");
@@ -1334,14 +1334,14 @@ fn naval_yard_with_rally(rules: &RuleSet) -> Simulation {
     let grid = PathGrid::from_resolved_terrain(&terrain);
     sim.install_fixture_path_grid(Some(&grid));
     sim.resolved_terrain = Some(terrain);
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 40,
         off_fc: -100,
         off_100: -100,
         off_104: 200,
         off_108: 200,
-    });
-    sim.playfield_size_height = Some(40);
+    }));
+    sim.set_playfield_size_height_for_test(Some(40));
     sim.session.set_map_width_for_test(40);
     sim.session.set_map_height_for_test(40);
 
@@ -1553,14 +1553,14 @@ fn naval_rally_destination_and_move_survive_beyond_the_path_grid() {
     let grid = PathGrid::test_all_passable(15, 15);
     sim.install_fixture_path_grid(Some(&grid));
     sim.resolved_terrain = Some(terrain);
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 40,
         off_fc: -100,
         off_100: -100,
         off_104: 200,
         off_108: 200,
-    });
-    sim.playfield_size_height = Some(40);
+    }));
+    sim.set_playfield_size_height_for_test(Some(40));
     sim.session.set_map_width_for_test(40);
     sim.session.set_map_height_for_test(40);
 

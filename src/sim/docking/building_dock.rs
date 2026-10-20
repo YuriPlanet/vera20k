@@ -2119,8 +2119,8 @@ mod tests {
             );
         }
         sim.substrate.entities.insert(ge);
-        if sim.substrate.next_stable_object_id <= sid {
-            sim.substrate.next_stable_object_id = sid + 1;
+        if sim.next_stable_object_id() <= sid {
+            sim.set_next_stable_object_id_for_test(sid + 1);
         }
     }
 

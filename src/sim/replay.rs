@@ -1481,7 +1481,7 @@ mod tests {
 
         let hashes = ReplayRunner::run_fixture(&mut sim, &decoded, None, None, 33);
         assert_eq!(hashes.len(), 1);
-        assert!(sim.quit_requested);
+        assert!(sim.quit_requested());
         assert_eq!(sim.take_executed_exit_owner(), Some(owner));
         assert_eq!(sim.take_executed_exit_owner(), None);
     }

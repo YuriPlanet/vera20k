@@ -180,16 +180,16 @@ fn follow_friendlies_alliance_is_asked_by_candidate_not_team_owner() {
     let mut f = Fixture::new();
     let other = f.spawn("TANK", "Americans", 8, 4);
     f.sim
-        .house_alliances
+        .house_alliances_mut_for_test()
         .insert("RUSSIANS".into(), ["AMERICANS".into()].into());
     assert_eq!(
         f.center(),
         None,
         "team owner's one-way declaration is not enough"
     );
-    f.sim.house_alliances.clear();
+    f.sim.house_alliances_mut_for_test().clear();
     f.sim
-        .house_alliances
+        .house_alliances_mut_for_test()
         .insert("AMERICANS".into(), ["RUSSIANS".into()].into());
     assert_eq!(f.center(), Some(TeamTarget::Object(other)));
 }

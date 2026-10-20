@@ -17,6 +17,8 @@ fn ordinary_pass(session_mode: SessionMode, pacer_timing_admits: bool) -> Runtim
         menu_open: false,
         session_mode,
         pacer_timing_admits,
+        network_wait: false,
+        network_dialog_open: false,
     }
 }
 

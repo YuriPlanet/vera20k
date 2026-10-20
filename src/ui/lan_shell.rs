@@ -228,29 +228,56 @@ impl LanChatState {
         visible_rows: usize,
         measure: impl Fn(&[u16]) -> i32,
     ) {
-        for text in split_chat_lines(&message.text, width, measure) {
-            self.append_row(
-                LanChatLine {
-                    text,
-                    color: message.color,
-                },
-                visible_rows,
-            );
-        }
+        append_list_message(
+            &mut self.lines,
+            &mut self.list,
+            message,
+            width,
+            visible_rows,
+            measure,
+        );
     }
+}
 
-    ///5E29A0: keep at most501rows (delete only when oldcount>500),
-    /// and follow appended text only when the old view was at the bottom.
-    fn append_row(&mut self, line: LanChatLine, visible_rows: usize) {
-        let follow = self.lines.len().saturating_sub(self.list.top_index) <= visible_rows;
-        if self.lines.len() > 500 {
-            self.lines.remove(0);
-            self.list.top_index = self.list.top_index.saturating_sub(1);
-        }
-        self.lines.push(line);
-        if follow {
-            self.list.top_index = self.lines.len().saturating_sub(visible_rows);
-        }
+/// The shell list line adder `0x005E2820` -> `0x005E29A0`: wrap the text to
+/// the list's width and append each row. An empty text adds nothing.
+pub(crate) fn append_list_message(
+    lines: &mut Vec<LanChatLine>,
+    list: &mut LanListState,
+    message: LanChatLine,
+    width: i32,
+    visible_rows: usize,
+    measure: impl Fn(&[u16]) -> i32,
+) {
+    for text in split_chat_lines(&message.text, width, measure) {
+        append_row(
+            lines,
+            list,
+            LanChatLine {
+                text,
+                color: message.color,
+            },
+            visible_rows,
+        );
+    }
+}
+
+///5E29A0: keep at most501rows (delete only when oldcount>500),
+/// and follow appended text only when the old view was at the bottom.
+fn append_row(
+    lines: &mut Vec<LanChatLine>,
+    list: &mut LanListState,
+    line: LanChatLine,
+    visible_rows: usize,
+) {
+    let follow = lines.len().saturating_sub(list.top_index) <= visible_rows;
+    if lines.len() > 500 {
+        lines.remove(0);
+        list.top_index = list.top_index.saturating_sub(1);
+    }
+    lines.push(line);
+    if follow {
+        list.top_index = lines.len().saturating_sub(visible_rows);
     }
 }
 
@@ -668,7 +695,10 @@ mod tests {
     fn chat_retains_501_rows_and_does_not_jump_a_scrolled_view() {
         let mut lobby = LanLobbyState::new("Tester", false);
         for value in 0..501 {
-            lobby.chat.append_row(
+            let chat = &mut lobby.chat;
+            append_row(
+                &mut chat.lines,
+                &mut chat.list,
                 LanChatLine {
                     text: vec![value],
                     color: u32::MAX,
@@ -679,7 +709,10 @@ mod tests {
         assert_eq!(lobby.chat.lines.len(), 501);
         assert_eq!(lobby.chat.list.top_index, 493);
         lobby.chat.list.top_index = 10;
-        lobby.chat.append_row(
+        let chat = &mut lobby.chat;
+        append_row(
+            &mut chat.lines,
+            &mut chat.list,
             LanChatLine {
                 text: vec![501],
                 color: u32::MAX,

@@ -143,13 +143,13 @@ fn scripted_rally_preference_and_clear_match_original_targets_and_rng() {
         sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         // These are the five admitted MapClass predicate inputs in the
         // generator, not a terrain-height fit to a captured target.
-        sim.playfield_bounds = Some(PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(PlayfieldBounds {
             base: 40,
             off_fc: 2,
             off_100: 4,
             off_104: 36,
             off_108: 36,
-        });
+        }));
         crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "scripted rally flat64");
         for object in input["buildings"].as_array().unwrap() {
             let at = wide(cell(&object["cell"]));
@@ -494,7 +494,7 @@ fn the_try_fire_arms_match_native() {
         sim.session
             .set_binary_frame_for_test(int(&row["frame"]) as u32);
         sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
-        sim.playfield_bounds = Some(test_playfield_bounds());
+        sim.set_playfield_bounds_for_test(Some(test_playfield_bounds()));
         crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "ai fire flat 64");
         let rally = cell(&row["rally"]);
         if rally != NO_CELL {
@@ -633,12 +633,12 @@ fn the_genetic_mutator_target_matches_native() {
                 .register(HouseState::new(id, 0, None, false, 0, 10));
         }
         // `+0x5788` bit 2: the computer counts the third house an ally.
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry(COMPUTER.to_ascii_uppercase())
             .or_default()
             .insert(ALLY.to_ascii_uppercase());
         sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
-        sim.playfield_bounds = Some(playfield(&oracle));
+        sim.set_playfield_bounds_for_test(Some(playfield(&oracle)));
         crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "ai fire flat 64");
         // Each listed object and its cell, in arrival order; the cells that
         // hold a Unit or Building.
@@ -864,7 +864,7 @@ fn retail_skirmish() -> Option<(RuleSet, Simulation, InternedId, InternedId)> {
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.game_options_mut_for_test().super_weapons = true;
     sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
-    sim.playfield_bounds = Some(test_playfield_bounds());
+    sim.set_playfield_bounds_for_test(Some(test_playfield_bounds()));
     crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "ai fire flat 64");
     Some((rules, sim, americans, russians))
 }
@@ -1018,7 +1018,7 @@ fn retail_computer_house_nukes_the_enemy_construction_yard() {
         assert!(sim.map_cell_in_bounds(cell), "launch scene cell {cell:?}");
         assert!(crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (i32::from(cell.0), i32::from(cell.1)),
-            sim.playfield_bounds,
+            sim.playfield_bounds(),
             sim.resolved_terrain.as_ref(),
         ));
     }
@@ -1141,12 +1141,12 @@ fn the_psychic_dominator_target_matches_native() {
             .unwrap()
             .set_enemy_house_for_test((int(&row["enemy_index"]) != -1).then_some(enemy));
         // `+0x5788` bit 2: the computer counts the third house an ally.
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry(COMPUTER.to_ascii_uppercase())
             .or_default()
             .insert(ALLY.to_ascii_uppercase());
         sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
-        sim.playfield_bounds = Some(playfield(&oracle));
+        sim.set_playfield_bounds_for_test(Some(playfield(&oracle)));
         crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "ai fire flat 64");
         let status = u8::try_from(int(&row["psydom"])).unwrap();
         sim.psychic_dominator = PsychicDominatorState::for_test(

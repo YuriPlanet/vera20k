@@ -336,7 +336,7 @@ fn paradrop(
 ) -> Result<(), DepartureFailure> {
     if !cell_is_in_playfield_leptons(
         (landing.x, landing.y, landing.z),
-        sim.playfield_bounds,
+        sim.playfield_bounds(),
         sim.resolved_terrain.as_ref(),
     ) {
         return Err(DepartureFailure::Placement);
@@ -552,7 +552,7 @@ mod tests {
                 crate::map::resolved_terrain::test_retail_clear_grid(64, 64),
             );
         }
-        sim.playfield_bounds = Some(DROP_PLAYFIELD);
+        sim.set_playfield_bounds_for_test(Some(DROP_PLAYFIELD));
         let mut aircraft = GameEntity::test_default_of_category(
             aircraft_id,
             "PDPLANE",

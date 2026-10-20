@@ -186,7 +186,7 @@ pub(super) fn commit_receiver_health(
                 hostile_source(
                     target,
                     attacker_owner,
-                    &world.house_alliances,
+                    world.house_alliances.as_map(),
                     &world.interner,
                 ),
             )),
@@ -270,7 +270,7 @@ pub(super) fn commit_receiver_health(
         if execute_world_callbacks {
             update_anger_nodes(
                 &mut world.houses,
-                &world.house_alliances,
+                world.house_alliances.as_map(),
                 &world.interner,
                 victim_owner,
                 source_owner,
@@ -323,7 +323,7 @@ pub(super) fn commit_receiver_health(
         let hostile = hostile_source(
             target,
             attacker_owner,
-            &world.house_alliances,
+            world.house_alliances.as_map(),
             &world.interner,
         );
         latch_hostile_hit = survivor && hostile;

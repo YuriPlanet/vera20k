@@ -114,7 +114,7 @@ fn relocating_owner(category: EntityCategory, type_name: &str, target: (u16, u16
         0,
     )));
     sim.substrate.entities.insert(entity);
-    sim.substrate.next_stable_object_id = 2;
+    sim.set_next_stable_object_id_for_test(2);
     assert!(matches!(
         sim.reveal(1),
         super::super::RevealOutcome::Revealed { .. }

@@ -324,7 +324,8 @@ fn an_object_click_keeps_an_object_its_zone_reaches() {
 /// An object across the river: the retail GI's zone cannot reach its Cell,
 /// so FNPC sends the GI to its own bank (`0x004D7B5E..0x004D7BF3`). An
 /// Aircraft is special and keeps the object (`0x004D7AFB`), but its wrapper
-/// refuses NoMove (`0x00417C12`).
+/// refuses NoMove (`0x00417C12`). Its 0 is its own Cell action under the
+/// object (`0x00417D7C`), Move over this open Cell.
 #[test]
 fn an_object_across_the_river_sends_the_mover_to_its_own_bank() {
     let Some((mut sim, rules, owner, gi, harrier)) = retail_scene("ORCA") else {
@@ -345,7 +346,10 @@ fn an_object_across_the_river_sends_the_mover_to_its_own_bank() {
         Some(TargetKind::Entity(far))
     );
     assert_eq!(click(harrier, MoveAction::NoMove), None);
-    assert_eq!(click(harrier, MoveAction::None), None, "no Aircraft tail");
+    assert_eq!(
+        click(harrier, MoveAction::None),
+        Some(TargetKind::Entity(far))
+    );
 }
 
 /// NoMove's own shroud test (`0x004D77BD..0x004D77EA`): over an object whose

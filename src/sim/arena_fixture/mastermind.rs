@@ -53,12 +53,12 @@ impl MindScene {
         // scene: Bullet In_Bounds568300 must admit the cardinal encounter and
         // its ordinary tank pursuit (the arena's default20 ends at x+y=60).
         // Allocated terrain/fog64x64 and native MapSize20x64 are independent.
-        sim.playfield_size_height = Some(64);
-        let native_width = sim.playfield_bounds.unwrap().base;
+        sim.set_playfield_size_height_for_test(Some(64));
+        let native_width = sim.playfield_bounds().unwrap().base;
         for cell in [(32, 32), (32, 26), (38, 32), (32, 38), (26, 32)] {
             assert!(crate::map::playfield::size_diamond_contains(
                 native_width,
-                sim.playfield_size_height.unwrap(),
+                sim.playfield_size_height().unwrap(),
                 cell,
             ));
         }
@@ -359,7 +359,7 @@ impl MindScene {
         loaded.restore_after_snapshot_load().unwrap();
         loaded.rebuild_caches_after_load(
             self.sim.resolved_terrain.clone().unwrap(),
-            self.sim.terrain_speed_config.clone(),
+            self.sim.terrain_speed_config().clone(),
             &self.rules,
         );
         loaded.resolve_type_handles(&self.rules);

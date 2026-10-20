@@ -1340,7 +1340,7 @@ fn a_busy_factory_exit_pushes_its_neighbours_away_from_the_head() {
         spawn(&mut sim, 15, 15);
         let east = spawn(&mut sim, 16, 15);
         let north = spawn(&mut sim, 15, 14);
-        let producer = sim.substrate.next_stable_object_id;
+        let producer = sim.next_stable_object_id();
         let track = DriveCoord {
             x: 15 * 256 + 255,
             y: 15 * 256 + 1,
@@ -1374,4 +1374,115 @@ fn a_busy_factory_exit_pushes_its_neighbours_away_from_the_head() {
             );
         }
     }
+}
+
+/// Mission_Unload state 2 for a Teleport product (`0x0044DFAD..0x0044E163`):
+/// the retail Chrono Miner takes a Drive piggyback over its Teleport and
+/// leaves the bay on track 0x42, as a Drive product does
+/// (`0x0044DF72..0x0044DFA4`); once it stops past the bay the Drive ends and
+/// its Teleport is back.
+#[test]
+fn a_chrono_miner_leaves_the_war_factory_on_the_bay_track() {
+    use crate::rules::locomotor_type::LocomotorKind;
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 0x0044_DFAD, 48);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    sim.session
+        .set_current_house_for_test(sim.interner.get("Americans"));
+    let grid = sim
+        .path_grid_snapshot()
+        .map(|grid| (*grid).clone())
+        .unwrap();
+    let factory = sim
+        .spawn_object("GAWEAP", "Americans", 20, 20, 0, &rules)
+        .unwrap();
+    // A rival building keeps the skirmish from ending in victory.
+    sim.spawn_object("NAPOWR", "Russians", 14, 30, 0, &rules)
+        .unwrap();
+    // ExitObject's War Factory arm (`0x00444492`) places the product in the
+    // bay, makes the factory its contact and queues the factory's Unload.
+    let miner = sim
+        .construct_object_limbo_at_height(
+            "CMIN",
+            "Americans",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+    assert!(matches!(
+        crate::sim::production::exit_produced_object(
+            &mut sim,
+            &rules,
+            factory,
+            miner,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        ),
+        crate::sim::ai_base_building::BuildingExit::Placed
+    ));
+    let active = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(miner)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .active_kind()
+    };
+    let bay_track = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(miner)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .and_then(|loco| loco.selected_drive_runtime())
+            .and_then(|drive| drive.retained())
+            .is_some_and(|drive| drive.track().turn_index() == 0x42)
+    };
+    assert_eq!(active(&sim), LocomotorKind::Teleport);
+
+    let mut on_track = false;
+    for _ in 0..600 {
+        let commands = sim.take_due_commands();
+        sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33);
+        if active(&sim) == LocomotorKind::Drive && bay_track(&sim) {
+            on_track = true;
+            break;
+        }
+    }
+    assert!(on_track, "the Chrono Miner runs the bay track on a Drive");
+
+    // Past the bay the Drive stops and ends back onto the Teleport.
+    let mut teleport_again = false;
+    for _ in 0..600 {
+        let commands = sim.take_due_commands();
+        sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33);
+        if active(&sim) == LocomotorKind::Teleport {
+            teleport_again = true;
+            break;
+        }
+    }
+    assert!(teleport_again, "the Drive piggyback ends past the bay");
+    let unit = sim.substrate.entities.get(miner).unwrap();
+    let (rx, ry) = (unit.position.rx(), unit.position.ry());
+    assert!(
+        sim.substrate.occupancy.first_building_on_layer(
+            rx,
+            ry,
+            crate::sim::movement::locomotor::MovementLayer::Ground
+        ) != Some(factory),
+        "out of the bay at ({rx}, {ry})"
+    );
 }

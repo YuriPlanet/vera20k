@@ -752,6 +752,23 @@ impl Simulation {
             })
     }
 
+    /// House+0x80, the UnitRepair stations (Items `+0x84`, Count `+0x90`), in
+    /// vector order. Unlimbo appends a `UnitRepair=` building (Type
+    /// `+0x16A9`, `0x0044122C..0x0044127A`) ahead of its House+0xB0 and
+    /// House+68 appends; ChangeOwner removes it from the old House
+    /// (`0x00448790..0x004487E0`) and appends it to the new one
+    /// (`0x00448E6E..0x00448EC5`) under the same gate, ahead of the same
+    /// lists; pointer expiry stable-removes it (`0x004FBA59..0x004FBA99`). As
+    /// with [`Self::house_absorbers`], it is House+68 filtered by the gate,
+    /// in order.
+    pub(crate) fn house_unit_repair_stations(
+        &self,
+        owner: InternedId,
+        rules: &RuleSet,
+    ) -> Vec<u64> {
+        self.house_buildings_where(owner, rules, |object| object.unit_repair)
+    }
+
     /// House+0xB0, the absorbers (Items `+0xB4`, Count `+0xC0`), in vector
     /// order. Unlimbo appends a `UnitAbsorb=`/`InfantryAbsorb=` building
     /// (Type `+0x16AE`/`+0x16AF`, `0x004412D4..0x00441335`) ahead of its

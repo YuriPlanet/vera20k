@@ -17,7 +17,7 @@ use winit::event::MouseButton;
 
 use crate::app::AppState;
 use crate::ui::shell::descriptor::ControlKind;
-use crate::ui::shell::in_game_options::{build_in_game_options_descriptor, control};
+use crate::ui::shell::in_game_options::{build_in_game_options_descriptor, control, control_shown};
 use crate::ui::shell::in_game_options_state::{
     InGameOptionsState, OPTIONS_SPEED_MAX, OPTIONS_SPEED_MIN, plain_trackbar_thumb_left,
     speed_from_slider_pos, speed_slider_pos, trackbar_pos_from_mouse_x,
@@ -41,11 +41,15 @@ pub(crate) enum OptionsHit {
 /// descriptor order), so control KINDS are recovered by zipping a fresh descriptor.
 /// Hidden controls (the VisualDetails triplet) carry `visible: false` and are
 /// skipped; statics are not interactive (the cursor falls through them).
-pub(crate) fn in_game_options_hit(laid: &[LaidOutControl], cursor: (i32, i32)) -> OptionsHit {
+pub(crate) fn in_game_options_hit(
+    laid: &[LaidOutControl],
+    cursor: (i32, i32),
+    game_speed_hidden: bool,
+) -> OptionsHit {
     let (cx, cy) = cursor;
     let desc = build_in_game_options_descriptor();
     for (c, l) in desc.controls.iter().zip(laid.iter()) {
-        if !c.visible || !l.rect.contains(cx, cy) {
+        if !control_shown(c, game_speed_hidden) || !l.rect.contains(cx, cy) {
             continue;
         }
         match c.kind {
@@ -76,6 +80,37 @@ pub(crate) fn in_game_options_hit(laid: &[LaidOutControl], cursor: (i32, i32)) -
     OptionsHit::None
 }
 
+/// Every BBB creation runs init (message 0x497): the Sound button follows
+/// the audio device (4E2201..2229) and the GameSpeed row hides as
+/// [`game_speed_hidden`] decides.
+pub(crate) fn on_open(state: &mut AppState) {
+    let game_speed_hidden = game_speed_hidden(
+        state.match_state.session.mode(),
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .is_some_and(|runtime| runtime.simulation.local_player_defeated()),
+    );
+    let options = &mut state.match_state.match_presentation.in_game_options;
+    options.sound_enabled = state.audio.launcher_audio_available;
+    options.on_open(game_speed_hidden);
+}
+
+/// BBB init hides the GameSpeed row (see `control_shown`) in GameMode 0
+/// without `-SPEEDCONTROL` ([0xA8EDDC]) and with Session+0x300, which
+/// MPlayer_Defeated (4FC205) sets only for the local House.
+///
+/// Residual: `startup_options` accepts `-SPEEDCONTROL` and drops it, so a
+/// campaign launched with it hides the row where native shows it. Its other
+/// reader, Main_Tick's campaign GameSpeed=2 (0x55D767), is not ported either.
+fn game_speed_hidden(
+    mode: crate::app::match_runtime::session::SessionMode,
+    local_defeated: bool,
+) -> bool {
+    mode == crate::app::match_runtime::session::SessionMode::Campaign || local_defeated
+}
+
 /// Left-button press/release routing for the paused Options overlay. Non-left
 /// buttons are swallowed (no overlay action). No-ops until the overlay has rendered
 /// at least once (the anchor cache is `None`).
@@ -91,6 +126,11 @@ pub(crate) fn in_game_options_mouse(state: &mut AppState, button: MouseButton, p
     let desc = build_in_game_options_descriptor();
     let laid = layout_pass_in_game_options(&desc, screen_w, screen_h, anchor);
     let (cx, cy) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
+    let game_speed_hidden = state
+        .match_state
+        .match_presentation
+        .in_game_options
+        .game_speed_hidden;
 
     if pressed {
         if state
@@ -102,7 +142,7 @@ pub(crate) fn in_game_options_mouse(state: &mut AppState, button: MouseButton, p
         {
             return;
         }
-        match in_game_options_hit(&laid, (cx, cy)) {
+        match in_game_options_hit(&laid, (cx, cy), game_speed_hidden) {
             OptionsHit::Button(id) => {
                 if id == control::SOUND && !state.audio.launcher_audio_available {
                     return;
@@ -145,7 +185,7 @@ pub(crate) fn in_game_options_mouse(state: &mut AppState, button: MouseButton, p
             OptionsHit::None => {}
         }
     } else {
-        let over = match in_game_options_hit(&laid, (cx, cy)) {
+        let over = match in_game_options_hit(&laid, (cx, cy), game_speed_hidden) {
             OptionsHit::Button(control::SOUND) if !state.audio.launcher_audio_available => None,
             OptionsHit::Button(id) => Some(id),
             _ => None,
@@ -177,7 +217,12 @@ pub(crate) fn in_game_options_drag(state: &mut AppState) {
     let desc = build_in_game_options_descriptor();
     let laid = layout_pass_in_game_options(&desc, screen_w, screen_h, anchor);
     let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
-    let over = match in_game_options_hit(&laid, (x, y)) {
+    let game_speed_hidden = state
+        .match_state
+        .match_presentation
+        .in_game_options
+        .game_speed_hidden;
+    let over = match in_game_options_hit(&laid, (x, y), game_speed_hidden) {
         OptionsHit::Button(control::SOUND) if !state.audio.launcher_audio_available => None,
         OptionsHit::Button(id) => Some(id),
         _ => None,
@@ -223,17 +268,15 @@ fn begin_slider_press(opts: &mut InGameOptionsState, id: u16, rect: RectPx, cx: 
 /// reads the stored value to draw the thumb + value label; no effect applies here.
 fn store_slider_value(opts: &mut InGameOptionsState, id: u16, pos: i32) -> bool {
     let value = speed_from_slider_pos(pos.max(0) as u32);
-    let (stored, notified) = match id {
-        control::GAME_SPEED => (&mut opts.game_speed, &mut opts.game_speed_label_dragged),
-        control::SCROLL_RATE => (&mut opts.scroll_rate, &mut opts.scroll_rate_label_dragged),
+    let stored = match id {
+        control::GAME_SPEED => &mut opts.game_speed,
+        control::SCROLL_RATE => &mut opts.scroll_rate,
         _ => return false,
     };
     if *stored == value {
         return false;
     }
     *stored = value;
-    // 4E2278..4E232B updates the caption only after HSCROLL code5.
-    *notified = true;
     true
 }
 
@@ -272,30 +315,30 @@ mod tests {
         // Back button center -> Button(BACK).
         let back = rect_of(control::BACK);
         assert_eq!(
-            in_game_options_hit(&laid, (back.x + back.w / 2, back.y + back.h / 2)),
+            in_game_options_hit(&laid, (back.x + back.w / 2, back.y + back.h / 2), false),
             OptionsHit::Button(control::BACK)
         );
 
         // GameSpeed rail far-right edge (inside the rect) -> Slider at the max stop.
         let gs = rect_of(control::GAME_SPEED);
         assert_eq!(
-            in_game_options_hit(&laid, (gs.x + gs.w - 1, gs.y + gs.h / 2)),
+            in_game_options_hit(&laid, (gs.x + gs.w - 1, gs.y + gs.h / 2), false),
             OptionsHit::Slider(control::GAME_SPEED, 6)
         );
 
         // TargetLines icon center -> Checkbox(TARGET_LINES).
         let tl = rect_of(control::TARGET_LINES);
         assert_eq!(
-            in_game_options_hit(&laid, (tl.x + 9, tl.y + 9)),
+            in_game_options_hit(&laid, (tl.x + 9, tl.y + 9), false),
             OptionsHit::Checkbox(control::TARGET_LINES)
         );
         assert_eq!(
-            in_game_options_hit(&laid, (tl.x + 26, tl.y + 9)),
+            in_game_options_hit(&laid, (tl.x + 26, tl.y + 9), false),
             OptionsHit::None
         );
 
         // Empty corner -> None.
-        assert_eq!(in_game_options_hit(&laid, (2, 2)), OptionsHit::None);
+        assert_eq!(in_game_options_hit(&laid, (2, 2), false), OptionsHit::None);
     }
 
     #[test]
@@ -309,9 +352,38 @@ mod tests {
             .unwrap()
             .rect;
         assert_eq!(
-            in_game_options_hit(&laid, (vd.x + vd.w / 2, vd.y + vd.h / 2)),
+            in_game_options_hit(&laid, (vd.x + vd.w / 2, vd.y + vd.h / 2), false),
             OptionsHit::None
         );
+    }
+
+    #[test]
+    fn gamespeed_row_hides_in_campaign_and_after_local_defeat() {
+        use crate::app::match_runtime::session::SessionMode;
+        assert!(game_speed_hidden(SessionMode::Campaign, false));
+        for mode in [SessionMode::Skirmish, SessionMode::Lan, SessionMode::Wol] {
+            assert!(!game_speed_hidden(mode, false), "{mode:?}");
+            assert!(game_speed_hidden(mode, true), "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn init_hidden_gamespeed_row_is_not_hittable() {
+        // 4E20BA..4E211A: Session+0x300 hides 529/714/671; ScrollRate stays.
+        let laid = test_laid();
+        let rect = |id| laid.iter().find(|l| l.id == id).unwrap().rect;
+        let gs = rect(control::GAME_SPEED);
+        let point = (gs.x + gs.w - 1, gs.y + gs.h - 2);
+        assert!(matches!(
+            in_game_options_hit(&laid, point, false),
+            OptionsHit::Slider(control::GAME_SPEED, _)
+        ));
+        assert_eq!(in_game_options_hit(&laid, point, true), OptionsHit::None);
+        let sr = rect(control::SCROLL_RATE);
+        assert!(matches!(
+            in_game_options_hit(&laid, (sr.x + sr.w - 1, sr.y + sr.h - 2), true),
+            OptionsHit::Slider(control::SCROLL_RATE, _)
+        ));
     }
 
     #[test]
@@ -342,13 +414,9 @@ mod tests {
         ));
         assert_eq!(opts.dragging_slider, Some(control::GAME_SPEED));
         assert_eq!(opts.game_speed, 3);
-        assert!(!opts.game_speed_label_dragged);
         assert!(!store_slider_value(&mut opts, control::GAME_SPEED, 3));
-        assert!(!opts.game_speed_label_dragged);
         assert!(store_slider_value(&mut opts, control::GAME_SPEED, 6));
         assert_eq!(opts.game_speed, 0);
-        assert!(opts.game_speed_label_dragged);
-        assert!(!opts.scroll_rate_label_dragged);
     }
 
     #[test]
@@ -367,14 +435,13 @@ mod tests {
             rect.x
         ));
         assert_eq!(opts.scroll_rate, 6);
-        assert!(opts.scroll_rate_label_dragged);
         assert_eq!(opts.dragging_slider, None);
         assert_eq!(
-            in_game_options_hit(&laid, (rect.x, rect.y + rect.h - 18)),
+            in_game_options_hit(&laid, (rect.x, rect.y + rect.h - 18), false),
             OptionsHit::None
         );
         assert_eq!(
-            in_game_options_hit(&laid, (rect.x, rect.y + rect.h - 17)),
+            in_game_options_hit(&laid, (rect.x, rect.y + rect.h - 17), false),
             OptionsHit::Slider(control::SCROLL_RATE, 0)
         );
     }

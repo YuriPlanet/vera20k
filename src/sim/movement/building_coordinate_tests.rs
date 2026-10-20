@@ -264,7 +264,7 @@ fn building_navcom_reads_live_type_requester_and_radio_slots_after_restore() {
             }
         }
         sim.interner = test_interner();
-        sim.substrate.next_stable_object_id = 200;
+        sim.set_next_stable_object_id_for_test(200);
         let before = super::super::nav_target_coordinate(
             NavTargetRef::object(2),
             requester.map(|_| 1),

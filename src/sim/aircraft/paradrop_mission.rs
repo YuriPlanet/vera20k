@@ -126,7 +126,7 @@ pub(super) fn overfly(
         );
         crate::sim::cell_rect::cell_is_in_playfield_leptons(
             (location.x, location.y, location.z),
-            sim.playfield_bounds,
+            sim.playfield_bounds(),
             sim.resolved_terrain.as_ref(),
         )
     });

@@ -43,7 +43,10 @@ impl Action {
             Self::BackToMenu => App::leave_mission_result_screen(state),
             Self::Resume => App::enter_in_game_menu_state(state, InGameMenuState::Closed),
             Self::Abort => App::enter_in_game_menu_state(state, InGameMenuState::AbortConfirm),
-            Self::Leave => App::apply_in_game_modal_outcome(state, ModalOutcome::LeaveMatch),
+            Self::Leave => App::apply_in_game_modal_outcome(
+                state,
+                ModalOutcome::LeaveMatch { destruct: false },
+            ),
         }
     }
 }

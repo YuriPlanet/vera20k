@@ -83,7 +83,7 @@ fn parent_id(sim: &mut Simulation, category: EntityCategory, id: u64) -> u64 {
     e.building_light.stamp(true);
     e.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(e);
-    sim.substrate.next_stable_object_id = sim.substrate.next_stable_object_id.max(id + 1);
+    sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(id + 1));
     id
 }
 #[test]
@@ -302,7 +302,7 @@ fn spotlight_event35_uses_child_ground_lists_mode_gate_and_synchronous_tag_actio
                 z: at[2],
             });
         sim.substrate.entities.insert(unit);
-        sim.substrate.next_stable_object_id = 4;
+        sim.set_next_stable_object_id_for_test(4);
         sim.substrate.occupancy.add(
             (at[0] >> 8) as u16,
             (at[1] >> 8) as u16,
@@ -444,7 +444,7 @@ fn spotlight_tracking_selects_first_nearest_enemy_and_expiry_clears_the_pointer(
             crate::sim::occupancy::CellListInsertion::PrependNonBuilding,
         );
     }
-    sim.substrate.next_stable_object_id = 6;
+    sim.set_next_stable_object_id_for_test(6);
     sim.set_spotlight_behavior(id, 3);
     assert_eq!(sim.substrate.spotlights.get(id).unwrap().target, Some(4));
     sim.set_spotlight_behavior(id, 2);

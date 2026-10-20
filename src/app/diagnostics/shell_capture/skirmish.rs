@@ -23,6 +23,8 @@ pub(crate) enum PresentedShell {
     WolWelcome,
     WolLogin,
     WolLobby,
+    WolOptions,
+    WolSoundOptions,
     Score,
 }
 
@@ -1293,32 +1295,7 @@ impl SkirmishCapture {
             {
                 self.in_game_frames += 1;
                 if self.in_game_frames == QUIT_AFTER_FRAMES {
-                    // Tab through the ordinary key edge: the binding lookup
-                    // falls back to Request_Diplomacy_Menu (0x0055E08A).
-                    let tab = winit::keyboard::Key::Named(winit::keyboard::NamedKey::Tab);
-                    for edge in [
-                        winit::event::ElementState::Pressed,
-                        winit::event::ElementState::Released,
-                    ] {
-                        let paused_at_event = state.match_state.paused();
-                        crate::app::input::keyboard::in_game_key_edge(
-                            state,
-                            crate::app::input::keyboard::InGameKeyEdge {
-                                physical: winit::keyboard::KeyCode::Tab,
-                                logical: &tab,
-                                unmodified: &tab,
-                                location: winit::keyboard::KeyLocation::Standard,
-                                state: edge,
-                                repeat: false,
-                            },
-                            paused_at_event,
-                        );
-                    }
-                    ensure!(
-                        state.match_state.match_presentation.in_game_menu
-                            == crate::ui::pause_menu::InGameMenuState::Diplomacy,
-                        "Tab did not open the Diplomacy dialog"
-                    );
+                    press_diplomacy_tab(state)?;
                     self.route.push(json!({"screen": "in game", "frame": frame,
                         "action": "Tab", "dialog": 0x73, "in_game_frames": self.in_game_frames}));
                     // Rest on row 1's name, right of its text, so the status
@@ -1719,4 +1696,34 @@ mod tests {
             assert!(invalid.validate().is_err());
         }
     }
+}
+
+/// Tab through the ordinary key edge: the binding lookup falls back to
+/// Request_Diplomacy_Menu (0x0055E08A), which must open 0x73.
+pub(super) fn press_diplomacy_tab(state: &mut AppState) -> Result<()> {
+    let tab = winit::keyboard::Key::Named(winit::keyboard::NamedKey::Tab);
+    for edge in [
+        winit::event::ElementState::Pressed,
+        winit::event::ElementState::Released,
+    ] {
+        let paused_at_event = state.match_state.paused();
+        crate::app::input::keyboard::in_game_key_edge(
+            state,
+            crate::app::input::keyboard::InGameKeyEdge {
+                physical: winit::keyboard::KeyCode::Tab,
+                logical: &tab,
+                unmodified: &tab,
+                location: winit::keyboard::KeyLocation::Standard,
+                state: edge,
+                repeat: false,
+            },
+            paused_at_event,
+        );
+    }
+    ensure!(
+        state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::Diplomacy,
+        "Tab did not open the Diplomacy dialog"
+    );
+    Ok(())
 }

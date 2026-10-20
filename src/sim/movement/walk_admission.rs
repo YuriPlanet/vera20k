@@ -481,7 +481,7 @@ impl Simulation {
                     .get(blocker)
                     .ok_or("retired Walk blocker")?;
                 if crate::map::houses::is_allied_with(
-                    &self.house_alliances,
+                    self.house_alliances.as_map(),
                     self.interner.resolve(actor.owner()),
                     self.interner.resolve(other.owner()),
                 ) {

@@ -261,7 +261,7 @@ pub(super) fn send_planes(
     });
     let edge = Edge::authored_or_waypoint(authored, waypoint);
     let Some(cell) = find_paradrop_edge_cell(
-        sim.playfield_bounds,
+        sim.playfield_bounds(),
         sim.resolved_terrain.as_ref(),
         edge,
         &mut sim.scenario_rng,

@@ -14,6 +14,9 @@ pub(crate) struct MatchState {
     /// participants, local participant, host). Written by the launch path
     /// and the saved-game restore; read by the app loop only.
     pub(crate) session: super::session::MatchSession,
+    /// The in-match connection wait and its dialog 0xEA
+    /// (`Wait_For_Players 0x00648710`).
+    pub(crate) network_wait: super::network_match::NetworkMatchWait,
     pub(crate) sim_runtime: Option<crate::sim::runtime::SimRuntime>,
     /// Match input owner (F12): camera, zoom, cursor, keys, hotkeys.
     pub(crate) input: crate::app::input::state::MatchInputState,

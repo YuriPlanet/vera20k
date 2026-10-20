@@ -838,7 +838,7 @@ impl Simulation {
             id,
             destination,
             urgency,
-            self.playfield_bounds,
+            self.playfield_bounds(),
         )
         .ok_or_else(|| self.hover_error(id, "retired Hover Find_Path requester"))?;
         let found = self
@@ -877,7 +877,7 @@ impl Simulation {
             let cell = (i32::from(current.0) + dx, i32::from(current.1) + dy);
             if crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                 cell,
-                self.playfield_bounds,
+                self.playfield_bounds(),
                 self.resolved_terrain.as_ref(),
             ) && self.hover_can_enter(
                 id,
@@ -935,7 +935,7 @@ impl Simulation {
         };
         let allied = self.substrate.entities.get(nearest).is_some_and(|object| {
             crate::map::houses::is_allied_with(
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 self.interner.resolve(entity.owner()),
                 self.interner.resolve(object.owner()),
             )

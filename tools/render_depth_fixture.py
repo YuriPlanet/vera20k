@@ -15,6 +15,7 @@ Usage:
     python tools/render_depth_fixture.py target/ordinary-ifv-welding.map --ifv-welding
     python tools/render_depth_fixture.py target/ordinary-ifv-full-health.map --ifv-welding full-health
     python tools/render_depth_fixture.py target/ordinary-disk-laser.map --disk-laser
+    python tools/render_depth_fixture.py target/ordinary-dolphin-sonic.map --sonic-wave /absolute/XMP03T4.MAP
     python tools/render_depth_fixture.py target/drone-fire.map --drone-fire
 
 This writes only the requested map. It neither edits game configuration nor
@@ -151,7 +152,8 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
                   ifv_welding: str | None = None,
                   disk_laser: bool = False,
                   temporal_gunner: bool = False,
-                  drone_fire: bool = False) -> str:
+                  drone_fire: bool = False,
+                  sonic_wave: Path | None = None) -> str:
     """Keep comparison geometry stable within each selectable scene."""
     if house_self_heal not in (None, 'recovery', 'removal'):
         raise ValueError('Unknown House self-heal scene')
@@ -173,10 +175,10 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
     if sum((walls_only, cliff_back, building_brackets, building_repair,
             attack_order_voice is not None, house_self_heal is not None,
             damage_feedback is not None, move_order_voice is not None, bomb_clock,
-            ifv_welding is not None, disk_laser, temporal_gunner, drone_fire)) > 1:
+            ifv_welding is not None, disk_laser, temporal_gunner, drone_fire, sonic_wave is not None)) > 1:
         raise ValueError('Choose one comparison mode')
     building_brackets = building_brackets or building_repair
-    command_scene = bomb_clock or disk_laser or temporal_gunner or drone_fire or any(mode is not None for mode in
+    command_scene = sonic_wave is not None or bomb_clock or disk_laser or temporal_gunner or drone_fire or any(mode is not None for mode in
                         (attack_order_voice, house_self_heal, damage_feedback,
                          move_order_voice, ifv_welding))
     walls_only = walls_only or building_brackets or command_scene
@@ -380,6 +382,16 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
                 for i, (x, y) in enumerate(positions)
             ]
             infantry = [f'0=<human player>,E1,256,{near[0]},{near[1]},0,Guard,192,None,0,-1,0,1,1']
+        if sonic_wave is not None:
+            # The physical XMP03T4 scene admits these stock naval actors in a
+            # contiguous Water-set pool. Loading must confirm actual terrain;
+            # no water flags, unit, weapon or wave state is overridden here.
+            units = [
+                '0=<human player>,DLPH,256,106,118,64,Sleep,None,0,-1,0,-1,1,1',
+                '1=Computer,CARRIER,256,108,118,192,Sleep,None,0,-1,0,-1,1,1',
+            ]
+            structures = ['0=Computer,GAPOWR,256,76,76,0,None,0,0,1,0,0,None,None,None,0,0']
+            infantry = []
         overlay[:] = b'\xff' * len(overlay)
         overlay_data[:] = bytes(len(overlay_data))
     # Stock cliff-back blocking rejects Track/Foot placement in the exact
@@ -404,6 +416,7 @@ Color=DarkRed
 ''' if building_brackets or command_scene else ''
 
     name = 'C24 Ordinary Engineer IFV Welding' if ifv_welding else 'Depth Continuation - ' + (
+        'Dolphin Sonic' if sonic_wave is not None else
         'Temporal Gunner' if temporal_gunner else
         'Terror Drone Firing' if drone_fire else
         'Disk Laser' if disk_laser else
@@ -416,7 +429,7 @@ Color=DarkRed
         'Building Brackets' if building_brackets else
         'Cliff Back Edge' if cliff_back else 'Walls and Cliff'
     )
-    return f'''[Basic]
+    mission = f'''[Basic]
 Name={name}
 NewINIFormat=4
 Player=Americans
@@ -496,6 +509,8 @@ Color=Grey{bracket_house}
 [IsoMapPack5]
 {pack_lzo(bytes(cells))}
 '''
+    return (retain_terrain_template(mission, Path(sonic_wave).read_text(encoding='latin-1'))
+            if sonic_wave is not None else mission)
 
 
 def retain_terrain_template(mission: str, template: str) -> str:
@@ -594,6 +609,10 @@ def main() -> None:
         '--temporal-gunner', action='store_true',
         help='Use full-health stock CLEG/FV, an enemy HTNK and distant power plant for ordinary boarding and unloading',
     )
+    modes.add_argument(
+        '--sonic-wave', type=Path, metavar='RETAIL_MAP',
+        help='Use stock DLPH/CARRIER and preserve supplied XMP03T4 terrain; fixed naval cells must be admitted',
+    )
     modes.add_argument('--drone-fire', action='store_true',
                        help='Use retail DRON/DroneJump and a low-damage map-authored SonicZap tank for ordinary launch and live release')
     args = parser.parse_args()
@@ -610,11 +629,11 @@ def main() -> None:
                             ifv_welding=args.ifv_welding,
                             disk_laser=args.disk_laser,
                             temporal_gunner=args.temporal_gunner,
-                            drone_fire=args.drone_fire)
+                            drone_fire=args.drone_fire, sonic_wave=args.sonic_wave)
     if args.terrain_template:
         mission = retain_terrain_template(mission, args.terrain_template.read_bytes().decode('latin1'))
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(mission, encoding='latin1' if args.terrain_template else 'ascii')
+    args.output.write_text(mission, encoding='latin1' if args.terrain_template or args.sonic_wave is not None else 'ascii')
     print(f'Wrote {args.output} ({len(mission)} characters)')
 
 

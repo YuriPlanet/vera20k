@@ -120,8 +120,12 @@ fn retail_rules() -> Option<RuleSet> {
 /// the diamond ends at 96, and the target (40, 40) is well inside.
 pub(super) fn world(rules: RuleSet) -> (RuleSet, Simulation, InternedId) {
     let (rules, mut sim, americans) = world_with(rules, 64, &[]);
-    sim.playfield_bounds = Some(PlayfieldBounds::from_raw_local_size(32, 32, [2, 4, 28, 22]));
-    sim.playfield_size_height = Some(32);
+    sim.set_playfield_bounds_for_test(Some(PlayfieldBounds::from_raw_local_size(
+        32,
+        32,
+        [2, 4, 28, 22],
+    )));
+    sim.set_playfield_size_height_for_test(Some(32));
     sim.fog.set_width_for_test(64);
     sim.fog.set_height_for_test(64);
     (rules, sim, americans)
@@ -192,7 +196,7 @@ pub(super) fn expected_pick(sim: &Simulation, edge: Edge, draws: usize) -> (u16,
         rng.next_u32();
     }
     find_paradrop_edge_cell(
-        sim.playfield_bounds,
+        sim.playfield_bounds(),
         sim.resolved_terrain.as_ref(),
         edge,
         &mut rng,

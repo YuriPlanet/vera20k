@@ -821,7 +821,7 @@ impl crate::sim::world::Simulation {
                 occupancy: Some(&self.substrate.occupancy),
                 entities: Some(&self.substrate.entities),
                 zone_grid: self.zone_grid.as_ref(),
-                playfield_bounds: self.playfield_bounds,
+                playfield_bounds: self.playfield_bounds(),
             },
             args.options,
             // The frame counter is committed late, so during an advance it

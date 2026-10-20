@@ -95,6 +95,9 @@ pub(crate) enum AttackAction {
     Attack,
     NoMove,
     Rally,
+    /// Move (1) over an object: an Aircraft's own Cell action under it
+    /// (`0x00417D7C`), which its ClickedAction sends to Foot's Move arm.
+    Move,
 }
 
 /// The allied-object part of Techno6FFEC0's unforced attack admission,
@@ -315,12 +318,30 @@ pub(crate) fn attack_action(
     {
         action = AttackAction::None;
     }
-    // Over an object, the Unit and Infantry tails turn 0 into NoMove for a
-    // player's object it may control.
+    // Over an object, the Foot class tails turn 0 into another action: NoMove
+    // for a player's Unit or Infantry it may control, and an Aircraft's own
+    // Cell action under the object. The player's own object: its owner views.
     if action == AttackAction::None
-        && matches!(target, TargetKind::Entity(_))
-        && sim.foot_object_class_action(actor_id, crate::sim::world::MoveAction::None, rules)
-            == crate::sim::world::MoveAction::NoMove
+        && let TargetKind::Entity(target_id) = *target
+    {
+        action = match sim.foot_object_class_action(
+            actor.owner(),
+            actor_id,
+            target_id,
+            crate::sim::world::MoveAction::None,
+            rules,
+            overlay_registry,
+        ) {
+            crate::sim::world::MoveAction::None => AttackAction::None,
+            crate::sim::world::MoveAction::Move => AttackAction::Move,
+            crate::sim::world::MoveAction::NoMove => AttackAction::NoMove,
+        };
+    }
+    // Aircraft417F4A..417F63: Attack over an Immune= type (vt+0x88 +0x233) is
+    // NoMove, which its ClickedAction refuses (417C12).
+    if action == AttackAction::Attack
+        && actor.category() == EntityCategory::Aircraft
+        && target_is_immune(sim, rules, target)
     {
         action = AttackAction::NoMove;
     }
@@ -348,14 +369,7 @@ pub(crate) fn attack_action(
         {
             action = AttackAction::None;
         }
-        if action == AttackAction::Attack
-            && let TargetKind::Entity(id) = *target
-            && sim
-                .entities()
-                .get(id)
-                .and_then(|target| sim.interner().object_type(target.type_ref(), rules))
-                .is_some_and(|target| target.immune)
-        {
+        if action == AttackAction::Attack && target_is_immune(sim, rules, target) {
             // Object447512..447527; the Cell wrapper has no such target.
             action = AttackAction::NoMove;
         }
@@ -369,6 +383,45 @@ pub(crate) fn attack_action(
         }
     }
     action
+}
+
+/// Whether the cursor owner `actor_id`'s own What_Action decides a click or
+/// hover over the friendly object `target_id`, rather than the friendly
+/// selection route: a Unit's (`0x007403EB`) and an Aircraft's. Over an own
+/// object that is not selected the Techno base answers Select (7) as the
+/// selection route would; otherwise an Aircraft's 0 becomes its Cell action
+/// (`0x00417D7C`). A lone selected Aircraft over itself is Techno's Self
+/// (`0x007000B9..0x007000DF`), which an Aircraft carrying no passengers
+/// turns into 0 (`0x00417DCD..0x00417DF4`), so it keeps the selection route.
+pub(super) fn object_action_answers_friendly(
+    sim: &crate::sim::world::Simulation,
+    selected: &[u64],
+    actor_id: u64,
+    target_id: u64,
+) -> bool {
+    sim.entities()
+        .get(actor_id)
+        .is_some_and(|actor| match actor.category() {
+            EntityCategory::Unit => true,
+            EntityCategory::Aircraft => selected != [target_id],
+            _ => false,
+        })
+}
+
+/// The target is an object whose type is `Immune=` (`+0x233`), which the
+/// Building and Aircraft object actions turn from Attack into NoMove.
+fn target_is_immune(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    target: &TargetKind,
+) -> bool {
+    let TargetKind::Entity(id) = *target else {
+        return false;
+    };
+    sim.entities()
+        .get(id)
+        .and_then(|target| sim.interner().object_type(target.type_ref(), rules))
+        .is_some_and(|target| target.immune)
 }
 
 /// [`attack_action`] for an armed actor: the Ctrl branch (`forced`), and a
@@ -633,19 +686,25 @@ fn attack_branch_orders(
             continue;
         }
         attack_receivers.insert(id);
-        // Unit 0x738890 and Infantry 0x51F190 ClickedAction_Object hand an
-        // object click's 2 to Foot 0x4D74E0, which moves near the object, as
-        // the unforced click does (`object_attack_click_command`).
-        if action == AttackAction::NoMove
-            && !is_structure
+        // Unit 0x738890, Infantry 0x51F190 and Aircraft 0x417BD0
+        // ClickedAction_Object hand an object click's 1 or 2 to Foot
+        // 0x4D74E0, which moves near the object, as the unforced click does
+        // (`object_attack_click_command`).
+        if let Some(move_action) = match action {
+            AttackAction::NoMove => Some(crate::sim::world::MoveAction::NoMove),
+            AttackAction::Move => Some(crate::sim::world::MoveAction::Move),
+            _ => None,
+        } && !is_structure
             && let TargetKind::Entity(target_id) = attack_target
         {
             consumed_attack_action = true;
-            queued.extend(no_move_near_object(sim, rules, id, target_id));
+            queued.extend(move_near_object(sim, rules, id, target_id, move_action));
             continue;
         }
         match action {
-            AttackAction::None | AttackAction::NoMove => consumed_attack_action = true,
+            AttackAction::None | AttackAction::NoMove | AttackAction::Move => {
+                consumed_attack_action = true
+            }
             AttackAction::Rally => unreachable!("rally remains with its existing receiver"),
             AttackAction::Select => select_fallback = true,
             AttackAction::Attack => {
@@ -659,8 +718,13 @@ fn attack_branch_orders(
                     TargetKind::Entity(target_id) => {
                         match infantry_attack_action(sim, rules, id, target_id) {
                             Some(InfantryAttackAction::NoMove) => {
-                                let Some(command) = no_move_near_object(sim, rules, id, target_id)
-                                else {
+                                let Some(command) = move_near_object(
+                                    sim,
+                                    rules,
+                                    id,
+                                    target_id,
+                                    crate::sim::world::MoveAction::NoMove,
+                                ) else {
                                     continue;
                                 };
                                 command
@@ -696,23 +760,18 @@ fn attack_branch_orders(
     }
 }
 
-/// Foot `0x004D74E0` case 2 for a forced object click: a Move near the
-/// object.
-fn no_move_near_object(
+/// Foot `0x004D74E0` case 1 or 2 (`action`) for a forced object click: a
+/// Move near the object.
+fn move_near_object(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     id: u64,
     target_id: u64,
+    action: crate::sim::world::MoveAction,
 ) -> Option<Command> {
     let owner = sim.entities().get(id)?.owner();
     let destination = crate::app::input::commands::object_move_destination(
-        sim,
-        rules,
-        owner,
-        id,
-        target_id,
-        crate::sim::world::MoveAction::NoMove,
-        false,
+        sim, rules, owner, id, target_id, action, false,
     )?;
     Some(move_click_command(
         sim,
@@ -1243,6 +1302,7 @@ fn object_attack_click_command(
         AttackAction::NoMove => {
             return move_near(crate::sim::world::MoveAction::NoMove);
         }
+        AttackAction::Move => return move_near(crate::sim::world::MoveAction::Move),
         AttackAction::Select | AttackAction::None | AttackAction::Rally => return None,
     }
     match infantry_attack_action(sim, rules, attacker_id, target_id) {
@@ -1301,7 +1361,10 @@ impl From<AttackAction> for ReleaseAction {
         match action {
             AttackAction::Select => Self::Select,
             AttackAction::None => Self::Zero,
-            AttackAction::Attack | AttackAction::NoMove | AttackAction::Rally => Self::Other,
+            AttackAction::Attack
+            | AttackAction::NoMove
+            | AttackAction::Rally
+            | AttackAction::Move => Self::Other,
         }
     }
 }
@@ -2184,8 +2247,14 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             let friendly_unit_action = clicked_friendly
                 && hover.as_ref().is_some_and(|target| {
                     cursor_owner(sim, &resources.rules, &current_objects, target.stable_id)
-                        .and_then(|id| sim.entities().get(id))
-                        .is_some_and(|actor| actor.category() == EntityCategory::Unit)
+                        .is_some_and(|id| {
+                            object_action_answers_friendly(
+                                sim,
+                                &current_objects,
+                                id,
+                                target.stable_id,
+                            )
+                        })
                 });
             if select_friendly_clicks
                 && clicked_friendly
@@ -4115,6 +4184,163 @@ mod tests {
         );
     }
 
+    /// `AircraftClass::What_Action` over an object (`0x00417CC0`): the Foot
+    /// base's 0 becomes the aircraft's own What_Action on the Cell under the
+    /// object (`0x00417D7C..0x00417DCB`). A retail Harrier (`ORCA`) over an
+    /// enemy Kirov in flight, which its `AirToGroundMissile` cannot hit, and
+    /// over an allied Rocketeer, answers Move: the Move cursor, a dispatched
+    /// release and a Move order towards the object. Attack over an `Immune=`
+    /// type is NoMove (`0x00417F4A..0x00417F63`), which the click refuses
+    /// (`0x00417C12`).
+    #[test]
+    fn a_harrier_moves_to_an_object_it_may_not_attack() {
+        use crate::app::types::CursorFeedbackKind;
+        let patch = crate::rules::ini_parser::IniFile::from_str("[MTNK]\nImmune=yes\n");
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "Hills.mmx",
+            &patch,
+        ) else {
+            return;
+        };
+        let (mut sim, rules, _) = Simulation::walk_cell_input_test_scene_with(retail.rules, false);
+        let owner = sim.interner().get("Local").unwrap();
+        let harrier = sim.spawn_object("ORCA", "Local", 5, 4, 0, &rules).unwrap();
+        let kirov = sim.spawn_object("ZEP", "Enemy", 7, 6, 0, &rules).unwrap();
+        let rocketeer = sim
+            .spawn_object("JUMPJET", "Ally", 6, 8, 0, &rules)
+            .unwrap();
+        let tank = sim
+            .spawn_object("MTNK", "Enemy", 12, 10, 0, &rules)
+            .unwrap();
+        let own_tank = sim.spawn_object("MTNK", "Local", 6, 4, 0, &rules).unwrap();
+        let wingman = sim.spawn_object("ORCA", "Local", 6, 5, 0, &rules).unwrap();
+        sim.entities_mut_for_test()
+            .get_mut(wingman)
+            .unwrap()
+            .selection
+            .set_selected_for_test(true);
+        for flier in [kirov, rocketeer] {
+            sim.entities_mut_for_test()
+                .get_mut(flier)
+                .unwrap()
+                .position
+                .set_exact_z_leptons_for_test(Some(700));
+        }
+        for (asker, other) in [("LOCAL", "ALLY"), ("ALLY", "LOCAL")] {
+            sim.house_alliances_mut_for_test()
+                .entry(asker.to_string())
+                .or_default()
+                .insert(other.to_string());
+        }
+        sim.resolve_type_handles(&rules);
+        *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(16, 16);
+        sim.fog_mut_for_test()
+            .reveal_cells_for_owner(owner, (0..16).flat_map(|y| (0..16).map(move |x| (x, y))));
+        let overlays = crate::rules::overlay_types::OverlayTypeRegistry::empty();
+        let action = |target| {
+            attack_action(
+                &sim,
+                &rules,
+                harrier,
+                &TargetKind::Entity(target),
+                false,
+                None,
+            )
+        };
+        let cursor = |target, kind| {
+            crate::app::input::cursor::capability_cursor_for_hover(
+                &sim,
+                &[harrier],
+                Some(harrier),
+                &HoverTargetKindWithId {
+                    kind,
+                    stable_id: target,
+                },
+                Some(&rules),
+                None,
+                OrderModifier::Normal,
+                false,
+            )
+        };
+        let click = |target| {
+            object_attack_click_command(
+                &sim,
+                &rules,
+                &overlays,
+                owner,
+                OrderMode::Move,
+                OrderModifier::Normal,
+                false,
+                harrier,
+                target,
+            )
+        };
+
+        for (target, kind) in [
+            (kirov, HoverTargetKind::EnemyUnit),
+            (rocketeer, HoverTargetKind::FriendlyUnit),
+        ] {
+            assert_eq!(action(target), AttackAction::Move);
+            assert_eq!(cursor(target, kind), CursorFeedbackKind::Move);
+            assert_eq!(
+                object_click_release(
+                    &sim,
+                    &rules,
+                    &[harrier],
+                    &[harrier],
+                    target,
+                    &overlays,
+                    false
+                ),
+                LeftRelease::Dispatch
+            );
+            assert!(
+                matches!(
+                    click(target),
+                    Some(Command::Move { entity_id, .. } | Command::MoveToObject { entity_id, .. })
+                        if entity_id == harrier
+                ),
+                "{:?}",
+                click(target)
+            );
+        }
+        assert_eq!(action(tank), AttackAction::NoMove);
+        assert_eq!(
+            cursor(tank, HoverTargetKind::EnemyUnit),
+            CursorFeedbackKind::Invalid
+        );
+        assert_eq!(click(tank), None);
+
+        // Own objects: one not selected is Techno's Select (7); a selected
+        // one in a larger selection is 0, so the Cell action, Move; a lone
+        // Harrier over itself is Self, which 417DCD turns into 0 (the arrow).
+        assert_eq!(action(own_tank), AttackAction::Select);
+        assert_eq!(
+            cursor(own_tank, HoverTargetKind::FriendlyUnit),
+            CursorFeedbackKind::FriendlyUnit
+        );
+        assert_eq!(
+            crate::app::input::cursor::capability_cursor_for_hover(
+                &sim,
+                &[harrier, wingman],
+                Some(harrier),
+                &HoverTargetKindWithId {
+                    kind: HoverTargetKind::FriendlyUnit,
+                    stable_id: wingman,
+                },
+                Some(&rules),
+                None,
+                OrderModifier::Normal,
+                false,
+            ),
+            CursorFeedbackKind::Move
+        );
+        assert_eq!(
+            cursor(harrier, HoverTargetKind::FriendlyUnit),
+            CursorFeedbackKind::Default
+        );
+    }
+
     /// What_Action_OnCell's force-fire rung is a human player's too
     /// (`0x007008A6..0x007008B3`): another house's armed object, which the
     /// player may select to inspect, answers 0 over a cell in its range
@@ -5343,14 +5569,11 @@ mod tests {
             }
         });
         terrain.test_set_high_bridge_set_starts(Some(100), Some(200));
-        for y in 9..=11 {
-            terrain
-                .cell_mut_for_test(12, y)
-                .unwrap()
-                .bridge_facts
-                .overlay_id = Some(if collapsed { 0xE7 } else { 0xD4 });
-        }
         sim.install_resolved_terrain_for_new_map(terrain);
+        for y in 9..=11 {
+            sim.overlay_cell_mut_for_test(12, y).overlay_id =
+                Some(if collapsed { 0xE7 } else { 0xD4 });
+        }
         *sim.bridge_state_mut_for_test() =
             Some(crate::sim::bridge_state::BridgeRuntimeState::default());
         crate::sim::arena_fixture::supply_native_map(&mut sim);

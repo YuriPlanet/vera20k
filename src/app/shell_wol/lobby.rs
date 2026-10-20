@@ -53,9 +53,6 @@ pub(crate) struct WolLobbyGlobals {
     pub(crate) player_sort: PlayerSort,
     /// `[0xA8B540]`: Create's Limit Screen Resolution.
     pub(crate) limit_resolution: bool,
-    /// `[0xB76AF0]` and `[0xB73AD0]`, toggled by the chat filter words.
-    pub(crate) buddy_filter: bool,
-    pub(crate) clan_filter: bool,
 }
 
 /// The decoded result of a joined channel: its record and its users.
@@ -876,15 +873,17 @@ fn send_chat(state: &mut AppState, text: Vec<u16>) {
     let nickname = nickname(state);
     let line = match wol_chat::parse_lobby(&text, &commands, &filters, last_pager.is_some()) {
         WolLobbyChatLine::Filter(filter) => {
-            let globals = &mut state.frontend.wol_lobby_globals;
+            // 0x78B3F4/0x78B4DF flip the live DisplayBuddies/DisplayClan
+            // bytes without saving; the next WOL entry re-reads RA2MD.INI.
+            let live = &mut state.frontend.wol_preferences;
             let on = match filter {
                 WolChatFilter::Buddy => {
-                    globals.buddy_filter = !globals.buddy_filter;
-                    globals.buddy_filter
+                    live.display_buddies = !live.display_buddies;
+                    live.display_buddies
                 }
                 WolChatFilter::Clan => {
-                    globals.clan_filter = !globals.clan_filter;
-                    globals.clan_filter
+                    live.display_clan = !live.display_clan;
+                    live.display_clan
                 }
             };
             let notice = units(state, filter.notice(on));
@@ -1078,9 +1077,13 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
             .frontend
             .multiplayer_shell_runtime
             .set_lan_observer(observer),
+        // 0x0078B829: 0x113 slides out over the empty backdrop before 0x2BC.
+        WolLobbyAction::Options => {
+            App::leave_shell_dialog(state, shell_transition::ShellExitThen::WolOptionsOpen);
+        }
         WolLobbyAction::Unported(control) => {
             // Buddy List (mode 5), Clan/Tournament/News (0x00773E90 web
-            // pages), Options (0x2BC) and Page (0xCF) are later chains.
+            // pages) and Page (0xCF) are later chains.
             log::warn!("WOL lobby control {control:#x} is not implemented; 0x113 stays");
         }
         WolLobbyAction::Popup(action) => popup_action(state, action),

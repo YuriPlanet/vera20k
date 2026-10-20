@@ -479,6 +479,36 @@ impl Simulation {
         &self,
         command_owner: crate::sim::intern::InternedId,
     ) -> Option<CommandRecord> {
+        self.encode_header_event(command_owner, crate::sim::command::EXIT_OPCODE)
+    }
+
+    /// EVENT_DESTRUCT's header-only record: `EventClass(index, 8)`
+    /// (`0x004C66C0`) writes only the type, House and frame.
+    pub fn encode_destruct_record(
+        &self,
+        command_owner: crate::sim::intern::InternedId,
+    ) -> Option<CommandRecord> {
+        self.encode_header_event(command_owner, crate::sim::command::DESTRUCT_OPCODE)
+    }
+
+    /// EVENT_REMOVEPLAYER's record: the header House is the sender, the
+    /// dword payload the removed House's index (`0x004C6720`).
+    pub fn encode_remove_player_record(
+        &self,
+        command_owner: crate::sim::intern::InternedId,
+        house_index: i32,
+    ) -> Option<CommandRecord> {
+        let mut record =
+            self.encode_header_event(command_owner, crate::sim::command::REMOVE_PLAYER_OPCODE)?;
+        record.payload_mut()[..4].copy_from_slice(&house_index.to_le_bytes());
+        Some(record)
+    }
+
+    fn encode_header_event(
+        &self,
+        command_owner: crate::sim::intern::InternedId,
+        opcode: u8,
+    ) -> Option<CommandRecord> {
         if !self.houses.contains_key(&command_owner) {
             return None;
         }
@@ -488,11 +518,12 @@ impl Simulation {
             .iter()
             .position(|&owner| owner == command_owner)
             .and_then(|index| i8::try_from(index).ok())?;
-        ExitRecord {
-            house_id,
-            frame: self.session.binary_frame(),
-        }
-        .encode()
+        CommandRecord::encode(
+            opcode,
+            i32::from(house_id),
+            self.session.binary_frame() as i32,
+            &[],
+        )
         .ok()
     }
 
@@ -628,6 +659,30 @@ impl Simulation {
                 .then(|| CommandEnvelope::new(owner, execute_tick, Command::ExitMatch));
         }
 
+        if record.opcode() == crate::sim::command::REMOVE_PLAYER_OPCODE {
+            let house_index = usize::try_from(record.house_id()).ok()?;
+            let owner = *self.houses.order().get(house_index)?;
+            let removed = i32::from_le_bytes(record.payload()[..4].try_into().ok()?);
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(
+                    owner,
+                    execute_tick,
+                    Command::RemovePlayer {
+                        house_index: removed,
+                    },
+                )
+            });
+        }
+
+        if record.opcode() == crate::sim::command::DESTRUCT_OPCODE {
+            let house_index = usize::try_from(record.house_id()).ok()?;
+            let owner = *self.houses.order().get(house_index)?;
+            return self
+                .houses
+                .contains_key(&owner)
+                .then(|| CommandEnvelope::new(owner, execute_tick, Command::Destruct));
+        }
+
         let typed = SellWallAtCellRecord::decode(record)?;
         let house_index = usize::try_from(typed.house_id).ok()?;
         let owner = *self.houses.order().get(house_index)?;
@@ -664,7 +719,7 @@ impl Simulation {
                 *tail_grid = None;
             }
             if let (Some(tail), Some(cell)) = (tail_grid.as_mut(), terrain.cell(rx, ry)) {
-                let _ = tail.refresh_resolved_cell(cell, false);
+                let _ = tail.refresh_resolved_cell(cell, self.overlay_grid.as_ref(), false);
             }
         }
 
@@ -1431,20 +1486,66 @@ impl Simulation {
                 self.house_cheer(owner, rules, frame_effects);
                 true
             }
+            Command::Destruct => {
+                let Some(owner) = self.interner.get(command_owner) else {
+                    return false;
+                };
+                // Type-8 entry 0x004C7BDF: Flag_To_Die on the header House,
+                // with no human or mode test. Destruction waits for the
+                // House rung (Update 0x004F87C2).
+                self.flag_house_to_die(owner);
+                true
+            }
             Command::ExitMatch => {
                 let Some(owner) = self.interner.get(command_owner) else {
                     return false;
                 };
-                if !self.houses.contains_key(&owner) {
+                let Some(house) = self.houses.get_mut(&owner) else {
+                    return false;
+                };
+                // Execute_DoList's EXIT block (0x0064C7BF..0x0064C862), for
+                // every sender: House+0x248, then Flag_To_Die when no other
+                // human House is undefeated (0x005E2BA0).
+                house.mark_left_game();
+                if self.other_undefeated_humans(owner) == 0 {
+                    self.flag_house_to_die(owner);
+                }
+                // A Simulation without a current House (diagnostic and replay
+                // drivers) has no remote senders.
+                if self.session.current_house().is_none_or(|local| local == owner) {
+                    // The local sender's EventClass__Execute (0x004C7903)
+                    // writes the termination byte at 0x004C7917. The app
+                    // consumes the owner-tagged edge after this tail.
+                    if !self.quit_requested {
+                        self.executed_exit_owner = Some(owner);
+                    }
+                    self.quit_requested = true;
+                } else {
+                    // A remote sender never reaches Execute (0x0064C91B):
+                    // the app runs DestroyConnection(house, 0) for it
+                    // (0x0064C9B1).
+                    self.departed_owners.push(owner);
+                }
+                true
+            }
+            Command::RemovePlayer { house_index } => {
+                // EventClass::Execute 0x004C7B73: IsHumanControlled
+                // (0x0050B730, House+0x1EC outside mode 0), then
+                // Flag_To_Die (0x004C7BE1).
+                let Some(owner) = usize::try_from(*house_index)
+                    .ok()
+                    .and_then(|index| self.houses.order().get(index).copied())
+                else {
+                    return false;
+                };
+                if !self
+                    .houses
+                    .get(&owner)
+                    .is_some_and(|house| house.is_human())
+                {
                     return false;
                 }
-                // EventClass__Execute @ 0x004C6CB0, opcode 0x13: the due
-                // EXIT event writes the termination byte at 0x004C7917. The
-                // app consumes the owner-tagged edge after this tail dispatch.
-                if !self.quit_requested {
-                    self.executed_exit_owner = Some(owner);
-                }
-                self.quit_requested = true;
+                self.flag_house_to_die(owner);
                 true
             }
             // `EventClass::Execute 0x004C6ED2..0x004C6F01`: a live target
@@ -1856,7 +1957,7 @@ impl Simulation {
                 };
                 // Enemy-only.
                 if crate::map::houses::are_houses_friendly(
-                    &self.house_alliances,
+                    self.house_alliances.as_map(),
                     command_owner,
                     self.interner.resolve(target_owner),
                 ) {
@@ -2109,7 +2210,7 @@ impl Simulation {
             entity.disguise_hides_house_from(
                 house,
                 Some(&self.fog),
-                Some(&self.house_alliances),
+                Some(self.house_alliances.as_map()),
                 &self.interner,
             )
         }) {
@@ -2346,7 +2447,7 @@ impl Simulation {
             return false;
         }
         let refinery_owner = self.interner.resolve(refinery.owner());
-        if !are_houses_friendly(&self.house_alliances, command_owner, refinery_owner) {
+        if !are_houses_friendly(self.house_alliances.as_map(), command_owner, refinery_owner) {
             return false;
         }
         let refinery_type = self.interner.resolve(refinery.type_ref());
@@ -2391,7 +2492,7 @@ impl Simulation {
         };
         if self.substrate.entities.get(actor_id).is_some_and(|actor| {
             combat::combat_weapon::is_ally_by_object(
-                Some(&self.house_alliances),
+                Some(self.house_alliances.as_map()),
                 &self.interner,
                 player,
                 actor.owner(),

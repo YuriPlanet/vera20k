@@ -94,6 +94,8 @@
 //! from a house (`0x0044870E`). An ordinary building death limbos it at once:
 //! `BuildingClass::ReceiveDamage` UnInits it in its death arm (`0x0044269A`)
 //! while the death timer DestructionEffects armed (`+0x528`, 8 frames) runs.
+//! An `Explodes=` type (every shipyard) or a building dying while Selling gets
+//! a zero timer and leaves at its next Update's Limbo (`0x004400C5`).
 //! Time_To_Build reads one counter (`HouseClass::GetFactoryCount @
 //! 0x00500910`); the EVA funds nag sums four.
 //!
@@ -120,16 +122,6 @@
 //! objects stand (the house is defeated and they are blown up) or stay
 //! negative when nothing is left (the house is never defeated); VERA does
 //! neither.
-//!
-//! RESIDUAL: a factory whose type is `Explodes=` (TechnoType `+0xD15`) or
-//! that dies while selling leaves its counter one frame late natively.
-//! DestructionEffects arms its death timer at 0 (`0x00441C43..0x00441C8C`),
-//! so ReceiveDamage skips the UnInit, and the next Update limbos it
-//! (`0x004400C5`) before its UnInit; VERA UnInits every building at once
-//! (`crate::sim::crew_survival` records the same split). Trigger: every
-//! shipyard death (GAYARD, NAYARD and YAYARD are `Explodes=yes`) and any
-//! factory killed while sold. Effect: a build started or re-rated in that
-//! frame counts one factory more natively (one more MultipleFactory step).
 //!
 //! RESIDUAL: while the game-active byte `[0x00A8E9A0]` is clear, Limbo skips
 //! everything after `0x00445AC6`, Recount and TechnoClass::Limbo included;

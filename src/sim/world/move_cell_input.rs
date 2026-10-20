@@ -383,7 +383,7 @@ impl Simulation {
             .and_then(|cell| cell.wall_owner)
             .is_some_and(|owner| {
                 !crate::map::houses::is_allied_with(
-                    &self.house_alliances,
+                    self.house_alliances.as_map(),
                     self.interner.resolve(owner),
                     self.interner.resolve(entity.owner()),
                 )
@@ -501,12 +501,42 @@ impl Simulation {
     ///   deployed (6E0) IsSimpleDeployer (Unit `0x0074037A..0x007403AD`);
     /// - the tails turn 0 into NoMove for a player's Unit or Infantry it
     ///   may control (vt+0xA0; Unit `0x007403EB..0x00740414`, Infantry
-    ///   `0x0051F05E..0x0051F08B`).
+    ///   `0x0051F05E..0x0051F08B`);
+    /// - an Aircraft's 0 becomes its own What_Action on the Cell under the
+    ///   object's GetCoords (vt+0x48, `/256`), asked with 0 as its second
+    ///   argument (`0x00417D7C..0x00417DCB`): Move for a player's aircraft
+    ///   over an object it may not attack. Then a NoMove over an object worn
+    ///   as terrain becomes Move (`0x00417EFE..0x00417F39`).
+    ///
+    /// The aircraft's cell query passes no Shift. Native asks it with the
+    /// keys read live (third argument 0), but Shift's early Move only differs
+    /// where the aircraft's Can_Enter_Cell refuses the Cell, which it never
+    /// does in a session game ([`Self::aircraft_can_enter_cell`]).
+    ///
+    /// RESIDUALS:
+    /// - AirportBound GuardArea (`0x00417CE9..0x00417CFE`): Ctrl+Alt over an
+    ///   object answers 0x1A, which an `AirportBound=` type (`+0xE0D`, retail
+    ///   ORCA and BEAG) turns into 0 and so into this Cell query, whose own
+    ///   Ctrl+Alt rung may answer GuardArea on the Cell. VERA's GuardArea
+    ///   admission refuses an aircraft over an object and falls back to
+    ///   Move. Trigger: Ctrl+Alt over an object with a Harrier or Black
+    ///   Eagle selected. Effect: it moves to the object's Cell instead of
+    ///   area-guarding it. Frequency: rare.
+    /// - The Cell query's attack rung (`0x007008A6..`): over a destroyable
+    ///   cliff or a `LegalTarget=` overlay native answers Attack, which the
+    ///   Immune rung then tests on the object and the click sends to Foot
+    ///   `0x004D74E0` as an attack on the object. [`Self::cell_move_action`]
+    ///   does not model that rung, so VERA answers Move. Trigger: an aircraft
+    ///   over an object it may not attack standing on such a Cell. Frequency:
+    ///   rare.
     pub fn foot_object_class_action(
         &self,
+        viewer: InternedId,
         id: u64,
+        target: u64,
         action: MoveAction,
         rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
     ) -> MoveAction {
         let Some(entity) = self.substrate.entities.get(id) else {
             return action;
@@ -514,6 +544,9 @@ impl Simulation {
         let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return action;
         };
+        if entity.category() == EntityCategory::Aircraft {
+            return self.aircraft_object_class_action(viewer, id, target, action, rules, registry);
+        }
         let human = self.house_is_human_player(entity.owner());
         match (entity.category(), action) {
             (EntityCategory::Infantry, MoveAction::Move)
@@ -532,6 +565,56 @@ impl Simulation {
                 MoveAction::NoMove
             }
             _ => action,
+        }
+    }
+
+    /// The Aircraft rungs of [`Self::foot_object_class_action`].
+    fn aircraft_object_class_action(
+        &self,
+        viewer: InternedId,
+        id: u64,
+        target: u64,
+        action: MoveAction,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> MoveAction {
+        let Some(target_entity) = self.substrate.entities.get(target) else {
+            return action;
+        };
+        let action = if action == MoveAction::None {
+            let coords =
+                ground_pose::object_get_coords(target_entity, self.resolved_terrain.as_ref());
+            let cell = ((coords.x / 256) as u16, (coords.y / 256) as u16);
+            let query = CellActionQuery {
+                mouse_over: false,
+                shift: false,
+            };
+            self.cell_move_action(viewer, id, cell, query, rules, registry)
+                .unwrap_or(MoveAction::None)
+        } else {
+            action
+        };
+        // IsDisguised (vt+0xC4), no worn house (vt+0xD0(1)) and a worn type
+        // whose RTTI is Terrain (vt+0xCC(1), 0x15): a Mirage worn as a tree.
+        let worn_terrain = || {
+            target_entity
+                .disguise
+                .as_ref()
+                .filter(|disguise| disguise.is_disguised())
+                .and_then(|disguise| disguise.type_id())
+                .is_some_and(|worn| {
+                    rules
+                        .terrain_object_type_case_insensitive(self.interner.resolve(worn))
+                        .is_some()
+                })
+                && target_entity
+                    .disguise_house(true, Some(viewer), false)
+                    .is_none()
+        };
+        if action == MoveAction::NoMove && worn_terrain() {
+            MoveAction::Move
+        } else {
+            action
         }
     }
 
@@ -587,7 +670,7 @@ impl Simulation {
             .interner
             .object_type(entity.type_ref(), rules)
             .ok_or("Move click receiver lacks its type")?;
-        let action = self.foot_object_class_action(id, action, rules);
+        let action = self.foot_object_class_action(viewer, id, target, action, rules, None);
         let refused = match action {
             MoveAction::None => true,
             MoveAction::NoMove => match entity.category() {

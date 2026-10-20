@@ -33,8 +33,9 @@
 //!
 //! The full-screen B6 abort shell has a secondary action that is mode
 //! dependent: campaign labels it `GUI:Restart` (restart the scenario),
-//! multiplayer with two or more live human players labels it `GUI:Observe`, and
-//! **offline skirmish hides it outright**. What is left in skirmish is one
+//! multiplayer with two or more live human players labels it `GUI:Observe`
+//! (EVENT_DESTRUCT for the local House, then keep watching; Leave there also
+//! destructs before EXIT), and **offline skirmish hides it outright**. What is left in skirmish is one
 //! action button captioned `GUI:Leave` and Resume Mission. Callback4F18B0
 //! accepts Resume686 and IDOK1; IDCANCEL2 is ignored, so Escape stays in B6.
 //! Confirming Leave queues an
@@ -133,6 +134,10 @@ pub enum AbortConfirmAction {
     Leave,
     /// Campaign Restart — B6 result 5 (`0x004F196B`).
     Restart,
+    /// LAN/WOL Leave while Observe is offered — B6 result 3.
+    LeaveDestruct,
+    /// LAN/WOL Observe — B6 result 4.
+    Observe,
 }
 
 /// What the app layer must do once a modal reports the player's choice.
@@ -142,8 +147,14 @@ pub enum ModalOutcome {
     Stay,
     /// Move the in-scenario state variable to this value.
     Enter(InGameMenuState),
-    /// End the running match by the graceful-exit route.
-    LeaveMatch,
+    /// End the running match by the graceful-exit route. `destruct` first
+    /// queues EVENT_DESTRUCT for the local House: the state machine's
+    /// result-3 arm (`0x0048CA34..0x0048CAA8`) queues it and falls into the
+    /// result-2 EXIT (`0x6471A0`).
+    LeaveMatch { destruct: bool },
+    /// Queue EVENT_DESTRUCT for the local House and keep watching: the
+    /// result-4 arm (`0x0048CAB2`) clears the admission latch without EXIT.
+    Observe,
     /// Raise the scenario restart request: the state machine's result-5 arm
     /// (`0x0048CB2E`) sets `0x008B41C0` and the modal state returns to 0.
     RestartScenario,
@@ -158,8 +169,10 @@ pub fn resolve_abort_action(action: AbortConfirmAction) -> ModalOutcome {
     match action {
         AbortConfirmAction::None => ModalOutcome::Stay,
         AbortConfirmAction::Cancel => ModalOutcome::Enter(InGameMenuState::Closed),
-        AbortConfirmAction::Leave => ModalOutcome::LeaveMatch,
+        AbortConfirmAction::Leave => ModalOutcome::LeaveMatch { destruct: false },
+        AbortConfirmAction::LeaveDestruct => ModalOutcome::LeaveMatch { destruct: true },
         AbortConfirmAction::Restart => ModalOutcome::RestartScenario,
+        AbortConfirmAction::Observe => ModalOutcome::Observe,
     }
 }
 
@@ -222,7 +235,21 @@ mod tests {
     fn confirm_abort_leaves_the_match() {
         assert_eq!(
             resolve_abort_action(AbortConfirmAction::Leave),
-            ModalOutcome::LeaveMatch
+            ModalOutcome::LeaveMatch { destruct: false }
+        );
+    }
+
+    /// Network Leave with Observe offered destructs before EXIT; Observe
+    /// only destructs.
+    #[test]
+    fn network_leave_and_observe_destruct_the_local_house() {
+        assert_eq!(
+            resolve_abort_action(AbortConfirmAction::LeaveDestruct),
+            ModalOutcome::LeaveMatch { destruct: true }
+        );
+        assert_eq!(
+            resolve_abort_action(AbortConfirmAction::Observe),
+            ModalOutcome::Observe
         );
     }
 

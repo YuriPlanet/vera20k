@@ -1176,6 +1176,19 @@ impl Simulation {
                 outcome.destroyed_structure |= receipt.structure_destroyed;
             }
             sim.object_ai_post_movement_promote_one(stable_id, rules);
+            // Unit73671F..736817 follows that Commence (the CTF flag block
+            // between them is unreachable).
+            if let Some(rules) = rules {
+                sim.unit_ai_seek_repair(stable_id, rules, overlay_registry, object_ctx.effects);
+                // Unit73681D..73697B, the last block of UnitClass::AI.
+                crate::sim::miner::miner_system::unit_ai_nudge_off_refinery_pad(
+                    sim,
+                    stable_id,
+                    rules,
+                    overlay_registry,
+                    object_ctx.effects,
+                );
+            }
         }
         if let Some(rules) = rules {
             sim.aircraft_crash_smoke(stable_id, rules);

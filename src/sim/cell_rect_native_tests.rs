@@ -198,7 +198,7 @@ fn map_localsize_normalization_matches_native_executed_prefix() {
         let mut sim = crate::sim::world::Simulation::new();
         sim.install_playfield_from_map_header(&map.header);
         assert_eq!(
-            sim.playfield_bounds,
+            sim.playfield_bounds(),
             Some(actual),
             "physical map input: {row}"
         );

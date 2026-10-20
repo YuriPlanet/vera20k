@@ -7,13 +7,6 @@ pub(super) use crate::sim::world::entry_test_fixture::{fixture, fixture_with_rul
 
 fn broken_strip(sim: &mut Simulation) {
     for (x, y) in [(17, 14), (17, 15), (17, 16)] {
-        let c = sim
-            .resolved_terrain
-            .as_mut()
-            .unwrap()
-            .cell_mut_for_test(x, y)
-            .unwrap();
-        c.bridge_facts.overlay_id = Some(231);
         sim.overlay_grid
             .as_mut()
             .unwrap()
@@ -213,12 +206,10 @@ fn command_repair_fixture(with_aircraft: bool, with_team: bool) {
     for (x, y) in [(17, 14), (17, 15), (17, 16)] {
         assert!(
             (205..=208).contains(
-                &sim.resolved_terrain
+                &sim.overlay_grid
                     .as_ref()
                     .unwrap()
                     .cell(x, y)
-                    .unwrap()
-                    .bridge_facts
                     .overlay_id
                     .unwrap()
             )
@@ -454,13 +445,7 @@ pub(in crate::sim::world) fn ready_repair_fixture(
         .unwrap();
     if let Some(overlay) = overlay {
         for (x, y) in [(17, 14), (17, 15), (17, 16)] {
-            sim.resolved_terrain
-                .as_mut()
-                .unwrap()
-                .cell_mut_for_test(x, y)
-                .unwrap()
-                .bridge_facts
-                .overlay_id = Some(overlay);
+            sim.overlay_cell_mut_for_test(x, y).overlay_id = Some(overlay);
             sim.overlay_grid
                 .as_mut()
                 .unwrap()
@@ -1147,13 +1132,7 @@ fn repair_receiver_failure_stops_runtime_before_consumption_or_frame_commit() {
         "the live cursor must stop before the following object"
     );
     assert_eq!(
-        sim.resolved_terrain
-            .as_ref()
-            .unwrap()
-            .cell(17, 15)
-            .unwrap()
-            .bridge_facts
-            .overlay_id,
+        sim.overlay_grid.as_ref().unwrap().cell(17, 15).overlay_id,
         Some(206),
         "already-published repair writes are not rolled back"
     );
@@ -1416,12 +1395,10 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
                     crate::sim::movement::locomotor::MovementLayer::Ground
                 ),
                 [(17, 14), (17, 15), (17, 16)].map(|(x, y)| world
-                    .resolved_terrain
+                    .overlay_grid
                     .as_ref()
                     .unwrap()
                     .cell(x, y)
-                    .unwrap()
-                    .bridge_facts
                     .overlay_id),
                 world
                     .resolved_terrain

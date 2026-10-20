@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn quit_and_connection_alone_do_not_score_but_ready_outcome_wins_exit_race() {
         let mut quit_only = Simulation::with_seed(0x51C0_B001);
-        quit_only.quit_requested = true;
+        quit_only.set_quit_requested_for_test(true);
         let quit_cursor = quit_only.clone_scenario_rng().state();
         let quit_tick = quit_only.advance_tick(&[], None, None, None, 67);
         assert!(!quit_tick.frame_committed);
@@ -396,7 +396,7 @@ mod tests {
         assert_eq!(quit_only.clone_scenario_rng().state(), quit_cursor);
 
         let mut connection_only = Simulation::with_seed(0x51C0_B002);
-        connection_only.connection_lost = true;
+        connection_only.set_connection_lost_for_test(true);
         let connection_cursor = connection_only.clone_scenario_rng().state();
         let connection_tick = connection_only.advance_tick(&[], None, None, None, 67);
         assert!(!connection_tick.frame_committed);

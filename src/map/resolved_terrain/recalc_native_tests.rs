@@ -823,7 +823,7 @@ fn retail_bridge_catalog_after_normal_map_loading() {
                     overlay,
                     -1,
                     &scenario.runtime.resources.overlay_registry,
-                    sim.playfield_bounds,
+                    sim.playfield_bounds(),
                 )
                 .unwrap_or_else(|error| panic!("{fallback} {coord:?} source{input:?}: {error}"));
             terrain

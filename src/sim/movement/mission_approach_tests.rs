@@ -32,7 +32,7 @@ fn arena(rules: &RuleSet) -> Simulation {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x4D5690);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.input_delay_ticks = 0;
+    sim.set_input_delay_ticks(0);
     sim.session.set_binary_frame_for_test(1);
     sim
 }

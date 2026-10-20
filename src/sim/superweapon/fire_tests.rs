@@ -76,7 +76,7 @@ fn sim(rules: &RuleSet, human: bool, levels: &[((u16, u16), u8)]) -> Simulation 
             .map_or(0, |&(_, level)| level),
         ..test_terrain_cell(x, y)
     }));
-    sim.playfield_bounds = Some(test_playfield_bounds());
+    sim.set_playfield_bounds_for_test(Some(test_playfield_bounds()));
     crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, ("fire sim", levels.to_vec()));
     sim
 }

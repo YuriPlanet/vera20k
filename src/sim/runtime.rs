@@ -97,7 +97,7 @@ impl<'a> SimView<'a> {
 
     /// The houses' ally graph, which fog and visibility questions ask.
     pub fn house_alliances(&self) -> &'a crate::map::houses::HouseAllianceMap {
-        &self.simulation.house_alliances
+        self.simulation.house_alliances.as_map()
     }
 
     pub fn houses(&self) -> &'a crate::sim::houses::Houses {
@@ -136,8 +136,8 @@ impl<'a> SimView<'a> {
     /// successful trigger-action-40 writers that rebuilt radar/scroll state.
     pub fn playfield_authority(&self) -> (Option<crate::map::playfield::PlayfieldBounds>, u64) {
         (
-            self.simulation.playfield_bounds,
-            self.simulation.playfield_revision,
+            self.simulation.playfield_bounds(),
+            self.simulation.playfield_revision(),
         )
     }
 }
@@ -668,13 +668,7 @@ where
     // Wire the cliff/slope coefficients from [General] into the live World config;
     // it otherwise holds compiled vanilla defaults and never sees a modded INI.
     if let Some(rules) = rules {
-        sim.terrain_speed_config =
-            crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::from_general(
-                rules.general.tracked_uphill,
-                rules.general.tracked_downhill,
-                rules.general.wheeled_uphill,
-                rules.general.wheeled_downhill,
-            );
+        sim.install_terrain_speed_rules(&rules.general);
     }
     // Normal loading first clips/normalizes LocalSize through
     // `MapClass::Set_Clipped_LocalSize @ 0x00567230`; every playfield consumer
@@ -695,11 +689,9 @@ where
             (map_data.header.width as i32, map_data.header.height as i32),
         ),
     );
-    if let Some(rules) = rules {
-        sim.resolve_rule_animation_lists(rules);
-    } else {
-        sim.bridge_explosions.clear();
-        sim.metallic_debris.clear();
+    match rules {
+        Some(rules) => sim.resolve_rule_animation_lists(rules),
+        None => sim.clear_rule_animation_lists(),
     }
     // gamemd `TerrainClass::Read_Map_Section` runs while the map sections are
     // walked, ahead of `[Units]`/`[Aircraft]`/`[Infantry]`/`[Structures]`: every
@@ -1070,7 +1062,7 @@ where
             debug_assert!(written);
         }
     }
-    sim.authored_tiberium_value_total = Some(tiberium_value_total);
+    sim.record_authored_tiberium_value_total(tiberium_value_total);
     let bridge_destroyable = map_data
         .special_flags
         .effective_destroyable_bridges(bridge_destroyability_mode);

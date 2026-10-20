@@ -57,11 +57,8 @@ fn simulation_fixture() -> (Simulation, crate::map::terrain::TerrainGrid) {
         crate::map::bridge_facts::BridgeFlagStamp::new(CENTER, 0, true),
         crate::map::bridge_facts::BridgeStampFamily::Nesw,
     );
-    terrain
-        .cell_mut_for_test(CENTER.0, CENTER.1)
-        .unwrap()
-        .bridge_facts
-        .overlay_id = Some(24);
+    let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(SIDE, SIDE);
+    overlays.cell_mut_for_test(CENTER.0, CENTER.1).overlay_id = Some(24);
     terrain
         .cell_mut_for_test(FLOOD[0].0, FLOOD[0].1)
         .expect("perpendicular anchor terrain cell")
@@ -81,11 +78,7 @@ fn simulation_fixture() -> (Simulation, crate::map::terrain::TerrainGrid) {
     // Ordinary high 0xD1 identities on the perpendicular anchor and the
     // repair start (CellClass+44).
     for (rx, ry) in [FLOOD[0], REPAIR_START] {
-        terrain
-            .cell_mut_for_test(rx, ry)
-            .unwrap()
-            .bridge_facts
-            .overlay_id = Some(0xD1);
+        overlays.cell_mut_for_test(rx, ry).overlay_id = Some(0xD1);
     }
     let grid = build_terrain_grid_from_resolved(&terrain, None);
     let bridge_state = BridgeRuntimeState::from_resolved_terrain_with_map_size(
@@ -98,6 +91,7 @@ fn simulation_fixture() -> (Simulation, crate::map::terrain::TerrainGrid) {
     let mut sim = Simulation::new();
     *sim.resolved_terrain_mut_for_test() = Some(terrain);
     *sim.bridge_state_mut_for_test() = Some(bridge_state);
+    *sim.overlay_grid_mut_for_test() = Some(overlays);
     (sim, grid)
 }
 

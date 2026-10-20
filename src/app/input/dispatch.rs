@@ -77,6 +77,19 @@ pub(crate) fn handle_mouse_input(
         crate::app::input::keyboard::mouse(state, button, pressed);
         return;
     }
+    // 0xEA is pushed over the game and any open page.
+    if state.match_state.network_wait.dialog_open() {
+        if !pressed {
+            state.match_state.input.cancel_tactical_drag();
+            state
+                .match_state
+                .match_presentation
+                .in_game_gadgets
+                .cancel_pointer_capture();
+        }
+        crate::app::input::connection::mouse(state, button, pressed);
+        return;
+    }
     // Paused in-game Options overlay owns the mouse: route press/release/checkbox/
     // Back here and CONSUME the click so it never reaches the tactical viewport or
     // a gadget (no unit orders behind the overlay). KD-6.
@@ -725,6 +738,10 @@ fn clamp_tactical_drag_endpoint(
 pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     if state.frontend.keyboard_dialog.is_some() {
         crate::app::input::keyboard::cursor_moved(state);
+        return;
+    }
+    if state.match_state.network_wait.dialog_open() {
+        crate::app::input::connection::cursor_moved(state);
         return;
     }
     // Paused in-game Options overlay: drive a live slider drag (visual/stored only —

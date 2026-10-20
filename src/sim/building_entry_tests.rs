@@ -1467,7 +1467,6 @@ fn absorbed_infantry_tracking_is_restored_after_building_death_and_sale() {
                 &rules,
                 None,
                 reactor,
-                false,
                 |_, _| {},
                 crate::sim::world::FrameEffects::default(),
             );
@@ -1788,7 +1787,7 @@ fn an_order_into_an_absorber_is_admitted_by_its_can_load() {
     assert!(!admits(&sim, tank), "a vehicle into an infantry absorber");
     assert!(!admits(&sim, guest), "an enemy house's infantryman");
     for (house, ally) in [("YURICOUNTRY", "AMERICANS"), ("AMERICANS", "YURICOUNTRY")] {
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry(house.to_string())
             .or_default()
             .insert(ally.to_string());
@@ -2713,13 +2712,13 @@ fn nearest_occupiable_uses_native_playfield_instead_of_navigation_rectangle() {
     let occupier = spawn(&mut sim, &rules, "E1", "YuriCountry", 10, 10);
     assert!(entity(&sim, building).position.rx() < grid.width());
     assert!(whole_map_garrison_seek(&mut sim, &rules, occupier));
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 1,
         off_fc: 0,
         off_100: 0,
         off_104: 1,
         off_108: 1,
-    });
+    }));
 
     assert!(!whole_map_garrison_seek(&mut sim, &rules, occupier));
     assert!(

@@ -88,7 +88,7 @@ fn retail_dustbowl_battle_fortress_boarded(riders: u16) -> Fortress {
         ("RUSSIANS", "PLAYER"),
         ("PLAYER", "RUSSIANS"),
     ] {
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry(house.to_string())
             .or_default()
             .insert(ally.to_string());

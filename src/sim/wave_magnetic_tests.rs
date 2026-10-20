@@ -10,7 +10,7 @@ fn retail_magnetic_wave_tracks_the_lifted_unit_then_the_live_firer_flh() {
     };
     let rules = fixture.rules;
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x1269);
-    sim.input_delay_ticks = 0;
+    sim.set_input_delay_ticks(0);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     let grid = sim.path_grid_snapshot().unwrap();

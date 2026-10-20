@@ -8267,6 +8267,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     );
     let canonical_path = crate::sim::pathfinding::PathGrid::from_resolved_terrain_with_bridges(
         sim.resolved_terrain.as_ref().unwrap(),
+        sim.overlay_grid.as_ref(),
     );
     for rx in 9..=12 {
         assert_eq!(

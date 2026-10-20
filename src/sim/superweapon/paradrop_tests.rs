@@ -845,7 +845,7 @@ fn drop_payload_matches_native() {
             fill_spots(&mut sim, landing.unwrap());
         }
         if !flag(row, "spawned") {
-            sim.playfield_bounds = Some(NO_DROP_PLAYFIELD);
+            sim.set_playfield_bounds_for_test(Some(NO_DROP_PLAYFIELD));
         }
         let neighbours: Vec<(i16, i16)> = ids
             .iter()
@@ -1020,7 +1020,7 @@ fn spawn_parachuted_matches_native() {
             ),
         );
         if !flag(row, "paradropped") {
-            sim.playfield_bounds = Some(NO_DROP_PLAYFIELD);
+            sim.set_playfield_bounds_for_test(Some(NO_DROP_PLAYFIELD));
         }
 
         let (observed, _) = observe(0, || {

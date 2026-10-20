@@ -129,7 +129,14 @@ enum NetworkPhase {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum NetworkLoadingRequest {
     ReportProgress(i32),
-    Disconnect { source_index: usize, reason: i32 },
+    Disconnect {
+        source_index: usize,
+        reason: i32,
+    },
+    /// The kick proposal packet `0x1C` (0x0064AAE0) to every other node.
+    ProposeKick {
+        target_source: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,6 +171,61 @@ pub(crate) struct MatchSession {
     /// Process byte B07788, set by the first ReadMultiPlayerSettings call.
     /// It survives dialog, match and saved-game transitions.
     multiplayer_settings_initialized: bool,
+    /// LatencyFudge `0xA8DB9C`, a zero-initialized process global. LAN
+    /// start (`0x005DD2E4`/`0x005DD4A4`) writes 0, WOL Start Game Now
+    /// (`0x007950C9..0x0079510B`) 1 or 2, and EVENT_LATENCYFUDGE
+    /// (`0x004C7F4F`) the event value. FF reads it at init and Resume;
+    /// MaxAhead pacing is transport.
+    latency_fudge: i32,
+    /// FF Resume's two event limiters (`0xA8EE40` latency, `0xA8EE30`
+    /// speed): function statics that outlive every menu and match.
+    pause_event_limiters: PauseEventLimiters,
+}
+
+/// One native wall-clock countdown `{start, clock, duration}` in 16 ms
+/// buckets: `0x004F1B00` starts it, `0x004F1B20` reports the remainder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct WallBucketTimer {
+    start: Option<u32>,
+    duration: u32,
+}
+
+impl WallBucketTimer {
+    pub(crate) fn start(now_bucket: u32, duration: u32) -> Self {
+        Self {
+            start: Some(now_bucket),
+            duration,
+        }
+    }
+
+    /// `0x004F1B20`: a never-started timer returns its duration; otherwise
+    /// `duration - elapsed` while elapsed (wrapping) is below it, else 0.
+    pub(crate) fn remaining(self, now_bucket: u32) -> u32 {
+        match self.start {
+            None => self.duration,
+            Some(start) => {
+                let elapsed = now_bucket.wrapping_sub(start) as i32;
+                if elapsed < self.duration as i32 {
+                    (self.duration as i32 - elapsed) as u32
+                } else {
+                    0
+                }
+            }
+        }
+    }
+}
+
+/// The FF Resume rate limiters. Both statics are constructed on the
+/// callback's first WM_COMMAND (`0x004F1290..0x004F12D8`) as expired
+/// zero-duration timers; each accepted event restarts its own for 900.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct PauseEventLimiters {
+    pub(crate) latency: WallBucketTimer,
+    pub(crate) speed: WallBucketTimer,
+}
+
+impl PauseEventLimiters {
+    pub(crate) const COOLDOWN_BUCKETS: u32 = 900;
 }
 
 impl Default for MatchSession {
@@ -175,6 +237,8 @@ impl Default for MatchSession {
             host: false,
             checksum_history: MultiplayerChecksumHistory::new(),
             multiplayer_settings_initialized: false,
+            latency_fudge: 0,
+            pause_event_limiters: PauseEventLimiters::default(),
         }
     }
 }
@@ -1166,7 +1230,23 @@ impl MatchSession {
             protocol,
             response_time,
         ));
+        self.latency_fudge = 0;
         Ok(())
+    }
+
+    pub(crate) fn latency_fudge(&self) -> i32 {
+        self.latency_fudge
+    }
+
+    /// EVENT_LATENCYFUDGE's write (`0x004C7F4F`). The event itself, its
+    /// broadcast and the remote-sender message `TXT_PLAYER_CHANGED_LATENCY`
+    /// (`0x004C7F7D`) travel through the transport, outside this owner.
+    pub(crate) fn set_latency_fudge(&mut self, value: i32) {
+        self.latency_fudge = value;
+    }
+
+    pub(crate) fn pause_event_limiters_mut(&mut self) -> &mut PauseEventLimiters {
+        &mut self.pause_event_limiters
     }
     /// WOL Start Game Now timing block (`0x794F6F..0x7951F0`): MaxAhead
     /// comes from the agreed game speed, identical for host and guest.
@@ -1191,6 +1271,7 @@ impl MatchSession {
         let timing =
             crate::net::lockstep::wol_start_timing(launch.options.game_speed, pings, channel_owner);
         network.max_ahead_frames = Some(timing.max_ahead);
+        self.latency_fudge = timing.latency_fudge;
         Ok(())
     }
 
@@ -1311,7 +1392,45 @@ impl MatchSession {
         }
     }
 
-    pub(crate) fn disconnect_network_loading_participant(&mut self, source_index: usize) -> bool {
+    /// 0x0064AAE0's kick proposal for participant `target_source`, sent to
+    /// every other connected node.
+    pub(crate) fn request_kick_proposal(&mut self, target_source: usize) {
+        if let Some(network) = self.network.as_mut()
+            && matches!(network.phase, NetworkPhase::Frozen { .. })
+        {
+            network
+                .loading_requests
+                .push(NetworkLoadingRequest::ProposeKick { target_source });
+        }
+    }
+
+    /// The frozen launch's owner key of network participant `source_index`.
+    pub(crate) fn network_source_owner(&self, source_index: usize) -> Option<String> {
+        let launch = self.network_setup()?;
+        crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
+            .into_iter()
+            .find(|slot| slot.source_human_index == Some(source_index))
+            .map(|slot| slot.owner_name)
+    }
+
+    /// The network participant whose House has owner key `owner`.
+    pub(crate) fn network_owner_source(&self, owner: &str) -> Option<usize> {
+        let launch = self.network_setup()?;
+        crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
+            .into_iter()
+            .find(|slot| slot.owner_name == owner)
+            .and_then(|slot| slot.source_human_index)
+    }
+
+    /// `IPXManager::Delete_Connection 0x00540F00` and the node removal of
+    /// DestroyConnection (`0x005DAA8A`, `--[0xA8B54C]`): the participant
+    /// leaves the live membership and the transport is asked to drop it.
+    /// False when it is the local player or no longer connected.
+    pub(crate) fn disconnect_network_participant(
+        &mut self,
+        source_index: usize,
+        reason: i32,
+    ) -> bool {
         let Some(network) = self.network.as_mut() else {
             return false;
         };
@@ -1329,7 +1448,7 @@ impl MatchSession {
             .loading_requests
             .push(NetworkLoadingRequest::Disconnect {
                 source_index,
-                reason: 1,
+                reason,
             });
         true
     }
@@ -1511,12 +1630,12 @@ mod tests {
             assert_eq!(session.network_connected_source_indices(), &[0, 1]);
             session.report_network_loading_progress(100);
             assert!(
-                !session.disconnect_network_loading_participant(1),
+                !session.disconnect_network_participant(1, 1),
                 "local cannot time out itself"
             );
-            assert!(session.disconnect_network_loading_participant(0));
+            assert!(session.disconnect_network_participant(0, 1));
             assert!(
-                !session.disconnect_network_loading_participant(0),
+                !session.disconnect_network_participant(0, 1),
                 "disconnect is one-shot"
             );
             assert_eq!(session.network_connected_source_indices(), &[1]);
@@ -1623,6 +1742,11 @@ mod tests {
         assert_eq!(
             session.network_max_ahead_frames(),
             Some(crate::net::lockstep::wol_start_timing(speed, [0; 8], false).max_ahead)
+        );
+        // The same block seeds LatencyFudge, which FF's Connection trackbar opens on.
+        assert_eq!(
+            session.latency_fudge(),
+            crate::net::lockstep::wol_start_timing(speed, [0; 8], true).latency_fudge
         );
 
         let mut lan = MatchSession::default();

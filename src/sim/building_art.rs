@@ -393,9 +393,10 @@ impl Simulation {
         self.add_building_sensor_array_if_powered(id, rules, registry);
         self.announce_super_weapon_building_complete(id, rules);
         if !captured && !scenario_initialization {
-            self.mission_spawned_entities |= crate::sim::production::spawn_building_free_unit(
-                self, id, rules, registry, effects,
-            );
+            if crate::sim::production::spawn_building_free_unit(self, id, rules, registry, effects)
+            {
+                self.note_mission_spawned_entities();
+            }
         }
     }
     fn building_anim_config(

@@ -1020,7 +1020,7 @@ impl crate::sim::world::Simulation {
                         )
                         .and_then(|other| self.substrate.entities.get(other))
                         && !crate::sim::combat::combat_weapon::is_ally_by_object(
-                            Some(&self.house_alliances),
+                            Some(self.house_alliances.as_map()),
                             &self.interner,
                             entity.owner(),
                             neighbor.owner(),

@@ -359,8 +359,10 @@ pub(crate) enum WolLobbyAction {
     /// `0x3ED` with the capped edit text.
     Emote(Vec<u16>),
     ObserverChanged(bool),
-    /// Buddy List, Clan, Tournament, News, Options and Page run dialogs or
-    /// web pages that are later chains.
+    /// `0x61F`: WOL Options `0x2BC`.
+    Options,
+    /// Buddy List, Clan, Tournament, News and Page run dialogs or web pages
+    /// that are later chains.
     Unported(u16),
     Popup(WolPopupAction),
 }
@@ -446,6 +448,11 @@ impl WolLobbyState {
 
     pub(crate) fn enabled(&self, control: u16) -> bool {
         !self.disabled.contains(&control)
+    }
+
+    /// `SetFocus` on the chat edit `0x540`: its caret blink restarts.
+    pub(crate) fn refocus_chat(&mut self) {
+        self.focus_started_at = std::time::Instant::now();
     }
 
     pub(crate) fn set_enabled(&mut self, control: u16, enabled: bool) {
@@ -626,9 +633,8 @@ impl WolLobbyState {
                 self.observer = !self.observer;
                 WolLobbyAction::ObserverChanged(self.observer)
             }
-            BUDDY | CLAN | TOURNAMENT | NEWS | OPTIONS | PAGE_BUTTON => {
-                WolLobbyAction::Unported(control)
-            }
+            OPTIONS => WolLobbyAction::Options,
+            BUDDY | CLAN | TOURNAMENT | NEWS | PAGE_BUTTON => WolLobbyAction::Unported(control),
             _ => return None,
         })
     }

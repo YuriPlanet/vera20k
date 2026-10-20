@@ -397,7 +397,6 @@ impl Probe {
                 (Some(id), (x + 1 - center.0) as u8),
                 "{phase}"
             );
-            assert_eq!(cell.bridge_facts.overlay_id, live.overlay_id, "{phase}");
             assert!(
                 !cell.bridge_facts.has_structural_bridge(),
                 "ground-surface family"

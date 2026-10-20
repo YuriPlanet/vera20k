@@ -219,9 +219,9 @@ impl Fixture {
             ),
         );
         if name == "allied_damaged" {
-            sim.house_alliances
+            sim.house_alliances_mut_for_test()
                 .insert("AMERICANS".into(), ["SECOND".into()].into_iter().collect());
-            sim.house_alliances
+            sim.house_alliances_mut_for_test()
                 .insert("SECOND".into(), ["AMERICANS".into()].into_iter().collect());
         }
         sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(999));

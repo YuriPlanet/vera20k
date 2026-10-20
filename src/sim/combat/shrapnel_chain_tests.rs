@@ -942,7 +942,8 @@ fn shrapnel_children_and_lasers_match_original_spawn_shrapnel() {
         }
         // Native actors are supplied boundaries, but Terrain representation
         // still enters through its real constructor/registration owner.
-        world.substrate.next_stable_object_id = row["actors"].as_array().unwrap().len() as u64 + 1;
+        world
+            .set_next_stable_object_id_for_test(row["actors"].as_array().unwrap().len() as u64 + 1);
         let terrain_actors: Vec<_> = row["actors"]
             .as_array()
             .unwrap()

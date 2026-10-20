@@ -133,8 +133,8 @@ fn make_recalc_mcv_rules(vector_values: &str) -> RuleSet {
 fn spawn_infantry(sim: &mut Simulation, type_str: &str, owner: &str, rx: u16, ry: u16) -> u64 {
     let owner_id = sim.interner.intern(owner);
     let type_id = sim.interner.intern(type_str);
-    let id = sim.substrate.next_stable_object_id;
-    sim.substrate.next_stable_object_id += 1;
+    let id = sim.next_stable_object_id();
+    sim.set_next_stable_object_id_for_test(sim.next_stable_object_id() + 1);
     let mut e = GameEntity::new_at_frame_zero_for_test(
         id,
         rx,
@@ -190,7 +190,7 @@ fn deploy_mcv_on(
         .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
         .expect("spawn MCV");
     sim.resolved_terrain = Some(terrain);
-    sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
+    sim.set_playfield_bounds_for_test(Some(crate::sim::arena_fixture::OPEN_PLAYFIELD));
     prepare(&mut sim);
 
     let applied = sim.deploy_mcv(
@@ -480,14 +480,14 @@ fn a_computer_mcv_deploy_turns_the_computers_paranoid() {
     let mcv = sim
         .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
         .expect("spawn MCV");
-    assert!(sim.house_alliances.is_empty());
+    assert!(sim.house_alliances.as_map().is_empty());
     assert!(sim.deploy_mcv(
         mcv,
         &rules,
         None,
         crate::sim::world::FrameEffects::default()
     ));
-    let allies = |name: &str| sim.house_alliances[&name.to_ascii_uppercase()].clone();
+    let allies = |name: &str| sim.house_alliances.as_map()[&name.to_ascii_uppercase()].clone();
     assert!(allies("Americans").contains("COMPUTER2"));
     assert!(allies("Computer2").contains("AMERICANS"));
     let player = sim.interner.get("Player").unwrap();

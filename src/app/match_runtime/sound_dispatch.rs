@@ -882,13 +882,17 @@ pub(super) fn dispatch_sim_sound_events(
             }
             SimSoundEvent::PlayerDefeated { house } => {
                 // `HouseClass::MPlayer_Defeated 0x004FC1B5 CMP EAX,ESI`
-                // splits the local branch (`EVA_YouHaveLost`, owned by
-                // `MatchOutcome`) from the `0x004FC3BC` line.
-                if owner_is_local(sim.interner(), house, local_owner_name) {
-                    continue;
-                }
+                // splits the local `EVA_YouHaveLost` (`0x004FC2EA`) from the
+                // remote `EVA_PlayerDefeated` (`0x004FC3BC`). A Flag_To_Lose
+                // in the same frame queues the local line again, and
+                // QueueVoice drops that same-type duplicate (`0x00752566`).
+                let event = if owner_is_local(sim.interner(), house, local_owner_name) {
+                    "EVA_YouHaveLost"
+                } else {
+                    eva_producers::EVA_PLAYER_DEFEATED
+                };
                 GameSoundEvent::Eva {
-                    event: eva_producers::EVA_PLAYER_DEFEATED.to_string(),
+                    event: event.to_string(),
                     type_override: None,
                 }
             }
@@ -1160,6 +1164,9 @@ pub(super) fn hud_messages(
                 owner,
                 event: crate::sim::house_eva::EVA_LOW_POWER,
             } => owner_is_local(interner, owner, local_owner_name).then_some(HudMessage::LowPower),
+            // Both MPlayer_Defeated branches post the line; the sim already
+            // left out the observer House.
+            SimSoundEvent::PlayerDefeated { house } => Some(HudMessage::PlayerDefeated(house)),
             _ => None,
         })
         .collect()
@@ -2273,6 +2280,47 @@ mod tests {
             &mut output,
         );
         assert!(output.drain().is_empty());
+    }
+
+    /// MPlayer_Defeated posts its line in both branches (`0x004FC271`,
+    /// `0x004FC34F`) and plays `EVA_YouHaveLost` for the local House
+    /// (`0x004FC2EA`), `EVA_PlayerDefeated` for any other (`0x004FC3BC`).
+    /// A same-frame Flag_To_Lose line is the duplicate VoxQueue drops
+    /// (`audio::vox` `duplicate_rule_matches_entry_and_type`).
+    #[test]
+    fn a_defeat_names_the_house_and_tells_the_local_player_they_lost() {
+        let mut sim = Simulation::new();
+        let local = sim.intern("Local");
+        let other = sim.intern("Other");
+        let events = [
+            SimSoundEvent::PlayerDefeated { house: other },
+            SimSoundEvent::PlayerDefeated { house: local },
+        ];
+        assert_eq!(
+            hud_messages(&events, sim.interner(), Some("Local")),
+            [
+                HudMessage::PlayerDefeated(other),
+                HudMessage::PlayerDefeated(local)
+            ]
+        );
+        let mut output = SoundEventQueue::new();
+        dispatch_sim_sound_events(
+            events,
+            &sim,
+            &dispatch_rules(),
+            Some("Local"),
+            &mut |_| panic!("a defeat is not a radar event"),
+            &mut output,
+        );
+        let evas: Vec<String> = output
+            .drain()
+            .into_iter()
+            .filter_map(|event| match event {
+                GameSoundEvent::Eva { event, .. } => Some(event),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(evas, ["EVA_PlayerDefeated", "EVA_YouHaveLost"]);
     }
 
     #[test]

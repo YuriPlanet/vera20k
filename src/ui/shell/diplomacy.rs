@@ -462,15 +462,16 @@ mod tests {
     /// Resume and footer places (0x00608D4B, 0x006097AB, 0x00601360).
     #[test]
     fn title_return_and_status_line_share_the_pause_menu_placements() {
-        use crate::ui::shell::pause_menu::{PauseMenuButton, pause_menu_layout};
+        use crate::ui::shell::pause_menu::{PauseMenuButton, PauseMenuTemplate, pause_menu_layout};
         for (width, height) in [(640, 480), (800, 600), (1024, 768)] {
             let shell = shell(width, height);
             let layout = diplomacy_layout(width, height, shell, [125, 25]);
-            let pause = pause_menu_layout(width, height, shell, [125, 25]);
+            let pause =
+                pause_menu_layout(width, height, shell, [125, 25], PauseMenuTemplate::Offline);
             assert_eq!(layout.title, pause.title);
             assert_eq!(
                 layout.return_button,
-                pause.buttons[PauseMenuButton::Resume as usize]
+                pause.button(PauseMenuButton::Resume).unwrap()
             );
             assert_eq!(layout.status_line, pause.footer);
         }

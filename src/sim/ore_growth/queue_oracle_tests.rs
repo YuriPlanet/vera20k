@@ -1403,13 +1403,11 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
             cell.land_type,
             crate::rules::terrain_rules::LandType::Tiberium.as_index()
         );
-        assert!(
-            scene
-                .sim()
-                .path_grid()
-                .unwrap()
-                .resolved_cell_is_current(cell, false)
-        );
+        assert!(scene.sim().path_grid().unwrap().resolved_cell_is_current(
+            cell,
+            scene.sim().overlay_grid.as_ref(),
+            false
+        ));
         assert!(
             scene
                 .sim()

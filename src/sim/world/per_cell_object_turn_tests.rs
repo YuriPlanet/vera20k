@@ -206,7 +206,7 @@ fn a_parachute_landing_in_its_own_cell_runs_the_foot_body() {
     entity.set_falling_down_for_test(true);
     entity.set_fall_rate_for_test(-3);
     sim.substrate.entities.insert(entity);
-    sim.substrate.next_stable_object_id = 2;
+    sim.set_next_stable_object_id_for_test(2);
     assert!(matches!(
         sim.reveal(1),
         super::super::RevealOutcome::Revealed { .. }

@@ -1245,7 +1245,7 @@ impl Simulation {
     /// as its digest from [`Self::fog_digests`].
     fn hash_fog_and_alliances(&self, fog_digests: &[u64], hasher: &mut impl Hasher) {
         self.fog.hash_state(fog_digests, hasher);
-        for (owner, allies) in &self.house_alliances {
+        for (owner, allies) in self.house_alliances.as_map() {
             owner.hash(hasher);
             for ally in allies {
                 ally.hash(hasher);
@@ -1541,6 +1541,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         // Building+6E3: doubles the survivor divisor, widens the
         // survivor roll and skips the engineer roll at death.
         0x6e3_u32.hash(hasher);
+    }
+    if entity.no_survivor.is_set() {
+        // Building+6E0 (CRC `0x00454407`): no survivor leaves the building
+        // that outlived its killing blow.
+        0x6e0_u32.hash(hasher);
     }
     if let Some(production) = entity.secret_lab_fallback() {
         b"building-secret-production-v382".hash(hasher);
@@ -4151,8 +4156,8 @@ mod rocking_hash_tests {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
         let type_id = sim.interner.intern("HTNK");
-        let id = sim.substrate.next_stable_object_id;
-        sim.substrate.next_stable_object_id += 1;
+        let id = sim.next_stable_object_id();
+        sim.set_next_stable_object_id_for_test(sim.next_stable_object_id() + 1);
         let e = GameEntity::new_at_frame_zero_for_test(
             id,
             10,
@@ -4212,8 +4217,8 @@ mod c4_hash_tests {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
         let type_id = sim.interner.intern("GHOST");
-        let id = sim.substrate.next_stable_object_id;
-        sim.substrate.next_stable_object_id += 1;
+        let id = sim.next_stable_object_id();
+        sim.set_next_stable_object_id_for_test(sim.next_stable_object_id() + 1);
         let e = GameEntity::new_at_frame_zero_for_test(
             id,
             10,

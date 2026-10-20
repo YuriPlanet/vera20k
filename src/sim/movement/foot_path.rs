@@ -674,7 +674,7 @@ impl Simulation {
             interner: &self.interner,
             grid,
             terrain: self.resolved_terrain.as_ref(),
-            playfield_bounds: self.playfield_bounds,
+            playfield_bounds: self.playfield_bounds(),
         }
         .reading(
             &self.substrate.entities,
@@ -719,7 +719,7 @@ impl Simulation {
                 path_grid: Some(grid),
                 zone_grid: self.zone_grid.as_ref(),
                 resolved_terrain: self.resolved_terrain.as_ref(),
-                playfield_bounds: self.playfield_bounds,
+                playfield_bounds: self.playfield_bounds(),
                 blocker_neighbor_counts: Some(counts),
             },
             &entry,
@@ -1124,14 +1124,14 @@ impl Simulation {
             zones.bridge_records(),
             &start_cell,
             start_bridge,
-            self.playfield_bounds,
+            self.playfield_bounds(),
         )?;
         let goal_projection = live_hierarchy_projection(
             terrain,
             zones.bridge_records(),
             &goal_cell,
             goal_bridge,
-            self.playfield_bounds,
+            self.playfield_bounds(),
         )?;
         let hierarchy = zones
             .hierarchy_for(object.movement_zone)
@@ -1189,7 +1189,7 @@ impl Simulation {
                     packed(goal),
                     0,
                     fine_path[count - 2],
-                    self.playfield_bounds,
+                    self.playfield_bounds(),
                 )?;
             }
             if adjacent == (0, 0) {
@@ -1198,7 +1198,7 @@ impl Simulation {
                     packed(goal),
                     0,
                     fine_path[count - 1],
-                    self.playfield_bounds,
+                    self.playfield_bounds(),
                 )?;
             }
             if adjacent == (0, 0) {
@@ -1216,7 +1216,7 @@ impl Simulation {
                     packed(start),
                     0,
                     fine_path[1],
-                    self.playfield_bounds,
+                    self.playfield_bounds(),
                 )?;
             }
             if adjacent == (0, 0) {
@@ -1225,7 +1225,7 @@ impl Simulation {
                     packed(start),
                     0,
                     fine_path[0],
-                    self.playfield_bounds,
+                    self.playfield_bounds(),
                 )?;
             }
             if adjacent == (0, 0) {
@@ -1362,7 +1362,7 @@ impl Simulation {
             .as_ref()
             .ok_or("Foot precheck requires zone topology")?;
         let bounds = self
-            .playfield_bounds
+            .playfield_bounds()
             .ok_or("Foot precheck requires playfield bounds")?;
         let size = self
             .map_size_diamond()
@@ -1454,9 +1454,14 @@ mod tests {
             ));
             sim.zone_grid = Some(zones);
             let goal = DriveCoord::cell(goal_cell.0, goal_cell.1, 0);
-            let request =
-                FootPathRequest::track(&sim.substrate.entities, id, goal, 0, sim.playfield_bounds)
-                    .unwrap();
+            let request = FootPathRequest::track(
+                &sim.substrate.entities,
+                id,
+                goal,
+                0,
+                sim.playfield_bounds(),
+            )
+            .unwrap();
             let found = sim
                 .search_foot_path(
                     &request,

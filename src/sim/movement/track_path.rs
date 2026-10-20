@@ -456,7 +456,7 @@ impl Simulation {
     ) -> Result<bool, String> {
         if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             cell,
-            self.playfield_bounds,
+            self.playfield_bounds(),
             self.resolved_terrain.as_ref(),
         ) {
             return Ok(false);
@@ -546,7 +546,7 @@ impl Simulation {
         //4B2BDA..4B2BE4: the Foot's own House asks (Is_Ally_ByObject).
         let allied = self.substrate.entities.get(blocker).is_some_and(|b| {
             crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(&self.house_alliances),
+                Some(self.house_alliances.as_map()),
                 &self.interner,
                 actor.owner(),
                 b.owner(),

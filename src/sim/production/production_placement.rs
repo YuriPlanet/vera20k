@@ -708,7 +708,7 @@ pub fn is_within_build_area(
             }
         } else if !(sim.session.game_options().build_off_ally
             && existing.eligibile_for_ally_building
-            && are_houses_friendly(&sim.house_alliances, provider_owner, owner))
+            && are_houses_friendly(sim.house_alliances.as_map(), provider_owner, owner))
         {
             continue;
         }

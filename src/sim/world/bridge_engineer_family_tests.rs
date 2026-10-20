@@ -34,12 +34,14 @@ fn engineer_family_selector_matches_original_boundary_and_dummy() {
             None,
             Some(input["wood_base"].as_u64().unwrap() as u16),
         );
+        let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(16, 16);
         for row in input["cells"].as_array().unwrap() {
             let x = row[0].as_u64().unwrap() as usize;
             let y = row[1].as_u64().unwrap() as usize;
             let c = &mut terrain.cells_mut_for_test()[y * 16 + x];
             c.final_tile_index = row[2].as_i64().unwrap() as i32;
-            c.bridge_facts.overlay_id = u8::try_from(row[3].as_i64().unwrap()).ok();
+            overlays.cell_mut_for_test(x as u16, y as u16).overlay_id =
+                u8::try_from(row[3].as_i64().unwrap()).ok();
         }
         let allocated: Vec<_> = (8..=12)
             .flat_map(|y| (8..=12).map(move |x| (x, y)))
@@ -49,6 +51,7 @@ fn engineer_family_selector_matches_original_boundary_and_dummy() {
         let mut sim = Simulation::with_seed(31);
         sim.resolve_type_handles(&rules);
         sim.install_resolved_terrain_for_new_map(terrain);
+        sim.overlay_grid = Some(overlays);
         let engineer = sim
             .construct_object_limbo_at_height(
                 "ENGINEER",

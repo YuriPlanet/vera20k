@@ -61,7 +61,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
             dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(0),
         });
     sim.substrate.entities.insert(entity);
-    sim.substrate.next_stable_object_id = 2;
+    sim.set_next_stable_object_id_for_test(2);
     sim.interner = test_interner();
     sim.set_logic_order_for_test(vec![1]);
     (sim, rules)

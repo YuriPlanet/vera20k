@@ -201,7 +201,7 @@ fn computer_crusher_charges_a_crushable_attacker() {
         gi
     }));
     assert!(!charge(10, &|sim, _, gi| {
-        sim.house_alliances = crate::map::houses::HouseAllianceMap::from([(
+        *sim.house_alliances_mut_for_test() = crate::map::houses::HouseAllianceMap::from([(
             "RUSSIANS".to_string(),
             std::collections::BTreeSet::from(["AMERICANS".to_string()]),
         )]);

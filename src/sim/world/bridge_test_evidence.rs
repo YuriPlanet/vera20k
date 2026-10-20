@@ -65,7 +65,7 @@ pub(super) fn navigation_snapshot(
             "zone_type": c.zone_type, "land": c.land_type,
             "tile": c.final_tile_index, "subtile": c.final_sub_tile,
             "bridge_flags": c.bridge_facts.raw_flags,
-            "overlay": c.bridge_facts.overlay_id,
+            "overlay": sim.overlay_grid.as_ref().unwrap().cell(x, y).overlay_id,
             "cached_class": base.movement_classes()[index], "cached_height": base.levels()[index],
             "base_id": cluster, "raw_row7": base.raw_zone_ids_by_row()[7].get(usize::from(cluster)),
         }))
@@ -295,24 +295,10 @@ pub fn visit_starting_mtnk_concrete_attack(
                     (live.overlay_id, live.overlay_data),
                     (Some(stages[phase]), data)
                 );
-                // Ordinary bridge publication mirrors identity synchronously
-                // into Terrain and OverlayGrid; it deliberately bypasses the
-                // generic placement dirty/upsert channel. The retained index
-                // remains an anchor whose bridge identity resolves live.
-                let terrain = scene
-                    .sim()
-                    .resolved_terrain
-                    .as_ref()
-                    .unwrap()
-                    .cell(x, 54)
-                    .unwrap();
-                assert_eq!(
-                    (
-                        terrain.bridge_facts.overlay_id,
-                        terrain.bridge_facts.state_byte
-                    ),
-                    (Some(stages[phase]), data)
-                );
+                // Ordinary bridge publication writes the identity
+                // synchronously and deliberately bypasses the generic
+                // placement dirty/upsert channel. The retained index remains
+                // an anchor whose bridge identity resolves live.
                 assert!(scene.sim().dirty_cells.radar().contains(&(x, 54)));
                 assert!(
                     !output.overlay_removals.contains(&(x, 54)),
@@ -463,6 +449,14 @@ pub fn visit_retail_high_bridge_stages(
             .unwrap()
             .bridge_facts
     };
+    let live = |scene: &HeadlessScenario, point: (u16, u16)| {
+        *scene
+            .sim()
+            .overlay_grid
+            .as_ref()
+            .unwrap()
+            .cell(point.0, point.1)
+    };
     let loaded_target = facts(&scene, target);
     assert!(loaded_target.has_structural_bridge());
     let anchor = loaded_target.anchor.expect("loaded bridge anchor").anchor;
@@ -470,9 +464,9 @@ pub fn visit_retail_high_bridge_stages(
         anchor, expected_anchor,
         "{kind:?}: physical anchor relation"
     );
-    let loaded_anchor = facts(&scene, anchor);
-    assert_eq!(loaded_anchor.overlay_id, Some(overlay), "{kind:?}");
-    assert!(matches!(loaded_anchor.state_byte, 0..=5 | 9..=14));
+    let loaded_anchor = (facts(&scene, anchor), live(&scene, anchor));
+    assert_eq!(loaded_anchor.1.overlay_id, Some(overlay), "{kind:?}");
+    assert!(matches!(loaded_anchor.1.overlay_data, 0..=5 | 9..=14));
     visit("loaded", &scene);
 
     // Keep the real RNG/admission/publication callbacks. Observe transitions
@@ -485,8 +479,8 @@ pub fn visit_retail_high_bridge_stages(
         if !facts(&scene, target).has_structural_bridge() {
             break;
         }
-        let damaged_anchor = facts(&scene, anchor);
-        if !saw_damage && matches!(damaged_anchor.state_byte, 6 | 15) {
+        let damaged_anchor = (facts(&scene, anchor), live(&scene, anchor));
+        if !saw_damage && matches!(damaged_anchor.1.overlay_data, 6 | 15) {
             assert_ne!(
                 damaged_anchor, loaded_anchor,
                 "receiver must publish damage"
@@ -508,7 +502,7 @@ pub fn visit_retail_high_bridge_stages(
 
     repair_ordinary_bridge(&mut scene, hut, start, &mut ordinary_repair_orders);
     assert!(facts(&scene, target).has_structural_bridge());
-    assert_eq!(facts(&scene, anchor).overlay_id, Some(overlay), "{kind:?}");
+    assert_eq!(live(&scene, anchor).overlay_id, Some(overlay), "{kind:?}");
     visit("repaired", &scene);
 }
 
@@ -724,7 +718,12 @@ fn assert_repaired_ground_row(
             .cell(x, y)
             .unwrap();
         assert!(
-            c.bridge_facts
+            scene
+                .sim()
+                .overlay_grid
+                .as_ref()
+                .unwrap()
+                .cell(x, y)
                 .overlay_id
                 .is_some_and(|id| overlays.contains(&id))
         );

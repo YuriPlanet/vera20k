@@ -828,7 +828,7 @@ impl Simulation {
             id,
             destination,
             0,
-            self.playfield_bounds,
+            self.playfield_bounds(),
         )
     }
 
@@ -843,7 +843,7 @@ impl Simulation {
             id,
             destination,
             urgency,
-            self.playfield_bounds,
+            self.playfield_bounds(),
         )
     }
 

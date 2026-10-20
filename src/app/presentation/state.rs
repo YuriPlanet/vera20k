@@ -156,6 +156,14 @@ pub(crate) struct MatchPresentationState {
     pub(crate) modal_latch: bool,
     pub(crate) pause_menu_has_saves: bool,
     pub(crate) pause_menu_interaction: crate::ui::shell::pause_menu::PauseMenuInteraction,
+    /// The template 4F10E0 chose when state 1 last opened; it stays for that
+    /// dialog's lifetime.
+    pub(crate) pause_menu_template: crate::ui::shell::pause_menu::PauseMenuTemplate,
+    /// FF's trackbars (WOL in-game menu), recreated on every state-1 entry.
+    pub(crate) internet_pause: crate::app::input::pause_menu::InternetPauseControls,
+    /// What B6 init (4F1840) made of control712 when the dialog last opened;
+    /// its stored results stay for that dialog's lifetime.
+    pub(crate) abort_secondary: crate::ui::shell::abort::AbortSecondary,
     pub(crate) sound_dialog: Option<crate::ui::shell::sound::SoundState>,
     pub(crate) abort_buttons:
         crate::ui::shell::button::ShellButtonInteraction<crate::ui::shell::abort::AbortButton>,

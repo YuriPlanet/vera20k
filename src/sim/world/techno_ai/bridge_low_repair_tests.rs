@@ -72,7 +72,16 @@ fn retail_shrapnel_engineer_repairs_authored_water_gap() {
             .unwrap()
             .cell(x, 59)
             .unwrap();
-        assert_eq!(cell.bridge_facts.overlay_id, Some(101));
+        assert_eq!(
+            scene
+                .sim()
+                .overlay_grid
+                .as_ref()
+                .unwrap()
+                .cell(x, 59)
+                .overlay_id,
+            Some(101)
+        );
         assert_eq!(cell.land_type, LandType::Water.as_index());
         assert!(!cell.bridge_facts.has_structural_bridge());
     }
@@ -147,7 +156,12 @@ fn retail_shrapnel_engineer_repairs_authored_water_gap() {
             .cell(x, 59)
             .unwrap();
         assert!(
-            cell.bridge_facts
+            scene
+                .sim()
+                .overlay_grid
+                .as_ref()
+                .unwrap()
+                .cell(x, 59)
                 .overlay_id
                 .is_some_and(|overlay| (83..=86).contains(&overlay))
         );
