@@ -46,20 +46,22 @@ mod in_game;
 mod initialize;
 pub(crate) mod input;
 #[cfg(any(target_os = "ios", test))]
-pub mod ios_runtime;
-#[cfg(any(target_os = "ios", test))]
-mod ios_touch;
-#[cfg(any(target_os = "ios", test))]
 #[cfg_attr(not(target_os = "ios"), allow(dead_code))]
 mod ios_battle_touch;
-#[cfg(any(target_os = "ios", test))]
-#[cfg_attr(not(target_os = "ios"), allow(dead_code))]
-mod ios_shortcuts;
 #[cfg(any(target_os = "ios", test))]
 #[cfg_attr(not(target_os = "ios"), allow(dead_code))]
 mod ios_controls;
 #[cfg(target_os = "ios")]
 mod ios_hud_render;
+#[cfg(any(target_os = "ios", test))]
+pub mod ios_runtime;
+#[cfg(any(target_os = "ios", test))]
+#[cfg_attr(not(target_os = "ios"), allow(dead_code))]
+mod ios_shortcuts;
+#[cfg(target_os = "ios")]
+mod ios_sidebar_art;
+#[cfg(any(target_os = "ios", test))]
+mod ios_touch;
 #[cfg(target_os = "ios")]
 mod ios_unit_tags;
 pub(crate) mod loading;
@@ -216,7 +218,9 @@ impl App {
 
     pub fn finish_capture(&mut self) -> Result<()> {
         if let Some(error) = self.startup_failure.as_ref().or_else(|| {
-            self.state.as_ref().and_then(|state| state.frontend.external_launch_error.as_ref())
+            self.state
+                .as_ref()
+                .and_then(|state| state.frontend.external_launch_error.as_ref())
         }) {
             anyhow::bail!("{error}");
         }

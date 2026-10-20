@@ -324,6 +324,23 @@ pub fn scroll_button_rects(
     down_size: Option<[f32; 2]>,
     up_size: Option<[f32; 2]>,
 ) -> (Rect, Rect) {
+    if spec.touch_controls {
+        let y = layout.cameo_grid_bottom + 7.0;
+        return (
+            Rect {
+                x: layout.sidebar_x + 8.0,
+                y,
+                w: 68.0,
+                h: 24.0,
+            },
+            Rect {
+                x: layout.sidebar_x + 92.0,
+                y,
+                w: 68.0,
+                h: 24.0,
+            },
+        );
+    }
     let [dw, dh] = down_size.unwrap_or([0.0, 0.0]);
     let [uw, uh] = up_size.unwrap_or([0.0, 0.0]);
     let x = layout.sidebar_x + spec.scroll_x;

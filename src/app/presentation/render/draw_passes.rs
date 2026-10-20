@@ -52,6 +52,8 @@ fn draw_sidebar_surface(
     encoder: &mut wgpu::CommandEncoder,
     data: &DrawPassData<'_>,
 ) {
+    #[cfg(target_os = "ios")]
+    crate::app::ios_sidebar_art::prepare(state);
     let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
     let presentation = &state.match_state.match_presentation;
     let chrome = presentation.sidebar_chrome.as_ref().and_then(|set| {
@@ -74,7 +76,20 @@ fn draw_sidebar_surface(
     let mut draw = |tex: Option<&BatchTexture>, key: &'static str| {
         draw_pooled_with_camera(&mut pass, batch, camera, pool, tex, key);
     };
+    #[cfg(target_os = "ios")]
+    draw(
+        renderer
+            .ios_sidebar_art
+            .as_ref()
+            .map(|art| art.texture(theme)),
+        "ios_sidebar_background",
+    );
     draw(chrome.map(|atlas| &atlas.texture), "sidebar_chrome");
+    #[cfg(target_os = "ios")]
+    draw(
+        renderer.ios_sidebar_art.as_ref().map(|art| art.glyphs()),
+        "ios_sidebar_controls",
+    );
     draw(
         presentation
             .sidebar_cameo_atlas
@@ -171,6 +186,7 @@ fn draw_sidebar_surface(
     };
     draw(cameo_overlay_tex, "sidebar_cameo_overlay");
     draw(Some(renderer.bit_font.atlas()), "sidebar_text");
+    #[cfg(not(target_os = "ios"))]
     draw(
         presentation.radar_anim.as_ref().map(|ra| ra.texture()),
         "radar_anim",

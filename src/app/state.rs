@@ -84,6 +84,15 @@ impl AppState {
         width: u32,
         height: u32,
     ) -> crate::ui::sidebar::SidebarFrame {
+        #[cfg(target_os = "ios")]
+        if self.platform.capture_client_size.is_none() {
+            let window_zoom = self.tactical_zoom().map_or(1.0, |zoom| zoom.scale());
+            return crate::ui::sidebar::SidebarFrame::for_ios(
+                width,
+                height,
+                self.platform.window.scale_factor() as f32 / window_zoom,
+            );
+        }
         let percent = if self.platform.capture_client_size.is_some() {
             100
         } else {

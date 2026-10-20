@@ -15,6 +15,9 @@ pub enum SidebarTheme {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SidebarChromeLayoutSpec {
     pub theme: SidebarTheme,
+    /// VERA's touch chrome fills the column with larger control targets.
+    /// Retail desktop layout and native comparisons leave this disabled.
+    pub touch_controls: bool,
     pub sidebar_width: f32,
     pub top_inset: f32,
     pub side2_height: f32,
@@ -52,6 +55,7 @@ impl SidebarChromeLayoutSpec {
         let allied = matches!(theme, SidebarTheme::Allied);
         Self {
             theme,
+            touch_controls: false,
             sidebar_width: super::SIDEBAR_WIDTH_PX as f32,
             top_inset: 48.0,
             side2_height: 50.0,

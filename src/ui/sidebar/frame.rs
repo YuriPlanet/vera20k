@@ -45,6 +45,44 @@ impl SidebarFrame {
         Self::new(frame_width, frame_height, 100)
     }
 
+    /// iPhone battle controls have a stable point size, independent of Retina
+    /// density and the Options zoom pass. Keep the original sidebar's layout,
+    /// drawing and input transform together instead of enlarging its artwork
+    /// separately from cameo/tab/minimap hit regions.
+    ///
+    /// `source_pixels_per_point` is window pixels per UIKit point divided by
+    /// the match frame's window zoom. A 180-point column leaves two thirds of
+    /// even a small landscape frame available to the battlefield. The height
+    /// cap preserves at least one 50-pixel cameo row below the 227-pixel header
+    /// and the stock Allied 26+7-pixel footer allowance.
+    pub fn for_ios(frame_width: u32, frame_height: u32, source_pixels_per_point: f32) -> Self {
+        const TARGET_WIDTH_POINTS: f64 = 180.0;
+        const MINIMUM_LAYOUT_HEIGHT: f64 = 227.0 + 50.0 + 26.0 + 7.0;
+        let pixels_per_point =
+            if source_pixels_per_point.is_finite() && source_pixels_per_point > 0.0 {
+                f64::from(source_pixels_per_point)
+            } else {
+                1.0
+            };
+        let requested_scale = TARGET_WIDTH_POINTS * pixels_per_point / f64::from(SIDEBAR_WIDTH_PX);
+        let height_limit = f64::from(frame_height) / MINIMUM_LAYOUT_HEIGHT;
+        let width_limit = f64::from(frame_width) / (3.0 * f64::from(SIDEBAR_WIDTH_PX));
+        let percent = (requested_scale.min(height_limit).min(width_limit) * 100.0).floor() as u32;
+        Self::new(frame_width, frame_height, percent)
+    }
+
+    /// Active-game dialogs still use their original 640x480 control layouts.
+    /// A touch-sized battle column can leave fewer native layout rows than a
+    /// full-screen Diplomacy/Options dialog needs. Fit that complete dialog
+    /// through the same transform, so its layout, renderer and pointer inverse
+    /// all use one frame without changing battle sidebar capacity.
+    pub fn fit_native_shell(self) -> Self {
+        let fits = (self.frame_width * 100 / 640)
+            .min(self.frame_height * 100 / 480)
+            .max(100);
+        Self::new(self.frame_width, self.frame_height, self.percent.min(fits))
+    }
+
     /// Frame pixels per sidebar pixel.
     pub fn scale(self) -> f32 {
         self.percent as f32 / 100.0
@@ -313,5 +351,88 @@ mod tests {
         assert_eq!(large.pixel_to_layout(1, 1), (1, 1));
         assert_eq!(large.pixel_to_layout(2, 2), (1, 1));
         assert_eq!(large.pixel_to_layout(3, 3), (2, 2));
+    }
+
+    #[test]
+    fn iphone_column_preserves_build_rows_and_tactical_space_at_retina_sizes() {
+        for (width, height, density, window_zoom, expected_rows) in [
+            (568, 320, 2, 1, 1),
+            (667, 375, 2, 1, 1),
+            (844, 390, 3, 1, 2),
+            (926, 428, 3, 2, 2),
+        ] {
+            let frame = SidebarFrame::for_ios(
+                width * density / window_zoom,
+                height * density / window_zoom,
+                density as f32 / window_zoom as f32,
+            );
+            let width_points = frame.width_in_frame() as f32 * window_zoom as f32 / density as f32;
+            assert!(
+                (172.0..=180.0).contains(&width_points),
+                "{width}x{height}: {width_points}"
+            );
+            assert!(frame.layout_size().1 >= 310);
+            assert!(frame.tactical_size().0 >= 2 * frame.width_in_frame());
+            let (layout_width, layout_height) = frame.layout_screen();
+            let layout = crate::ui::sidebar::compute_layout_with_spec(
+                crate::ui::sidebar::SidebarChromeLayoutSpec::stock(),
+                layout_width,
+                layout_height,
+                50,
+            );
+            assert_eq!(layout.side2_tile_count, expected_rows, "{width}x{height}");
+        }
+    }
+
+    #[test]
+    fn touch_column_width_and_radar_hit_mapping_survive_options_zoom() {
+        for zoom in [1.0, 1.5, 2.0] {
+            let frame =
+                SidebarFrame::for_ios((2532.0 / zoom) as u32, (1170.0 / zoom) as u32, 3.0 / zoom);
+            let width_points = frame.width_in_frame() as f32 * zoom / 3.0;
+            assert!(
+                (178.0..=180.0).contains(&width_points),
+                "zoom {zoom}: {width_points}"
+            );
+            let aperture = crate::ui::sidebar::radar_minimap_rect_with_spec(
+                frame.layout_screen().0,
+                crate::ui::sidebar::SidebarChromeLayoutSpec::stock(),
+            );
+            let drawn = frame.rect_to_frame(aperture);
+            assert!(drawn.x >= frame.frame_left());
+            assert!(drawn.x + drawn.w <= 2532.0 / zoom);
+            let pointer = (drawn.x + drawn.w * 0.37, drawn.y + drawn.h * 0.64);
+            let layout_pointer = frame.point_to_layout(pointer.0, pointer.1);
+            assert!(aperture.contains(layout_pointer.0, layout_pointer.1));
+            assert!((layout_pointer.0 - aperture.x - aperture.w * 0.37).abs() < 0.001);
+            assert!((layout_pointer.1 - aperture.y - aperture.h * 0.64).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn touch_shell_fits_whole_native_dialog_and_keeps_pointer_inverse() {
+        for (width, height, pixels_per_point) in
+            [(1136, 640, 2.0), (2532, 1170, 3.0), (1560, 1170, 3.0)]
+        {
+            let shell = SidebarFrame::for_ios(width, height, pixels_per_point).fit_native_shell();
+            let (layout_width, layout_height) = shell.layout_size();
+            assert!(layout_width >= 640 && layout_height >= 480);
+            let control = rect(
+                layout_width as f32 - 147.0,
+                layout_height as f32 - 80.0,
+                120.0,
+                30.0,
+            );
+            let shown = shell.rect_to_frame(control);
+            assert!(shown.x >= 0.0 && shown.y >= 0.0);
+            assert!(shown.x + shown.w <= width as f32);
+            assert!(shown.y + shown.h <= height as f32 + 1.0);
+            let point = shell.point_to_layout(shown.x + shown.w / 2.0, shown.y + shown.h / 2.0);
+            assert!(control.contains(point.0, point.1));
+        }
+        for percent in [100, 150, 200] {
+            let desktop = SidebarFrame::new(1920, 1080, percent);
+            assert_eq!(desktop.fit_native_shell(), desktop);
+        }
     }
 }

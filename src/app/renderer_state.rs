@@ -14,6 +14,8 @@ pub(crate) struct RendererState {
     pub(crate) batch_renderer: BatchRenderer,
     #[cfg(target_os = "ios")]
     pub(super) ios_hud: Option<crate::app::ios_hud_render::IosHudArt>,
+    #[cfg(target_os = "ios")]
+    pub(super) ios_sidebar_art: Option<crate::app::ios_sidebar_art::IosSidebarArt>,
     pub(crate) terrain_draw_renderer: crate::render::terrain_draw::TerrainDrawRenderer,
     pub(crate) combat_light_renderer: crate::render::combat_light::CombatLightRenderer,
     /// Reusable GPU instance buffers — avoids per-frame GPU buffer allocation.

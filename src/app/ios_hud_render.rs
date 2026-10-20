@@ -58,13 +58,17 @@ pub(super) fn render(
     }
     let layout = super::ios_controls::layout(state);
     let controls = &state.match_state.input.ios_controls;
+    let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
     let size = [
         state.renderer.gpu.config.width as f32,
         state.renderer.gpu.config.height as f32,
     ];
-    let sprites = prepare(&layout, size, &controls.touch, controls.save_failed);
+    let sprites = prepare(&layout, size, &controls.touch, controls.save_failed, theme);
     let tags = super::ios_unit_tags::build(state);
     let renderer = &mut state.renderer;
+    let faction = renderer.ios_sidebar_art.get_or_insert_with(|| {
+        super::ios_sidebar_art::IosSidebarArt::new(&renderer.gpu, &renderer.batch_renderer)
+    });
     let art = renderer
         .ios_hud
         .get_or_insert_with(|| IosHudArt::new(&renderer.gpu, &renderer.batch_renderer));
@@ -85,6 +89,7 @@ pub(super) fn render(
     for (key, instances) in [
         ("ios_touch_tags", &tags),
         ("ios_touch_background", &sprites.background),
+        ("ios_touch_strip", &sprites.strip),
         ("ios_touch_art", &sprites.art),
         ("ios_touch_foreground", &sprites.foreground),
     ] {
@@ -114,6 +119,7 @@ pub(super) fn render(
     for (key, texture) in [
         ("ios_touch_tags", renderer.bit_font.atlas()),
         ("ios_touch_background", &art.glyphs),
+        ("ios_touch_strip", faction.texture(theme)),
         ("ios_touch_art", &art.atlas),
         ("ios_touch_foreground", &art.glyphs),
     ] {
@@ -133,6 +139,7 @@ pub(super) fn render(
 #[derive(Default)]
 struct Sprites {
     background: Vec<SpriteInstance>,
+    strip: Vec<SpriteInstance>,
     art: Vec<SpriteInstance>,
     foreground: Vec<SpriteInstance>,
 }
@@ -142,6 +149,7 @@ fn prepare(
     size: [f32; 2],
     touch: &super::ios_battle_touch::BattleTouch,
     save_failed: bool,
+    theme: crate::ui::sidebar::SidebarTheme,
 ) -> Sprites {
     let mut result = Sprites::default();
     let scale = layout.touch.scale_factor;
@@ -194,29 +202,24 @@ fn prepare(
             }
         }
     }
-    let bar_top = (layout.bar.y - 4.0 * scale).max(0.0);
-    result.background.push(glyph(
-        SOLID,
-        rect(
-            0.0,
-            bar_top,
-            layout.bar.x + layout.bar.width,
-            size[1] - bar_top,
-        ),
-        [0.025, 0.045, 0.06],
-        0.98,
-    ));
-    result.background.push(glyph(
-        SOLID,
-        rect(
-            0.0,
-            bar_top,
-            layout.bar.x + layout.bar.width,
-            scale.max(1.0),
-        ),
-        [0.16, 0.31, 0.36],
-        0.9,
-    ));
+    let bar_panel = layout.bar_background();
+    let bar_top = bar_panel.y;
+    // Preserve the outer end cap, but let the center plate meet the sidebar's
+    // vertical rail directly. An extra end cap there makes a detached joint
+    // and also sits underneath the fixed shortcut editor button.
+    let width = bar_panel.width;
+    let height = bar_panel.height;
+    let cap = (24.0 * scale).min(width * 0.25);
+    let image = super::ios_sidebar_art::bottom_region(theme);
+    for (x, part_width, u, uv_width) in [(0.0, cap, 0.0, 0.06), (cap, width - cap, 0.06, 0.88)] {
+        result.strip.push(quad(
+            rect(x, bar_top, part_width, height),
+            [image[0] + u * image[2], image[1]],
+            [uv_width * image[2], image[3]],
+            [1.0; 3],
+            1.0,
+        ));
+    }
     if let Some(joystick) = layout.touch.joystick {
         let radius = joystick.radius;
         result
@@ -254,25 +257,31 @@ fn prepare(
             ));
         }
         let index = button.icon.icon_index();
+        let inset_in_bar =
+            layout.editor_panel.is_none() && (button.rect.y - layout.bar_button_y()).abs() < 1.0;
         if index < 16 {
             result.art.push(atlas(index, button.rect, opacity));
         } else {
-            result.foreground.push(glyph(
-                ROUNDED_FILL,
-                button.rect,
-                if selected {
-                    [0.10, 0.26, 0.30]
-                } else {
-                    [0.07, 0.13, 0.17]
-                },
-                0.96,
-            ));
-            result.foreground.push(glyph(
-                ROUNDED_LINE,
-                button.rect,
-                [0.28, 0.46, 0.52],
-                opacity,
-            ));
+            if !inset_in_bar || selected {
+                result.foreground.push(glyph(
+                    ROUNDED_FILL,
+                    button.rect,
+                    if selected {
+                        [0.10, 0.26, 0.30]
+                    } else {
+                        [0.07, 0.13, 0.17]
+                    },
+                    0.96,
+                ));
+            }
+            if !inset_in_bar {
+                result.foreground.push(glyph(
+                    ROUNDED_LINE,
+                    button.rect,
+                    [0.28, 0.46, 0.52],
+                    opacity,
+                ));
+            }
             result
                 .foreground
                 .push(glyph(index - 16, inset(button.rect, 0.18), color, opacity));

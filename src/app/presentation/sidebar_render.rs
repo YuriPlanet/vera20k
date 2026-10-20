@@ -119,6 +119,10 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
     refresh_radar_animation_source(state);
     let mut spec =
         crate::ui::sidebar::SidebarChromeLayoutSpec::for_theme(current_sidebar_theme(state));
+    #[cfg(target_os = "ios")]
+    {
+        spec.touch_controls = true;
+    }
     if let Some(atlas) = current_sidebar_chrome(state) {
         spec.side2_height = atlas.side2.pixel_size[1];
         spec.side3_height = atlas.side3.pixel_size[1];
@@ -604,7 +608,10 @@ fn sidebar_cursor(state: &AppState) -> (f32, f32) {
 /// frame pixels through [`crate::ui::sidebar::SidebarFrame::rect_to_frame`].
 pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar::Rect {
     let (sw, sh) = state.sidebar_frame().layout_screen();
-    if current_sidebar_chrome(state).is_some() {
+    // Touch chrome and a temporarily unavailable retail atlas share the same
+    // right-column aperture. A bottom-left fallback would otherwise receive
+    // the enlarged sidebar transform and draw/hit-test outside its column.
+    if cfg!(target_os = "ios") || current_sidebar_chrome(state).is_some() {
         crate::ui::sidebar::radar_minimap_rect_with_spec(
             sw,
             state.match_state.match_presentation.sidebar_layout_spec,

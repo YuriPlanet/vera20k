@@ -403,11 +403,25 @@ pub(super) struct LandscapeLayout {
     pub(super) touch: TouchLayout,
     pub(super) buttons: Vec<ShortcutButton>,
     pub(super) bar: TouchRect,
+    /// The painted strip extends from just above the reserved bar anchor to
+    /// the window bottom. Keep it separate so centering buttons cannot move
+    /// the world/joystick/editor boundary or move their background with them.
+    bar_panel: TouchRect,
     pub(super) editor_panel: Option<TouchRect>,
     pub(super) page_count: usize,
 }
 
 impl LandscapeLayout {
+    pub(super) fn bar_background(&self) -> TouchRect {
+        self.bar_panel
+    }
+
+    /// All ordinary shortcuts, page arrows and the fixed editor button share
+    /// the center of the full painted strip, including its safe-area padding.
+    pub(super) fn bar_button_y(&self) -> f32 {
+        self.bar_panel.y + (self.bar_panel.height - self.bar.height) * 0.5
+    }
+
     /// All arguments and output rectangles use physical window pixels. `scale`
     /// is the physical-pixels-per-point value, not the tactical zoom.
     pub(super) fn new(
@@ -432,7 +446,8 @@ impl LandscapeLayout {
         let size = (44.0 * scale).min(available / 4.6).min(height * 0.15);
         let gap = (8.0 * scale).min(size * 0.2);
         let bar = rect(left, (height - bottom - size).max(0.0), available, size);
-        let settings = rect(right - size, bar.y, size, size);
+        let panel_top = (bar.y - 4.0 * scale).max(0.0);
+        let bar_panel = rect(0.0, panel_top, right, height - panel_top);
         let capacity_without_pages =
             ((available - size - gap) / (size + gap)).floor().max(1.0) as usize;
         let normalized = preferences.normalized();
@@ -459,9 +474,12 @@ impl LandscapeLayout {
             },
             buttons: Vec::new(),
             bar,
+            bar_panel,
             editor_panel: None,
             page_count,
         };
+        let button_y = result.bar_button_y();
+        let settings = rect(right - size, button_y, size, size);
         result.button(
             settings,
             Shortcut::Edit,
@@ -482,7 +500,7 @@ impl LandscapeLayout {
         {
             let x = left + (slot % capacity) as f32 * (size + gap);
             result.button(
-                rect(x, bar.y, size, size),
+                rect(x, button_y, size, size),
                 *shortcut,
                 *shortcut,
                 false,
@@ -491,14 +509,14 @@ impl LandscapeLayout {
         }
         if needs_pages {
             result.button(
-                rect(settings.x - 2.0 * (size + gap), bar.y, size, size),
+                rect(settings.x - 2.0 * (size + gap), button_y, size, size),
                 Shortcut::PagePrevious,
                 Shortcut::PagePrevious,
                 false,
                 true,
             );
             result.button(
-                rect(settings.x - size - gap, bar.y, size, size),
+                rect(settings.x - size - gap, button_y, size, size),
                 Shortcut::PageNext,
                 Shortcut::PageNext,
                 false,
@@ -848,6 +866,86 @@ mod tests {
     }
 
     #[test]
+    fn bottom_buttons_and_hit_targets_share_the_full_strip_center_at_phone_sizes() {
+        let preferences = Preferences {
+            shortcuts: CATALOG[..16].to_vec(),
+            page: 0,
+        };
+        let editor = ShortcutEditor::new(&preferences);
+        for (width, height, scale, sidebar, original_bar_y) in [
+            (568.0, 320.0, 2.0, 173.0, 252.0),
+            (844.0, 390.0, 3.0, 180.0, 322.0),
+            (926.0, 428.0, 3.0, 180.0, 360.0),
+        ] {
+            let layout = LandscapeLayout::new(
+                width * scale,
+                height * scale,
+                scale,
+                sidebar * scale,
+                &preferences,
+                None,
+            );
+            let panel = layout.bar_background();
+            // The world and editor anchor stays in its original place; only
+            // the row's buttons move inside the existing full-height strip.
+            assert_eq!(layout.bar.y, original_bar_y * scale);
+            assert_eq!(layout.touch.world.height, layout.bar.y);
+            assert_eq!(layout.touch.excluded[0].y, layout.bar.y);
+            assert_eq!(panel.y, layout.bar.y - 4.0 * scale);
+            assert_eq!(panel.y + panel.height, height * scale);
+            assert_eq!(panel.x, 0.0);
+            assert_eq!(panel.width, layout.bar.x + layout.bar.width);
+            assert!(layout.page_count > 1);
+            let row: Vec<_> = layout
+                .buttons
+                .iter()
+                .filter(|button| button.rect.y >= layout.bar.y)
+                .collect();
+            assert!(
+                row.iter()
+                    .any(|button| button.command == Shortcut::PagePrevious)
+            );
+            assert!(
+                row.iter()
+                    .any(|button| button.command == Shortcut::PageNext)
+            );
+            assert!(row.iter().any(|button| button.command == Shortcut::Edit));
+            for button in row {
+                assert_eq!(button.rect.height, 44.0 * scale);
+                assert!((button.rect.center()[1] - panel.center()[1]).abs() < 0.001);
+                assert!((button.rect.y - layout.bar_button_y()).abs() < 0.001);
+                assert!(
+                    height * scale - button.rect.y - button.rect.height >= 14.0 * scale - 0.001
+                );
+                assert!(layout.touch.controls.iter().any(|control| {
+                    control.command == button.command && control.rect == button.rect
+                }));
+            }
+            let editing = LandscapeLayout::new(
+                width * scale,
+                height * scale,
+                scale,
+                sidebar * scale,
+                &preferences,
+                Some(&editor),
+            );
+            let gear = editing
+                .buttons
+                .iter()
+                .find(|button| button.command == Shortcut::Edit)
+                .unwrap();
+            assert!((gear.rect.center()[1] - editing.bar_background().center()[1]).abs() < 0.001);
+            assert_eq!(editing.bar.y, layout.bar.y);
+            assert!(
+                editing.editor_panel.unwrap().y + editing.editor_panel.unwrap().height
+                    <= editing.bar.y
+            );
+            let joystick = layout.touch.joystick.unwrap();
+            assert!((joystick.center[1] / scale - (original_bar_y - 82.4)).abs() < 0.001);
+        }
+    }
+
+    #[test]
     fn editor_pages_wrap_and_catalog_can_add_last_available_item() {
         let mut editor = ShortcutEditor::new(&Preferences::default());
         editor.handle(Shortcut::PageNext);
@@ -891,5 +989,122 @@ mod tests {
                 .iter()
                 .any(|rect| rect.contains([1135.0, 639.0]))
         );
+    }
+
+    #[test]
+    fn widened_sidebar_keeps_short_landscape_hud_and_world_gestures_disjoint() {
+        use super::super::ios_battle_touch::{BattleTouch, TouchAction};
+        use std::time::Instant;
+        use winit::dpi::PhysicalPosition;
+        use winit::event::{DeviceId, Touch, TouchPhase};
+        for (width, height, density) in [(568, 320, 2), (844, 390, 3)] {
+            let frame = crate::ui::sidebar::SidebarFrame::for_ios(
+                width * density,
+                height * density,
+                density as f32,
+            );
+            let layout = LandscapeLayout::new(
+                (width * density) as f32,
+                (height * density) as f32,
+                density as f32,
+                frame.width_in_frame() as f32,
+                &Preferences::default(),
+                None,
+            );
+            let sidebar_left = frame.frame_left();
+            assert!(layout.bar.x + layout.bar.width <= sidebar_left);
+            assert!(layout.buttons.iter().all(|button| {
+                button.rect.x >= 0.0
+                    && button.rect.x + button.rect.width <= sidebar_left
+                    && button.rect.y >= 0.0
+                    && button.rect.y + button.rect.height <= (height * density) as f32
+            }));
+            let joystick = layout.touch.joystick.unwrap();
+            assert!(joystick.center[0] + joystick.radius <= sidebar_left);
+            assert!(joystick.center[1] + joystick.radius < layout.bar.y);
+            for button in layout.buttons.iter().filter(|button| {
+                matches!(
+                    button.command,
+                    Shortcut::AttackMove | Shortcut::ForceAttack | Shortcut::Cancel,
+                )
+            }) {
+                assert!(button.rect.y + button.rect.height < layout.bar.y);
+            }
+            let now = Instant::now();
+            let event = |id, phase, [x, y]: [f32; 2]| Touch {
+                device_id: DeviceId::dummy(),
+                id,
+                phase,
+                location: PhysicalPosition::new(x as f64, y as f64),
+                force: None,
+            };
+            let mut touch = BattleTouch::default();
+            let ui = [
+                sidebar_left + frame.width_in_frame() as f32 / 2.0,
+                100.0 * density as f32,
+            ];
+            assert_eq!(
+                touch.handle(event(1, TouchPhase::Started, ui), now, &layout.touch),
+                vec![TouchAction::BeginDrag { position: ui }]
+            );
+            assert_eq!(
+                touch.handle(event(1, TouchPhase::Ended, ui), now, &layout.touch),
+                vec![TouchAction::EndDrag { position: ui }]
+            );
+            let point = [
+                layout.touch.world.width * 0.65,
+                layout.touch.world.height * 0.25,
+            ];
+            assert!(
+                touch
+                    .handle(event(2, TouchPhase::Started, point), now, &layout.touch)
+                    .is_empty()
+            );
+            assert_eq!(
+                touch.handle(event(2, TouchPhase::Ended, point), now, &layout.touch),
+                vec![TouchAction::Click {
+                    position: point,
+                    force: false,
+                    attack_move: false
+                }]
+            );
+            let second = [point[0] + 40.0 * density as f32, point[1]];
+            touch.handle(event(3, TouchPhase::Started, point), now, &layout.touch);
+            touch.handle(event(4, TouchPhase::Started, second), now, &layout.touch);
+            let delta = 30.0 * density as f32;
+            assert!(
+                touch
+                    .handle(
+                        event(3, TouchPhase::Moved, [point[0] + delta, point[1]]),
+                        now,
+                        &layout.touch
+                    )
+                    .is_empty()
+            );
+            let pan = touch.handle(
+                event(4, TouchPhase::Moved, [second[0] + delta, second[1]]),
+                now,
+                &layout.touch,
+            );
+            assert!(matches!(pan.as_slice(), [TouchAction::CameraPan { .. }]));
+            assert!(
+                touch
+                    .handle(
+                        event(3, TouchPhase::Ended, [point[0] + delta, point[1]]),
+                        now,
+                        &layout.touch
+                    )
+                    .is_empty()
+            );
+            assert!(
+                touch
+                    .handle(
+                        event(4, TouchPhase::Ended, [second[0] + delta, second[1]]),
+                        now,
+                        &layout.touch
+                    )
+                    .is_empty()
+            );
+        }
     }
 }

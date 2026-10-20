@@ -176,7 +176,29 @@ use physical window coordinates independently of the game zoom; map vectors are
 converted through the existing zoom and camera clamp.
 
 The original generated PNG, grid order, and built-in imagegen prompt are in
-[`art/mobile`](../art/mobile/README.md). No retail artwork is replaced.
+[`art/mobile`](../art/mobile/README.md).
+
+### Faction HUD
+
+The iOS battle column targets 180 UIKit points, independently of Options zoom.
+Short landscape screens cap the width to retain one production row; a
+844-by-390-point screen shows two rows. Cameos, category buttons, radar content
+and their hit regions share the same SidebarFrame transform. The four categories
+use equal wider buttons; diplomacy, settings, repair, sell and scrolling also
+have larger touch rectangles. Full-screen diplomacy and Options dialogs fit their
+complete native layout through a separate shared render/input frame.
+
+Original generated Allied, Soviet and Yuri chrome switches with the local
+player's faction. Each includes a sidebar plate, a long bottom shortcut strip
+and an offline radar display. The offline image preserves its aspect ratio
+inside the radar aperture; the online minimap retains its normal map projection,
+viewport marker and navigation. Retail resource files remain read only.
+
+The top, repair/sell, category and scroll controls share continuous metal
+housings with inset separators. The bottom strip meets the sidebar rail without
+a second end cap. Shortcut icons, pages and the editor gear center vertically in
+the whole visible strip; their hit rectangles use that same center. Joystick,
+world-gesture and editor anchors stay independent of that bottom-button offset.
 
 Validate launch, visible menu, menu touch navigation, map load, and a rendered
 skirmish separately on the connected physical phone. Touch controls, playability,

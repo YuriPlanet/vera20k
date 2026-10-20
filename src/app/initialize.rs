@@ -723,6 +723,8 @@ impl App {
                 batch_renderer,
                 #[cfg(target_os = "ios")]
                 ios_hud: None,
+                #[cfg(target_os = "ios")]
+                ios_sidebar_art: None,
                 combat_light_renderer,
                 terrain_draw_renderer,
                 instance_pool: crate::render::batch::InstanceBufferPool::new(),

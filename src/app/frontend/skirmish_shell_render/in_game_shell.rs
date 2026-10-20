@@ -47,7 +47,7 @@ pub(super) fn shell_layout(
 /// match frame in sidebar pixels (`SidebarFrame::layout_size`), the frame
 /// itself at Normal.
 pub(crate) fn in_game_shell_size(state: &AppState) -> (i32, i32) {
-    let (width, height) = state.sidebar_frame().layout_size();
+    let (width, height) = in_game_shell_frame(state).layout_size();
     (width as i32, height as i32)
 }
 
@@ -55,9 +55,17 @@ pub(crate) fn in_game_shell_size(state: &AppState) -> (i32, i32) {
 /// the frame pixel under it.
 pub(crate) fn in_game_shell_cursor(state: &AppState) -> (i32, i32) {
     let (x, y) = state.cursor_position();
-    state
-        .sidebar_frame()
-        .pixel_to_layout(x.round() as i32, y.round() as i32)
+    in_game_shell_frame(state).pixel_to_layout(x.round() as i32, y.round() as i32)
+}
+
+/// The same fit owns the full-screen modal's draw and hit-test coordinates.
+/// Desktop already admits Sidebar sizes only when 640x480 still fits.
+fn in_game_shell_frame(state: &AppState) -> crate::ui::sidebar::SidebarFrame {
+    let frame = state.sidebar_frame();
+    #[cfg(target_os = "ios")]
+    return frame.fit_native_shell();
+    #[cfg(not(target_os = "ios"))]
+    frame
 }
 
 /// An active-game shell's pixel space and its native layout there.
@@ -336,7 +344,7 @@ pub(super) fn render_shell_frame(
 ) -> anyhow::Result<()> {
     let width = state.render_width();
     let height = state.render_height();
-    let sidebar_frame = matches!(art, ShellFrameArt::Sidebar).then(|| state.sidebar_frame());
+    let sidebar_frame = matches!(art, ShellFrameArt::Sidebar).then(|| in_game_shell_frame(state));
     let (shell_width, shell_height) =
         sidebar_frame.map_or((width, height), |frame| frame.layout_size());
     if let Some(frame) = sidebar_frame {

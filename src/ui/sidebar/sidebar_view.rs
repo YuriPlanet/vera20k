@@ -235,10 +235,22 @@ pub(crate) fn build_sidebar_view_with_spec(
         .map(|(idx, tab)| SidebarTabButton {
             tab,
             rect: Rect {
-                x: layout.sidebar_x + layout_spec.tab_x + idx as f32 * layout_spec.tab_pitch,
+                x: if layout_spec.touch_controls {
+                    layout.sidebar_x + idx as f32 * layout_spec.sidebar_width / 4.0
+                } else {
+                    layout.sidebar_x + layout_spec.tab_x + idx as f32 * layout_spec.tab_pitch
+                },
                 y: layout.tabs_y,
-                w: tab_w,
-                h: tab_h,
+                w: if layout_spec.touch_controls {
+                    layout_spec.sidebar_width / 4.0
+                } else {
+                    tab_w
+                },
+                h: if layout_spec.touch_controls {
+                    28.0
+                } else {
+                    tab_h
+                },
             },
             active: tab == active_tab,
             disabled: gadget_state.tab_disabled[idx],
@@ -256,17 +268,35 @@ pub(crate) fn build_sidebar_view_with_spec(
     let [repair_w, repair_h] = repair_button_size.unwrap_or([0.0, 0.0]);
     let [sell_w, sell_h] = sell_button_size.unwrap_or([0.0, 0.0]);
     let side1_y_local = layout.side1_y;
-    let repair_rect = Rect {
-        x: layout.sidebar_x + layout_spec.repair_x,
-        y: side1_y_local + layout_spec.repair_y,
-        w: repair_w,
-        h: repair_h,
+    let repair_rect = if layout_spec.touch_controls {
+        Rect {
+            x: layout.sidebar_x + 8.0,
+            y: 163.0,
+            w: 68.0,
+            h: 30.0,
+        }
+    } else {
+        Rect {
+            x: layout.sidebar_x + layout_spec.repair_x,
+            y: side1_y_local + layout_spec.repair_y,
+            w: repair_w,
+            h: repair_h,
+        }
     };
-    let sell_rect = Rect {
-        x: layout.sidebar_x + layout_spec.sell_x,
-        y: side1_y_local + layout_spec.sell_y,
-        w: sell_w,
-        h: sell_h,
+    let sell_rect = if layout_spec.touch_controls {
+        Rect {
+            x: layout.sidebar_x + 92.0,
+            y: 163.0,
+            w: 68.0,
+            h: 30.0,
+        }
+    } else {
+        Rect {
+            x: layout.sidebar_x + layout_spec.sell_x,
+            y: side1_y_local + layout_spec.sell_y,
+            w: sell_w,
+            h: sell_h,
+        }
     };
     let repair_button = SidebarToggleButton {
         rect: repair_rect,
@@ -294,11 +324,20 @@ pub(crate) fn build_sidebar_view_with_spec(
     let top_buttons = std::array::from_fn(|i| {
         let [w, h] = top_button_sizes[i].unwrap_or([0.0, 0.0]);
         SidebarScrollButton {
-            rect: Rect {
-                x: layout.sidebar_x + layout_spec.top_button_x + 72.0 * i as f32,
-                y: layout_spec.top_button_y,
-                w,
-                h,
+            rect: if layout_spec.touch_controls {
+                Rect {
+                    x: layout.sidebar_x + 8.0 + 84.0 * i as f32,
+                    y: 18.0,
+                    w: 68.0,
+                    h: 28.0,
+                }
+            } else {
+                Rect {
+                    x: layout.sidebar_x + layout_spec.top_button_x + 72.0 * i as f32,
+                    y: layout_spec.top_button_y,
+                    w,
+                    h,
+                }
             },
             disabled: false,
             frame_index: u8::from(gadget_state.top_pressed[i]),
@@ -651,6 +690,94 @@ mod tests {
     use crate::rules::object_type::ObjectCategory;
     use crate::sim::intern::StringInterner;
     use crate::sim::production::{BuildOption, BuildQueueState, ProductionCategory, QueueItemView};
+
+    #[test]
+    fn touch_view_uses_large_disjoint_controls_and_keeps_last_build_row_reachable() {
+        use super::*;
+        use crate::ui::sidebar::{SidebarFrame, SidebarTheme};
+        for (width, height, density, expected_rows) in [(568, 320, 2, 1), (844, 390, 3, 2)] {
+            for theme in [
+                SidebarTheme::Allied,
+                SidebarTheme::Soviet,
+                SidebarTheme::Yuri,
+            ] {
+                let frame =
+                    SidebarFrame::for_ios(width * density, height * density, density as f32);
+                let (screen_w, screen_h) = frame.layout_screen();
+                let mut spec = SidebarChromeLayoutSpec::for_theme(theme);
+                spec.touch_controls = true;
+                let mut interner = StringInterner::new();
+                let options: Vec<_> = (0..12)
+                    .map(|i| {
+                        unit_option(
+                            &mut interner,
+                            &format!("TOUCH{i}"),
+                            ProductionCategory::Vehicle,
+                        )
+                    })
+                    .collect();
+                let cameos = CameoStrips::layout_fixture(&options, &[], &[]);
+                let view = build_sidebar_view_with_spec(
+                    spec,
+                    screen_w,
+                    screen_h,
+                    SidebarTab::Vehicle,
+                    1000,
+                    100,
+                    50,
+                    Some([29.0, 25.0]),
+                    &[],
+                    &options,
+                    &[],
+                    None,
+                    &[],
+                    Some(&interner),
+                    &[],
+                    &SidebarGadgetState::default(),
+                    Some([56.0, 25.0]),
+                    Some([56.0, 25.0]),
+                    Some([32.0, 19.0]),
+                    Some([32.0, 19.0]),
+                    [Some([72.0, 15.0]); 2],
+                    &cameos,
+                );
+                assert_eq!(view.items.len(), expected_rows * CAMEO_COLUMNS);
+                assert_eq!(view.tabs[0].rect.x, view.panel_rect.x);
+                assert_eq!(
+                    view.tabs[3].rect.x + view.tabs[3].rect.w,
+                    view.panel_rect.x + view.panel_rect.w
+                );
+                let mut controls: Vec<_> = view.tabs.iter().map(|tab| tab.rect).collect();
+                controls.extend(view.top_buttons.iter().map(|button| button.rect));
+                controls.extend([
+                    view.repair_button.rect,
+                    view.sell_button.rect,
+                    view.scroll_down_button.rect,
+                    view.scroll_up_button.rect,
+                ]);
+                for (index, rect) in controls.iter().enumerate() {
+                    let shown = frame.rect_to_frame(*rect);
+                    assert!(shown.x >= frame.frame_left());
+                    // The column copy clips its fractional final source
+                    // pixel at the integer frame edge.
+                    assert!(shown.x + shown.w <= (width * density) as f32 + 1.0);
+                    assert!(shown.y >= 0.0 && shown.y + shown.h <= (height * density) as f32);
+                    let point =
+                        frame.point_to_layout(shown.x + shown.w / 2.0, shown.y + shown.h / 2.0);
+                    assert!(rect.contains(point.0, point.1));
+                    for other in controls.iter().skip(index + 1) {
+                        let overlap = rect.x.max(other.x)
+                            < (rect.x + rect.w).min(other.x + other.w)
+                            && rect.y.max(other.y) < (rect.y + rect.h).min(other.y + other.h);
+                        assert!(
+                            !overlap,
+                            "{theme:?} {width}x{height}: {rect:?} vs {other:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn superweapon_money_affordability_darkens_cameo_without_erasing_readiness() {
