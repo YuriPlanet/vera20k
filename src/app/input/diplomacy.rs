@@ -76,11 +76,7 @@ pub(crate) fn open(state: &mut AppState, request: DiplomacyRequest) {
         RequestedState::Diplomacy => {
             App::enter_in_game_menu_state(state, InGameMenuState::Diplomacy);
         }
-        // RESIDUAL: State 9's ShowMissionRestateBriefing is a separate
-        // chain; until it lands the request opens nothing.
-        RequestedState::MissionBriefing => {
-            log::info!("Diplomacy button requested the mission briefing (state 9), not ported");
-        }
+        RequestedState::MissionBriefing => crate::app::input::restate::open(state),
     }
 }
 

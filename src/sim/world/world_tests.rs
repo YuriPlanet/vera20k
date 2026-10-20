@@ -106,7 +106,7 @@ fn combatant_selection_ingress_precedes_destroy_and_is_not_replayed_at_tail() {
         .unwrap()
         .health
         .set_for_test(0);
-    sim.object_destroy_callback(1, UninitContext::default());
+    sim.detach_all(1, true, UninitContext::default());
     assert!(!sim.entities().get(1).unwrap().selection.is_selected());
     let (tail_count, spawned) = sim.apply_due_commands(
         &commands,
@@ -283,12 +283,11 @@ fn building_on_off_line_opcodes_decode_direction_and_target() {
     );
 
     // 0x004C6CF0/0x004C6D4D drop a dead or limboed target before GoOffline.
-    let rules = crate::rules::ruleset::RuleSet::from_ini(
-        &crate::rules::ini_parser::IniFile::from_str(
+    let rules =
+        crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
             "[BuildingTypes]\n1=GAPOWR\n[GAPOWR]\nPower=-20\n",
-        ),
-    )
-    .unwrap();
+        ))
+        .unwrap();
     {
         let building = sim.substrate.entities.get_mut(7).unwrap();
         building.set_type_ref_for_test(sim.interner.intern("GAPOWR"));
@@ -9205,7 +9204,10 @@ fn radar_terrain_dirty_marks_deduplicate_and_clear() {
     sim.dirty_cells.mark_radar([(3, 3)]);
     sim.dirty_cells.mark_radar([(3, 3), (4, 4)]);
     assert_eq!(sim.dirty_cells.radar(), [(1, 1), (2, 2), (3, 3), (4, 4)]);
-    assert!(sim.dirty_cells.acknowledge_radar(sim.dirty_cells.radar_generation()));
+    assert!(
+        sim.dirty_cells
+            .acknowledge_radar(sim.dirty_cells.radar_generation())
+    );
     sim.dirty_cells.mark_radar([(1, 1)]);
     assert_eq!(sim.dirty_cells.radar(), [(1, 1)]);
 }

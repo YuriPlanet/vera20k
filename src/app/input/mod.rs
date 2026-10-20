@@ -9,6 +9,7 @@ pub(crate) mod context_order;
 pub(crate) mod cursor;
 pub(crate) mod connection;
 pub(crate) mod diplomacy;
+pub(crate) mod restate;
 pub(crate) mod dispatch;
 pub(crate) mod entity_pick;
 pub(crate) mod gadget_input;

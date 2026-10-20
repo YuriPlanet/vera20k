@@ -143,10 +143,34 @@ pub(crate) enum WolServiceEvent {
     ChannelLeft,
     /// The create result and the channel's users.
     Created(Result<Vec<WolMember>, u32>),
-    /// The page sink `0x007A9220`: sender and text.
+    /// The page sinks `0x007A9200`/`0x007A9550`: sender and text.
     Page {
-        from: String,
+        from: WolMember,
         text: Vec<u16>,
+    },
+    /// A chat or action line from another user: the chat sinks
+    /// `0x007A8DA0` (public), `0x007A8FC0` (private), `0x007AB170` (public
+    /// action), `0x007AAFB0` (private action) and their UTF-16 forms.
+    Message {
+        from: WolMember,
+        text: Vec<u16>,
+        private: bool,
+        action: bool,
+    },
+    /// The find sink `0x007A9970`: the channel the located user is in, or
+    /// the result code.
+    Located(Result<WolChannel, u32>),
+    /// A user's ladder rank (`CNetUtilEventSink+0x10`, the table
+    /// `[0xB77E0C]`).
+    LadderRank {
+        name: String,
+        rank: i32,
+    },
+    /// A user's locale (`CChatEventSink+0x84`/`+0x8C`, the table
+    /// `0xB76530`).
+    UserLocale {
+        name: String,
+        locale: i32,
     },
 }
 
@@ -268,10 +292,13 @@ impl WolVisit {
                     return WolStep::Welcome;
                 }
                 // 0x00786390 resets the WOL globals (0x00780110), including
-                // [0xB77AD0] and the selected record.
+                // [0xB77AD0], the selected record and the ladder and locale
+                // tables.
                 self.api = true;
                 self.last_error = None;
                 self.selected_server = 0;
+                self.ladder_ranks.clear();
+                self.locales.clear();
                 self.requests.push(WolServiceRequest::ListCredentials);
                 self.requests
                     .push(WolServiceRequest::FetchServers { flags: 0x2900 });
@@ -423,6 +450,29 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
     let event = match event {
         WolServiceEvent::Page { from, text } => {
             super::lobby::page_received(state, from, text);
+            return;
+        }
+        WolServiceEvent::Message {
+            from,
+            text,
+            private,
+            action,
+        } => {
+            super::lobby::message_received(state, from, text, private, action);
+            return;
+        }
+        WolServiceEvent::Located(result) => {
+            super::lobby::located(state, result);
+            return;
+        }
+        WolServiceEvent::LadderRank { name, rank } => {
+            let visit = state.frontend.wol.as_mut().expect("checked");
+            visit.ladder_ranks.insert(name.to_ascii_lowercase(), rank);
+            return;
+        }
+        WolServiceEvent::UserLocale { name, locale } => {
+            let visit = state.frontend.wol.as_mut().expect("checked");
+            visit.locales.insert(name.to_ascii_lowercase(), locale);
             return;
         }
         event @ (WolServiceEvent::Channels { .. }

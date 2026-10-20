@@ -23,6 +23,7 @@ from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_ESP
 
 from tools import native_oracle as oracle
+from tools.tests.pe_fixture import pe_image
 
 
 CODE = 0x1000
@@ -355,19 +356,35 @@ class IdentityAndReferenceTests(unittest.TestCase):
 
     def test_wrong_executable_is_rejected_explicitly(self):
         self.target.write_bytes(b"not the original executable")
-        with self.assertRaisesRegex(oracle.OracleError, "Unsupported gamemd.exe SHA-256"):
+        with self.assertRaisesRegex(oracle.OracleError, "Unsupported gamemd.exe"):
             oracle._verified_image(self.target)
 
-    def test_both_supported_executable_identities_load_the_same_read_bytes(self):
-        self.target.write_bytes(b"synthetic identity test, not native evidence")
+    def test_any_file_carrying_the_native_sections_loads_under_the_native_identity(self):
+        reference = pe_image()
+        sections = tuple((rva, raw, size, virtual_size, flags,
+                          hashlib.sha256(reference[raw:raw + size]).hexdigest())
+                         for rva, raw, size, virtual_size, flags in oracle._sections(reference))
+        repackaged = bytearray(reference)
+        repackaged[0x80 + 8] ^= 0xFF  # PE timestamp: a header outside the sections
+        repackaged += b"release-specific trailer"
+        changed_code = bytearray(reference)
+        changed_code[0x200] ^= 0x01
         self.addCleanup(oracle._verified_image.cache_clear)
-        for digest in (oracle.NATIVE_SHA256, oracle.STEAM_NATIVE_SHA256):
-            with self.subTest(digest=digest), patch.object(oracle.hashlib, "sha256") as sha:
-                sha.return_value.hexdigest.return_value = digest
-                oracle._verified_image.cache_clear()
-                self.assertEqual(oracle._verified_image(self.target), self.target.read_bytes())
+        self.addCleanup(oracle._carries_native_code.cache_clear)
+        with patch.object(oracle, "NATIVE_SECTIONS", sections):
+            oracle._carries_native_code.cache_clear()
+            for data in (reference, bytes(repackaged)):
+                with self.subTest(size=len(data)):
+                    self.target.write_bytes(data)
+                    oracle._verified_image.cache_clear()
+                    self.assertEqual(oracle._verified_image(self.target), data)
+                    self.assertEqual(oracle.image_sha256(data), oracle.NATIVE_SHA256)
+            self.target.write_bytes(bytes(changed_code))
+            oracle._verified_image.cache_clear()
+            with self.assertRaisesRegex(oracle.OracleError, "game code differs"):
+                oracle._verified_image(self.target)
 
-    def test_actual_input_identity_is_not_the_legacy_reference_identity(self):
+    def test_bytes_without_the_native_code_report_their_own_hash(self):
         data = b"synthetic execution bytes"
         with patch.object(oracle, "image_bytes", return_value=data):
             actual = hashlib.sha256(data).hexdigest()

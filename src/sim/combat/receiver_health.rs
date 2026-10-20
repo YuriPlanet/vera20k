@@ -125,7 +125,7 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
                         id,
                     );
                     if super::world_receiver::callbacks_enabled(self.world) {
-                        self.world.object_destroy_callback(id, context);
+                        self.world.detach_all(id, true, context);
                     }
                 }
             }

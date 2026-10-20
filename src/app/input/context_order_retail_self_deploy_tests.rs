@@ -129,3 +129,55 @@ fn planning_mode_refuses_unit_and_infantry_self_actions() {
         )
     );
 }
+
+/// A unit in a tank bunker offers Deploy over itself (`0x00740023`,
+/// `0x00740107`, then CanDeploySlashUnload), and the click sends the DEPLOY
+/// that brings it out. Outside a bunker a tank has no self action, and an
+/// empty transport answers NoDeploy (`0x0074003F`).
+#[test]
+fn a_bunkered_unit_offers_deploy_over_itself() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let fv = rules.object("FV").expect("[FV]");
+    assert!(
+        fv.bunkerable && fv.passengers > 0,
+        "the IFV is a bunkerable transport"
+    );
+    let mut sim = arena(rules);
+    let bunker = sim
+        .spawn_object("NATBNK", "Americans", 6, 6, 0, rules)
+        .expect("bunker");
+    let tank = sim
+        .spawn_object("MTNK", "Americans", 20, 20, 0, rules)
+        .expect("tank");
+    let ifv = sim
+        .spawn_object("FV", "Americans", 24, 20, 0, rules)
+        .expect("ifv");
+    assert_eq!(
+        self_click(&sim, rules, tank, HoverTargetKind::FriendlyUnit, false).1,
+        None
+    );
+    assert_eq!(
+        self_click(&sim, rules, ifv, HoverTargetKind::FriendlyUnit, false),
+        (CursorFeedbackKind::NoDeploy, None)
+    );
+    for id in [tank, ifv] {
+        sim.entities_mut_for_test()
+            .get_mut(id)
+            .unwrap()
+            .bunker
+            .set_bunker_link_for_test(crate::sim::docking::bunker_link::BunkerLink::Installed(
+                bunker,
+            ));
+        assert_eq!(
+            self_click(&sim, rules, id, HoverTargetKind::FriendlyUnit, false),
+            (
+                CursorFeedbackKind::Deploy,
+                Some(Command::DeployMcv { entity_id: id })
+            ),
+            "{id}"
+        );
+    }
+}

@@ -1,16 +1,39 @@
 name: Release
 
-# Downloadable builds of the game for players who do not compile it. Pushing a
-# tag that matches the Cargo.toml version (v0.1.0 for version 0.1.0) builds
-# every platform and publishes a GitHub pre-release with SHA-256 checksums and
-# signed build provenance; a manual run only uploads the archives as workflow
-# artifacts. Archives hold the game program, config.toml.example, the license,
-# the third-party notices (THIRD_PARTY_LICENSES.html) and a README.txt made
-# from .github/release/README.txt.in, never game files.
+# Downloadable builds of the game for players who do not compile it.
+#
+# Two ways in, both publishing from the *same* run (never by pushing a tag and
+# waiting for a second trigger -- GitHub suppresses `on: push` for refs written
+# with GITHUB_TOKEN, so a tag created by a job can never start another one):
+#
+#   tag push `v*`     -- the versioned release path. The tag must equal
+#                        `v` + the Cargo.toml version, publishes a pre-release.
+#   workflow_dispatch -- the maintainer's path, because this project changes too
+#                        fast for every main commit to be a release. Builds all
+#                        platforms, names every archive after its build time and
+#                        the commit it was built from, and writes release notes
+#                        that list the commits since the previous release.
+#                        Publishes a draft by default, so a bad build is
+#                        discarded instead of shipped.
+#
+# Archives hold the game program, config.toml.example, the license, the
+# third-party notices (THIRD_PARTY_LICENSES.html) and a README.txt made from
+# .github/release/README.txt.in. They never hold game files: this repository
+# ships no retail assets, and neither do its releases (README.md, README.txt.in).
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag. Empty = v<Cargo.toml version>-<build time>.'
+        type: string
+        required: false
+      publish:
+        description: 'Publish how? "none" only uploads workflow artifacts.'
+        type: choice
+        options: [draft, prerelease, none]
+        default: draft
 
 permissions:
   contents: read
@@ -23,8 +46,78 @@ env:
   CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
 
 jobs:
+  # One cheap job decides the names and the publish mode, so all platform jobs
+  # and the publish job agree instead of each recomputing a date that may roll
+  # over midnight mid-run.
+  prepare:
+    name: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.names.outputs.version }}
+      stamp: ${{ steps.names.outputs.stamp }}
+      sha: ${{ steps.names.outputs.sha }}
+      tag: ${{ steps.names.outputs.tag }}
+      publish: ${{ steps.names.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The short build sha comes from the checkout, so it is the commit the
+          # archives were actually built from.
+          fetch-depth: 1
+      - name: Decide version, build time, sha, tag and publish mode
+        id: names
+        shell: bash
+        env:
+          # Inputs arrive through env, never interpolated into the script, so a
+          # crafted dispatch cannot inject shell syntax.
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_PUBLISH: ${{ inputs.publish }}
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+          if [ -z "$version" ]; then
+            echo "No [package] version found in Cargo.toml" >&2
+            exit 1
+          fi
+          # UTC keeps archive names identical for maintainers in any timezone.
+          # YYYYMMDD-HHMMSS: a sortable build time, so two builds of one
+          # Cargo.toml version never collide.
+          stamp="$(date -u +%Y%m%d-%H%M%S)"
+          # Short build sha: the archive name carries the commit it came from,
+          # so a downloaded file can be traced without opening the release.
+          sha="$(git rev-parse --short=7 HEAD)"
+          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
+            tag="$GITHUB_REF_NAME"
+            if [ "$tag" != "v$version" ]; then
+              echo "Tag $tag does not match Cargo.toml version $version (expected v$version)" >&2
+              exit 1
+            fi
+            publish='prerelease'
+          else
+            tag="${INPUT_TAG:-v$version-$stamp}"
+            publish="${INPUT_PUBLISH:-draft}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "stamp=$stamp" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Release plan"
+            echo
+            echo "| field | value |"
+            echo "|---|---|"
+            echo "| version | \`$version\` |"
+            echo "| build time | \`$stamp\` (UTC) |"
+            echo "| build commit | \`$sha\` |"
+            echo "| tag | \`$tag\` |"
+            echo "| publish | \`$publish\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   build:
     name: build (${{ matrix.target }})
+    needs: prepare
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -49,15 +142,6 @@ jobs:
         if: runner.os == 'Windows'
         run: git config --global core.autocrlf false
       - uses: actions/checkout@v7
-      - name: Require the tag to match the Cargo.toml version
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: bash
-        run: |
-          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
-          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version $version (expected v$version)" >&2
-            exit 1
-          fi
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@v2
         with:
@@ -67,6 +151,7 @@ jobs:
       - name: Third-party license notices
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p dist
           cargo about generate --locked --fail -c .github/release/about.toml \
             -o dist/THIRD_PARTY_LICENSES.html .github/release/about.hbs
@@ -80,14 +165,22 @@ jobs:
         run: cargo build --profile shipping --locked -p vera20k --no-default-features --bin vera20k
       - name: Package
         shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          STAMP: ${{ needs.prepare.outputs.stamp }}
+          SHA7: ${{ needs.prepare.outputs.sha }}
+          TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME//\//-}"
-          name="vera20k-$version-${{ matrix.target }}"
+          # Name = version + platform + build time + the commit built. The time
+          # keeps two builds of one Cargo.toml version apart; the short sha makes
+          # a downloaded archive traceable to its commit.
+          name="vera20k-${VERSION}-${{ matrix.target }}-${STAMP}-${SHA7}"
           mkdir -p "dist/$name"
           cp "target/shipping/${{ matrix.program }}" config.toml.example LICENSE-GPL \
             dist/THIRD_PARTY_LICENSES.html "dist/$name/"
-          sed "s/@VERSION@/$version/" .github/release/README.txt.in > "dist/$name/README.txt"
+          sed "s/@VERSION@/${TAG}/" .github/release/README.txt.in > "dist/$name/README.txt"
+
           # Files sit at the archive root so they can be extracted straight into
           # the game folder.
           cd "dist/$name"
@@ -105,9 +198,25 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    name: publish
+    needs: [prepare, build]
+    # Tag pushes always publish; a dispatch chooses, and "none" stops here with
+    # the archives left as workflow artifacts.
+    if: needs.prepare.outputs.publish != 'none'
+    #
+    # MAINTENANCE DECISION, left to the maintainers: `needs: build` means one
+    # platform failing stops the release. That is deliberate -- a release that
+    # silently lacks macOS is worse than no release -- but hosted runners do
+    # drop jobs ("not acquired by Runner of type hosted"), and then a fully
+    # built Windows and Linux are discarded too.
+    #
+    # To publish whatever succeeded instead, add `always()` to the condition
+    # above and assert the expected archives exist before `gh release create`;
+    # the Checksums step already fails on a missing file. The trade-off is that
+    # a capacity failure would ship a release missing a platform, so the
+    # assertion has to name all three.
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
       # Signed SLSA build provenance: `gh attestation verify <archive>
@@ -115,6 +224,10 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      # Notes need real history to list commits since the previous release.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
           path: dist
@@ -122,12 +235,180 @@ jobs:
       - uses: actions/attest@v4
         with:
           subject-path: dist/vera20k-*
-      - name: Create the pre-release
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Checksums
+        shell: bash
         run: |
           set -euo pipefail
+          # `gh release create TAG dist/*` hands each match to the uploader, so a
+          # leftover directory (or a symlink) would fail or be skipped silently.
+          # Assert the download really left only regular files.
+          nonfile="$(find dist -mindepth 1 -not -type f -print)"
+          if [ -n "$nonfile" ]; then
+            echo "!! non-file entries in dist/, refusing to publish:" >&2
+            echo "$nonfile" >&2
+            exit 1
+          fi
           cd dist
           sha256sum vera20k-* > SHA256SUMS.txt
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
-            --prerelease --generate-notes --title "VERA20k $GITHUB_REF_NAME" ./*
+          cat SHA256SUMS.txt
+      - name: Write release notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          STAMP: ${{ needs.prepare.outputs.stamp }}
+          SHA7: ${{ needs.prepare.outputs.sha }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          repo_url="https://github.com/$GITHUB_REPOSITORY"
+
+          # Base = the newest *published* release. Drafts are excluded on
+          # purpose: an unpublished draft must not become the diff base.
+          prev_tag="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts \
+            --limit 1 --json tagName --jq '.[0].tagName // empty' 2>/dev/null || true)"
+
+          # Compare by commit, not by tag object: checkout does not fetch tags,
+          # and a scope that names a missing tag fails with "unknown revision".
+          base=""
+          if [ -n "$prev_tag" ]; then
+            base="$(gh release view "$prev_tag" --repo "$GITHUB_REPOSITORY" \
+              --json targetCommitish --jq '.targetCommitish // empty' 2>/dev/null || true)"
+            # targetCommitish may name a branch; resolve it to a commit.
+            if [ -n "$base" ] && git cat-file -e "${base}^{commit}" 2>/dev/null; then
+              : # already a commit in this history
+            else
+              base="$(git rev-parse --verify --quiet "refs/tags/$prev_tag^{commit}" \
+                || git rev-parse --verify --quiet "$prev_tag^{commit}" || true)"
+            fi
+            if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+              base=""
+            fi
+          fi
+          if [ -n "$base" ]; then
+            base_label="$prev_tag"
+          else
+            base="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
+            base_label="the first commit"
+          fi
+
+          # `tformat` (not `format`) terminates every record with a newline;
+          # `format` drops the last one, so `read` at EOF discards the final
+          # line -- which silently hides the only commit in a one-commit range.
+          #
+          # A release page cannot show a whole project's history. The first
+          # release has no previous tag, so its range is every commit ever
+          # made; cap the list and link the full comparison instead.
+          CHANGELOG_LIMIT=30
+          total="$(git rev-list --count --no-merges "$base..$GITHUB_SHA")"
+          compare_url="$repo_url/compare/$base...$GITHUB_SHA"
+          : > commits.md
+          git log --no-merges --max-count="$CHANGELOG_LIMIT" \
+            --pretty=tformat:'%H%x09%s' "$base..$GITHUB_SHA" \
+            | while IFS=$'\t' read -r h s; do
+                if [ -z "$h" ]; then continue; fi
+                printf -- '- [`%s`](%s/commit/%s) %s\n' "${h:0:7}" "$repo_url" "$h" "$s" >> commits.md
+              done
+          n="$(grep -c '^- ' commits.md || true)"
+
+          cat > notes.md <<EOF
+          ## VERA20k \`$TAG\`
+
+          VERA20k is a free, open-source reimplementation of Command & Conquer: Yuri's
+          Revenge. **It contains no game files**: you need your own copy of Yuri's
+          Revenge 1.001.
+
+          - Version: \`$VERSION\`
+          - Build time: \`$STAMP\` (UTC)
+          - Built from commit [\`$SHA7\`]($repo_url/commit/$GITHUB_SHA)
+
+          ### Changelog
+
+          EOF
+          if [ "$n" -gt 0 ]; then
+            if [ "$total" -gt "$n" ]; then
+              # Newest first, so the cap keeps what a player most wants to read.
+              printf '%s commits since %s; the newest %s are below.\n\n' \
+                "$total" "$base_label" "$n" >> notes.md
+            else
+              printf '%s commit(s) since %s.\n\n' "$total" "$base_label" >> notes.md
+            fi
+            cat commits.md >> notes.md
+            if [ "$total" -gt "$n" ]; then
+              printf '\n_%s more not shown — [full comparison](%s)._\n' \
+                "$((total - n))" "$compare_url" >> notes.md
+            fi
+          else
+            echo 'No commits were added since the previous release.' >> notes.md
+          fi
+
+          cat >> notes.md <<EOF
+
+          ### Downloads
+
+          Extract the archive straight into your Yuri's Revenge folder, or keep it in
+          its own folder and point \`config.toml\` at the game (see the README.txt inside).
+
+          | archive | platform |
+          |---|---|
+          | \`vera20k-$VERSION-windows-x64-$STAMP-$SHA7.zip\` | Windows x64 |
+          | \`vera20k-$VERSION-linux-x64-$STAMP-$SHA7.tar.gz\` | Linux x64 |
+          | \`vera20k-$VERSION-macos-arm64-$STAMP-$SHA7.tar.gz\` | macOS Apple Silicon |
+
+          \`SHA256SUMS.txt\` lists every archive's checksum. Builds are signed with
+          GitHub build provenance; verify one with:
+
+          \`\`\`sh
+          gh attestation verify <archive> --repo $GITHUB_REPOSITORY
+          \`\`\`
+
+          VERA20k is licensed under the GNU General Public License version 3.
+          Source: $repo_url
+
+          Command & Conquer, Red Alert and Yuri's Revenge are trademarks of Electronic
+          Arts Inc. VERA20k is not affiliated with or endorsed by Electronic Arts.
+          EOF
+
+          # Assert the substitution happened instead of shipping a literal
+          # placeholder to players. Both the shell form ($VAR / ${VAR}) and an
+          # @@NAME@@ template marker are checked; a quoted heredoc <<'EOF' would
+          # silently keep either one. Commit lines are skipped: a subject may
+          # legitimately mention a variable such as $RA2_DIR.
+          placeholder='(\$[{]?[A-Z_]+[}]?|@@[A-Z_]+@@)'
+          if grep -v '^- \[`' notes.md | grep -qE "$placeholder"; then
+            echo "!! release notes still contain an unexpanded placeholder:" >&2
+            grep -v '^- \[`' notes.md | grep -nE "$placeholder" >&2
+            exit 1
+          fi
+          echo "--- notes.md ($(wc -l < notes.md) lines) ---"
+          head -20 notes.md
+      - name: Create the tag and the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          PUBLISH: ${{ needs.prepare.outputs.publish }}
+        run: |
+          set -euo pipefail
+          # Creating the tag here, before the release, keeps it pinned to the
+          # commit that was actually built even when dispatching from a branch.
+          # `gh release create --verify-tag` then refuses to invent a different
+          # target. A tag push already has its tag, so only dispatch creates one.
+          if [ "$GITHUB_EVENT_NAME" != 'push' ]; then
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+              echo "Tag $TAG already exists; choose another tag with the 'tag' input." >&2
+              exit 1
+            fi
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" > /dev/null
+            echo "Created tag $TAG at $GITHUB_SHA"
+          fi
+
+          args=(--repo "$GITHUB_REPOSITORY" --verify-tag --title "VERA20k $TAG" --notes-file notes.md)
+          case "$PUBLISH" in
+            draft)      args+=(--draft) ;;
+            prerelease) args+=(--prerelease) ;;
+            *) echo "Unsupported publish mode: $PUBLISH" >&2; exit 1 ;;
+          esac
+          gh release create "$TAG" "${args[@]}" dist/*
+          echo "Published $TAG ($PUBLISH)"

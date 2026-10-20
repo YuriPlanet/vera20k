@@ -16,7 +16,7 @@ fn loss_threshold_event_corpus() -> &'static Value {
         crate::test_fixture::json("tools/spatial_oracle/trigger_loss_threshold_events.json");
     assert_eq!(
         corpus["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     corpus
 }
@@ -245,7 +245,7 @@ fn naval_land_events_match_original_signed_tracking_and_country_selection() {
     .unwrap();
     assert_eq!(
         corpus["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     assert_eq!(corpus["country_indices"], json!([0, 7, 0]));
     assert_eq!(corpus["code_unchanged"], true);
@@ -559,7 +559,7 @@ fn funds_event_corpus() -> &'static Value {
     let corpus = crate::test_fixture::json("tools/spatial_oracle/trigger_funds_events.json");
     assert_eq!(
         corpus["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     corpus
 }
@@ -885,7 +885,7 @@ fn building_loss_event_matches_original_tracked_count_and_country_order() {
     .unwrap();
     assert_eq!(
         corpus["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     let controls = corpus["controls"].as_array().unwrap();
     assert_eq!(controls.len(), 14);
@@ -1078,7 +1078,7 @@ fn damage_source_event44_matches_original_registered_house_index() {
     .unwrap();
     assert_eq!(
         corpus["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     assert_eq!(corpus["house_indices"], json!([0, 1, 2]));
     assert_eq!(corpus["country_indices"], json!([0, 7, 0]));
@@ -4004,7 +4004,7 @@ fn live_instances_match_all_native_supplied_histories_and_serialization() {
     .unwrap();
     assert_eq!(
         damage["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     let destruction = damage["object_destruction_controls"].as_array().unwrap();
     assert_eq!(destruction.len(), 3);

@@ -166,6 +166,10 @@ pub(crate) struct MatchPresentationState {
     pub(crate) abort_buttons:
         crate::ui::shell::button::ShellButtonInteraction<crate::ui::shell::abort::AbortButton>,
     pub(crate) diplomacy: crate::ui::shell::diplomacy::DiplomacyInteraction,
+    /// Restate 0x10C's pointer state.
+    pub(crate) restate: crate::ui::shell::restate::RestateInteraction,
+    /// `[0xB04CA0]`: the briefing text 0x10C shows, resolved once at open.
+    pub(crate) restate_text: String,
     pub(crate) saved_game_browser:
         Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,
     /// Client-side in-game Options (0xBBB) state: the six [Options] values plus

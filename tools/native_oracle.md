@@ -103,11 +103,14 @@ cargo test -p vera20k-core --lib rules::color_scheme::tests::hsv_to_rgb_matches_
 ```
 
 `RA2_DIR` is an alternative; an explicit executable path takes precedence and never
-silently falls back. The loader hashes the same immutable bytes it maps. It accepts
-these exact retail executables, including under optimized Python:
-
-- Historical reference: `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
-- Steam installation: `3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`.
+silently falls back. The loader checks the same immutable bytes it maps: it accepts
+any `gamemd.exe` whose four PE sections, layout and bytes, equal those of the
+historical reference build
+(`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`), including
+under optimized Python. Releases that repackage that code differ only in headers
+and trailing bytes and are accepted, Steam's
+(`3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`) among them.
+A build whose code differs is refused.
 
 No executable is distributed here.
 This restriction belongs to these comparison tools alone, because their harnesses
@@ -115,49 +118,42 @@ run code at fixed addresses of that build. The game reads no `gamemd.exe` bytes.
 The Rust table checks read the `RA2_DIR` executable's math tables at the same
 retail addresses and compare every byte, without checking the file hash.
 
-### Steam compatibility and evidence identity
+### Evidence identity
 
-The Steam file's four file-backed section hashes/layouts match the historical
-sections in the sealed
+`NATIVE_SECTIONS` holds the reference's sections as sealed in
 [`loader_compatibility.json`](spatial_oracle/shrapnel_damage/loader_compatibility.json).
-This establishes identical section bytes and virtual addresses for these fixed-address
-fixtures. The comparison results belong in the PR description, not a committed
-inspection receipt. It does not compare PE headers/section-external bytes or establish Windows
-startup, imports, DRM or complete game behavior. Reproduce the Steam section record
-with `python -m tools.native_inspect sections` after selecting the Steam EXE.
+Every byte `load_image` maps and `file_span` reads, apart from the header page and
+BSS, comes from them, so every accepted file produces the same native outputs. The
+check does not cover PE headers or bytes after the sections, and it does not
+establish Windows startup, imports, DRM or complete game behavior. Compare another
+release's sections with `python -m tools.native_inspect sections`.
 
-`image_sha256()` and `provenance()` identify the actual selected file. Static
-inspection, native frame reports and standalone new execution receipts do so too.
-`NATIVE_SHA256` remains the historical reference identifier in legacy Rust-facing
-vector payloads; it must not be used to attest a newly selected executable.
-The authoritative execution identity for those legacy vectors is their provenance
-sidecar. Existing sidecars and historical fixture replays retain strict identity
-checks: accepting another input does not relabel old evidence as Steam execution.
+`image_sha256()` names the game code, not the file: it reports `NATIVE_SHA256` for
+every accepted executable, and payloads, `provenance()` sidecars and static
+inspection record that identity. A reference made with one accepted release
+therefore checks on any other. Bytes without the supported code, such as synthetic
+test images, report their own SHA-256.
 Ghidra annotation ledgers also remain tied to their own `program_sha256`; a Steam
 program needs a ledger authored for that program.
 
 The factory packet's registered helper profiles and inspection-owner seal are
-unchanged. Its public historical replay admission checks the actual file, including
-the direct consumer/gate routes. Only the explicitly unregistered candidate helper
+unchanged. Its public historical replay admission checks the recorded code identity,
+including the direct consumer/gate routes. Only the explicitly unregistered candidate helper
 map is refreshed for the changed shared sources; it is not a compatibility verdict.
 Saved-receipt unit tests validate retained profile claims against the sealed
 registration independently of today's source admission. Native factory controls
 have not been replayed or rebaselined by this change.
 
-Generate and check Steam-specific evidence at a separate path, preserving the old
-goldens (the parent directory is created by `--write`):
+Any accepted release checks the committed references directly:
 
 ```powershell
 $env:VERA20K_GAMEMD_EXE = 'C:/Games/RA2/gamemd.exe'
-python -m tools.native_inspect sections
-python -m tools.spatial_oracle.shroud_current_sight --write --output logs/steam/shroud.json
-python -m tools.spatial_oracle.shroud_current_sight --check --output logs/steam/shroud.json
+python -m tools.spatial_oracle.shroud_current_sight --check
 ```
 
-Compare the separate Steam payload with
-[`shroud_current_sight.json`](spatial_oracle/shroud_current_sight.json), preserving
-its Steam provenance sidecar. These 23 histories and 9 timer cases cover selected
-cell reveal/gap and timer transitions, not renderer pixels or full-game parity.
+[`shroud_current_sight.json`](spatial_oracle/shroud_current_sight.json)'s 23 histories
+and 9 timer cases cover selected cell reveal/gap and timer transitions, not renderer
+pixels or full-game parity.
 Keep execution receipts and validation results outside the source tree and report
 them in the PR description.
 
@@ -454,7 +450,7 @@ same argument and adds a reserved `call` object containing ECX/EDX, stack
 arguments, FPCW, observation mode and fixture write ranges. Reports do not copy
 the full heap, pointed-to data or executable and cannot restore an emulator.
 Include the fixture selectors needed to reproduce the case. The recorded
-`supported_native_sha256` lists accepted input identities, not an attestation of a
+`supported_native_sha256` names the accepted code identity, not an attestation of a
 custom machine: `run_checked` also accepts synthetic tests.
 
 The shared `Reader.invoke(..., context=...)` forwards this context. Anytown

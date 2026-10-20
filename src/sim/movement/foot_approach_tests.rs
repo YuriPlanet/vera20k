@@ -10,7 +10,7 @@ fn original_infantry_and_unit_approach_radii_and_rays() {
     .unwrap();
     assert_eq!(
         native["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     assert_eq!(native["infantry_identity"]["rtti"], 15);
     let cases = native["cases"].as_array().unwrap();

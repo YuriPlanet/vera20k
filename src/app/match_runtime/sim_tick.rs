@@ -1279,7 +1279,7 @@ fn advance_one_simulation_frame(
         // Native drives the follow camera from the tail of
         // LogicClass__PerTickUpdate 0x0055B6B8, after every object has updated,
         // so the view lands on this tick's position rather than the last one's.
-        crate::app::input::camera::update_follow_camera(state);
+        crate::app::input::camera::update_follow_camera(state, &drained_lifecycle_outputs);
         // Rendering is rebuilt from lifecycle facts every frame. Replay the
         // app-owned transactions in native emission order for state that has a
         // direct attachment or retained audio handle.
@@ -1334,7 +1334,8 @@ fn advance_one_simulation_frame(
                 | LifecycleOutput::ProductionFactoryUnlinked { .. }
                 | LifecycleOutput::BuildingPlacementRetry { .. }
                 | LifecycleOutput::BuildingPlacementSucceeded { .. }
-                | LifecycleOutput::BuildingProductionAbandoned { .. } => {}
+                | LifecycleOutput::BuildingProductionAbandoned { .. }
+                | LifecycleOutput::FollowReleased { .. } => {}
                 LifecycleOutput::ObjectPointerExpired { stable_id } => {
                     state
                         .match_state

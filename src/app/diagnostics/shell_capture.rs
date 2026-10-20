@@ -56,6 +56,7 @@ const CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART_SHOWN: &str = "campaign-all1-abort-
 const CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART: &str = "campaign-all1-abort-restart";
 const CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_PROMPT: &str = "campaign-all1-defeat-replay-prompt";
 const CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_YES: &str = "campaign-all1-defeat-replay-yes";
+const CHECKPOINT_CAMPAIGN_ALL1_RESTATE: &str = "campaign-all1-restate";
 const CHECKPOINT_CAMPAIGN_SOV1_OPENING_LOCKED: &str = "campaign-sov1-opening-locked";
 const CHECKPOINT_CAMPAIGN_SOV1_OPENING_PAN: &str = "campaign-sov1-opening-pan";
 const CHECKPOINT_CAMPAIGN_SOV1_OPENING_FLASH: &str = "campaign-sov1-opening-flash";
@@ -558,6 +559,9 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_YES => {
                 Ok(Self::CampaignRestart(movies::RestartTarget::DefeatReplayed))
             }
+            CHECKPOINT_CAMPAIGN_ALL1_RESTATE => {
+                Ok(Self::CampaignRestart(movies::RestartTarget::Restate))
+            }
             CHECKPOINT_CAMPAIGN_SOV1_OPENING_LOCKED => {
                 Ok(Self::CampaignOpening(movies::OpeningTarget::Locked))
             }
@@ -663,6 +667,9 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignRestart(movies::RestartTarget::DefeatReplayed) => {
                 CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_YES
+            }
+            Self::CampaignRestart(movies::RestartTarget::Restate) => {
+                CHECKPOINT_CAMPAIGN_ALL1_RESTATE
             }
             Self::CampaignOpening(movies::OpeningTarget::Locked) => {
                 CHECKPOINT_CAMPAIGN_SOV1_OPENING_LOCKED
@@ -2397,6 +2404,13 @@ mod tests {
                     target: movies::CampaignStartTarget::Restart(
                         movies::RestartTarget::DefeatReplayed,
                     ),
+                },
+            ),
+            (
+                CHECKPOINT_CAMPAIGN_ALL1_RESTATE,
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(movies::RestartTarget::Restate),
                 },
             ),
             (

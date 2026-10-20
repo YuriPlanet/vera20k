@@ -572,6 +572,8 @@ impl App {
                     crate::app::frontend::skirmish_shell_render::render_sound_shell(state, &mut encoder, &output.texture)?;
                 } else if state.match_state.match_presentation.in_game_menu == crate::ui::pause_menu::InGameMenuState::Diplomacy {
                     crate::app::frontend::skirmish_shell_render::render_diplomacy_shell(state, &mut encoder, &output.texture)?;
+                } else if state.match_state.match_presentation.in_game_menu == crate::ui::pause_menu::InGameMenuState::MissionBriefing {
+                    crate::app::frontend::skirmish_shell_render::render_restate_shell(state, &mut encoder, &output.texture)?;
                 } else if matches!(state.match_state.match_presentation.in_game_menu, crate::ui::pause_menu::InGameMenuState::SavedGame(_)) {
                     crate::app::frontend::skirmish_shell_render::render_saved_game_shell(state, &mut encoder, &output.texture)?;
                 } else {

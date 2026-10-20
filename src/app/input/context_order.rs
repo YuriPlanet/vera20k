@@ -2468,8 +2468,9 @@ pub(super) fn is_simple_deploy_unit(
 
 /// Infantry51EC14..51EC9F blocks Doing27..31 only when Type+6C4
 /// (UndeployDelay) > -1; Type+6A8 (DeployFireWeapon) is unrelated.
-/// Unit740015..74003F blocks an empty mobile transport. Both answer
-/// NoDeploy30 rather than a self action. The D-key's receiver is separate.
+/// Unit740015..74003F blocks an empty mobile transport outside a tank bunker
+/// (`+0x2E4`, `0x00740023`). Both answer NoDeploy30 rather than a self
+/// action. The D-key's receiver is separate.
 fn self_deploy_is_blocked(
     entity: &crate::sim::game_entity::GameEntity,
     object: &crate::rules::object_type::ObjectType,
@@ -2483,6 +2484,7 @@ fn self_deploy_is_blocked(
         || (entity.category() == EntityCategory::Unit
             && object.passengers > 0
             && !object.is_simple_deployer
+            && entity.bunker.link().installed_in().is_none()
             && entity
                 .passenger_role
                 .cargo()
@@ -2691,6 +2693,14 @@ fn self_action(
     let obj = sim.interner().object_type(entity.type_ref(), rules);
     if obj.is_some_and(|object| self_deploy_is_blocked(entity, object)) {
         return None;
+    }
+    // Unit740023/740107: a unit in a tank bunker skips the transport arm
+    // and offers Deploy whenever CanDeploySlashUnload admits it; its Unload
+    // leaves the bunker (the DEPLOY event, `deploy::issue_order`).
+    if entity.category() == EntityCategory::Unit && entity.bunker.link().installed_in().is_some() {
+        return Some(Command::DeployMcv {
+            entity_id: target.stable_id,
+        });
     }
     if let Some(command) = super::transport_orders::unload_command(entity, obj, Some(local_owner)) {
         return Some(command);

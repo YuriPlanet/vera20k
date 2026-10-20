@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -38,5 +38,5 @@
   },
   "write_trace_policy": "UC_HOOK_MEM_WRITE values are masked to the actual store width; high bits outside the written byte/word/dword are not native state.",
   "replay_command": "python -m tools.spatial_oracle.temporal_stop --open-topped-guard",
-  "payload_sha256": "69b0c65fb231ce618ee53d4b1a560f97ff18fcf0699748d5d0ad23f7fff4dc10"
+  "payload_sha256": "f5ae979beac2973ca4512347e14ffe88a39b985d093737f2c798f1dc100961e1"
 }

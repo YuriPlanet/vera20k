@@ -134,6 +134,12 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
             crate::app::input::diplomacy::mouse(state, button, pressed);
             return;
         }
+        if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::MissionBriefing
+        {
+            crate::app::input::restate::mouse(state, button, pressed);
+            return;
+        }
         if matches!(
             state.match_state.match_presentation.in_game_menu,
             crate::ui::pause_menu::InGameMenuState::SavedGame(_)
@@ -766,6 +772,12 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
             == crate::ui::pause_menu::InGameMenuState::Diplomacy
         {
             crate::app::input::diplomacy::cursor_moved(state);
+            return;
+        }
+        if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::MissionBriefing
+        {
+            crate::app::input::restate::cursor_moved(state);
             return;
         }
         if matches!(
@@ -3006,9 +3018,10 @@ fn deployer_is_deployed(
 
 /// The deploy key's per-object order for an object it admits: each
 /// class's Unload mission (vt+0x374(9), `0x00730D15`). The command's
-/// historical `DeployMcv` wire name also carries a SimpleDeployer toggle.
-/// A Unit admitted for a tank-bunker link alone gets none, but a bunkered
-/// unit cannot be selected.
+/// historical `DeployMcv` wire name also carries a SimpleDeployer toggle
+/// and a tank bunker's occupant's deploy out. The walk admits a bunkered unit
+/// only through IsActive (vt+0x9C): vt+0xA0 refuses a bunker link, and a box
+/// never selects one, but a click does.
 fn deploy_key_command(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
@@ -3023,6 +3036,11 @@ fn deploy_key_command(
             super::transport_orders::unload_command(entity, obj, local_owner)
         }
         EntityCategory::Infantry => Some(Command::ToggleInfantryDeploy { entity_id }),
+        // A unit in a tank bunker deploys out of it: its Unload's bunker arm
+        // (`0x0073D63B`) runs before the transport arm.
+        EntityCategory::Unit if entity.bunker.link().installed_in().is_some() => {
+            Some(Command::DeployMcv { entity_id })
+        }
         _ => {
             // A loaded transport (including aircraft) keeps the unload action.
             super::transport_orders::unload_command(entity, obj, local_owner).or_else(|| {
@@ -3500,6 +3518,61 @@ mod deploy_key_tests {
         assert!(
             deploy_key_commands(&sim, Some(&rules), &[heli], sim.session().current_house())
                 .is_empty()
+        );
+    }
+
+    /// A unit in a tank bunker passes CanDeploySlashUnload and deploys out of
+    /// it, a loaded transport too: its Unload's bunker arm (`0x0073D63B`)
+    /// precedes the transport arm. Outside a bunker a plain tank is refused.
+    /// Both are armed: vt+0xA0 refuses a bunker link, so the walk admits them
+    /// through IsActive (vt+0x9C), which asks for a weapon.
+    #[test]
+    fn the_deploy_key_deploys_a_unit_out_of_its_tank_bunker() {
+        use crate::sim::docking::bunker_link::BunkerLink;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=TANK\n1=TRANSPORT\n\
+             [TANK]\nStrength=300\nPrimary=GUN\n\
+             [TRANSPORT]\nPassengers=2\nPrimary=GUN\n\
+             [WeaponTypes]\n0=GUN\n[GUN]\nDamage=10\nRange=5\nWarhead=AP\n\
+             [Warheads]\n0=AP\n[AP]\n",
+        ))
+        .expect("bunker deploy rules");
+        let mut sim = player_sim();
+        let mut spawn = |type_id| {
+            sim.spawn_object_limbo_at_height(type_id, "Americans", 10, 10, 0, 0, &rules)
+                .expect("the deploy key fixture builds")
+        };
+        let tank = spawn("TANK");
+        let transport = spawn("TRANSPORT");
+        let mut cargo = PassengerCargo::new(2, 0.0);
+        cargo.board_forced_chain(&[(999, 1.0)]);
+        sim.entities_mut_for_test()
+            .get_mut(transport)
+            .unwrap()
+            .passenger_role = PassengerRole::transport(cargo);
+        let owner = sim.session().current_house();
+        assert!(deploy_key_commands(&sim, Some(&rules), &[tank], owner).is_empty());
+        assert_eq!(
+            deploy_key_command(&sim, Some(&rules), transport, owner),
+            Some(Command::UnloadPassengers {
+                transport_id: transport
+            })
+        );
+        for id in [tank, transport] {
+            sim.entities_mut_for_test()
+                .get_mut(id)
+                .unwrap()
+                .bunker
+                .set_bunker_link_for_test(BunkerLink::Installed(99));
+        }
+        assert_eq!(
+            deploy_key_commands(&sim, Some(&rules), &[tank, transport], owner),
+            [
+                Command::DeployMcv { entity_id: tank },
+                Command::DeployMcv {
+                    entity_id: transport
+                }
+            ]
         );
     }
 

@@ -1772,7 +1772,8 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 
 /// The shared post-acquisition sequence of `TechnoClass::AI_Update`:
 /// Bomb6FA6F5, Slave6FA717, Capture6FA726, IsAlive6FA735, self-heal6FA743,
-/// House healing6FA79A, Cloak6FA941 and Spawn6FA94C. Original instructions
+/// House healing6FA79A, Cloak6FA941, Spawn6FA94C, the cloak-field arms
+/// 6FA95B and the healer drops 6FA9D8. Original instructions
 /// and executable controls: `tools/spatial_oracle/capture_overload_update.py
 /// --techno-order` and its documented callback/stock-MIND boundaries.
 ///
@@ -1817,6 +1818,7 @@ fn techno_after_acquisition(
             ctx.overlay_registry,
             ctx.effects,
         );
+        super::techno_ai_cloak::cloak_field_ai_step(sim, id, rules, ctx.overlay_registry);
         healer_target_drop_step(sim, id, rules);
     }
     true
@@ -1955,13 +1957,6 @@ fn screen_visual_character(
 ///
 /// IsAlliedWith on an object asks its owner; a Cell or an ownerless object is
 /// never allied. Both alliance arms ask the object's own house (+0x21C).
-///
-/// RESIDUAL: the cloak-field arms before this block (`0x006FA95B..0x006FA9D2`)
-/// are not run. Trigger: an object in a house's cloak field, which only a
-/// `CloakGenerator=` building raises; retail rules name it only in a comment
-/// and `fog.cloaked_by_houses` has no writer, so they are dormant, not
-/// unreachable. Effect if a map sets it: the field's cloak and uncloak calls
-/// are missed. No RNG draws.
 fn healer_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     use crate::sim::combat::{TargetKind, combat_weapon};
     let healer = |sim: &Simulation| {

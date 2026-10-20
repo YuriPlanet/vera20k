@@ -44,6 +44,7 @@ pub enum Verb {
     IniGet { section: String, key: String },
     IniType { type_id: String },
     IniRoots,
+    IniExpand { name: String },
     Help,
 }
 
@@ -68,6 +69,9 @@ pub struct Cli {
     pub corpus_baseline_out: Option<PathBuf>,
     pub ini: IniOptions,
     pub ini_roots: Option<crate::util::ini_roots::IniRootConfig>,
+    pub ini_strict: bool,
+    pub ini_source_only: bool,
+    pub ini_max_depth: usize,
 }
 
 pub fn usage() -> &'static str {
@@ -81,6 +85,7 @@ VERBS
   ini-get <SECTION> <KEY>  Inspect exact authored values and a production INI accessor.
   ini-type <TYPE>          Inspect final scenario ObjectType movement/flight fields.
   ini-roots               Inspect the selected Rules/Art/AI roots and byte sources.
+  ini-expand <FILE>        Probe production Include/Inherits expansion and sources.
   find <NAME>          Which archive wins, what shadows it, and what is
                        catalogued but unreachable by name lookup.
   ls <ARCHIVE>         Paged listing of one archive's entries.
@@ -120,8 +125,14 @@ ini-type
                       including exact stored float/fixed bits. No runtime Link clamp.
                       --reader/--default/--capacity/--all-mixes are rejected.
 
+ini-expand
+  --source-only        INI-only resource root; no required retail game archives.
+  --strict             Fail on the first reference diagnostic instead of skipping it.
+  --max-depth <N>      Positive active reference-edge limit (default 64).
+                       --all-mixes widens tooling lookup only, not game mounting.
+
 GLOBAL OPTIONS
-  --ini-profile <yr|mo|auto|custom>  INI verbs only; overrides the whole [ini] config.
+  --ini-profile <yr|mo|auto|custom>  ini-roots/get/type only; overrides [ini] as a unit.
   --rules-ini <NAME> --art-ini <NAME> --ai-ini <NAME>
                        Custom profile requires all three plain INI basenames.
   --ra2-dir <PATH>     Retail install root. Overrides $RA2_DIR and config.toml.
@@ -227,6 +238,9 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
         corpus_baseline_out: None,
         ini: IniOptions::default(),
         ini_roots: None,
+        ini_strict: false,
+        ini_source_only: false,
+        ini_max_depth: 64,
     };
 
     let mut args = argv.into_iter().peekable();
@@ -237,10 +251,12 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
         return Ok(cli);
     }
 
-    if matches!(verb_word.as_str(), "ini-get" | "ini-type" | "ini-roots")
-        && args
-            .peek()
-            .is_some_and(|arg| matches!(arg.as_str(), "-h" | "--help"))
+    if matches!(
+        verb_word.as_str(),
+        "ini-get" | "ini-type" | "ini-roots" | "ini-expand"
+    ) && args
+        .peek()
+        .is_some_and(|arg| matches!(arg.as_str(), "-h" | "--help"))
     {
         return Ok(cli);
     }
@@ -267,6 +283,9 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
         },
         "ini-type" => Verb::IniType {
             type_id: require_target(target, "ini-type", "<TYPE>")?,
+        },
+        "ini-expand" => Verb::IniExpand {
+            name: require_target(target, "ini-expand", "<FILE>")?,
         },
         "find" => Verb::Find {
             name: require_target(target, "find", "<NAME>")?,
@@ -325,6 +344,20 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
         {
             return Err(flag_not_valid(&flag, &cli.verb));
         }
+        if matches!(cli.verb, Verb::IniExpand { .. })
+            && !matches!(
+                flag.as_str(),
+                "--ra2-dir"
+                    | "--all-mixes"
+                    | "--strict"
+                    | "--max-depth"
+                    | "--source-only"
+                    | "-h"
+                    | "--help"
+            )
+        {
+            return Err(flag_not_valid(&flag, &cli.verb));
+        }
         if matches!(cli.verb, Verb::IniGet { .. } | Verb::IniType { .. })
             && !matches!(
                 flag.as_str(),
@@ -375,6 +408,21 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
                     "--art-ini" => config.art = Some(text),
                     "--ai-ini" => config.ai = Some(text),
                     _ => unreachable!(),
+                }
+            }
+            "--strict" | "--max-depth" | "--source-only" => {
+                if !matches!(cli.verb, Verb::IniExpand { .. }) {
+                    return Err(flag_not_valid(&flag, &cli.verb));
+                }
+                if flag == "--source-only" {
+                    cli.ini_source_only = true;
+                } else if flag == "--strict" {
+                    cli.ini_strict = true;
+                } else {
+                    cli.ini_max_depth = number(&mut args, &flag)?;
+                    if cli.ini_max_depth == 0 {
+                        return Err("--max-depth must be positive".into());
+                    }
                 }
             }
             "--domain" | "--reader" | "--default" | "--capacity" | "--map" | "--mode-id" => {
@@ -580,6 +628,7 @@ fn flag_not_valid(flag: &str, verb: &Verb) -> String {
         Verb::IniGet { .. } => "ini-get",
         Verb::IniType { .. } => "ini-type",
         Verb::IniRoots => "ini-roots",
+        Verb::IniExpand { .. } => "ini-expand",
         Verb::Help => "help",
     };
     format!("{flag} is not valid for `{verb_name}`")
@@ -625,6 +674,34 @@ mod tests {
             vec!["ini-roots", "--ini-profile", "unknown"],
             vec!["ini-roots", "--out", "somewhere"],
             vec!["find", "r.ini", "--ini-profile", "mo"],
+            vec!["ini-expand", "r.ini", "--ini-profile", "mo"],
+            vec!["ini-roots", "--strict"],
+            vec!["ini-roots", "--source-only"],
+        ] {
+            assert!(parse(args(&words)).is_err(), "{words:?}");
+        }
+    }
+
+    #[test]
+    fn ini_expand_probe_admits_only_its_own_read_only_options() {
+        let cli = parse(args(&[
+            "ini-expand",
+            "rulesmo.ini",
+            "--strict",
+            "--max-depth",
+            "12",
+            "--all-mixes",
+            "--source-only",
+        ]))
+        .unwrap();
+        assert!(matches!(cli.verb, Verb::IniExpand { name } if name == "rulesmo.ini"));
+        assert!(cli.ini_strict && cli.all_mixes && cli.ini_source_only);
+        assert_eq!(cli.ini_max_depth, 12);
+        for words in [
+            vec!["ini-expand"],
+            vec!["ini-expand", "a.ini", "--max-depth", "0"],
+            vec!["ini-expand", "a.ini", "--out", "a.json"],
+            vec!["find", "a", "--strict"],
         ] {
             assert!(parse(args(&words)).is_err(), "{words:?}");
         }

@@ -7,7 +7,8 @@
 //! It answers the visit's and the WOL setup's requests once no shell
 //! transition runs: like a real service, a reply arrives after the page that
 //! asked has slid out. Any login is accepted. The lobbies, games and users
-//! are fixed stand-ins; nobody else ever joins, chats or starts, so a
+//! are fixed stand-ins. Two of them say one line each when a chat lobby is
+//! joined, and a locate finds them; nobody else ever joins or starts, so a
 //! created game cannot be started and a joined game never receives its
 //! host's options.
 
@@ -17,6 +18,7 @@ use super::{WolProvider, WolServiceRequest, service_event};
 use crate::app::AppState;
 use crate::app::match_runtime::session::SessionMode;
 use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
+use crate::ui::wol_chat::WolChatLine;
 use crate::ui::wol_lobby::{
     EX_INFO_VERSION, GAME_CHANNEL, MEMBER_OPERATOR, MEMBER_VOICE, WolChannel, WolMember,
 };
@@ -75,8 +77,8 @@ fn pending(state: &AppState) -> bool {
         .is_some_and(|visit| !visit.requests.is_empty())
 }
 
-/// The WOL setup's own requests; this service answers only the guest's
-/// leave.
+/// The WOL setup's own requests; this service answers a locate and the
+/// guest's leave.
 fn setup_requests(state: &mut AppState) -> Vec<NetworkSetupRequest> {
     if state.match_state.session_mode() != SessionMode::Wol
         || !state.frontend.shell_route.network_setup()
@@ -92,6 +94,11 @@ fn setup_requests(state: &mut AppState) -> Vec<NetworkSetupRequest> {
 }
 
 fn answer_setup(state: &mut AppState, request: NetworkSetupRequest) {
+    if let NetworkSetupRequest::WolChat(WolChatLine::Locate { name }) = &request {
+        let result = locate(&String::from_utf16_lossy(name));
+        service_event(state, WolServiceEvent::Located(result));
+        return;
+    }
     // C9 Back waits for the leave's OnPart; C2 Back closes at once.
     if request == NetworkSetupRequest::Leave
         && !state.match_state.session.host()
@@ -123,15 +130,27 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         },
         WolServiceRequest::JoinChannel { mut channel, .. } => {
             let local = nickname(state);
-            let mut members = if channel.kind == GAME_CHANNEL {
-                vec![member(host_of(&channel.name), MEMBER_OPERATOR)]
-            } else {
+            let lobby = channel.kind != GAME_CHANNEL;
+            let mut members = if lobby {
                 lobby_members()
+            } else {
+                vec![member(host_of(&channel.name), MEMBER_OPERATOR)]
             };
             members.push(member(&local, 0));
             channel.users = members.len() as i32;
-            WolServiceEvent::Joined(Ok(WolJoined { channel, members }))
+            service_event(
+                state,
+                WolServiceEvent::Joined(Ok(WolJoined { channel, members })),
+            );
+            if lobby {
+                lobby_greeting(state);
+            }
+            return;
         }
+        WolServiceRequest::Chat {
+            line: WolChatLine::Locate { name },
+            ..
+        } => WolServiceEvent::Located(locate(&String::from_utf16_lossy(&name))),
         // OnPart arrives only for a channel this user is in.
         WolServiceRequest::LeaveChannel if super::lobby::in_channel(state) => {
             WolServiceEvent::ChannelLeft
@@ -152,6 +171,47 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         | WolServiceRequest::SetFindPage { .. } => return,
     };
     service_event(state, event);
+}
+
+/// What the stand-ins say in a chat lobby, and what the user tooltip shows
+/// for Tanya.
+fn lobby_greeting(state: &mut AppState) {
+    let line = |from, text: &str| WolServiceEvent::Message {
+        from,
+        text: text.encode_utf16().collect(),
+        private: false,
+        action: false,
+    };
+    for event in [
+        WolServiceEvent::LadderRank {
+            name: "Tanya".into(),
+            rank: 1,
+        },
+        WolServiceEvent::UserLocale {
+            name: "Tanya".into(),
+            locale: 2,
+        },
+        line(
+            member("Tanya", MEMBER_OPERATOR),
+            "Welcome to the VERA20k test lobby.",
+        ),
+        line(member("Boris", MEMBER_VOICE), "Anyone up for a game?"),
+    ] {
+        service_event(state, event);
+    }
+}
+
+/// A locate finds a stand-in in the first chat lobby; anyone else is not
+/// logged in (`0x40130`).
+fn locate(name: &str) -> Result<WolChannel, u32> {
+    if lobby_members()
+        .iter()
+        .any(|member| member.name.eq_ignore_ascii_case(name))
+    {
+        Ok(lobbies().remove(0))
+    } else {
+        Err(0x0004_0130)
+    }
 }
 
 fn nickname(state: &AppState) -> String {

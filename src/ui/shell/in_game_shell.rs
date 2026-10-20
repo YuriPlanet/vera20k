@@ -168,6 +168,45 @@ pub fn ordinary_child_rect(raw: RectPx, width: i32, height: i32) -> RectPx {
     )
 }
 
+/// The active-game shell over the allied theme's retail art sizes, from the
+/// `tools/storage_oracle/in_game_shell_geometry.json` corpus, for the dialog
+/// layout tests that place children against it.
+#[cfg(test)]
+pub(crate) fn allied_fixture_layout(width: i32, height: i32) -> InGameShellLayout {
+    let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/storage_oracle/in_game_shell_geometry.json",
+    ))
+    .unwrap();
+    let assets = &fixture["assets"]["allied"];
+    let size = |address: &str| {
+        [
+            assets[address]["width"].as_i64().unwrap() as i32,
+            assets[address]["height"].as_i64().unwrap() as i32,
+        ]
+    };
+    InGameShellLayout::new(
+        width,
+        height,
+        InGameShellSizes {
+            background_small: size("00b0fad4"),
+            background_medium: size("00b0fac8"),
+            background_large: size("00b0fa50"),
+            credits: size("00b0fb08"),
+            top: size("00b0f9e0"),
+            radar: size("00b0fa68"),
+            side1: size("00b0fa70"),
+            side2: size("00b0fafc"),
+            side3: size("00b0fa8c"),
+            addon: size("00b0fa48"),
+            bottom_spacer: size("00b0fa3c"),
+            left_cap: size("00b0fa90"),
+            button_background: size("00b0faa8"),
+            right_cap: size("00b0fabc"),
+        },
+    )
+    .unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

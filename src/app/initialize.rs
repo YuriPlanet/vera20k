@@ -574,6 +574,8 @@ impl App {
                     sound_dialog: None,
                     abort_buttons: Default::default(),
                     diplomacy: Default::default(),
+                    restate: Default::default(),
+                    restate_text: String::new(),
                     saved_game_browser: None,
                     in_game_options: startup_in_game_options,
                     in_game_options_anchor: None,

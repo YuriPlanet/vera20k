@@ -24,6 +24,7 @@ pub mod static_reveal;
 pub mod warning_monitor;
 pub mod abort;
 pub mod diplomacy;
+pub mod restate;
 pub mod connection;
 pub mod button;
 

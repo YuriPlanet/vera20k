@@ -101,7 +101,7 @@ impl TarCom {
     /// An object that dies or is UnInit is dropped by its attackers:
     /// PointerExpired's TarCom arm (`0x007077C0`) calls the class setter with
     /// NULL (`0x00707A33`) in the killing hit's announcement
-    /// (`Simulation::object_destroy_callback`) and in UnInit's. An
+    /// (`Simulation::detach_all`) and in UnInit's. An
     /// infantryman deployed without `DeployFire=` refuses that write
     /// (`0x0051B273..0x0051B299`) and keeps the target.
     pub(crate) fn set(&mut self, target: Option<TargetKind>) {

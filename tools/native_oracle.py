@@ -30,14 +30,24 @@ from unicorn.x86_const import (
 
 from tools import oracle_sources
 
-# Historical vector/reference identity, retained for existing Rust-facing payloads.
-# Actual input identity belongs in image_sha256()/provenance, not this constant.
+# The identity of the supported game code, named by the SHA-256 of the historical
+# reference file. Releases that repackage that code (Steam's, for one) differ only
+# outside its sections, run the same native code and report this identity.
 NATIVE_SHA256 = "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-STEAM_NATIVE_SHA256 = "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
-# Steam's four file-backed sections and their layouts match the sealed original
-# loader witness. See native_oracle.md for comparison and reproduction; this does
-# not admit arbitrary builds or claim equivalence of the Windows loader/startup.
-SUPPORTED_NATIVE_SHA256 = (NATIVE_SHA256, STEAM_NATIVE_SHA256)
+# The reference's PE sections: RVA, raw pointer, raw size, virtual size, flags and
+# the SHA-256 of the raw bytes (spatial_oracle/shrapnel_damage/loader_compatibility.json).
+# Every byte load_image maps and file_span reads, except the header page and
+# BSS, comes from these. Headers and bytes after the sections are not compared.
+NATIVE_SECTIONS = (
+    (0x1000, 0x1000, 0x3E0000, 0x3DF38D, 0x60000020,
+     "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc"),
+    (0x3E1000, 0x3E1000, 0x31000, 0x30074, 0x40000040,
+     "057ab12d49f7879e8707413511e0d2dc3c4326f4440d5164862a8ec9abdeab5d"),
+    (0x412000, 0x412000, 0x6C000, 0x367BE4, 0xC0000040,
+     "50490286ee34220d562815ebc4ca3661e0e4d8c160b9aecd540d023e13f469af"),
+    (0x77A000, 0x47E000, 0x8A000, 0x89A9C, 0x40000040,
+     "a2377a82d5aa7c72562a657b2e294a24a4d69b2faa85cdd7287efc9caf52e380"),
+)
 IMAGE_BASE = 0x00400000
 # Preserve the original fixture mapping, including runtime globals in BSS.
 IMAGE_SIZE = 0x00A00000
@@ -230,13 +240,27 @@ def configured_gamemd() -> Path:
     return path
 
 
+@lru_cache(maxsize=4)
+def _carries_native_code(data: bytes) -> bool:
+    """Whether these file bytes hold the supported sections, byte for byte."""
+    try:
+        sections = list(_sections(data))
+    except OracleError:
+        return False
+    return tuple((rva, raw_ptr, raw_size, virtual_size, flags,
+                  hashlib.sha256(data[raw_ptr:raw_ptr + raw_size]).hexdigest())
+                 for rva, raw_ptr, raw_size, virtual_size, flags in sections) == NATIVE_SECTIONS
+
+
 @lru_cache(maxsize=2)
 def _verified_image(path: Path) -> bytes:
-    # Hash the same immutable bytes subsequently mapped, not a separate read.
+    # Check the same immutable bytes subsequently mapped, not a separate read.
     data = path.read_bytes()
-    digest = hashlib.sha256(data).hexdigest()
-    if digest not in SUPPORTED_NATIVE_SHA256:
-        raise OracleError(f"Unsupported gamemd.exe SHA-256 {digest}; expected one of {SUPPORTED_NATIVE_SHA256}")
+    if not _carries_native_code(data):
+        raise OracleError(
+            f"Unsupported gamemd.exe SHA-256 {hashlib.sha256(data).hexdigest()} ({path}): "
+            "its game code differs from the supported Yuri's Revenge 1.001 build's. "
+            "Steam's gamemd.exe carries that code.")
     return data
 
 
@@ -245,8 +269,14 @@ def image_bytes() -> bytes:
 
 
 def image_sha256(data: bytes | None = None) -> str:
-    """Actual input identity; supplied data must be the verified immutable bytes."""
-    return hashlib.sha256(image_bytes() if data is None else data).hexdigest()
+    """Identity of the game code in these bytes (default: the selected executable).
+
+    Every file carrying the supported code reports NATIVE_SHA256, whatever its
+    headers, so its outputs and provenance match the recorded references. Other
+    bytes, such as synthetic test images, report their own SHA-256.
+    """
+    data = image_bytes() if data is None else data
+    return NATIVE_SHA256 if _carries_native_code(data) else hashlib.sha256(data).hexdigest()
 
 
 def _sections(data: bytes):
@@ -399,7 +429,7 @@ def run_checked(uc: Uc, begin: int, end: int | tuple[int, ...], *,
                 "unicorn_binding": unicorn.__version__, "unicorn_core": list(unicorn.uc_version()),
                 # run_checked also accepts synthetic machines and cannot attest
                 # their image identity just because this runner knows the pin.
-                "supported_native_sha256": list(SUPPORTED_NATIVE_SHA256),
+                "supported_native_sha256": [NATIVE_SHA256],
             }
             raise NativeExecutionError(
                 f"{message}; reason={reason}, timeout={timed_out}, "

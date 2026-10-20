@@ -7,6 +7,9 @@ use std::sync::Arc;
 
 use crate::assets::asset_manager::AssetManager;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::ini_parser::directives::{
+    DirectiveDiagnostic, DirectiveOptions, include_identity, process_directives,
+};
 use crate::rules::process_owner::NativeRulesProcessOwner;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
@@ -25,9 +28,71 @@ pub struct IniSourceIdentity {
 pub struct SelectedIni {
     pub ini: IniFile,
     pub source: IniSourceIdentity,
+    /// Physical child snapshots in traversal order (including repeated DAG
+    /// references). Root identity still describes the original root bytes.
+    pub included_sources: Vec<IniSourceIdentity>,
+    pub directive_diagnostics: Vec<DirectiveDiagnostic>,
 }
 
 pub fn select_ini(assets: &AssetManager, name: &str) -> Result<SelectedIni, String> {
+    select_ini_with_options(assets, name, DirectiveOptions::default())
+}
+
+pub fn select_ini_with_options(
+    assets: &AssetManager,
+    name: &str,
+    options: DirectiveOptions,
+) -> Result<SelectedIni, String> {
+    let mut selected = select_physical_ini(assets, name)?;
+    let (expanded, included_sources) = expand_ini_with_assets(assets, selected.ini, name, options)?;
+    selected.ini = expanded.ini;
+    selected.included_sources = included_sources;
+    selected.directive_diagnostics = expanded.diagnostics;
+    Ok(selected)
+}
+
+/// Maps already own their decoded physical INI (including MMX wrappers).
+/// They enter the same traversal/provider instead of selecting a second root.
+pub(crate) fn expand_ini_with_assets(
+    assets: &AssetManager,
+    ini: IniFile,
+    name: &str,
+    options: DirectiveOptions,
+) -> Result<
+    (
+        crate::rules::ini_parser::directives::ExpandedIni,
+        Vec<IniSourceIdentity>,
+    ),
+    String,
+> {
+    let mut included_sources = Vec::new();
+    let expanded = process_directives(
+        ini,
+        name,
+        |reference| {
+            // All references share the production VFS root; do not rebase on the
+            // including document's host directory or open arbitrary host paths.
+            let logical = include_identity(reference);
+            let Some(resolved) = assets.resolve_ref(&logical) else {
+                return Ok(None);
+            };
+            if resolved.bytes.is_empty() {
+                return Ok(None);
+            }
+            let child = select_physical_ini(assets, &logical)?;
+            included_sources.push(child.source);
+            Ok(Some(child.ini))
+        },
+        options,
+    )
+    .map_err(|error| error.to_string())?;
+    for diagnostic in &expanded.diagnostics {
+        log::warn!("INI directive: {diagnostic}");
+    }
+    Ok((expanded, included_sources))
+}
+
+fn select_physical_ini(assets: &AssetManager, name: &str) -> Result<SelectedIni, String> {
     let selected = assets
         .resolve_ref(name)
         .ok_or_else(|| format!("retail INI {name} is unavailable"))?;
@@ -40,6 +105,8 @@ pub fn select_ini(assets: &AssetManager, name: &str) -> Result<SelectedIni, Stri
         .map_err(|error| format!("parse {name} from {}: {error}", selected.source_archive))?;
     Ok(SelectedIni {
         ini,
+        included_sources: Vec::new(),
+        directive_diagnostics: Vec::new(),
         source: IniSourceIdentity {
             logical_name: name.to_owned(),
             source_archive: selected.source_archive.to_owned(),

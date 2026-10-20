@@ -33,6 +33,7 @@ pub mod verb_extract;
 pub mod verb_find;
 pub mod verb_info;
 pub mod verb_ini;
+pub mod verb_ini_expand;
 pub mod verb_ls;
 pub mod verb_palette;
 pub mod verb_parse_check;

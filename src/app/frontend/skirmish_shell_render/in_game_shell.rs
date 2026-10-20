@@ -82,6 +82,7 @@ pub(crate) fn native_in_game_shell_active(state: &AppState) -> bool {
                 | crate::ui::pause_menu::InGameMenuState::Options
                 | crate::ui::pause_menu::InGameMenuState::SavedGame(_)
                 | crate::ui::pause_menu::InGameMenuState::Diplomacy
+                | crate::ui::pause_menu::InGameMenuState::MissionBriefing
         )
         && (matches!(
             state.match_state.match_presentation.in_game_menu,

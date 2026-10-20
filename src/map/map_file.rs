@@ -302,7 +302,7 @@ impl MapFile {
         Self::from_ini(IniFile::from_bytes(data)?)
     }
 
-    fn from_ini(ini: IniFile) -> Result<Self, MapError> {
+    pub(super) fn from_ini(ini: IniFile) -> Result<Self, MapError> {
         let header: MapHeader = parse_header(&ini)?;
         let basic: BasicSection = basic::parse_basic_section(&ini);
         let ranking: crate::map::ranking::RankingSection =

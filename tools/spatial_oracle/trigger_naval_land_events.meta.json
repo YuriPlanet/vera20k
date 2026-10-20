@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -40,5 +40,5 @@
     "checkout_prerequisite": "ini/rulesmd.ini is the selected extracted retail RULESMD"
   },
   "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --naval-land-events",
-  "payload_sha256": "61e809b82c32f75deaf556150970286d6a41f17ee9f30905d45104f7c634b42a"
+  "payload_sha256": "75256deb4a7560b055cc44012b11d3b6e42e87b5aebfc5f53bcbe97e7e736847"
 }

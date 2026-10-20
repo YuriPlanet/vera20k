@@ -812,6 +812,7 @@ impl ApplicationHandler for App {
                             state.match_state.match_presentation.in_game_menu,
                             crate::ui::pause_menu::InGameMenuState::Sound
                                 | crate::ui::pause_menu::InGameMenuState::Diplomacy
+                                | crate::ui::pause_menu::InGameMenuState::MissionBriefing
                         )
                     {
                         // B8 has no IDOK/IDCANCEL close command. Neither has

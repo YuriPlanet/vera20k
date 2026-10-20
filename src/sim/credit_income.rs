@@ -414,7 +414,7 @@ pub(crate) fn stop_drain(sim: &mut Simulation, drainer_id: u64, rules: Option<&R
 /// dying object drops both halves of any drain link it is part of, the
 /// drainer's DrainAnim first on each side. The killing hit reaches it through
 /// its Destroy's Detach_All broadcast (`0x005F5280`, the receiver's
-/// `object_destroy_callback`), in the same ReceiveDamage and before any draw
+/// `detach_all`), in the same ReceiveDamage and before any draw
 /// the death arm makes, so a falling wreck no longer drains or shows its ray.
 pub(crate) fn clear_drain_links_on_expiry(
     sim: &mut Simulation,

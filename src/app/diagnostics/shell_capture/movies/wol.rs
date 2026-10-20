@@ -48,6 +48,15 @@ pub enum WolTarget {
     LobbySort,
     /// A typed chat line and a received page in the transcript.
     LobbyChat,
+    /// Received public, private and operator lines and both actions in
+    /// their sink colors; the user's own line is not shown.
+    LobbyIncomingChat,
+    /// DisplayAsian off, then `/clan` and `/buddy`: the gated lines hidden.
+    LobbyFilteredChat,
+    /// Three locates: found in a chat lobby, not online, find disabled.
+    LobbyFind,
+    /// A ranked user with a clan and a locale: the hovered row's help.
+    LobbyUserTooltip,
     /// A version-mismatched and a full game selected: their refusals.
     JoinAdmission,
     /// Join on a keyed game: the password popup `0xE1`.
@@ -183,6 +192,10 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-0x113-login-accepted", WolTarget::LoginAccepted),
     ("wol-0x113-sort", WolTarget::LobbySort),
     ("wol-0x113-chat", WolTarget::LobbyChat),
+    ("wol-0x113-incoming-chat", WolTarget::LobbyIncomingChat),
+    ("wol-0x113-filtered-chat", WolTarget::LobbyFilteredChat),
+    ("wol-0x113-find", WolTarget::LobbyFind),
+    ("wol-0x113-user-tooltip", WolTarget::LobbyUserTooltip),
     ("wol-0x113-join-admission", WolTarget::JoinAdmission),
     ("wol-0xe1-password", WolTarget::JoinPassword),
     ("wol-c9-join-accepted", WolTarget::JoinAccepted),
@@ -733,6 +746,29 @@ impl WolCapture {
                         && sim.session().game_mode_nonzero(),
                     "the WOL runtime was not admitted"
                 );
+                // [0xB77DC1]: a line received during the match shows nowhere.
+                let lines = |state: &AppState| {
+                    state
+                        .frontend
+                        .wol
+                        .as_ref()
+                        .and_then(|visit| visit.lobby())
+                        .map(|lobby| lobby.ui.chat.lines.len())
+                };
+                let before = lines(state);
+                service_event(
+                    state,
+                    WolServiceEvent::Message {
+                        from: member("Hotel", MEMBER_OPERATOR, ""),
+                        text: "mid-match".encode_utf16().collect(),
+                        private: false,
+                        action: false,
+                    },
+                );
+                ensure!(
+                    lines(state) == before,
+                    "a line received during the match was shown"
+                );
                 self.event(frame, "WOL match installed");
                 self.abort_input = Some(match self.target {
                     WolTarget::InternetMenu => {
@@ -1098,7 +1134,24 @@ impl WolCapture {
                     .is_some_and(|ui| ui.chat.edit.units.is_empty()),
             "the emote was not sent or echoed: {requests:?}"
         );
-        self.event(frame, "C2 page and emote");
+        // C2 in the stack passes the language gate: with both display
+        // filters off, the guest's line still shows.
+        state.frontend.wol_preferences.display_latin = 0;
+        state.frontend.wol_preferences.display_asian = 0;
+        service_event(
+            state,
+            WolServiceEvent::Message {
+                from: member(PEER, 0, ""),
+                text: "\u{4f60}\u{597d}".encode_utf16().collect(),
+                private: false,
+                action: false,
+            },
+        );
+        ensure!(
+            setup_chat_has(state, &format!("[{PEER}] : \u{4f60}\u{597d}"))?,
+            "the guest's line did not show in C2"
+        );
+        self.event(frame, "C2 page, emote and a received line");
         Ok(())
     }
 
@@ -1287,12 +1340,23 @@ impl WolCapture {
     }
 
     fn chat_has(state: &AppState, text: &str) -> Result<bool> {
+        Ok(Self::chat_color(state, text)?.is_some())
+    }
+
+    fn chat_color(state: &AppState, text: &str) -> Result<Option<u32>> {
         Ok(Self::lobby(state)?
             .ui
             .chat
             .lines
             .iter()
-            .any(|line| String::from_utf16_lossy(&line.text) == text))
+            .find(|line| String::from_utf16_lossy(&line.text) == text)
+            .map(|line| line.color))
+    }
+
+    /// A line typed into the lobby's chat edit and sent with Enter.
+    fn type_line(state: &mut AppState, text: &str) {
+        App::handle_wol_key(state, None, true, Some(text));
+        App::handle_wol_key(state, Some(winit::keyboard::KeyCode::Enter), true, None);
     }
 
     /// `0x113` shown and settled: drive the target's interaction.
@@ -1387,7 +1451,7 @@ impl WolCapture {
                 service_event(
                     state,
                     WolServiceEvent::Page {
-                        from: "Golf".into(),
+                        from: member("Golf", 0, ""),
                         text: "are you there?".encode_utf16().collect(),
                     },
                 );
@@ -1410,6 +1474,196 @@ impl WolCapture {
                     "the membership did not follow join and part: {names:?}"
                 );
                 self.event(frame, "chat line and received page");
+            }
+            WolTarget::LobbyIncomingChat => {
+                use crate::ui::wol_chat as chat;
+                let lines = [
+                    ("Hotel", MEMBER_OPERATOR, false, false, "welcome all"),
+                    ("Echo", 0, false, false, "anyone for a game?"),
+                    ("Foxtrot", MEMBER_VOICE, true, false, "psst"),
+                    ("Hotel", MEMBER_OPERATOR, true, false, "behave"),
+                    ("Echo", 0, false, true, "waves"),
+                    ("Foxtrot", MEMBER_VOICE, true, true, "nods"),
+                    (NICKNAME, 0, false, false, "my own line"),
+                ];
+                for (name, flags, private, action, text) in lines {
+                    service_event(
+                        state,
+                        WolServiceEvent::Message {
+                            from: member(name, flags, ""),
+                            text: text.encode_utf16().collect(),
+                            private,
+                            action,
+                        },
+                    );
+                }
+                let expected = [
+                    ("[Hotel] : welcome all", chat::OPERATOR_COLOR),
+                    ("[Echo] : anyone for a game?", chat::PUBLIC_COLOR),
+                    ("Foxtrot : psst", chat::PRIVATE_COLOR),
+                    ("Hotel : behave", chat::OPERATOR_COLOR),
+                    ("Echo waves", chat::EMOTE_COLOR),
+                    ("Foxtrot nods", chat::PRIVATE_EMOTE_COLOR),
+                ];
+                for (text, color) in expected {
+                    ensure!(
+                        Self::chat_color(state, text)? == Some(color),
+                        "{text:?} did not show in {color:#X}"
+                    );
+                }
+                ensure!(
+                    !Self::chat_has(state, &format!("[{NICKNAME}] : my own line"))?,
+                    "the user's own line was shown"
+                );
+                self.event(frame, "received lines in their sink colors");
+            }
+            WolTarget::LobbyFilteredChat => {
+                let say = |state: &mut AppState, name, tag, text: &str| {
+                    let flags = if name == "Hotel" { MEMBER_OPERATOR } else { 0 };
+                    service_event(
+                        state,
+                        WolServiceEvent::Message {
+                            from: member(name, flags, tag),
+                            text: text.encode_utf16().collect(),
+                            private: false,
+                            action: false,
+                        },
+                    );
+                };
+                // DisplayAsian off: non-Latin-1 text shows only from an
+                // operator.
+                state.frontend.wol_preferences.display_asian = 0;
+                say(state, "Echo", "WW", "\u{4f60}\u{597d}");
+                say(state, "Hotel", "", "\u{4f60}\u{597d}");
+                say(state, "Foxtrot", "", "caf\u{e9}");
+                ensure!(
+                    !Self::chat_has(state, "[Echo] : \u{4f60}\u{597d}")?
+                        && Self::chat_has(state, "[Hotel] : \u{4f60}\u{597d}")?
+                        && Self::chat_has(state, "[Foxtrot] : caf\u{e9}")?,
+                    "the language gate did not hold"
+                );
+                // /clan: the local user has no clan, so only clanless users
+                // show; Echo's clan hides it.
+                let clan = App::csf_label(state, "TXT_CLAN_FILTER", "TXT_CLAN_FILTER");
+                Self::type_line(state, &clan);
+                ensure!(
+                    state.frontend.wol_preferences.display_clan,
+                    "/clan did not turn DisplayClan on"
+                );
+                say(state, "Echo", "WW", "clan one");
+                say(state, "Foxtrot", "", "clan two");
+                ensure!(
+                    !Self::chat_has(state, "[Echo] : clan one")?
+                        && Self::chat_has(state, "[Foxtrot] : clan two")?,
+                    "the clan gate did not hold"
+                );
+                // /clan off and /buddy on: no buddies, every sender hidden.
+                Self::type_line(state, &clan);
+                let buddy = App::csf_label(state, "TXT_BUDDY_FILTER", "TXT_BUDDY_FILTER");
+                Self::type_line(state, &buddy);
+                say(state, "Foxtrot", "", "buddy one");
+                say(state, "Hotel", "", "buddy two");
+                ensure!(
+                    !Self::chat_has(state, "[Foxtrot] : buddy one")?
+                        && !Self::chat_has(state, "[Hotel] : buddy two")?,
+                    "the buddy gate let a sender through"
+                );
+                self.event(frame, "language, clan and buddy gates");
+            }
+            WolTarget::LobbyFind => {
+                let online = App::csf_label(state, "TXT_ONLINE_COMMAND", "TXT_ONLINE_COMMAND");
+                let room = App::csf_label(state, "TXT_LOB_1", "TXT_LOB_1");
+                use crate::assets::csf_file::{CsfArg, format_csf};
+                let cases: [(&str, Result<WolChannel, u32>, String); 3] = [
+                    (
+                        "Hotel",
+                        Ok(lobbies()[0].clone()),
+                        format_csf(
+                            &App::csf_label(state, "TXT_USER_FOUND", "TXT_USER_FOUND"),
+                            &[CsfArg::Str("Hotel"), CsfArg::Str(&room)],
+                        ),
+                    ),
+                    (
+                        "Zulu",
+                        Err(0x0004_0130),
+                        format_csf(
+                            &App::csf_label(state, "TXT_USER_NOT_ONLINE", "TXT_USER_NOT_ONLINE"),
+                            &[CsfArg::Str("Zulu")],
+                        ),
+                    ),
+                    (
+                        "Kilo",
+                        Err(0x0004_0132),
+                        format_csf(
+                            &App::csf_label(
+                                state,
+                                "TXT_USER_FIND_DISABLED",
+                                "TXT_USER_FIND_DISABLED",
+                            ),
+                            &[CsfArg::Str("Kilo")],
+                        ),
+                    ),
+                ];
+                for (name, result, expected) in cases {
+                    Self::type_line(state, &format!("{online} {name}"));
+                    let requests = self.requests(state, frame)?;
+                    ensure!(
+                        requests
+                            == [WolServiceRequest::Chat {
+                                line: WolChatLine::Locate {
+                                    name: name.encode_utf16().collect(),
+                                },
+                                to: Vec::new(),
+                            }],
+                        "the locate was not sent: {requests:?}"
+                    );
+                    service_event(state, WolServiceEvent::Located(result));
+                    ensure!(
+                        Self::chat_color(state, &expected)? == Some(u32::MAX),
+                        "{expected:?} did not show"
+                    );
+                }
+                self.event(frame, "found, not online and find disabled");
+            }
+            WolTarget::LobbyUserTooltip => {
+                service_event(
+                    state,
+                    WolServiceEvent::LadderRank {
+                        name: "ECHO".into(),
+                        rank: 42,
+                    },
+                );
+                service_event(
+                    state,
+                    WolServiceEvent::UserLocale {
+                        name: "Echo".into(),
+                        locale: 2,
+                    },
+                );
+                // Player rows: Hotel, Echo, Foxtrot, the user.
+                let lobby = Self::lobby(state)?;
+                ensure!(
+                    lobby.ui.player_rows.get(1).map(|row| row.name.as_str()) == Some("Echo"),
+                    "Echo is not the second player row"
+                );
+                let geometry = lobby.ui.player_list.geometry(
+                    layout.players,
+                    lobby.ui.player_rows.len(),
+                    layout.page.scale,
+                );
+                let rect = geometry.row(1 - lobby.ui.player_list.top_index);
+                set_window_pointer_to_rect_center(state, rect);
+                App::handle_wol_mouse_move(state);
+                let expected = format!(
+                    "Echo : {} 42: Westwood Warriors : {}",
+                    App::csf_label(state, "TXT_RANK", "TXT_RANK"),
+                    App::csf_label(state, "WOL:Locale02", "WOL:Locale02")
+                );
+                let help = crate::app::shell_wol::lobby::status_help(state);
+                ensure!(help == expected, "the user tooltip read {help:?}");
+                self.event(frame, json!({"hovered user help": help}));
+                self.settle();
+                return Ok(());
             }
             WolTarget::JoinAdmission => {
                 // Rows: Alpha, Charlie (version 24), Delta, Bravo (full).

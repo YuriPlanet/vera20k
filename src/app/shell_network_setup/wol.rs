@@ -208,6 +208,7 @@ pub(super) fn chat(state: &mut AppState, text: Vec<u16>) {
             ))
         }
     };
+    crate::app::shell_wol::chat_sent(state, &line);
     queue(state, NetworkSetupRequest::WolChat(line));
     if let Some((text, color)) = echo {
         crate::app::shell_lan::append_chat(state, LanChatLine { text, color });
