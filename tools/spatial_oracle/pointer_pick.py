@@ -54,7 +54,7 @@ def generate():
 
 
 def metadata():
-    result = native.provenance(
+    return native.provenance(
         scope='Unchanged Tactical6DA380 weighted nearest-object metric, strict threshold and encounter-order ties; supplied registrations.',
         assumptions=[
             'DiscoveryFixture owns both original Infantry constructor-prefix shells, Cell transport and seeded RNG streams. Alive, non-limbo and non-cloaked fields are supplied. These are not concrete Building/Jumpjet instances or a whole UI.',
@@ -65,8 +65,6 @@ def metadata():
         substitutions=['Only inherited DiscoveryFixture platform/constructor boundaries; no TacticalPick instruction, cast or metric answer is replaced.'],
         entry_points=dict(pick=0x6DA380, techno_cast=0x40DD20,
                           weighted_distance=0x6DA444))
-    result['native_sha256'] = native.image_sha256()
-    return result
 
 
 if __name__ == '__main__':

@@ -21,7 +21,6 @@
     "techno_cast": "0x0040DD20",
     "weighted_distance": "0x006DA444"
   },
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "replay_command": "python -m tools.spatial_oracle.pointer_pick",
   "payload_sha256": "7fa592afeb917ee85887f24a0f8f4b5a0335b61390a7889cf727dd59ac05c4ab"
 }
