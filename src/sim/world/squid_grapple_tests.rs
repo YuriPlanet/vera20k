@@ -64,8 +64,8 @@ impl Encounter {
                 .expect("original game-speed readback")
                 as i32;
             // Supplied original component input: the native harness has not
-            // run map lighting/recalculation. Import its measured profile,
-            // retaining the production Cell ground-Z-adjust calculation.
+            // run map lighting/recalculation. Import its measured zero-light
+            // profile rather than the ordinary arena's Scenario defaults.
             sim.session.lighting_mut().set_normal_for_test(
                 serde_json::from_value(initial["lighting"]["normal_profile"].clone())
                     .expect("original Scenario lighting profile readback"),
@@ -542,6 +542,55 @@ fn entire_grapple(elite: bool) {
 fn stock_normal_and_elite_squid_grapples_roll_bite_cull_and_retire_the_ship() {
     for elite in [false, true] {
         entire_grapple(elite);
+    }
+}
+
+#[test]
+fn stock_squid_grapple_keeps_depth_separate_from_cell_lighting() {
+    let native = crate::test_fixture::json("tools/spatial_oracle/squid_grapple_light.json");
+    let profile: crate::sim::scenario_session::ScenarioLightProfileUnits =
+        serde_json::from_value(native["normal_profile"].clone()).unwrap();
+    let light = native["cell_light"].as_i64().unwrap();
+    let expected_z = native["held_anim"]["z_adjust"].as_i64().unwrap() as i32;
+    assert_ne!(
+        light, 0,
+        "the original Cell light must distinguish the fields"
+    );
+    assert_eq!(
+        native["held_anim"]["light_intensity_fc"].as_i64(),
+        Some(light)
+    );
+    for elite in [false, true] {
+        let Some(mut scene) = Encounter::retail(elite) else {
+            return;
+        };
+        // The older native grapple stream supplies an all-zero lighting
+        // profile, which cannot distinguish light from depth. Use the normal
+        // arena profile and the actual stock Attack/Projectile/AttachTo chain.
+        assert_eq!(scene.sim.session.lighting().normal(), profile);
+        assert_eq!(
+            scene
+                .rules
+                .art()
+                .anim_runtime_config("SQDG")
+                .unwrap()
+                .z_adjust,
+            expected_z,
+            "physical SQDG ART depth matches the original constructor"
+        );
+        scene.attach_after_actual_shot();
+        let id = scene.wait_for_roll();
+        for _ in 0..12 {
+            let anim = scene
+                .sim
+                .anim(id)
+                .expect("the live stock roll retains SQDG");
+            assert_eq!(anim.owner_entity(), Some(scene.ship));
+            // Original629DE5 writes the nonzero Cell+10A light to Anim+FC;
+            // it leaves constructor/type ZAdjust at Anim+100 unchanged.
+            assert_eq!(anim.z_adjust(), expected_z, "cell light is not ZAdjust");
+            scene.step();
+        }
     }
 }
 

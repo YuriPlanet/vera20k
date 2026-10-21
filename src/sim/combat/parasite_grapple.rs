@@ -290,7 +290,7 @@ impl Simulation {
             }
             _ => self.parasite_exit_unit(owner, rules, effects),
         }
-        //629D97: attachment/remap/Z-adjust only when the Anim changes owner.
+        //629D97: attachment/remap only when the Anim changes owner.
         let Some(anim) = self
             .substrate
             .entities
@@ -310,22 +310,10 @@ impl Simulation {
                     .anims
                     .set_anim_house_remap(anim, source.owner());
             }
-            if let Some(target) = self.substrate.entities.get(victim)
-                && let Some(cell) = self
-                    .resolved_terrain
-                    .as_ref()
-                    .and_then(|terrain| terrain.cell(target.position.rx(), target.position.ry()))
-            {
-                let frame = self.anim(anim).unwrap().runtime().current_frame;
-                self.substrate.set_anim_frame_and_z_adjust(
-                    anim,
-                    frame,
-                    crate::map::lighting::cell_ground_z_adjust(
-                        self.session.lighting().normal().into(),
-                        cell.level,
-                    ),
-                );
-            }
+            //629DE5 copies Cell+10A light into Anim+FC, not ZAdjust+100.
+            // Preserve the constructor's depth. Retaining that copied light
+            // needs the current Cell light authority, which is not yet part
+            // of Simulation; a normal-profile estimate is not that history.
         }
     }
 

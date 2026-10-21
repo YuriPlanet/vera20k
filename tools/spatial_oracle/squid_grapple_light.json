@@ -1,0 +1,343 @@
+{
+  "cell_controls": [
+    {
+      "after_fields_104": [
+        65536,
+        0,
+        950,
+        950,
+        982
+      ],
+      "before_fields_104": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cell": [
+        8,
+        8
+      ],
+      "convert_is_null": true,
+      "level": 0,
+      "light_intensity": 950
+    },
+    {
+      "after_fields_104": [
+        65536,
+        0,
+        950,
+        950,
+        982
+      ],
+      "before_fields_104": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cell": [
+        9,
+        8
+      ],
+      "convert_is_null": true,
+      "level": 0,
+      "light_intensity": 950
+    }
+  ],
+  "cell_light": 950,
+  "constructor": {
+    "after": {
+      "draw_flags": 1536,
+      "drawer_is_null": true,
+      "light_intensity_fc": 1000,
+      "native_id": 7,
+      "owner_is_null": true,
+      "owner_is_victim": false,
+      "runtime": {
+        "constructor_reverse": 0,
+        "current_frame": 0,
+        "delay_remaining": 0,
+        "first_ai_guard": 1,
+        "frame_step": 1,
+        "frame_timer": [
+          0,
+          9
+        ],
+        "inactive": 0,
+        "loop_remaining": 1,
+        "paused": 0,
+        "rate_reload": 9
+      },
+      "stored_xyz": [
+        2432,
+        2176,
+        0
+      ],
+      "type_name": "SQDG",
+      "type_should_use_cell_drawer": true,
+      "type_z_adjust": 0,
+      "use_cell_drawer": false,
+      "use_normal_light": false,
+      "z_adjust": 0
+    },
+    "arguments": {
+      "delay": 0,
+      "draw_flags": 1536,
+      "loops": 1,
+      "position": [
+        2432,
+        2176,
+        0
+      ],
+      "reverse": 0,
+      "z_adjust": 0
+    }
+  },
+  "draw_entry": {
+    "arguments": {
+      "clip": [
+        0,
+        0,
+        160,
+        160
+      ],
+      "color": 0,
+      "flags": 11776,
+      "frame": 0,
+      "gradient": 2,
+      "intensity": 950,
+      "point": [
+        80,
+        80
+      ],
+      "stack_argument_5": 0,
+      "z_adjust": -2,
+      "zshape_frame": 0,
+      "zshape_is_null": true,
+      "zshape_offset": [
+        0,
+        0
+      ]
+    },
+    "call_frame_pending": true,
+    "caller": "0042382C",
+    "converter_is_null": true,
+    "declared_clip": [
+      0,
+      0,
+      160,
+      160
+    ],
+    "declared_point": [
+      80,
+      80
+    ],
+    "entry": "00422CA0",
+    "palette_nulls": {
+      "anim_drawer": true,
+      "global_anim_convert": true,
+      "global_palette_convert": true,
+      "victim_cell_convert": true
+    },
+    "physical_image": {
+      "canvas": [
+        196,
+        138
+      ],
+      "crop": [
+        102,
+        52,
+        41,
+        50
+      ],
+      "format": 3,
+      "raw_frame_count": 240,
+      "source_is_actual_held_anim_image": true
+    },
+    "pixels_observed": false,
+    "raster_executed": false,
+    "required_before_stop": [
+      "004237EA"
+    ],
+    "stop_before": "004AED70",
+    "surface_body_executed": false,
+    "surface_receiver_is_null": true,
+    "surface_return_observed": false
+  },
+  "guards": {
+    "draw_observed_anim_unchanged": true,
+    "draw_rng_unchanged": true,
+    "lighting_rng_unchanged": true,
+    "original_executable_sections_unchanged": true,
+    "selected_vtables_unchanged": true
+  },
+  "held_anim": {
+    "draw_flags": 1536,
+    "drawer_is_null": true,
+    "light_intensity_fc": 950,
+    "native_id": 7,
+    "owner_is_null": false,
+    "owner_is_victim": true,
+    "runtime": {
+      "constructor_reverse": 0,
+      "current_frame": 0,
+      "delay_remaining": 0,
+      "first_ai_guard": 1,
+      "frame_step": 1,
+      "frame_timer": [
+        0,
+        9
+      ],
+      "inactive": 0,
+      "loop_remaining": 1,
+      "paused": 0,
+      "rate_reload": 9
+    },
+    "stored_xyz": [
+      0,
+      0,
+      0
+    ],
+    "type_name": "SQDG",
+    "type_should_use_cell_drawer": true,
+    "type_z_adjust": 0,
+    "use_cell_drawer": false,
+    "use_normal_light": false,
+    "z_adjust": 0
+  },
+  "house_convert": {
+    "caller": "00629DD4",
+    "entry": "00705D70",
+    "receiver_is_source": true,
+    "returned": true,
+    "returned_is_null": true
+  },
+  "input": {
+    "actor_admissions": [
+      {
+        "alive": 1,
+        "health": 200,
+        "land_after": 2,
+        "limbo": 0,
+        "location": [
+          2176,
+          2176,
+          0
+        ],
+        "native_id": 4,
+        "owner_alliances": 1,
+        "owner_slot": 0,
+        "primary_current_raw": 32768,
+        "tile_after": 314,
+        "tile_before": 314,
+        "type": "SQD",
+        "unlimbo_al": 1,
+        "unlimbo_facing_input": 128
+      },
+      {
+        "alive": 1,
+        "health": 600,
+        "land_after": 2,
+        "limbo": 0,
+        "location": [
+          2432,
+          2176,
+          0
+        ],
+        "native_id": 5,
+        "owner_alliances": 2,
+        "owner_slot": 1,
+        "primary_current_raw": 32768,
+        "tile_after": 314,
+        "tile_before": 314,
+        "type": "DEST",
+        "unlimbo_al": 1,
+        "unlimbo_facing_input": 128
+      }
+    ],
+    "can_infect_al": 1,
+    "cell_relight": {
+      "arguments": [
+        0,
+        65536,
+        0,
+        1000,
+        1000,
+        1000
+      ],
+      "entry": "00483E30"
+    },
+    "frame": 0,
+    "game_speed": 3,
+    "object_limbo_al": 1,
+    "options_detail": 2,
+    "physical_files": [
+      {
+        "bytes": 336535,
+        "name": "ARTMD.INI",
+        "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+      },
+      {
+        "bytes": 441000,
+        "name": "SQDG.SHP",
+        "sha256": "f75be15eb3b2d63c98966a8787a218aca3b6f975c6d1cc0c1127052835ae144c"
+      }
+    ],
+    "physical_layers": [
+      {
+        "file": "RULESMD.INI",
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+      },
+      {
+        "absent": true,
+        "file": "LANGRULE.INI"
+      },
+      {
+        "file": "MPBattleMD.ini",
+        "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+      },
+      {
+        "file": "Hills.map",
+        "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e"
+      }
+    ]
+  },
+  "normal_profile": {
+    "ambient_percent": 100,
+    "blue_percent": 100,
+    "green_percent": 100,
+    "ground_units": 50,
+    "level_units": 8,
+    "red_percent": 100
+  },
+  "original_entries": [
+    "00424B50",
+    "00483E30",
+    "00484180",
+    "00544E70",
+    "006297F0",
+    "00629DBF",
+    "006838D3",
+    "0068A817",
+    "00705D70"
+  ],
+  "original_light_read": {
+    "cell": [
+      9,
+      8
+    ],
+    "pc": "00629DDE",
+    "value": 950
+  },
+  "original_light_write": {
+    "before": 1000,
+    "offset": 252,
+    "pc": "00629DE5",
+    "size": 4,
+    "value": 950
+  },
+  "schema": 1
+}
