@@ -859,6 +859,36 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
     // sqrt(3712² + 128²) = 3714 leptons, within 15 × 256.
     place(&mut sim, "NAPSIS", "Americans", (54, 40));
     assert!(detected(&sim, americans));
+    // The presentation asks this every frame. Moved off the map, the
+    // warning's lookup stamp stays private to the query.
+    let warning = sim
+        .substrate
+        .anims
+        .iter()
+        .find(|(_, anim)| sim.interner.resolve(anim.type_id()) == "PSIWARN")
+        .map(|(&id, _)| id)
+        .unwrap();
+    let on_map = std::mem::replace(
+        sim.substrate
+            .anims
+            .get_mut(warning)
+            .unwrap()
+            .world_coord_mut_for_test(),
+        crate::sim::anim_class::AnimWorldCoord {
+            x: -2000,
+            y: -2000,
+            z: 0,
+        },
+    );
+    let dummy = sim.effective_shared_cell_dummy().snapshot();
+    assert_ne!(dummy.coord, (-7, -7));
+    detected(&sim, americans);
+    assert_eq!(sim.effective_shared_cell_dummy().snapshot(), dummy);
+    *sim.substrate
+        .anims
+        .get_mut(warning)
+        .unwrap()
+        .world_coord_mut_for_test() = on_map;
     assert_eq!(psi_warnings(&sim), vec![Some(missile)]);
 
     // The missile rises out of sight; its warning goes with it and the

@@ -100,8 +100,8 @@ fn source_release_retains_its_cached_geometry_until_teardown() {
         cache.cells.is_empty(),
         "inactive cache retains no active footprint index"
     );
-    let config = sim.sight_reveal_config(Some(&rules));
-    sim.refresh_sight_sources(&config, Some(&rules));
+    let config = sim.sight_reveal_config(&rules);
+    sim.refresh_sight_sources(&config, &rules);
     assert_eq!(sim.fog.sight_admissions_for_test()[&(id, owner)], cache);
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "inactive-sight-cache", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -138,7 +138,7 @@ fn source_release_retains_its_cached_geometry_until_teardown() {
     // Use that real rules-bearing destructor owner, not a direct store/cache
     // removal or the test-only rules-less flush wrapper.
     restored.process_pending_delete_with(
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
         1,
@@ -186,7 +186,7 @@ fn exact_zero_sight_gate_differs_from_empty_walk_and_override() {
     assert!(admission.latched);
     assert_eq!(admission.radius, -1);
     assert!(admission.cells.is_empty());
-    sim.refresh_object_sight(zero, Some(&rules), 3);
+    sim.refresh_object_sight(zero, &rules, 3);
     assert!(sim.fog.sight_is_latched(zero, owner));
     assert_eq!(
         sim.fog.sight_admissions_for_test()[&(zero, owner)].radius,
@@ -194,8 +194,8 @@ fn exact_zero_sight_gate_differs_from_empty_walk_and_override() {
     );
     assert!(sim.fog.is_cell_revealed(owner, 16, 16));
     let held = sim.fog.sight_admissions_for_test()[&(zero, owner)].clone();
-    let config = sim.sight_reveal_config(Some(&rules));
-    sim.refresh_sight_sources(&config, Some(&rules));
+    let config = sim.sight_reveal_config(&rules);
+    sim.refresh_sight_sources(&config, &rules);
     assert_eq!(
         sim.fog.sight_admissions_for_test()[&(zero, owner)],
         held,
@@ -258,8 +258,8 @@ fn a_nested_source_release_is_not_resurrected_by_outer_walk_or_next_frame() {
     );
     let cache = sim.fog.sight_admissions_for_test()[&(id, owner)].clone();
     let before = sim.fog.by_owner()[&owner].shroud_knowledge_raw().to_vec();
-    let config = sim.sight_reveal_config(Some(&rules));
-    sim.refresh_sight_sources(&config, Some(&rules));
+    let config = sim.sight_reveal_config(&rules);
+    sim.refresh_sight_sources(&config, &rules);
     assert_eq!(sim.fog.sight_admissions_for_test()[&(id, owner)], cache);
     assert!(!sim.fog.sight_is_latched(id, owner));
     assert_eq!(sim.fog.by_owner()[&owner].shroud_knowledge_raw(), before);
@@ -1360,7 +1360,7 @@ fn retail_goldst_cold_fire_borders_and_conceal_notifications_match_native() {
             (actual_xyz.1 / 256) as u16,
             actual_xyz.2 as i32,
         );
-        let config = sim.sight_reveal_config(Some(rules));
+        let config = sim.sight_reveal_config(rules);
         let heights = sim.sight_height_grid(&config);
         let context = UninitContext::with_rules(rules);
         let rng = (
@@ -1618,15 +1618,15 @@ fn a_reveal_before_navigation_publication_tests_the_cell_heights() {
     assert_ne!(early, flat, "the cliff hides cells before publication");
     let grid = PathGrid::from_resolved_terrain(sim.resolved_terrain.as_ref().unwrap());
     sim.install_fixture_path_grid(Some(&grid));
-    sim.refresh_object_sight(id, Some(&rules), 0);
+    sim.refresh_object_sight(id, &rules, 0);
     assert_eq!(
         sim.fog.sight_admission(id, owner).unwrap().cells,
         early,
         "the same cells after publication"
     );
     sim.techno_limbo_with_rules(id, &rules, None);
-    let config = sim.sight_reveal_config(Some(&rules));
-    sim.refresh_sight_sources(&config, Some(&rules));
+    let config = sim.sight_reveal_config(&rules);
+    sim.refresh_sight_sources(&config, &rules);
     for y in 0..32 {
         for x in 0..32 {
             assert!(!sim.fog.is_cell_visible(owner, x, y), "({x}, {y})");
@@ -1684,12 +1684,19 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
         .spawn_object("MTNK", "Russians", 8, 22, 0, &rules)
         .unwrap();
     // The Spy Plane's kind of reveal: a radius that replaces its Sight=.
-    sim.refresh_object_sight(tank, Some(&rules), 7);
+    sim.refresh_object_sight(tank, &rules, 7);
     let tank_sight = sim.fog.sight_admission(tank, russians).unwrap().clone();
     assert_eq!(tank_sight.radius, 7);
     assert!(!sim.fog.sight_is_latched(standing, americans));
 
-    sim.make_ally(russians, americans, &rules, None, FrameEffects::default(), false);
+    sim.make_ally(
+        russians,
+        americans,
+        &rules,
+        None,
+        FrameEffects::default(),
+        false,
+    );
     // RESIDUAL (`Simulation::admit_allied_building_sight`): native's latch
     // (`+0x250`), set by the plant's Unlimbo, makes this `UpdateReveal`
     // return (`0x0070B0B1`); VERA opens it here.
@@ -1697,8 +1704,8 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
     // The re-admission gives a computer House's non-Building only its gap
     // callback (`0x004ADE2D..0x004ADEBF`).
     assert!(!sim.fog.sight_is_latched(tank, americans));
-    let config = sim.sight_reveal_config(Some(&rules));
-    sim.refresh_sight_sources(&config, Some(&rules));
+    let config = sim.sight_reveal_config(&rules);
+    sim.refresh_sight_sources(&config, &rules);
     assert!(
         !sim.fog.sight_is_latched(tank, americans),
         "the frame pass reveals nothing"
@@ -1727,7 +1734,14 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
     assert!(!sim.fog.is_cell_visible(americans, origin.0, origin.1));
     assert!(sim.fog.sight_is_latched(plant, russians));
 
-    sim.make_ally(russians, americans, &rules, None, FrameEffects::default(), false);
+    sim.make_ally(
+        russians,
+        americans,
+        &rules,
+        None,
+        FrameEffects::default(),
+        false,
+    );
     assert!(
         sim.fog.sight_is_latched(plant, americans),
         "0x004ADDE4 passes UpdateReveal's latch test"
@@ -1800,7 +1814,7 @@ fn an_infantry_arrival_refreshes_its_sight_border() {
         sim.per_cell_process(
             man,
             crate::sim::movement::PerCellReason::Arrival,
-            Some(&rules),
+            &rules,
             None,
             FrameEffects::default(),
         )

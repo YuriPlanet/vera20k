@@ -16,7 +16,9 @@ use crate::sim::vision::FogState;
 
 use super::geometry::NativeRadarSurfaceGeometry;
 use super::helpers::owner_dot_color;
-use super::visibility::{RadarRegistrationVisibilityFacts, radar_owner_is_human_player};
+use super::visibility::{
+    RadarRegistrationVisibilityFacts, radar_cell_shrouded, radar_owner_is_human_player,
+};
 
 const TRACKER_BUCKET_COUNT: usize = 256;
 
@@ -140,6 +142,7 @@ pub(super) fn radar_pixel_candidate_eligible(
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
     projection: RadarProjectionFacts,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> bool {
     let Some(entity) = entities.get(entry.stable_id) else {
         return false;
@@ -163,7 +166,7 @@ pub(super) fn radar_pixel_candidate_eligible(
                 .unwrap_or((entity.position.rx(), entity.position.ry()));
             let owner_is_human =
                 radar_owner_is_human_player(entity.owner(), local_owner, houses, game_mode_nonzero);
-            if !fog.is_cell_revealed(local_owner, rx, ry) && !owner_is_human {
+            if radar_cell_shrouded(fog, cells, local_owner, (rx, ry)) && !owner_is_human {
                 return false;
             }
         }

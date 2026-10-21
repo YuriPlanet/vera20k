@@ -127,7 +127,7 @@ fn accepted_direct_and_regular_orders_keep_signed_rules_delays_and_retry_word() 
                     path_runtime.set_blocked_timer_for_test(CdTimer::from_raw(19, 42));
                     path_runtime.set_path_blocked_for_test(true);
                     path_runtime.set_retries_left_for_test(u32::MAX);
-                    let timing = DestinationTiming::from_rules(frame, Some(&rules));
+                    let timing = DestinationTiming::from_rules(frame, &rules);
                     match command {
                         0 => timing.accept(sim.substrate.entities.get_mut(1).unwrap()),
                         1 => {
@@ -135,7 +135,7 @@ fn accepted_direct_and_regular_orders_keep_signed_rules_delays_and_retry_word() 
                             sim.assign_destination_represented(
                                 1,
                                 Some(crate::sim::components::NavTargetRef::cell(10, 8)),
-                                Some(&rules),
+                                &rules,
                                 None,
                                 crate::sim::world::FrameEffects::default(),
                             )
@@ -262,7 +262,7 @@ fn rules_driven_sentinel_timers_survive_snapshot_and_same_frame_process() {
         sim.session.set_tick_for_test(u64::from(u32::MAX));
         assert_eq!(rules.general.path_delay_ticks(), expected_path);
         let entity = sim.substrate.entities.get_mut(1).unwrap();
-        DestinationTiming::from_rules(u32::MAX, Some(&rules)).accept(entity);
+        DestinationTiming::from_rules(u32::MAX, &rules).accept(entity);
         entity
             .navigation
             .path_runtime_mut()

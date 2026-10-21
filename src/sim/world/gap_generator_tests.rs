@@ -112,7 +112,7 @@ fn damage(sim: &mut Simulation, rules: &RuleSet, id: u64, amount: i32) {
 }
 
 fn refresh(sim: &mut Simulation, rules: &RuleSet) {
-    sim.refresh_fog(&vision::VisionConfig::default(), Some(rules));
+    sim.refresh_fog(&vision::VisionConfig::default(), rules);
 }
 
 /// The sight reveal of the Unlimbo `insert` stands for (`0x006F6D27`),
@@ -238,7 +238,7 @@ pub fn gap_operational_power_loss_views() -> Vec<(
     sim.set_object_height(
         10,
         208,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default(),
     );
@@ -303,12 +303,8 @@ pub fn gap_operational_power_loss_views() -> Vec<(
             crate::sim::movement::jumpjet_movement::jumpjet_flight::STATE_TRANSLATE,
         );
         live.set_logic_order_for_test(order);
-        live.advance_live_object_pass(
-            Some(&rules),
-            None,
-            crate::sim::world::FrameEffects::default(),
-        )
-        .expect("fixture frame must complete");
+        live.advance_live_object_pass(&rules, None, crate::sim::world::FrameEffects::default())
+            .expect("fixture frame must complete");
         assert_eq!(
             live.substrate
                 .entities

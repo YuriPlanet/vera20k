@@ -104,7 +104,7 @@ fn damage_event_predicates_match_original_discrete_controls() {
                     .as_u64()
                     .map(|index| houses[index as usize]),
                 &mut persistence,
-                Some(&rules),
+                &rules,
                 live,
             )
         };
@@ -188,7 +188,7 @@ fn damage_event_single_register_history_matches_original() {
                     ..Default::default()
                 },
                 row["repeat"].as_bool().unwrap(),
-                Some(&rules),
+                &rules,
             )
         });
         assert_eq!(result, integer(&row["result"]) != 0, "{name}: Register");
@@ -340,14 +340,14 @@ fn retail_damage_scene(route: &Value) -> Option<RetailDamageScene> {
     crate::sim::scenario_bootstrap::initialize_map_roster_houses(
         &mut sim,
         &roster,
-        Some(&rules),
+        &rules,
         Some(&map.ini),
     );
     sim.install_team_ai_registry(&teams, &rules).unwrap();
     let eva =
         EvaRegistry::from_ini(&IniFile::from_bytes(assets.get_ref("EVAMD.INI").unwrap()).unwrap());
     sim.initialize_trigger_definitions(&excerpt, &teams, Some(&eva), None);
-    sim.classify_map_triggers(Some(&rules));
+    sim.classify_map_triggers(&rules);
     // Declared clear geometry isolates the selected received-damage route.
     // Retail rules/roster/definitions remain intact; whole campaign timing,
     // terrain, animation asset binding and world RNG parity are not claimed.
@@ -433,7 +433,7 @@ fn retail_all05_first_damage_creates_defense_team_from_existing_units() {
         integer(&route["native_event"]["conditions"][0]["kind"])
     );
     assert_eq!(
-        resolve_trigger_house(&sim, definition.owner.as_deref(), Some(&rules)),
+        resolve_trigger_house(&sim, definition.owner.as_deref(), &rules),
         Some(owner)
     );
     let team_type = sim
@@ -760,7 +760,7 @@ fn retail_all06_red_damage_runs_parliament_destroy_attached_synchronously() {
     sim.session
         .set_binary_frame_for_test(timer.start_frame().wrapping_add(timer.duration()) as u32);
     let previous_actions = sim.trigger_runtime.action_trace.len();
-    let effects = sim.advance_triggers(Some(&rules), Some(&overlays), FrameEffects::default());
+    let effects = sim.advance_triggers(&rules, Some(&overlays), FrameEffects::default());
     assert!(!sim.trigger_runtime.trigger(next).unwrap().enabled);
     assert_eq!(
         sim.trigger_runtime.action_trace[previous_actions..]

@@ -210,14 +210,11 @@ impl Simulation {
     /// The pass's answers, before its first turn.
     pub(in crate::sim::world) fn answer_batched_scans(
         &mut self,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
     ) {
-        let (Some(rules), Some(terrain), Some(_)) = (
-            rules,
-            self.resolved_terrain.as_ref(),
-            self.scan_batch.as_ref(),
-        ) else {
+        let (Some(terrain), Some(_)) = (self.resolved_terrain.as_ref(), self.scan_batch.as_ref())
+        else {
             return;
         };
         let dummy = terrain.shared_cell_dummy();

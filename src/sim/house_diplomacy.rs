@@ -348,8 +348,7 @@ impl Simulation {
                         target_owner,
                     )
                 {
-                    let _ =
-                        self.assign_target_represented(id, None, Some(rules), registry, effects);
+                    let _ = self.assign_target_represented(id, None, rules, registry, effects);
                 }
             }
             self.announce_alliance(owner, other, true, announce);
@@ -358,7 +357,7 @@ impl Simulation {
         self.admit_allied_building_sight(
             owner,
             other,
-            crate::sim::world::UninitContext::new(Some(rules), registry).with_effects(effects),
+            crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
         );
     }
 

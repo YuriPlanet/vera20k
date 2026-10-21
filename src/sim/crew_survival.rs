@@ -436,7 +436,7 @@ impl Simulation {
         //mission queue, and is decremented at443288, including failed exits.
         self.with_object_placement_scope(|sim| {
             if !sim.unlimbo_crew(rules, id, unlimbo, None, registry, effects) {
-                sim.discard_constructed_limbo(id, Some(rules), effects);
+                sim.discard_constructed_limbo(id, rules, effects);
                 return false;
             }
             let strength = rules.object(crew).map_or(0, |object| object.strength);
@@ -587,7 +587,7 @@ impl Simulation {
             let facing = building.body_facing_dir(frame);
             let requested = building.position;
             let positioned = if infantry && !no_survivor {
-                sim.infantry_unlimbo_position(requested, Some(rules))
+                sim.infantry_unlimbo_position(requested, rules)
             } else {
                 Some(requested)
             };
@@ -615,7 +615,7 @@ impl Simulation {
                                 placement: PlacementEvidence::MarkSucceeded,
                                 logic_eligible: true,
                             },
-                            UninitContext::new(Some(rules), registry)
+                            UninitContext::new(rules, registry)
                                 .with_effects(effects)
                                 .with_unlimbo_facing(Some(facing)),
                         ),
@@ -625,7 +625,7 @@ impl Simulation {
             if !revealed {
                 sim.uninit_with_context(
                     passenger,
-                    UninitContext::new(Some(rules), registry).with_effects(effects),
+                    UninitContext::new(rules, registry).with_effects(effects),
                 );
                 return;
             }
@@ -749,7 +749,7 @@ impl Simulation {
             self.techno_select(
                 id,
                 true,
-                UninitContext::new(Some(rules), registry).with_effects(effects),
+                UninitContext::new(rules, registry).with_effects(effects),
             );
         }
     }
@@ -785,7 +785,7 @@ impl Simulation {
             self.kill_passengers(
                 unit_id,
                 dying.attacker,
-                UninitContext::new(Some(rules), registry).with_effects(effects),
+                UninitContext::new(rules, registry).with_effects(effects),
             );
         }
         if crashable {
@@ -889,7 +889,7 @@ impl Simulation {
             self.record_kill_and_uninit(
                 passenger,
                 dying.attacker,
-                UninitContext::new(Some(rules), registry).with_effects(effects),
+                UninitContext::new(rules, registry).with_effects(effects),
             );
             return;
         }
@@ -944,15 +944,14 @@ impl Simulation {
                 sim.record_kill_and_uninit(
                     passenger,
                     dying.attacker,
-                    UninitContext::new(Some(rules), registry).with_effects(effects),
+                    UninitContext::new(rules, registry).with_effects(effects),
                 );
                 return;
             }
 
             // `0x00738104..0x0073812A`: Assign_Target(NULL).
             if open_topped && passenger_owner != unit_owner {
-                let _ =
-                    sim.assign_target_represented(passenger, None, Some(rules), registry, effects);
+                let _ = sim.assign_target_represented(passenger, None, rules, registry, effects);
             }
             // `0x00738130..0x0073813D`: Scatter(&EmptyCoord, 1, 0).
             // The virtual receiver includes Unit passengers. Its destination
@@ -976,7 +975,7 @@ impl Simulation {
                 sim.techno_select(
                     passenger,
                     true,
-                    UninitContext::new(Some(rules), registry).with_effects(effects),
+                    UninitContext::new(rules, registry).with_effects(effects),
                 );
             }
         });
@@ -997,7 +996,7 @@ impl Simulation {
         let (rx, ry, z) = unlimbo.cell_level();
         let id = self.construct_crew_limbo(rules, crew, owner, (rx, ry), z, effects)?;
         if !self.unlimbo_crew(rules, id, unlimbo, None, registry, effects) {
-            self.discard_constructed_limbo(id, Some(rules), effects);
+            self.discard_constructed_limbo(id, rules, effects);
             return None;
         }
         Some(id)
@@ -1084,7 +1083,7 @@ impl Simulation {
                 // ordinary constructors, factory output and slaves.
                 let Some(position) = self.infantry_unlimbo_position(
                     RevealPosition::new(cell.0, cell.1, z, requested_z, request.0, request.1),
-                    Some(rules),
+                    rules,
                 ) else {
                     return false;
                 };
@@ -1124,7 +1123,7 @@ impl Simulation {
                 placement: PlacementEvidence::MarkSucceeded,
                 logic_eligible: true,
             },
-            UninitContext::new(Some(rules), registry)
+            UninitContext::new(rules, registry)
                 .with_effects(effects)
                 .with_unlimbo_facing(facing),
         );
@@ -1232,7 +1231,7 @@ impl Simulation {
                     registry,
                     effects,
                 ) {
-                    sim.discard_constructed_limbo(id, Some(rules), effects);
+                    sim.discard_constructed_limbo(id, rules, effects);
                     return false;
                 }
                 true

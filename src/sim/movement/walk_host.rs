@@ -20,7 +20,7 @@ impl Simulation {
     pub(crate) fn finish_walk_navigation(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) -> Result<(), String> {
         let Some(actor) = self.substrate.entities.get(id) else {
@@ -71,7 +71,7 @@ impl Simulation {
         &mut self,
         id: u64,
         coord: DriveCoord,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
@@ -139,7 +139,7 @@ impl Simulation {
         &mut self,
         id: u64,
         head: DriveCoord,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<bool, crate::sim::world::FrameAdvanceError> {

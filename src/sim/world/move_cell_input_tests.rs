@@ -124,7 +124,7 @@ fn ground_walk_order_preserves_native_human_deploy_refusal() {
     let _ = sim.assign_destination_represented(
         id,
         Some(crate::sim::components::NavTargetRef::cell(11, 10)),
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     );

@@ -162,26 +162,16 @@ fn place(sim: &mut Simulation, rules: &RuleSet, id: u64, (x, y): (i32, i32)) {
             false
         ));
     }
-    assert!(sim.foot_mark_remove(
-        id,
-        Some(rules),
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
+    assert!(sim.foot_mark_remove(id, rules, None, crate::sim::world::FrameEffects::default()));
     let coord = crate::sim::components::DriveCoord { x, y, z: 0 };
     crate::sim::movement::ground_pose::foot_set_location(
         &mut sim.substrate.entities,
         id,
         coord,
-        Some(rules),
+        rules,
         &sim.interner,
     );
-    assert!(sim.foot_mark_put(
-        id,
-        Some(rules),
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
+    assert!(sim.foot_mark_put(id, rules, None, crate::sim::world::FrameEffects::default()));
     if infantry {
         assert!(crate::sim::world::Simulation::object_raw_receiver_at(
             &mut sim.substrate,

@@ -130,10 +130,7 @@ fn grinder_seek_keeps_the_last_registered_building_on_distance_ties() {
             .nav_com(),
         Some(NavTargetRef::object(last))
     );
-    sim.uninit_with_context(
-        last,
-        crate::sim::world::UninitContext::new(Some(&rules), None),
-    );
+    sim.uninit_with_context(last, crate::sim::world::UninitContext::new(&rules, None));
     assert!(sim.foot_enter_grinder(civ, &rules, None, FrameEffects::default()));
     assert_eq!(
         sim.substrate
@@ -186,7 +183,7 @@ fn vehicle_grinding_refunds_both_cargo_levels_and_removes_each_passenger() {
     let outer = spawn(&mut sim, &rules, "TANK", "Russians", 11, 10);
     let nested = spawn(&mut sim, &rules, "CIV", "Russians", 12, 10);
     let sibling = spawn(&mut sim, &rules, "CIV", "Russians", 13, 10);
-    let context = crate::sim::world::UninitContext::new(Some(&rules), None);
+    let context = crate::sim::world::UninitContext::new(&rules, None);
     assert!(sim.add_cargo_passenger_chain(outer, &[(nested, 1.0)], context));
     assert!(sim.add_cargo_passenger_chain(tank, &[(sibling, 1.0)], context));
     assert!(sim.add_cargo_passenger_chain(tank, &[(outer, 1.0)], context));
@@ -210,7 +207,7 @@ fn vehicle_grinding_refunds_both_cargo_levels_and_removes_each_passenger() {
     sim.per_cell_process(
         tank,
         PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     )
@@ -459,11 +456,11 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
         sim.session.install_waypoints(&cropped.waypoints);
         spawn(&mut sim, &rules, "YAGRND", "Civie3", 18, 10);
         sim.initialize_trigger_definitions(&cropped, &teams, None, None);
-        sim.classify_map_triggers(Some(&rules));
+        sim.classify_map_triggers(&rules);
         let frame = |sim: &mut Simulation| {
             sim.advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 None,
                 67,
                 crate::sim::world::TickLane::Ordinary,
@@ -592,7 +589,7 @@ fn infantry_arrival_switches_active_to_special_without_a_foot_tail() {
     sim.per_cell_process(
         civ,
         PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     )
@@ -626,10 +623,7 @@ fn eaten_idles_when_its_grinder_expires_without_falling_back_to_hunt() {
     let civ = spawn(&mut sim, &rules, "CIV", "Russians", 10, 10);
     assert!(sim.foot_enter_grinder(civ, &rules, None, FrameEffects::default()));
     mission(&mut sim, civ, MissionType::Eaten, MissionId::NONE);
-    sim.uninit_with_context(
-        grinder,
-        crate::sim::world::UninitContext::new(Some(&rules), None),
-    );
+    sim.uninit_with_context(grinder, crate::sim::world::UninitContext::new(&rules, None));
     assert_eq!(
         sim.substrate
             .entities
@@ -746,7 +740,7 @@ fn arrival_callbacks_precede_refund_and_playback_precedes_the_next_main_draw() {
     .unwrap();
     let teams = TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map.ini, false);
     sim.initialize_trigger_definitions(&map, &teams, None, None);
-    sim.classify_map_triggers(Some(&rules));
+    sim.classify_map_triggers(&rules);
     sim.attach_object_trigger_tag(grinder, Some("OWNER_TAG"));
     sim.attach_object_trigger_tag(civ, Some("DONE_TAG"));
     sim.clear_tag_dispatch_trace_for_test();

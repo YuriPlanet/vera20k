@@ -163,7 +163,7 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
                     );
                     // Actor construction/cleanup are Rust fixture preparation,
                     // outside the original Record/limit comparison interval.
-                    sim.discard_constructed_limbo(product, Some(&rules), FrameEffects::default());
+                    sim.discard_constructed_limbo(product, &rules, FrameEffects::default());
                 }
                 "factory" => {
                     let strip = match category(family) {
@@ -179,7 +179,7 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
                         .and_then(|factory| factory.object)
                         .and_then(|object| object.entity_id);
                     if let Some(held) = held {
-                        sim.discard_constructed_limbo(held, Some(&rules), FrameEffects::default());
+                        sim.discard_constructed_limbo(held, &rules, FrameEffects::default());
                     }
                     sim.production
                         .factories_mut()

@@ -270,10 +270,10 @@ fn voice_precedes_turret_controls_and_each_control_reaches_its_native_boundary()
         id,
         ai_counter: sim.substrate.entities.get(id).unwrap().mission.ai_counter(),
     };
-    let effects = FrameEffects::for_sound(&boundary).with_rules(Some(&rules));
+    let effects = FrameEffects::for_sound(&boundary);
     sim.object_ai_visit_one_with_effects(
         id,
-        Some(&rules),
+        &rules,
         crate::sim::world::techno_ai::ObjectAiCtx {
             effects,
             ..Default::default()
@@ -366,7 +366,7 @@ fn turret_rotate_sound_matches_native_control_corpus() {
                 id,
                 visit["sample"].as_u64().unwrap() != 0,
                 &rules,
-                FrameEffects::for_sound(&boundary).with_rules(Some(&rules)),
+                FrameEffects::for_sound(&boundary),
             );
             let expected = visit["calls"]
                 .as_array()
@@ -423,7 +423,7 @@ fn turret_rotate_sound_matches_native_control_corpus() {
         }
         let prior = latch(&sim, id);
         sim.sound_events.clear_for_test();
-        sim.turret_rotate_sound_limbo(id, FrameEffects::default(), Some(&rules));
+        sim.turret_rotate_sound_limbo(id, FrameEffects::default(), &rules);
         assert_eq!(
             turret_events(&sim, id),
             if prior { vec![] } else { vec!["release"] }
@@ -542,7 +542,7 @@ fn a_retail_grand_cannons_mission_aim_starts_and_releases_the_retail_cue() {
     sim.assign_target_represented(
         id,
         Some(TargetKind::Entity(enemy)),
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     )

@@ -211,7 +211,7 @@ fn generic_member_follows_capture_and_limbo_through_existing_owners() {
         "UnInit leaves ctor-to-dtor tracking until physical destruction"
     );
     sim.process_pending_delete_with(
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
         1,
@@ -248,7 +248,7 @@ fn alternate_follows_owned_limbo_acquisition_and_destruction() {
             .active_count(EntityCategory::Unit, type_id),
         0
     );
-    sim.discard_constructed_limbo(alternate, Some(&rules), FrameEffects::default());
+    sim.discard_constructed_limbo(alternate, &rules, FrameEffects::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::No
@@ -274,7 +274,7 @@ fn generic_override_precedes_tech_and_prerequisites_then_checks_build_limit() {
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::AtLimit
     );
-    sim.discard_constructed_limbo(alternate, Some(&rules), FrameEffects::default());
+    sim.discard_constructed_limbo(alternate, &rules, FrameEffects::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::No
@@ -342,7 +342,7 @@ fn installed_upgrade_direct_and_group_requirements_follow_host_lifecycle() {
             .object_alive()
     );
     sim.process_pending_delete_with(
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
         1,

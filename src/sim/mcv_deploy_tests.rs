@@ -380,7 +380,11 @@ fn continuation_result_and_rotation_edge_match_original_blocks() {
         e.mission
             .set_handler_state(if kind == "initial" { 1 } else { 2 });
         if kind == "initial" {
-            finish_initial_attempt(&mut sim, id);
+            finish_initial_attempt(
+                &mut sim,
+                id,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+            );
         } else {
             finish_retry(&mut sim.substrate, id, row["result"].as_u64().unwrap() != 0);
         }

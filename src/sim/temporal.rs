@@ -73,10 +73,9 @@
 //!   its Chronosphere warp-out (60 frames). Effect: VERA keeps the object
 //!   frozen until the chain lets go; native thaws it once its warp-in ends,
 //!   or when the chain lets go before the warp.
-//! - `Mark(2)` at warp start and release (vtable `+0x124`) and the building's
-//!   animation-slot translucency/fades (`0x004521C0`/`0x00452210`, Anim+119,
-//!   distinct from the power pause at+19E) are presentation; their independent online latch is
-//!   [`GameEntity::building_online`].
+//! - `Mark(2)` at warp start and release (vtable `+0x124`) is presentation.
+//!   A building's online latch and slot-anim freeze (`0x004521C0`/`0x00452210`)
+//!   are `ObjectSubstrate::set_building_online_for_temporal`.
 //! - House `+0x1FC`, set at a building's warp start (`0x0071B13A`), release
 //!   (`0x0071AC49`, `0x0071AD17`) and erase (`0x0071AA60`), asks the House
 //!   update for the Super passes (`0x004F92F6`, `0x004F92FD`). VERA tests a
@@ -397,7 +396,7 @@ impl Simulation {
                 crate::sim::spawn_manager::kill_all_spawns_with_context(
                     self,
                     target,
-                    UninitContext::new(Some(rules), registry).with_effects(effects),
+                    UninitContext::new(rules, registry).with_effects(effects),
                 );
             }
             if self
@@ -471,10 +470,7 @@ impl Simulation {
                 }
             }
         }
-        // 0x0071B0EA sets `+0x270`, which the head above stands for; a
-        // building's independent online latch is forced off (`0x004521C0`).
-        self.substrate
-            .set_building_online_for_temporal(target, false);
+        // 0x0071B0EA sets `+0x270`, which the head above stands for.
         // 0x0071B0FC..0x0071B10B: a gattling victim winds down one tick.
         if self
             .substrate
@@ -485,13 +481,18 @@ impl Simulation {
         {
             self.gattling_update(target, rules, 1, effects);
         }
-        // 0x0071B14E..0x0071B162: a victim that was itself warping lets go.
+        // 0x0071B110..0x0071B13A: a building marks its House's power, then
+        // forces its independent online latch off and freezes its slot anims
+        // (`0x004521C0`), then marks the House's Super passes.
         if let Some(owner) = self.substrate.entities.get(target).and_then(|entity| {
             (entity.category() == EntityCategory::Structure).then_some(entity.owner())
         }) {
             Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false); //71B126, before release
+            self.substrate
+                .set_building_online_for_temporal(target, false); //71B12F
             self.houses.request_house_tech_tree_recheck(owner); //71B13A
         }
+        // 0x0071B14E..0x0071B162: a victim that was itself warping lets go.
         Self::temporal_release_if_warping(
             &mut self.substrate,
             &mut self.houses,
@@ -722,7 +723,7 @@ impl Simulation {
             // 0x0071A9EE..0x0071AA15: a Tank Bunker releases its occupant
             // (`0x004593A0`). Garrison occupants and absorbed passengers go
             // in the UnInit below (module residual).
-            crate::sim::docking::bunker_link::release_sell_destroy(self, target, effects);
+            crate::sim::docking::bunker_link::release_sell_destroy(self, target, rules, effects);
         }
         // 0x0071AA90: the erased object's own bunker link (`+0x2E4`) names a
         // building — `BuildingClass::ClearBunker @ 0x00459470`, ahead of
@@ -769,13 +770,13 @@ impl Simulation {
             target,
             crate::sim::combat::KillSource::Techno(Some(head)),
             crate::sim::combat::KillCallback::Terminal,
-            UninitContext::new(Some(rules), registry).with_effects(effects),
+            UninitContext::new(rules, registry).with_effects(effects),
         );
         let target_owner = self.substrate.entities.get(target).map(GameEntity::owner);
         // vtable +0xF8 UnInit: no death effects, no survivors.
         self.uninit_with_context(
             target,
-            UninitContext::new(Some(rules), registry).with_effects(effects),
+            UninitContext::new(rules, registry).with_effects(effects),
         );
         //71AA5A..71AA60 requests the owner's House tail; the actual late
         //Building destructor separately calls hold/revoke43BEF0.
@@ -1013,14 +1014,12 @@ impl Simulation {
     /// `TechnoClass::PointerExpired`'s forward (`0x00707B34` ->
     /// `0x0071AB60`), outside the removal gate: the attacker's own expiry lets
     /// go; its target's expiry clears the link and idles the attacker without
-    /// relinking the chain. `rules` is absent only for a rules-less UnInit
-    /// (fixtures; production passes the frame's rules), which has no idle
-    /// selector, so the idle is skipped there.
+    /// relinking the chain.
     pub(crate) fn temporal_pointer_expired(
         &mut self,
         listener: u64,
         expired: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
         let Some(target) = Self::temporal_link(&self.substrate, listener).map(|link| link.target)
@@ -1036,9 +1035,7 @@ impl Simulation {
             );
         } else if target == Some(expired) {
             self.substrate.temporal_clear_fields(listener);
-            if let Some(rules) = rules {
-                self.temporal_owner_idle(listener, rules, effects);
-            }
+            self.temporal_owner_idle(listener, rules, effects);
         }
     }
 
@@ -1167,7 +1164,7 @@ impl Simulation {
                 // Process even in Limbo. Its71930C..719322 early arm calls the
                 // existing TimerCheck owner; FootAI's later Limbo gate remains.
                 // Native execution: infantry_teleport_prologue.json (Steam gamemd).
-                self.process_teleport(id, Some(rules), ctx);
+                self.process_teleport(id, rules, ctx);
             }
             if self
                 .substrate
@@ -1209,7 +1206,7 @@ impl Simulation {
             // Each frozen class calls virtual +3C8 (Infantry51BBEF), not
             // the Techno base write set. Its reached tail also clears a
             // Tesla Trooper's automatic charging intent at51B33F.
-            let _ = self.assign_target_represented(id, None, Some(rules), registry, ctx.effects);
+            let _ = self.assign_target_represented(id, None, rules, registry, ctx.effects);
         }
         let clears_destination = category != EntityCategory::Structure
             && self
@@ -1218,7 +1215,7 @@ impl Simulation {
                 .get(id)
                 .is_some_and(|entity| entity.navigation.nav_com().is_some());
         if clears_destination {
-            self.assign_null_destination(id, Some(rules), registry, ctx.effects);
+            self.assign_null_destination(id, rules, registry, ctx.effects);
         }
         true
     }

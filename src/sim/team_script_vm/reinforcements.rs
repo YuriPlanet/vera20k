@@ -342,7 +342,7 @@ impl Simulation {
                     member,
                     coord,
                     0,
-                    PlacementEvidence::UnitEntryAdmitted,
+                    PlacementEvidence::FootEntryAdmitted,
                     rules,
                     registry,
                     effects,
@@ -351,7 +351,7 @@ impl Simulation {
             });
             if !placed {
                 //65F016 decrements A8E7AC before the scalar deleting destructor.
-                self.discard_constructed_limbo(member, Some(rules), effects);
+                self.discard_constructed_limbo(member, rules, effects);
                 continue;
             }
             let locomotor = self
@@ -388,7 +388,7 @@ impl Simulation {
             return (false, None);
         }
         for member in successes.into_iter().rev() {
-            self.foot_mark_remove(member, Some(rules), registry, effects);
+            self.foot_mark_remove(member, rules, registry, effects);
             //65F29F publishes pending3 after Mark0 and before Commence5B3570.
             //The same warp payload carries that pending value until state7.
             self.substrate
@@ -508,7 +508,7 @@ impl Simulation {
                 .get(head)
                 .map(|entity| entity.owner())
             else {
-                self.discard_constructed_limbo(plane, Some(rules), effects);
+                self.discard_constructed_limbo(plane, rules, effects);
                 return false;
             };
             let (authored, waypoint) = self.houses.get(&owner).map_or((-1, 0), |house| {
@@ -517,7 +517,7 @@ impl Simulation {
             let Some(cell) =
                 self.aircraft_edge_cell(Edge::authored_or_waypoint(authored, waypoint))
             else {
-                self.discard_constructed_limbo(plane, Some(rules), effects);
+                self.discard_constructed_limbo(plane, rules, effects);
                 return false;
             };
             (cell.0 as i16, cell.1 as i16)
@@ -548,7 +548,7 @@ impl Simulation {
         if !placed {
             //65DD08 deletes only the carrier. The already constructed Team
             //members remain held; no additional UnInit/kill is invented.
-            self.discard_constructed_limbo(plane, Some(rules), effects);
+            self.discard_constructed_limbo(plane, rules, effects);
             return false;
         }
         let cargo_members: Vec<_> = members
@@ -570,7 +570,7 @@ impl Simulation {
         let loaded = self.add_cargo_passenger_chain(
             plane,
             &cargo_members,
-            UninitContext::new(Some(rules), registry).with_effects(effects),
+            UninitContext::new(rules, registry).with_effects(effects),
         );
         assert!(
             loaded,
@@ -757,7 +757,7 @@ impl Simulation {
                 let loaded = self.add_cargo_passenger_chain(
                     transport,
                     &cargo_members,
-                    UninitContext::new(Some(rules), registry).with_effects(effects),
+                    UninitContext::new(rules, registry).with_effects(effects),
                 );
                 assert!(
                     loaded,
@@ -837,7 +837,7 @@ impl Simulation {
         let mut placed_any = false;
         for &member in members {
             if cell == (0, 0) {
-                self.discard_constructed_limbo(member, Some(rules), effects);
+                self.discard_constructed_limbo(member, rules, effects);
                 continue;
             }
             let aircraft = self
@@ -871,7 +871,7 @@ impl Simulation {
                             member,
                             coord,
                             facing,
-                            PlacementEvidence::UnitEntryAdmitted,
+                            PlacementEvidence::FootEntryAdmitted,
                             rules,
                             registry,
                             effects,
@@ -912,7 +912,7 @@ impl Simulation {
                                 .then_some(candidate)
                         });
                     if next.is_none() {
-                        sim.discard_constructed_limbo(member, Some(rules), effects);
+                        sim.discard_constructed_limbo(member, rules, effects);
                     }
                     (false, next)
                 });

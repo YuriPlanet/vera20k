@@ -4,7 +4,7 @@
 //! building's existing StageClass, Techno RepairTick and ExitObject owners.
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::passenger::{DepartureRoute, depart_cargo_head};
 use crate::sim::radio::{self, RadioMessage, RadioResponse};
@@ -62,13 +62,8 @@ pub(super) fn mission_repair(
         }
         building.mission_leaf.set_building_ready_latch(0);
         building.mission_leaf.reset_building_repair_progress();
-        let response = radio::transmit_to_contact(
-            sim,
-            hospital,
-            RadioMessage::RepairTick,
-            Some(rules),
-            effects,
-        );
+        let response =
+            radio::transmit_to_contact(sim, hospital, RadioMessage::RepairTick, rules, effects);
         if matches!(
             response,
             RadioResponse::Negatory
@@ -124,7 +119,7 @@ pub(super) fn mission_repair(
                     MissionId::from_known(MissionType::Guard),
                     0,
                     now,
-                    &EntityReadyInputProvider,
+                    &LiveReadyInputProvider { rules },
                 );
             }
         }

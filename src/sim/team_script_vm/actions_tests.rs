@@ -53,7 +53,7 @@ fn wall_sale_detach_clears_only_matching_team_target_fields() {
     assert!(sim.apply_command_with_overlays(
         "Receiver",
         &Command::SellWallAtCell { x: 4, y: 4 },
-        Some(&rules),
+        &rules,
         Some(&overlays),
         FrameEffects::default(),
     ));
@@ -82,7 +82,12 @@ fn object_detach_clears_team_targets_without_expiring_zone_or_members() {
     state.mission_target = Some(TeamTarget::Object(44));
     state.focus = Some(TeamTarget::Cell { x: 4, y: 4 });
     state.zone = state.mission_target;
-    sim.stop_all_targeting_on_detach(44, None, None, FrameEffects::default());
+    sim.stop_all_targeting_on_detach(
+        44,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        None,
+        FrameEffects::default(),
+    );
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!(state.mission_target, None);
     assert_eq!(state.focus, Some(TeamTarget::Cell { x: 4, y: 4 }));
@@ -109,7 +114,7 @@ fn tesla_charger_team_recalls_an_automatic_target_but_keeps_an_explicit_attack()
             sim.assign_target_represented(
                 source,
                 Some(TargetKind::Entity(coil)),
-                Some(&rules),
+                &rules,
                 None,
                 FrameEffects::default(),
             )
@@ -831,7 +836,7 @@ fn script59_building_gate_and_retained_ammo_route_match_original_controls() {
         }
         if input["count"] == 0 {
             for &member in &members {
-                sim.team_remove_member(team, member, false, Some(&rules), FrameEffects::default());
+                sim.team_remove_member(team, member, false, &rules, FrameEffects::default());
             }
         }
         if !first {

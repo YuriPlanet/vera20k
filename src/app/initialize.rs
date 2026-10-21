@@ -660,7 +660,7 @@ impl App {
                     theater_name: "TEMPERATE".to_string(),
                     theater_ext: "tem".to_string(),
                     target_lines: startup_target_lines,
-                    cached_overlay_instances: Vec::new(),
+                    cached_cell_body_instances: Vec::new(),
                     terrain_grid: None,
                     overlays: Default::default(),
                     terrain_objects: Vec::new(),

@@ -97,7 +97,7 @@ pub fn launch(
         .clamp(0, i32::from(u16::MAX)) as u16;
     #[cfg(any(test, feature = "test-support"))]
     observe(Observed::RevealArea(coord, radius));
-    let config = sim.sight_reveal_config(Some(rules));
+    let config = sim.sight_reveal_config(rules);
     let viewers = vision::direct_reveal_viewers(
         &sim.fog,
         sim.house_alliances.as_map(),

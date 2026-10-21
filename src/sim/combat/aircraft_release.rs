@@ -55,7 +55,9 @@ fn live_shot<'r>(
                     terrain.type_ref(),
                 ))
             }),
-        Some(TargetKind::Cell(rx, ry)) => Some((cell_center_coords(rx, ry), entity.type_ref())),
+        Some(target @ TargetKind::Cell(..)) => {
+            resolve_target_coords(&target, world).map(|coords| (coords, entity.type_ref()))
+        }
         None => None,
     };
     let shot = coordinates.map(|(target_coords, target_type_ref)| AdmittedFire {
@@ -412,7 +414,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             .general
             .attacking_aircraft_sight_range
             .clamp(0, i32::from(u16::MAX)) as u16;
-        let config = world.sight_reveal_config(Some(strike.rules));
+        let config = world.sight_reveal_config(strike.rules);
         let heights = world.sight_height_grid(&config);
         let _ = world.reveal_area(
             &[owner],
@@ -425,7 +427,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             Some(&heights),
             final_pass,
             &config,
-            crate::sim::world::UninitContext::new(Some(strike.rules), strike.overlay_registry)
+            crate::sim::world::UninitContext::new(strike.rules, strike.overlay_registry)
                 .with_effects(strike.run.effects()),
             crate::sim::vision::MapRevealProjection::Transient,
             world.session.current_house(),
@@ -441,7 +443,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
         let strike = &mut *self.strike;
         strike.world.uninit_with_context(
             strike.id,
-            crate::sim::world::UninitContext::new(Some(strike.rules), strike.overlay_registry)
+            crate::sim::world::UninitContext::new(strike.rules, strike.overlay_registry)
                 .with_effects(strike.run.effects()),
         );
     }

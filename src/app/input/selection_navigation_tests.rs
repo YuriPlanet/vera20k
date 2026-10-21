@@ -1961,7 +1961,7 @@ fn next_previous_search_and_candidate_gates_match_original_execution() {
                         sim.entities(),
                         Some(&rules),
                         Some(sim.interner()),
-                    ) && sim.object_is_selectable(visit.id, Some(&rules))
+                    ) && sim.object_is_selectable(visit.id, &rules)
                 }
                 other => panic!("unexpected native gate {other}"),
             };

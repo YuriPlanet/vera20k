@@ -21,7 +21,7 @@ pub(super) struct ProjectileCollisionWorld<'a> {
     pub alliances: &'a HouseAllianceMap,
     pub overlays: Option<&'a crate::sim::overlay_grid::OverlayGrid>,
     pub overlay_registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
-    pub rules: Option<&'a RuleSet>,
+    pub rules: &'a RuleSet,
     pub map_size: Option<(i32, i32)>,
 }
 
@@ -155,17 +155,14 @@ impl ProjectileCollisionWorld<'_> {
         projectile: &Projectile,
         location: ProjectileCoord,
     ) -> ImpactLadderWorld {
-        let em_effect = self.rules.is_some_and(|rules| {
-            rules
-                .warhead(self.interner.resolve(projectile.payload().warhead))
-                .is_some_and(|warhead| warhead.em_effect)
-        });
+        let em_effect = self
+            .rules
+            .warhead(self.interner.resolve(projectile.payload().warhead))
+            .is_some_and(|warhead| warhead.em_effect);
         let target = match projectile.target() {
             ProjectileTarget::Entity(id) => self.entities.get(id).map(|target| {
                 let coords = self.location(target);
-                let object_type = self
-                    .rules
-                    .and_then(|rules| self.interner.object_type(target.type_ref(), rules));
+                let object_type = self.interner.object_type(target.type_ref(), self.rules);
                 let offset_coords = crate::sim::movement::ground_pose::object_target_coords(
                     target,
                     self.terrain,
@@ -183,7 +180,7 @@ impl ProjectileCollisionWorld<'_> {
                     ground_layer: super::display_registry::entity_layer(
                         target,
                         self.terrain,
-                        self.rules.map(|rules| (rules, self.interner)),
+                        Some((self.rules, self.interner)),
                     ) == super::display_layers::DisplayLayer::GROUND,
                     distance: self
                         .target_distance(location, projectile.target())
@@ -306,16 +303,13 @@ impl ProjectileCollisionWorld<'_> {
                     let exempt = self
                         .entities
                         .get(id)
-                        .and_then(|object| {
-                            self.rules.and_then(|rules| {
-                                self.interner.object_type(object.type_ref(), rules)
-                            })
-                        })
+                        .and_then(|object| self.interner.object_type(object.type_ref(), self.rules))
                         .is_some_and(|kind| {
                             kind.is_1x1_with_undeploy()
-                                && kind.undeploys_into.as_deref().is_some_and(|name| {
-                                    self.rules.is_some_and(|rules| rules.object(name).is_some())
-                                })
+                                && kind
+                                    .undeploys_into
+                                    .as_deref()
+                                    .is_some_and(|name| self.rules.object(name).is_some())
                         });
                     // LaserFence+stage>=8 has no active retail type/data writer.
                     obstacle &= Some(id) != source && !exempt && !self.allied(source, id);
@@ -535,10 +529,9 @@ impl ProjectileCollisionWorld<'_> {
         let (location, building) = match target {
             ProjectileTarget::Entity(id) => {
                 let target = self.entities.get(id)?;
-                let building = self
-                    .rules
-                    .filter(|_| target.category() == EntityCategory::Structure)
-                    .and_then(|rules| self.interner.object_type(target.type_ref(), rules))
+                let building = (target.category() == EntityCategory::Structure)
+                    .then(|| self.interner.object_type(target.type_ref(), self.rules))
+                    .flatten()
                     .map(|kind| {
                         let (width, height) =
                             crate::rules::foundation::foundation_dimensions(&kind.foundation);
@@ -602,8 +595,7 @@ impl ProjectileCollisionWorld<'_> {
                     .map(|source| source.owner()),
             },
             self.interner,
-            self.rules
-                .is_some_and(|rules| rules.allied_wall_transparency),
+            self.rules.allied_wall_transparency,
             &los,
             |(x, y)| {
                 self.packed_cell(ProjectileCoord::new(
@@ -629,9 +621,7 @@ impl ProjectileCollisionWorld<'_> {
             ProjectileTarget::Entity(id) => {
                 let target = self.entities.get(id)?;
                 if query == ProjectileTargetQuery::GuidanceAim {
-                    let kind = self
-                        .rules
-                        .and_then(|rules| self.interner.object_type(target.type_ref(), rules));
+                    let kind = self.interner.object_type(target.type_ref(), self.rules);
                     let coord = crate::sim::movement::ground_pose::object_target_coords(
                         target,
                         self.terrain,
@@ -670,7 +660,7 @@ impl ProjectileCollisionWorld<'_> {
                 crate::sim::movement::air_movement::is_high_flying(
                     target,
                     self.terrain,
-                    self.rules.map(|rules| (rules, self.interner)),
+                    Some((self.rules, self.interner)),
                 )
             }),
             ProjectileTarget::Terrain(id) => self
@@ -703,7 +693,7 @@ mod tests {
             alliances: sim.house_alliances.as_map(),
             overlays: sim.overlay_grid.as_ref(),
             overlay_registry: None,
-            rules: None,
+            rules: crate::rules::ruleset::RuleSet::empty_for_test(),
             map_size: Some((2, 3)),
         }
     }
@@ -903,7 +893,7 @@ mod tests {
             .unwrap()
             .level = 0;
         let mut collision = world(&sim);
-        collision.rules = Some(&rules);
+        collision.rules = &rules;
         let target = ProjectileTarget::Terrain(id);
         for query in [
             ProjectileTargetQuery::GetCoords,
@@ -955,7 +945,7 @@ mod tests {
                 .spawn_object(name, "Russians", 10, 20, 0, &rules)
                 .unwrap();
             let mut collision = world(&sim);
-            collision.rules = Some(&rules);
+            collision.rules = &rules;
             let centre = collision.location(sim.substrate.entities.get(target).unwrap());
             let translate = |point: &Value| {
                 ProjectileCoord::new(
@@ -1305,7 +1295,7 @@ mod tests {
                     .unwrap_or((1, 2)),
             );
             let mut world = world(&sim);
-            world.rules = Some(&rules);
+            world.rules = &rules;
             world.overlay_registry = Some(&registry);
             assert_eq!(
                 world.shared(&projectile, candidate),
@@ -1378,7 +1368,7 @@ mod tests {
                 }
             }
             let mut world = world(&sim);
-            world.rules = Some(&rules);
+            world.rules = &rules;
             let selected = world
                 .nearest(&world.cell(ProjectileCoord::new(384, 128, 0)))
                 .map(|(id, _)| id - 1);
@@ -1448,6 +1438,12 @@ mod tests {
             let mut shot = gsi_05_02_projectile(999, None);
             shot.target = target;
             shot.origin = location;
+            shot.payload = crate::sim::projectile::ProjectilePayload::new(
+                1,
+                sim.interner.intern("LADDERWH"),
+                None,
+                false,
+            );
             admit_existing(&mut sim, shot);
             let projectile = sim.projectiles.get(100).unwrap();
             let inputs = world(&sim).impact_ladder(projectile, location);
@@ -2316,7 +2312,7 @@ mod tests {
                 velocity: [20.0f64, 3.0, -6.0].map(|v| NativeF64Bits::from_bits(v.to_bits())),
             };
             let mut world = world(&sim);
-            world.rules = Some(&rules);
+            world.rules = &rules;
             let (actual, impact) =
                 world.ordinary_geometry(sim.projectiles.get(100).unwrap(), motion);
             assert_eq!(

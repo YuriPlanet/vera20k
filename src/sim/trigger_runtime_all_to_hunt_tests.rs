@@ -155,7 +155,7 @@ fn all_to_hunt_action_matches_original_selector_mode_timer_and_ordinary_foot() {
                 input: TagEventInput::default(),
             },
             &mut Vec::new(),
-            Some(&rules),
+            &rules,
             None,
             FrameEffects::default(),
         );
@@ -307,7 +307,7 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
     crate::sim::scenario_bootstrap::initialize_map_roster_houses(
         &mut sim,
         &roster,
-        Some(&rules),
+        &rules,
         Some(&map.ini),
     );
     sim.intern_rule_type_ids(&rules);
@@ -389,14 +389,14 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
             input: TagEventInput::default()
         },
         &mut Vec::new(),
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default()
     ));
     assert!(enabled(&sim, chain[0]));
     for frame in [0, 3599, 3600, 4049, 4050] {
         sim.session.set_binary_frame_for_test(frame);
-        sim.advance_triggers(Some(&rules), None, FrameEffects::default());
+        sim.advance_triggers(&rules, None, FrameEffects::default());
         for &id in &actors {
             assert_eq!(
                 sim.team_script_vm.team_for_member(id).is_none(),

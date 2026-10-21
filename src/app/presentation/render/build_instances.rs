@@ -33,15 +33,16 @@ mod planning_lines;
 /// Game-world sprite instances: terrain tiles, overlays, entities, bridges.
 pub(super) struct WorldInstances {
     pub terrain: crate::render::terrain_instances::TerrainInstances,
-    pub overlay: Vec<SpriteInstance>,
-    pub overlay_render_z: Vec<crate::render::tactical_draw_plan::RenderZPolicy>,
+    /// Every overlay body, high bridge or ordinary, in the cell body sweep's
+    /// order, with each instance's draw beside it.
+    pub cell_bodies: Vec<SpriteInstance>,
+    pub cell_body_draws: Vec<instances::CellBodyDraw>,
     /// Represented Display parents in their five retained native layer orders.
     pub object_layers: [super::draw_plan_lowering::ObjectLayerPass; 5],
     /// One BuildingClass::Array-ordered text sweep after Ground2 bodies.
     pub building_status_text: crate::app::presentation::ui_overlays::BuildingStatusTextInstances,
     /// Static smudge decals (craters, scorches) — drawn between terrain and entities.
     pub smudge: Vec<SpriteInstance>,
-    pub bridge_body: Vec<SpriteInstance>,
     pub bridge_body_shadow: Vec<SpriteInstance>,
     /// Actual particle pieces observed by the existing map diagnostic policy.
     pub particle_draws: Option<Vec<instances::ParticleDrawObservation>>,
@@ -186,30 +187,30 @@ pub(super) fn build_world_instances(
         })
         .unwrap_or_default();
     let mut planned_objects = Vec::new();
-    let mut overlay: Vec<SpriteInstance> = std::mem::take(
-        &mut state
-            .match_state
-            .match_presentation
-            .cached_overlay_instances,
-    );
-    overlay.clear();
-    let mut overlay_render_z = Vec::new();
+    let mut bodies = Vec::new();
     instances::build_overlay_instances(
         state,
         sw,
         sh,
-        &mut overlay,
-        &mut overlay_render_z,
+        &mut bodies,
         &mut planned_objects,
         &display_order,
     );
-    // Bridge body and shadow emission live in instances::bridges
-    // (Phase D). Read live CellClass bridge fields post-tick (NOT OverlayGrid).
-    let mut bridge_body: Vec<SpriteInstance> = Vec::new();
+    // High-bridge bodies read live CellClass bridge fields post-tick (NOT
+    // OverlayGrid), then join the ordinary bodies in one native sweep.
+    instances::bridges::build_bridge_body_instances(state, sw, sh, &mut bodies);
+    let mut cell_bodies: Vec<SpriteInstance> = std::mem::take(
+        &mut state
+            .match_state
+            .match_presentation
+            .cached_cell_body_instances,
+    );
+    cell_bodies.clear();
+    let mut cell_body_draws = Vec::new();
+    instances::submit_cell_body_sweep(bodies, &mut cell_bodies, &mut cell_body_draws);
+    // The shadow sweep keeps the same cell order; accepted pixels write Z.
     let mut bridge_body_shadow: Vec<SpriteInstance> = Vec::new();
-    instances::bridges::build_bridge_body_instances(state, sw, sh, &mut bridge_body);
     instances::bridges::build_bridge_shadow_instances(state, &mut bridge_body_shadow);
-    // Both bridge passes retain native cell sweeps; accepted pixels write Z.
 
     // Smudges: static crater/scorch decals on top of terrain, under entities.
     // Registered SmudgeType SHPs share the live OverlayAtlas and Cell light
@@ -433,7 +434,7 @@ pub(super) fn build_world_instances(
             "First frame: {} terrain tiles (of {} cells) + {} fixed overlays + {} retained object sprites",
             terrain.normal.len(),
             total_grid,
-            overlay.len() + bridge_body.len(),
+            cell_bodies.len(),
             object_layers
                 .iter()
                 .map(|layer| layer.instances.len())
@@ -443,12 +444,11 @@ pub(super) fn build_world_instances(
 
     WorldInstances {
         terrain,
-        overlay,
-        overlay_render_z,
+        cell_bodies,
+        cell_body_draws,
         object_layers,
         building_status_text,
         smudge,
-        bridge_body,
         bridge_body_shadow,
         particle_draws,
         cell_sparkles,

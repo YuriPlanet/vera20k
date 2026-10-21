@@ -128,7 +128,7 @@ impl GuardScene {
             .sim
             .advance_app_frame(
                 &commands,
-                Some(&self.rules),
+                &self.rules,
                 None,
                 33,
                 TickLane::Ordinary,
@@ -243,7 +243,7 @@ fn distributed_explicit_attack_retains_target_and_elite_burst() {
             .assign_target_represented(
                 scene.aegis,
                 Some(target),
-                Some(&scene.rules),
+                &scene.rules,
                 None,
                 FrameEffects::default(),
             )
@@ -313,7 +313,7 @@ fn distributed_list_only_expiry_uses_common_broadcast_and_first_removal() {
     assert_eq!(source.distributed_fire_history(), [Some(shot.target)]);
     scene
         .sim
-        .notify_pointer_expired(target, super::UninitContext::new(Some(&scene.rules), None));
+        .notify_pointer_expired(target, super::UninitContext::new(&scene.rules, None));
     let source = scene.sim.substrate.entities.get(scene.aegis).unwrap();
     assert_eq!(
         source.distributed_fire_candidates(),
@@ -439,7 +439,7 @@ fn distributed_normal_load_clears_all_classes_before_strong_reference_validation
     sim.assign_target_represented(
         actors[0],
         Some(TargetKind::Entity(actors[1])),
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     )
@@ -699,7 +699,7 @@ fn distributed_building_attack_takes_the_common_history_tail() {
     sim.assign_target_represented(
         pillbox,
         Some(TargetKind::Entity(target)),
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     )

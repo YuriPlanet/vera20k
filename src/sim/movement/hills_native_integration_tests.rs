@@ -232,7 +232,7 @@ fn spawn_supplied_ground_mtnk(
         cell.1,
         0,
         height,
-        crate::sim::world::PlacementEvidence::UnitEntryAdmitted,
+        crate::sim::world::PlacementEvidence::FootEntryAdmitted,
         &resources.rules,
         crate::sim::world::FrameEffects::default(),
     )
@@ -849,7 +849,7 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
         // downgrade; with requested1 retained it would choose a detour.
         assert!(sim.foot_mark_remove(
             mover,
-            Some(&resources.rules),
+            &resources.rules,
             Some(&resources.overlay_registry),
             crate::sim::world::FrameEffects::default()
         ));
@@ -858,13 +858,13 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
             let peer = bridge_marker_peer(
                 &sim.substrate.entities,
                 mover,
-                Some(&resources.rules),
+                &resources.rules,
                 &sim.interner,
             );
             let context = DeferredBridgeMarker {
                 mover_id: mover,
                 mover: peer.as_ref(),
-                rules: Some(&resources.rules),
+                rules: &resources.rules,
                 interner: &sim.interner,
                 grid: &grid,
                 terrain: sim.resolved_terrain.as_ref(),
@@ -898,7 +898,7 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
         }
         assert!(sim.foot_mark_put(
             mover,
-            Some(&resources.rules),
+            &resources.rules,
             Some(&resources.overlay_registry),
             crate::sim::world::FrameEffects::default()
         ));

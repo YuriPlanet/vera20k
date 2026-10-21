@@ -683,7 +683,7 @@ fn the_genetic_mutator_target_matches_native() {
             if extra["bridge"].as_bool().unwrap_or(false) {
                 assert!(sim.foot_mark_remove(
                     id,
-                    Some(&rules),
+                    &rules,
                     None,
                     crate::sim::world::FrameEffects::default()
                 ));
@@ -694,7 +694,7 @@ fn the_genetic_mutator_target_matches_native() {
                     .set_on_bridge(true);
                 assert!(sim.foot_mark_put(
                     id,
-                    Some(&rules),
+                    &rules,
                     None,
                     crate::sim::world::FrameEffects::default()
                 ));
@@ -899,12 +899,12 @@ fn retail_walk_reads_each_object() {
     sim.set_object_height(
         flying,
         600,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     );
     assert_ne!(
-        sim.entity_display_layer(flying, Some(&rules)),
+        sim.entity_display_layer(flying, &rules),
         Some(crate::sim::world::display_layers::DisplayLayer::GROUND)
     );
     let own = spawn(&mut sim, "NAPOWR", "Americans", (20, 10), 0);
@@ -1235,7 +1235,7 @@ fn the_psychic_dominator_target_matches_native() {
             if fact("bridge") {
                 assert!(sim.foot_mark_remove(
                     id,
-                    Some(&rules),
+                    &rules,
                     None,
                     crate::sim::world::FrameEffects::default()
                 ));
@@ -1246,7 +1246,7 @@ fn the_psychic_dominator_target_matches_native() {
                     .set_on_bridge(true);
                 assert!(sim.foot_mark_put(
                     id,
-                    Some(&rules),
+                    &rules,
                     None,
                     crate::sim::world::FrameEffects::default()
                 ));

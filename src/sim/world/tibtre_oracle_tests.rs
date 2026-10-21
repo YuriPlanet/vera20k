@@ -277,7 +277,7 @@ fn terrain_ai_timelines_match_native_stage_timers_ore_queues_and_rng() {
             crate::sim::terrain_spawn::tick_terrain_object_ai(
                 &mut s.sim,
                 id,
-                Some(&s.rules),
+                &s.rules,
                 Some(registry()),
                 None,
             );
@@ -421,7 +421,7 @@ fn same_frame_ore_terrain_ai_publishes_the_path_view_before_return() {
     crate::sim::terrain_spawn::tick_terrain_object_ai(
         &mut s.sim,
         tree,
-        Some(&s.rules),
+        &s.rules,
         Some(&registry),
         None,
     );
@@ -540,7 +540,7 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
             crate::sim::mission::MissionType::Harvest,
             crate::sim::combat::TargetKind::Cell(at.0, at.1)
         ),
-        Some(&s.rules),
+        &s.rules,
         Some(registry()),
         crate::sim::world::FrameEffects::default()
     ));
@@ -592,7 +592,7 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
             crate::sim::mission::MissionType::Enter,
             crate::sim::combat::TargetKind::Entity(s.refinery)
         ),
-        Some(&s.rules),
+        &s.rules,
         Some(registry()),
         crate::sim::world::FrameEffects::default()
     ));

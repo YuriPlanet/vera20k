@@ -1248,7 +1248,7 @@ impl Simulation {
         if let Err(cause) = self.assign_destination_represented(
             slave,
             Some(crate::sim::components::NavTargetRef::cell(cell.0, cell.1)),
-            Some(rules),
+            rules,
             registry,
             frame_effects,
         ) {
@@ -1318,7 +1318,7 @@ impl Simulation {
                 &self.substrate.raw_cell_occupation,
                 &self.substrate.occupancy,
                 &self.substrate.entities,
-                Some(rules),
+                rules,
                 &self.interner,
                 &mut self.scenario_rng,
                 coords,
@@ -1385,7 +1385,7 @@ impl Simulation {
             slave,
             RevealPosition::new(cell.0, cell.1, z, None, request.0, request.1),
             PlacementEvidence::EvaluateMark,
-            Some(rules),
+            rules,
             registry,
         ) else {
             return false;
@@ -1397,7 +1397,7 @@ impl Simulation {
                 placement,
                 logic_eligible: true,
             },
-            UninitContext::new(Some(rules), registry)
+            UninitContext::new(rules, registry)
                 .with_effects(frame_effects)
                 .with_unlimbo_facing(Some(0)),
         );
@@ -1414,7 +1414,7 @@ impl Simulation {
     ) {
         let _ = self.techno_limbo_with_context(
             slave,
-            UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+            UninitContext::new(rules, registry).with_effects(frame_effects),
         );
     }
 
@@ -1610,42 +1610,16 @@ impl Simulation {
     /// InfantryClass destructor leaves its node (RemoveSlave at
     /// `0x00517E22`), and a master still holding its manager frees its
     /// slaves with no killer and no house (TechnoClass destructor
-    /// `0x006F4571`). A rules-less drain (test fixtures) has no house to hand
-    /// the ones outside to: they only lose their link, and the ones inside
-    /// are UnInit.
+    /// `0x006F4571`).
     pub(crate) fn release_slave_links_at_destruction(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
         Self::remove_slave(&self.session, &mut self.substrate, id);
-        match rules {
-            Some(rules) => self.free_slaves(id, None, None, rules, registry, frame_effects),
-            None => {
-                let Some(manager) = self
-                    .substrate
-                    .entities
-                    .get_mut(id)
-                    .and_then(|entity| entity.slave_manager.take())
-                else {
-                    return;
-                };
-                for slave in manager.nodes.iter().rev().filter_map(|node| node.slave) {
-                    let Some(entity) = self.substrate.entities.get_mut(slave) else {
-                        continue;
-                    };
-                    entity.slave.owner = None;
-                    if entity.lifecycle.in_limbo() {
-                        self.uninit_with_context(
-                            slave,
-                            UninitContext::default().with_effects(frame_effects),
-                        );
-                    }
-                }
-            }
-        }
+        self.free_slaves(id, None, None, rules, registry, frame_effects);
     }
 
     /// FreeSlaves (`0x006B0AE0`, `killer`, `house`), last node first. Each
@@ -1719,11 +1693,11 @@ impl Simulation {
             slave,
             crate::sim::combat::KillSource::Techno(killer),
             crate::sim::combat::KillCallback::Terminal,
-            UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+            UninitContext::new(rules, registry).with_effects(frame_effects),
         );
         self.uninit_with_context(
             slave,
-            UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+            UninitContext::new(rules, registry).with_effects(frame_effects),
         );
     }
 

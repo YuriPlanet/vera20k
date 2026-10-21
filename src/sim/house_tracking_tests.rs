@@ -128,7 +128,7 @@ fn factory_counts_match_original_raw_class_dispatch() {
                     _ => panic!("unreviewed original counter offset {offset:x}"),
                 });
                 assert_eq!(
-                    TrackingFacts::of(EntityCategory::Structure, Some(ty), Some(&rules)).factory,
+                    TrackingFacts::of(EntityCategory::Structure, Some(ty), &rules).factory,
                     expected,
                     "{} {row} Naval={naval}",
                     table["name"],
@@ -390,12 +390,12 @@ fn discarding_a_constructed_object_releases_its_tracking() {
 
     assert!(sim.discard_constructed_limbo(
         building,
-        Some(&rules),
+        &rules,
         crate::sim::world::FrameEffects::default()
     ));
     assert!(sim.discard_constructed_limbo(
         unit,
-        Some(&rules),
+        &rules,
         crate::sim::world::FrameEffects::default()
     ));
     let tracking = sim.houses[&house].tracking();

@@ -956,7 +956,7 @@ impl ReplayRunner {
             let result = sim
                 .advance_master_frame(
                     &due_commands,
-                    rules,
+                    rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
                     overlay_registry,
                     tick_ms,
                     TickLane::Ordinary,

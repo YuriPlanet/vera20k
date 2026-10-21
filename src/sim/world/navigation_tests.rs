@@ -346,7 +346,7 @@ fn held_factory_and_consumed_upgrade_stay_off_navigation_through_frame_and_resto
     let output = sim
         .advance_app_frame(
             &[],
-            Some(&rules),
+            &rules,
             Some(&overlays),
             67,
             TickLane::Ordinary,
@@ -436,7 +436,7 @@ fn structure_changes_publish_footprint_cells_without_rebuilding_zones() {
     structure.lifecycle.set_cell_marked_for_test(true);
     sim.substrate.entities.insert(structure);
     assert!(
-        sim.finalize_frame_overlays_and_navigation(Some(&rules), Some(&overlays), false, true)
+        sim.finalize_frame_overlays_and_navigation(&rules, Some(&overlays), false, true)
             .is_empty()
     );
     let placed = sim.path_grid_snapshot().unwrap();
@@ -460,7 +460,7 @@ fn structure_changes_publish_footprint_cells_without_rebuilding_zones() {
         .lifecycle
         .set_cell_marked_for_test(false);
     let zones_before = zone_storage(&sim);
-    sim.finalize_frame_overlays_and_navigation(Some(&rules), Some(&overlays), false, true);
+    sim.finalize_frame_overlays_and_navigation(&rules, Some(&overlays), false, true);
     assert_eq!(*sim.path_grid_snapshot().unwrap(), *open);
     assert_eq!(zone_storage(&sim), zones_before);
 }
@@ -468,7 +468,7 @@ fn structure_changes_publish_footprint_cells_without_rebuilding_zones() {
 #[test]
 fn structure_mark_publishes_presence_and_preserves_other_marked_blockers() {
     let (rules, overlays) = rules_and_overlays();
-    let context = super::UninitContext::new(Some(&rules), Some(&overlays));
+    let context = super::UninitContext::new(&rules, Some(&overlays));
     let mut sim = Simulation::with_seed(0x43f180);
     sim.install_resolved_terrain_for_new_map(gsi_04_10_clear_terrain(16, 16));
     assert!(sim.rebuild_dynamic_navigation(&rules));

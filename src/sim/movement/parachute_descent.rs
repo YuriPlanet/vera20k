@@ -69,23 +69,18 @@ impl crate::sim::world::Simulation {
         {
             return Ok((false, false));
         }
-        let old_layer = self.entity_display_layer(id, Some(rules));
+        let old_layer = self.entity_display_layer(id, rules);
         let landed = self.advance_fall(
             id,
             rules.general.parachute_max_fall_rate,
-            Some(rules),
+            rules,
             registry,
             effects,
         );
         let mut changed = false;
         if landed {
-            changed = self.per_cell_process(
-                id,
-                super::PerCellReason::Arrival,
-                Some(rules),
-                registry,
-                effects,
-            )?;
+            changed =
+                self.per_cell_process(id, super::PerCellReason::Arrival, rules, registry, effects)?;
             Self::wind_down_parachute_anim(&self.interner, &mut self.substrate, rules, id);
             //5F3FA4..5F3FFA: PerCell can Limbo the object. The landing
             // frame updates and retains FallRate only after that callback.
@@ -107,7 +102,7 @@ impl crate::sim::world::Simulation {
             self.substrate.display.remove(id);
             return Ok((landed, changed));
         }
-        let new_layer = self.entity_display_layer(id, Some(rules));
+        let new_layer = self.entity_display_layer(id, rules);
         if old_layer != new_layer
             && let Some(layer) = new_layer
         {
@@ -118,7 +113,7 @@ impl crate::sim::world::Simulation {
                 &mut self.substrate,
                 id,
                 layer,
-                Some(rules),
+                rules,
             );
         }
         if let Some(health) = self
@@ -274,7 +269,7 @@ impl crate::sim::world::Simulation {
         &mut self,
         stable_id: u64,
         max_fall_rate: i32,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
@@ -306,10 +301,7 @@ impl crate::sim::world::Simulation {
         };
         if crate::sim::movement::air_movement::current_fly_height(entity, terrain) > 0 {
             if !entity.lifecycle.in_limbo() {
-                entity.advance_fall_rate(
-                    max_fall_rate,
-                    rules.map_or(-100, |r| r.general.no_parachute_max_fall_rate),
-                );
+                entity.advance_fall_rate(max_fall_rate, rules.general.no_parachute_max_fall_rate);
             }
             return false;
         }
@@ -404,7 +396,7 @@ mod canopy_tests {
             sim.advance_fall(
                 id,
                 -3,
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
                 crate::sim::world::FrameEffects::default(),
             );

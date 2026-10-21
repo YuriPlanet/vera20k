@@ -216,7 +216,7 @@ impl Simulation {
             let _ = self.assign_target_represented(
                 id,
                 Some(TargetKind::Entity(building)),
-                Some(rules),
+                rules,
                 registry,
                 effects,
             );

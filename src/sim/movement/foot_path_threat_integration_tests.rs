@@ -20,7 +20,7 @@ fn request_move(
     sim.assign_destination_represented(
         mover,
         Some(crate::sim::components::NavTargetRef::cell(goal.0, goal.1)),
-        Some(rules),
+        rules,
         Some(registry),
         crate::sim::world::FrameEffects::default(),
     )
@@ -173,7 +173,7 @@ fn live_avoid_threats_membership_reads_admitted_house_grid_through_search_and_sn
         team,
         mover,
         true,
-        Some(&rules),
+        &rules,
         crate::sim::world::FrameEffects::default(),
     );
     assert!(!sim.team_script_vm.member_avoids_threats(mover));

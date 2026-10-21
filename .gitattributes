@@ -19,3 +19,5 @@ tools/spatial_oracle/_factory_infantry_output/idle.py whitespace=-blank-at-eof
 tools/spatial_oracle/_factory_infantry_output/phase.py whitespace=-blank-at-eof
 tools/spatial_oracle/_factory_infantry_output/producer.py whitespace=-blank-at-eof
 tools/rules_oracle/ares_armor.json -text
+tools/rules_oracle/session_country_starting_ownership.json -text
+tools/rules_oracle/country_veterancy.json -text

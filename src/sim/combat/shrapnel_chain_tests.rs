@@ -82,7 +82,7 @@ impl PrismScene {
             .assign_target_represented(
                 source,
                 Some(TargetKind::Entity(victim)),
-                Some(&rules),
+                &rules,
                 None,
                 FrameEffects::default(),
             )

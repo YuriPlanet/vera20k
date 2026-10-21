@@ -525,7 +525,7 @@ fn a_computer_spy_attacking_a_power_plant_goes_in() {
     sim.assign_target_represented(
         spy,
         Some(TargetKind::Entity(plant)),
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     )

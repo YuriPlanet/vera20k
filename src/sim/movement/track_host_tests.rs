@@ -109,8 +109,12 @@ fn terminal_horizontal_gate_uses_installed_owner_and_retires_with_class() {
             .store_track_head(TrackFamily::Drive, None)
     );
     assert!(
-        !sim.track_reached_destination(1, TrackFamily::Drive, None)
-            .unwrap()
+        !sim.track_reached_destination(
+            1,
+            TrackFamily::Drive,
+            crate::rules::ruleset::RuleSet::empty_for_test()
+        )
+        .unwrap()
     );
     sim.substrate
         .entities
@@ -119,16 +123,24 @@ fn terminal_horizontal_gate_uses_installed_owner_and_retires_with_class() {
         .navigation
         .set_nav_com_for_test(Some(NavTargetRef::cell(10, 10)));
     assert!(
-        sim.track_reached_destination(1, TrackFamily::Drive, None)
-            .unwrap()
+        sim.track_reached_destination(
+            1,
+            TrackFamily::Drive,
+            crate::rules::ruleset::RuleSet::empty_for_test()
+        )
+        .unwrap()
     );
 
     // The retained destination belongs to the installed Drive. Retiring the
     // entire class removes it before the terminal owner-coordinate query.
     sim.substrate.entities.get_mut(1).unwrap().locomotor = None;
     assert!(
-        !sim.track_reached_destination(1, TrackFamily::Drive, None)
-            .unwrap()
+        !sim.track_reached_destination(
+            1,
+            TrackFamily::Drive,
+            crate::rules::ruleset::RuleSet::empty_for_test()
+        )
+        .unwrap()
     );
     sim.substrate
         .entities
@@ -137,8 +149,12 @@ fn terminal_horizontal_gate_uses_installed_owner_and_retires_with_class() {
         .navigation
         .set_nav_com_for_test(Some(NavTargetRef::cell(20, 20)));
     assert!(
-        !sim.track_reached_destination(1, TrackFamily::Drive, None)
-            .unwrap()
+        !sim.track_reached_destination(
+            1,
+            TrackFamily::Drive,
+            crate::rules::ruleset::RuleSet::empty_for_test()
+        )
+        .unwrap()
     );
 }
 
@@ -806,7 +822,7 @@ fn bridge_placement_retains_selected_cell_but_reads_fresh_world_attributes() {
         (10, 10),
         false,
         false,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         &mut |sim, id, event| {
             if event == TrackWorldEvent::SetCoords {
@@ -882,10 +898,15 @@ fn ordinary_foot_limbo_releases_live_head_and_handoff_for_both_families() {
                 0x20
             );
         }
-        sim.apply_lifecycle_request(LifecycleRequest::Uninit {
-            stable_id: 1,
-            reason: UninitReason::Crush,
-        });
+        sim.apply_lifecycle_request(
+            LifecycleRequest::Uninit {
+                stable_id: 1,
+                reason: UninitReason::Crush,
+            },
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
         assert_eq!(
             sim.substrate
                 .raw_cell_occupation
@@ -945,10 +966,15 @@ fn repeated_foot_limbo_does_not_clear_a_new_raw_head_claim() {
             supplied,
             true,
         );
-        sim.apply_lifecycle_request(LifecycleRequest::Uninit {
-            stable_id: 1,
-            reason: UninitReason::Crush,
-        });
+        sim.apply_lifecycle_request(
+            LifecycleRequest::Uninit {
+                stable_id: 1,
+                reason: UninitReason::Crush,
+            },
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
         assert_eq!(
             sim.substrate.raw_cell_occupation.ground_bits(at.0, at.1) & 0x20,
             0x20
@@ -1043,7 +1069,7 @@ fn per_cell_promotes_queued_mission_before_tail_without_dispatching_handler() {
         sim.unit_per_cell_process(
             1,
             super::super::PerCellReason::Arrival,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         );
@@ -1134,7 +1160,7 @@ fn factory_per_cell_fixture(
             2,
             RadioMessage::Hello,
             RadioPayload::default(),
-            Some(&rules),
+            &rules,
             crate::sim::world::FrameEffects::default()
         ),
         RadioResponse::Roger
@@ -1147,7 +1173,7 @@ fn factory_per_cell_fixture(
                 2,
                 RadioMessage::Tether,
                 RadioPayload::default(),
-                Some(&rules),
+                &rules,
                 crate::sim::world::FrameEffects::default()
             ),
             RadioResponse::Roger
@@ -1206,7 +1232,7 @@ fn per_cell_factory_clearance_precedes_ready_and_preserves_foot_stop_scope() {
     sim.per_cell_process(
         1,
         super::super::PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -1395,7 +1421,7 @@ fn per_cell_factory_clearance_keeps_reason_mission_rtti_and_ground_building_gate
         sim.per_cell_process(
             1,
             reason,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -1477,7 +1503,7 @@ fn per_cell_factory_clearance_keeps_reason_mission_rtti_and_ground_building_gate
         sim.per_cell_process(
             1,
             PerCellReason::Arrival,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -1503,7 +1529,7 @@ fn per_cell_factory_clearance_starts_a_slave_miners_hunt() {
     sim.per_cell_process(
         1,
         super::super::PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -1578,7 +1604,7 @@ fn per_cell_factory_clearance_sends_a_computer_unit_to_its_post() {
     sim.per_cell_process(
         1,
         super::super::PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -1621,7 +1647,7 @@ fn per_cell_factory_clearance_without_a_post_clears_the_archive() {
     sim.per_cell_process(
         1,
         super::super::PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -1656,7 +1682,7 @@ fn per_cell_factory_clearance_reads_unit_archive_through_the_shared_setter() {
     sim.per_cell_process(
         1,
         super::super::PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -1738,7 +1764,7 @@ fn per_cell_factory_harvester_queue_uses_live_readiness_and_preserves_miner_stat
             sim.per_cell_process(
                 1,
                 super::super::PerCellReason::Arrival,
-                Some(&rules),
+                &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             )
@@ -1802,7 +1828,12 @@ fn idle_receiver_cancels_burst_through_the_shared_target_setter() {
             entity
                 .navigation
                 .set_nav_com_for_test(has_destination.then(|| NavTargetRef::cell(12, 10)));
-            sim.unit_enter_idle_mode(1, None, false, crate::sim::world::FrameEffects::default());
+            sim.unit_enter_idle_mode(
+                1,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+                false,
+                crate::sim::world::FrameEffects::default(),
+            );
             let entity = sim.substrate.entities.get(1).unwrap();
             assert_eq!(entity.weapon_burst.index(), i32::from(has_destination));
             assert_eq!(entity.passive_scan.acquired(), has_destination);
@@ -2218,16 +2249,13 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
             // This owner has no retained tube continuation to resume.
             sim.unit_enter_idle_mode(
                 tank,
-                Some(&rules),
+                &rules,
                 false,
                 crate::sim::world::FrameEffects::default(),
             );
         } else if input["entry"] == "navigation_gate" {
-            let returns = sim.track_navigation_gate(
-                tank,
-                Some(&rules),
-                crate::sim::world::FrameEffects::default(),
-            );
+            let returns =
+                sim.track_navigation_gate(tank, &rules, crate::sim::world::FrameEffects::default());
             assert_eq!(
                 u8::from(returns),
                 row["returned_al"].as_u64().unwrap() as u8,
@@ -2253,7 +2281,7 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
                     // terminal body starts after it. OriginalCursor executes
                     // this supplied budget and records the paid entry budget.
                     integer(&sample["supplied_budget"]),
-                    Some(&rules),
+                    &rules,
                     None,
                     &mut |world, _, event| {
                         if event == TrackWorldEvent::PerCell {
@@ -2346,8 +2374,12 @@ fn foot_idle_empty_queue_admission_matches_original_latch_rows() {
             .mission_leaf
             .set_foot_idle_entry_latch(row["before"]["latch"].as_u64().unwrap() as u8);
         let rng = sim.rng_state();
-        let returned =
-            sim.foot_enter_idle_base(1, None, None, crate::sim::world::FrameEffects::default());
+        let returned = sim.foot_enter_idle_base(
+            1,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
         assert_eq!(
             u8::from(returned),
             row["returned_al"].as_u64().unwrap() as u8
@@ -2400,7 +2432,7 @@ fn foot_idle_set_latch_refuses_queue_and_speed_setters_without_effects() {
     assert_eq!(
         u8::from(sim.foot_enter_idle_base(
             1,
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             crate::sim::world::FrameEffects::default()
         )),
@@ -2446,8 +2478,12 @@ fn foot_idle_ends_a_warp_teleport_like_original_end_rows() {
         }
         actor.locomotor = Some(locomotor);
         actor.foot_speed.set_speed_fraction(SimFixed::lit("0.625"));
-        let returned =
-            sim.foot_enter_idle_base(1, None, None, crate::sim::world::FrameEffects::default());
+        let returned = sim.foot_enter_idle_base(
+            1,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
 
         let events: Vec<&str> = row["events"]
             .as_array()
@@ -2518,7 +2554,7 @@ fn inherited_foot_idle_latch_roundtrips_and_hashes_for_every_foot_category() {
         let rng = restored.rng_state();
         assert!(!restored.foot_enter_idle_base(
             1,
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             crate::sim::world::FrameEffects::default()
         ));
@@ -2567,7 +2603,7 @@ fn per_cell_factory_clearance_scatters_a_harvester_off_the_factory() {
         sim.per_cell_process(
             1,
             super::super::PerCellReason::Arrival,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -2693,7 +2729,7 @@ fn the_unit_guard_pick_follows_house_iq_team_and_type() {
         }
         sim.unit_enter_idle_mode(
             id,
-            Some(&rules),
+            &rules,
             false,
             crate::sim::world::FrameEffects::default(),
         );
@@ -2755,7 +2791,7 @@ fn a_unit_at_rest_on_a_cell_centre_breaks_its_radio_link() {
         crate::sim::radio::take_transmit_log();
         sim.unit_enter_idle_mode(
             id,
-            Some(&rules),
+            &rules,
             false,
             crate::sim::world::FrameEffects::default(),
         );
@@ -2800,7 +2836,7 @@ fn a_mission_only_transport_with_passengers_selects_unload() {
         }
         sim.unit_enter_idle_mode(
             id,
-            Some(&rules),
+            &rules,
             false,
             crate::sim::world::FrameEffects::default(),
         );
@@ -2862,7 +2898,7 @@ fn a_unit_entering_a_bunker_ahead_of_it_queues_nothing() {
         });
         sim.unit_enter_idle_mode(
             id,
-            Some(&rules),
+            &rules,
             false,
             crate::sim::world::FrameEffects::default(),
         );
@@ -3172,7 +3208,7 @@ fn crusher_all_paid_crossing_caps_the_next_track_speed_prefix() {
             super::super::track_speed::advance(
                 sim.substrate.entities.get_mut(1).unwrap(),
                 rules.object("MTNK"),
-                Some(&rules),
+                &rules,
                 &sim.houses,
                 sim.resolved_terrain.as_ref(),
                 sim.path_grid.as_deref(),
@@ -3194,7 +3230,7 @@ fn crusher_all_paid_crossing_caps_the_next_track_speed_prefix() {
         sim.per_cell_process(
             1,
             super::super::PerCellReason::TurnComplete,
-            Some(&rules),
+            &rules,
             Some(&registry),
             crate::sim::world::FrameEffects::default(),
         )
@@ -3313,7 +3349,7 @@ fn retail_battle_fortress_preserves_nonaccelerating_speed_during_crush() {
     super::super::track_speed::advance(
         actor,
         Some(object),
-        Some(&rules),
+        &rules,
         &sim.houses,
         sim.resolved_terrain.as_ref(),
         sim.path_grid.as_deref(),

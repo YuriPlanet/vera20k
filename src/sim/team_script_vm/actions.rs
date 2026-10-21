@@ -400,7 +400,7 @@ impl Simulation {
                 //vtD4 Limbo and vtF8 UnInit, then marks+80 to advance.
                 //Neither direct deletion nor a damage/RecordKill path is
                 //this action's call. Reuse the complete class lifecycle.
-                let context = crate::sim::world::UninitContext::new(Some(rules), registry)
+                let context = crate::sim::world::UninitContext::new(rules, registry)
                     .with_effects(frame_effects);
                 let mut member = self
                     .team_script_vm
@@ -437,7 +437,7 @@ impl Simulation {
                         .get(&team_id)
                         .and_then(|team| team.next_member_after(current));
                     if self.foot_enter_nearest_occupiable(current, rules, registry, frame_effects) {
-                        self.team_remove_member(team_id, current, true, Some(rules), frame_effects);
+                        self.team_remove_member(team_id, current, true, rules, frame_effects);
                     }
                     member = next;
                 }
@@ -683,7 +683,7 @@ impl Simulation {
                         _ => self.foot_enter_battle_bunker(member, rules, registry, frame_effects),
                     };
                     if found {
-                        self.team_remove_member(team_id, member, true, Some(rules), frame_effects);
+                        self.team_remove_member(team_id, member, true, rules, frame_effects);
                     }
                 }
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
@@ -1278,7 +1278,7 @@ impl Simulation {
                 continue;
             }
             if transport && returns {
-                self.team_remove_member(team_id, member, false, Some(rules), frame_effects);
+                self.team_remove_member(team_id, member, false, rules, frame_effects);
                 self.team_member_clear_target(member, rules);
                 let archive = self
                     .substrate
@@ -1293,7 +1293,7 @@ impl Simulation {
             } else if (transport && matches!(argument, 2 | 3))
                 || (!transport && matches!(argument, 1 | 3))
             {
-                self.team_remove_member(team_id, member, false, Some(rules), frame_effects);
+                self.team_remove_member(team_id, member, false, rules, frame_effects);
                 self.team_member_clear_target(member, rules);
                 self.team_member_set_destination(member, None, rules, registry, frame_effects);
             }
@@ -1366,7 +1366,7 @@ impl Simulation {
                 if unloading {
                     continue;
                 }
-                self.foot_mark_remove(member, Some(rules), registry, frame_effects);
+                self.foot_mark_remove(member, rules, registry, frame_effects);
                 let placeable = crate::sim::build_site::can_place_building_at(
                     self, rules, registry, building, cell, None, None, None,
                 );
@@ -1381,7 +1381,7 @@ impl Simulation {
                         frame_effects,
                     );
                 }
-                self.foot_mark_put(member, Some(rules), registry, frame_effects);
+                self.foot_mark_put(member, rules, registry, frame_effects);
                 if placeable {
                     self.team_member_set_destination(member, None, rules, registry, frame_effects);
                     self.team_member_clear_target(member, rules);
@@ -2505,7 +2505,7 @@ impl Simulation {
                     self,
                     member,
                     crate::sim::radio::RadioMessage::Break,
-                    Some(rules),
+                    rules,
                     frame_effects,
                 );
                 self.team_member_queue_mission(member, MissionType::Attack, rules);

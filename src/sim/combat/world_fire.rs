@@ -182,10 +182,8 @@ fn admit_attacker_fire<'r>(
                 let (rx, ry, sx, sy) = resolve_target_coords(&snap.target, world)?;
                 Some((rx, ry, sx, sy, target.health(), target.type_ref()))
             }),
-        TargetKind::Cell(rx, ry) => {
-            let (trx, try_, tsx, tsy) = cell_center_coords(rx, ry);
-            Some((trx, try_, tsx, tsy, 1i32, snap.type_id))
-        }
+        TargetKind::Cell(..) => resolve_target_coords(&snap.target, world)
+            .map(|(trx, try_, tsx, tsy)| (trx, try_, tsx, tsy, 1i32, snap.type_id)),
     };
 
     let (target_rx, target_ry, target_sub_x, target_sub_y, target_type_ref) = match target_data {
@@ -386,7 +384,7 @@ fn admit_attacker_fire<'r>(
                 crate::sim::spawn_manager::clear_all_spawn_targets(
                     world,
                     snap.stable_id,
-                    Some(rules),
+                    rules,
                     overlay_registry,
                     effects,
                 );
@@ -570,7 +568,7 @@ fn admit_attacker_fire<'r>(
                     })?;
                 (coords, type_ref)
             }
-            TargetKind::Cell(rx, ry) => (cell_center_coords(rx, ry), snap.type_id),
+            TargetKind::Cell(..) => (resolve_target_coords(&snap.target, world)?, snap.type_id),
         }
     } else {
         (
@@ -983,8 +981,8 @@ fn reveal_on_fire(
         return;
     };
     viewers.dedup();
-    let context = crate::sim::world::UninitContext::new(Some(rules), None);
-    let config = world.sight_reveal_config(Some(rules));
+    let context = crate::sim::world::UninitContext::new(rules, None);
+    let config = world.sight_reveal_config(rules);
     let heights = world.sight_height_grid(&config);
     for house in viewers {
         let Some(firer) = world.substrate.entities.get(firer_id) else {
@@ -2032,7 +2030,7 @@ fn fireat_tail(
             .unwrap()
             .remember_distributed_fire_target(snap.target);
         world
-            .assign_target_represented(snap.stable_id, None, Some(rules), overlay_registry, effects)
+            .assign_target_represented(snap.stable_id, None, rules, overlay_registry, effects)
             .expect("DistributedFire firer retains its concrete target receiver");
     }
     if weapon.fire_once {
@@ -2041,7 +2039,7 @@ fn fireat_tail(
             world.team_fire_once_complete(snap.stable_id, rules, overlay_registry, effects);
         }
         world
-            .assign_target_represented(snap.stable_id, None, Some(rules), overlay_registry, effects)
+            .assign_target_represented(snap.stable_id, None, rules, overlay_registry, effects)
             .expect("FireOnce firer retains its concrete target receiver");
     }
 }
@@ -2170,7 +2168,7 @@ fn commit_fire_bookkeeping(
         ) {
             world.free_all_captures(victim_id, rules, overlay_registry, effects);
             crate::sim::credit_income::attach_drain_anim(world, drainer_id, rules);
-            world.leave_team(drainer_id, true, Some(rules), effects);
+            world.leave_team(drainer_id, true, rules, effects);
         }
         if let Some(drainer) = world.substrate.entities.get_mut(drainer_id) {
             represented_assign_target(drainer, None);
@@ -2529,7 +2527,7 @@ pub(crate) fn visit_fire(
             .assign_target_represented(
                 removed,
                 None,
-                Some(rules),
+                rules,
                 overlay_registry,
                 FrameEffects::default(),
             )
@@ -2562,7 +2560,7 @@ pub(crate) fn visit_fire(
                 crate::sim::movement::turret::facing_update(
                     entity,
                     world,
-                    Some(rules),
+                    rules,
                     &world.interner,
                     binary_frame,
                 ),
@@ -2710,7 +2708,7 @@ pub(crate) fn tick_combat(
         let _ = world.assign_target_represented(
             attacker_id,
             None,
-            Some(rules),
+            rules,
             overlay_registry,
             FrameEffects::default(),
         );

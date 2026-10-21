@@ -1407,12 +1407,12 @@ fn walk_stop_and_pending_callback_match_original_deployment_rows() {
         let (mut sim, rules, id) = native_deploy_fixture(row);
         let untouched = (sim.main_rng.logical_state(), sim.mapgen_rng.logical_state());
         if row["input"]["kind"] == "stop" {
-            sim.walk_stop_moving(id, Some(&rules), crate::sim::world::FrameEffects::default())
+            sim.walk_stop_moving(id, &rules, crate::sim::world::FrameEffects::default())
                 .unwrap();
         } else {
             sim.infantry_pending_deploy_stop_callback(
                 id,
-                Some(&rules),
+                &rules,
                 crate::sim::world::FrameEffects::default(),
             )
             .unwrap();

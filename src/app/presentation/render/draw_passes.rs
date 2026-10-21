@@ -7,6 +7,7 @@
 //! - Internal to `presentation::render` — only called from mod.rs via `dispatch_draw_passes()`.
 
 use crate::app::AppState;
+use crate::app::presentation::instances::{CellBodyAtlas, CellBodyDraw};
 use crate::app::presentation::sidebar_render::{begin_main_load_pass, begin_main_pass};
 use crate::app::presentation::sidebar_surface::SidebarPart;
 use crate::app::presentation::ui_overlays::current_software_cursor_texture;
@@ -24,7 +25,7 @@ use super::merge_passes;
 /// because they're computed fresh each frame and (for the merge passes) need CPU-side
 /// depth values that match the uploaded GPU buffers.
 pub(super) struct DrawPassData<'a> {
-    pub overlay_render_z: &'a [RenderZPolicy],
+    pub cell_body_draws: &'a [CellBodyDraw],
     pub bridge_shadows: &'a [SpriteInstance],
     pub object_layers: &'a [super::draw_plan_lowering::ObjectLayerPass; 5],
     pub building_status_text:
@@ -201,7 +202,7 @@ fn draw_sidebar_surface(
 /// are tactical; the screen-fixed block at the end copies in the sidebar's
 /// surface (`draw_sidebar_surface`) and releases the scissor.
 ///
-/// Tactical submission: terrain, bridge/overlay bodies, overlay shadows and
+/// Tactical submission: terrain, the cell body sweep, overlay shadows and
 /// railings, native Ground parents, particles and upper-layer bodies, then
 /// debug and UI. World blitters sample the shared ABuffer. A bridge body split stays within its unit parent.
 pub(super) fn dispatch_draw_passes(
@@ -253,34 +254,21 @@ pub(super) fn dispatch_draw_passes(
         "smudge",
     );
 
-    // --- Step 2: Bridge bodies (native SHP row depth, strict Less + write) ---
-    draw_pooled_bridge_bodies(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        state.match_state.match_presentation.bridge_atlas.as_ref(),
-        "overlay_bridge_body",
-    );
-
-    // (Bridge body shadows are NOT drawn here. The native cell-content layer
-    // runs two full sweeps — every overlay body, then every overlay shadow —
-    // so shadows belong after the overlay bodies at step 3.5, not between the
-    // bridge body and the overlays.)
-
-    // --- Step 3: Overlay bodies (SHP depth read + write) ---
-    // Active walls/ordinary overlays are 0x4E00 CC_Draw_Shape draws at
-    // 0x0047F6A0, reached through 0x006D6D10. They are not the TMP tile
-    // path at 0x00480350. Their class gradient, stored frame rectangle and
-    // height adjustment keep them above the ground and let them occlude later
-    // buildings/units. Preserve fixed cell order, including unsupported
-    // slope-shape records that still use their previous passthrough policy.
-    draw_pooled_overlay_bodies(
+    // --- Step 2: The cell body sweep (SHP depth read + write) ---
+    // High bridges, walls and ordinary overlays are 0x4E00 CC_Draw_Shape
+    // draws at 0x0047F6A0, reached through one 0x006D6D10 sweep. They are not
+    // the TMP tile path at 0x00480350. Their class gradient, stored frame
+    // rectangle and height adjustment keep them above the ground and let them
+    // occlude later buildings/units. The native cell-content layer runs this
+    // whole sweep before its overlay shadow sweep, below.
+    draw_pooled_cell_bodies(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
         state.match_state.match_presentation.overlay_atlas.as_ref(),
-        "overlay",
-        data.overlay_render_z,
+        state.match_state.match_presentation.bridge_atlas.as_ref(),
+        "cell_body",
+        data.cell_body_draws,
     );
 
     // Cell::DrawOverlay_Shadow0047F510 uses native destination halving and
@@ -932,29 +920,6 @@ fn draw_pooled_zdepth<'a>(
     }
 }
 
-pub(super) fn draw_pooled_bridge_bodies<'a>(
-    pass: &mut wgpu::RenderPass<'a>,
-    batch: &'a BatchRenderer,
-    pool: &'a InstanceBufferPool,
-    atlas: Option<&'a BridgeAtlas>,
-    key: &'static str,
-) {
-    if let (Some(a), Some((buf, count))) = (atlas, pool.get(key)) {
-        // Cell47F80B flags4E00 selects the opaque SHP leaf4990E0:
-        // strict signed candidate<oldZ, unlike TMP547CF0's <= policy.
-        // Reuse the native SHP row/gradient owner and its read/write pipeline.
-        batch.draw_zsprite_range(
-            pass,
-            &a.texture,
-            batch.default_zshape_bind_group(),
-            buf,
-            0,
-            count,
-            true,
-        );
-    }
-}
-
 /// Draw a pooled buffer with LessEqual depth test, depth write ON.
 /// Used for the base terrain pass and UI/debug passes that write depth.
 fn draw_pooled_no_depth<'a>(
@@ -1030,52 +995,65 @@ fn draw_pooled_ui_passthrough<'a>(
     }
 }
 
-/// Adjacent policy runs preserve the native cell traversal exactly; grouping
-/// every wall together would change color/depth ties against nearby overlays.
-fn overlay_policy_runs(policies: &[RenderZPolicy]) -> Vec<(u32, u32, RenderZPolicy)> {
+/// Adjacent runs of equal draws preserve the sweep exactly; grouping every
+/// wall or every bridge together would change color/depth ties against
+/// nearby bodies.
+fn cell_body_runs(draws: &[CellBodyDraw]) -> Vec<(u32, u32, CellBodyDraw)> {
     let mut runs = Vec::new();
     let mut start = 0;
-    while start < policies.len() {
-        let policy = policies[start];
+    while start < draws.len() {
+        let draw = draws[start];
         let mut end = start + 1;
-        while end < policies.len() && policies[end] == policy {
+        while end < draws.len() && draws[end] == draw {
             end += 1;
         }
-        runs.push((start as u32, (end - start) as u32, policy));
+        runs.push((start as u32, (end - start) as u32, draw));
         start = end;
     }
     runs
 }
 
-pub(crate) fn draw_pooled_overlay_bodies<'a>(
+/// Draw the cell body sweep in its uploaded order. The bodies share one
+/// pipeline and differ only in atlas: Cell47F80B flags4E00 selects the opaque
+/// SHP leaf4990E0, strict signed candidate<oldZ unlike TMP547CF0's <= policy,
+/// through the native SHP row/gradient owner and its read/write pipeline.
+pub(crate) fn draw_pooled_cell_bodies<'a>(
     pass: &mut wgpu::RenderPass<'a>,
     batch: &'a BatchRenderer,
     pool: &'a InstanceBufferPool,
-    atlas: Option<&'a OverlayAtlas>,
+    overlay_atlas: Option<&'a OverlayAtlas>,
+    bridge_atlas: Option<&'a BridgeAtlas>,
     key: &'static str,
-    policies: &[RenderZPolicy],
+    draws: &[CellBodyDraw],
 ) {
-    let (Some(atlas), Some((buf, count))) = (atlas, pool.get(key)) else {
+    let Some((buf, count)) = pool.get(key) else {
         return;
     };
     assert_eq!(
         count as usize,
-        policies.len(),
-        "overlay policies must describe the uploaded buffer"
+        draws.len(),
+        "cell body draws must describe the uploaded buffer"
     );
-    for (start, count, policy) in overlay_policy_runs(policies) {
-        if policy == RenderZPolicy::None {
-            batch.draw_passthrough_range(pass, &atlas.texture, buf, start, count);
+    for (start, count, draw) in cell_body_runs(draws) {
+        let texture = match draw.atlas {
+            CellBodyAtlas::Overlay => overlay_atlas.map(|atlas| &atlas.texture),
+            CellBodyAtlas::Bridge => bridge_atlas.map(|atlas| &atlas.texture),
+        };
+        let Some(texture) = texture else {
+            continue;
+        };
+        if draw.render_z == RenderZPolicy::None {
+            batch.draw_passthrough_range(pass, texture, buf, start, count);
         } else {
             batch.draw_zsprite_range(
                 pass,
-                &atlas.texture,
+                texture,
                 batch.default_zshape_bind_group(),
                 buf,
                 start,
                 count,
                 matches!(
-                    policy,
+                    draw.render_z,
                     RenderZPolicy::ReadWrite | RenderZPolicy::AlphaReadWrite
                 ),
             );
@@ -1121,17 +1099,21 @@ pub(crate) fn draw_bridge_shadows(
 
 #[cfg(test)]
 mod tests {
-    use super::{RenderZPolicy, overlay_policy_runs};
+    use super::{CellBodyAtlas, CellBodyDraw, RenderZPolicy, cell_body_runs};
     const SOURCE: &str = include_str!("draw_passes.rs");
 
     #[test]
-    fn overlay_depth_runs_do_not_reorder_walls_around_special_overlays() {
+    fn cell_body_runs_keep_the_sweep_across_atlases_and_policies() {
         use RenderZPolicy::{None, ReadWrite};
+        let draw = |atlas, render_z| CellBodyDraw { atlas, render_z };
+        let wall = draw(CellBodyAtlas::Overlay, ReadWrite);
+        let ore = draw(CellBodyAtlas::Overlay, None);
+        let bridge = draw(CellBodyAtlas::Bridge, ReadWrite);
         assert_eq!(
-            overlay_policy_runs(&[ReadWrite, ReadWrite, None, ReadWrite]),
-            [(0, 2, ReadWrite), (2, 1, None), (3, 1, ReadWrite)]
+            cell_body_runs(&[ore, wall, wall, bridge, wall]),
+            [(0, 1, ore), (1, 2, wall), (3, 1, bridge), (4, 1, wall)]
         );
-        assert!(overlay_policy_runs(&[]).is_empty());
+        assert!(cell_body_runs(&[]).is_empty());
     }
 
     fn source_offset(needle: &str) -> usize {

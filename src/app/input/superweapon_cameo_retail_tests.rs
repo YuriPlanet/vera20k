@@ -11,7 +11,7 @@ fn frame(sim: &mut Simulation, rules: &RuleSet) -> SimFrameOutput {
     let due = sim.take_due_commands();
     sim.advance_app_frame(
         &due,
-        Some(rules),
+        rules,
         None,
         67,
         TickLane::Ordinary,

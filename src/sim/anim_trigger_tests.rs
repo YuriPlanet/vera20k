@@ -265,7 +265,7 @@ fn retail_trigger_anim_and_retained_no_effects_next_match_original_until_cleanup
         assert_state(&sim, id, &row["initial"], label);
         assert_sound_calls(&sim, &row["constructor_calls"], label);
         assert_eq!(
-            sim.anim_display_layer(id, Some(&rules)),
+            sim.anim_display_layer(id, &rules),
             Some(crate::sim::world::display_layers::DisplayLayer::TOP)
         );
         sim.sound_events.clear_for_test();

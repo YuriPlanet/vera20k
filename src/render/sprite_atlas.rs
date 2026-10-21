@@ -90,6 +90,26 @@ fn effect_anim_shp_candidates(
 }
 
 /// First existing file among `candidates`, with its bytes.
+/// The files a building type's Buildup SHP loads from: its art `Buildup=`
+/// through the theater lookup (`rules::buildup_asset_catalog`), none without
+/// one.
+fn buildup_shp_candidates(
+    art: &ArtRegistry,
+    rules: Option<&RuleSet>,
+    type_id: &str,
+    theater_name: &str,
+) -> Vec<String> {
+    let rules_image = rules
+        .and_then(|rules| rules.object(type_id))
+        .map_or(type_id, |object| object.image.as_str());
+    art.resolve_metadata_entry(type_id, rules_image)
+        .and_then(|entry| entry.buildup.as_deref())
+        .map(|buildup| {
+            crate::rules::buildup_asset_catalog::buildup_shp_names(buildup, theater_name).to_vec()
+        })
+        .unwrap_or_default()
+}
+
 fn find_shp<'a, 'n>(
     asset_manager: &'a AssetManager,
     candidates: &'n [String],
@@ -1620,17 +1640,7 @@ pub fn build_sprite_atlas(
             let count = match make_frame_counts.get(&make_key) {
                 Some(&count) => count,
                 None => {
-                    let rules_image: String = rules
-                        .and_then(|r| r.object(type_id))
-                        .map(|o| o.image.clone())
-                        .unwrap_or_else(|| type_id.clone());
-                    let image: String = art_reg.resolve_effective_image_id(type_id, &rules_image);
-                    let candidates: Vec<String> = art_data::make_shp_candidates(
-                        Some(art_reg),
-                        &image,
-                        theater_ext,
-                        theater_name,
-                    );
+                    let candidates = buildup_shp_candidates(art_reg, rules, type_id, theater_name);
                     let Some((file, data)) = find_shp(asset_manager, &candidates) else {
                         continue;
                     };
@@ -1645,11 +1655,18 @@ pub fn build_sprite_atlas(
                     };
                     log::debug!("Make SHP for {type_id}: {count} frames from {file}");
                     shp_files.insert(make_key.to_ascii_uppercase(), file.to_string());
+                    object_shp_frame_counts.insert(make_key.to_ascii_uppercase(), raw_count);
                     make_frame_counts.insert(make_key.clone(), count);
                     count
                 }
             };
-            for frame in 0..count {
+            // The shadow half too: DrawSHP's shadow arm (`0x00705E00`) draws
+            // frame + count/2 of the Buildup like any body image.
+            let raw_count = object_shp_frame_counts
+                .get(&make_key.to_ascii_uppercase())
+                .copied()
+                .unwrap_or(count);
+            for frame in 0..raw_count {
                 needed.insert(ShpSpriteKey {
                     palette_context: ShpPaletteContext::Legacy,
                     type_id: make_key.clone(),
@@ -2167,7 +2184,8 @@ fn load_shp_source<'a>(
                 .map(|a| a.resolve_effective_image_id(base_type_id, &rules_image))
                 .unwrap_or_else(|| rules_image.to_uppercase());
             if is_make {
-                art_data::make_shp_candidates(art, &image, theater_ext, theater_name)
+                art.map(|art| buildup_shp_candidates(art, rules, base_type_id, theater_name))
+                    .unwrap_or_default()
             } else {
                 art_data::object_shp_candidates(art, &image, theater_ext, theater_name)
             }

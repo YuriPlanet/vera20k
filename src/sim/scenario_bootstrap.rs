@@ -1459,12 +1459,30 @@ fn apply_resolved_skirmish_launch_session(
             let Some(slot) = slots.get(*slot_idx) else {
                 continue;
             };
-            if slot.observer {
+            let Some(country) = crate::sim::house_state::house_state_for_owner(
+                &sim.houses,
+                &slot.owner_name,
+                &sim.interner,
+            )
+            .and_then(|house| house.country())
+            .and_then(|name| rules.country_index(sim.interner.resolve(name))) else {
+                continue;
+            };
+            // GenerateStartingUnits5D6EF0..5D6EF8 skips passive Countries
+            // before either the MCV (+C8) or extra-unit (+CC) callback.
+            if slot.observer
+                || rules
+                    .country_name(country)
+                    .is_some_and(|name| rules.country_multiplay_passive(name))
+            {
                 continue;
             }
             // Battle5D7062 skips Unit construction and its RNG when505310
             // finds no Owner-compatible BaseUnit. The House still exists.
-            let Some(mcv_type) = launch_mcv_type_for_country(slot.country, rules) else {
+            let Some(mcv_type) = launch_mcv_type_for_country(
+                LaunchCountry::from_country_index(u32::from(country.0)),
+                rules,
+            ) else {
                 continue;
             };
             if place_starting_mcv(
@@ -1525,7 +1543,7 @@ fn apply_resolved_skirmish_launch_session(
 
     apply_launch_shroud_option(
         sim,
-        crate::sim::world::UninitContext::new(Some(rules), overlay_registry),
+        crate::sim::world::UninitContext::new(rules, overlay_registry),
     );
 
     SkirmishLaunchApplyResult {
@@ -1711,7 +1729,7 @@ pub fn populate_special_houses(sim: &mut Simulation, house_roster: &HouseRoster,
         // is always concrete here — the roster's `Country=` when the map named
         // one, otherwise the special house's own `[Countries]` entry, which is
         // what this house is being built as.
-        house.resolve_multiplay_passive(Some(rules), Some(country_name));
+        house.resolve_multiplay_passive(rules, Some(country_name));
         house.project_country_mults(rules, &sim.interner);
         sim.houses.register(house);
     }
@@ -1791,7 +1809,7 @@ pub fn populate_launch_houses(
                 sim.session.set_computer_slot_has_team();
             }
         }
-        house.resolve_multiplay_passive(Some(rules), Some(country_name));
+        house.resolve_multiplay_passive(rules, Some(country_name));
         house.project_country_mults(rules, &sim.interner);
         sim.houses.register(house);
     }
@@ -2030,11 +2048,7 @@ fn place_starting_object_near_base(
         }
     }
 
-    sim.discard_constructed_limbo(
-        stable_id,
-        Some(rules),
-        crate::sim::world::FrameEffects::default(),
-    );
+    sim.discard_constructed_limbo(stable_id, rules, crate::sim::world::FrameEffects::default());
     None
 }
 
@@ -2090,7 +2104,11 @@ fn seed_starting_extra_units_with_overlay_registry(
     }
     let budget = starting_unit_budget(
         rules,
-        slots,
+        sim.houses.values().filter_map(|house| {
+            house
+                .country()
+                .and_then(|name| rules.country_index(sim.interner.resolve(name)))
+        }),
         sim.session.game_options().tech_level,
         unit_count,
     );
@@ -2100,22 +2118,37 @@ fn seed_starting_extra_units_with_overlay_registry(
     let mut spawned = 0;
 
     for slot in slots {
-        // 5D6F4A..53: observer node+6B==-1 skips all starting forces.
+        // 5D6EF0..F8 and5D6F4A..53 precede both starting-force callbacks.
         if slot.observer {
             continue;
         }
-        let Some(base_center) = crate::sim::house_state::house_state_for_owner(
-            &sim.houses,
-            &slot.owner_name,
-            &sim.interner,
-        )
-        .and_then(|house| house.base_center()) else {
+        let Some((base_center, tech_level, country_name)) =
+            crate::sim::house_state::house_state_for_owner(
+                &sim.houses,
+                &slot.owner_name,
+                &sim.interner,
+            )
+            .and_then(|house| {
+                Some((
+                    house.base_center()?,
+                    house.tech_level(),
+                    sim.interner.resolve(house.country()?),
+                ))
+            })
+        else {
             continue;
         };
+        if rules.country_multiplay_passive(country_name) {
+            continue;
+        }
+        let Some(country) = rules.country_index(country_name) else {
+            continue;
+        };
+        //5D70F0 compares the House's +1D4, not the global budget level.
         let candidates = starting_unit_candidates_for_country(
             rules,
-            slot.country,
-            sim.session.game_options().tech_level,
+            LaunchCountry::from_country_index(u32::from(country.0)),
+            tech_level,
         );
         if candidates.vehicles.is_empty() && candidates.infantry.is_empty() {
             continue;
@@ -2206,29 +2239,36 @@ fn seed_starting_extra_units_with_overlay_registry(
 
 pub fn starting_unit_budget(
     rules: &RuleSet,
-    slots: &[NormalizedSkirmishSlot],
+    countries: impl IntoIterator<Item = crate::rules::ruleset::CountryIdx>,
     tech_level: i32,
     unit_count: i32,
 ) -> i32 {
     if unit_count <= 0 {
         return 0;
     }
+    // GenerateStartingUnits5D6D80:5D6DAF..5D6DCB ORs actual Country+B4
+    // bits from non-passive Countries. Observer filtering is later; neither
+    // ParentCountry nor production's Required/ForbiddenHouses enters this
+    // budget or5D70F0's candidate lists. Executed controls:
+    // tools/rules_oracle/session_country_starting_ownership.{json,md}.
+    let country_mask = countries.into_iter().fold(0u32, |mask, country| {
+        let Some(name) = rules.country_name(country) else {
+            return mask;
+        };
+        if rules.country_multiplay_passive(name) {
+            mask
+        } else {
+            mask | crate::sim::ai_buildable::country_bit(country)
+        }
+    });
     let mut total_cost: i32 = 0;
     let mut eligible_count: i32 = 0;
     for id in &rules.vehicle_ids {
         let Some(object) = rules.object(id) else {
             continue;
         };
-        if !object.allowed_to_start_in_multiplayer
-            || object.tech_level > tech_level
-            || !slots
-                .iter()
-                .any(|slot| launch_country_can_own_object(slot.country, object, rules))
-            || rules
-                .general
-                .base_unit_types
-                .iter()
-                .any(|base_unit| base_unit.eq_ignore_ascii_case(&object.id))
+        if !starting_unit_vehicle_allowed(rules, object, tech_level)
+            || !crate::sim::ai_buildable::owner_allows(object, country_mask, rules)
         {
             continue;
         }
@@ -2239,11 +2279,8 @@ pub fn starting_unit_budget(
         let Some(object) = rules.object(id) else {
             continue;
         };
-        if !object.allowed_to_start_in_multiplayer
-            || object.tech_level > tech_level
-            || !slots
-                .iter()
-                .any(|slot| launch_country_can_own_object(slot.country, object, rules))
+        if !starting_unit_infantry_allowed(object, tech_level)
+            || !crate::sim::ai_buildable::owner_allows(object, country_mask, rules)
         {
             continue;
         }
@@ -2268,13 +2305,20 @@ pub fn starting_unit_candidates_for_country(
     country: LaunchCountry,
     tech_level: i32,
 ) -> StartingUnitCandidates {
+    if rules.country_name(country.index()).is_none() {
+        return StartingUnitCandidates::default();
+    }
+    // GenerateStartingUnitsForHouse5D70F0 uses the actual Country+B4 bit,
+    // unlike the MCV's separate505310 ParentCountry lookup. Reuse the one
+    // shared Owner-mask decision; production admission is not called here.
+    let country_mask = crate::sim::ai_buildable::country_bit(country.index());
     let vehicles = rules
         .vehicle_ids
         .iter()
         .filter_map(|id| {
             let object = rules.object(id)?;
             if !starting_unit_vehicle_allowed(rules, object, tech_level)
-                || !launch_country_can_own_object(country, object, rules)
+                || !crate::sim::ai_buildable::owner_allows(object, country_mask, rules)
             {
                 return None;
             }
@@ -2290,7 +2334,7 @@ pub fn starting_unit_candidates_for_country(
         .filter_map(|id| {
             let object = rules.object(id)?;
             if !starting_unit_infantry_allowed(object, tech_level)
-                || !launch_country_can_own_object(country, object, rules)
+                || !crate::sim::ai_buildable::owner_allows(object, country_mask, rules)
             {
                 return None;
             }
@@ -2380,34 +2424,9 @@ pub fn launch_mcv_type_for_country(country: LaunchCountry, rules: &RuleSet) -> O
         rules,
         &rules.general.base_unit_types,
         crate::rules::object_type::ObjectCategory::Vehicle,
-        crate::sim::ai_buildable::house_country_bit(rules, name),
+        rules.country_owner_mask(name),
     )
     .map(|object| object.id.as_str())
-}
-
-fn launch_country_can_own_object(
-    country: LaunchCountry,
-    object: &crate::rules::object_type::ObjectType,
-    rules: &RuleSet,
-) -> bool {
-    let Some(country_name) = rules.country_name(country.index()) else {
-        return false;
-    };
-    if !object.owner.iter().any(|owner| owner == country_name) {
-        return false;
-    }
-    if !object.required_houses.is_empty()
-        && !object
-            .required_houses
-            .iter()
-            .any(|required| required == country_name)
-    {
-        return false;
-    }
-    !object
-        .forbidden_houses
-        .iter()
-        .any(|forbidden| forbidden == country_name)
 }
 
 /// Opaque owner for the RNG cursors used while a map becomes a world.
@@ -2565,7 +2584,7 @@ impl ScenarioBootstrapRng {
                 initialize_map_roster_houses(
                     &mut simulation,
                     house_roster,
-                    Some(rules),
+                    rules,
                     Some(&map_data.ini),
                 );
                 initialize_campaign_current_house(
@@ -2768,7 +2787,7 @@ pub fn initialize_campaign_current_house(
 pub fn initialize_map_roster_houses(
     sim: &mut Simulation,
     house_roster: &HouseRoster,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     map_ini: Option<&crate::rules::ini_parser::IniFile>,
 ) {
     assert!(
@@ -2781,7 +2800,7 @@ pub fn initialize_map_roster_houses(
     let campaign_difficulties = sim.session.campaign_house_difficulties();
     if campaign_difficulties.is_some() {
         assert!(
-            rules.is_some() && map_ini.is_some(),
+            map_ini.is_some(),
             "campaign Houses require admitted map/rules"
         );
         assert!(
@@ -2793,17 +2812,15 @@ pub fn initialize_map_roster_houses(
     let mission_counter = sim.session.campaign_mission_counter().unwrap_or(1);
     for house in &house_roster.houses {
         let country_name = rules
-            .and_then(|rules| rules.scenario_country_name(house.country.as_deref()))
+            .scenario_country_name(house.country.as_deref())
             .or(house.country.as_deref());
         let fallback_side = crate::sim::house_state::side_index_from_name(house.side.as_deref());
-        let side_idx = rules.map_or(fallback_side, |rules| {
-            crate::sim::house_state::resolve_house_side_index(
-                rules,
-                country_name,
-                house.side.as_deref(),
-                fallback_side,
-            )
-        });
+        let side_idx = crate::sim::house_state::resolve_house_side_index(
+            rules,
+            country_name,
+            house.side.as_deref(),
+            fallback_side,
+        );
         let name_id = sim.interner.intern(&house.name);
         let country_id = country_name.map(|c| sim.interner.intern(c));
         let mut house_state = crate::sim::house_state::HouseState::new(
@@ -2820,16 +2837,13 @@ pub fn initialize_map_roster_houses(
         });
         // Every native House constructs its whole Supers vector before map
         // objects. Only the admitted campaign prefix has a measured ID cursor.
-        if let Some(rules) = rules {
-            crate::sim::superweapon::construct_house_supers(
-                sim,
-                rules,
-                name_id,
-                campaign_house_id.is_some(),
-            );
-        }
+        crate::sim::superweapon::construct_house_supers(
+            sim,
+            rules,
+            name_id,
+            campaign_house_id.is_some(),
+        );
         if let Some((_, computer_difficulty)) = campaign_difficulties {
-            let rules = rules.expect("admitted campaign rules");
             let draw = draw_house_constructor_timer(&mut sim.scenario_rng);
             house_state.bind_native_construction(
                 campaign_house_id.expect("admitted campaign House ID"),
@@ -2854,9 +2868,7 @@ pub fn initialize_map_roster_houses(
             house_state.set_ui_name(crate::sim::house_state::HouseUiName::Csf(key.clone()));
         }
         house_state.resolve_multiplay_passive(rules, country_name);
-        if let Some(rules) = rules {
-            house_state.project_country_mults(rules, &sim.interner);
-        }
+        house_state.project_country_mults(rules, &sim.interner);
         // Registration admits distinct House names only.
         sim.houses.register(house_state);
     }
@@ -2878,19 +2890,17 @@ pub fn initialize_map_roster_houses(
             house_state.initialize_scenario_parameters(
                 house.read_scenario_parameters(ini, mission_counter),
                 campaign_difficulties.map(|(player, _)| player),
-                rules.map(|rules| &rules.general),
+                Some(&rules.general),
             );
             house_state
                 .team_creation_mut()
                 .read_scenario_ratio(ini.section_or_empty(&house.name));
-            if let Some(rules) = rules {
-                let temporary_delay = house_state
-                    .difficulty_value(&rules.general.team_delays)
-                    .wrapping_add((index as i32).wrapping_mul(175));
-                house_state
-                    .team_creation_mut()
-                    .restart(frame, temporary_delay);
-            }
+            let temporary_delay = house_state
+                .difficulty_value(&rules.general.team_delays)
+                .wrapping_add((index as i32).wrapping_mul(175));
+            house_state
+                .team_creation_mut()
+                .restart(frame, temporary_delay);
         }
         house_state.base_plan_mut().read_scenario(
             house.base_plan.percent_built,
@@ -2909,13 +2919,8 @@ pub fn initialize_map_roster_houses(
         // house section, defaults it to zero, and changes a value above
         // MaxIQLevels to literal one before storing it as both the authored
         // IQ (+0x1D0) and CurrentIQ (+0x24C) (0x00500DBA..0x00500DC0).
-        house_state.install_scenario_iq(rules.map_or_else(
-            || house.iq,
-            |rules| house.scenario_current_iq(rules.general.max_iq_levels),
-        ));
-        if let Some(rules) = rules
-            && let Some((player, computer)) = campaign_difficulties
-        {
+        house_state.install_scenario_iq(house.scenario_current_iq(rules.general.max_iq_levels));
+        if let Some((player, computer)) = campaign_difficulties {
             let difficulty = if house_state.is_controlled_by_human(false) {
                 player
             } else {
@@ -2938,7 +2943,7 @@ pub fn initialize_map_roster_houses(
             crate::sim::house_diplomacy::HouseAllianceAdmission::ScenarioInitialization {
                 roster: house_roster,
             },
-            rules.expect("admitted campaign rules"),
+            rules,
         );
     }
 }
@@ -2947,10 +2952,294 @@ pub fn initialize_map_roster_houses(
 mod tests {
     use super::*;
 
-    const CONTROLLED_STOCK_COUNTRIES: &str = "[Countries]\n0=Americans\n1=Alliance\n2=French\n3=Germans\n4=British\n5=Africans\n6=Arabs\n7=Confederation\n8=Russians\n9=YuriCountry\n[Sides]\nAllied=Americans,Alliance,French,Germans,British\nSoviet=Africans,Arabs,Confederation,Russians\nThirdSide=YuriCountry\n";
+    // Each stock Country reaches its section, so its ParentCountry defaults to
+    // its own ID as in retail; a sectionless Country keeps ctor-empty
+    // ParentCountry and owns nothing.
+    const CONTROLLED_STOCK_COUNTRIES: &str = "[Countries]\n0=Americans\n1=Alliance\n2=French\n3=Germans\n4=British\n5=Africans\n6=Arabs\n7=Confederation\n8=Russians\n9=YuriCountry\n[Sides]\nAllied=Americans,Alliance,French,Germans,British\nSoviet=Africans,Arabs,Confederation,Russians\nThirdSide=YuriCountry\n[Americans]\nParentCountry=Americans\n[Alliance]\nParentCountry=Alliance\n[French]\nParentCountry=French\n[Germans]\nParentCountry=Germans\n[British]\nParentCountry=British\n[Africans]\nParentCountry=Africans\n[Arabs]\nParentCountry=Arabs\n[Confederation]\nParentCountry=Confederation\n[Russians]\nParentCountry=Russians\n[YuriCountry]\nParentCountry=YuriCountry\n";
 
+    /// Layer a test's source over the Countries fixture, so its own Country
+    /// keys join the fixture's sections; a fresh load would keep only the
+    /// first of two same-named sections.
     fn launch_fixture_ini(source: &str) -> IniFile {
-        IniFile::from_str(&format!("{CONTROLLED_STOCK_COUNTRIES}{source}"))
+        let mut ini = IniFile::from_str(CONTROLLED_STOCK_COUNTRIES);
+        ini.merge(&IniFile::from_str(source));
+        ini
+    }
+
+    fn starting_country_native_fixture(passive: bool) -> (serde_json::Value, RuleSet) {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/rules_oracle/session_country_starting_ownership.json",
+        ))
+        .unwrap();
+        let mut source = String::from("[General]\nBaseUnit=V_BASE\n");
+        for (section, prefix) in [("VehicleTypes", "V_"), ("InfantryTypes", "I_")] {
+            source.push_str(&format!("[{section}]\n"));
+            for (index, row) in corpus["type_inputs"].as_array().unwrap().iter().enumerate() {
+                let id = row["id"].as_str().unwrap();
+                if id.starts_with(prefix) {
+                    source.push_str(&format!("{index}={id}\n"));
+                }
+            }
+        }
+        source.push_str(corpus["root"].as_str().unwrap());
+        let mut ini = IniFile::from_str(&source);
+        if passive {
+            ini.merge(&IniFile::from_str(
+                corpus["passive_layer"].as_str().unwrap(),
+            ));
+        }
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        (corpus, rules)
+    }
+
+    #[test]
+    fn starting_country_candidate_lists_match_original_owner_only_admission() {
+        let (corpus, rules) = starting_country_native_fixture(false);
+        for row in corpus["type_inputs"].as_array().unwrap() {
+            let object = rules.object(row["id"].as_str().unwrap()).unwrap();
+            assert_eq!(
+                rules.house_type_mask(&object.owner),
+                row["owner_mask"].as_u64().unwrap() as u32,
+                "{} Owner mask",
+                row["id"],
+            );
+        }
+        for country in corpus["country_inputs"].as_array().unwrap() {
+            let id = country["id"].as_str().unwrap();
+            let candidates = starting_unit_candidates_for_country(
+                &rules,
+                LaunchCountry::from_country_index(country["actual_index"].as_u64().unwrap() as u32),
+                corpus["tech_level"].as_i64().unwrap() as i32,
+            );
+            for (category, actual) in [
+                ("vehicles", candidates.vehicles),
+                ("infantry", candidates.infantry),
+            ] {
+                let ids: Vec<_> = actual
+                    .iter()
+                    .map(|candidate| candidate.type_id.as_str())
+                    .collect();
+                let expected: Vec<_> = corpus["candidate_lists"][id][category]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|value| value.as_str().unwrap())
+                    .collect();
+                assert_eq!(ids, expected, "{id}/{category}");
+            }
+        }
+        for row in corpus["candidate_house_tech_controls"].as_array().unwrap() {
+            let index = corpus["country_inputs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|country| country["id"] == row["country"])
+                .unwrap()["actual_index"]
+                .as_u64()
+                .unwrap();
+            let candidates = starting_unit_candidates_for_country(
+                &rules,
+                LaunchCountry::from_country_index(index as u32),
+                row["house_tech_level"].as_i64().unwrap() as i32,
+            );
+            for (category, actual) in [
+                ("vehicles", candidates.vehicles),
+                ("infantry", candidates.infantry),
+            ] {
+                let expected: Vec<_> = row[category]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|value| value.as_str().unwrap())
+                    .collect();
+                assert_eq!(
+                    actual
+                        .iter()
+                        .map(|candidate| candidate.type_id.as_str())
+                        .collect::<Vec<_>>(),
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn starting_country_budgets_match_original_actual_nonpassive_mask() {
+        let (corpus, active_rules) = starting_country_native_fixture(false);
+        let (_, passive_rules) = starting_country_native_fixture(true);
+        let template =
+            normalized_launch_slots(one_player_battle_launch("budget.map").session()).remove(0);
+        for row in corpus["budget_rows"].as_array().unwrap() {
+            let rules = if row["alliance_passive"].as_bool().unwrap() {
+                &passive_rules
+            } else {
+                &active_rules
+            };
+            let slots: Vec<_> = row["participants"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|name| {
+                    let index = corpus["country_inputs"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|country| country["id"] == *name)
+                        .unwrap()["actual_index"]
+                        .as_u64()
+                        .unwrap();
+                    let mut slot = template.clone();
+                    slot.country = LaunchCountry::from_country_index(index as u32);
+                    slot
+                })
+                .collect();
+            assert_eq!(
+                starting_unit_budget(
+                    rules,
+                    slots.iter().map(|slot| slot.country.index()),
+                    corpus["tech_level"].as_i64().unwrap() as i32,
+                    corpus["unit_count"].as_i64().unwrap() as i32
+                ),
+                row["budget"].as_i64().unwrap() as i32,
+                "{}",
+                row["name"],
+            );
+        }
+    }
+
+    #[test]
+    fn starting_country_native_qualifier_sentinels_reach_shared_consumers() {
+        let corpus =
+            crate::test_fixture::json("tools/rules_oracle/session_country_starting_ownership.json");
+        let gate = &corpus["qualifier_gates"];
+        let mut source = String::from("[Countries]\n");
+        for (index, id) in gate["sentinel_registry_ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+        {
+            source.push_str(&format!("{index}={}\n", id.as_str().unwrap()));
+        }
+        // The native House's Country reads its retained ParentCountry, which
+        // supplies the Owner-side bit; its actual index supplies the rest.
+        let actual_country = gate["actual_country"].as_str().unwrap();
+        source.push_str(&format!(
+            "[{actual_country}]\nParentCountry={}\n",
+            gate["owner_parent"].as_str().unwrap()
+        ));
+        let type_id = gate["type_id"].as_str().unwrap();
+        source.push_str(&format!(
+            "[VehicleTypes]\n0={type_id}\n[{type_id}]\nTechLevel=1\n"
+        ));
+        for row in gate["rows"].as_array().unwrap() {
+            let mut ini = IniFile::from_str(&source);
+            ini.merge(&IniFile::from_str(gate["owner_layer"].as_str().unwrap()));
+            ini.merge(&IniFile::from_str(row["physical_layer"].as_str().unwrap()));
+            let rules = RuleSet::from_ini(&ini).unwrap();
+            let object = rules.object(type_id).unwrap();
+            assert_eq!(
+                rules.house_type_mask(&object.owner),
+                gate["owner_mask"].as_u64().unwrap() as u32
+            );
+            assert_eq!(
+                crate::sim::ai_buildable::house_country_bit(&rules, actual_country),
+                1 << gate["actual_index"].as_u64().unwrap()
+            );
+            assert_eq!(
+                crate::sim::ai_buildable::candidate_allowed(
+                    object,
+                    crate::sim::ai_buildable::CountryBuildMasks::for_country(
+                        &rules,
+                        actual_country
+                    ),
+                    gate["planned_side"].as_i64().unwrap() as i32,
+                    true,
+                    &rules,
+                ),
+                row["first_buildable_result"].as_str() == Some(type_id),
+                "{} FirstBuildable",
+                row["name"],
+            );
+            // Only the original qualifier region is a native CanBuild
+            // golden. Other production gates are open in this Rust scene.
+            let mut sim = Simulation::new();
+            let owner = sim.interner.intern("QualifierHouse");
+            let country = sim.interner.intern(actual_country);
+            sim.houses
+                .register(HouseState::new(owner, -1, Some(country), false, 0, 10));
+            assert_eq!(
+                crate::sim::production::can_build(&sim, &rules, owner, object, false, false)
+                    == crate::sim::production::CanBuild::Yes,
+                row["can_build_qualifier_gate"].as_bool().unwrap(),
+                "{} CanBuild qualifier integration",
+                row["name"],
+            );
+        }
+    }
+
+    #[test]
+    fn starting_country_passive_blocks_both_mcv_and_extra_unit_callbacks() {
+        // Original5D6EF8 skips both callbacks. Exercise the shared launch
+        // consumer; this is a Rust integration check, not placement parity.
+        for (passive, house_tech_level, changed_house_country) in [
+            (false, 10, false),
+            (false, 0, false),
+            (true, 10, false),
+            (false, 10, true),
+        ] {
+            let rules = RuleSet::from_ini(&launch_fixture_ini(&format!(
+                "[General]\nBaseUnit=MTNK\n[Americans]\nMultiplayPassive={}\n[Alliance]\nMultiplayPassive=yes\n\
+                 [VehicleTypes]\n0=MTNK\n1=HTNK\n\
+                 [MTNK]\nStrength=300\nSpeed=6\nCost=100\nTechLevel=1\nOwner=Americans\nAllowedToStartInMultiplayer=yes\n\
+                 [HTNK]\nStrength=300\nSpeed=6\nCost=100\nTechLevel=1\nOwner=Americans\nAllowedToStartInMultiplayer=yes\n",
+                if passive { "yes" } else { "no" },
+            ))).unwrap();
+            let mut session = one_player_battle_launch("passive.map").session().clone();
+            session.options.bases = true;
+            session.options.unit_count = 1;
+            session.options.tech_level = 10;
+            let launch = MatchLaunchDescriptor::from_resolved(session).unwrap();
+            let map = one_start_prefix_map(Waypoint {
+                index: 0,
+                rx: 44,
+                ry: 48,
+            });
+            let terrain = techno_constructor_flat_start_terrain(96);
+            let mut sim = techno_constructor_start_sim(0xC701_1005, 96);
+            sim.install_resolved_terrain_for_new_map(terrain.clone());
+            initialize_skirmish_launch_houses(&mut sim, &HouseRoster::default(), &rules, &launch);
+            let owner = sim.session.current_house().unwrap();
+            if changed_house_country {
+                let country = sim.interner.intern("Alliance");
+                sim.houses
+                    .get_mut(&owner)
+                    .unwrap()
+                    .set_country_for_test(Some(country));
+            }
+            sim.houses
+                .get_mut(&owner)
+                .unwrap()
+                .set_tech_level_for_test(house_tech_level);
+            let result = apply_explicit_skirmish_launch_session(
+                &mut sim,
+                &map,
+                &HouseRoster::default(),
+                &rules,
+                &terrain,
+                &launch,
+            );
+            let skips_forces = passive || changed_house_country;
+            assert_eq!(result.spawned_mcvs, u32::from(!skips_forces));
+            assert_eq!(
+                sim.entities().len(),
+                if skips_forces {
+                    0
+                } else {
+                    1 + usize::from(house_tech_level > 0)
+                },
+            );
+        }
     }
 
     #[test]
@@ -3174,7 +3463,12 @@ mod tests {
             "[Houses]\n7=Zulu\n2=Alpha\n9=1234567890123456789\n[Zulu]\n[Alpha]\n[1234567890123456789]\n",
         );
         let roster = crate::map::houses::parse_house_roster(&map, &[], None);
-        initialize_map_roster_houses(&mut sim, &roster, None, None);
+        initialize_map_roster_houses(
+            &mut sim,
+            &roster,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            None,
+        );
         let first = sim.interner.get("Zulu").unwrap();
         let second = sim.interner.get("Alpha").unwrap();
         let capped = sim.interner.get("1234567890123456789").unwrap();
@@ -3502,7 +3796,7 @@ mod tests {
                     &map,
                     &terrain,
                     "TEMPERATE",
-                    Some(&rules),
+                    &rules,
                     Some(&overlays),
                     Some(&overlay_grid),
                     crate::map::basic::BridgeDestroyabilityMode::SkirmishOrMultiplayer {
@@ -3864,7 +4158,7 @@ mod tests {
         let mut sim = techno_constructor_start_sim(seed, 10);
         sim.session.game_options_mut_for_test().tech_level = 10;
         let owner = sim.interner.intern("Americans");
-        let mut house = HouseState::new(owner, 0, None, true, 0, 10);
+        let mut house = HouseState::new(owner, 0, Some(owner), true, 0, 10);
         house.set_base_center_for_test(Some((6, 5)));
         sim.houses.register(house);
         let slots = [NormalizedSkirmishSlot {
@@ -4442,7 +4736,12 @@ mod tests {
         );
         let roster = crate::map::houses::parse_house_roster(&ini, &[], None);
         let mut sim = Simulation::new();
-        initialize_map_roster_houses(&mut sim, &roster, None, Some(&ini));
+        initialize_map_roster_houses(
+            &mut sim,
+            &roster,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            Some(&ini),
+        );
         let name = |house: &str| {
             let id = sim.interner.get(house).unwrap();
             sim.houses[&id].ui_name().clone()

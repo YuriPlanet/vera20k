@@ -12,14 +12,35 @@ pub(crate) fn country_bit(index: CountryIdx) -> u32 {
     1u32.wrapping_shl(u32::from(index.0 & 31))
 }
 
-/// `1 << HouseTypeClass::FindIndexOfName(name)` for a house whose type (or
-/// `ParentCountry=`, `HouseTypeClass+0x98`, which retail leaves at the type's
-/// own name) is `country_name`: an unknown name answers -1, whose low five
-/// bits make bit 31.
+/// Actual HouseType array index (`+B8`) for RequiredHouses/ForbiddenHouses,
+/// e.g. CanBuild4F79F3/4F7A82. This is an identity, not a Trigger token or
+/// the distinct ParentCountry lookup used by Owner gates.
 pub fn house_country_bit(rules: &RuleSet, country_name: &str) -> u32 {
     rules
-        .trigger_house_type_index(country_name)
+        .country_index(country_name)
         .map_or(1 << 31, country_bit)
+}
+
+/// Read-only inputs for FirstBuildable5051E0 and Recalc5054B0: Owner uses
+/// Country+98, while Required/Forbidden use the actual Country+B8. This is
+/// derived once per choice; the retained Rules registry owns both identities.
+#[derive(Debug, Clone, Copy)]
+pub struct CountryBuildMasks {
+    owner: u32,
+    actual: u32,
+}
+
+impl CountryBuildMasks {
+    pub fn for_country(rules: &RuleSet, country: &str) -> Self {
+        Self {
+            owner: rules.country_owner_mask(country),
+            actual: house_country_bit(rules, country),
+        }
+    }
+
+    pub(crate) fn owner_bit(self) -> u32 {
+        self.owner
+    }
 }
 
 /// The first `[General] HarvesterUnit=` type (`Rules+0xB3C`) whose `Owner=`
@@ -56,16 +77,8 @@ pub(crate) fn first_owner_compatible<'a>(
     })
 }
 
-pub(crate) fn house_token_mask(tokens: &[String], rules: &RuleSet) -> u32 {
-    tokens.iter().fold(0u32, |mask, token| {
-        rules
-            .trigger_house_type_index(token)
-            .map_or(mask, |index| mask | country_bit(index))
-    })
-}
-
 pub(crate) fn owner_allows(candidate: &ObjectType, country_bit: u32, rules: &RuleSet) -> bool {
-    !candidate.owner.is_empty() && house_token_mask(&candidate.owner, rules) & country_bit != 0
+    !candidate.owner.is_empty() && rules.house_type_mask(&candidate.owner) & country_bit != 0
 }
 
 /// Exact identity/shell tail of `HouseClass__FirstBuildableFromArray`.
@@ -76,22 +89,23 @@ pub(crate) fn owner_allows(candidate: &ObjectType, country_bit: u32, rules: &Rul
 /// sim-bench also asks it which of a side's types a country may own.
 pub fn candidate_allowed(
     candidate: &ObjectType,
-    country_bit: u32,
+    country: CountryBuildMasks,
     side_index: i32,
     super_weapons: bool,
     rules: &RuleSet,
 ) -> bool {
-    if !owner_allows(candidate, country_bit, rules) {
+    if !owner_allows(candidate, country.owner, rules) {
         return false;
     }
     if !candidate.required_houses.is_empty()
-        && house_token_mask(&candidate.required_houses, rules) & country_bit == 0
+        && rules.house_type_mask(&candidate.required_houses) & country.actual == 0
     {
         return false;
     }
-    if !candidate.forbidden_houses.is_empty()
-        && house_token_mask(&candidate.forbidden_houses, rules) & country_bit != 0
-    {
+    // FirstBuildable505259 skips ForbiddenHouses==-1, including a
+    // nonempty authored list whose parsed OR-mask is all bits set.
+    let forbidden = rules.house_type_mask(&candidate.forbidden_houses);
+    if forbidden != u32::MAX && forbidden & country.actual != 0 {
         return false;
     }
     if !candidate.planned_for_side(side_index) {
@@ -119,9 +133,14 @@ pub(crate) fn first_buildable_from_array<'a>(
     side_index: i32,
     super_weapons: bool,
 ) -> Option<&'a ObjectType> {
-    let bit = country_bit(rules.trigger_house_type_index(country_name)?);
+    rules.country_index(country_name)?;
+    let country = CountryBuildMasks::for_country(rules, country_name);
     type_ids.iter().find_map(|type_id| {
         let candidate = rules.object_in_category(ObjectCategory::Building, type_id)?;
-        candidate_allowed(candidate, bit, side_index, super_weapons, rules).then_some(candidate)
+        candidate_allowed(candidate, country, side_index, super_weapons, rules).then_some(candidate)
     })
 }
+
+#[cfg(test)]
+#[path = "ai_buildable_parent_tests.rs"]
+mod parent_tests;

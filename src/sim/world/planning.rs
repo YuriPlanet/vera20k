@@ -570,7 +570,23 @@ impl Simulation {
     /// PlanMgr63B150 and node63CAE0 traverse shared nodes before actor links.
     /// Association634CC0/634E10 groups predecessor records by their live XYZ;
     /// the first remaining occurrence of a node supplies each actor's index.
+    ///
+    /// Only the presentation and input ask this. A target read looks its
+    /// cell up, which stamps the fallback CellClass on a miss; the stamp
+    /// stays private to the query, so drawing cannot change the simulation.
     pub fn planning_draw_graph(
+        &self,
+        viewer: InternedId,
+        selected: &[u64],
+        hover_point: Option<[i32; 2]>,
+        retained_highlighted_node: Option<u64>,
+    ) -> PlanningDrawGraph {
+        self.effective_shared_cell_dummy().detached(|| {
+            self.build_planning_draw_graph(viewer, selected, hover_point, retained_highlighted_node)
+        })
+    }
+
+    fn build_planning_draw_graph(
         &self,
         viewer: InternedId,
         selected: &[u64],
@@ -1063,7 +1079,7 @@ impl Simulation {
         &mut self,
         owner_name: &str,
         record: &CommandRecord,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
     ) -> bool {
         let Some(owner) = self.interner.get(owner_name) else {
             return false;
@@ -1083,7 +1099,7 @@ impl Simulation {
                     let before = !path.nodes.is_empty() && (path.pending == -1 || path.pending > 0);
                     path.commit();
                     if !before && self.planning_commit_starts(actor) {
-                        self.planning_start_actor(actor);
+                        self.planning_start_actor(actor, rules);
                     }
                 }
                 true
@@ -1284,7 +1300,7 @@ impl Simulation {
         &mut self,
         owner: InternedId,
         record: &CommandRecord,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
     ) -> bool {
         let Some(MegaMissionTarget::Object { id }) = read_target(record, 0) else {
             return false;
@@ -1309,9 +1325,7 @@ impl Simulation {
         {
             path.loop_start = Some(index);
             path.loop_changed = true;
-            if let Some(rules) = rules {
-                self.planning_promote_patrol(actor, rules);
-            }
+            self.planning_promote_patrol(actor, rules);
             return true;
         }
         let node = &self.planning.nodes[&node_id];
@@ -1432,7 +1446,11 @@ impl Simulation {
 
     /// Techno709A40 ->705D50 (!warp-in) ->6385C0. Called only after the
     /// existing RefreshMegaMission owner declined to resume attack-move.
-    pub(crate) fn planning_enter_idle(&mut self, actor: u64) -> bool {
+    pub(crate) fn planning_enter_idle(
+        &mut self,
+        actor: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> bool {
         if self
             .substrate
             .entities
@@ -1441,10 +1459,14 @@ impl Simulation {
         {
             return false;
         }
-        self.planning_start_actor(actor)
+        self.planning_start_actor(actor, rules)
     }
 
-    pub(crate) fn planning_start_actor(&mut self, actor: u64) -> bool {
+    pub(crate) fn planning_start_actor(
+        &mut self,
+        actor: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> bool {
         let Some(path) = self.planning.paths.get(&actor) else {
             return false;
         };
@@ -1492,7 +1514,7 @@ impl Simulation {
             ),
             0,
             self.session.binary_frame(),
-            &crate::sim::mission::authority::EntityReadyInputProvider,
+            &crate::sim::mission::authority::LiveReadyInputProvider { rules },
         );
         // 637550 ->652230: deferred publication stamps frame+1. Reverse
         // pending traversal plus ring prepend restores generation order.

@@ -443,7 +443,7 @@ mod tests {
         crate::sim::scenario_bootstrap::initialize_map_roster_houses(
             &mut sim,
             &roster,
-            Some(&rules),
+            &rules,
             Some(&ini),
         );
         assert!(crate::map::houses::is_allied_with(

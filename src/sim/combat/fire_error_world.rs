@@ -857,7 +857,7 @@ impl FireQuery for WorldQuery<'_, '_> {
     fn locomotor_moving(&mut self) -> bool {
         crate::sim::movement::motion_query::is_moving_now(
             self.subject.firer,
-            Some(self.subject.speed_rules()),
+            self.subject.speed_rules(),
             self.subject.frame(),
         )
     }
@@ -866,7 +866,7 @@ impl FireQuery for WorldQuery<'_, '_> {
         self.target.entity.is_some_and(|target| {
             crate::sim::movement::motion_query::is_moving_now(
                 target,
-                Some(self.subject.speed_rules()),
+                self.subject.speed_rules(),
                 self.subject.frame(),
             )
         })

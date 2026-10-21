@@ -308,10 +308,7 @@ fn unit_choice_is_harvester(sim: &Simulation, rules: &RuleSet, owner: InternedId
     let Some(house) = sim.houses.get(&owner) else {
         return false;
     };
-    let country_bit = crate::sim::ai_buildable::house_country_bit(
-        rules,
-        sim.interner.resolve(house.house_type_id()),
-    );
+    let country_bit = rules.country_owner_mask(sim.interner.resolve(house.house_type_id()));
     crate::sim::ai_buildable::first_owner_compatible_harvester(rules, country_bit)
         .and_then(|harvester| rules.type_array_index(ObjectCategory::Vehicle, &harvester.id))
         .is_some_and(|index| index == house.ai_unit_choices().get(UnitChoiceKind::Unit))

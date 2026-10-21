@@ -9,11 +9,13 @@
 //! asked has slid out. Any login is accepted. The lobbies, games and users
 //! are fixed stand-ins. Two of them say one line each when a chat lobby is
 //! joined, and a locate finds them. A created game is joined by one
-//! stand-in guest who picks and accepts; the joined game's host answers the
-//! guest's first choices with its options. Nobody ever starts a game, so a
-//! StartGame stays unanswered. The buddy list starts with four stand-ins whose locates
-//! answer a chat lobby, a game, offline and find-disabled; Add and Remove
-//! change it for the process.
+//! stand-in guest who picks, has the map and accepts; the joined game's
+//! host answers the guest's first choices with its options. A start with
+//! that guest gets OnGameStart and the connection verify, then the scenario
+//! negotiation fails ("Scenarios don't match"): nobody can play a match
+//! here. The buddy list starts with four stand-ins whose locates answer a
+//! chat lobby, a game, offline and find-disabled; Add and Remove change it
+//! for the process.
 
 use super::lobby::WolJoined;
 use super::service::WolLadderRecord;
@@ -137,9 +139,9 @@ pub(crate) enum WolTestGuest {
 }
 
 /// The stand-in guest joins after C2's first options, sends its first `R`
-/// (Korea, colour 3) and accepts; after each option change that cleared its
-/// acceptance it accepts again. A host's kick reaches it as the server's
-/// kick echo.
+/// (Korea, colour 3), `K1` and accepts. Each later options parse sends `K1`
+/// again, and accepts again when the change cleared its acceptance. A
+/// host's kick reaches it as the server's kick echo.
 fn guest_answer(state: &mut AppState, request: &NetworkSetupRequest) {
     let local = nickname(state);
     match (state.frontend.wol_test_guest, request) {
@@ -162,12 +164,39 @@ fn guest_answer(state: &mut AppState, request: &NetworkSetupRequest) {
                     observer: false,
                 },
             );
+            guest_map_status(state);
             guest_accepts(state);
         }
-        (
-            WolTestGuest::Joined,
-            NetworkSetupRequest::PublishOptions | NetworkSetupRequest::RequestAcceptance,
-        ) => guest_accepts(state),
+        (WolTestGuest::Joined, NetworkSetupRequest::PublishOptions) => {
+            guest_map_status(state);
+            guest_accepts(state);
+        }
+        (WolTestGuest::Joined, NetworkSetupRequest::RequestAcceptance) => guest_accepts(state),
+        (WolTestGuest::Joined, NetworkSetupRequest::StartGame { users }) => {
+            // OnGameStart for the requested users, then Start Game Now: the
+            // guest answers the verify, but nobody can play here, so the
+            // negotiation fails as for a map the guest lacks.
+            let users = users
+                .iter()
+                .map(|name| crate::app::shell_network_setup::WolStartUser {
+                    name: name.clone(),
+                    flags: u32::from(*name == local),
+                })
+                .collect();
+            let mut pings = [-1; 8];
+            pings[1] = 60;
+            for event in [
+                NetworkSetupEvent::GameStarted { users, pings },
+                NetworkSetupEvent::VerifyStarted { pairs: true },
+                NetworkSetupEvent::PeerConnected { node: 1 },
+                NetworkSetupEvent::Negotiated { result: 2 },
+            ] {
+                if let Err(error) = crate::app::shell_network_setup::service_event(state, event) {
+                    log::warn!("WOL test service: game start refused: {error:#}");
+                    return;
+                }
+            }
+        }
         (WolTestGuest::Joined, NetworkSetupRequest::Kick { name }) if name == GUEST => {
             state.frontend.wol_test_guest = WolTestGuest::Kicked;
             let Some(channel) = super::lobby::current_channel(state) else {
@@ -184,6 +213,17 @@ fn guest_answer(state: &mut AppState, request: &NetworkSetupRequest) {
         }
         _ => {}
     }
+}
+
+/// The guest's options parse finds the map and sends `K1`.
+fn guest_map_status(state: &mut AppState) {
+    service_event(
+        state,
+        WolServiceEvent::MapStatus {
+            from: GUEST.into(),
+            status: 1,
+        },
+    );
 }
 
 fn guest_accepts(state: &mut AppState) {
@@ -409,6 +449,7 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         // Nothing to cancel or deliver: nobody is online.
         WolServiceRequest::SetLocale(_)
         | WolServiceRequest::LeaveChannel
+        | WolServiceRequest::Logout
         | WolServiceRequest::CancelWait
         | WolServiceRequest::Chat { .. }
         | WolServiceRequest::Emote { .. }

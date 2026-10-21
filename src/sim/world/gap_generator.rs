@@ -344,7 +344,7 @@ impl Simulation {
         viewer: InternedId,
         rules: &RuleSet,
     ) -> (Vec<vision::GapGeneratorSource>, bool) {
-        let config = self.sight_reveal_config(Some(rules));
+        let config = self.sight_reveal_config(rules);
         let candidates: Vec<_> = self
             .substrate
             .entities

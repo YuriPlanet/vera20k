@@ -365,17 +365,17 @@ mod tests {
         );
 
         assert_eq!(
-            sim.successful_non_wall_placement_owner(&refinery_command, false, Some(&rules)),
+            sim.successful_non_wall_placement_owner(&refinery_command, false, &rules),
             None,
             "a rejected placement cannot borrow an unrelated spawn signal"
         );
         assert_eq!(
-            sim.successful_non_wall_placement_owner(&wall_command, true, Some(&rules)),
+            sim.successful_non_wall_placement_owner(&wall_command, true, &rules),
             None,
             "wall overlays do not arm a producer crane"
         );
         assert_eq!(
-            sim.successful_non_wall_placement_owner(&refinery_command, true, Some(&rules)),
+            sim.successful_non_wall_placement_owner(&refinery_command, true, &rules),
             Some(owner)
         );
     }
@@ -393,7 +393,7 @@ mod tests {
         let app_output = app_sim
             .advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 None,
                 67,
                 crate::sim::world::TickLane::Ordinary,

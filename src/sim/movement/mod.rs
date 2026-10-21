@@ -59,6 +59,8 @@ mod foot_approach;
 mod foot_coordinate;
 pub(crate) mod foot_mark;
 mod foot_path;
+#[cfg(test)]
+mod foot_path_window_tests;
 pub(crate) use drive_locomotion::drive_do_turn;
 #[cfg(test)]
 pub(crate) mod approach_oracle_seam;

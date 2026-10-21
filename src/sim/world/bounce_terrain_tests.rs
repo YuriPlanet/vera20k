@@ -142,7 +142,7 @@ fn native_bounce_ground_deck_contacts_match_original_update() {
         let sim = fixture(case);
         let terrain = ResolvedBounceTerrain {
             sim: &sim,
-            rules: Some(&rules),
+            rules: &rules,
         };
         let mut state = body(case);
         // The ground observation is compared on a separate fixture so it cannot
@@ -150,7 +150,7 @@ fn native_bounce_ground_deck_contacts_match_original_update() {
         let ground_sim = fixture(case);
         let ground_terrain = ResolvedBounceTerrain {
             sim: &ground_sim,
-            rules: Some(&rules),
+            rules: &rules,
         };
         let query = &case["events"][0];
         check_eq!(
@@ -343,7 +343,7 @@ fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection()
             .set_bounce_for_test(body(case));
         assert!(sim.live_object_order_snapshot().contains(&id));
         let before = sim.state_hash();
-        sim.visit_voxel_anim(id, Some(&rules));
+        sim.visit_voxel_anim(id, &rules);
         let actual = sim.substrate.voxel_anims.get(id).unwrap();
         assert_eq!(
             actual.duration(),
@@ -459,7 +459,7 @@ fn a_debris_chunk_flight_matches_original_update() {
         let sim = flight_sim(input["terrain"].as_str().unwrap(), FLIGHT_CENTER);
         let terrain = ResolvedBounceTerrain {
             sim: &sim,
-            rules: None,
+            rules: crate::rules::ruleset::RuleSet::empty_for_test(),
         };
         let mut state = native_body(&hex_bytes(row["launch_body_hex"].as_str().unwrap()));
         let native_ticks = row["ticks"].as_array().unwrap();
@@ -519,7 +519,7 @@ fn a_spinning_piece_tumbles_like_the_original() {
     let sim = flight_sim("flat0", FLIGHT_CENTER);
     let terrain = ResolvedBounceTerrain {
         sim: &sim,
-        rules: None,
+        rules: crate::rules::ruleset::RuleSet::empty_for_test(),
     };
     let mut bounces = 0;
     for row in golden["flight"].as_array().unwrap() {

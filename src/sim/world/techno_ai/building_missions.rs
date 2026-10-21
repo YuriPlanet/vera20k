@@ -220,11 +220,8 @@ const SPECIAL_ANIM_SLOT: u8 = 10;
 
 ///4509D0 runs once before Techno AI. The native type/control owner decides
 /// Stage/ready, including idle and sale; neither mission steps its own clock.
-pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
+pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(id) else {
-        return;
-    };
-    let Some(rules) = rules else {
         return;
     };
     let Some(object) = sim.object_type(entity.type_ref(), rules) else {
@@ -275,7 +272,7 @@ pub(super) fn apply_queued_body(
 pub(super) fn dispatch(
     sim: &mut Simulation,
     id: u64,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     ctx: ObjectAiCtx<'_>,
     bridge_state_changed: &mut bool,
 ) {
@@ -292,9 +289,6 @@ pub(super) fn dispatch(
         sim.visit_building_down(id, rules, ctx.overlay_registry, ctx.effects);
         return;
     }
-    let Some(rules) = rules else {
-        return;
-    };
     let delay = match current {
         Some(MissionType::Guard | MissionType::Sticky | MissionType::AreaGuard) => {
             mission_guard(sim, id, rules, ctx)
@@ -350,13 +344,7 @@ fn mission_construction(
             .get_mut(id)
             .unwrap()
             .begin_building_body(BuildingBodyMode::Construction, now as i32);
-        transmit_to_contact(
-            sim,
-            id,
-            RadioMessage::DockApproach,
-            Some(rules),
-            ctx.effects,
-        );
+        transmit_to_contact(sim, id, RadioMessage::DockApproach, rules, ctx.effects);
         let sound = sim
             .substrate
             .entities
@@ -379,8 +367,8 @@ fn mission_construction(
             entity.mission.set_handler_state(1);
         }
     } else if status == 1 && entity.building_ready_latch() != 0 {
-        transmit_to_contact(sim, id, RadioMessage::DockArrived, Some(rules), ctx.effects);
-        transmit_to_contact(sim, id, RadioMessage::Break, Some(rules), ctx.effects);
+        transmit_to_contact(sim, id, RadioMessage::DockArrived, rules, ctx.effects);
+        transmit_to_contact(sim, id, RadioMessage::Break, rules, ctx.effects);
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.begin_building_body(BuildingBodyMode::Idle, now as i32);
         }
@@ -579,7 +567,7 @@ fn mission_factory_unload(
                         product,
                         0x42,
                         track,
-                        Some(rules),
+                        rules,
                         ctx.overlay_registry,
                         ctx.effects,
                     );
@@ -618,7 +606,7 @@ fn mission_factory_unload(
             entity.mission.set_handler_state(4);
         }
         4 if phase == DoorPhase::ClosedStable || naval => {
-            sim.building_enter_idle_mode(id, false, Some(rules));
+            sim.building_enter_idle_mode(id, false, rules);
         }
         _ => {}
     }
@@ -809,7 +797,7 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
                 contact,
                 crate::sim::radio::RadioMessage::NeedToMove,
                 crate::sim::radio::RadioPayload::default(),
-                Some(rules),
+                rules,
                 ctx.effects,
             ) == crate::sim::radio::RadioResponse::Roger
             {
@@ -887,13 +875,13 @@ fn attack_prelude(sim: &mut Simulation, id: u64, rules: &RuleSet) -> Option<(Tar
         let _ = sim.assign_target_represented(
             id,
             None,
-            Some(rules),
+            rules,
             None,
             crate::sim::world::FrameEffects::default(),
         );
         clear_support_count(&mut sim.substrate, id);
         //44AFA5..44AFB1: the warp-in readiness gate precedes705D60 ->6385C0.
-        sim.planning_enter_idle(id);
+        sim.planning_enter_idle(id, rules);
         if !waits(sim, id) {
             queue_and_commence(sim, id, MissionType::Guard, rules);
         }
@@ -929,16 +917,11 @@ fn attack_arm(
         }
         // `0x0044B0DE`: the drop tail (`+0x664 = 0` at `0x0044B0ED`).
         FireError::Ammo | FireError::Illegal | FireError::Cant | FireError::Range => {
-            let _ = sim.assign_target_represented(
-                id,
-                None,
-                Some(rules),
-                ctx.overlay_registry,
-                ctx.effects,
-            );
+            let _ =
+                sim.assign_target_represented(id, None, rules, ctx.overlay_registry, ctx.effects);
             clear_support_count(&mut sim.substrate, id);
             //44B0F3..44B0FF: retain the Wait queued by planned dispatch.
-            sim.planning_enter_idle(id);
+            sim.planning_enter_idle(id, rules);
             if waits(sim, id) {
                 return 1;
             }
@@ -1539,7 +1522,7 @@ pub(super) fn range_drop(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: Ob
     {
         return;
     }
-    let _ = sim.assign_target_represented(id, None, Some(rules), ctx.overlay_registry, ctx.effects);
+    let _ = sim.assign_target_represented(id, None, rules, ctx.overlay_registry, ctx.effects);
 }
 
 impl Simulation {

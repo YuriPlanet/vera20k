@@ -685,7 +685,10 @@ mod tests {
 
         sim.reveal_entire_map(
             Some(local),
-            crate::sim::world::UninitContext::new(None, None),
+            crate::sim::world::UninitContext::new(
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+                None,
+            ),
         );
 
         assert_eq!(

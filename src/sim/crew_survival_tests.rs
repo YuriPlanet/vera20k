@@ -775,7 +775,7 @@ fn a_crewed_vehicle_rolls_crew_escape_then_places_its_crewman() {
             let mcv = spawn(&mut sim, &rules, "AMCV", owner, 10, 10);
             sim.foot_mark_remove(
                 mcv,
-                Some(&rules),
+                &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             );
@@ -849,7 +849,7 @@ fn a_crewman_leaving_a_bridge_deck_keeps_the_vehicle_coordinate() {
         }
         sim.foot_mark_remove(
             mcv,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         );
@@ -897,12 +897,7 @@ fn prevent_escape_and_passenger_capacity_skip_the_crew_draw() {
     let mcv = spawn(&mut sim, &rules, "AMCV", "Americans", 10, 10);
     let ifv = spawn(&mut sim, &rules, "IFV", "Americans", 20, 10);
     for (id, prevent) in [(mcv, true), (ifv, false)] {
-        sim.foot_mark_remove(
-            id,
-            Some(&rules),
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
+        sim.foot_mark_remove(id, &rules, None, crate::sim::world::FrameEffects::default());
         let before = sim.scenario_rng.state();
         sim.spawn_vehicle_crew(
             &rules,

@@ -416,7 +416,7 @@ pub(crate) fn populate_staged_app_scenario<F>(
     map_data: &MapFile,
     resolved_terrain: &ResolvedTerrainGrid,
     theater_name: &str,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
     bridge_destroyability_mode: BridgeDestroyabilityMode,

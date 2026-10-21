@@ -134,7 +134,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
         let output = sim
             .advance_app_frame(
                 &due,
-                Some(&rules),
+                &rules,
                 Some(&registry),
                 TICK_MS,
                 super::TickLane::Ordinary,

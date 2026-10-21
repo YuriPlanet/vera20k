@@ -1,0 +1,616 @@
+{
+  "rank_controls": [
+    {
+      "country_match": false,
+      "id": "infantry_empty",
+      "infiltrated": false,
+      "kind": "infantry",
+      "naval": false,
+      "raw_after": 0,
+      "raw_before": 0,
+      "trainable": true
+    },
+    {
+      "country_match": true,
+      "id": "infantry_country_untrainable_naval",
+      "infiltrated": false,
+      "kind": "infantry",
+      "naval": true,
+      "raw_after": 1065353216,
+      "raw_before": 0,
+      "trainable": false
+    },
+    {
+      "country_match": true,
+      "id": "infantry_country_replaces_elite",
+      "infiltrated": false,
+      "kind": "infantry",
+      "naval": false,
+      "raw_after": 1065353216,
+      "raw_before": 1073741824,
+      "trainable": false
+    },
+    {
+      "country_match": true,
+      "id": "infantry_country_and_spy",
+      "infiltrated": true,
+      "kind": "infantry",
+      "naval": false,
+      "raw_after": 1065353216,
+      "raw_before": 0,
+      "trainable": true
+    },
+    {
+      "country_match": false,
+      "id": "infantry_spy_only",
+      "infiltrated": true,
+      "kind": "infantry",
+      "naval": false,
+      "raw_after": 1065353216,
+      "raw_before": 0,
+      "trainable": true
+    },
+    {
+      "country_match": false,
+      "id": "infantry_spy_naval",
+      "infiltrated": true,
+      "kind": "infantry",
+      "naval": true,
+      "raw_after": 1065353216,
+      "raw_before": 0,
+      "trainable": true
+    },
+    {
+      "country_match": false,
+      "id": "infantry_spy_untrainable",
+      "infiltrated": true,
+      "kind": "infantry",
+      "naval": false,
+      "raw_after": 0,
+      "raw_before": 0,
+      "trainable": false
+    },
+    {
+      "country_match": false,
+      "id": "unit_ctor_empty",
+      "infiltrated": false,
+      "kind": "unit_ctor",
+      "naval": false,
+      "raw_after": 0,
+      "raw_before": 0,
+      "trainable": true
+    },
+    {
+      "country_match": true,
+      "id": "unit_ctor_country_untrainable_naval",
+      "infiltrated": false,
+      "kind": "unit_ctor",
+      "naval": true,
+      "raw_after": 1065353216,
+      "raw_before": 0,
+      "trainable": false
+    },
+    {
+      "country_match": true,
+      "id": "unit_ctor_country_replaces_elite",
+      "infiltrated": false,
+      "kind": "unit_ctor",
+      "naval": false,
+      "raw_after": 1065353216,
+      "raw_before": 1073741824,
+      "trainable": false
+    },
+    {
+      "country_match": true,
+      "id": "unit_ctor_country_and_spy",
+      "infiltrated": true,
+      "kind": "unit_ctor",
+      "naval": false,
+      "raw_after": 1065353216,
+      "raw_before": 0,
+      "trainable": true
+    },
+    {
+      "country_match": false,
+      "id": "unit_ctor_spy_only",
+      "infiltrated": true,
+      "kind": "unit_ctor",
+      "naval": false,
+      "raw_after": 1065353216,
+      "raw_before": 0,
+      "trainable": true
+    },
+    {
+      "country_match": false,
+      "id": "unit_ctor_spy_naval",
+      "infiltrated": true,
+      "kind": "unit_ctor",
+      "naval": true,
+      "raw_after": 0,
+      "raw_before": 0,
+      "trainable": true
+    },
+    {
+      "country_match": false,
+      "id": "unit_ctor_spy_untrainable",
+      "infiltrated": true,
+      "kind": "unit_ctor",
+      "naval": false,
+      "raw_after": 0,
+      "raw_before": 0,
+      "trainable": false
+    },
+    {
+      "country_match": false,
+      "id": "unit_init_empty",
+      "infiltrated": false,
+      "kind": "unit_init",
+      "naval": false,
+      "raw_after": 0,
+      "raw_before": 0,
+      "trainable": true
+    },
+    {
+      "country_match": true,
+      "id": "unit_init_country_untrainable_naval",
+      "infiltrated": false,
+      "kind": "unit_init",
+      "naval": true,
+      "raw_after": 1065353216,
+      "raw_before": 0,
+      "trainable": false
+    },
+    {
+      "country_match": true,
+      "id": "unit_init_country_replaces_elite",
+      "infiltrated": false,
+      "kind": "unit_init",
+      "naval": false,
+      "raw_after": 1065353216,
+      "raw_before": 1073741824,
+      "trainable": false
+    },
+    {
+      "country_match": true,
+      "id": "unit_init_country_and_spy",
+      "infiltrated": true,
+      "kind": "unit_init",
+      "naval": false,
+      "raw_after": 1065353216,
+      "raw_before": 0,
+      "trainable": true
+    },
+    {
+      "country_match": false,
+      "id": "unit_init_spy_only",
+      "infiltrated": true,
+      "kind": "unit_init",
+      "naval": false,
+      "raw_after": 1065353216,
+      "raw_before": 0,
+      "trainable": true
+    },
+    {
+      "country_match": false,
+      "id": "unit_init_spy_naval",
+      "infiltrated": true,
+      "kind": "unit_init",
+      "naval": true,
+      "raw_after": 0,
+      "raw_before": 0,
+      "trainable": true
+    },
+    {
+      "country_match": false,
+      "id": "unit_init_spy_untrainable",
+      "infiltrated": true,
+      "kind": "unit_init",
+      "naval": false,
+      "raw_after": 0,
+      "raw_before": 0,
+      "trainable": false
+    },
+    {
+      "country_match": false,
+      "id": "aircraft_init_empty",
+      "infiltrated": false,
+      "kind": "aircraft_init",
+      "naval": false,
+      "raw_after": 0,
+      "raw_before": 0,
+      "trainable": true
+    },
+    {
+      "country_match": true,
+      "id": "aircraft_init_country_untrainable_naval",
+      "infiltrated": false,
+      "kind": "aircraft_init",
+      "naval": true,
+      "raw_after": 1065353216,
+      "raw_before": 0,
+      "trainable": false
+    },
+    {
+      "country_match": true,
+      "id": "aircraft_init_country_replaces_elite",
+      "infiltrated": false,
+      "kind": "aircraft_init",
+      "naval": false,
+      "raw_after": 1065353216,
+      "raw_before": 1073741824,
+      "trainable": false
+    },
+    {
+      "country_match": true,
+      "id": "aircraft_init_country_and_spy",
+      "infiltrated": true,
+      "kind": "aircraft_init",
+      "naval": false,
+      "raw_after": 1065353216,
+      "raw_before": 0,
+      "trainable": true
+    },
+    {
+      "country_match": false,
+      "id": "aircraft_init_spy_only",
+      "infiltrated": true,
+      "kind": "aircraft_init",
+      "naval": false,
+      "raw_after": 0,
+      "raw_before": 0,
+      "trainable": true
+    },
+    {
+      "country_match": false,
+      "id": "aircraft_init_spy_naval",
+      "infiltrated": true,
+      "kind": "aircraft_init",
+      "naval": true,
+      "raw_after": 0,
+      "raw_before": 0,
+      "trainable": true
+    },
+    {
+      "country_match": false,
+      "id": "aircraft_init_spy_untrainable",
+      "infiltrated": true,
+      "kind": "aircraft_init",
+      "naval": false,
+      "raw_after": 0,
+      "raw_before": 0,
+      "trainable": false
+    }
+  ],
+  "reader_controls": [
+    {
+      "id": "synthetic_names",
+      "lists": {
+        "VeteranAircraft": {
+          "names": [
+            "ONE",
+            "TWO"
+          ]
+        },
+        "VeteranInfantry": {
+          "names": [
+            "ONE",
+            "TWO"
+          ]
+        },
+        "VeteranUnits": {
+          "names": [
+            "ONE",
+            "TWO"
+          ]
+        }
+      },
+      "sections": {
+        "SYNTHCOUNTRY": {
+          "VeteranAircraft": "ONE,TWO",
+          "VeteranInfantry": "ONE,TWO",
+          "VeteranUnits": "ONE,TWO"
+        }
+      }
+    },
+    {
+      "id": "missing",
+      "lists": {
+        "VeteranAircraft": {
+          "names": [
+            "ONE",
+            "TWO"
+          ]
+        },
+        "VeteranInfantry": {
+          "names": [
+            "ONE",
+            "TWO"
+          ]
+        },
+        "VeteranUnits": {
+          "names": [
+            "ONE",
+            "TWO"
+          ]
+        }
+      },
+      "sections": {
+        "SYNTHCOUNTRY": {}
+      }
+    },
+    {
+      "id": "stored_empty",
+      "lists": {
+        "VeteranAircraft": {
+          "names": [
+            "ONE",
+            "TWO"
+          ]
+        },
+        "VeteranInfantry": {
+          "names": [
+            "ONE",
+            "TWO"
+          ]
+        },
+        "VeteranUnits": {
+          "names": [
+            "ONE",
+            "TWO"
+          ]
+        }
+      },
+      "sections": {
+        "SYNTHCOUNTRY": {
+          "VeteranAircraft": "",
+          "VeteranInfantry": "",
+          "VeteranUnits": ""
+        }
+      }
+    },
+    {
+      "id": "whitespace",
+      "lists": {
+        "VeteranAircraft": {
+          "names": [
+            "ONE",
+            "TWO"
+          ]
+        },
+        "VeteranInfantry": {
+          "names": [
+            "ONE",
+            "TWO"
+          ]
+        },
+        "VeteranUnits": {
+          "names": [
+            "ONE",
+            "TWO"
+          ]
+        }
+      },
+      "sections": {
+        "SYNTHCOUNTRY": {
+          "VeteranAircraft": "   ",
+          "VeteranInfantry": "   ",
+          "VeteranUnits": "   "
+        }
+      }
+    },
+    {
+      "id": "delimiters",
+      "lists": {
+        "VeteranAircraft": {
+          "names": []
+        },
+        "VeteranInfantry": {
+          "names": []
+        },
+        "VeteranUnits": {
+          "names": []
+        }
+      },
+      "sections": {
+        "SYNTHCOUNTRY": {
+          "VeteranAircraft": ",,,",
+          "VeteranInfantry": ",,,",
+          "VeteranUnits": ",,,"
+        }
+      }
+    },
+    {
+      "id": "duplicates_none_case",
+      "lists": {
+        "VeteranAircraft": {
+          "names": [
+            "ONE",
+            " TWO",
+            "ONE"
+          ]
+        },
+        "VeteranInfantry": {
+          "names": [
+            "ONE",
+            " TWO",
+            "ONE"
+          ]
+        },
+        "VeteranUnits": {
+          "names": [
+            "ONE",
+            " TWO",
+            "ONE"
+          ]
+        }
+      },
+      "sections": {
+        "SYNTHCOUNTRY": {
+          "VeteranAircraft": "ONE,none,NONE,<none>, TWO,one",
+          "VeteranInfantry": "ONE,none,NONE,<none>, TWO,one",
+          "VeteranUnits": "ONE,none,NONE,<none>, TWO,one"
+        }
+      }
+    },
+    {
+      "id": "mixed_delimiters",
+      "lists": {
+        "VeteranAircraft": {
+          "names": [
+            "ONE TWO\tTHREE",
+            "FOUR"
+          ]
+        },
+        "VeteranInfantry": {
+          "names": [
+            "ONE TWO\tTHREE",
+            "FOUR"
+          ]
+        },
+        "VeteranUnits": {
+          "names": [
+            "ONE TWO\tTHREE",
+            "FOUR"
+          ]
+        }
+      },
+      "sections": {
+        "SYNTHCOUNTRY": {
+          "VeteranAircraft": "ONE TWO\tTHREE,FOUR",
+          "VeteranInfantry": "ONE TWO\tTHREE,FOUR",
+          "VeteranUnits": "ONE TWO\tTHREE,FOUR"
+        }
+      }
+    },
+    {
+      "id": "long_buffer",
+      "lists": {
+        "VeteranAircraft": {
+          "names": [
+            "AAAAAAAAAAAAAAAAAAAAAAAA"
+          ]
+        },
+        "VeteranInfantry": {
+          "names": [
+            "AAAAAAAAAAAAAAAAAAAAAAAA"
+          ]
+        },
+        "VeteranUnits": {
+          "names": [
+            "AAAAAAAAAAAAAAAAAAAAAAAA"
+          ]
+        }
+      },
+      "sections": {
+        "SYNTHCOUNTRY": {
+          "VeteranAircraft": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,Z",
+          "VeteranInfantry": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,Z",
+          "VeteranUnits": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,Z"
+        }
+      }
+    },
+    {
+      "id": "long_token",
+      "lists": {
+        "VeteranAircraft": {
+          "names": [
+            "BBBBBBBBBBBBBBBBBBBBBBBB"
+          ]
+        },
+        "VeteranInfantry": {
+          "names": [
+            "BBBBBBBBBBBBBBBBBBBBBBBB"
+          ]
+        },
+        "VeteranUnits": {
+          "names": [
+            "BBBBBBBBBBBBBBBBBBBBBBBB"
+          ]
+        }
+      },
+      "sections": {
+        "SYNTHCOUNTRY": {
+          "VeteranAircraft": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "VeteranInfantry": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "VeteranUnits": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+        }
+      }
+    },
+    {
+      "id": "wrong_key_case",
+      "lists": {
+        "VeteranAircraft": {
+          "names": [
+            "BBBBBBBBBBBBBBBBBBBBBBBB"
+          ]
+        },
+        "VeteranInfantry": {
+          "names": [
+            "BBBBBBBBBBBBBBBBBBBBBBBB"
+          ]
+        },
+        "VeteranUnits": {
+          "names": [
+            "BBBBBBBBBBBBBBBBBBBBBBBB"
+          ]
+        }
+      },
+      "sections": {
+        "SYNTHCOUNTRY": {
+          "veteranaircraft": "OTHER",
+          "veteraninfantry": "OTHER",
+          "veteranunits": "OTHER"
+        }
+      }
+    },
+    {
+      "id": "wrong_section_case",
+      "lists": {
+        "VeteranAircraft": {
+          "names": [
+            "BBBBBBBBBBBBBBBBBBBBBBBB"
+          ]
+        },
+        "VeteranInfantry": {
+          "names": [
+            "BBBBBBBBBBBBBBBBBBBBBBBB"
+          ]
+        },
+        "VeteranUnits": {
+          "names": [
+            "BBBBBBBBBBBBBBBBBBBBBBBB"
+          ]
+        }
+      },
+      "sections": {
+        "synthcountry": {
+          "VeteranAircraft": "OTHER",
+          "VeteranInfantry": "OTHER",
+          "VeteranUnits": "OTHER"
+        }
+      }
+    },
+    {
+      "id": "absent_section",
+      "lists": {
+        "VeteranAircraft": {
+          "names": [
+            "BBBBBBBBBBBBBBBBBBBBBBBB"
+          ]
+        },
+        "VeteranInfantry": {
+          "names": [
+            "BBBBBBBBBBBBBBBBBBBBBBBB"
+          ]
+        },
+        "VeteranUnits": {
+          "names": [
+            "BBBBBBBBBBBBBBBBBBBBBBBB"
+          ]
+        }
+      },
+      "sections": {}
+    }
+  ],
+  "schema": 1
+}

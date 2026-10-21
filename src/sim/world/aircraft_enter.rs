@@ -56,7 +56,7 @@ impl WorldEnter<'_> {
     }
 
     fn transmit(&mut self, message: RadioMessage) -> RadioResponse {
-        radio::transmit_to_contact(self.sim, self.id, message, Some(self.rules), self.effects)
+        radio::transmit_to_contact(self.sim, self.id, message, self.rules, self.effects)
     }
 }
 
@@ -129,7 +129,7 @@ impl EnterHost for WorldEnter<'_> {
     }
 
     fn on_ground_layer(&mut self) -> bool {
-        self.sim.entity_display_layer(self.id, Some(self.rules)) == Some(DisplayLayer::GROUND)
+        self.sim.entity_display_layer(self.id, self.rules) == Some(DisplayLayer::GROUND)
     }
 
     fn docking(&mut self) -> bool {
@@ -234,13 +234,8 @@ impl EnterHost for WorldEnter<'_> {
             y: here.y.wrapping_add(step(target.y, here.y)),
             z: here.z,
         };
-        self.sim.foot_set_location_marked(
-            self.id,
-            next,
-            Some(self.rules),
-            self.registry,
-            self.effects,
-        );
+        self.sim
+            .foot_set_location_marked(self.id, next, self.rules, self.registry, self.effects);
     }
 
     fn dock_now(&mut self) -> i32 {

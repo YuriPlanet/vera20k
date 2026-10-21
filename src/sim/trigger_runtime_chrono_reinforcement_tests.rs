@@ -236,7 +236,7 @@ fn chrono_reinforcement_reader_dispatch_placement_and_process_match_original() {
                     id,
                     coord,
                     0,
-                    crate::sim::world::PlacementEvidence::UnitEntryAdmitted,
+                    crate::sim::world::PlacementEvidence::FootEntryAdmitted,
                     &rules,
                     Some(&overlays),
                     FrameEffects::default(),
@@ -350,7 +350,7 @@ fn chrono_reinforcement_reader_dispatch_placement_and_process_match_original() {
                 incoming_house: owner,
             },
             &mut effects,
-            Some(&rules),
+            &rules,
             Some(&overlays),
             FrameEffects::default(),
         );
@@ -421,7 +421,7 @@ fn chrono_reinforcement_reader_dispatch_placement_and_process_match_original() {
             sim.assign_target_represented(
                 ids[0],
                 Some(crate::sim::combat::TargetKind::Entity(target)),
-                Some(&rules),
+                &rules,
                 Some(&overlays),
                 FrameEffects::default(),
             )

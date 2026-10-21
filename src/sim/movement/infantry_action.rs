@@ -461,7 +461,7 @@ impl Simulation {
                 .set_foot_firing_sequence(0);
             self.infantry_do_action(id, requested, false, rules, effects)?;
         }
-        self.object_ai_post_movement_promote_one(id, Some(rules));
+        self.object_ai_post_movement_promote_one(id, rules);
         //51BF0B is after Process and the second Ready/Commence, including a
         // retained death sequence. Shared DoAction decides stance refusal.
         let bridge_changed = self.infantry_fear_turn(id, rules, registry, effects)?;
@@ -711,7 +711,7 @@ impl Simulation {
             } else {
                 0
             },
-            Some(rules),
+            rules,
             registry,
             effects,
         );
@@ -809,7 +809,7 @@ impl Simulation {
         {
             return Ok(());
         }
-        self.assign_null_destination(id, Some(rules), registry, effects);
+        self.assign_null_destination(id, rules, registry, effects);
         Ok(())
     }
 
@@ -892,7 +892,7 @@ impl Simulation {
         };
         let moving_now = super::motion_query::is_really_moving_now(
             actor,
-            Some(super::SpeedRules::new(rules, &self.interner, &self.houses)),
+            super::SpeedRules::new(rules, &self.interner, &self.houses),
             self.session.binary_frame(),
         );
         let requested = if moving_now {

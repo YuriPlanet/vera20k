@@ -232,7 +232,7 @@ fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm(
         None,
         None,
     );
-    sim.classify_map_triggers(None);
+    sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     sim.publish_scenario_started();
     // Declared raging-storm fixture; its lifecycle has separate tests.
     let owner = sim.intern("Americans");
@@ -250,7 +250,11 @@ fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm(
     sim.publish_global_lighting(PaletteUpdate::from_scenario(&sim.session().lighting()));
     lights.apply_events(&terrain, sim.lighting_sources().pending());
     sim.lighting_sources_mut_for_test().discard_pending();
-    sim.advance_triggers(None, None, FrameEffects::default());
+    sim.advance_triggers(
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        None,
+        FrameEffects::default(),
+    );
     assert_eq!(sim.lighting_sources().pending().len(), 3);
     lights.apply_events(&terrain, sim.lighting_sources().pending());
     sim.lighting_sources_mut_for_test().discard_pending();
@@ -262,10 +266,7 @@ fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm(
     let brightness = lights.grid.cell_light_at((0, 0)).unwrap().top_scalar;
     let expected = PaletteLight::color_scheme([1200, 800, 600], brightness);
     assert_eq!(body_palette_light(&lights.grid, (0, 0), 0), expected);
-    assert_eq!(
-        building_palette_light(&lights.grid, (0, 0), None, false),
-        expected
-    );
+    assert_eq!(building_palette_light(&lights.grid, (0, 0), None), expected);
     let art = ArtRegistry::from_ini(&IniFile::from_str("[ALT]\nAltPalette=yes\n"));
     // Default N1 schemes are skipped by53AD4D, independently of N53 and
     // cell caches (68C710 RGB1000;4232E2 selects B054D4[0]+30C).

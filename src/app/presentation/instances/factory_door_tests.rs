@@ -78,7 +78,7 @@ fn unloading_factory(rules: &RuleSet, product: &str, unload: bool) -> (Simulatio
         crate::sim::world::FrameEffects::default(),
     );
     if unload {
-        sim.queue_order_mission(factory, MissionType::Unload);
+        sim.queue_order_mission(factory, MissionType::Unload, rules);
         sim.advance_tick(&[], Some(rules), None, None, 67);
     }
     (sim, factory)

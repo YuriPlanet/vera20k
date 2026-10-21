@@ -537,12 +537,10 @@ pub struct HouseState {
     /// Stock `Neutral` (Civilian) and `Special` (JP) both set it, and they exist
     /// in every skirmish, so without it the alive set can never shrink to one.
     ///
-    /// Stamped once at house creation, while a `RuleSet` is still in hand, and
-    /// then read straight off the house — the house rung takes
-    /// `rules: Option<&RuleSet>` and never has to resolve the country itself. A
-    /// house built with no rules available is stamped `false`, the INI default
-    /// for `MultiplayPassive=`; there is no runtime fallback, because gamemd has
-    /// none.
+    /// Stamped once at house creation from the country's rules, and then read
+    /// straight off the house, so the house rung never resolves the country
+    /// itself. A house a fixture builds directly keeps `false`, the INI default
+    /// for `MultiplayPassive=`.
     ///
     /// Persisted state, and versioned as such: it is an authoritative input to
     /// the win/loss outcome, so a save that dropped it would reload as an
@@ -999,7 +997,7 @@ impl HouseState {
     /// MultiplayPassive from the House's country ([`resolve_multiplay_passive`]).
     pub(crate) fn resolve_multiplay_passive(
         &mut self,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         country: Option<&str>,
     ) {
         self.multiplay_passive = resolve_multiplay_passive(rules, country);
@@ -2762,28 +2760,19 @@ pub fn resolve_house_side_index(
 /// Resolve a house's `MultiplayPassive` fact from its country/house-type rules.
 ///
 /// The RuleSet identity owner resolves missing Country to entry0 and known
-/// names through its shared alias lookup. Missing rules or an unresolved
-/// constructor retain the reader's false default.
+/// names through its shared alias lookup. An unresolved constructor retains
+/// the reader's false default.
 pub fn resolve_multiplay_passive(
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
     country: Option<&str>,
 ) -> bool {
-    let Some(rules) = rules else {
-        return false;
-    };
     let key = rules.scenario_country_name(country);
     key.is_some_and(|key| rules.country_multiplay_passive(key))
 }
 
 /// Resolve a house type's `WallOwner=` permission. Missing data keeps the native
 /// constructor default of `true`; an absent `Country=` binds to registry entry zero.
-pub fn resolve_wall_owner(
-    rules: Option<&crate::rules::ruleset::RuleSet>,
-    country: Option<&str>,
-) -> bool {
-    let Some(rules) = rules else {
-        return true;
-    };
+pub fn resolve_wall_owner(rules: &crate::rules::ruleset::RuleSet, country: Option<&str>) -> bool {
     let key = rules.scenario_country_name(country);
     key.is_none_or(|key| rules.country_wall_owner(key))
 }
@@ -3271,10 +3260,10 @@ mod multiplay_passive_tests {
     #[test]
     fn named_country_resolves_its_own_multiplay_passive() {
         let rules = rules_with_country_order("Americans", "Neutral");
-        assert!(resolve_multiplay_passive(Some(&rules), Some("Neutral")));
-        assert!(!resolve_multiplay_passive(Some(&rules), Some("Americans")));
+        assert!(resolve_multiplay_passive(&rules, Some("Neutral")));
+        assert!(!resolve_multiplay_passive(&rules, Some("Americans")));
         // Case-insensitive, like every other country lookup.
-        assert!(resolve_multiplay_passive(Some(&rules), Some("neutral")));
+        assert!(resolve_multiplay_passive(&rules, Some("neutral")));
     }
 
     #[test]
@@ -3284,22 +3273,25 @@ mod multiplay_passive_tests {
         // does not fall back to the house's own section name — with `Neutral`
         // sitting at entry 1, a section-name fallback would answer `true` here.
         let americans_first = rules_with_country_order("Americans", "Neutral");
-        assert!(!resolve_multiplay_passive(Some(&americans_first), None));
+        assert!(!resolve_multiplay_passive(&americans_first, None));
 
         // Flip the registry order and the same absent key now follows entry 0.
         let neutral_first = rules_with_country_order("Neutral", "Americans");
-        assert!(resolve_multiplay_passive(Some(&neutral_first), None));
+        assert!(resolve_multiplay_passive(&neutral_first, None));
     }
 
     #[test]
     fn missing_rules_or_unknown_country_is_not_passive() {
         let rules = rules_with_country_order("Americans", "Neutral");
-        assert!(!resolve_multiplay_passive(None, Some("Neutral")));
-        assert!(!resolve_multiplay_passive(None, None));
         assert!(!resolve_multiplay_passive(
-            Some(&rules),
-            Some("Nonexistent")
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            Some("Neutral")
         ));
+        assert!(!resolve_multiplay_passive(
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            None
+        ));
+        assert!(!resolve_multiplay_passive(&rules, Some("Nonexistent")));
     }
 }
 

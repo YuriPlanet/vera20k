@@ -479,6 +479,37 @@ fn retail_atlas_refresh_costs() {
         loaded_sprites.active_anim_frame_counts
     );
     assert_eq!(sprites.make_frame_counts, loaded_sprites.make_frame_counts);
+    // The atlas draws the Buildup the rules bound (`Buildup=` through the
+    // theater lookup, `rules::buildup_asset_catalog`), with its frame count.
+    for (make_key, &count) in &loaded_sprites.make_frame_counts {
+        let type_id = make_key.strip_suffix("_MAKE").expect("a make key");
+        assert!(rules.has_buildup(type_id), "{make_key}");
+        if !rules.object(type_id).is_some_and(|object| object.gate) {
+            assert_eq!(
+                i32::from(count),
+                rules.buildup_control(type_id)[1],
+                "{make_key}"
+            );
+        }
+    }
+    let mut buildings = 0;
+    for entity in sim.entities().values() {
+        let type_id = sim.interner().resolve(entity.type_ref());
+        if rules
+            .object(type_id)
+            .is_some_and(|object| object.category == ObjectCategory::Building)
+        {
+            buildings += 1;
+            assert_eq!(
+                loaded_sprites
+                    .make_frame_counts
+                    .contains_key(&format!("{type_id}_MAKE")),
+                rules.has_buildup(type_id),
+                "{type_id}"
+            );
+        }
+    }
+    eprintln!("buildings with their Buildup checked: {buildings}");
     let loaded_units = unit_atlas::build_unit_atlas(
         &device,
         &queue,

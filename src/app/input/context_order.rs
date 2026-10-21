@@ -253,7 +253,7 @@ pub(crate) fn attack_action(
         && let Some(object) = sim.entities().get(target_id)
         && !(armed && human && object.owner() != actor.owner())
         && !(actor.is_mission_only() && actor.discovery.owned_by_current_house())
-        && sim.object_is_selectable(target_id, Some(rules))
+        && sim.object_is_selectable(target_id, rules)
         && !object.selection.is_selected()
         && !object.is_warped_out()
     {
@@ -1392,7 +1392,7 @@ fn left_release(
         ReleaseAction::Other => return LeftRelease::Dispatch,
         ReleaseAction::Select => target.is_some(),
         ReleaseAction::Zero => target.is_some_and(|id| {
-            sim.object_is_selectable(id, Some(rules))
+            sim.object_is_selectable(id, rules)
                 && sim
                     .entities()
                     .get(id)

@@ -185,7 +185,7 @@ pub(crate) fn choose(
 fn harvester_choice(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Option<i32> {
     let house = sim.houses.get(&owner)?;
     let country_name = sim.interner.resolve(house.house_type_id());
-    let country_bit = crate::sim::ai_buildable::house_country_bit(rules, country_name);
+    let country_bit = rules.country_owner_mask(country_name);
     let unit_index = |id: &str| rules.type_array_index(ObjectCategory::Vehicle, id);
     let refinery = crate::sim::ai_buildable::first_buildable_from_array(
         rules,

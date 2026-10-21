@@ -1730,9 +1730,10 @@ mod tests {
     #[test]
     fn mp_sibling_rng_state_matches_after_seed_sync() {
         use crate::map::entities::{EntityCategory, MapEntity};
+        use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
         use crate::sim::command::{Command, CommandEnvelope};
 
-        fn build(seed: u32) -> Simulation {
+        fn build(seed: u32, rules: &RuleSet) -> Simulation {
             let mut sim = Simulation::from_descriptor(&ScenarioDescriptor {
                 seed,
                 ..Default::default()
@@ -1740,6 +1741,7 @@ mod tests {
             // This synthetic fixture omits the production native Rules prefix.
             sim.native_unique_ids =
                 Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
+            crate::sim::arena_fixture::flat_ground(&mut sim, rules);
             let entity = MapEntity {
                 owner: "Americans".to_string(),
                 type_id: "MTNK".to_string(),
@@ -1760,10 +1762,10 @@ mod tests {
                 structure_online: true,
                 trigger_tag: None,
             };
-            sim.spawn_from_map(&[entity], None);
+            sim.spawn_from_map(&[entity], Some(rules));
             sim
         }
-        fn run_300(sim: &mut Simulation) -> Vec<Option<u64>> {
+        fn run_300(sim: &mut Simulation, rules: &RuleSet) -> Vec<Option<u64>> {
             let owner = sim.interner.get("Americans").expect("owner interned");
             (0..300u64)
                 .map(|t| {
@@ -1780,23 +1782,29 @@ mod tests {
                     } else {
                         Vec::new()
                     };
-                    sim.advance_tick(&cmds, None, None, None, 67).state_hash
+                    sim.advance_tick(&cmds, Some(rules), None, None, 67)
+                        .state_hash
                 })
                 .collect()
         }
 
-        let (mut a, mut b) = (build(0xA5EED), build(0xA5EED));
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=400\nSpeed=6\nSpeedType=Track\n\
+             MovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+        ))
+        .expect("seed-sync fixture rules");
+        let (mut a, mut b) = (build(0xA5EED, &rules), build(0xA5EED, &rules));
         assert_eq!(
-            run_300(&mut a),
-            run_300(&mut b),
+            run_300(&mut a, &rules),
+            run_300(&mut b, &rules),
             "same descriptor seed must produce an identical hash timeline"
         );
         assert_eq!(a.scenario_rng.state(), b.scenario_rng.state());
         assert_eq!(a.main_rng.state(), b.main_rng.state());
         assert_eq!(a.mapgen_rng.state(), b.mapgen_rng.state());
 
-        let mut c = build(0xA5EED + 1);
-        run_300(&mut c);
+        let mut c = build(0xA5EED + 1, &rules);
+        run_300(&mut c, &rules);
         assert_ne!(
             a.state_hash(),
             c.state_hash(),

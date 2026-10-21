@@ -330,7 +330,7 @@ impl Simulation {
         let outcome = self
             .process_active_locomotor(
                 id,
-                Some(rules),
+                rules,
                 crate::sim::world::ObjectAiCtx {
                     overlay_registry: registry,
                     effects: frame_effects,
@@ -627,14 +627,14 @@ impl Simulation {
                 EnterRadioArm::Continue => {}
                 // 51ACB1..51ACC5: Foot's setter takes NULL (51B1D2).
                 EnterRadioArm::Queued => {
-                    self.foot_null_destination(id, Some(rules), registry, frame_effects);
+                    self.foot_null_destination(id, rules, registry, frame_effects);
                     return Ok(true);
                 }
                 // 51ACF7: no Foot setter at all.
                 EnterRadioArm::Docking => return Ok(true),
             }
         }
-        if !self.begin_foot_destination(id, true, Some(rules), registry, frame_effects) {
+        if !self.begin_foot_destination(id, true, rules, registry, frame_effects) {
             return Ok(true);
         }
         match kind {
@@ -658,7 +658,7 @@ impl Simulation {
                 let accepted =
                     self.teleport_move_to(id, point, rules, false, registry, frame_effects)?;
                 let actor = self.substrate.entities.get_mut(id).unwrap();
-                super::DestinationTiming::from_rules(frame, Some(rules)).accept(actor);
+                super::DestinationTiming::from_rules(frame, rules).accept(actor);
                 Ok(accepted)
             }
             LocomotorKind::Jumpjet => Ok(self.jumpjet_foot_destination(id, requested, rules)),
@@ -675,7 +675,7 @@ impl Simulation {
                     id,
                     (requested, coord),
                     self.resolved_terrain.as_ref(),
-                    super::DestinationTiming::from_rules(self.session.binary_frame(), Some(rules)),
+                    super::DestinationTiming::from_rules(self.session.binary_frame(), rules),
                 );
                 Ok(true)
             }
@@ -726,7 +726,7 @@ impl Simulation {
             target,
             RadioMessage::Hello,
             RadioPayload::default(),
-            Some(rules),
+            rules,
             frame_effects,
         ) != RadioResponse::Roger
         {
@@ -736,7 +736,7 @@ impl Simulation {
             self,
             id,
             RadioMessage::CanDock,
-            Some(rules),
+            rules,
             frame_effects,
         ) {
             RadioResponse::Docking => EnterRadioArm::Docking,
@@ -746,7 +746,7 @@ impl Simulation {
                     self,
                     id,
                     RadioMessage::Break,
-                    Some(rules),
+                    rules,
                     frame_effects,
                 );
                 EnterRadioArm::Continue
@@ -797,7 +797,7 @@ impl Simulation {
     pub(crate) fn set_infantry_null_destination(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {

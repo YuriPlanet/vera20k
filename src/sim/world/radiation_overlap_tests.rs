@@ -20,7 +20,7 @@ fn advance(sim: &mut Simulation, rules: &RuleSet) -> super::SimFrameOutput {
     let output = sim
         .advance_app_frame(
             &commands,
-            Some(rules),
+            rules,
             None,
             33,
             TickLane::Ordinary,

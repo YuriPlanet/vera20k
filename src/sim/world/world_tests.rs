@@ -95,7 +95,7 @@ fn combatant_selection_ingress_precedes_destroy_and_is_not_replayed_at_tail() {
 
     let ingress_count = sim.apply_due_frame_ingress_commands(
         &commands,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         1,
         crate::sim::world::FrameEffects::default(),
     );
@@ -110,7 +110,7 @@ fn combatant_selection_ingress_precedes_destroy_and_is_not_replayed_at_tail() {
     assert!(!sim.entities().get(1).unwrap().selection.is_selected());
     let (tail_count, spawned) = sim.apply_due_commands(
         &commands,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         1,
         None,
         crate::sim::world::FrameEffects::default(),
@@ -126,7 +126,10 @@ fn combatant_selection_ingress_precedes_destroy_and_is_not_replayed_at_tail() {
     assert!(!sim.entities().get(1).unwrap().lifecycle.in_limbo());
     // A distinct later real P remains admitted, as the executed native
     // infantry_health_zero_alive_true control pins. Do not add a health gate.
-    assert!(sim.try_select_object(1, UninitContext::new(None, None)));
+    assert!(sim.try_select_object(
+        1,
+        UninitContext::new(crate::rules::ruleset::RuleSet::empty_for_test(), None)
+    ));
     assert!(sim.entities().get(1).unwrap().selection.is_selected());
 }
 
@@ -139,7 +142,7 @@ fn game_speed_transition_applies_at_ingress_before_triggers_and_hash() {
     let result = sim
         .advance_master_frame(
             &[command],
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             67,
             TickLane::Ordinary,
@@ -151,7 +154,7 @@ fn game_speed_transition_applies_at_ingress_before_triggers_and_hash() {
     let control_result = control
         .advance_master_frame(
             &[],
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             67,
             TickLane::Ordinary,
@@ -203,7 +206,7 @@ fn live_game_speed_event_decodes_and_applies_within_its_frame() {
     let result = sim
         .advance_master_frame(
             &[command],
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             67,
             TickLane::Ordinary,
@@ -215,7 +218,7 @@ fn live_game_speed_event_decodes_and_applies_within_its_frame() {
     let control_result = control
         .advance_master_frame(
             &[],
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             67,
             TickLane::Ordinary,
@@ -443,7 +446,7 @@ fn network_modal_does_not_execute_game_speed_ingress() {
     let result = sim
         .advance_master_frame(
             &[command],
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             67,
             TickLane::NetworkModal,
@@ -528,7 +531,9 @@ fn particle_frame_boundary_fixture(frame_count: u16) -> (Simulation, RuleSet) {
         system.set_done_spawning_for_test(true);
         system
     });
-    assert!(sim.reveal_particle_system(stable_id, None));
+    assert!(
+        sim.reveal_particle_system(stable_id, crate::rules::ruleset::RuleSet::empty_for_test())
+    );
     (sim, rules)
 }
 
@@ -541,7 +546,7 @@ fn app_and_headless_frames_hash_identically_for_particle_frame_timing() {
         let app = app_sim
             .advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 None,
                 67,
                 TickLane::Ordinary,
@@ -612,18 +617,10 @@ fn a_jumpjet_cruising_over_water_leaves_no_wake() {
     let speed = crate::sim::movement::SpeedRules::new(&rules, &sim.interner, &sim.houses);
     let jumpjet = sim.substrate.entities.get(id).expect("Jumpjet");
     assert!(crate::sim::movement::motion_query::is_moving_now(
-        jumpjet,
-        Some(speed),
-        10
+        jumpjet, speed, 10
     ));
     assert_eq!(
-        super::wake_anchor_for(
-            jumpjet,
-            Some(speed),
-            false,
-            sim.resolved_terrain.as_ref(),
-            10
-        ),
+        super::wake_anchor_for(jumpjet, speed, false, sim.resolved_terrain.as_ref(), 10),
         None
     );
 }
@@ -926,7 +923,7 @@ fn terminal_master_frame_visits_class_sequence_before_exit_without_frame_commit(
     let result = sim
         .advance_master_frame(
             &[exit],
-            Some(&rules),
+            &rules,
             None,
             67,
             TickLane::Ordinary,
@@ -971,7 +968,7 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
     let first = sim
         .advance_app_frame(
             &[],
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             67,
             TickLane::Ordinary,
@@ -987,7 +984,7 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
     let second = sim
         .advance_app_frame(
             &[],
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             67,
             TickLane::Ordinary,
@@ -1015,7 +1012,7 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
     let deferred = sim
         .advance_app_frame(
             &[],
-            Some(&rules),
+            &rules,
             None,
             67,
             TickLane::Ordinary,
@@ -1033,7 +1030,7 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
     let first = sim
         .advance_app_frame(
             &[],
-            Some(&rules),
+            &rules,
             Some(&overlays),
             67,
             TickLane::Ordinary,
@@ -1054,7 +1051,7 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
     let second = sim
         .advance_app_frame(
             &[],
-            Some(&rules),
+            &rules,
             Some(&overlays),
             67,
             TickLane::Ordinary,
@@ -1095,7 +1092,7 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
     let output = sim
         .advance_app_frame(
             &[exit],
-            Some(&rules),
+            &rules,
             Some(&overlays),
             67,
             TickLane::Ordinary,
@@ -1131,7 +1128,7 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
     let next = sim
         .advance_app_frame(
             &[],
-            Some(&rules),
+            &rules,
             Some(&overlays),
             67,
             TickLane::Ordinary,
@@ -1213,7 +1210,11 @@ fn idle_squid_body_counter_starts_move_sound() {
         .get();
     crate::sim::animation::tick_foot_body_frame_counter(
         sim.substrate.entities.get_mut(1).unwrap(),
-        None,
+        crate::sim::movement::SpeedRules::new(
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            &sim.interner,
+            &sim.houses,
+        ),
         crate::sim::animation::FootBodyCadence {
             walk_rate: object.walk_rate,
             idle_rate: object.idle_rate,
@@ -1241,7 +1242,7 @@ fn idle_squid_body_counter_starts_move_sound() {
         &sim.houses,
         1,
         before,
-        Some(&rules),
+        &rules,
     );
     assert!(
         sim.substrate
@@ -1305,7 +1306,7 @@ fn trigger_move_sound_tail(sim: &mut Simulation, rules: &RuleSet) {
         &sim.houses,
         1,
         before,
-        Some(rules),
+        rules,
     );
 }
 
@@ -1364,7 +1365,7 @@ fn move_sound_start_consumes_exactly_one_main_draw() {
         &sim.houses,
         1,
         before,
-        Some(&configured_rules),
+        &configured_rules,
     );
     sim.substrate
         .entities
@@ -1507,7 +1508,7 @@ fn wall_sale_detach_restores_without_resetting_the_archived_targets_burst() {
     assert!(sim.apply_command_with_overlays(
         "Americans",
         &Command::SellWallAtCell { x: 4, y: 4 },
-        Some(&rules),
+        &rules,
         Some(&overlays),
         FrameEffects::default(),
     ));
@@ -1640,7 +1641,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     assert!(sim.apply_command_with_overlays(
         "Receiver",
         &Command::SellWallAtCell { x: 4, y: 4 },
-        Some(&rules),
+        &rules,
         Some(&overlays),
         crate::sim::world::FrameEffects::default(),
     ));
@@ -1729,7 +1730,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
         )
     };
     assert!(
-        sim.finalize_frame_overlays_and_navigation(Some(&rules), Some(&overlays), false, false)
+        sim.finalize_frame_overlays_and_navigation(&rules, Some(&overlays), false, false)
             .is_empty(),
         "the sold and cleanup cells are cleared, so no occupied render update remains"
     );
@@ -1865,7 +1866,7 @@ fn wall_sale_cleanup_reaches_fixed_stride_alias_and_reverses_that_source_only() 
     assert!(sim.apply_command_with_overlays(
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 1 },
-        Some(&rules),
+        &rules,
         Some(&overlays),
         crate::sim::world::FrameEffects::default(),
     ));
@@ -1971,7 +1972,7 @@ fn gsi_04_07_wall_sell_eligibility_gate_matrix_rejects_without_mutation() {
         sim.apply_command_with_overlays(
             "Receiver",
             &Command::SellWallAtCell { x: 1, y: 1 },
-            Some(rules),
+            rules,
             Some(&overlays),
             crate::sim::world::FrameEffects::default(),
         )
@@ -2025,7 +2026,7 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
     assert!(!sim.apply_command_with_overlays(
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 2 },
-        Some(&unsellable_rules),
+        &unsellable_rules,
         Some(&overlays),
         crate::sim::world::FrameEffects::default(),
     ));
@@ -2038,7 +2039,7 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
     assert!(sim.apply_command_with_overlays(
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 2 },
-        Some(&rules),
+        &rules,
         Some(&overlays),
         crate::sim::world::FrameEffects::default(),
     ));
@@ -2053,7 +2054,7 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
     assert!(!sim.apply_command_with_overlays(
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 2 },
-        Some(&rules),
+        &rules,
         Some(&overlays),
         crate::sim::world::FrameEffects::default(),
     ));
@@ -2064,14 +2065,14 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
     assert!(sim.apply_command_with_overlays(
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 2 },
-        Some(&rules),
+        &rules,
         Some(&overlays),
         crate::sim::world::FrameEffects::default(),
     ));
     assert!(!sim.apply_command_with_overlays(
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 0 },
-        Some(&rules),
+        &rules,
         Some(&overlays),
         crate::sim::world::FrameEffects::default(),
     ));
@@ -2780,7 +2781,7 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
             MissionId::from_known(MissionType::Move),
             0,
             0,
-            &crate::sim::mission::authority::EntityReadyInputProvider,
+            &crate::sim::mission::authority::LiveReadyInputProvider { rules: &rules },
         )
         .expect("queue remains pending through TubeMovement");
         sim.resolved_terrain = Some(terrain);
@@ -3338,7 +3339,7 @@ fn target_coord_offset_moves_initial_wave_endpoint_but_not_tracking() {
     admit_test_wave(&mut sim, &rules, &event);
     let id = sim.active_wave_links[&dolphin];
     assert_eq!(
-        sim.wave_update_context(sim.waves.get(id).unwrap(), Some(&rules))
+        sim.wave_update_context(sim.waves.get(id).unwrap(), &rules)
             .target_position,
         Some(crate::sim::projectile::ProjectileCoord::new(
             centre.x, centre.y, centre.z
@@ -3444,7 +3445,7 @@ fn sonic_cell_target_uses_persistent_dummy_gettargetcoords_on_create_and_refresh
     assert_eq!(process_dummy.snapshot().coord, (-1, 7));
 
     process_dummy.stamp_coord(-9, -9);
-    let context = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), Some(&rules));
+    let context = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules);
     assert_eq!(process_dummy.snapshot().coord, (-1, 7));
     assert_eq!(
         context.target_position,
@@ -4014,7 +4015,7 @@ fn native_frame_committed_late_gate_captures_pre_increment_frame() {
         crate::sim::mission::MissionId::from_known(MissionType::Open),
         0,
         0,
-        &crate::sim::mission::authority::EntityReadyInputProvider,
+        &crate::sim::mission::authority::LiveReadyInputProvider { rules: &rules },
     )
     .unwrap();
     sim.substrate.mission_commence_exact(gate_id, 0).unwrap();
@@ -4048,6 +4049,7 @@ fn mission_host_counter_changes_state_hash() {
     sim.substrate
         .entities
         .insert(GameEntity::test_default(1, "E1", "Americans", 3, 3));
+    sim.interner = crate::sim::intern::test_interner();
     sim.set_logic_order_for_test(vec![1]);
     let before = sim.state_hash();
     sim.object_ai_stage(None);
@@ -4107,7 +4109,7 @@ fn flag_to_die_destroys_owned_objects_at_frame_zero_before_defeat_gate() {
         "Flag_To_Die has no RNG call"
     );
     assert!(sim.houses[&owner].is_to_die());
-    let generated = sim.house_rung(Some(&rules), None, false, FrameEffects::default());
+    let generated = sim.house_rung(&rules, None, false, FrameEffects::default());
     assert!(generated.is_empty());
     assert!(!sim.houses[&owner].is_to_die());
     assert!(
@@ -4919,7 +4921,7 @@ fn test_structural_bridge_collapse_preserves_dynamic_navigation_and_snapshot() {
         ));
         assert!(sim.foot_continue_mega_mission(
             2,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         ));
@@ -5238,7 +5240,7 @@ fn item83_fresh_selection_rejects_warp_out_but_keeps_preexisting_selection() {
     let wingman = sim
         .spawn_object("MTNK", "Americans", 21, 22, 0, &rules)
         .expect("spawn second MTNK");
-    assert!(sim.try_select_object(tank, UninitContext::new(Some(&rules), None)));
+    assert!(sim.try_select_object(tank, UninitContext::new(&rules, None)));
     // BeingWarpedOut (`+0x270`): a Temporal chain's head.
     sim.substrate
         .entities
@@ -5299,7 +5301,7 @@ fn item83_fresh_selection_rejects_warp_out_but_keeps_preexisting_selection() {
             .is_selected(),
         "an ordinary replacement still deselects an omitted warp-out member"
     );
-    assert!(!sim.try_select_object(tank, UninitContext::new(Some(&rules), None)));
+    assert!(!sim.try_select_object(tank, UninitContext::new(&rules, None)));
 }
 
 #[test]
@@ -5343,7 +5345,7 @@ fn event33_select_command_raises_tags_once_in_payload_order_after_admission() {
         None,
         None,
     );
-    sim.classify_map_triggers(Some(&rules));
+    sim.classify_map_triggers(&rules);
     sim.attach_object_trigger_tag(first, Some("ONE"));
     sim.attach_object_trigger_tag(second, Some("TWO"));
     sim.attach_object_trigger_tag(refused, Some("ONE"));
@@ -5500,6 +5502,10 @@ fn phase14_drive_move_command_preserves_fractions_until_scheduled_visit() {
 #[test]
 fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
     use crate::sim::occupancy::VEHICLE_OCCUPATION_BIT;
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=MTNK\n[MTNK]\nSpeed=6\n",
+    ))
+    .unwrap();
     let mut sim = Simulation::new();
     sim.spawn_from_map(
         &[MapEntity {
@@ -5507,7 +5513,7 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
             cell_y: 4,
             ..make_test_entity("MTNK", EntityCategory::Unit)
         }],
-        None,
+        Some(&rules),
     );
     {
         let entity = sim.substrate.entities.get_mut(1).unwrap();
@@ -5526,10 +5532,6 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
         entity.body_facing.snap(0x4000, 0);
     }
 
-    let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[VehicleTypes]\n0=MTNK\n[MTNK]\nSpeed=6\n",
-    ))
-    .unwrap();
     install_rectangular_test_map(&mut sim, 16, 16);
     sim.resolved_terrain = Some(gsi_04_10_clear_terrain(16, 16));
     assert!(sim.rebuild_dynamic_navigation(&rules));
@@ -5559,7 +5561,7 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
         Some((8, 4))
     );
 
-    assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 1 }, None,));
+    assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 1 }, Some(&rules)));
     let stopped = sim.substrate.entities.get(1).unwrap();
     assert_eq!(stopped.navigation.nav_com(), None);
     assert!(crate::sim::movement::motion_query::is_moving(&stopped) == Some(true));
@@ -5684,6 +5686,10 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
 
 #[test]
 fn gsi_13_06_stop_preserves_committed_ship_segment_and_speed_state() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=DLPH\n[DLPH]\nSpeed=6\n",
+    ))
+    .unwrap();
     let mut sim = Simulation::new();
     sim.spawn_from_map(
         &[MapEntity {
@@ -5691,7 +5697,7 @@ fn gsi_13_06_stop_preserves_committed_ship_segment_and_speed_state() {
             cell_y: 4,
             ..make_test_entity("DLPH", EntityCategory::Unit)
         }],
-        None,
+        Some(&rules),
     );
     {
         let entity = sim.substrate.entities.get_mut(1).unwrap();
@@ -5706,10 +5712,6 @@ fn gsi_13_06_stop_preserves_committed_ship_segment_and_speed_state() {
         entity.body_facing.snap(0x4000, 0);
     }
 
-    let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[VehicleTypes]\n0=DLPH\n[DLPH]\nSpeed=6\n",
-    ))
-    .unwrap();
     install_rectangular_test_map(&mut sim, 16, 16);
     sim.resolved_terrain = Some(water_terrain(16, 16));
     assert!(sim.rebuild_dynamic_navigation(&rules));
@@ -5749,7 +5751,7 @@ fn gsi_13_06_stop_preserves_committed_ship_segment_and_speed_state() {
         u16::try_from(committed_head.y.div_euclid(256)).unwrap(),
     );
 
-    assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 1 }, None,));
+    assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 1 }, Some(&rules)));
 
     let stopped = sim.substrate.entities.get(1).unwrap();
     assert!(
@@ -5788,6 +5790,7 @@ fn gsi_13_06_stop_preserves_committed_ship_segment_and_speed_state() {
 
 #[test]
 fn move_event_issuer_does_not_replace_actor_owner() {
+    let rules = driving_combat_test_rules();
     let mut sim: Simulation = Simulation::new();
     sim.spawn_from_map(
         &[MapEntity {
@@ -5810,7 +5813,7 @@ fn move_event_issuer_does_not_replace_actor_owner() {
             structure_online: true,
             trigger_tag: None,
         }],
-        None,
+        Some(&rules),
     );
     let grid = PathGrid::new(32, 32);
     sim.interner.intern("Russians"); // Ensure "Russians" is in sim's interner for cmd_envelope lookup.
@@ -5825,7 +5828,7 @@ fn move_event_issuer_does_not_replace_actor_owner() {
         },
     );
 
-    let _ = sim.advance_tick(&[cmd], None, Some(&grid), None, 33);
+    let _ = sim.advance_tick(&[cmd], Some(&rules), Some(&grid), None, 33);
     assert!(
         sim.substrate
             .entities
@@ -6364,7 +6367,7 @@ fn test_lethal_hit_restore_refuses_the_dying_archived_target() {
                 ..make_test_entity("E1", EntityCategory::Infantry)
             },
         ],
-        None,
+        Some(&rules),
     );
     sim.substrate
         .entities
@@ -6440,7 +6443,7 @@ fn test_lethal_hit_stuns_the_dying_infantry() {
                 ..make_test_entity("MTNK", EntityCategory::Unit)
             },
         ],
-        None,
+        Some(&rules),
     );
     {
         let gi = sim.substrate.entities.get_mut(1).unwrap();
@@ -6858,9 +6861,8 @@ fn combat_death_after_its_repair_visit_is_freed_at_end_of_tick() {
         .register(HouseState::new(russia, 0, None, false, 1000, 10));
     sim.substrate.entities.insert(atk);
     sim.substrate.entities.insert(bld);
-    sim.reveal(1);
-    sim.reveal(2);
-    sim.add_entity_occupancy(2);
+    sim.reveal_entity_with_rules(1, &rules);
+    sim.reveal_entity_with_rules(2, &rules);
     sim.substrate
         .entities
         .get_mut(1)
@@ -7324,7 +7326,7 @@ fn unit_route_beside_building(
     sim.assign_destination_represented(
         tank,
         Some(crate::sim::components::NavTargetRef::cell(goal.0, goal.1)),
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -7928,7 +7930,7 @@ fn repro_group_move_of_eight_vehicles_to_one_cell() {
     // (a) What the group-destination distributor rewrites each command to.
     // Same &self read the tick performs, run before any tick mutates state.
     let mut staged = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut staged, Some(&rules), None);
+    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None);
     let assigned: Vec<(u64, (u16, u16))> = staged
         .iter()
         .filter_map(|c| match &c.payload {
@@ -8081,7 +8083,7 @@ fn repro_group_move_short_range_traces_every_tick() {
         .collect();
 
     let mut staged = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut staged, Some(&rules), None);
+    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None);
     println!("--- repro_group_move_short_range_traces_every_tick ---");
     println!("(a) distributor assignments:");
     for c in &staged {
@@ -8212,7 +8214,7 @@ fn repro_two_moving_vehicles_pass_through_each_other() {
     // Different targets => different formation keys => runs of length 1 =>
     // the group-destination distributor cannot touch either command.
     let mut staged = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut staged, Some(&rules), None);
+    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None);
     println!("--- repro_two_moving_vehicles_pass_through_each_other ---");
     for c in &staged {
         if let Command::Move {
@@ -8721,8 +8723,12 @@ fn group_move_never_draws_two_hulls_on_one_spot() {
 /// bound resources, and the due command executes within that same frame.
 #[test]
 fn runtime_frame_call_order_matches_the_app_seam() {
+    let rules = driving_combat_test_rules();
     let mut sim: Simulation = Simulation::new();
-    sim.spawn_from_map(&[make_test_entity("MTNK", EntityCategory::Unit)], None);
+    sim.spawn_from_map(
+        &[make_test_entity("MTNK", EntityCategory::Unit)],
+        Some(&rules),
+    );
     let select = cmd_envelope(
         &sim,
         "Americans",
@@ -8733,6 +8739,7 @@ fn runtime_frame_call_order_matches_the_app_seam() {
         },
     );
     let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
+    runtime.resources.rules = rules;
     runtime.simulation.queue_command(select);
 
     assert!(runtime.simulation.take_due_commands().is_empty());
@@ -8873,14 +8880,14 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
     // order once its AI reaches Delete.
     let first = first_id;
     let before = sim.substrate.voxel_anims.get(first).unwrap().world_coord();
-    sim.visit_voxel_anim(first, None);
+    sim.visit_voxel_anim(first, crate::rules::ruleset::RuleSet::empty_for_test());
     let after = sim.substrate.voxel_anims.get(first).unwrap().world_coord();
     assert_ne!(before, after, "one AI visit moves the body");
     for _ in 0..200 {
         if !sim.substrate.voxel_anims.contains_key(first) {
             break;
         }
-        sim.visit_voxel_anim(first, None);
+        sim.visit_voxel_anim(first, crate::rules::ruleset::RuleSet::empty_for_test());
     }
     assert!(
         !sim.substrate.voxel_anims.contains_key(first),
@@ -9080,7 +9087,7 @@ fn group_spread(sim: &Simulation, rules: &RuleSet, ids: &[u64]) -> Vec<(u16, u16
         .iter()
         .map(|&id| cmd_envelope(sim, "Americans", 1, move_command(id, (20, 20))))
         .collect::<Vec<_>>();
-    sim.adjust_staged_megamission_destinations(&mut staged, Some(rules), None);
+    sim.adjust_staged_megamission_destinations(&mut staged, rules, None);
     staged
         .iter()
         .map(|command| match command.payload {

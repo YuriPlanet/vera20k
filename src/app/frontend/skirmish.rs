@@ -370,7 +370,13 @@ mod tests {
         let scenario_rng_before = sim.scenario_rng().state();
         let main_rng_before = sim.main_rng().state();
 
-        apply_launch_shroud_option(&mut sim, crate::sim::world::UninitContext::new(None, None));
+        apply_launch_shroud_option(
+            &mut sim,
+            crate::sim::world::UninitContext::new(
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+                None,
+            ),
+        );
 
         for (rx, ry) in [(0, 0), (7, 0), (0, 5), (7, 5), (3, 2)] {
             assert!(sim.fog().is_cell_revealed(local, rx, ry));
@@ -392,7 +398,10 @@ mod tests {
         shrouded
             .houses_mut_for_test()
             .register(HouseState::new(human, 0, None, true, 10_000, 10));
-        let context = crate::sim::world::UninitContext::new(None, None);
+        let context = crate::sim::world::UninitContext::new(
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            None,
+        );
         apply_launch_shroud_option(&mut shrouded, context);
         assert!(!shrouded.fog().is_cell_revealed(human, 7, 5));
 
@@ -2086,9 +2095,19 @@ mod tests {
     #[test]
     fn skirmish_start_unit_budget_is_global_but_house_pools_filter_tech_and_mask() {
         let rules = test_starting_unit_rules();
-        let slots = normalized_launch_slots(&test_session());
 
-        assert_eq!(starting_unit_budget(&rules, &slots, 10, 2), 334);
+        assert_eq!(
+            starting_unit_budget(
+                &rules,
+                [
+                    LaunchCountry::America.index(),
+                    LaunchCountry::Russia.index()
+                ],
+                10,
+                2,
+            ),
+            334
+        );
 
         let allied_candidates =
             starting_unit_candidates_for_country(&rules, LaunchCountry::America, 10);

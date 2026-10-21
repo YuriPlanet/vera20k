@@ -1977,7 +1977,7 @@ fn a_captive_boarding_an_absorber_is_freed_first() {
     sim.per_cell_process(
         gi,
         crate::sim::movement::PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -2336,6 +2336,6 @@ fn control_link_timer_selection_ports_cleanup_and_snapshot_share_the_manager() {
     assert_eq!(sim.capture_link_coordinates(controller, &rules).len(), 2);
     sim.free_unit(controller, first, &rules, None, FrameEffects::default());
     assert_eq!(sim.capture_link_coordinates(controller, &rules).len(), 1);
-    sim.uninit_with_context(second, UninitContext::new(Some(&rules), None));
+    sim.uninit_with_context(second, UninitContext::new(&rules, None));
     assert!(sim.capture_link_coordinates(controller, &rules).is_empty());
 }

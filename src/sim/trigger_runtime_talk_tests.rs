@@ -105,13 +105,13 @@ fn dispatch(
         .resolve_action(entry, None, None);
     assert_eq!(action.reference, reference);
     assert_eq!(action.value, Some(value));
-    let context = sim.trigger_action_context(0, None, TagEventInput::default(), Some(rules));
+    let context = sim.trigger_action_context(0, None, TagEventInput::default(), rules);
     let mut effects = Vec::new();
     let result = sim.apply_live_trigger_action(
         &action,
         context,
         &mut effects,
-        Some(rules),
+        rules,
         None,
         FrameEffects::default(),
     );

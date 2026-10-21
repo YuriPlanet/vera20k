@@ -375,7 +375,7 @@ fn ordinary_friendly_repair_uses_capture_event_without_hut_exception() {
                     engineer_id: engineer,
                     target_building_id: target,
                 },
-                Some(&rules),
+                &rules,
                 Some(&registry),
                 crate::sim::world::FrameEffects::default(),
             ),
@@ -462,7 +462,7 @@ fn queued_hut_capture_survives_repair_before_event_execution() {
             sim.apply_command_with_overlays(
                 "Americans",
                 &due[0].payload,
-                Some(&rules),
+                &rules,
                 Some(&registry),
                 crate::sim::world::FrameEffects::default(),
             ),
@@ -619,13 +619,12 @@ fn plant_c4(sim: &mut Simulation, rules: &RuleSet, target: u64, seal: u64) {
 /// overlay-first scan hit must not fall through to the fallback trap.
 #[test]
 fn c4_on_cabhut_without_a_collapsible_bridge_changes_nothing() {
-    let cases: [(&str, u16, &dyn Fn(&mut Simulation)); 4] = [
-        ("no bridge", 10, &|sim: &mut Simulation| {
+    let cases: [(&str, &dyn Fn(&mut Simulation)); 4] = [
+        ("no bridge", &|sim: &mut Simulation| {
             sim.bridge_state = Some(BridgeRuntimeState::default());
         }),
         (
             "anchor or direction flags alone",
-            9,
             &|sim: &mut Simulation| {
                 seed_hut_fallback_bridgehead_layout(sim);
                 let starter = sim
@@ -639,15 +638,15 @@ fn c4_on_cabhut_without_a_collapsible_bridge_changes_nothing() {
                 starter.bridge_facts.anchor = None;
             },
         ),
-        ("no fallback starter", 9, &seed_hut_fallback_without_starter),
-        ("terminal overlay 0x65", 10, &|sim: &mut Simulation| {
+        ("no fallback starter", &seed_hut_fallback_without_starter),
+        ("terminal overlay 0x65", &|sim: &mut Simulation| {
             seed_terminal_overlay_with_fallback_trap(sim, 0x65);
         }),
     ];
-    for (case, seal_x, seed) in cases {
+    for (case, seed) in cases {
         let (mut sim, rules) = build_sim();
         let cabhut = spawn_cabhut(&mut sim, 9, 10);
-        let seal = spawn_seal(&mut sim, seal_x, 10);
+        let seal = spawn_seal(&mut sim, 10, 10);
         let cabhut_max_hp = sim.substrate.entities.get(cabhut).unwrap().health.current();
         seed(&mut sim);
         let anchor_state = fallback_anchor_state(&sim);

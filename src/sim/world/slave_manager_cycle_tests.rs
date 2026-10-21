@@ -495,7 +495,7 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
         .finish_pack_up_for_test();
     sim.visit_building_down(
         yarefn,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     );
@@ -734,7 +734,7 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
         .finish_pack_up_for_test();
     sim.visit_building_down(
         refinery,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     );

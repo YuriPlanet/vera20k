@@ -433,7 +433,7 @@ impl crate::sim::world::Simulation {
                 // Source: tools/input_oracle/gattling_loop.json.
                 self.sound_events
                     .emit(crate::sim::world::SimSoundEvent::GattlingLoopStop { owner });
-                frame_effects.flush_sound(self, Some(rules));
+                frame_effects.flush_sound(self, rules);
             },
             || main_draws.next_u32(),
         );
@@ -451,7 +451,7 @@ impl crate::sim::world::Simulation {
                     sound_id: sound.to_owned(),
                     world,
                 });
-            frame_effects.flush_sound(self, Some(rules));
+            frame_effects.flush_sound(self, rules);
         }
     }
 
@@ -479,7 +479,7 @@ impl crate::sim::world::Simulation {
                 .emit(crate::sim::world::SimSoundEvent::GattlingLoopRelease {
                     owner: gattling_sound_owner(id),
                 });
-            frame_effects.flush_sound(self, Some(rules));
+            frame_effects.flush_sound(self, rules);
         });
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.gattling = state;

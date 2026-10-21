@@ -69,7 +69,7 @@ impl Simulation {
         }
         self.uninit_with_context(
             id,
-            UninitContext::new(Some(rules), registry).with_effects(effects),
+            UninitContext::new(rules, registry).with_effects(effects),
         );
         true
     }

@@ -401,7 +401,7 @@ fn a_retail_area_guard_tanya_with_a_building_target_plants_c4() {
     sim.assign_target_represented(
         tanya,
         Some(TargetKind::Entity(building)),
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     )

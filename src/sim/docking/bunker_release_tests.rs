@@ -123,7 +123,12 @@ fn release_head() -> DriveCoord {
 fn sell_release_uses_building_center_preserves_pose_and_orders_links_after_speed() {
     let mut sim = release_fixture();
     let pose = position_world_coord(&sim.substrate.entities.get(1).unwrap().position);
-    release_sell_destroy(&mut sim, 2, crate::sim::world::FrameEffects::default());
+    release_sell_destroy(
+        &mut sim,
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default(),
+    );
     let trace = take_trace();
     assert_eq!(
         trace.iter().map(|b| b.name).collect::<Vec<_>>(),
@@ -194,6 +199,37 @@ fn sell_release_uses_building_center_preserves_pose_and_orders_links_after_speed
     );
 }
 
+/// The forced head reaches `CellClass::PickupCrate` through `Force_Track`
+/// (`0x004B0D1B`) with the frame's OverlayType table, so a crate on the
+/// bunker's exit cell is picked up there.
+#[test]
+fn sell_release_picks_up_a_crate_on_the_forced_head_cell() {
+    let mut sim = release_fixture();
+    let registry = crate::sim::crates::tests::crate_registry();
+    let wood = registry.id_for_name("WOOD").unwrap();
+    let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(64, 64);
+    overlays.place_overlay(10, 12, wood, 0);
+    sim.overlay_grid = Some(overlays);
+    release_sell_destroy(
+        &mut sim,
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default().with_overlay_registry(Some(&registry)),
+    );
+    let trace = take_trace();
+    assert_eq!(trace[1].name, "force");
+    assert_eq!(
+        trace[1].head,
+        Some(release_head()),
+        "a money crate keeps the head"
+    );
+    assert_eq!(
+        sim.overlay_grid.as_ref().unwrap().cell(10, 12).overlay_id,
+        None,
+        "the crate is picked up"
+    );
+}
+
 #[test]
 fn normal_release_clears_unit_first_and_assigns_destination_without_teleport() {
     let mut sim = release_fixture();
@@ -251,7 +287,12 @@ fn force_limbo_early_return_does_not_skip_caller_speed_links_or_break() {
         .unwrap()
         .lifecycle
         .set_in_limbo_for_test(true);
-    release_sell_destroy(&mut sim, 2, crate::sim::world::FrameEffects::default());
+    release_sell_destroy(
+        &mut sim,
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default(),
+    );
     let unit = sim.substrate.entities.get(1).unwrap();
     assert!(
         unit.lifecycle.in_limbo(),
@@ -286,7 +327,12 @@ fn break_targets_slot_zero_even_when_it_is_not_the_released_unit() {
     building.radio_contacts = Contacts::with_capacity(2);
     building.radio_contacts.insert(3);
     building.radio_contacts.insert(1);
-    release_sell_destroy(&mut sim, 2, crate::sim::world::FrameEffects::default());
+    release_sell_destroy(
+        &mut sim,
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default(),
+    );
     assert!(
         !sim.substrate
             .entities
@@ -321,7 +367,12 @@ fn empty_slot_zero_does_not_scan_later_contacts() {
     building.radio_contacts.insert(3);
     building.radio_contacts.insert(1);
     building.radio_contacts.remove(3);
-    release_sell_destroy(&mut sim, 2, crate::sim::world::FrameEffects::default());
+    release_sell_destroy(
+        &mut sim,
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default(),
+    );
     assert!(
         sim.substrate
             .entities
@@ -358,7 +409,12 @@ fn nonunit_link_does_not_release_or_reset_bunker() {
                 crate::sim::world::FrameEffects::default(),
             );
         } else {
-            release_sell_destroy(&mut sim, 2, crate::sim::world::FrameEffects::default());
+            release_sell_destroy(
+                &mut sim,
+                2,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+                crate::sim::world::FrameEffects::default(),
+            );
         }
         assert!(take_trace().is_empty());
         let unit = sim.substrate.entities.get(1).unwrap();

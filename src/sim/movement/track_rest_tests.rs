@@ -39,7 +39,7 @@ fn drive_stop_retains_speed_until_an_eligible_process_rest_tail() {
             .is_empty()
     );
     let rng = rng_streams(&sim);
-    sim.locomotor_stop_moving(id, Some(&rules), None, FrameEffects::default())
+    sim.locomotor_stop_moving(id, &rules, None, FrameEffects::default())
         .unwrap();
     assert_eq!(
         sim.substrate
@@ -192,7 +192,7 @@ fn drive_stop_rest_and_immediate_reorder_match_native_departure_frames() {
             Some(crate::sim::components::DriveCoord::cell(11, 10, 0)),
         );
         let rng = rng_streams(&sim);
-        sim.locomotor_stop_moving(id, Some(&rules), None, FrameEffects::default())
+        sim.locomotor_stop_moving(id, &rules, None, FrameEffects::default())
             .unwrap();
         if row["rest"] == true {
             sim.process_ground_locomotor_stats_for_test(id, Some(&rules), None)
@@ -201,7 +201,7 @@ fn drive_stop_rest_and_immediate_reorder_match_native_departure_frames() {
         sim.assign_destination_represented(
             id,
             Some(NavTargetRef::cell(11, 10)),
-            Some(&rules),
+            &rules,
             None,
             FrameEffects::default(),
         )
@@ -265,7 +265,7 @@ fn native_stop_and_null_destination_histories_preserve_frame_order() {
             .store_track_destination(TrackFamily::Drive, Some(DriveCoord::cell(11, 10, 0)));
         let rng = rng_streams(&sim);
         if row["input"]["stop"] == "locomotor" {
-            sim.locomotor_stop_moving(id, Some(&rules), None, FrameEffects::default())
+            sim.locomotor_stop_moving(id, &rules, None, FrameEffects::default())
                 .unwrap();
         } else {
             sim.substrate
@@ -274,15 +274,9 @@ fn native_stop_and_null_destination_histories_preserve_frame_order() {
                 .unwrap()
                 .navigation
                 .set_nav_com_for_test(Some(NavTargetRef::cell(11, 10)));
-            sim.assign_destination_represented(
-                id,
-                None,
-                Some(&rules),
-                None,
-                FrameEffects::default(),
-            )
-            .unwrap();
-            sim.complete_pending_order(id, Some(&rules), None, FrameEffects::default());
+            sim.assign_destination_represented(id, None, &rules, None, FrameEffects::default())
+                .unwrap();
+            sim.complete_pending_order(id, &rules, None, FrameEffects::default());
         }
         for state in row["states"].as_array().unwrap().iter().skip(1) {
             match state["stage"].as_str().unwrap() {
@@ -295,7 +289,7 @@ fn native_stop_and_null_destination_histories_preserve_frame_order() {
                     sim.assign_destination_represented(
                         id,
                         Some(NavTargetRef::cell(11, 10)),
-                        Some(&rules),
+                        &rules,
                         None,
                         FrameEffects::default(),
                     )
@@ -341,7 +335,7 @@ fn a_callback_destination_is_published_before_the_drive_rest_decision() {
         .navigation
         .set_nav_com_for_test(Some(NavTargetRef::cell(11, 10)));
     entity.navigation.owe_destination_setter();
-    sim.drive_process_rest_tail(id, Some(&rules), None, FrameEffects::default());
+    sim.drive_process_rest_tail(id, &rules, None, FrameEffects::default());
     let entity = sim.substrate.entities.get(id).unwrap();
     assert!(
         entity
@@ -373,7 +367,7 @@ fn drive_stop_rest_and_departure_survive_production_snapshot_restore() {
         // Native load resets Scenario from Seed0; compare that documented cursor.
         original.scenario_rng = crate::sim::rng::SimRng::new(0);
         original
-            .locomotor_stop_moving(id, Some(&rules), None, FrameEffects::default())
+            .locomotor_stop_moving(id, &rules, None, FrameEffects::default())
             .unwrap();
         let bytes = GameSnapshot::save(&original, 0, 0, "drive-rest", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
@@ -397,7 +391,7 @@ fn drive_stop_rest_and_departure_survive_production_snapshot_restore() {
             sim.assign_destination_represented(
                 id,
                 Some(NavTargetRef::cell(11, 10)),
-                Some(&rules),
+                &rules,
                 None,
                 FrameEffects::default(),
             )

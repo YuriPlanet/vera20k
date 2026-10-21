@@ -79,7 +79,7 @@ impl Simulation {
 
     /// Every changed-owner Building path writes HasEngineer (4484AF), including
     /// non-engineer transfers. Same-owner calls return before this entry.
-    pub(crate) fn enable_building_after_owner_change(&mut self, id: u64, rules: Option<&RuleSet>) {
+    pub(crate) fn enable_building_after_owner_change(&mut self, id: u64, rules: &RuleSet) {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
         };
@@ -87,11 +87,10 @@ impl Simulation {
             return;
         }
         entity.building_has_engineer.set = true;
-        if let Some(rules) = rules
-            && self
-                .interner
-                .object_type(entity.type_ref(), rules)
-                .is_some_and(|o| o.needs_engineer)
+        if self
+            .interner
+            .object_type(entity.type_ref(), rules)
+            .is_some_and(|o| o.needs_engineer)
         {
             self.set_building_stuff_enabled(id, true, rules);
         }

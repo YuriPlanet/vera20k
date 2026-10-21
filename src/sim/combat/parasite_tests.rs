@@ -481,7 +481,7 @@ fn a_paid_repair_radio_request_releases_the_drone_after_the_heal() {
             None,
             RadioMessage::RepairTick,
             RadioPayload::default(),
-            Some(&rules),
+            &rules,
             crate::sim::world::FrameEffects::default(),
         ),
         RadioResponse::InsufficientFunds
@@ -502,7 +502,7 @@ fn a_paid_repair_radio_request_releases_the_drone_after_the_heal() {
             None,
             RadioMessage::RepairTick,
             RadioPayload::default(),
-            Some(&rules),
+            &rules,
             crate::sim::world::FrameEffects::default(),
         ),
         RadioResponse::Roger
@@ -1371,7 +1371,7 @@ fn grinder_arrival_refunds_the_infesting_drone_before_forced_release() {
         .per_cell_process(
             tank,
             PerCellReason::Arrival,
-            Some(&rules),
+            &rules,
             None,
             FrameEffects::default(),
         )

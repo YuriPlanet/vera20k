@@ -136,7 +136,7 @@ fn stock_carrier_pips_follow_construction_sortie_recall_reload_and_selection() {
         let result = sim
             .advance_app_frame(
                 &[],
-                Some(rules),
+                rules,
                 None,
                 33,
                 crate::sim::world::TickLane::Ordinary,

@@ -61,9 +61,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let host = session.host();
     let host_name = protocol.wol_host.as_deref();
     let local = launch.humans.get(launch.local_player_index)?;
-    // A guest shows its own copy of the map only when it verified
-    // (0x005E74E0); otherwise its preview is the host's Preview.bin.
-    let local_map = host || protocol.local_map_verified();
+    // A guest shows its own copy of the map only when it verified, and on
+    // WOL only from a mixfile (0x005E74E0); otherwise its preview is the
+    // host's Preview.bin.
+    let local_map = host || protocol.local_preview();
     let map_index = launch
         .selected_map_file
         .as_deref()
@@ -402,6 +403,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         map_label: super::map_display_name(state)
             .map_or_else(|| label(state, "GUI:None"), str::to_owned),
         selected_map_index: map_index,
+        no_preview: protocol.wol_no_preview().0,
+        preview_hidden: protocol.wol_no_preview().1,
         cooperative,
         cooperative_description: coop.as_ref().map(|coop| {
             label(

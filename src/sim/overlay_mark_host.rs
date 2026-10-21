@@ -33,7 +33,7 @@ pub(crate) struct SimulationMarkHost<'a> {
     sim: &'a mut Simulation,
     /// `None` only for focused crate fixtures that bind CrateRules alone:
     /// they refuse walls and construct no CellAnim.
-    rules: Option<&'a RuleSet>,
+    rules: &'a RuleSet,
     registry: &'a OverlayTypeRegistry,
     lighting_profile: LightingProfileUnits,
 }
@@ -41,7 +41,7 @@ pub(crate) struct SimulationMarkHost<'a> {
 impl<'a> SimulationMarkHost<'a> {
     pub(crate) fn new(
         sim: &'a mut Simulation,
-        rules: Option<&'a RuleSet>,
+        rules: &'a RuleSet,
         registry: &'a OverlayTypeRegistry,
         lighting_profile: LightingProfileUnits,
     ) -> Self {
@@ -255,9 +255,7 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
     }
 
     fn wall_clear_to_build(&mut self, anchor: NativeCellIdentity) -> Result<bool, Infallible> {
-        let Some(rules) = self.rules else {
-            return Ok(false);
-        };
+        let rules = self.rules;
         let cells = NativeCellQuery::canonical(self.terrain());
         Ok(crate::sim::build_site::is_clear_to_build(
             self.sim,
@@ -317,9 +315,7 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
     }
 
     fn spawn_cell_anim(&mut self, request: OverlayCellAnim<'_>) -> Result<(), Infallible> {
-        let Some(rules) = self.rules else {
-            return Ok(());
-        };
+        let rules = self.rules;
         let ground = OverlayCellAnimGround::read(self.terrain(), &request);
         if let Err(error) = self.sim.construct_overlay_cell_anim(
             rules,
@@ -514,7 +510,7 @@ impl Simulation {
             .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
             .into();
         match mark_overlay(
-            &mut SimulationMarkHost::new(self, Some(rules), registry, lighting),
+            &mut SimulationMarkHost::new(self, rules, registry, lighting),
             &request,
         ) {
             Ok(outcome) => outcome,

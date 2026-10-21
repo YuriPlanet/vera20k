@@ -44,12 +44,16 @@ fn sim_with_trigger(action: &str) -> (Simulation, crate::map::map_file::MapFile)
         None,
         Some(&sounds()),
     );
-    sim.classify_map_triggers(None);
+    sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     (sim, map)
 }
 
 fn poll(sim: &mut Simulation) {
-    sim.advance_triggers(None, None, FrameEffects::default());
+    sim.advance_triggers(
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        None,
+        FrameEffects::default(),
+    );
 }
 
 fn insert_structure(sim: &mut Simulation, id: u64, type_name: &str, cell: (u16, u16)) {
@@ -109,7 +113,11 @@ fn action_99_gives_the_waypoint_building_its_custom_sound_for_object_ai_to_play(
         Some("TestAmbient")
     );
 
-    sim.object_ai_sounds(40, None, FrameEffects::default());
+    sim.object_ai_sounds(
+        40,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        FrameEffects::default(),
+    );
     let world = Simulation::movement_sound_world(sim.substrate.entities.get(40).unwrap());
     assert!(matches!(
         sim.sound_events.as_slice(),
@@ -132,7 +140,11 @@ fn action_99_gives_the_waypoint_building_its_custom_sound_for_object_ai_to_play(
         [SimSoundEvent::ObjectSoundDetached { owner }] if *owner == custom_sound_owner(40)
     ));
     sim.sound_events.clear_for_test();
-    sim.object_ai_sounds(40, None, FrameEffects::default());
+    sim.object_ai_sounds(
+        40,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        FrameEffects::default(),
+    );
     assert!(sim.sound_events.is_empty());
     assert!(sim.object_custom_sounds.contains_key(&40));
     assert_eq!(
@@ -178,7 +190,11 @@ fn action_99_takes_the_cell_terrain_without_a_building_and_its_uninit_detaches()
     );
 
     // TerrainClass::AI calls ObjectClass::AI first.
-    sim.object_ai_sounds(41, None, FrameEffects::default());
+    sim.object_ai_sounds(
+        41,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        FrameEffects::default(),
+    );
     assert!(matches!(
         sim.sound_events.as_slice(),
         [SimSoundEvent::AnimationStarted { anim_id, sound_id, world }]
@@ -215,9 +231,17 @@ fn action_116_clears_the_first_building_instead_of_terrain_or_coordinate_request
     );
     // Object AI can no longer recreate +50; Terrain's independent handle survives.
     sim.sound_events.clear_for_test();
-    sim.object_ai_sounds(40, None, FrameEffects::default());
+    sim.object_ai_sounds(
+        40,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        FrameEffects::default(),
+    );
     assert!(sim.sound_events.is_empty());
-    sim.object_ai_sounds(41, None, FrameEffects::default());
+    sim.object_ai_sounds(
+        41,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        FrameEffects::default(),
+    );
     assert!(matches!(sim.sound_events.as_slice(),
         [SimSoundEvent::AnimationStarted { anim_id, .. }] if *anim_id == custom_sound_owner(41)));
 }
@@ -265,7 +289,7 @@ fn a_type_ambient_sound_plays_every_visit_and_limbo_hard_stops_it() {
     let world = Simulation::movement_sound_world(sim.substrate.entities.get(50).unwrap());
     for _ in 0..2 {
         sim.sound_events.clear_for_test();
-        sim.object_ai_sounds(50, Some(&rules), FrameEffects::default());
+        sim.object_ai_sounds(50, &rules, FrameEffects::default());
         assert!(matches!(
             sim.sound_events.as_slice(),
             [SimSoundEvent::AnimationStarted { anim_id, sound_id, world: at }]
@@ -275,10 +299,10 @@ fn a_type_ambient_sound_plays_every_visit_and_limbo_hard_stops_it() {
     // A type without AmbientSound plays nothing.
     insert_structure(&mut sim, 51, "CAWASH18", (8, 8));
     sim.sound_events.clear_for_test();
-    sim.object_ai_sounds(51, Some(&rules), FrameEffects::default());
+    sim.object_ai_sounds(51, &rules, FrameEffects::default());
     assert!(sim.sound_events.is_empty());
 
-    sim.object_sound_conceal(50, Some(&rules));
+    sim.object_sound_conceal(50, &rules);
     assert!(matches!(
         sim.sound_events.as_slice(),
         [SimSoundEvent::AnimationStopped { anim_id, stop_sound_id: None, .. }]
@@ -445,7 +469,7 @@ fn waypoint_cue_random_sound_matches_original_selection_and_rng_without_terrain(
             );
             assert!(sim.trigger_play_sound_at_random_waypoint(
                 sound,
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 FrameEffects::default()
             ));
             assert_eq!(

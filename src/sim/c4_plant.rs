@@ -272,7 +272,7 @@ impl Simulation {
             );
         if !refused {
             if target.pending_c4_detonation.pending().is_some() {
-                self.assign_null_destination(id, Some(rules), registry, effects);
+                self.assign_null_destination(id, rules, registry, effects);
                 Self::rearm_c4_planter(
                     &self.interner,
                     &self.session,
@@ -287,8 +287,8 @@ impl Simulation {
                 return Ok(true);
             }
             let (flash, fuse) = (rules.c4_flash_frames(), rules.c4_delay_frames());
+            self.substrate.flash_building(building, flash, frame);
             if let Some(target) = self.substrate.entities.get_mut(building) {
-                target.flash_base(flash);
                 target.pending_c4_detonation.plant(frame as i32, fuse, id);
             }
         }

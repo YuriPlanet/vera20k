@@ -280,7 +280,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             engineer_id: passenger,
             target_building_id: building,
         },
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default(),
     ));

@@ -967,7 +967,7 @@ fn gsi_13_08_warpout_keeps_all_frames_and_drives_the_progressive_alpha_ladder() 
             crate::sim::anim_class::AnimTranslucencyInput {
                 base_flags: 0,
                 forced_translucent: false,
-                forced_uses_75: false,
+                double_thick: false,
                 translucency_detail_level: warpout.translucency_detail_level,
                 game_detail_level: 2,
                 translucent_ramp: warpout.translucent,

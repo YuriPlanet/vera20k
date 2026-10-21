@@ -189,11 +189,7 @@ impl TrackingFacts {
     /// `0x004FF761..0x004FF791`) when its vtable `+0x80` answers (a 1x1
     /// undeployer) or it undeploys (`+0x408`) into a `ResourceGatherer=`
     /// (`+0x5EC`).
-    pub(crate) fn of(
-        category: EntityCategory,
-        ty: Option<&ObjectType>,
-        rules: Option<&RuleSet>,
-    ) -> Self {
+    pub(crate) fn of(category: EntityCategory, ty: Option<&ObjectType>, rules: &RuleSet) -> Self {
         let Some(ty) = ty else {
             return Self::default();
         };
@@ -202,7 +198,7 @@ impl TrackingFacts {
                 || ty
                     .undeploys_into
                     .as_deref()
-                    .and_then(|undeploys| rules.and_then(|rules| rules.object(undeploys)))
+                    .and_then(|undeploys| rules.object(undeploys))
                     .is_some_and(|undeploys| undeploys.resource_gatherer));
         Self {
             dont_score: ty.dont_score,

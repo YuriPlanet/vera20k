@@ -381,7 +381,7 @@ pub(crate) fn attach_drain_anim(sim: &mut Simulation, drainer_id: u64, rules: &R
 
 /// The `+0x1D4` DrainAnim un-init (vt+0xF8) that opens every native break
 /// of a drain link, for `drainer_id`.
-fn remove_drain_anim(sim: &mut Simulation, drainer_id: u64, rules: Option<&RuleSet>) {
+fn remove_drain_anim(sim: &mut Simulation, drainer_id: u64, rules: &RuleSet) {
     if let Some(anim) = sim
         .substrate
         .entities
@@ -396,7 +396,7 @@ fn remove_drain_anim(sim: &mut Simulation, drainer_id: u64, rules: Option<&RuleS
 /// the `DrainAnim`, clear the victim's `DrainingMe`, flag its house's power
 /// recalc, clear the drainer's `DrainTarget`. Also the inline copy in
 /// `TechnoClass::AI_Update @ 0x006FA1DF..0x006FA21E`.
-pub(crate) fn stop_drain(sim: &mut Simulation, drainer_id: u64, rules: Option<&RuleSet>) {
+pub(crate) fn stop_drain(sim: &mut Simulation, drainer_id: u64, rules: &RuleSet) {
     remove_drain_anim(sim, drainer_id, rules);
     let Some(victim_id) = sim
         .substrate
@@ -425,11 +425,7 @@ pub(crate) fn stop_drain(sim: &mut Simulation, drainer_id: u64, rules: Option<&R
 /// its Destroy's Detach_All broadcast (`0x005F5280`, the receiver's
 /// `detach_all`), in the same ReceiveDamage and before any draw
 /// the death arm makes, so a falling wreck no longer drains or shows its ray.
-pub(crate) fn clear_drain_links_on_expiry(
-    sim: &mut Simulation,
-    expired_id: u64,
-    rules: Option<&RuleSet>,
-) {
+pub(crate) fn clear_drain_links_on_expiry(sim: &mut Simulation, expired_id: u64, rules: &RuleSet) {
     let Some((drain_target, draining_me)) = sim
         .substrate
         .entities
@@ -542,7 +538,7 @@ pub(crate) fn drain_common_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
             sim.interner.resolve(owner),
         )
     {
-        stop_drain(sim, stable_id, Some(rules));
+        stop_drain(sim, stable_id, rules);
     }
 }
 
@@ -553,7 +549,7 @@ pub(crate) fn drain_common_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
 ///    unit's own cell and stop the drain when it is no longer the target.
 /// 2. `0x007361E9..0x00736204`: a `DrainAnim` (`+0x1D4`) left with no
 ///    `DrainTarget` is removed through Stop_Drain.
-pub(crate) fn drain_unit_ai_step(sim: &mut Simulation, stable_id: u64, rules: Option<&RuleSet>) {
+pub(crate) fn drain_unit_ai_step(sim: &mut Simulation, stable_id: u64, rules: &RuleSet) {
     let Some((target, anim, rx, ry)) = sim.substrate.entities.get(stable_id).map(|entity| {
         (
             entity.drain.target,
@@ -772,7 +768,7 @@ mod tests {
             "still on the ground list"
         );
         sim.session.set_binary_frame_for_test(2);
-        drain_unit_ai_step(&mut sim, disc, Some(&rules));
+        drain_unit_ai_step(&mut sim, disc, &rules);
         assert_eq!(
             sim.entities().get(disc).unwrap().drain.target(),
             Some(refinery)
@@ -782,14 +778,14 @@ mod tests {
             crate::sim::world::UninitContext::with_rules(&rules)
         ));
         sim.session.set_binary_frame_for_test(17);
-        drain_unit_ai_step(&mut sim, disc, Some(&rules));
+        drain_unit_ai_step(&mut sim, disc, &rules);
         assert_eq!(
             sim.entities().get(disc).unwrap().drain.target(),
             Some(refinery),
             "not a recheck frame"
         );
         sim.session.set_binary_frame_for_test(18);
-        drain_unit_ai_step(&mut sim, disc, Some(&rules));
+        drain_unit_ai_step(&mut sim, disc, &rules);
         assert_eq!(sim.entities().get(disc).unwrap().drain.target(), None);
         assert_eq!(
             sim.entities().get(refinery).unwrap().drain.draining_me(),
@@ -1267,7 +1263,7 @@ mod tests {
         attach_drain_anim(&mut sim, disk, &rules);
         let stray = assert_drain_anim(&sim, disk);
         sim.session.set_binary_frame_for_test(5);
-        drain_unit_ai_step(&mut sim, disk, Some(&rules));
+        drain_unit_ai_step(&mut sim, disk, &rules);
         assert_eq!(sim.entities().get(disk).unwrap().drain.anim, None);
         assert!(anim_uninited(&sim, stray));
 

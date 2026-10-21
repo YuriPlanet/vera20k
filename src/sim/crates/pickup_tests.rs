@@ -34,6 +34,7 @@ fn house(sim: &mut Simulation, name: &str, player_control: bool) -> InternedId {
 /// A revealed Ground-layer object at the centre of `cell`.
 fn place_actor(
     sim: &mut Simulation,
+    rules: &RuleSet,
     owner: InternedId,
     cell: (u16, u16),
     category: EntityCategory,
@@ -58,7 +59,7 @@ fn place_actor(
     entity.position.set_sub_x_for_test(SimFixed::from_num(128));
     entity.position.set_sub_y_for_test(SimFixed::from_num(128));
     sim.substrate.entities.insert(entity);
-    sim.try_reveal_entity(
+    sim.try_reveal_entity_with_context(
         id,
         RevealRequest {
             position: RevealPosition::new(
@@ -72,6 +73,7 @@ fn place_actor(
             placement: PlacementEvidence::MarkSucceeded,
             logic_eligible: true,
         },
+        crate::sim::world::UninitContext::with_rules(rules),
     );
     id
 }
@@ -158,6 +160,7 @@ fn multiplayer_fixture(slot: u8) -> (Simulation, RuleSet, OverlayTypeRegistry, I
     let owner = house(&mut sim, "H0", false);
     let actor = place_actor(
         &mut sim,
+        &rules,
         owner,
         (CELL.0 as u16, CELL.1 as u16),
         EntityCategory::Infantry,
@@ -268,7 +271,14 @@ fn original_pickup_rows_match_through_the_dispatcher() {
         } else {
             // The fixture's one actor always stands at (10, 10)'s centre,
             // whatever cell the crate occupies.
-            place_actor(&mut sim, owner, (10, 10), EntityCategory::Infantry, "E1")
+            place_actor(
+                &mut sim,
+                &rules,
+                owner,
+                (10, 10),
+                EntityCategory::Infantry,
+                "E1",
+            )
         };
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
@@ -418,8 +428,22 @@ fn effect_rules(extra: &str) -> RuleSet {
 fn veteran_crate_promotes_trainable_technos_within_the_radius() {
     let (mut sim, _, registry, owner, actor) = multiplayer_fixture(POWERUP_VETERAN as u8);
     let rules = effect_rules("[AudioVisual]\nCratePromoteSound=CratePromoted\n");
-    let civilian = place_actor(&mut sim, owner, (10, 10), EntityCategory::Infantry, "CIV");
-    let distant = place_actor(&mut sim, owner, (20, 20), EntityCategory::Infantry, "E1");
+    let civilian = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (10, 10),
+        EntityCategory::Infantry,
+        "CIV",
+    );
+    let distant = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (20, 20),
+        EntityCategory::Infantry,
+        "E1",
+    );
 
     assert!(pickup_crate(
         &mut sim,
@@ -462,7 +486,14 @@ fn armor_and_firepower_crates_multiply_once_and_announce() {
         .get_mut(&owner)
         .unwrap()
         .set_player_control_for_test(true);
-    let distant = place_actor(&mut sim, owner, (20, 20), EntityCategory::Infantry, "E1");
+    let distant = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (20, 20),
+        EntityCategory::Infantry,
+        "E1",
+    );
 
     assert!(pickup_crate(
         &mut sim,
@@ -873,7 +904,7 @@ fn force_track_onto_a_unit_crate_drops_the_head() {
         actor,
         -1,
         DriveCoord::cell(21, 22, 0),
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default()
     ));
@@ -1142,6 +1173,7 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
         // body. Install that prior through the existing tracking owner.
         let yard = place_actor(
             &mut sim,
+            &rules,
             owner,
             (24, 24),
             EntityCategory::Structure,

@@ -8,7 +8,7 @@ fn step(sim: &mut Simulation, rules: &RuleSet) {
     let commands = sim.take_due_commands();
     sim.advance_app_frame(
         &commands,
-        Some(rules),
+        rules,
         None,
         33,
         crate::sim::world::TickLane::Ordinary,

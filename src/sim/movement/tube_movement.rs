@@ -225,8 +225,8 @@ impl Simulation {
                         locomotor.set_step_head(None);
                     }
                 }
-                self.walk_stop_moving(id, Some(rules), effects)?;
-                self.assign_null_destination(id, Some(rules), registry, effects);
+                self.walk_stop_moving(id, rules, effects)?;
+                self.assign_null_destination(id, rules, registry, effects);
             }
         }
         Ok(true)
@@ -264,7 +264,7 @@ impl Simulation {
         let on_bridge = actor.on_bridge();
         let target = walk_tube_target(&mut actor.position, on_bridge, tube, terrain)?;
         let location = ground_pose::position_world_coord(&actor.position);
-        self.foot_mark_remove(id, Some(rules), registry, effects);
+        self.foot_mark_remove(id, rules, registry, effects);
         Self::object_raw_receiver_at(
             &mut self.substrate,
             &self.path_grid,
@@ -316,7 +316,7 @@ impl Simulation {
         &mut self,
         id: u64,
         family: TrackFamily,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<bool, String> {
@@ -411,7 +411,7 @@ fn tick_active_tube_object(
     entity_id: u64,
     terrain: &ResolvedTerrainGrid,
     occupancy: &OccupancyGrid,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     interner: &StringInterner,
 ) -> TubeTurn {
     let Some(entity) = entities.get(entity_id) else {
@@ -424,8 +424,8 @@ fn tick_active_tube_object(
         return TubeTurn::Moved;
     };
     let category = entity.category();
-    let speed = rules
-        .and_then(|rules| interner.object_type(entity.type_ref(), rules))
+    let speed = interner
+        .object_type(entity.type_ref(), rules)
         .map_or(0, |object| {
             crate::util::fixed_math::ra2_speed_to_leptons_per_frame(object.speed)
         });
@@ -523,7 +523,7 @@ impl Simulation {
     pub(crate) fn tube_object_turn(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<TubeObjectTurn, FrameAdvanceError> {
@@ -567,15 +567,14 @@ impl Simulation {
     /// is copied first and each copy tested as the loop reaches it (Unit
     /// `0x00735E74..0x00735F62`, Infantry `0x0051B7E6..0x0051B8F4`). Then the
     /// object's speed becomes 0 (Unit `0x00735F6A`, Infantry `0x0051B8FC`)
-    /// and it stays in the tube, to try again on its next turn. Without rules
-    /// no Scatter admits, so none runs.
+    /// and it stays in the tube, to try again on its next turn.
     ///
     /// Answers whether an Infantry Scatter's immediate Process changed bridge
     /// state.
     fn tube_exit_blocked(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<bool, String> {
@@ -590,23 +589,21 @@ impl Simulation {
             })
             .map_or_else(Vec::new, |cell| cell.snapshot_layer(MovementLayer::Ground));
         let mut bridge_state_changed = false;
-        if let Some(rules) = rules {
-            for blocker in occupants {
-                if self
-                    .substrate
-                    .entities
-                    .get(blocker)
-                    .is_some_and(tube_exit_scatters)
-                {
-                    bridge_state_changed |= self.scatter(
-                        blocker,
-                        None,
-                        ScatterFlags::new(true, true),
-                        rules,
-                        registry,
-                        effects,
-                    )?;
-                }
+        for blocker in occupants {
+            if self
+                .substrate
+                .entities
+                .get(blocker)
+                .is_some_and(tube_exit_scatters)
+            {
+                bridge_state_changed |= self.scatter(
+                    blocker,
+                    None,
+                    ScatterFlags::new(true, true),
+                    rules,
+                    registry,
+                    effects,
+                )?;
             }
         }
         stop_blocked_mover(&mut self.substrate.entities, id);
@@ -633,7 +630,7 @@ impl Simulation {
     fn unit_tube_exit(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<bool, String> {
@@ -669,7 +666,7 @@ impl Simulation {
         let navcom_names_cell = self.substrate.entities.get(id).is_some_and(|actor| {
             matches!(actor.navigation.nav_com(), Some(NavTargetRef::Cell { rx, ry }) if (rx, ry) == at)
         });
-        if let (true, Some(rules)) = (navcom_names_cell, rules) {
+        if navcom_names_cell {
             self.scatter(
                 id,
                 None,
@@ -735,11 +732,10 @@ impl Simulation {
     fn infantry_tube_exit(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<bool, String> {
-        let rules = rules.ok_or("Infantry tube exit requires rules")?;
         let terrain = self
             .resolved_terrain
             .as_ref()
@@ -758,7 +754,7 @@ impl Simulation {
             previous_cell: None,
         };
         if self.foot_can_enter(id, cell, args, rules, registry)? != 0 {
-            return self.tube_exit_blocked(id, Some(rules), registry, effects);
+            return self.tube_exit_blocked(id, rules, registry, effects);
         }
 
         let out = Self::place_infantry_in_ground_cell(
@@ -791,7 +787,7 @@ impl Simulation {
             &mut self.substrate.entities,
             id,
             exit,
-            Some(rules),
+            rules,
             &self.interner,
         );
         if let Some(actor) = self.substrate.entities.get_mut(id) {
@@ -806,7 +802,7 @@ impl Simulation {
             let on_bridge = actor.on_bridge();
             actor.position.store_cell_level(level, on_bridge);
         }
-        self.foot_force_immediate_destination(id, None, Some(rules), registry, effects)?;
+        self.foot_force_immediate_destination(id, None, rules, registry, effects)?;
         if let Some(locomotor) = self
             .substrate
             .entities
@@ -815,7 +811,7 @@ impl Simulation {
         {
             locomotor.stop_movement_animation();
         }
-        self.foot_mark_put(id, Some(rules), registry, effects);
+        self.foot_mark_put(id, rules, registry, effects);
         if let Some(actor) = self.substrate.entities.get(id) {
             let location = ground_pose::position_world_coord(&actor.position);
             Self::object_raw_receiver_at(
@@ -849,7 +845,7 @@ impl Simulation {
             actor.runtime_bridge_transition.latch();
         }
         bridge_state_changed |= self
-            .per_cell_process(id, PerCellReason::Arrival, Some(rules), registry, effects)
+            .per_cell_process(id, PerCellReason::Arrival, rules, registry, effects)
             .map_err(|error| error.cause)?;
         Ok(bridge_state_changed)
     }
@@ -1109,7 +1105,7 @@ mod tests {
             .unwrap()
             .slope_type = 1;
         let turn = sim
-            .tube_object_turn(1, Some(&rules), None, FrameEffects::default())
+            .tube_object_turn(1, &rules, None, FrameEffects::default())
             .expect("tube turn");
         assert!(turn.per_cell_ran);
         assert_eq!(turn.movement.movers_total, 1);
@@ -1241,7 +1237,7 @@ mod tests {
             .low_bridge_tube_state
             .is_some()
         {
-            sim.tube_object_turn(1, Some(&rules), None, FrameEffects::default())
+            sim.tube_object_turn(1, &rules, None, FrameEffects::default())
                 .expect("tube turn");
             turns += 1;
             assert!(turns < 1000, "the tube's two steps end");
@@ -1369,13 +1365,7 @@ mod tests {
                 z: 0,
             });
         assert_eq!(
-            sim.track_tube_head(
-                1,
-                TrackFamily::Drive,
-                Some(&rules),
-                None,
-                FrameEffects::default()
-            ),
+            sim.track_tube_head(1, TrackFamily::Drive, &rules, None, FrameEffects::default()),
             Ok(true)
         );
         let vehicle = sim.substrate.entities.get(1).unwrap();
@@ -1450,7 +1440,7 @@ mod tests {
             .unwrap()
             .set_in_playfield(false);
         let turn = sim
-            .tube_object_turn(1, Some(&rules), None, FrameEffects::default())
+            .tube_object_turn(1, &rules, None, FrameEffects::default())
             .expect("tube turn");
         assert!(turn.per_cell_ran);
         let vehicle = sim.substrate.entities.get(1).unwrap();

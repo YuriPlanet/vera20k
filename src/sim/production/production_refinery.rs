@@ -207,7 +207,7 @@ fn try_spawn_building_free_unit(
     );
     sim.uninit_with_context(
         free_unit_id,
-        crate::sim::world::UninitContext::new(Some(rules), overlay_registry).with_effects(effects),
+        crate::sim::world::UninitContext::new(rules, overlay_registry).with_effects(effects),
     );
     log::warn!(
         "Completed refinery {} could not place free unit {}; refunded {} to {}",

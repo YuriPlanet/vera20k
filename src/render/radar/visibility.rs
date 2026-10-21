@@ -103,19 +103,60 @@ fn radar_get_height_leptons(
     height
 }
 
+/// `MapClass::IsShrouded @ 0x00586360` for `viewer` at `point`
+/// ([`crate::sim::vision::point_is_shrouded`]), which raises the point by
+/// its height before testing the shroud lattice. A fixture without terrain
+/// tests the flat cell.
+fn radar_point_shrouded(
+    fog: &FogState,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    viewer: InternedId,
+    point: crate::sim::components::DriveCoord,
+) -> bool {
+    match cells {
+        Some(cells) => crate::sim::vision::point_is_shrouded(fog, cells, viewer, point),
+        None => radar_fog_cell_from_leptons(point.x, point.y)
+            .is_none_or(|(rx, ry)| !fog.is_cell_revealed(viewer, rx, ry)),
+    }
+}
+
+/// RenderCellPixel's shroud test (`0x00655D06..0x00655D5B`): IsShrouded
+/// at a radar Cell's centre raised to its floor (`0x00578080`), which is
+/// [`crate::sim::vision::cell_is_shrouded`]. A fixture without terrain
+/// tests the flat cell.
+pub(super) fn radar_cell_shrouded(
+    fog: &FogState,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    viewer: InternedId,
+    cell: (u16, u16),
+) -> bool {
+    match cells {
+        Some(cells) => crate::sim::vision::cell_is_shrouded(fog, cells, viewer, cell),
+        None => !fog.is_cell_revealed(viewer, cell.0, cell.1),
+    }
+}
+
+/// `0x00457117..0x0045714B`: IsShrouded at the Location (`+0x9C`), then at
+/// the Location plus `(dimension - 1)` cells along each foundation axis
+/// (`0x0045EC90` width, `0x0045ECA0` height), at the Location's Z.
 fn radar_building_both_corners_shrouded(
     fog: &FogState,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
     local_owner: InternedId,
-    entity: &crate::sim::game_entity::GameEntity,
+    location: crate::sim::components::DriveCoord,
     foundation: (u32, u32),
 ) -> bool {
-    let origin_shrouded =
-        !fog.is_cell_revealed(local_owner, entity.position.rx(), entity.position.ry());
-    let far_x = i32::from(entity.position.rx()).wrapping_add((foundation.0 as i32).wrapping_sub(1));
-    let far_y = i32::from(entity.position.ry()).wrapping_add((foundation.1 as i32).wrapping_sub(1));
-    let far_shrouded =
-        far_x < 0 || far_y < 0 || !fog.is_cell_revealed(local_owner, far_x as u16, far_y as u16);
-    origin_shrouded && far_shrouded
+    let far = crate::sim::components::DriveCoord {
+        x: location
+            .x
+            .wrapping_add((foundation.0 as i32).wrapping_sub(1).wrapping_mul(256)),
+        y: location
+            .y
+            .wrapping_add((foundation.1 as i32).wrapping_sub(1).wrapping_mul(256)),
+        z: location.z,
+    };
+    radar_point_shrouded(fog, cells, local_owner, location)
+        && radar_point_shrouded(fog, cells, local_owner, far)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -275,8 +316,9 @@ pub(super) fn build_radar_object_update(
     interner: Option<&crate::sim::intern::StringInterner>,
     projection: RadarProjectionFacts,
     playfield_bounds: Option<crate::map::playfield::PlayfieldBounds>,
-    resolved_terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> RadarObjectUpdate {
+    let resolved_terrain = cells.map(crate::map::resolved_terrain::NativeCellQuery::terrain);
     let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
     let object = rules.and_then(|rules| rules.object(type_str));
     let [raw_x, raw_y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
@@ -322,14 +364,16 @@ pub(super) fn build_radar_object_update(
         || local_owner.is_some_and(|local_owner| {
             current_cell.is_some_and(|(rx, ry)| fog.is_cell_revealed(local_owner, rx, ry))
         });
+    // Both bodies test the Location (`+0x9C`), not GetCoords: mobile
+    // `0x0070D30E..0x0070D34B`, Building `0x00457117..0x0045714B`.
+    let location = crate::sim::movement::ground_pose::object_location(entity, resolved_terrain);
     let shrouded = !full_visibility
-        && local_owner.is_some_and(|local_owner| {
-            current_cell.is_none_or(|(rx, ry)| !fog.is_cell_revealed(local_owner, rx, ry))
-        });
+        && local_owner
+            .is_some_and(|local_owner| radar_point_shrouded(fog, cells, local_owner, location));
     let both_corners_shrouded = !full_visibility
         && local_owner.is_some_and(|local_owner| {
             foundation.is_some_and(|foundation| {
-                radar_building_both_corners_shrouded(fog, local_owner, entity, foundation)
+                radar_building_both_corners_shrouded(fog, cells, local_owner, location, foundation)
             })
         });
     let has_sensor = full_visibility
@@ -852,21 +896,82 @@ mod tests {
         let mut entity =
             crate::sim::game_entity::GameEntity::test_default(1, "BLDG", "Enemy", 4, 4);
         entity.type_facts.set_foundation_for_test("3x2".to_string());
+        let location = crate::sim::movement::ground_pose::object_location(&entity, None);
         let mut fog = FogState::default();
         fog.mark_visible_for_owner(local, 6, 5);
         assert!(!radar_building_both_corners_shrouded(
             &fog,
+            None,
             local,
-            &entity,
+            location,
             (3, 2),
         ));
         let fog = FogState::default();
         assert!(radar_building_both_corners_shrouded(
             &fog,
+            None,
             local,
-            &entity,
+            location,
             (3, 2),
         ));
+    }
+
+    /// `0x0070D30E..0x0070D34B` and `0x00457117..0x0045714B` ask
+    /// `MapClass::IsShrouded @ 0x00586360` at the Location, which raises the
+    /// point by its height. On level-4 ground an enemy at (10, 10) is tested
+    /// at (8, 8), and a 2x2 building's far corner (11, 11) at (9, 9).
+    #[test]
+    fn radar_shroud_is_tested_at_the_height_raised_location() {
+        let local = crate::sim::intern::test_intern("Local");
+        let terrain =
+            crate::map::resolved_terrain::test_grid(32, 32, |rx, ry| ResolvedTerrainCell {
+                level: 4,
+                ..flat_cell(rx, ry)
+            });
+        let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(&terrain);
+        let visible = |entity: &crate::sim::game_entity::GameEntity, revealed: &[(u16, u16)]| {
+            let mut fog = FogState::default();
+            for &(rx, ry) in revealed {
+                fog.mark_visible_for_owner(local, rx, ry);
+            }
+            build_radar_object_update(
+                entity,
+                &crate::sim::houses::Houses::default(),
+                Some(local),
+                &fog,
+                &Default::default(),
+                false,
+                true,
+                None,
+                None,
+                visibility_projection(),
+                None,
+                Some(&cells),
+            )
+            .visibility
+            .evaluate(false)
+            .visible
+        };
+
+        let mut unit = crate::sim::game_entity::GameEntity::test_default(1, "DOT", "Enemy", 10, 10);
+        // Standing on its ground: GetHeight (`vt+0x1C8`) is zero.
+        unit.position.set_z_for_test(4);
+        unit.lifecycle.set_in_limbo_for_test(false);
+        assert!(
+            !visible(&unit, &[(10, 10)]),
+            "mapping its own cell leaves a raised unit shrouded"
+        );
+        assert!(visible(&unit, &[(8, 8)]));
+
+        let mut building =
+            crate::sim::game_entity::GameEntity::test_default(2, "BLDG", "Enemy", 10, 10);
+        building.set_category_for_test(EntityCategory::Structure);
+        building
+            .type_facts
+            .set_foundation_for_test("2x2".to_string());
+        building.lifecycle.set_in_limbo_for_test(false);
+        assert!(!visible(&building, &[(10, 10), (11, 11)]));
+        assert!(visible(&building, &[(9, 9)]), "the raised far corner");
     }
 
     /// The radar asks from the current player's house whether an object's
