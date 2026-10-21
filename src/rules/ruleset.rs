@@ -10929,8 +10929,11 @@ Projectile=Invisible
         ))
         .expect("BuildConst whitespace rules");
 
-        assert_eq!(rules.build_const_types, ["GACNST"]);
+        // BuildingType FindOrAllocate (`0x004653C0`) compares whole IDs, so
+        // " NACNST" allocates its own type rather than aliasing NACNST.
+        assert_eq!(rules.build_const_types, ["GACNST", " NACNST"]);
         assert!(rules.object("GACNST").unwrap().build_const_eligible);
+        assert!(rules.object(" NACNST").unwrap().build_const_eligible);
         assert!(
             !rules.object("NACNST").unwrap().build_const_eligible,
             "the internally space-prefixed token must not alias registered NACNST"
@@ -11010,15 +11013,16 @@ Projectile=Invisible
         assert_eq!(rules.build_barracks_types, ["BAR"]);
         assert_eq!(
             rules.build_tech_types,
-            ["TECH"],
-            "the internally space-prefixed token is not individually trimmed"
+            ["TECH", " TECH"],
+            "the internally space-prefixed token is not trimmed; it allocates its own type"
         );
         assert_eq!(rules.build_weapons_types, ["WEAP"]);
         assert_eq!(rules.build_radar_types, ["RAD", "RAD"]);
         assert_eq!(
             rules.harvester_unit_types,
-            ["HARV", "HARV"],
-            "sentinels are omitted, duplicates retained, and a space-prefixed Unit token is unresolved"
+            ["HARV", "HARV", " AUNIT"],
+            "sentinels are omitted, duplicates retained, and a space-prefixed Unit token \
+             allocates its own UnitType (`0x007480D0`)"
         );
         assert!(rules.object("CON").unwrap().build_const_eligible);
         assert!(!rules.object("POISON").unwrap().build_const_eligible);
