@@ -761,9 +761,13 @@ fn gsi_08_11_killing_hits_play_the_types_death_anims() {
 /// same anim from an ordinary type keeps no remap.
 #[test]
 fn a_custom_palette_building_gives_its_destroy_anim_the_palette_scheme() {
+    use crate::assets::asset_manager::{AssetManager, test_support::TestDirectory};
     use crate::sim::anim_class::AnimRemap;
-    let rules = rules();
-    assert_eq!(rules.extra_building_palette(), Some("lib"));
+    let mut rules = rules();
+    let palette_root = TestDirectory::new("destroy-anim-palette");
+    std::fs::write(palette_root.path().join("LIBTEM.PAL"), [0u8; 768]).unwrap();
+    let assets = AssetManager::from_loose_root_for_test(palette_root.path());
+    rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
     let remaps = |kind: &str| {
         let mut sim = sim(5);
         let building = spawn(&mut sim, &rules, kind, 10, 20);
@@ -1656,4 +1660,107 @@ fn a_power_plant_killed_while_selling_outlives_the_blow_until_its_update() {
     assert!(outlives(&sim, plant));
     tick(&mut sim, &rules, &grid);
     assert!(retired(&sim, plant));
+}
+
+/// A retained request must not give DestroyAnim a house remap when the
+/// native group loader would return null (441D25 /6276AA).
+#[test]
+fn palette_binding_missing_file_keeps_destroy_anim_unremapped() {
+    use crate::assets::asset_manager::{AssetManager, test_support::TestDirectory};
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+    let art = IniFile::from_str(ART);
+    let mut layers = RulesLayerStack::new(IniFile::from_str(RULES));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[STATUE]\nImage=EMPTY\n"),
+    );
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let mut registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
+    registry.bind_anim_frame_count_for_test("DESTA", 10);
+    rules.install_art_data(registry);
+    let root = TestDirectory::new("destroy-anim-missing-palette");
+    let assets = AssetManager::from_loose_root_for_test(root.path());
+    rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
+    assert_eq!(
+        rules.object("STATUE").unwrap().custom_palette_name(),
+        Some("lib")
+    );
+    let mut sim = sim(5);
+    let building = spawn(&mut sim, &rules, "STATUE", 10, 20);
+    kill(&mut sim, &rules, building);
+    let remaps: Vec<_> = sim
+        .substrate
+        .anims
+        .iter()
+        .map(|(_, anim)| (sim.interner.resolve(anim.type_id()), anim.remap()))
+        .collect();
+    assert_eq!(remaps, [("DESTA", None)]);
+}
+
+/// Legal original one-successful-group case: A's failed request is retained
+/// through an empty later ART read, while B's valid group must still bind.
+/// A must neither shadow B's body/MAKE palette nor inherit B's DestroyAnim
+/// scheme (717820 null-store,626F47..626F62 loaded-group count,441D25).
+#[test]
+fn palette_binding_failed_request_does_not_shadow_or_inherit_loaded_group() {
+    use crate::assets::asset_manager::{AssetManager, test_support::TestDirectory};
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+    use crate::sim::anim_class::AnimRemap;
+    let root_rules = RULES.replace(
+        "[HALL]\nStrength=100\nDestroyAnim=DESTA",
+        "[HALL]\nStrength=100\nDestroyAnim=DESTA\nImage=MISS",
+    );
+    let art = IniFile::from_str(&format!("{ART}\n[MISS]\nPalette=missing\n[EMPTY]\n"));
+    let mut layers = RulesLayerStack::new(IniFile::from_str(&root_rules));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[HALL]\nImage=EMPTY\n"),
+    );
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let mut registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
+    registry.bind_anim_frame_count_for_test("DESTA", 10);
+    rules.install_art_data(registry);
+    let root = TestDirectory::new("retained-missing-plus-valid-palette");
+    std::fs::write(root.path().join("LIBTEM.PAL"), [0u8; 768]).unwrap();
+    let assets = AssetManager::from_loose_root_for_test(root.path());
+    assert_eq!(rules.object("HALL").unwrap().image, "EMPTY");
+    assert_eq!(
+        rules.object("HALL").unwrap().custom_palette_name(),
+        Some("missing")
+    );
+    assert_eq!(
+        rules.object("STATUE").unwrap().custom_palette_name(),
+        Some("lib")
+    );
+    // The public body/MAKE resolver skips A's missing file and names B's
+    // actual group, instead of a first-request marker shared by every type.
+    let (name, _palette) = rules.load_extra_building_palette(&assets, "tem").unwrap();
+    assert_eq!(name, "lib");
+    rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
+    for (kind, loaded) in [("HALL", false), ("STATUE", true)] {
+        assert_eq!(
+            rules.has_loaded_custom_palette(rules.object(kind).unwrap()),
+            loaded
+        );
+        let mut sim = sim(5);
+        let owner = sim.interner.intern("Americans");
+        let building = spawn(&mut sim, &rules, kind, 10, 20);
+        kill(&mut sim, &rules, building);
+        let remaps: Vec<_> = sim
+            .substrate
+            .anims
+            .iter()
+            .map(|(_, anim)| (sim.interner.resolve(anim.type_id()), anim.remap()))
+            .collect();
+        assert_eq!(
+            remaps,
+            [(
+                "DESTA",
+                loaded.then_some(AnimRemap::ExtraBuildingScheme(owner))
+            )],
+            "{kind}"
+        );
+    }
 }

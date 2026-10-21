@@ -564,8 +564,8 @@ impl Simulation {
                 },
                 0,
             );
-            let follow_up = object
-                .custom_palette
+            let follow_up = rules
+                .has_loaded_custom_palette(object)
                 .then_some(DeathAnimFollowUp::ExtraBuildingRemap(owner));
             self.emit_death_anim(rules, anims, anim, DeathAnimSpawn { follow_up, ..spawn });
         }

@@ -3384,3 +3384,91 @@ fn spotlight_type_flag_retains_the_native_current_default_across_rules_layers() 
             .has_spotlight
     );
 }
+
+/// Control-flow regression for71582B/717820 and the active repeated
+/// ReadTypeData679A10 path; see tools/rules_oracle/techno_palette_binding.md.
+#[test]
+fn palette_binding_survives_image_changes_handoff_and_asset_refresh() {
+    use crate::assets::asset_manager::{AssetManager, test_support::TestDirectory};
+    use crate::rules::{art_data::ArtRegistry, ruleset::RuleSet};
+
+    let art = IniFile::from_str("[FIRST]\nPalette= LiB \n[EMPTY]\nPalette= \n");
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[BuildingTypes]\n0=TYPE\n[TYPE]\nImage=FIRST\nStrength=10\n",
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[TYPE]\nImage=EMPTY\n"),
+    );
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    let (_, trace) = processed.into_ini_and_native_type_construction_trace();
+    let state = trace.into_registry_state_discarding_events();
+    let state = save_codec::deserialize(&save_codec::serialize(&state).unwrap()).unwrap();
+    // No [TYPE] in this further pass: it must not reread its final Image.
+    let continued = RulesLayerStack::new(IniFile::empty())
+        .process_with_fixed_art_and_registry_state(&art, state)
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&continued).unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    assert_eq!(rules.object("TYPE").unwrap().image, "EMPTY");
+    assert_eq!(
+        rules.object("TYPE").unwrap().custom_palette_name(),
+        Some("lib")
+    );
+
+    let root = TestDirectory::new("palette-binding-refresh");
+    let assets = AssetManager::from_loose_root_for_test(root.path());
+    rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
+    assert!(!rules.has_loaded_custom_palette(rules.object("TYPE").unwrap()));
+    assert!(rules.load_extra_building_palette(&assets, "tem").is_none());
+    std::fs::write(root.path().join("LIBTEM.PAL"), [0u8; 768]).unwrap();
+    let assets = AssetManager::from_loose_root_for_test(root.path());
+    rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
+    assert!(rules.has_loaded_custom_palette(rules.object("TYPE").unwrap()));
+    assert!(rules.load_extra_building_palette(&assets, "tem").is_some());
+    // A new theater binding replaces the entire capability catalog.
+    rules.bind_effect_assets(&assets, "sno", "SNOW");
+    assert!(!rules.has_loaded_custom_palette(rules.object("TYPE").unwrap()));
+
+    let (_, trace) = continued.into_ini_and_native_type_construction_trace();
+    let reset = RulesLayerStack::new(IniFile::from_str(
+        "[BuildingTypes]\n0=TYPE\n[TYPE]\nImage=EMPTY\nStrength=10\n",
+    ))
+    .process_with_fixed_art_and_registry_state(
+        &art,
+        trace
+            .into_registry_state_discarding_events()
+            .destructive_reset(),
+    )
+    .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&reset).unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    assert_eq!(rules.object("TYPE").unwrap().custom_palette_name(), None);
+}
+
+#[test]
+fn palette_binding_requires_a_reached_type_read_and_replaces_nonempty_names() {
+    use crate::rules::{art_data::ArtRegistry, ruleset::RuleSet};
+    let art = IniFile::from_str(
+        "[FIRST]\nPalette=one\n[SECOND]\nPalette=none\n[UNREAD]\nPalette=orphan\n",
+    );
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[BuildingTypes]\n0=TYPE\n1=UNREAD\n[TYPE]\nImage=FIRST\nStrength=10\n",
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[TYPE]\nImage=SECOND\n"),
+    );
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    // Installation cannot run a second Palette reader, even with a different
+    // ART snapshot or with a constructor-only [UNREAD] entry in that snapshot.
+    rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str(
+        "[SECOND]\nPalette=wrong\n[UNREAD]\nPalette=orphan\n",
+    )));
+    assert_eq!(
+        rules.object("TYPE").unwrap().custom_palette_name(),
+        Some("none")
+    );
+    assert_eq!(rules.object("UNREAD").unwrap().custom_palette_name(), None);
+}

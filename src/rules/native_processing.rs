@@ -2964,6 +2964,14 @@ pub(crate) struct TechnoTypeReferences {
     /// over a copy of the retained text, which starts as the type's ID. It
     /// names the type's fixed ART section and its asset.
     image: String,
+    /// Last nonempty fixed ART Palette request bound by717820. Constructor
+    /// store711680 clears DF0;71582B reads DD0 with empty default/capacity32.
+    ///717820..71783E keeps DF0 on an empty read, and otherwise replaces it
+    /// with6263D0's answer. Asset resolution, not this request, proves load
+    /// success (627590 returns null for a missing file). See
+    /// tools/rules_oracle/techno_palette_binding.md.
+    #[serde(default)]
+    palette_binding: Option<String>,
     /// `DeathWeapon=` (+D18): TechnoType ReadINI `0x007122D8..0x00712311`
     /// over the constructor's null (`0x007114AE`).
     death_weapon: Option<String>,
@@ -3020,6 +3028,7 @@ impl TechnoTypeReferences {
     fn new(native_stored_id: &str) -> Self {
         Self {
             image: native_stored_id.to_owned(),
+            palette_binding: None,
             death_weapon: None,
             debris_types: Vec::new(),
             debris_anims: Vec::new(),
@@ -3049,6 +3058,7 @@ impl TechnoTypeReferences {
     /// stored IDs.
     pub(crate) fn apply_to(&self, object: &mut crate::rules::object_type::ObjectType) {
         object.image.clone_from(&self.image);
+        object.project_custom_palette(self.palette_binding.as_deref());
         object.death_weapon.clone_from(&self.death_weapon);
         object.debris_types.clone_from(&self.debris_types);
         object.debris_anims.clone_from(&self.debris_anims);
@@ -4769,6 +4779,16 @@ impl RulesPassProcessor {
                 let references = &mut self.family_mut(family)[index].techno_references;
                 let image = raw.read_string("Image", &references.image, 0x19);
                 references.image.clone_from(&image);
+                // ReadINI712170 reaches715852 on every admitted Rules layer,
+                // after ObjectType's Image read. Empty/missing Palette keeps
+                // the previous binding even when this pass changes Image.
+                // A missing Rules [Type] never reaches this block (712194).
+                if let Some(name) = fixed_art
+                    .section_or_empty(&image)
+                    .read_name("Palette", 0x20)
+                {
+                    references.palette_binding = Some(name.to_ascii_lowercase());
+                }
                 let member = &mut self.families.get_mut(&family).unwrap()[index];
                 member.voxel_shadow_index = fixed_art
                     .section_or_empty(&image)

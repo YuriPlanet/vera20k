@@ -955,8 +955,8 @@ pub(crate) enum SpritePaletteChoice {
     CellIso,
     /// BulletClass's ordinary global Convert, independent of the theater.
     Bullet,
-    /// The extra building palette (`RuleSet::extra_building_palette`) for the
-    /// active theater.
+    /// The selected successfully loaded extra building palette for the
+    /// active theater (`RuleSet::load_extra_building_palette`).
     ExtraBuilding,
 }
 
@@ -994,22 +994,6 @@ pub(crate) fn sprite_palette_choice(
     } else {
         SpritePaletteChoice::Unit
     }
-}
-
-/// The extra building palette for the active theater, or `None` without one.
-/// ColorScheme__GeneratePalette (`0x006263D0`, `0x00627590`) loads it as
-/// `<name><theater suffix>.PAL` (the suffix at `+0x4E` of the theater rows
-/// from `0x007E1B78`), uppercased, each byte shifted left by 2, and builds
-/// every `[Colors]` scheme on it. Without the file `+0xDF0` stays null and the
-/// ordinary scheme draws.
-fn load_extra_building_palette(
-    asset_manager: &AssetManager,
-    rules: Option<&RuleSet>,
-    theater_ext: &str,
-) -> Option<Palette> {
-    let name = rules?.extra_building_palette()?;
-    let data = asset_manager.get_ref(&format!("{name}{theater_ext}.pal"))?;
-    Palette::from_bytes(data).ok()
 }
 
 /// `extra_palette_type_ids` holds the custom-palette TechnoTypes, `None` when
@@ -1931,7 +1915,8 @@ pub fn build_sprite_atlas(
 
     // BuildingType TerrainPalette (004612B4, DrawSHP 00705EC7) has the same
     // palette owner as cell-drawer animations. Resolve the rules Image alias.
-    let extra_palette = load_extra_building_palette(asset_manager, rules, theater_ext);
+    let extra_palette =
+        rules.and_then(|rules| rules.load_extra_building_palette(asset_manager, theater_ext));
     let mut cell_palette_type_ids = cell_drawer_type_ids.clone();
     let mut extra_palette_type_ids = HashSet::new();
     let new_types: HashSet<&str> = new_keys.iter().map(|key| key.type_id.as_str()).collect();
@@ -1945,7 +1930,14 @@ pub fn build_sprite_atlas(
         {
             cell_palette_type_ids.insert(type_id.to_ascii_uppercase());
         }
-        if object.is_some_and(|o| o.custom_palette) {
+        if object
+            .and_then(|o| o.custom_palette_name())
+            .is_some_and(|name| {
+                extra_palette
+                    .as_ref()
+                    .is_some_and(|(loaded, _)| name == *loaded)
+            })
+        {
             extra_palette_type_ids.insert(type_id.to_ascii_uppercase());
         }
     }
@@ -2040,7 +2032,7 @@ pub fn build_sprite_atlas(
                 bullet_palette.as_ref().expect("bullet palette validated")
             }
             SpritePaletteChoice::ExtraBuilding => {
-                extra_palette.as_ref().expect("chosen only when loaded")
+                &extra_palette.as_ref().expect("chosen only when loaded").1
             }
         };
         // 0x00627590 builds each scheme with ColorScheme's constructor

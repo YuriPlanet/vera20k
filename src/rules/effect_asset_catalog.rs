@@ -1,4 +1,8 @@
-//! GPU-independent SHP frame counts used by authoritative match systems.
+//! GPU-independent effect assets used by authoritative match systems.
+//!
+//! Besides SHP frame counts, the catalog admits the loaded custom palette
+//! capability used by original Building DestroyAnim remapping. A rules request
+//! alone cannot substitute for the native loader's non-null group.
 //!
 //! The renderer may consume this catalog when deciding which effect frames to
 //! make resident, but it is not the source of the counts. Binding happens from
@@ -21,17 +25,22 @@ pub struct EffectAssetFrameCounts {
     available: u16,
 }
 
-/// Deterministic match input derived from particle image SHPs.
+/// Deterministic match input derived from effect SHPs and palette availability.
 ///
 /// Keys are trimmed, uppercase asset IDs. A `BTreeMap` is deliberate: binding
 /// and hashing must not inherit `HashMap`'s process-random iteration order.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct EffectAssetCatalog {
     entries: BTreeMap<String, EffectAssetFrameCounts>,
+    /// Selected successfully loaded singleton group, derived from retained
+    /// type requests and the active assets/theater. Rebuilt with this entire
+    /// catalog; None until resources bind. Other failed requests do not gain
+    /// this group's capability merely because one type loaded it.
+    extra_building_palette_name: Option<String>,
 }
 
 impl EffectAssetCatalog {
-    /// Bind every particle image root.
+    /// Bind every particle image root and the singleton custom palette capability.
     ///
     /// Missing or malformed assets are optional at this layer: the entry is
     /// omitted after a warning and each simulation consumer retains its
@@ -44,7 +53,12 @@ impl EffectAssetCatalog {
         theater_ext: &str,
         theater_name: &str,
     ) -> Self {
-        let mut catalog = Self::default();
+        let mut catalog = Self {
+            extra_building_palette_name: rules
+                .load_extra_building_palette(asset_manager, theater_ext)
+                .map(|(name, _palette)| name.to_owned()),
+            ..Self::default()
+        };
 
         for name in authoritative_effect_roots(rules) {
             let image_id = rules.art().resolve_effective_image_id(&name, &name);
@@ -85,6 +99,10 @@ impl EffectAssetCatalog {
         }
 
         catalog
+    }
+
+    pub(crate) fn loaded_extra_building_palette_name(&self) -> Option<&str> {
+        self.extra_building_palette_name.as_deref()
     }
 
     /// Consumer-visible frame count (particle image timing).

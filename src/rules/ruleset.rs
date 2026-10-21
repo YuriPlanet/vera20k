@@ -4156,12 +4156,6 @@ pub struct RuleSet {
     /// active AssetManager with effect assets. Gameplay and rendering share
     /// the GPU-independent physical model loader.
     voxel_assets: crate::rules::voxel_asset_catalog::VoxelAssetCatalog,
-    /// The one TechnoType custom palette name (art `Palette=`, lowercase,
-    /// without theater suffix or `.pal`). gamemd keeps one generated palette
-    /// per name and exits when a second exists ("only one extra building
-    /// palette", `0x00715857..0x00715871`), so every type with
-    /// `ObjectType::custom_palette` shares it. Projected from ART.
-    extra_building_palette: Option<String>,
     /// Every building type's construction control from its Buildup SHP,
     /// bound once from the active assets (`bind_building_buildup_assets`).
     buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog,
@@ -5458,7 +5452,6 @@ impl RuleSet {
                 .collect(),
             effect_assets: crate::rules::effect_asset_catalog::EffectAssetCatalog::default(),
             voxel_assets: crate::rules::voxel_asset_catalog::VoxelAssetCatalog::default(),
-            extra_building_palette: None,
             buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog::default(),
             rubble_assets: crate::rules::building_rubble::RubbleAssetCatalog::default(),
             terrain_spawner_assets:
@@ -5837,11 +5830,34 @@ impl RuleSet {
         self.source_ini_hash
     }
 
-    /// The one TechnoType custom palette name, lowercase, without theater
-    /// suffix or `.pal`; every type with `ObjectType::custom_palette` draws
-    /// from it (`TechnoClass::GetRemapColour @ 0x00705D70`).
-    pub fn extra_building_palette(&self) -> Option<&str> {
-        self.extra_building_palette.as_deref()
+    /// Resolve the original singleton's first successfully loaded retained
+    /// request, returning the binding identity with its palette. A failed
+    /// request must not shadow another type's valid group:626DA0 counts
+    /// non-null groups (626F47..626F62), not request names. This covers the
+    /// legal one-successful-group path; multiple successful groups and cache
+    /// history retain the documented compatibility-policy residual.
+    /// Shared by the client atlas and authoritative effect-asset binding.
+    pub fn load_extra_building_palette(
+        &self,
+        assets: &crate::assets::asset_manager::AssetManager,
+        theater_ext: &str,
+    ) -> Option<(&str, crate::assets::pal_file::Palette)> {
+        self.object_list.iter().find_map(|object| {
+            let name = object.custom_palette_name()?;
+            let data = assets.get_ref(&format!("{name}{theater_ext}.pal"))?;
+            crate::assets::pal_file::Palette::from_bytes(data)
+                .ok()
+                .map(|palette| (name, palette))
+        })
+    }
+
+    /// Building441D25 tests this type's actual DF0 group, not DD0 text or
+    /// whether an unrelated type loaded a palette. The immutable asset owner
+    /// records the selected successful name for the active scenario/theater.
+    pub(crate) fn has_loaded_custom_palette(&self, object: &ObjectType) -> bool {
+        object.custom_palette_name().is_some_and(|name| {
+            self.effect_assets.loaded_extra_building_palette_name() == Some(name)
+        })
     }
 
     /// Compatibility identity for processed rules plus the resolved animation,
@@ -6044,11 +6060,10 @@ impl RuleSet {
         // palette type's DestroyAnim its scheme (0x00441D2F).
         self.object_list
             .iter()
-            .filter(|o| o.custom_palette)
-            .map(|o| &o.id)
+            .filter(|o| o.custom_palette_name().is_some())
+            .map(|o| (&o.id, o.custom_palette_name()))
             .collect::<Vec<_>>()
             .hash(&mut hasher);
-        self.extra_building_palette.hash(&mut hasher);
         self.general.default_mirage_disguises.hash(&mut hasher);
         self.general.infantry_disguises.hash(&mut hasher);
         if self
@@ -7230,7 +7245,6 @@ impl RuleSet {
         let mut buildings_checked: u32 = 0;
         let mut infantry_checked: u32 = 0;
         let mut crawls_patched: u32 = 0;
-        self.extra_building_palette = None;
         for obj in self.object_list.iter_mut() {
             // Resolve the art.ini section: use Image= override if present,
             // otherwise fall back to the object ID itself.
@@ -7239,20 +7253,6 @@ impl RuleSet {
             // Every TechnoType's ReadINI reads CanBeHidden from the ART
             // section of its own ID (0x007121EB); art is not layered.
             obj.can_be_hidden = art.can_be_hidden(&obj.id);
-            // ...and Palette= from its ImageFile's section (0x0071582B).
-            let palette = art.techno_palette(art_key);
-            obj.custom_palette = palette.is_some();
-            if let Some(name) = palette {
-                match &self.extra_building_palette {
-                    None => self.extra_building_palette = Some(name.to_owned()),
-                    Some(first) if first != name => log::error!(
-                        "[{}] Palette={name}: gamemd allows one extra building palette \
-                         and exits; Palette={first} is kept",
-                        obj.id
-                    ),
-                    Some(_) => {}
-                }
-            }
             if obj.category == crate::rules::object_type::ObjectCategory::Infantry {
                 infantry_checked += 1;
                 if let Some(entry) = entry {

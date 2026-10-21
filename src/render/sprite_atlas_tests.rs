@@ -1642,21 +1642,21 @@ fn retail_statue_bakes_against_the_theater_lib_palette() {
     let rules = &battle.rules;
     let (_, assets) = crate::rules::retail_ini_fixture::retail_assets()
         .expect("Battle rules came from the explicit retail install");
-    assert_eq!(rules.extra_building_palette(), Some("lib"));
     let custom: Vec<&str> = rules
         .all_objects()
-        .filter(|o| o.custom_palette)
+        .filter(|o| o.custom_palette_name().is_some())
         .map(|o| o.id.as_str())
         .collect();
     assert_eq!(custom, ["CANEWY04"]);
     for suffix in ["tem", "sno", "urb", "des", "ubn", "lun"] {
         assert!(
-            load_extra_building_palette(&assets, Some(rules), suffix).is_some(),
+            rules.load_extra_building_palette(&assets, suffix).is_some(),
             "LIB{suffix}.PAL"
         );
     }
 
-    let lib = load_extra_building_palette(&assets, Some(rules), "ubn").unwrap();
+    let (name, lib) = rules.load_extra_building_palette(&assets, "ubn").unwrap();
+    assert_eq!(name, "lib");
     assert_eq!(
         lib.to_rgba_bytes(),
         Palette::from_bytes(assets.get_ref("LIBUBN.PAL").unwrap())

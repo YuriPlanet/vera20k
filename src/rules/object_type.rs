@@ -1907,13 +1907,11 @@ pub struct ObjectType {
     /// Gates the Behind indicator (`TechnoClass::AI_Update @ 0x006FA2A2`).
     pub can_be_hidden: bool,
 
-    /// Whether the type draws from the scenario's extra building palette
-    /// ([`RuleSet::extra_building_palette`](crate::rules::ruleset::RuleSet::extra_building_palette)):
-    /// art `Palette=` named one, so ReadINI (`0x00715852`, `0x00717820`)
-    /// pointed `+0xDF0` at its generated colour schemes. Set by
-    /// `RuleSet::project_art_data` from
-    /// [`ArtRegistry::techno_palette`](crate::rules::art_data::ArtRegistry::techno_palette).
-    pub custom_palette: bool,
+    /// Last nonempty Palette request from the reached TechnoType ReadINI
+    /// passes. This is binding metadata, not proof that its asset loaded:
+    /// native717820 stores null if6263D0 cannot load the named group.
+    /// The registered type's Image/reference owner supplies this projection.
+    custom_palette: Option<String>,
 
     /// `RevealToAll=` (TechnoType `+0x5EE`): constructor `0x00710FFC` writes
     /// false; ReadINI (`0x00714382..0x00714396`) reads it with ReadBool
@@ -2221,6 +2219,16 @@ impl ObjectType {
         {
             false
         }
+    }
+
+    /// Retained custom palette request; the asset loader remains responsible
+    /// for resolving it. Empty ART Palette reads retain this name (717820).
+    pub fn custom_palette_name(&self) -> Option<&str> {
+        self.custom_palette.as_deref()
+    }
+
+    pub(crate) fn project_custom_palette(&mut self, name: Option<&str>) {
+        self.custom_palette = name.map(str::to_owned);
     }
 
     #[cfg(feature = "ares")]
@@ -3476,7 +3484,7 @@ impl ObjectType {
             is_selectable_combatant: section.read_bool("IsSelectableCombatant", false),
             // The constructor's value; ART supplies the key (`project_art_data`).
             can_be_hidden: true,
-            custom_palette: false,
+            custom_palette: None,
             reveal_to_all: section.read_bool("RevealToAll", false),
 
             // Naval flags
