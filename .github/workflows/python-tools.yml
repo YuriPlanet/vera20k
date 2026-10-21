@@ -18,5 +18,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r tools/requirements-test.txt
+      # test_cargo_run resolves the locked dependency graph offline from Cargo's cache.
+      - run: cargo fetch --locked
       - run: python -m tools.run_tests
       - run: python tools/skill_sync.py --check

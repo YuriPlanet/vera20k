@@ -6,11 +6,10 @@ Synthetic object/cell/house state is the input. Original 565730/5657A0/578080,
 addresses and cell-query inputs; it never changes registers, memory or control.
 This is a post-commit probe oracle, not an upstream trajectory oracle.
 """
-import hashlib
 import itertools
 import sys
 from pathlib import Path
-from tools.native_oracle import NATIVE_FPCW, image_bytes, finish_vectors, provenance
+from tools.native_oracle import NATIVE_FPCW, finish_vectors, provenance
 from .collision_fixture import shared_probe, line_walk
 
 
@@ -45,7 +44,7 @@ def generate():
     cases.append(dict(on_bridge=True, flak=True, candidate=[640, 640, 415], target=dict(coord=[640, 640, 415])))
     cases.append(dict(candidate=[640, 640, 0], target=dict(on_bridge=True)))
     rows = [shared_probe(case) for case in cases]
-    output = dict(sha256=hashlib.sha256(image_bytes()).hexdigest(), fpcw=NATIVE_FPCW, hooks='observation only', cases=rows)
+    output = dict(fpcw=NATIVE_FPCW, hooks='observation only', cases=rows)
     return output
 
 
@@ -81,8 +80,7 @@ def generate_line_walk():
         dict(name='cliff_first_rise', source_coord=[128, 640, 501], target_coord=[1408, 640, -502], cliffs=True, cells={'2,2': dict(level=4)}),
         dict(name='shared_dummy_endpoints', source_coord=[-640, 640, 5], target_coord=[2432, 640, -6], cliffs=True),
     ]
-    return dict(sha256=hashlib.sha256(image_bytes()).hexdigest(), fpcw=NATIVE_FPCW,
-                hooks='observation only', cases=[line_walk(case) for case in cases])
+    return dict(fpcw=NATIVE_FPCW, hooks='observation only', cases=[line_walk(case) for case in cases])
 
 
 def line_walk_metadata():

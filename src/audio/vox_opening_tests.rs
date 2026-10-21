@@ -88,7 +88,9 @@ fn dispatch(queue: &mut VoxQueue, registry: &EvaRegistry, step: &Value) -> Queue
         .unwrap();
     assert_eq!(call["type_override"], 2);
     assert_eq!(call["priority_override"], -1);
-    queue.set_side(step["before"]["side"].as_i64().unwrap() as i32);
+    // This fixture seeds the process cache image, not Scenario.Side or
+    // a SetSide call (the Ares binder has separate native controls).
+    queue.selected_voice = step["before"]["side"].as_i64().unwrap() as i32;
     let index = call["index"].as_i64().unwrap() as i32;
     let effect = registry
         .entry_by_index(index)

@@ -58,9 +58,9 @@ Exactly executed:
   1/255/INT_MAX return true. Positive controls do not establish arming.
 
 The output JSON SHA256 is
-`4d0a3ada14fe6c5fa8f4a09ae0ca69c718d08fabdede4a68c10b0f4b5c959f25`;
+`580c4898a1e3b6451e82e4ad110778cd17b3d002173381bc1fa4ce4386cbe711`;
 canonical payload SHA256 is
-`4b626e9d985af5714681fd6838bdda958a458128a97eadc0ca7609d2a1f55fc2`.
+`8c773ac05df6ee49e26d83eebe097591c57c09af406357f442949a3c4b2282a2`.
 The executable rows establish the bounded gates/defaults above; the successful
 per-resident effect below is established by original instruction reading.
 

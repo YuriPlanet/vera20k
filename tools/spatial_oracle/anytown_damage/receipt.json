@@ -23,35 +23,6 @@
       }
     }
   },
-  "dependencies": {
-    "tools/native_oracle.py": "79dac1057d97e706f106a26145f00fa220d92c172b5173876c60fed22c17530c",
-    "tools/native_slope.py": "737b8294db419d298d362029825a255ae70df9945bef4c8b588369a53eaf13de",
-    "tools/projectile_oracle/bridge_render_inputs.py": "4bfc6d80d7cd0d75f3db0123bb646011b6706f9195a8c1137e0f397941bff9e4",
-    "tools/projectile_oracle/flat_art.py": "2f663fbb2b8c88925dd8aa46e8be9216d580ec033bac3e08a138bcd0b272b7c6",
-    "tools/projectile_oracle/guided_step.py": "66862363b6ada9a83f71645f8d2f1684984bde8cd35cb52091607d40427e528e",
-    "tools/rmg_oracle/gen_rng_vectors.py": "bac5dde765d07d3f522b7281a21a8527869f5d4da59eb385e7f9fed7493775a2",
-    "tools/rules_oracle/bridge_anim_inputs.py": "f7f2941e11bbede50ffab19554a789e4e3e42f4969b04ad4e9697973e659d316",
-    "tools/rules_oracle/bridge_anim_lists.py": "2a7a96ea1e24f1129161e8fe5608c0ab69ac584ee6ad78fa91c43bd3ad072045",
-    "tools/rules_oracle/bridge_child_sound.py": "ea32c11dbb9f1ee1aeb3cdc1069605658ca100d864e90dacb3cd5bfe8f01c350",
-    "tools/rules_oracle/bridge_landing_inputs.py": "489e7999c957edfc1141d6ca8b5d72e36e570cb4065b2f208564875ed81174e5",
-    "tools/rules_oracle/theater_general_reader.py": "a466f2d5d94e5f4d8908bed0a97c69cf2aeb2d9356694d0af107491349e7afbd",
-    "tools/sidebar_oracle/stock.py": "62b855dba1836bf484bb6c112b9249003ff4427c3004a1ef3d95c3aac985ba9b",
-    "tools/spatial_oracle/__init__.py": "d2b8761741eec0f99f145b6b84c9efbe5e91a8d08b59b83ef67bef54c75f0415",
-    "tools/spatial_oracle/bridge_rim.py": "4227c24dcd27ea44a2de55a866057b1accffee8106c5029dedf0171b776fa32b",
-    "tools/spatial_oracle/building_body_rules.py": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
-    "tools/spatial_oracle/map_queries.py": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305",
-    "tools/spatial_oracle/mapgen_range.py": "df39b5ab3a2450c98dfa749a67826d5cb87f9d73086dc2511ff3261906724eef",
-    "tools/spatial_oracle/naval_occupants.py": "95979c94da43df23f8d582a662d0269f0151c3f4ce926bae3a8b40167f1b36f5",
-    "tools/spatial_oracle/shrapnel_repair/__init__.py": "181c307c7f2f1767bee7fc8812eb72698df94241d26c669526254bf13084e003",
-    "tools/spatial_oracle/shrapnel_repair/hierarchy_composition.py": "a545496a5203c56d02dfed6d37da792c0f261b26db6b128db4ea57b9acc19ac0",
-    "tools/spatial_oracle/shrapnel_repair/map_facts.py": "8fec739ee85c0110096180ae7c7712ad96e5191752ec9362dc3d9eb21e5d6768",
-    "tools/spatial_oracle/shrapnel_repair/packet_io.py": "80d7a5dd328c47c9fe453d0048c5ae116feef741220537f1d1dc4e587387b865",
-    "tools/spatial_oracle/shrapnel_repair/production_inputs.py": "0e29a8c5bac7eb2f6f8819e6d54b2959045f3205e4930c162e96e479bef76289",
-    "tools/spatial_oracle/shrapnel_repair/retail_inputs.py": "5386be531deb221b2abf0a06cf46371937a3134fd4fdde142a7d20fc97691400",
-    "tools/spatial_oracle/shrapnel_repair/shrapnel_repair.py": "766d30e22188ef36c66a940eb4546ad52e025fa80e80c864a9644a1a4662b27c",
-    "tools/spatial_oracle/shrapnel_repair/validate_packet.py": "52ec7ec8d9b126b5d4bde9055b18618165240c39d27420c56d458fc7cc5260d4",
-    "tools/spatial_oracle/shrapnel_repair/zone_composition.py": "0eb3b38561c804dd4bfbbfdb3e858babd2e9a1c2214f296eedfe6447901db73e"
-  },
   "external_inputs": {
     "VERA20K_ANYTOWN_INPUTS": {
       "120mm.shp": {
@@ -157,148 +128,53 @@
       }
     }
   },
-  "historical_identity_changes": {
-    "hut_cursor_receipt.json": {
-      "hut_cursor.meta.json": {
-        "current_sha256": "5775f1f9068b9ed3c3c1ed658f76555adbb3497d17c1e745ebab1705209d4ba0",
-        "historical_sha256": "19f468c77abd0c585a19609043cbb480d364dfd11e0b68cb020070052d3caa87"
-      },
-      "hut_cursor.py": {
-        "current_sha256": "79b8ddad3a2a14f97248d93f14518c44d09012b1f496d6dd8f485acd77044729",
-        "historical_sha256": "52875c3734ad1b7422f1399f8e6baad0f8f14430520bf98c00ae9a62c651d5e9"
-      },
-      "tools/native_oracle.py": {
-        "current_sha256": "79dac1057d97e706f106a26145f00fa220d92c172b5173876c60fed22c17530c",
-        "historical_sha256": "f3f58e1a15a4fd3be9e3bc2030819f079ab9155bdb08833e228c1c661445e51e"
-      },
-      "tools/spatial_oracle/anytown_damage/hut_cursor.py": {
-        "current_sha256": "79b8ddad3a2a14f97248d93f14518c44d09012b1f496d6dd8f485acd77044729",
-        "historical_sha256": "52875c3734ad1b7422f1399f8e6baad0f8f14430520bf98c00ae9a62c651d5e9"
-      },
-      "tools/spatial_oracle/anytown_damage/validate_packet.py": {
-        "current_sha256": "abec26974d5e4a336ba45223b2ffa169921e7951b31ce5ef69b82467009b8b3a",
-        "historical_sha256": "cec57a1afbc65fb05ce2f3c8059ceb7d5c66c5315f616db7bfc834cc93e6b6f0"
-      }
-    },
-    "hut_receipt.json": {
-      "hut.meta.json": {
-        "current_sha256": "ce250a97664740a935601eff957d8163ebe37e7ff731694f4f22fb487b99ce91",
-        "historical_sha256": "0d57ea0a8e9664db005748a6c28fc3d581c16eeae1dca60ddd44d06a42196ae8"
-      },
-      "hut.py": {
-        "current_sha256": "9cc81f6889c2e132fca9ccf1fb98c768da221947bc0d2d213de11c6466b5093b",
-        "historical_sha256": "000950121c307d77867148f5dd1f023b7dcc0236022d142117c82fe923f98435"
-      },
-      "tools/native_oracle.py": {
-        "current_sha256": "79dac1057d97e706f106a26145f00fa220d92c172b5173876c60fed22c17530c",
-        "historical_sha256": "f3f58e1a15a4fd3be9e3bc2030819f079ab9155bdb08833e228c1c661445e51e"
-      },
-      "tools/spatial_oracle/anytown_damage/hut.py": {
-        "current_sha256": "9cc81f6889c2e132fca9ccf1fb98c768da221947bc0d2d213de11c6466b5093b",
-        "historical_sha256": "000950121c307d77867148f5dd1f023b7dcc0236022d142117c82fe923f98435"
-      },
-      "tools/spatial_oracle/anytown_damage/validate_packet.py": {
-        "current_sha256": "abec26974d5e4a336ba45223b2ffa169921e7951b31ce5ef69b82467009b8b3a",
-        "historical_sha256": "cec57a1afbc65fb05ce2f3c8059ceb7d5c66c5315f616db7bfc834cc93e6b6f0"
-      }
-    },
-    "mission_receipt.json": {
-      "tools/native_oracle.py": {
-        "current_sha256": "79dac1057d97e706f106a26145f00fa220d92c172b5173876c60fed22c17530c",
-        "historical_sha256": "f3f58e1a15a4fd3be9e3bc2030819f079ab9155bdb08833e228c1c661445e51e"
-      },
-      "tools/projectile_oracle/ordinary_collision.py": {
-        "current_sha256": "3dbbd6691f56cf4c8546f58317799169f7d52ea7741ebbfcec52390c97f01cf6",
-        "historical_sha256": "5e0a862ae8e0169de9d2a7051a4152f9f757c2721f2d6b7f87a38fb84cbb77a3"
-      },
-      "tools/spatial_oracle/anytown_damage/mtnk_attack.py": {
-        "current_sha256": "c8c7d363b4b73fbf3593a2838e96f994b95c09da6db2375b17ddf23fdb907bd8",
-        "historical_sha256": "a167202ae128a3242ee4ff136aa74c603e9f627da7a5b94ce3b61f2c4fe31113"
-      }
-    },
-    "navigation_receipt.json": {
-      "tools/native_oracle.py": {
-        "current_sha256": "79dac1057d97e706f106a26145f00fa220d92c172b5173876c60fed22c17530c",
-        "historical_sha256": "f3f58e1a15a4fd3be9e3bc2030819f079ab9155bdb08833e228c1c661445e51e"
-      }
-    }
-  },
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "owned": {
-    "README.md": "d5eae40390f77aa47e77bb620bc6cb21dd3a33cb8880ba0346787de3f8957c73",
-    "__init__.py": "5cca8aa87d9e3c1c8ff349b7a2c105a2bdfbce58bb13acae9fbda5645ef8c66a",
     "anytown_admission.json.gz": "f54a757f89ec6542e9de8fe96cbc80ade5fdb883436fedab06bcf404c11a9851",
-    "anytown_admission.meta.json": "74abc0acd8fafc4f3735bd6d5dba327adb72da2cdea20e1e1dd993476c73318d",
-    "anytown_admission.py": "71bee216e7b05e8371fa6e6be33276c300e5722c0bde160294a82474299fb01d",
+    "anytown_admission.meta.json": "84487ac21987d3f34ddb52b16cdec501784ca9267bfed774177e8726b35658fb",
     "anytown_geometry.json.gz": "5f517ae7b60a0d6928577e1ff4b4c548fe3a68c1d7139570fd1de62a12184a4f",
-    "anytown_geometry.meta.json": "1297092cbdaa730cad344403d2fb4afd2f2a405dbec97e3824eb08a15fd0a001",
-    "anytown_geometry.py": "012d148f0299bfa6aee589070fb87bfb8ad14ebd09cdc30c3b22bf11df562e69",
-    "anytown_occupants.json.gz": "cbbdcb37bf3eb340a036fd13cedd18c1b568f309a10a37f3d64954f5239520ab",
-    "anytown_occupants.meta.json": "3e4f59bea857d6ba3d4a4aa6809f8a177a1eec00f177bd146fe49a36b4afaa8c",
-    "anytown_occupants.py": "9c6568395dff1c36fbcecc567bb698f9ba13b5551ec5b9592562ba271cf77778",
+    "anytown_geometry.meta.json": "05f81f34c5751a6535bb4447973eb7f9fb57aa36deaf031ed2d51b07de126787",
+    "anytown_occupants.json.gz": "696b24143884bed7770758c8d37b80ad61f53f0041a4e295a8ef09a8494ab05f",
+    "anytown_occupants.meta.json": "385c22fdbbfc6cdd7cbf7ff310670562c04624b5d2cbfc753ed6911ec5c1d034",
     "anytown_resident.json.gz": "a7ec3411940bded3acb5e24874b73565d64ccdb8c7e1a852cc78a6f747783e37",
-    "anytown_resident.meta.json": "54c29c9dc78bb6c8c7d8be41b8b2a48298fb26bfa0b6694f45b2a389d4af3d63",
-    "anytown_resident.py": "a3fd84ea7a7d038014fac37ebda4e72609f06662619506722fd11318b9d7f285",
-    "hut.json.gz": "624dface5dfb18ce8f517879c0dd1ced7b5cb24881cdbb2702b31899aa62b06f",
-    "hut.md": "114367c3c27e04fb79a2f12dbbbeef4292aef76fcb3264df8b8b18b24c4fa23c",
-    "hut.meta.json": "ce250a97664740a935601eff957d8163ebe37e7ff731694f4f22fb487b99ce91",
-    "hut.py": "9cc81f6889c2e132fca9ccf1fb98c768da221947bc0d2d213de11c6466b5093b",
-    "hut_callsite_bytes.json": "dd1210b17a429b1fefde113f12ddc74e2d95e23e9c961e5e1998c04fe7cf9bba",
-    "hut_cursor.json.gz": "6b98261d5685e82bdd103cbfcd1b000dda37cf534bf172d0620fe96fa31d9aa4",
-    "hut_cursor.md": "e438363bdbde6acb489d5f0322fe3e3db783b2fac089cc1d2ca34df35be01325",
-    "hut_cursor.meta.json": "5775f1f9068b9ed3c3c1ed658f76555adbb3497d17c1e745ebab1705209d4ba0",
-    "hut_cursor.py": "79b8ddad3a2a14f97248d93f14518c44d09012b1f496d6dd8f485acd77044729",
-    "hut_cursor_native_bytes.json": "70763ad54713244975a668ecba9c34e5e64d431de54ab4fde9d95adc3ba9429c",
-    "hut_cursor_promotion.json": "dbb5b28b7f6e5ab42867305d2823c88460ba2303ad64bc2f654a42c0edfdaac7",
-    "hut_cursor_receipt.json": "e943bd41886981d29b0e5a8603e48ac4fcd404c64fcf8d1b829c784bd31cfe60",
-    "hut_cursor_summary.json.gz": "d0cc4c79eb57a4e4f13ddcaa9eb1d49a06378d575bd29e282a051000377c7d89",
-    "hut_promotion.json": "8519a2f8335746a09d83bfdf11a35d80cd80d7d0d824d6551f44c864feb7a98f",
-    "hut_publication.py": "ea7f83f536586f6d2e22351af4cdb007ddc707b6698ef3e6dd13e64382fd2c0f",
-    "hut_receipt.json": "d13b69da178676fbcbdc2edf587445ff8545317bb634d012b6a81a484f2f60a5",
-    "hut_summary.json.gz": "d35da0044074ffbd6376315540df63a8732ec4523b04b7cf7832cccf069c2a19",
-    "hut_test_vectors.json": "b9f7fd6921bb04fd4bc29f54babf9ef04a7560dff1c6c1c632f2a0274aacfab4",
-    "hut_test_vectors.meta.json": "bd082a1ac67599f6ceee78876352ee2b512920057fa967f23bea8b3fd319a2d2",
-    "hut_test_vectors.py": "d4bf8a42414b011a27ab778af251bf00b21b1ed80c29ea868cfc6a835db23cf5",
-    "inputs.py": "c3e1732837e85deb628f04862aaab8cf72dc3e8ba2804ce55db5dc46f2a68f25",
-    "mission.json.gz": "baf23f248ac724807b76f3102fee89bbf698dfe49dea1677047abc002be2a04f",
-    "mission.md": "8274d8f8c5a293fa6a92384a91f143b57fac868dbda4d469700ff8c6376242c2",
-    "mission.meta.json": "5f16fe12f478e89a016dfec28611570af06664094f0a53acf7f6725970ee16ac",
-    "mission.py": "4c0ebd785de2a39bc832f2a5365b81e613fdc1d3ffb651f06252b0563f953b9a",
+    "anytown_resident.meta.json": "bd53eadc3726388ea87b61f86a567d257f2ac1927f080908e81ac0e47ff367f1",
+    "hut.json.gz": "17a323bb9b789eb5ba13538022b66cc8ab4913aadb7e52eaeeb4c38d6aa4728d",
+    "hut.meta.json": "6cc56a9943bdfa89f15056649226f820f1cf3b74bcac556c0e261c4ac26705a8",
+    "hut_callsite_bytes.json": "b50c5a48dc7fb4321d7891c83216620be1b46e1de4a1747f4c8cea9aab61aa48",
+    "hut_cursor.json.gz": "fac4a648591ebb05f7dfcb70909c34a3d495b3ade1e03e2214ecaf36f0febb0e",
+    "hut_cursor.meta.json": "41b5882b4fe784bfa36031f64c7ca19fd0f4cbce1dffd0b6225c06a73815485e",
+    "hut_cursor_native_bytes.json": "d66fa60941918ed6f0c818b8933abb6e0f5eacb5b376e429391aed0bf8c12c57",
+    "hut_cursor_promotion.json": "39982ea12621dbde47e8da0627fac8d7e8f778f6e4b855df66ede127fbf96580",
+    "hut_cursor_receipt.json": "f444cd837fac33b63145e2b41f93fbd734206aae4d5ace72e1b5bf670efb1887",
+    "hut_cursor_summary.json.gz": "9edca6fe53ba79c9638984d1f00caa6a7f1d9069396b9de52f3b2e3c3f452ead",
+    "hut_promotion.json": "9b6bbbfc28cef65808a29a6f1ab1860e7743dcee0b1a67ffeebca73bd76aa888",
+    "hut_receipt.json": "b345099b6d3be049bbecd0323a84aeae03e9826a1e8ca59ac6f2e273df2a7804",
+    "hut_summary.json.gz": "ff5eb5a40970493f00f6a4e18a9895fb54d427ddeef313fcae946a280c61090a",
+    "hut_test_vectors.json": "d759c132c069a2561d26b1c9410ec2b14419b07713c0f27d47f5cba5de1095d6",
+    "hut_test_vectors.meta.json": "32d65c0a032be12c9e3f6765d8b62a8b4d7c1293f26a3706e996c6f127b83ad4",
+    "mission.json.gz": "aee14fed26c792155254fd3e845364fd2794810534bc0cb5bc1c689e8dffdab2",
+    "mission.meta.json": "939b30d66e5f1fcdb1088531a73e611ec285547a197575f074d3f59a6b970566",
     "mission_counter.input.json": "3ca42781e1b1e8385dabfa52170b625678c5be4231247ff8e300bcc4bf9ccdc8",
-    "mission_counter.json": "699a738930e8936a6544e6a873617246d2453852c88668c46184fe1eeb0a193c",
-    "mission_counter.meta.json": "a866f05ca0be41a0d0d3edde20855d2c4358f86f9100a364a90cb1d12961e21a",
-    "mission_counter.py": "6ad38e9778339909671173c1303d7a7ede089b29cc2ac44e2636ed86fda69922",
+    "mission_counter.json": "2687d98a2320e6ed60ffd1a2e2fc6337eb755b7d7856274386db800f75c08219",
+    "mission_counter.meta.json": "d860f8c8d95de3328cd8528446261aafb9d59d2b2422922346e04c2aebb68d9f",
     "mission_interleaving.input.json": "602ae9d3b9e686956bc542ef6f23276fee5f6f781fa44f9e2d939c47ba9e544b",
-    "mission_interleaving.json": "50c90949811e283202d40b2c1b8c0b15f0e200cabad8031d173f541d28f1100e",
-    "mission_interleaving.meta.json": "ef977df0af9293f907c4e858eb2b34eb8c5732f6071a21512e6ceb2ee9440a5f",
-    "mission_interleaving.py": "55397c7d0f2b22e75b18147ed5647a8d846e4698828dafba48cea5be94dbfc77",
-    "mission_promotion.json": "c2fab9ab3c87e5418a250344a67c6889dd696051cd246d1b03456929df818ce2",
-    "mission_publication.py": "658212dba467967a1d2673b96279f45303c5ebc1c2d00033a6a01f49d3938f3e",
-    "mission_receipt.json": "5e40a9904c9709eee8ac153507ec5c1e228f3c54cf9362e85369871202938550",
-    "mission_test_vectors.json": "8934ab7c34d8738f8db6ff2bd0068ef14eb0874c4077cd89b74de3b944dfc32b",
-    "mission_test_vectors.meta.json": "a6d236ac67a8c5c4ecc98c311f860b6b179bbe70bdbc5b78e08167c88c7ed8cd",
-    "mission_test_vectors.py": "cdd796ded427c8258be5fee51505bdb75992c3a3d5c93f898789248f12afc521",
-    "mtnk_attack.json.gz": "026569a44e60b1646066331faa60319d5d685b987c2507bea0921e5d07823280",
-    "mtnk_attack.meta.json": "ad1f9035a567953f500b34753b6b8dee4fb146e877d63c495a42a2dffe51a2fe",
-    "mtnk_attack.py": "c8c7d363b4b73fbf3593a2838e96f994b95c09da6db2375b17ddf23fdb907bd8",
+    "mission_interleaving.json": "cd67898d886cbd17def5add8b22cc934dc4fda6c5cf8ebe08734bdd9d36f118e",
+    "mission_interleaving.meta.json": "37de6c99984fb0bd9775cc4f1230b6181d07173e0cc4f6f0622976264e5bec05",
+    "mission_promotion.json": "3160e6371ef4688325ab72f85827442828891eaf840960cdeff240c91d95899a",
+    "mission_receipt.json": "e2f81d67c3c503b66720e3aa4ebe565e54088522f32d928531e883f287b04c81",
+    "mission_test_vectors.json": "4cdfaeafa94c4fcb3fa71adbd7d24c2df944f9fe53fdf325224b4dcd79947d2d",
+    "mission_test_vectors.meta.json": "e7423c07e41fc520d302ed120d63c11d89796a70eb614c8408a150a32ccf8422",
+    "mtnk_attack.json.gz": "3d35416870916e8577386c90188fd0b34755fc9f69f445ac0e59d47deadee1b2",
+    "mtnk_attack.meta.json": "dc8b138bc90a4a8b1493aff3df3984268dfa538f214639dfc002ba13f805f12f",
     "navigation.json.gz": "a2197179f0818a7b2c231c8956601b2269df164db04e05d856b99db380a15d35",
-    "navigation.md": "7dbedf55a3141ba06e182d77ae68d62c406410c1258f804ff3545d4514c1f303",
-    "navigation.meta.json": "3c68495e6af0b8dfbd8284ea397c70fd7f232e8d3721a8ab8ab4e481f837e992",
-    "navigation.py": "2d60a0ff6e1febb46542361c849a96a8cc9b9384783d5bab09b339560c2c7cbd",
-    "navigation_compare.py": "8bf700547df8a1e6deba099edfeb492ce48d07b187157ac261040bbd826f2cca",
+    "navigation.meta.json": "fa906c5ce86aab3c4975280cfc8c98f94cd9764c040afd1a992fba376a828561",
     "navigation_comparison.json": "35df6a325ec9b85b5d461554bb93e45248666290e24c4bf759326b82d6f6be5f",
-    "navigation_inputs.py": "aba234d20bd320102832b69c2a3a15a7f3ebcb131e4a5ab7b715c2bfe931e705",
-    "navigation_promotion.json": "5fe250b70786cb80f517ad799101fc47274052c928fd441b0d0dc3718f5d5098",
-    "navigation_publication.py": "4d6d09e465e67bf3ed3415495f1efee7f51f069f8c762f53dbc7cb437be91211",
-    "navigation_receipt.json": "37d080655c909cb1b30daf2864573f74f70cc14042c3d214cd3f7a5a47954220",
+    "navigation_promotion.json": "45cbb90245a6c0b431ab9f2a186fd8655243b0212d77d35a45866c801d50ab6b",
+    "navigation_receipt.json": "40c2df2b9103751e2e23be1d18964ed442bcea34d1b250666dfdeb9701678668",
     "next_family_native.json.gz": "0f6c0ad83e8922bdb1cdb2cd47934263f03dec74a9984dec6ad0ea764cbf5220",
-    "next_family_native.meta.json": "2dab18534a84c1d62beb8973ff1c8a8dd4ec8f559622d6ece44bf36b38c081d8",
-    "next_family_native.py": "b5545ca21bc1b678335dfe74f0eda02b3af4f013d37a965529243c0d170b8881",
-    "promotion.json": "d273aff7456ed9616d104b6e11f78c0f7785d4a9a8574f4447a95124b38d9505",
-    "publication.py": "9331a5cc2c46ff487774b898918f267df740347dcb1745b23364703f9e24d650",
-    "retail_manifest.json": "5e8059c02cdbe854d2f549cf4caa40beff4fcdf2cf6d63bd7c7825023439ee67",
-    "validate_packet.py": "abec26974d5e4a336ba45223b2ffa169921e7951b31ce5ef69b82467009b8b3a",
-    "validation.json": "043fecb9d0bd4e46d64eceb562855653162ef95d1cca9bce222f3a14e4859990"
+    "next_family_native.meta.json": "e872ce09d4d5f7a472711388dfa5e9bb0f9e5ed15c1b2389b5af682454c49e67",
+    "promotion.json": "474fd0a893f3853d7c67b014bdf9e1459ffbaca55728c9a7b4f834d11d0247c4",
+    "retail_manifest.json": "195228947bb6da8c1b6add6fc4565d91c94caa6494389997f034002ba10b64a0",
+    "validation.json": "8d350c2ff2d510cbaacdc0791be08e9b9714533badeb79004e9f80090af5a10a"
   },
   "projections": [
     "tools.spatial_oracle.anytown_damage.hut_test_vectors",
@@ -318,13 +194,7 @@
     "tools.spatial_oracle.anytown_damage.mission_counter",
     "tools.spatial_oracle.anytown_damage.mission_interleaving"
   ],
-  "runtime": {
-    "capstone": "5.0.7",
-    "lzo_version": 8352,
-    "python_requires": ">=3.10",
-    "unicorn": "2.1.4"
-  },
   "schema": 2,
   "scope": "Native family identity, damage/repair geometry, selected Recalc, admission, MTNK occupants/Detach, host-scheduled FireAt/flight/impact, full physical Anytown navigation builders/updates, bounded concrete hut sweeps and physical concrete repair-cursor queries, original live MTNK command/Logic continuation, counter ordering and selected v8 first-shot RNG interleaving. Saved navigation production comparison covers loaded/first-damaged/collapsed and repaired states. Mission evidence excludes other-world scheduling except recorded v8 Terrain Next prefixes; no ordinary movement/head, full hut lifecycle or whole-bridge parity claim.",
-  "validation": "--refresh-receipt stages twelve native witnesses and two Rust projections, requires unchanged payloads and evidence metadata, then publishes only source-identity sidecars and this receipt. Ten compressed witnesses guard their original unprojected payload and lexical-input projection. The v7 counter comparison guards its frozen original projection; v8 interleaving checks original execution against recorded production inputs. All modes guard historical artifacts and pin their receipt bytes. Historical source/metadata drift is recorded without rewriting those original commands or claims. Current active sources are pinned separately; two Rust projections are checked. Manifest-only is read-only, skips native execution and does not repeat the saved navigation production comparison."
+  "validation": "--refresh-receipt stages twelve native witnesses and two Rust projections, requires unchanged payloads and sidecar evidence, then publishes only their sidecars and this receipt. Ten compressed witnesses guard their original unprojected payload and lexical-input projection. The v7 counter comparison guards its frozen original projection; v8 interleaving checks original execution against recorded production inputs. All modes guard historical artifacts and pin their receipt bytes. Earlier receipts keep their original commands and claims; two Rust projections are checked. Manifest-only is read-only, skips native execution and does not repeat the saved navigation production comparison."
 }

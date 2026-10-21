@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- VERA20k's app icon: the "V3" of the V3RA20K wordmark in lavender chrome
+       on a stormy purple tile. Original art, free of any game art. The tile
+       fills macOS's icon grid (824 px with 185 px corners on a 1024 px canvas),
+       so macOS draws it as a standard app icon. .github/release/macos/app.sh
+       renders it with sips at each size macOS uses. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8273d6"/>
+      <stop offset="0.5" stop-color="#4a3d98"/>
+      <stop offset="1" stop-color="#221a48"/>
+    </linearGradient>
+    <radialGradient id="light" cx="0.3" cy="0.18" r="0.62">
+      <stop offset="0" stop-color="#e2dbff" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#e2dbff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.46" stop-color="#e6e0ff"/>
+      <stop offset="0.5" stop-color="#b9adf0"/>
+      <stop offset="0.53" stop-color="#a596e4"/>
+      <stop offset="1" stop-color="#f1edff"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.5"/>
+      <stop offset="0.35" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="tile"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="16"/></filter>
+    <filter id="haze" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="40"/></filter>
+    <path id="v" d="M232 347H312L377 537L442 347H522L409 677H345Z"/>
+    <path id="three" d="M556 347H731A60 60 0 0 1 791 407V617A60 60 0 0 1 731 677H556V601H711V550H626V474H711V423H556Z"/>
+  </defs>
+  <rect x="100" y="114" width="824" height="824" rx="185" fill="#000" fill-opacity="0.45" filter="url(#soft)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#sky)"/>
+  <g clip-path="url(#tile)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#light)"/>
+    <ellipse cx="560" cy="300" rx="520" ry="70" transform="rotate(-24 560 300)" fill="#120c2a" fill-opacity="0.45" filter="url(#haze)"/>
+    <ellipse cx="420" cy="860" rx="560" ry="110" fill="#0e0a22" fill-opacity="0.5" filter="url(#haze)"/>
+  </g>
+  <g transform="translate(0 14)" fill="#0d0820" fill-opacity="0.55" filter="url(#soft)">
+    <use href="#v"/><use href="#three"/>
+  </g>
+  <g fill="url(#chrome)">
+    <use href="#v"/><use href="#three"/>
+  </g>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="url(#rim)" stroke-width="3"/>
+</svg>

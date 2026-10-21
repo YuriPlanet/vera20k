@@ -141,7 +141,7 @@ impl Simulation {
         };
         if entity.category() != crate::map::entities::EntityCategory::Structure
             || !object.infantry_absorb
-            || object.extra_power <= 0
+            || object.extra_power.output() <= 0
             || !entity.building_art.actually_placed
             || entity.in_construction_bstate()
         {

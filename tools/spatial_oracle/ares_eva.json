@@ -1,0 +1,1019 @@
+{
+  "read_bind": {
+    "controls": [
+      {
+        "continuation": "0075319F",
+        "event_names": [
+          "EVA_TEST",
+          "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+        ],
+        "input": {
+          "DialogList": {
+            "0": "EVA_TEST",
+            "1": "eva_test",
+            "2": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+          },
+          "EVATypes": {
+            "0": "Allied",
+            "1": "VoiceA",
+            "2": "Russian",
+            "3": "vOICEa",
+            "4": "VoiceB",
+            "5": "Yuri",
+            "6": "",
+            "7": "VoiceA",
+            "8": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+          },
+          "EVA_TEST": {
+            "Allied": "STOCK_A",
+            "Russian": "STOCK_R",
+            "VoiceA": "AbCdEf123456789XYZTAIL",
+            "VoiceB": "EXTRA_B",
+            "Yuri": "STOCK_Y"
+          }
+        },
+        "kind": "registration",
+        "tags": [
+          "VoiceA",
+          "VoiceB",
+          "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+        ]
+      },
+      {
+        "kind": "extra_columns",
+        "return_value": 0,
+        "samples": [
+          "AbCdEf12",
+          "EXTRA_B",
+          ""
+        ]
+      },
+      {
+        "filename": "STOCK_A",
+        "kind": "filename",
+        "voice_index": 0
+      },
+      {
+        "filename": "STOCK_R",
+        "kind": "filename",
+        "voice_index": 1
+      },
+      {
+        "filename": "STOCK_Y",
+        "kind": "filename",
+        "voice_index": 2
+      },
+      {
+        "filename": "AbCdEf12",
+        "kind": "filename",
+        "voice_index": 3
+      },
+      {
+        "filename": "EXTRA_B",
+        "kind": "filename",
+        "voice_index": 4
+      },
+      {
+        "filename": "",
+        "kind": "filename",
+        "voice_index": -1
+      },
+      {
+        "filename": "",
+        "kind": "filename",
+        "voice_index": -2
+      },
+      {
+        "filename": "",
+        "kind": "filename",
+        "voice_index": 6
+      },
+      {
+        "constructor_voice_index": -1,
+        "id": "GDI",
+        "kind": "side_default",
+        "voice_index": 0
+      },
+      {
+        "constructor_voice_index": -1,
+        "id": "Nod",
+        "kind": "side_default",
+        "voice_index": 1
+      },
+      {
+        "constructor_voice_index": -1,
+        "id": "ThirdSide",
+        "kind": "side_default",
+        "voice_index": 2
+      },
+      {
+        "constructor_voice_index": -1,
+        "id": "SyntheticSide",
+        "kind": "side_default",
+        "voice_index": 0
+      },
+      {
+        "continuation": "00000000",
+        "has_sides_section": false,
+        "kind": "side_load_all",
+        "sides": [
+          "GDI",
+          "Nod",
+          "ThirdSide",
+          "SyntheticSide",
+          null
+        ],
+        "visits": [
+          {
+            "ini_is_current": true,
+            "side_id": "GDI"
+          },
+          {
+            "ini_is_current": true,
+            "side_id": "Nod"
+          },
+          {
+            "ini_is_current": true,
+            "side_id": "ThirdSide"
+          },
+          {
+            "ini_is_current": true,
+            "side_id": "SyntheticSide"
+          }
+        ]
+      },
+      {
+        "final_phase": 2,
+        "final_voice_index": 0,
+        "initial_phase": 0,
+        "initial_voice_index": 4,
+        "kind": "side_phase_dispatch",
+        "reader_visits": [
+          {
+            "phase": 1,
+            "voice_index": 0
+          }
+        ]
+      },
+      {
+        "final_phase": 2,
+        "final_voice_index": 4,
+        "initial_phase": 1,
+        "initial_voice_index": 4,
+        "kind": "side_phase_dispatch",
+        "reader_visits": [
+          {
+            "phase": 1,
+            "voice_index": 4
+          }
+        ]
+      },
+      {
+        "final_phase": 2,
+        "final_voice_index": 4,
+        "initial_phase": 2,
+        "initial_voice_index": 4,
+        "kind": "side_phase_dispatch",
+        "reader_visits": [
+          {
+            "phase": 2,
+            "voice_index": 4
+          }
+        ]
+      },
+      {
+        "final_phase": -1,
+        "final_voice_index": 4,
+        "initial_phase": -1,
+        "initial_voice_index": 4,
+        "kind": "side_phase_dispatch",
+        "reader_visits": []
+      },
+      {
+        "final_phase": 3,
+        "final_voice_index": 4,
+        "initial_phase": 3,
+        "initial_voice_index": 4,
+        "kind": "side_phase_dispatch",
+        "reader_visits": []
+      },
+      {
+        "bound": 0,
+        "cache_after_read": 6,
+        "cache_before_read": 6,
+        "cache_writes": [
+          {
+            "phase": "side_read_and_bind",
+            "value": 0,
+            "writer": "1002FB38"
+          }
+        ],
+        "continuation": "007534F3",
+        "filename": "STOCK_A",
+        "input": null,
+        "kind": "side_read_and_bind",
+        "prior": 0,
+        "resolved": 0,
+        "side_index": 3
+      },
+      {
+        "bound": 3,
+        "cache_after_read": 0,
+        "cache_before_read": 0,
+        "cache_writes": [
+          {
+            "phase": "side_read_and_bind",
+            "value": 3,
+            "writer": "1002FB38"
+          }
+        ],
+        "continuation": "007534F3",
+        "filename": "AbCdEf12",
+        "input": "vOICEa",
+        "kind": "side_read_and_bind",
+        "prior": 0,
+        "resolved": 3,
+        "side_index": 3
+      },
+      {
+        "bound": 3,
+        "cache_after_read": 3,
+        "cache_before_read": 3,
+        "cache_writes": [
+          {
+            "phase": "side_read_and_bind",
+            "value": 3,
+            "writer": "1002FB38"
+          }
+        ],
+        "continuation": "007534F3",
+        "filename": "AbCdEf12",
+        "input": "",
+        "kind": "side_read_and_bind",
+        "prior": 3,
+        "resolved": 3,
+        "side_index": 3
+      },
+      {
+        "bound": 3,
+        "cache_after_read": 3,
+        "cache_before_read": 3,
+        "cache_writes": [
+          {
+            "phase": "side_read_and_bind",
+            "value": 3,
+            "writer": "1002FB38"
+          }
+        ],
+        "continuation": "007534F3",
+        "filename": "AbCdEf12",
+        "input": "unknown",
+        "kind": "side_read_and_bind",
+        "prior": 3,
+        "resolved": 3,
+        "side_index": 3
+      },
+      {
+        "bound": -1,
+        "cache_after_read": 3,
+        "cache_before_read": 3,
+        "cache_writes": [
+          {
+            "phase": "side_read_and_bind",
+            "value": -1,
+            "writer": "1002FB38"
+          }
+        ],
+        "continuation": "007534F3",
+        "filename": "",
+        "input": "<none>",
+        "kind": "side_read_and_bind",
+        "prior": 3,
+        "resolved": -1,
+        "side_index": 3
+      },
+      {
+        "bound": 1,
+        "cache_after_read": -1,
+        "cache_before_read": -1,
+        "cache_writes": [
+          {
+            "phase": "side_read_and_bind",
+            "value": 1,
+            "writer": "1002FB38"
+          }
+        ],
+        "continuation": "007534F3",
+        "filename": "STOCK_R",
+        "input": "rUSsian",
+        "kind": "side_read_and_bind",
+        "prior": -1,
+        "resolved": 1,
+        "side_index": 3
+      },
+      {
+        "bound": 4,
+        "cache_after_read": 1,
+        "cache_before_read": 1,
+        "cache_writes": [
+          {
+            "phase": "side_read_and_bind",
+            "value": 4,
+            "writer": "1002FB38"
+          }
+        ],
+        "continuation": "007534F3",
+        "filename": "EXTRA_B",
+        "input": "VoiceB",
+        "kind": "side_read_and_bind",
+        "prior": 1,
+        "resolved": 4,
+        "side_index": 3
+      },
+      {
+        "bound": 0,
+        "cache_writes": [
+          {
+            "phase": "set_side",
+            "value": 0,
+            "writer": "1002FB38"
+          }
+        ],
+        "continuation": "007534F3",
+        "filename": "STOCK_A",
+        "kind": "set_side",
+        "prior": 4,
+        "side_index": 0
+      },
+      {
+        "bound": 1,
+        "cache_writes": [
+          {
+            "phase": "set_side",
+            "value": 1,
+            "writer": "1002FB38"
+          }
+        ],
+        "continuation": "007534F3",
+        "filename": "STOCK_R",
+        "kind": "set_side",
+        "prior": 0,
+        "side_index": 1
+      },
+      {
+        "bound": 2,
+        "cache_writes": [
+          {
+            "phase": "set_side",
+            "value": 2,
+            "writer": "1002FB38"
+          }
+        ],
+        "continuation": "007534F3",
+        "filename": "STOCK_Y",
+        "kind": "set_side",
+        "prior": 1,
+        "side_index": 2
+      },
+      {
+        "bound": 2,
+        "cache_writes": [],
+        "continuation": "007534F3",
+        "filename": "STOCK_Y",
+        "kind": "set_side",
+        "prior": 2,
+        "side_index": 4
+      },
+      {
+        "bound": -1,
+        "cache_writes": [
+          {
+            "phase": "set_side",
+            "value": -1,
+            "writer": "1002FB0B"
+          }
+        ],
+        "continuation": "007534F3",
+        "filename": "",
+        "kind": "set_side",
+        "prior": 2,
+        "side_index": -1
+      },
+      {
+        "input": {
+          "EVA_TEST": {
+            "VoiceB": "SECOND12345"
+          }
+        },
+        "kind": "extra_columns_reread",
+        "samples": [
+          "",
+          "SECOND12",
+          ""
+        ]
+      },
+      {
+        "event_count": 2,
+        "input": {
+          "EVATypes": {
+            "0": "VoiceB",
+            "1": "VoiceA",
+            "2": "voiceb"
+          }
+        },
+        "kind": "catalog_reregister",
+        "tags": [
+          "VoiceB",
+          "VoiceA"
+        ]
+      },
+      {
+        "input": "none",
+        "kind": "none_tag_precedence",
+        "prior": 2,
+        "registered": false,
+        "resolved": -1,
+        "tags": [
+          "VoiceB",
+          "VoiceA"
+        ]
+      },
+      {
+        "input": "<none>",
+        "kind": "none_tag_precedence",
+        "prior": 2,
+        "registered": false,
+        "resolved": -1,
+        "tags": [
+          "VoiceB",
+          "VoiceA"
+        ]
+      },
+      {
+        "input": "none",
+        "kind": "none_tag_precedence",
+        "prior": 2,
+        "registered": true,
+        "resolved": 3,
+        "tags": [
+          "none",
+          "<none>"
+        ]
+      },
+      {
+        "input": "<none>",
+        "kind": "none_tag_precedence",
+        "prior": 2,
+        "registered": true,
+        "resolved": 4,
+        "tags": [
+          "none",
+          "<none>"
+        ]
+      }
+    ],
+    "native_reads": [
+      {
+        "capacity": 200,
+        "default": "",
+        "key": "0",
+        "length": 6,
+        "output": "Allied",
+        "section": "EVATypes"
+      },
+      {
+        "capacity": 200,
+        "default": "",
+        "key": "1",
+        "length": 6,
+        "output": "VoiceA",
+        "section": "EVATypes"
+      },
+      {
+        "capacity": 200,
+        "default": "",
+        "key": "2",
+        "length": 7,
+        "output": "Russian",
+        "section": "EVATypes"
+      },
+      {
+        "capacity": 200,
+        "default": "",
+        "key": "3",
+        "length": 6,
+        "output": "vOICEa",
+        "section": "EVATypes"
+      },
+      {
+        "capacity": 200,
+        "default": "",
+        "key": "4",
+        "length": 6,
+        "output": "VoiceB",
+        "section": "EVATypes"
+      },
+      {
+        "capacity": 200,
+        "default": "",
+        "key": "5",
+        "length": 4,
+        "output": "Yuri",
+        "section": "EVATypes"
+      },
+      {
+        "capacity": 200,
+        "default": "",
+        "key": "6",
+        "length": 0,
+        "output": "",
+        "section": "EVATypes"
+      },
+      {
+        "capacity": 200,
+        "default": "",
+        "key": "7",
+        "length": 6,
+        "output": "VoiceA",
+        "section": "EVATypes"
+      },
+      {
+        "capacity": 200,
+        "default": "",
+        "key": "8",
+        "length": 199,
+        "output": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "section": "EVATypes"
+      },
+      {
+        "capacity": 40,
+        "default": "",
+        "key": "0",
+        "length": 8,
+        "output": "EVA_TEST",
+        "section": "DialogList"
+      },
+      {
+        "capacity": 500,
+        "default": "",
+        "key": "Type",
+        "length": 0,
+        "output": "",
+        "section": "EVA_TEST"
+      },
+      {
+        "capacity": 500,
+        "default": "",
+        "key": "Priority",
+        "length": 0,
+        "output": "",
+        "section": "EVA_TEST"
+      },
+      {
+        "capacity": 500,
+        "default": "",
+        "key": "Yuri",
+        "length": 7,
+        "output": "STOCK_Y",
+        "section": "EVA_TEST"
+      },
+      {
+        "capacity": 500,
+        "default": "",
+        "key": "Russian",
+        "length": 7,
+        "output": "STOCK_R",
+        "section": "EVA_TEST"
+      },
+      {
+        "capacity": 500,
+        "default": "",
+        "key": "Allied",
+        "length": 7,
+        "output": "STOCK_A",
+        "section": "EVA_TEST"
+      },
+      {
+        "capacity": 40,
+        "default": "",
+        "key": "1",
+        "length": 8,
+        "output": "eva_test",
+        "section": "DialogList"
+      },
+      {
+        "capacity": 500,
+        "default": "",
+        "key": "Type",
+        "length": 0,
+        "output": "",
+        "section": "EVA_TEST"
+      },
+      {
+        "capacity": 500,
+        "default": "",
+        "key": "Priority",
+        "length": 0,
+        "output": "",
+        "section": "EVA_TEST"
+      },
+      {
+        "capacity": 500,
+        "default": "",
+        "key": "Yuri",
+        "length": 7,
+        "output": "STOCK_Y",
+        "section": "EVA_TEST"
+      },
+      {
+        "capacity": 500,
+        "default": "",
+        "key": "Russian",
+        "length": 7,
+        "output": "STOCK_R",
+        "section": "EVA_TEST"
+      },
+      {
+        "capacity": 500,
+        "default": "",
+        "key": "Allied",
+        "length": 7,
+        "output": "STOCK_A",
+        "section": "EVA_TEST"
+      },
+      {
+        "capacity": 40,
+        "default": "",
+        "key": "2",
+        "length": 39,
+        "output": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+        "section": "DialogList"
+      },
+      {
+        "capacity": 16,
+        "default": "",
+        "key": "VoiceA",
+        "length": 15,
+        "output": "AbCdEf123456789",
+        "section": "EVA_TEST"
+      },
+      {
+        "capacity": 16,
+        "default": "",
+        "key": "VoiceB",
+        "length": 7,
+        "output": "EXTRA_B",
+        "section": "EVA_TEST"
+      },
+      {
+        "capacity": 16,
+        "default": "",
+        "key": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "length": 0,
+        "output": "",
+        "section": "EVA_TEST"
+      },
+      {
+        "capacity": 2048,
+        "default": "",
+        "key": "EVA.Tag",
+        "length": 0,
+        "output": "",
+        "section": "SyntheticSide"
+      },
+      {
+        "capacity": 2048,
+        "default": "",
+        "key": "EVA.Tag",
+        "length": 6,
+        "output": "vOICEa",
+        "section": "SyntheticSide"
+      },
+      {
+        "capacity": 2048,
+        "default": "",
+        "key": "EVA.Tag",
+        "length": 0,
+        "output": "",
+        "section": "SyntheticSide"
+      },
+      {
+        "capacity": 2048,
+        "default": "",
+        "key": "EVA.Tag",
+        "length": 7,
+        "output": "unknown",
+        "section": "SyntheticSide"
+      },
+      {
+        "capacity": 2048,
+        "default": "",
+        "key": "EVA.Tag",
+        "length": 6,
+        "output": "<none>",
+        "section": "SyntheticSide"
+      },
+      {
+        "capacity": 2048,
+        "default": "",
+        "key": "EVA.Tag",
+        "length": 7,
+        "output": "rUSsian",
+        "section": "SyntheticSide"
+      },
+      {
+        "capacity": 2048,
+        "default": "",
+        "key": "EVA.Tag",
+        "length": 6,
+        "output": "VoiceB",
+        "section": "SyntheticSide"
+      },
+      {
+        "capacity": 16,
+        "default": "",
+        "key": "VoiceA",
+        "length": 0,
+        "output": "",
+        "section": "EVA_TEST"
+      },
+      {
+        "capacity": 16,
+        "default": "",
+        "key": "VoiceB",
+        "length": 11,
+        "output": "SECOND12345",
+        "section": "EVA_TEST"
+      },
+      {
+        "capacity": 16,
+        "default": "",
+        "key": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "length": 0,
+        "output": "",
+        "section": "EVA_TEST"
+      },
+      {
+        "capacity": 200,
+        "default": "",
+        "key": "0",
+        "length": 6,
+        "output": "VoiceB",
+        "section": "EVATypes"
+      },
+      {
+        "capacity": 200,
+        "default": "",
+        "key": "1",
+        "length": 6,
+        "output": "VoiceA",
+        "section": "EVATypes"
+      },
+      {
+        "capacity": 200,
+        "default": "",
+        "key": "2",
+        "length": 6,
+        "output": "voiceb",
+        "section": "EVATypes"
+      },
+      {
+        "capacity": 2048,
+        "default": "",
+        "key": "EVA.Tag",
+        "length": 4,
+        "output": "none",
+        "section": "SyntheticSide"
+      },
+      {
+        "capacity": 2048,
+        "default": "",
+        "key": "EVA.Tag",
+        "length": 6,
+        "output": "<none>",
+        "section": "SyntheticSide"
+      },
+      {
+        "capacity": 200,
+        "default": "",
+        "key": "0",
+        "length": 4,
+        "output": "none",
+        "section": "EVATypes"
+      },
+      {
+        "capacity": 200,
+        "default": "",
+        "key": "1",
+        "length": 6,
+        "output": "<none>",
+        "section": "EVATypes"
+      },
+      {
+        "capacity": 2048,
+        "default": "",
+        "key": "EVA.Tag",
+        "length": 4,
+        "output": "none",
+        "section": "SyntheticSide"
+      },
+      {
+        "capacity": 2048,
+        "default": "",
+        "key": "EVA.Tag",
+        "length": 6,
+        "output": "<none>",
+        "section": "SyntheticSide"
+      }
+    ],
+    "rng": {
+      "after": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "before": {
+        "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      },
+      "calls": [],
+      "seed": 31
+    }
+  },
+  "scalar_roundtrips": [
+    {
+      "buffer_consumed": 4,
+      "cache": {
+        "after_explicit_set_side": 0,
+        "after_load": 2,
+        "after_save": 2,
+        "before": 2
+      },
+      "cache_writes": [
+        {
+          "phase": "explicit_set_side",
+          "value": 0,
+          "writer": "1002FB38"
+        }
+      ],
+      "continuation": "007534F3",
+      "framed_stream_hex": "0400000000000000",
+      "input": 0,
+      "overwrite_before_load": 99,
+      "payload_hex": "00000000",
+      "restored": 0,
+      "rng_calls": [],
+      "stream_read_bytes": 8,
+      "transfers": [
+        {
+          "length": 4,
+          "operation": "write"
+        },
+        {
+          "length": 4,
+          "operation": "write"
+        },
+        {
+          "length": 4,
+          "operation": "read"
+        },
+        {
+          "length": 4,
+          "operation": "read"
+        }
+      ],
+      "writer_al": 1
+    },
+    {
+      "buffer_consumed": 4,
+      "cache": {
+        "after_explicit_set_side": 1,
+        "after_load": 2,
+        "after_save": 2,
+        "before": 2
+      },
+      "cache_writes": [
+        {
+          "phase": "explicit_set_side",
+          "value": 1,
+          "writer": "1002FB38"
+        }
+      ],
+      "continuation": "007534F3",
+      "framed_stream_hex": "0400000001000000",
+      "input": 1,
+      "overwrite_before_load": 99,
+      "payload_hex": "01000000",
+      "restored": 1,
+      "rng_calls": [],
+      "stream_read_bytes": 8,
+      "transfers": [
+        {
+          "length": 4,
+          "operation": "write"
+        },
+        {
+          "length": 4,
+          "operation": "write"
+        },
+        {
+          "length": 4,
+          "operation": "read"
+        },
+        {
+          "length": 4,
+          "operation": "read"
+        }
+      ],
+      "writer_al": 1
+    },
+    {
+      "buffer_consumed": 4,
+      "cache": {
+        "after_explicit_set_side": 4,
+        "after_load": 2,
+        "after_save": 2,
+        "before": 2
+      },
+      "cache_writes": [
+        {
+          "phase": "explicit_set_side",
+          "value": 4,
+          "writer": "1002FB38"
+        }
+      ],
+      "continuation": "007534F3",
+      "framed_stream_hex": "0400000004000000",
+      "input": 4,
+      "overwrite_before_load": 99,
+      "payload_hex": "04000000",
+      "restored": 4,
+      "rng_calls": [],
+      "stream_read_bytes": 8,
+      "transfers": [
+        {
+          "length": 4,
+          "operation": "write"
+        },
+        {
+          "length": 4,
+          "operation": "write"
+        },
+        {
+          "length": 4,
+          "operation": "read"
+        },
+        {
+          "length": 4,
+          "operation": "read"
+        }
+      ],
+      "writer_al": 1
+    },
+    {
+      "buffer_consumed": 4,
+      "cache": {
+        "after_explicit_set_side": -1,
+        "after_load": 2,
+        "after_save": 2,
+        "before": 2
+      },
+      "cache_writes": [
+        {
+          "phase": "explicit_set_side",
+          "value": -1,
+          "writer": "1002FB38"
+        }
+      ],
+      "continuation": "007534F3",
+      "framed_stream_hex": "04000000ffffffff",
+      "input": -1,
+      "overwrite_before_load": 99,
+      "payload_hex": "ffffffff",
+      "restored": -1,
+      "rng_calls": [],
+      "stream_read_bytes": 8,
+      "transfers": [
+        {
+          "length": 4,
+          "operation": "write"
+        },
+        {
+          "length": 4,
+          "operation": "write"
+        },
+        {
+          "length": 4,
+          "operation": "read"
+        },
+        {
+          "length": 4,
+          "operation": "read"
+        }
+      ],
+      "writer_al": 1
+    }
+  ],
+  "schema_version": 1
+}

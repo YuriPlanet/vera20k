@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -27,5 +26,5 @@
     "cell_neighbor": "0x00481810"
   },
   "replay_command": "python -m tools.superweapon_oracle --unit-light",
-  "payload_sha256": "f8db3b9406f4cadf9531158afcbe0388dd5455f64d67a6f729961c48ffa1d1d9"
+  "payload_sha256": "081fc33f088c7f84906e157045e49c5b808265f528e24a803aa39ea63a4754fd"
 }

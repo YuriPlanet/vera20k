@@ -1190,7 +1190,7 @@ def generate_destroyed_house_events():
     House constructors, counter writers and a physical gameplay world are
     excluded. All original predicates, Country lookup and total getters run.
     """
-    from tools.native_oracle import image_sha256, NATIVE_FPCW
+    from tools.native_oracle import NATIVE_FPCW
     m = PowerEventControls()
     m.SPANS = [*m.SPANS,(0x49FB60,0x49FB64)]
     m.original.append(bytes(m.u.mem_read(0x49FB60,4)))
@@ -1210,7 +1210,7 @@ def generate_destroyed_house_events():
         m.predicate(f'destroyed{kind}_first_duplicate_country',f'1,{kind},0,0',
             order=(2,1,0),destruction_counts=((0,0,0,0),(0,0,0,0),(0,1,0,0)))
     m.assert_unchanged()
-    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+    return dict(schema_version=1,native_fpcw=f'0x{NATIVE_FPCW:X}',
         constructor_defaults=m.constructor_defaults,reader_rows=m.readers,
         predicate_controls=m.predicates,code_unchanged=True,zero_rng_calls=True,
         timer_bytes_unchanged=timer_before==bytes(m.u.mem_read(m.timer,12)),
@@ -1232,7 +1232,7 @@ def destroyed_house_event_metadata():
 
 def generate_building_loss_events():
     """Event10 uses the selected Country's signed tracked-building scalar."""
-    from tools.native_oracle import image_sha256, NATIVE_FPCW
+    from tools.native_oracle import NATIVE_FPCW
     m=PowerEventControls()
     m.SPANS=[*m.SPANS,(0x71F950,0x71FA40)]
     m.original.append(bytes(m.u.mem_read(0x71F950,0xF0)))
@@ -1269,7 +1269,7 @@ def generate_building_loss_events():
     classification=dict(state_a=m.fixture.call(0x71F950,[],ecx=m.event)&255,
                         state_b=m.fixture.call(0x71F9C0,[],ecx=m.event)&255)
     m.assert_unchanged()
-    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+    return dict(schema_version=1,native_fpcw=f'0x{NATIVE_FPCW:X}',
                 country_indices=[0,7,0],controls=controls,classification=classification,
                 code_unchanged=True,zero_rng_calls=True)
 
@@ -1290,7 +1290,7 @@ def building_loss_event_metadata():
 
 def generate_damage_source_events():
     """Event44 compares source House+30, independently of actor/Country."""
-    from tools.native_oracle import image_sha256, NATIVE_FPCW
+    from tools.native_oracle import NATIVE_FPCW
     m = PowerEventControls()
     # This selected fixture supplies canonical registered House indices0/1/2.
     # Legacy modes keep their existing20/21/22 priors and null source ABI.
@@ -1315,7 +1315,7 @@ def generate_damage_source_events():
     m.predicate('source44_null_actor','1,44,0,1',raised=44,
         source_index=1,actor_index=None)
     m.assert_unchanged()
-    return dict(schema_version=1,native_sha256=image_sha256(),
+    return dict(schema_version=1,
         native_fpcw=f'0x{NATIVE_FPCW:X}',house_indices=[0,1,2],country_indices=[0,7,0],
         houses=m.houses,actor=m.actor,source_object=m.source,
         predicate_controls=m.predicates,code_unchanged=True,
@@ -1339,7 +1339,7 @@ def damage_source_event_metadata():
 
 def generate_entered_cell_events():
     """Original1/59 predicates plus the bounded cached-Tag arrival slice."""
-    from tools.native_oracle import image_sha256, NATIVE_FPCW
+    from tools.native_oracle import NATIVE_FPCW
     from tools.spatial_oracle.building_body_rules import SP
     m = PowerEventControls()
     for kind in (1,59):
@@ -1398,7 +1398,7 @@ def generate_entered_cell_events():
     active.clear()
     assert body_before==bytes(u.mem_read(0x4D8978,len(body_before)))
     assert getter_before==bytes(u.mem_read(0x41BEA0,len(getter_before)))
-    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+    return dict(schema_version=1,native_fpcw=f'0x{NATIVE_FPCW:X}',
         predicate_controls=m.predicates,arrival_controls=rows,actor=m.actor,tag=tag,houses=m.houses,
         code_unchanged=True,arrival_body_sha256=hashlib.sha256(body_before).hexdigest())
 
@@ -1418,7 +1418,6 @@ def entered_cell_event_metadata():
 
 def generate_line_events():
     """Original marker writer and Foot line loops on declared sparse cells."""
-    from tools.native_oracle import image_sha256
     from tools.spatial_oracle.building_body_rules import SP
     from tools.spatial_oracle.map_queries import TABLE, EMPTY_TABLE
     m = PowerEventControls()
@@ -1513,7 +1512,7 @@ def generate_line_events():
     finally:
         u.hook_del(hook)
     assert original == [bytes(u.mem_read(a,b-a)) for a,b in original_spans]
-    return dict(schema_version=1,native_sha256=image_sha256(),controls=rows,
+    return dict(schema_version=1,controls=rows,
         original_code_unchanged=True,
         code_spans=[dict(start=hex(a),end=hex(b),sha256=hashlib.sha256(code).hexdigest())
                     for (a,b),code in zip(original_spans,original)])
@@ -1583,7 +1582,7 @@ def funds_event_history(kind,repeat,with_elapsed=False):
 
 def generate_funds_events():
     """Signed funds predicates and five original production-caller histories."""
-    from tools.native_oracle import image_sha256, NATIVE_FPCW
+    from tools.native_oracle import NATIVE_FPCW
     m=PowerEventControls(reader_inputs=(),extra_calls=(0x4F6990,0x6C9600,0x7C5F00))
     u=m.u
     for house,typ in zip(m.houses,m.types):
@@ -1639,7 +1638,7 @@ def generate_funds_events():
     assert rng_before==rng_after
     histories=[funds_event_history(kind,repeat) for kind in (12,52) for repeat in (0,2)]
     histories.append(funds_event_history(52,2,with_elapsed=True))
-    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+    return dict(schema_version=1,native_fpcw=f'0x{NATIVE_FPCW:X}',
         predicate_controls=predicates,classifiers=classifiers,histories=histories,
         code_unchanged=True,
         predicate_rng_before={hex(p):hashlib.sha256(v).hexdigest() for p,v in rng_before.items()},
@@ -1668,7 +1667,7 @@ def funds_event_metadata():
 
 def generate_loss_threshold_events():
     """Original15/16 compare the incoming House's signed loss counters."""
-    from tools.native_oracle import image_sha256, NATIVE_FPCW
+    from tools.native_oracle import NATIVE_FPCW
     from tools.sidebar_oracle.stock import mix, mix_hash
     from tools.rules_oracle.bridge_child_sound import sections
     m=PowerEventControls(reader_inputs=())
@@ -1728,7 +1727,7 @@ def generate_loss_threshold_events():
             actions=definitions['Actions'][trigger_id],team_id=team_id,team=team,
             task_force_id=task_force_id,task_force=definitions[task_force_id],
             script_id=script_id,script=definitions[script_id]))
-    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+    return dict(schema_version=1,native_fpcw=f'0x{NATIVE_FPCW:X}',
                 country_indices=[0,7,0],controls=controls,classification=classifiers,
                 retail_routes=routes,code_unchanged=True,zero_rng_calls=True)
 
@@ -1809,7 +1808,7 @@ def naval_land_retail_inputs():
 
 def generate_naval_land_events():
     """Signed tracked-count predicates; keep the existing tracking oracle owner."""
-    from tools.native_oracle import image_sha256, NATIVE_FPCW, first_difference
+    from tools.native_oracle import NATIVE_FPCW, first_difference
     from tools.spatial_oracle import house_tracking
     m=PowerEventControls(reader_inputs=())
     m.SPANS=[*m.SPANS,(0x71F950,0x71FA40)]
@@ -1866,10 +1865,8 @@ def generate_naval_land_events():
     digest=hashlib.sha256(json.dumps(actual,sort_keys=True,separators=(',',':'),
                                    allow_nan=False).encode('utf-8')).hexdigest()
     old_meta=json.loads(saved_path.with_suffix('.meta.json').read_text(encoding='utf-8'))
-    replay=dict(cases=len(actual),payload_matches_saved=True,payload_sha256=digest,
-                saved_provenance_native_sha256=old_meta['native_sha256'],
-                replayed_native_sha256=image_sha256())
-    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+    replay=dict(cases=len(actual),payload_matches_saved=True,payload_sha256=digest)
+    return dict(schema_version=1,native_fpcw=f'0x{NATIVE_FPCW:X}',
                 country_indices=[0,7,0],controls=controls,classification=classifiers,
                 tracking_replay=replay,retail=naval_land_retail_inputs(),
                 code_unchanged=True,zero_predicate_rng_calls=True)
@@ -2316,18 +2313,17 @@ def no_factories_strategy_controls():
     replay('uncharged_superweapons',sw.try_fire_row,next(row for row in saved_sw['ai_try_fire']
            if row['kinds'] and not any(charged for kind,charged in row['kinds'])))
     return dict(existing_payload_replays=comparisons,
-        retained_strategy_sidecar_native_sha256=saved_meta['native_sha256'],
         genuine_rng_strategy=actual,update_cadence_cases_are_independent=True,
         update_cadence_from_native_delay=timers,ordinary_foot_hunt=ordinary_hunt)
 
 
 def generate_no_factories_events():
-    from tools.native_oracle import image_sha256, NATIVE_FPCW
+    from tools.native_oracle import NATIVE_FPCW
     from tools.sidebar_oracle.stock import mix, mix_hash
     archive=(Path(os.environ['RA2_DIR'])/'mapsmd03.mix').read_bytes()
     raw_map=mix(archive)[mix_hash('SOV02SMD.MAP')]
     raw_rules=Path('ini/rulesmd.ini').read_bytes()
-    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+    return dict(schema_version=1,native_fpcw=f'0x{NATIVE_FPCW:X}',
         predicates=no_factories_predicates(),action9=no_factories_action9_controls(),
         factory=no_factories_factory_readers(raw_rules,raw_map),
         retail=dict(archive='mapsmd03.mix',archive_sha256=hashlib.sha256(archive).hexdigest(),
@@ -2392,7 +2388,7 @@ def build_type_record_controls():
     from tools.spatial_oracle.building_body_rules import INI
     from tools.sidebar_oracle.stock import mix, mix_hash
     from tools.rules_oracle.bridge_child_sound import sections
-    from tools.native_oracle import image_bytes, image_sha256
+    from tools.native_oracle import image_bytes
     from tools.native_inspect import selected_ranges, decode_ranges, instruction_row
     m=CampaignReader();u=m.u
     m.invoke(0x6832C0,m.scenario)
@@ -2540,7 +2536,7 @@ def build_type_record_controls():
                 native_type_index=type_defaults[category]['array_index'],before=before,after=after,
                 observation=receipt))
     u.hook_del(hook);m.check_code()
-    record=dict(native_sha256=image_sha256(),prefix=prefix,stock_type_prefixes=stock_type_prefixes,
+    record=dict(prefix=prefix,stock_type_prefixes=stock_type_prefixes,
         type_constructor_defaults=type_defaults,
         rules_constructor_create_sound_defaults=sound_defaults,virtuals=virtuals,controls=controls)
     return constructor,record,retail
@@ -2549,7 +2545,7 @@ def build_type_record_controls():
 def generate_build_type_events():
     """19..22: native last-built predicates, writers and delayed latch consumer."""
     from types import SimpleNamespace
-    from tools.native_oracle import image_bytes, image_sha256, file_span, NATIVE_FPCW
+    from tools.native_oracle import image_bytes, file_span, NATIVE_FPCW
     from tools.input_oracle.campaign_start import CampaignReader
     from tools.spatial_oracle.trigger_action_values import discovery_building_override
     m=PowerEventControls(reader_inputs=(),extra_calls=(0x7258D0,))
@@ -2614,7 +2610,7 @@ def generate_build_type_events():
     discovery=discovery_building_override()
     discovery['writer_bytes']=dict(start='0x0044D5D0',end_exclusive='0x0044D621',
         hex=file_span(image_bytes(),0x44D5D0,0x51)[1].hex())
-    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+    return dict(schema_version=1,native_fpcw=f'0x{NATIVE_FPCW:X}',
         country_indices=[0,7,0],controls=controls,classification=classifiers,
         predicate_rng=predicate_rng,register_history=m.registers,
         constructor=constructor,discovery=discovery,record_last_built=record,retail=retail,
@@ -2766,7 +2762,7 @@ def damage_event_object_destruction_controls():
 def generate_damage_events():
     """Combined38..43 evidence; reuse receiver, reader and Register owners."""
     from types import SimpleNamespace
-    from tools.native_oracle import image_sha256,NATIVE_FPCW
+    from tools.native_oracle import NATIVE_FPCW
     from tools.input_oracle.campaign_start import CampaignReader
     from tools.spatial_oracle.object_health import (damage_event_receiver_controls,
                                                   damage_event_techno_anger_controls)
@@ -2816,7 +2812,7 @@ def generate_damage_events():
     m.assert_unchanged()
     assert not any(call['pc'] in ('0x007258D0','0x006E4F60')
                    for row in m.registers for call in row['calls'])
-    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+    return dict(schema_version=1,native_fpcw=f'0x{NATIVE_FPCW:X}',
         receiver_controls=receiver,mutation_controls=mutations,receiver_rng=receiver_rng,
         techno_anger_controls=anger,
         object_destruction_controls=destruction,object_destruction_rng=destruction_rng,

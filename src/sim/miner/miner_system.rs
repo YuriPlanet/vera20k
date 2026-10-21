@@ -920,8 +920,12 @@ fn handle_going_to_idle(
 ///
 /// RESIDUAL: native always calls the setter with `Map[cell]`; VERA skips it
 /// when NearbyLocation finds no Cell or one outside the path grid
-/// ([`assign_miner_cell_destination`]). Trigger: no passable Cell in reach
-/// of the refinery. Frequency: none seen.
+/// ([`assign_miner_cell_destination`]). On a miss FNPC answers the zeroed
+/// (0,0) (`0x00ABD480`), outside the map diamond, so `Get_CellClass`
+/// (`0x005657A0`) hands back the shared dummy cell (`0x00ABDC50`) and Unit
+/// `Set_Destination` (`0x00741970`) makes it the NavCom with Move queued.
+/// Trigger: no unoccupied passable same-zone Cell within the search's ring
+/// cap (`0x0056DCEF`) of the refinery's centre. Frequency: none seen.
 fn drive_off_refinery(
     sim: &mut Simulation,
     rules: &RuleSet,

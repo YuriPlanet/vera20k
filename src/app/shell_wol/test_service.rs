@@ -20,7 +20,8 @@
 //! Quick Match finds a `Lob_40_0` lobby whose stand-in matchbot answers a
 //! request with `Working`, the pool size and a `Start` that makes the user
 //! the host and Natasha the opponent; she joins the created game, accepts,
-//! and the start then fails as a custom one does.
+//! and the start then fails as a custom one does. Quick Co-op's `Lob_39_0`
+//! has the same matchbot, whose `Start` names Cooperative on `C2S01MD.MAP`.
 
 use super::lobby::WolJoined;
 use super::service::WolLadderRecord;
@@ -373,7 +374,7 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         WolServiceRequest::JoinChannel { mut channel, .. } => {
             let local = nickname(state);
             let lobby = channel.kind != GAME_CHANNEL;
-            let quick_match = channel.name == QUICK_MATCH_LOBBY;
+            let quick_match = [QUICK_MATCH_LOBBY, QUICK_COOP_LOBBY].contains(&channel.name.as_str());
             let mut members = if quick_match {
                 quick_match_members()
             } else if lobby {
@@ -645,12 +646,20 @@ fn lobbies() -> Vec<WolChannel> {
     [(0, 4), (1, 0), (2, 0)]
         .into_iter()
         .map(|(number, users)| lobby(format!("Lob_41_{number}"), users))
-        .chain([lobby(QUICK_MATCH_LOBBY.into(), 2)])
+        .chain([
+            lobby(QUICK_MATCH_LOBBY.into(), 2),
+            lobby(QUICK_COOP_LOBBY.into(), 2),
+        ])
         .collect()
 }
 
-/// The Quick Match lobby, its matchbot and the opponent it names.
+/// The Quick Match and Quick Co-op lobbies, their matchbot and the opponent
+/// it names.
 const QUICK_MATCH_LOBBY: &str = "Lob_40_0";
+const QUICK_COOP_LOBBY: &str = "Lob_39_0";
+/// The map the stand-in matchbot names for Quick Co-op: the Soviet
+/// campaign's first (`coopcampmd.ini` `[Soviet]` `Map1`).
+pub(crate) const QUICK_COOP_MAP: &str = "C2S01MD.MAP";
 const MATCHBOT: &str = "matchbot";
 
 fn quick_match_members() -> Vec<WolMember> {
@@ -699,19 +708,29 @@ pub(crate) fn matchbot_options(
     use crate::skirmish_launch::{
         LaunchCountry, LaunchStartPosition, LaunchTeam, SkirmishHumanSlot, SkirmishLocalSlot,
     };
-    let mode = state
-        .frontend
-        .skirmish_modes
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("no mode"))?;
+    let quick_coop = super::quick_match::quick_coop(state);
+    let mode = if quick_coop {
+        state
+            .frontend
+            .skirmish_modes
+            .iter()
+            .find(|mode| mode.class == crate::skirmish_modes::MpModeClass::Cooperative)
+    } else {
+        state.frontend.skirmish_modes.first()
+    }
+    .ok_or_else(|| anyhow::anyhow!("no mode"))?;
     let file = state
         .frontend
         .scenario_catalog
         .records()
         .iter()
         .find(|record| {
-            crate::map::skirmish_scenarios::record_matches_mode(record, mode)
-                && record.player_capacity >= 2
+            if quick_coop {
+                record.file_name.eq_ignore_ascii_case(QUICK_COOP_MAP)
+            } else {
+                crate::map::skirmish_scenarios::record_matches_mode(record, mode)
+                    && record.player_capacity >= 2
+            }
         })
         .map(|record| record.file_name.clone())
         .ok_or_else(|| anyhow::anyhow!("no map for the matchbot"))?;
@@ -731,7 +750,14 @@ pub(crate) fn matchbot_options(
     let mut launch = crate::skirmish_launch::SkirmishLaunchSession {
         mode: crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(mode),
         selected_map_file: Some(file.clone()),
-        humans: vec![human(0, host, 5, 1), human(1, guest, 4, 3)],
+        // In Quick Co-op the host's +0x20 replaces the map with the first
+        // Allied one, whose stage admits only Americans (index 0); a peer
+        // country outside it turns Random, which the shell never resolves.
+        humans: if quick_coop {
+            vec![human(0, host, 0, 1), human(1, guest, 0, 3)]
+        } else {
+            vec![human(0, host, 5, 1), human(1, guest, 4, 3)]
+        },
         local_player_index: 0,
         opponents: Vec::new(),
         ai_player_count: 0,

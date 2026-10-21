@@ -334,7 +334,7 @@ JSON bytes, SHA-256 `773218f6a5333a6d7d0625650800c94c148b3043f273703b8381639c7d7
 Before the repair-fallback addition, the arrival-bearing payload SHA-256 is
 `fc9d418aaa0baef5bf89e3565d8b6cedc6a7cb5a850284494903b26ed24cabb3`.
 The expiry payload remains byte-identical, SHA-256
-`21f851dbcb3f964921ba1c06cec3cbfe131609890c1429deed8a2d3a48cb00f7`.
+`0ee67e2d592ffc7cdc8ddde5ea943ce66dd4f1921398ceeab7e9de4aeb55b9b5`.
 
 ## Repair fallback power and readiness
 

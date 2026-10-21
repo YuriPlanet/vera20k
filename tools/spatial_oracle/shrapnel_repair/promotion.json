@@ -10,7 +10,7 @@
     },
     "production_comparison.json": {
       "original_file_sha256": "241a02ac5ece0f6c443ffc7ac610a9447a835e19e6cb18d042f94f1d358c3e71",
-      "original_metadata_sha256": "847832d1b5d6b5d4a7fe6445361df49fc260519eb1a86e8aea6132ecc7c0eef9",
+      "original_metadata_sha256": "b60054333ea79b2c8b79a6bb286c021429e419ee7a9c0d8706c0eae692e6ae39",
       "original_payload_sha256": "750cb2a89044472656ed2e05f9f222256573979821e48ec4b912cfc04233a90e",
       "published_payload_sha256": "750cb2a89044472656ed2e05f9f222256573979821e48ec4b912cfc04233a90e"
     },

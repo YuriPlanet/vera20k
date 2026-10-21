@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -41,5 +40,5 @@
     "cpu_cmov": "0x007C5FFF"
   },
   "replay_command": "python -m tools.spatial_oracle.bridge_shadow_render --tile",
-  "payload_sha256": "b9fa1b01a9037a348abd6607b63e2940bd684d6b2e9dea4715c486d1fe0acd69"
+  "payload_sha256": "219b84f939943299a4ffeff8d7c58513f4f4852c940062e3bf1fb85380fb5240"
 }

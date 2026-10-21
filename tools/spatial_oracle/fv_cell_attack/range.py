@@ -10,11 +10,10 @@ import gzip
 import hashlib
 import json
 import struct
-import sys
 
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_ESP, UC_X86_REG_FPCW
-from tools.native_oracle import NATIVE_SHA256, RET_MAGIC, run_checked, provenance
+from tools.native_oracle import RET_MAGIC, run_checked, provenance
 from tools.spatial_oracle import bridge_target_composed as composed
 from tools.spatial_oracle import mapgen_range
 from tools.spatial_oracle.building_body_rules import SP, dwords
@@ -202,7 +201,7 @@ def generate():
             dict(name='water_raw100_control',target_flags=256),
             dict(name='nonwater_raw100_control',source_cell=[87,47],target=[87,53],target_flags=256)]
     rows += [dict(name=stage+'_maximum',stage=stage) for stage in ['damaged','collapsed','repaired']]
-    return dict(native_sha256=NATIVE_SHA256,rows=[execute(row) for row in rows])
+    return dict(rows=[execute(row) for row in rows])
 
 
 def metadata():
@@ -214,10 +213,6 @@ def metadata():
         'Original CRT/WinMain floating-control fragments establish the measured FPCW; the intervening Windows startup and callback history are excluded. No runtime RNG/Detach/identity callable may be reached.'],
         substitutions=['Inherited type/input/heap/OS preparation seams only; no range, Cell getter, source getter, weapon selection, FireError or line-of-fire result substitution.'],
         entry_points={'range_source':0x6F77B0,'range':0x6F7220,'unit_fire_error':0x740FD0,'techno_fire_error':0x6FC0B0,'T61':0x6FCCEE,'cell_low':0x4867E0,'cell_center':0x486840,'unit_approach':0x7414E0,'approach_range_return':0x4D570E})
-    result['harness_sha256'] = sha(Path(__file__).read_bytes())
-    result['sources'] = {str(p.relative_to(REPO)):sha(p.read_bytes())
-        for module in tuple(sys.modules.values()) if (name:=getattr(module,'__file__',None))
-        and (p:=Path(name).resolve()).is_relative_to(REPO/'tools') and p.suffix=='.py'}
     result['native_input_packet_sha256'] = sha(FACTS.read_bytes())
     return result
 

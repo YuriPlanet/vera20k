@@ -793,6 +793,10 @@ pub(crate) fn expire_cell_target_references(
         represented_assign_target(entity, None);
         let _restored = mission_was_suspended
             && restore_entity_after_target_expiry(entity, saved_target_stored);
+        // PointerExpired's aircraft-Patrol arm (`0x00707A51..0x00707A6C`).
+        if mission_was_suspended {
+            crate::sim::aircraft::restart_patrol_after_restore(entity);
+        }
         #[cfg(any(test, feature = "test-support"))]
         trace.push(CellTargetDetach {
             listener_id,

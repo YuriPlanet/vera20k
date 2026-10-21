@@ -1,10 +1,11 @@
 name: Test (reusable)
 
 # The library test job, shared by the per-platform workflows so each platform
-# reports its own status check. Runs what a fresh clone can run: no retail
-# game data is available here, so tests that need the gitignored `ini/` print
-# SKIPPED and pass. Local focused runs with `ini/` present cover the retail-data
-# tests a change touches.
+# reports its own status check, and by the Release workflow, which publishes a
+# dev build only after it passes on every platform the build ships. Runs what a
+# fresh clone can run: no retail game data is available here, so tests that need
+# the gitignored `ini/` print SKIPPED and pass. Local focused runs with `ini/`
+# present cover the retail-data tests a change touches.
 on:
   workflow_call:
     inputs:
@@ -32,4 +33,6 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
       - name: Library tests
-        run: cargo test --workspace --lib
+        # Each package's tests run even after another package's fail, so a
+        # failed run lists every failure, not only the first package's.
+        run: cargo test --workspace --lib --no-fail-fast

@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -29,5 +28,5 @@
     "bullet_type_reader": "0x0046BEE0",
     "aircraft_vtable_writer": "0x00413D87"
   },
-  "payload_sha256": "010664f22f7a42ef2a424874bf4e433f11c6bf898646c444bc3c26d7377afe5c"
+  "payload_sha256": "cca27f4670e3f37ab72d8e36b9de72f2122472f58531ff94aafdab7643900394"
 }

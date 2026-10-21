@@ -10,7 +10,7 @@ import hashlib,json,struct,sys
 from pathlib import Path
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import *
-from tools.native_oracle import NATIVE_SHA256,NATIVE_FPCW,RET_MAGIC,run_checked,finish_vectors,provenance
+from tools.native_oracle import NATIVE_FPCW,RET_MAGIC,run_checked,finish_vectors,provenance
 from tools.projectile_oracle.bridge_render_inputs import assets_root,lexical
 from tools.projectile_oracle.guided_step import create,i32,vec,xyz
 from tools.projectile_oracle.ifv_launch import bullet_addref_transport,bullet_world_admission_transport
@@ -89,7 +89,7 @@ def launch_shot(m,source,st,w,cells,initial,origin,frame=0,bridge=False):
  finally:u.hook_del(h)
  assert u.reg_read(UC_X86_REG_EIP)==0x6ff43f,hex(u.reg_read(UC_X86_REG_EIP))
  b=bullet[0]
- result=dict(native_sha256=NATIVE_SHA256,initial=initial,supplied=dict(origin=list(origin),source_heading=0x3fff,source_flags=0,weapon_slot=0,target_cell=[16,20],live_bridge_cell=[10,20] if bridge else None,binary_frame=frame),launch=dict(position=xyz(u,b+0x9c),target=target_xyz,velocity=vec(u,b+0xe8),**scalars,maximum_speed=i32(u,b+0x110),pitch=m.read32(SP+0x80)&0xffff,unique_id=i32(u,b+0x10),scenario_id_before=id_before,scenario_id_after=i32(u,scenario+0x214),course_locked=bool(u.mem_read(b+0x105,1)[0]),course_frames=i32(u,b+0x108),detector=dict(first_timer_start=i32(u,b+0xb8),first_timer_duration=i32(u,b+0xc0),arm_start=i32(u,b+0xc4),arm_duration=i32(u,b+0xcc),reference=xyz(u,b+0xd0),distance_watermark=i32(u,b+0xdc)),warhead=m.string(m.read32(b+0x128)+0x24),calls=sorted(visited),supplied_calls=events))
+ result=dict(initial=initial,supplied=dict(origin=list(origin),source_heading=0x3fff,source_flags=0,weapon_slot=0,target_cell=[16,20],live_bridge_cell=[10,20] if bridge else None,binary_frame=frame),launch=dict(position=xyz(u,b+0x9c),target=target_xyz,velocity=vec(u,b+0xe8),**scalars,maximum_speed=i32(u,b+0x110),pitch=m.read32(SP+0x80)&0xffff,unique_id=i32(u,b+0x10),scenario_id_before=id_before,scenario_id_after=i32(u,scenario+0x214),course_locked=bool(u.mem_read(b+0x105,1)[0]),course_frames=i32(u,b+0x108),detector=dict(first_timer_start=i32(u,b+0xb8),first_timer_duration=i32(u,b+0xc0),arm_start=i32(u,b+0xc4),arm_duration=i32(u,b+0xcc),reference=xyz(u,b+0xd0),distance_watermark=i32(u,b+0xdc)),warhead=m.string(m.read32(b+0x128)+0x24),calls=sorted(visited),supplied_calls=events))
  result['launch']['next_burst']=i32(u,source+0x3b8);result['launch']['rearm']=[i32(u,source+0x2ec),i32(u,source+0x2f4)];return m,b,cells,result
 
 def native_get_flh(m,source,output,slot=0):
@@ -116,7 +116,7 @@ def generate():
   _,b,_,row=launch_shot(m,source,typ,w,cells,initial,origin,frame)
   row['supplied']['source_flags']=4;row['supplied']['body_heading']=0;row['supplied']['source_lifecycle']='supplied Unit state; original Drive constructor and native matrix';row['supplied']['source_origin']=[2688,5248,800];row['launch']['burst_before']=burst;row['flh_calls']=flh_calls;row['rng_before']=rng_before;row['rng_after']=bytes(u.mem_read(scenario+0x218,0x3f4)).hex();rows.append(row)
   frame+=row['launch']['rearm'][1]
- return dict(native_sha256=NATIVE_SHA256,scope=__doc__,assumptions=['Partial physical type readers; UnitType concrete constructor and numbered FLH/BurstDelay readers execute','Supplied Unit source state and flat pose/body0/turret0x3fff/ownerROF1; original Drive constructor/DrawMatrix execute','Original Scenario Seed31 is supplied immediately before shot1; first call frame0 and second call at returned rearm duration4; no native Unit scheduler or intervening Bullet AI runs','Original full Weapon reader has empty sound registry; HoverMissile no muzzle Anim/Fire/Spark/Railgun systems; report sound itself not proven','Common native Bullet activation executes through native factory, Windows atomic increment supplied; ObjectUnlimbo and Display admission supplied','Stops before Sonic/post-fire tail at6FF43F; source construction/lifecycle, map placement, impact/retirement and other objects between calls remain unproved'],art_sha256=hashlib.sha256((assets_root()/'ARTMD.INI').read_bytes()).hexdigest(),flh=xyz(u,typ+0x89c),cases=rows)
+ return dict(scope=__doc__,assumptions=['Partial physical type readers; UnitType concrete constructor and numbered FLH/BurstDelay readers execute','Supplied Unit source state and flat pose/body0/turret0x3fff/ownerROF1; original Drive constructor/DrawMatrix execute','Original Scenario Seed31 is supplied immediately before shot1; first call frame0 and second call at returned rearm duration4; no native Unit scheduler or intervening Bullet AI runs','Original full Weapon reader has empty sound registry; HoverMissile no muzzle Anim/Fire/Spark/Railgun systems; report sound itself not proven','Common native Bullet activation executes through native factory, Windows atomic increment supplied; ObjectUnlimbo and Display admission supplied','Stops before Sonic/post-fire tail at6FF43F; source construction/lifecycle, map placement, impact/retirement and other objects between calls remain unproved'],art_sha256=hashlib.sha256((assets_root()/'ARTMD.INI').read_bytes()).hexdigest(),flh=xyz(u,typ+0x89c),cases=rows)
 
 def flh_controls():
  m,src,typ,w,cells,init=prepare();u=m.u;rows=[]

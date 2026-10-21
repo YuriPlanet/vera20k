@@ -9,10 +9,9 @@ import json
 import struct
 
 from tools.native_oracle import (
-    NATIVE_SHA256, file_span, finish_vectors, first_difference, image_bytes, provenance,
+    file_span, finish_vectors, first_difference, image_bytes, provenance,
 )
 from tools.spatial_oracle.in_range_cell_boundary import execute
-from tools.spatial_oracle.shrapnel_repair.packet_io import digest
 
 HERE = Path(__file__).resolve().parent
 
@@ -34,7 +33,7 @@ def generate():
         for old in json.loads(reference.read_bytes())['rows']:
             difference = first_difference(old, actual[old['input']['name']])
             assert difference is None, difference
-    return dict(native_sha256=NATIVE_SHA256, rows=rows)
+    return dict(rows=rows)
 
 
 def metadata():
@@ -52,9 +51,6 @@ def metadata():
         'distance comparison occurs in this Idle admission caller.',
     ], substitutions=['Inherited input, heap and OS seams only; no range result substitution.'],
         entry_points={'in_range': 0x6F7220})
-    result['harness_sha256'] = digest(Path(__file__).read_bytes())
-    owner = HERE.parent / 'in_range_cell_boundary.py'
-    result['owner_sha256'] = digest(owner.read_bytes())
     native = image_bytes()
     result['caller_instruction_bytes'] = {
         f'{address:08x}': file_span(native, address, length)[1].hex()

@@ -67,7 +67,7 @@ Die Pfeile zeigen den Datenfluss:
 
 Du brauchst:
 
-- **Rust und Git:** [Rust](https://rustup.rs/) 1.88 oder neuer, installiert mit rustup, und
+- **Rust und Git:** [Rust](https://rustup.rs/) 1.97 oder neuer, installiert mit rustup, und
   [Git](https://git-scm.com/).
 - **Build-Werkzeuge:** unter Windows die C++-Build-Tools von Visual Studio, deren Installation
   der Rust-Installer anbietet; unter macOS `xcode-select --install`; unter Debian und Ubuntu

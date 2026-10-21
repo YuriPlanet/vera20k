@@ -9,11 +9,9 @@ from pathlib import Path
 import hashlib
 import json
 import struct
-import sys
 import traceback
 
 HERE = Path(__file__).resolve().parent
-from .runtime import REPO_ROOT
 from tools import native_oracle as native
 from tools.spatial_oracle import passenger_escape as inherited
 from tools.spatial_oracle import refinery_dock
@@ -103,7 +101,7 @@ def gate_reader():
     u.reg_write(UC_X86_REG_ESI, TYPE)
     native.run_checked(u, 0x45E115, 0x45E11B, count=20)
     ctor = u.mem_read(TYPE + 0x16B7, 1)[0]
-    retail = json.loads((HERE / 'inputs/infantry-unlimbo-gate-retail.json').read_text())
+    retail = json.loads((HERE / 'inputs/infantry-unlimbo-gate-retail.json').read_text(encoding='utf-8'))
     rows = []
     for layer in retail['authored_layers']:
         if not layer['source_present']:
@@ -333,20 +331,7 @@ def generate():
             fault = dict(type=type(exc).__name__, message=str(exc),
                 traceback=traceback.format_exc(), case='gate_reader',
                 native_diagnostics=getattr(exc, 'diagnostics', None))
-    imported = {}
-    for module in tuple(sys.modules.values()):
-        file = getattr(module, '__file__', None)
-        if not file:
-            continue
-        path = Path(file).resolve()
-        if path.is_relative_to(REPO_ROOT / 'tools'):
-            name = str(path.relative_to(REPO_ROOT))
-            if name == 'tools/spatial_oracle/factory_infantry_output.py' or name.startswith(
-                    'tools/spatial_oracle/_factory_infantry_output/'):
-                continue
-            imported[name] = sha(path)
-    return dict(schema_version=1, native_sha256=native.NATIVE_SHA256,
-                driver_sha256=sha(__file__), imports=imported,
+    return dict(schema_version=1,
                 gate_reader=readers, original_instructions=instructions(), rows=rows,
                 bounds=['Prepared immutable passenger map/House/type/Walk owner with supplied object state, active cell-list byte1, original Door ctor and supplied stable state/mission; no whole GAGATE_A constructor or live Gate mission.',
                         'Original51DFF0 and481180 execute with original47C4D0/Building4525F0/Door4A51B0, original membership/floor, class mark and class return. The inherited Foot4D7170 observer supplies success and writes location/mark/limbo; full Object/Techno/Idle remains outside these controls.',

@@ -28,10 +28,6 @@ ENTRIES = {0x57BAA0:'selector', 0x57BCF0:'ns_root', 0x57C2B0:'ew_root',
            0x57C870:'ew_endpoints', 0x575EE0:'notify', 0x5868A0:'rectangle'}
 FORBIDDEN = {0x47DD70:'structural_fallout', 0x65C780:'raw_rng',
              0x65C7E0:'range_rng', 0x598030:'mapgen_rng', 0x70D4A0:'caller_detach'}
-SOURCES = ['tools/native_oracle.py', 'tools/spatial_oracle/bridge_ordinary_damage.py',
-           'tools/spatial_oracle/bridge_ordinary_repair.py',
-           'tools/spatial_oracle/bridge_repair.py', 'tools/spatial_oracle/bridge_pavement.py',
-           'tools/spatial_oracle/bridge_rim.py', 'tools/spatial_oracle/map_queries.py']
 STOCK = 'tools/spatial_oracle/shrapnel_repair/shrapnel_repair.json.gz'
 
 
@@ -152,8 +148,7 @@ def metadata():
     ], entry_points={**{name:address for address,name in ENTRIES.items()},
                      'recalc_boundary':0x47D2B0,'occupants_boundary':0x487A10,
                      'connectivity_boundary':0x56C510,'hierarchy_boundary':0x586990})
-    result['source_sha256'] = {p:hashlib.sha256((REPO/p).read_bytes()).hexdigest() for p in SOURCES+[STOCK]}
-    result['runner_sha256'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    result['source_sha256'] = {STOCK: hashlib.sha256((REPO/STOCK).read_bytes()).hexdigest()}
     return result
 
 

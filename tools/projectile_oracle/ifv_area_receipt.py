@@ -7,7 +7,7 @@ from unicorn import UC_HOOK_CODE,UC_HOOK_MEM_WRITE
 from unicorn.x86_const import *
 from tools.projectile_oracle.ifv_select_anim import setup
 from tools.projectile_oracle.ifv_impact import i32,xyz
-from tools.native_oracle import RET_MAGIC,NATIVE_SHA256,run_checked,finish_vectors,provenance
+from tools.native_oracle import RET_MAGIC,run_checked,finish_vectors,provenance
 from tools.spatial_oracle.building_body_rules import SP,RULES,dwords
 from tools.rmg_oracle.gen_rng_vectors import seeded_struct
 
@@ -41,7 +41,7 @@ def generate():
    u.mem_write(SP,dwords(RET_MAGIC,0,0 if spec.get('null_wh') else wh,0,0));u.reg_write(UC_X86_REG_ESP,SP);u.reg_write(UC_X86_REG_ECX,position);u.reg_write(UC_X86_REG_EDX,spec['damage']);run_checked(u,0x489280,RET_MAGIC,count=1000000)
   finally:u.hook_del(h)
   rows.append(dict(input=spec,result=u.reg_read(UC_X86_REG_EAX),dispatch=dispatch,flags=flags,events=events,rng_unchanged=bytes(u.mem_read(scenario+0x218,len(seed)))==seed))
- return dict(native_sha256=NATIVE_SHA256,scope='Full original AreaDamage with supplied Unit occupancy/state and explicit ReceiveDamage result boundary; original collection/admission/IC timer/dispatch/continuation/receipt execute',initial=initial,rows=rows)
+ return dict(scope='Full original AreaDamage with supplied Unit occupancy/state and explicit ReceiveDamage result boundary; original collection/admission/IC timer/dispatch/continuation/receipt execute',initial=initial,rows=rows)
 
 def metadata():
  return provenance(scope='Original AreaDamage returns0/1/2 and receiver dispatch versus IronCurtain isolation controls',assumptions=['Physical HE full reader, prepared flat level6 cells and original Unit vtable/getters. Original CellSpread reader consumes0.5/0.5001. Incoming health/flags/occupancy/XYZ/IC timer/kind are supplied; no Unit lifecycle claim.','Full AreaDamage489280 executes; original IC timer41BF40 and collector gates execute. No bridge overlay or damageable structural state. Seed31 remains unchanged. Result records receipt semantics, not actual receiver damage/kill behavior.'],substitutions=['Inherited reader archive/allocation/TLS boundaries. Unit ReceiveDamage737C90 is an explicit result boundary returning supplied0/1/2/4 with28bytecleanup; it does not mutate health. No AreaDamage, getter, timer, collection or receipt instruction replaced.'],entry_points={'area_damage':0x489280,'unit_receiver_boundary':0x737c90,'ic_timer':0x41bf40,'ground_isolation':0x489968,'air_isolation':0x4894a4,'return_isolated':0x489b3b,'return_receipt':0x48a47e})
@@ -144,7 +144,7 @@ def rocker_generate():
    cell_spread_bits=f'{m.read32(wh+0x124):08x}'),rng_before=before,rng_after=after,
    force_f64_bits=f'{struct.unpack("<Q",u.mem_read(SP+0x88,8))[0]:016x}',visits=visits,calls=calls,stores=stores,
    final=[dict(target=entry['name'],bits=field_bits(target)) for target,entry in zip(targets,entries)]))
- return dict(schema=1,native_sha256=NATIVE_SHA256,initial=dict(model_input=model,layers=layers,
+ return dict(schema=1,initial=dict(model_input=model,layers=layers,
   type_input=dict(name=m.string(typ+0x24),weight_bits=weight_bits),residents=entries,
   actor_boundary='Unit-shaped component inputs using original Unit vtable/getters; not constructors or placement'),rows=rows)
 

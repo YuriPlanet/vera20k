@@ -148,7 +148,7 @@ fn retail_local_defeat_leaves_planning_in_the_same_house_frame() {
                     &[],
                     67,
                     TickLane::Ordinary,
-                    FrameEffects::for_sound(&observed).with_local_defeat(&boundary),
+                    FrameEffects::for_sound(&observed).with_local_planning(&boundary),
                 )
                 .expect("ordinary retail defeat frame");
             outcome_cues.extend(observed.outcomes.into_inner());
@@ -274,7 +274,7 @@ fn retail_inactive_and_nonlocal_defeat_do_not_leave_the_local_planner() {
                     &[],
                     67,
                     TickLane::Ordinary,
-                    FrameEffects::for_sound(&boundary).with_local_defeat(&boundary),
+                    FrameEffects::for_sound(&boundary).with_local_planning(&boundary),
                 )
                 .unwrap()
             };

@@ -95,7 +95,10 @@ fn eva_selection_matches_original_cache_queue_and_restored_side_history() {
         );
         let operation = &step["operation"];
         match operation["kind"].as_str().unwrap() {
-            "bind" => queue.set_side(operation["side"].as_i64().unwrap() as i32),
+            "bind" => queue.set_side(
+                operation["side"].as_i64().unwrap() as i32,
+                &crate::rules::ruleset::RuleSet::from_ini(&IniFile::empty()).unwrap(),
+            ),
             "queue" => {
                 let entry = registry
                     .entry(operation["event"].as_str().unwrap())
@@ -141,7 +144,10 @@ fn eva_selection_matches_original_cache_queue_and_restored_side_history() {
                     loaded.session().scenario_side(),
                     row["restored_side"].as_i64().unwrap() as i32
                 );
-                queue.set_side(loaded.session().scenario_side());
+                queue.set_side(
+                    loaded.session().scenario_side(),
+                    &crate::rules::ruleset::RuleSet::from_ini(&IniFile::empty()).unwrap(),
+                );
             }
             other => panic!("unhandled native operation {other}"),
         }
@@ -162,7 +168,10 @@ fn eva_selection_distinguishes_pending_preemption_from_queue_cleanup() {
     for row in corpus["pending_eviction_controls"].as_array().unwrap() {
         let registry = registry_from(&row["synthetic_ini"]);
         let mut queue = VoxQueue::new();
-        queue.set_side(row["before"]["selected_voice"].as_i64().unwrap() as i32);
+        queue.set_side(
+            row["before"]["selected_voice"].as_i64().unwrap() as i32,
+            &crate::rules::ruleset::RuleSet::from_ini(&IniFile::empty()).unwrap(),
+        );
         for request in row["queue_inputs"].as_array().unwrap() {
             assert_eq!(request["type_override"], -1);
             assert_eq!(request["priority_override"], -1);

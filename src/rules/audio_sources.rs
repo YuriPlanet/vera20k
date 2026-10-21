@@ -222,7 +222,10 @@ mod tests {
         use crate::rules::native_processing::ProcessedRulesLayers;
         use crate::rules::process_owner::NativeScenarioRulesPrefix;
 
+        // Ares10063660 registers [DialogList] names through char[40]
+        // (spatial_oracle/ares_eva), so the long entry is the 39-byte prefix.
         let long_name = "E".repeat(160);
+        let registered_long_name = "E".repeat(39);
         let catalog = Arc::new(EvaRegistry::from_ini(&IniFile::from_str(&format!(
             "[DialogList]\n0=EVA_InsufficientFunds\n1=Known\n2={long_name}\n"
         ))));
@@ -233,7 +236,13 @@ mod tests {
             ("Known", "none", "Missing", None),
             ("Known", "<none>", "", None),
             ("Known", "none", "Known", Some("Known")),
-            ("Known", "", long_name.as_str(), Some(long_name.as_str())),
+            (
+                "Known",
+                "",
+                registered_long_name.as_str(),
+                Some(registered_long_name.as_str()),
+            ),
+            ("Known", "", long_name.as_str(), Some("Known")),
         ] {
             let root = IniFile::from_str(&format!(
                 "[SuperWeaponTypes]\n0=Paid\n[Paid]\nType=PsychicReveal\nMoney.Amount=-500\nEVA.InsufficientFunds={root_cue}\n"

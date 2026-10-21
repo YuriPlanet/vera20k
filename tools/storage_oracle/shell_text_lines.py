@@ -177,7 +177,7 @@ def main(argv=None):
     if "--text-label" in argv:
         argv.remove("--text-label")
         finish_vectors(text_label_controls, Path(__file__).with_name("shell_text_label.json"),
-                       provenance=lambda: {"native_sha256": native.image_sha256()}, argv=argv,
+                       provenance=lambda: {}, argv=argv,
                        source_paths={"producer": Path(__file__),
                                      "native_runner": Path(native.__file__)})
         return

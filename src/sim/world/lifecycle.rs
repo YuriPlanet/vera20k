@@ -4523,10 +4523,8 @@ impl Simulation {
     /// bridge-damage, wall-sale and teleport (`0x007193C7`) callers share this
     /// owner; the other caller chains remain separate migration work.
     ///
-    /// RESIDUALS, recorded rather than guessed:
-    /// - The aircraft-Patrol arm, which clears two patrol-cursor fields on an
-    ///   aircraft whose committed mission is Patrol. Neither field is
-    ///   represented; the arm is a no-op for every ground object.
+    /// After the Restore an aircraft now on Patrol restarts it
+    /// (`0x0070D513..0x0070D532`, [`crate::sim::aircraft::restart_patrol_after_restore`]).
     pub(crate) fn stop_all_targeting_on_detach(
         &mut self,
         detach_id: u64,
@@ -4579,6 +4577,10 @@ impl Simulation {
             let restored = self
                 .mission_restore_represented(listener_id, rules, registry, effects)
                 .expect("detach sweep listener was resolved immediately before the Restore");
+            // `0x0070D513..0x0070D532`, whatever the Restore did.
+            if let Some(listener) = self.substrate.entities.get_mut(listener_id) {
+                crate::sim::aircraft::restart_patrol_after_restore(listener);
+            }
 
             let target_cleared = self.listener_targets(listener_id, target);
             if target_cleared {
@@ -4816,6 +4818,10 @@ impl Simulation {
             if mission_is_suspended {
                 self.mission_restore_represented(listener_id, rules, registry, effects)
                     .expect("represented expiry restore remains available");
+                // `0x00707A51..0x00707A6C`.
+                if let Some(listener) = self.substrate.entities.get_mut(listener_id) {
+                    crate::sim::aircraft::restart_patrol_after_restore(listener);
+                }
             }
         }
 

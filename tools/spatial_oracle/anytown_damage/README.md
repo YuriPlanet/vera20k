@@ -236,7 +236,7 @@ other-axis paths are outside this physical witness.
 
 ## Promotion, ownership and replay
 
-[`promotion.json`](promotion.json) records original file, source, metadata and
+[`promotion.json`](promotion.json) records original file, metadata and
 canonical payload hashes, plus the published payload hash. It pins the four
 frozen external manifests/receipts whose 67 declared files were checked unchanged.
 Those originals are preserved. The archive census, rendered family-art examples,
@@ -256,8 +256,7 @@ The ten compressed native references use canonical JSON and deterministic gzip
 with no timestamp or filename. Each of those runners verifies its **original unprojected payload**
 before calling the existing Shrapnel `packet_io` publication owner. Even
 `--write` rejects a changed native value or copied lexical input. Original
-addresses, assumptions and boundaries remain in the metadata; source/import
-provenance now points to the promoted package.
+addresses, assumptions and boundaries remain in the metadata.
 Hut publication additionally hashes `animation_inputs.layers[*].source_lines`;
 all native read results, requests, cell stores and complete RNG states remain.
 Mission publication additionally hashes its MissionControl/country/side lexical
@@ -270,13 +269,13 @@ The existing shared MAP pack decoder owns physical parsing. Its new
 Shrapnel wrapper's duplicate loop. Every authored field for all 13,515 Anytown
 and 13,366 Shrapnel cells was compared with the prior decoder. Shrapnel's wrapper
 still omits its previously unrepresented ice field. Its four saved output
-hashes are unchanged; its receipt changes only the three shared source hashes.
+hashes are unchanged.
 `packet_io.finish_vectors` adds optional promotion/projection arguments with
 unchanged defaults. No native emulation logic was moved into a second owner.
 
 Use Python 3.10+, Unicorn/Capstone from
 [`tools/native_oracle.md`](../../native_oracle.md), and liblzo2. Set
-`VERA20K_GAMEMD_EXE` to the matching original executable, or use the shared
+`VERA20K_GAMEMD_EXE` to the original retail executable, or use the shared
 oracle's `RA2_DIR` lookup. Extract the exact files in
 [`retail_manifest.json`](retail_manifest.json) into the two declared **separate**
 flat local directories. `VERA20K_SHRAPNEL_INPUTS` supplies the original sparse
@@ -299,12 +298,12 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python -m tools.spatial_oracle.anytown_da
 
 The second invocation is independent and read-only. The explicit refresh stages
 all twelve native witnesses and two Rust projections through their existing
-publishers. It requires unchanged native payloads and evidence metadata; only
-`sources`, `harness_sha256`, `helper_sources` and `projection_source_sha256` may
-change. After every replay and source/input stability check succeeds, it updates
-those sidecars and publishes the aggregate receipt last. It never writes golden
-payloads. A failed or interrupted publication leaves the old receipt as a strict
-check against partial updates.
+publishers. It requires unchanged native payloads and sidecar evidence; only a
+sidecar's recorded replay command and runtime versions may change. After every
+replay and input/artifact stability check succeeds, it updates those sidecars
+and publishes the aggregate receipt last. It never writes golden payloads. A
+failed or interrupted publication leaves the old receipt as a strict check
+against partial updates.
 
 Each runner still accepts `--check`/`--write` individually with `python -m`;
 omitting the flag means check. `--manifest-only` is read-only, skips native replay
@@ -312,14 +311,17 @@ and still checks both Rust projections. It cannot be combined with refresh.
 Python optimization (`-O`) is rejected because inherited packet witnesses still
 use assertion guards.
 
-The aggregate receipt owns current source and metadata identity. Frozen
-navigation/hut/cursor/mission receipts retain their original bytes, commands,
-times and claims. Their native payloads, promotions, input snapshots, instruction
-bytes, summaries and saved production comparisons remain exact guards; historical
-source and metadata drift is recorded explicitly. Replaying native witnesses does
-not repeat those historical production comparisons. The receipt contains portable
-relative paths, runtime versions and verified external input identities. Inspect
-compressed results with `gzip.open` and `json.load`.
+The aggregate receipt binds the packet's data files: the twelve witnesses'
+native payloads and sidecars, promotions, receipts, inputs and projections.
+Other producers' corpora in this directory, Python sources and Markdown are not
+packet artifacts. Frozen navigation/hut/cursor/mission receipts
+retain their original bytes, commands, times and claims. Their native payloads,
+promotions, input snapshots, instruction bytes, summaries and saved production
+comparisons remain exact guards; their sidecars may since record a newer replay.
+Replaying native witnesses does not repeat those historical production
+comparisons. The receipt contains portable relative paths and verified external
+input identities. Inspect compressed results with `gzip.open`
+and `json.load`.
 
 [`validation.json`](validation.json) records this promotion's actual replay and
 shared-helper checks. It establishes packaging equivalence, not production

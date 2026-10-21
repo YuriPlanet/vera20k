@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -34,5 +33,5 @@
     "tilts_reader": "0x007153DA"
   },
   "replay_command": "python -m tools.spatial_oracle.anytown_damage.mtnk_attack --authored-fence-driveover",
-  "payload_sha256": "4e7ae7c66d70cf297f18e294915620d59e045ffc7fca0e29c5fa932b0931c108"
+  "payload_sha256": "cf7a48303648bd90789ed53e87266e3b92cb870e564c1d774b9ca06552132250"
 }

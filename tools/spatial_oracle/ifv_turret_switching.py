@@ -19,7 +19,7 @@ from unicorn.x86_const import (
 )
 from tools.native_oracle import (
     RET_MAGIC, finish_vectors, provenance, run_checked, file_span, image_bytes,
-    image_sha256, NativeCallTrace,
+    NativeCallTrace,
 )
 from tools.projectile_oracle.bridge_render_inputs import BulletReader, lexical
 from tools.rules_oracle.bridge_anim_inputs import Reader
@@ -918,7 +918,7 @@ def generate_temporal_gunner():
     layers = [(name, root / name) for name in ('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini')]
     layers.append((map_path.name, map_path))
     m = TemporalGunnerReader(root, layers)
-    return dict(schema_version=1, native_sha256=image_sha256(), inputs=m.inputs,
+    return dict(schema_version=1, inputs=m.inputs,
                 rows=[m.execute(row) for row in temporal_gunner_cases()],
                 native_code_unchanged=True)
 

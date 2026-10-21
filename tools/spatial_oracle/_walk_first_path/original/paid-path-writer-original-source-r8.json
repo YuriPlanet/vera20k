@@ -1,5 +1,4 @@
 {
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "correction": "Withdraw prior attribution of paid path head clearing to Event history prelude. Actual Infantry AssignTarget51B1F0 writer51B2A2 runs through Event4C7467 class+3C8 before destination+480; Foot4DA1C0 dispatches only destination history+5AC.",
   "spans": [
     {
@@ -460,7 +459,7 @@
   "executed_writes": [
     {
       "receipt": "paid_head_B-r7.json.gz",
-      "sha256": "5ad207ccb52dfa83607f555da033c6f7569080619c1d1d1521d8e8e98e959958",
+      "sha256": "93937cb0fc96856a0746c4ea969d27989c54de05b0550123b5e059f469bc7f37",
       "path_head_address": 675806992,
       "writes": [
         {
@@ -633,7 +632,7 @@
     },
     {
       "receipt": "paid_head_Stop_B-r7.json.gz",
-      "sha256": "ad6628dfa4e0d40e54bb5b7fa3c907a5b1dd4fcfffa201f1dbcc730453a8f4bb",
+      "sha256": "14c0940ec874f21c85ea697f7322458677a90d886beb3e108e5c180063b1d75b",
       "path_head_address": 675806992,
       "writes": [
         {

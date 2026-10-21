@@ -251,9 +251,7 @@ def generate_fear():
     results = [query(row, fear=True, capture_original=i == 0) for i, row in enumerate(rows)]
     receipt = results[0].pop('original_receipt')
     assert len(results) == 46
-    return dict(schema_version=1, native_sha256=provenance(
-        scope='Selected original Infantry fear receiver.', assumptions=['Supplied bounded input state.'],
-        substitutions=[], entry_points={'fear': 0x5200B0})['native_sha256'],
+    return dict(schema_version=1,
         default_payload_sha256=DEFAULT_PAYLOAD_SHA256, original_receipt=receipt, rows=results)
 
 

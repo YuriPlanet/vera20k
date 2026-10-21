@@ -58,14 +58,15 @@ done < <(git log --no-merges --max-count="$CHANGELOG_LIMIT" \
 n="$(printf '%s' "$commits" | grep -c '^- ' || true)"
 
 # One row per download, in a fixed order. Every download needs a row, so a new
-# kind cannot reach players unlabelled.
+# kind cannot reach players unlabelled. A dev build's names carry its build
+# time and commit after the platform; a release's do not.
 rows=""
 row_count=0
-for spec in '*-windows-x64-*-setup.exe|Windows x64 installer' \
-            '*-windows-x64-*.zip|Windows x64' \
-            '*-linux-x64-*.tar.gz|Linux x64' \
-            '*-macos-arm64-*.dmg|macOS Apple Silicon app' \
-            '*-macos-arm64-*.tar.gz|macOS Apple Silicon'; do
+for spec in '*-windows-x64*-setup.exe|Windows x64 installer' \
+            '*-windows-x64*.zip|Windows x64' \
+            '*-linux-x64*.tar.gz|Linux x64' \
+            '*-macos-arm64*.dmg|macOS Apple Silicon app' \
+            '*-macos-arm64*.tar.gz|macOS Apple Silicon'; do
   pattern="${spec%%|*}"
   label="${spec#*|}"
   # shellcheck disable=SC2086 # the pattern is a glob
@@ -83,7 +84,8 @@ fi
 
 if [ -n "${PROMOTED_FROM:-}" ]; then
   title="VERA20k \`$TAG\`"
-  kind="The same files as dev build \`$PROMOTED_FROM\`, which testers played before this release."
+  kind="The same files as dev build \`$PROMOTED_FROM\`, which testers played before this release,
+under shorter names."
 else
   title="VERA20k dev build \`$TAG\`"
   kind="**Development build** from \`main\`: the newest changes, tested less than a
@@ -129,8 +131,8 @@ EOF
 On Windows, the installer is easiest: it finds your Yuri's Revenge folder and
 sets everything up. On macOS, open the \`.dmg\` and drag VERA20k into
 Applications. The first time, macOS blocks it because Apple has not notarized
-it: click Done, then Open Anyway in System Settings > Privacy & Security. It
-then finds your Yuri's Revenge folder, or asks for it.
+it: click Done, then Open Anyway in System Settings > Privacy & Security
+within the hour. It then finds your Yuri's Revenge folder, or asks for it.
 Otherwise, extract an archive straight into your Yuri's Revenge folder, or keep
 it in its own folder and point \`config.toml\` at the game (see the README.txt
 inside).

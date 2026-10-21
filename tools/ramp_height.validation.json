@@ -1,16 +1,11 @@
 {
   "schema": 1,
   "checked_at_utc": "2026-09-28T00:02:50.063155+00:00",
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
-  "golden_sha256_before_and_after": "289978447530687aa238d1e7e60d5d3164bb9e5529b0009bd3f6b196edea5b26",
+  "golden_sha256_before_and_after": "5fa78bbbdfadbc1a92d96b2d9000c3eac4c63b702abae86ad7d61af0315330c2",
   "golden_byte_identical": true,
   "cases": 158,
   "all_candidate_payload_fields_match": true,
   "candidate_key_order": "Shared writer normalizes key order; original checked-in formatting retained.",
-  "source_sha256": {
-    "tools/ramp_height_oracle.py": "075bf47bd60f813783096ea034c271fdf3234ba6fdae9bfab9641bc49ca364b2",
-    "tools/native_oracle.py": "f3f58e1a15a4fd3be9e3bc2030819f079ab9155bdb08833e228c1c661445e51e"
-  },
   "region_sha256": {
     "set_height": "53c69322142504313aa6759e283116f57d30a2f116dbece8ce94a6f0b9e738d4",
     "get_height": "e41ad7a8db28ae266425fee0e354225a17f8325c1223cd48834a4d85d9e7c248",

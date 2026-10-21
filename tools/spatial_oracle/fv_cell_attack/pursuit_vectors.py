@@ -20,7 +20,7 @@ def generate():
                              blockage_timer=row['after']['blockage_timer'],
                              rng_before=row['before']['rng'], rng_after=row['after']['rng'],
                              returned=row['returned']))
-    return dict(native_sha256=data['native_sha256'], source=SOURCE.name,
+    return dict(source=SOURCE.name,
                 source_sha256=digest(SOURCE.read_bytes()), rows=rows)
 
 
@@ -31,7 +31,6 @@ def metadata():
         'values or calculated golden outcomes contribute.'
     ], substitutions=[], entry_points={'projected_original_approach': 0x4D5690})
     result['source_sha256'] = digest(SOURCE.read_bytes())
-    result['harness_sha256'] = digest(Path(__file__).read_bytes())
     return result
 
 

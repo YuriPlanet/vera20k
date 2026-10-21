@@ -225,6 +225,7 @@ impl NativeRulesProcessOwner {
             &selected_rules_root,
             &fixed_art,
             langrule.as_ref(),
+            &fixed_eva,
         )?;
         Ok(Self {
             sources: NativeRulesSourceSnapshot {
@@ -412,7 +413,13 @@ impl NativeRulesProcessOwner {
     /// one native registry owner.
     pub fn startup_compatibility_projection(&self) -> Result<ProcessedRulesLayers, RulesError> {
         self.startup_layers()
-            .process_with_fixed_art(&self.sources.fixed_art)
+            .process_with_fixed_art_and_registry_state_recovering(
+                &self.sources.fixed_art,
+                NativeRulesRegistryState::default(),
+                RulesProcessContext::Ordinary,
+                &self.sources.fixed_eva,
+            )
+            .map_err(|failure| failure.into_parts().0)
     }
 
     /// Execute the active Full_Init Rules chronology in place.
@@ -462,6 +469,7 @@ impl NativeRulesProcessOwner {
                     pre_reset_state,
                     named,
                     &self.sources.fixed_art,
+                    &self.sources.fixed_eva,
                 ) {
                     Ok(trace) => trace,
                     Err(failure) => {
@@ -481,6 +489,7 @@ impl NativeRulesProcessOwner {
             &self.sources.fixed_art,
             pre_reset_state,
             RulesProcessContext::ScenarioReset,
+            &self.sources.fixed_eva,
         ) {
             Ok(processed) => processed,
             Err(failure) => {
@@ -548,6 +557,10 @@ impl NativeRulesProcessOwner {
 #[cfg(test)]
 #[path = "session_country_tests.rs"]
 mod session_country_tests;
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "ares_eva_process_tests.rs"]
+mod ares_eva_tests;
 
 #[cfg(all(test, feature = "ares"))]
 #[path = "process_owner_global_controls_tests.rs"]

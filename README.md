@@ -67,7 +67,7 @@ Arrows show data flow:
 
 You need:
 
-- **Rust and Git:** [Rust](https://rustup.rs/) 1.88 or later, installed with rustup, and
+- **Rust and Git:** [Rust](https://rustup.rs/) 1.97 or later, installed with rustup, and
   [Git](https://git-scm.com/).
 - **Build tools:** on Windows, the Visual Studio C++ build tools, which the Rust installer offers
   to install; on macOS, `xcode-select --install`; on Debian and Ubuntu,
@@ -112,6 +112,8 @@ The enabled build also supports [generic production prerequisites](docs/ares-pre
 including alternate owned types and installed-upgrade qualification.
 It also supports [Ares House survival](docs/ares-house-survival.md), including
 `KeepAlive` and the complete `BaseUnit` list for short games.
+Additional [EVA voice tags and Side selection](docs/ares-eva.md) use the fixed
+EVAMD catalog and the existing announcement queue.
 
 To launch single-player YR skirmishes or campaigns through a dedicated CnCNet
 client, see the [offline client setup](integrations/cncnet/README.md). This needs
@@ -122,8 +124,9 @@ a VERA build with the `-SPAWN` startup adapter.
 Help is welcome. You can write code, refactor the engine, test the game, share ideas, or play
 it next to the original and tell us what feels wrong. Open a PR and we'll take it from there.
 If you add a native comparison under `tools/`, record what `gamemd.exe` computes, never a hash
-of the executable: every build is treated as the same game, and the oracle runner refuses such
-hashes (see [Evidence identity](tools/native_oracle.md#evidence-identity)).
+of the executable or of a repository source: every build is treated as the same game, the oracle
+runner refuses executable hashes, and a source hash would fail the check after unrelated edits
+(see [Evidence identity](tools/native_oracle.md#evidence-identity)).
 Discussion is on [Discord](https://discord.gg/kmjRUn5m5F) and in the QQ group (1097193563).
 
 ## Support

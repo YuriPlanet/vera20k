@@ -134,7 +134,7 @@ mod tests {
     use super::*;
 
     // Selected original constructor/ReadINI instructions and physical RULESMD
-    // inputs; executable identity and fixture bounds: ore_queue.md.
+    // inputs; fixture bounds: ore_queue.md.
     #[test]
     fn timer_and_percentage_readers_match_original_constructor_and_read_ini() {
         let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(

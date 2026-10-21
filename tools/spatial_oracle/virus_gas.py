@@ -132,7 +132,7 @@ def generate():
     ]
     rows = [history(case) for case in cases]
     m = VirusGas({})
-    return dict(native_sha256=native.image_sha256(), type_layers=m.smoke_layers,
+    return dict(type_layers=m.smoke_layers,
                 controls=rows, constructors=[constructors(1), constructors(3)])
 
 

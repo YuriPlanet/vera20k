@@ -1,6 +1,6 @@
 """Original type-three owner-button frame selection, with supplied paint state.
 
-Execute 612F2A..612F5F from the pinned gamemd.exe, after type-three admission
+Execute 612F2A..612F5F from the retail gamemd.exe, after type-three admission
 and the 72B050 art lookup. The snippet selects a frame and stores it at ESP+14.
 This does not emulate mouse capture, art lookup, painting or disabled tinting.
 """

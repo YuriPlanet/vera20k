@@ -67,7 +67,7 @@ VERA20K من صنع اللاعبين ومن أجلهم، وللاعبين الك
 
 تحتاج إلى:
 
-- **Rust وGit:** [Rust](https://rustup.rs/) 1.88 أو أحدث، مثبتًا عبر rustup، و[Git](https://git-scm.com/).
+- **Rust وGit:** [Rust](https://rustup.rs/) 1.97 أو أحدث، مثبتًا عبر rustup، و[Git](https://git-scm.com/).
 - **أدوات البناء:** على Windows أدوات بناء C++ من Visual Studio، ويعرض مثبّت Rust تثبيتها؛ وعلى macOS الأمر
   `xcode-select --install`؛ وعلى Debian وUbuntu الأمر `sudo apt install build-essential libasound2-dev pkg-config`.
 

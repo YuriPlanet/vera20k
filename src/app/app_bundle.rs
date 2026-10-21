@@ -197,28 +197,47 @@ mod first_launch {
     /// Yuri's Revenge folders inside the Wine prefixes Mac players use:
     /// wrapper apps from Porting Kit, Wineskin and Kegworks in `applications`
     /// or ~/Applications, CrossOver bottles and ~/.wine. None of these places
-    /// makes macOS ask the player for file access. Sorted, so the offer is
-    /// stable.
+    /// makes macOS ask the player for file access, and the search follows no
+    /// link out of them. Sorted, so the offer is stable.
     pub(super) fn find_game_folders(home: &Path, applications: &Path) -> Vec<PathBuf> {
         let mut drives = Vec::new();
-        for folder in [applications.to_path_buf(), home.join("Applications")] {
-            for app in subfolders(&folder).filter(|app| app.extension() == Some(OsStr::new("app")))
-            {
-                drives.push(app.join("Contents/SharedSupport/prefix/drive_c"));
+        let app_folders = [
+            Some(applications.to_path_buf()),
+            real_folder(home, "Applications"),
+        ];
+        for folder in app_folders.iter().flatten() {
+            for app in subfolders(folder).filter(|app| app.extension() == Some(OsStr::new("app"))) {
+                drives.extend(real_folder(&app, "Contents/SharedSupport/prefix/drive_c"));
                 // Wineskin wrappers made before version 2.9.
-                drives.push(app.join("Contents/Resources/drive_c"));
+                drives.extend(real_folder(&app, "Contents/Resources/drive_c"));
             }
         }
-        let bottles = home.join("Library/Application Support/CrossOver/Bottles");
-        drives.extend(subfolders(&bottles).map(|bottle| bottle.join("drive_c")));
-        drives.push(home.join(".wine/drive_c"));
+        if let Some(bottles) = real_folder(home, "Library/Application Support/CrossOver/Bottles") {
+            drives
+                .extend(subfolders(&bottles).filter_map(|bottle| real_folder(&bottle, "drive_c")));
+        }
+        drives.extend(real_folder(home, ".wine/drive_c"));
 
         let mut found = Vec::new();
-        for drive in drives.iter().filter(|drive| drive.is_dir()) {
+        for drive in &drives {
             game_folders_below(drive, &mut found);
         }
         found.sort();
         found
+    }
+
+    /// `below` inside `folder`, when each folder on the way is a real folder.
+    /// A link, such as a ~/.wine moved to an external drive or into Documents,
+    /// could lead to a place macOS asks the player about.
+    fn real_folder(folder: &Path, below: &str) -> Option<PathBuf> {
+        let mut path = folder.to_path_buf();
+        for name in below.split('/') {
+            path.push(name);
+            if !std::fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.is_dir()) {
+                return None;
+            }
+        }
+        Some(path)
     }
 
     /// Add the folders below `drive` that hold both masters to `found`.
@@ -380,7 +399,7 @@ mod tests {
     #[test]
     fn only_an_executable_inside_an_app_bundle_counts() {
         assert!(in_app_bundle(Path::new(
-            "/Applications/VERA20k.app/Contents/MacOS/vera20k"
+            "/Applications/VERA20k.app/Contents/MacOS/VERA20k"
         )));
         assert!(!in_app_bundle(Path::new(
             "/Users/me/vera20k/target/release/vera20k"
@@ -417,7 +436,7 @@ mod tests {
                 std::fs::create_dir_all(&data).unwrap();
                 let game = root.join("Yuri's Revenge 尤里的复仇");
                 write_masters(&game, ["RA2MD.MIX", "ra2.mix"]);
-                let executable = root.join("VERA20k.app/Contents/MacOS/vera20k");
+                let executable = root.join("VERA20k.app/Contents/MacOS/VERA20k");
                 Self {
                     root,
                     data,
@@ -601,6 +620,36 @@ mod tests {
             assert!(
                 find_game_folders(&fixture.root.join("nobody"), &fixture.root.join("none"))
                     .is_empty()
+            );
+        }
+
+        #[test]
+        fn the_search_follows_no_link_out_of_a_prefix() {
+            use std::os::unix::fs::symlink;
+
+            let fixture = Fixture::new();
+            let applications = fixture.root.join("Applications");
+            let home = fixture.root.join("home");
+            // A real prefix, then links to one elsewhere: a moved ~/.wine, a
+            // wrapper's drive_c and the CrossOver bottles folder.
+            let wrapper = applications.join("RA2.app/Contents/SharedSupport/prefix");
+            write_masters(&wrapper.join("drive_c/RA2"), ["ra2md.mix", "ra2.mix"]);
+            let elsewhere = fixture.root.join("Documents/prefix");
+            write_masters(&elsewhere.join("drive_c/RA2"), ["ra2md.mix", "ra2.mix"]);
+            let linked = applications.join("Linked.app/Contents/SharedSupport/prefix");
+            std::fs::create_dir_all(&linked).unwrap();
+            symlink(elsewhere.join("drive_c"), linked.join("drive_c")).unwrap();
+            std::fs::create_dir_all(home.join("Library/Application Support/CrossOver")).unwrap();
+            symlink(
+                fixture.root.join("Documents"),
+                home.join("Library/Application Support/CrossOver/Bottles"),
+            )
+            .unwrap();
+            symlink(&elsewhere, home.join(".wine")).unwrap();
+
+            assert_eq!(
+                find_game_folders(&home, &applications),
+                [wrapper.join("drive_c/RA2")]
             );
         }
     }

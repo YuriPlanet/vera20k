@@ -64,7 +64,6 @@ def generate():
     try:
         return dict(
             schema=1,
-            native_sha256=admission.base.NATIVE_SHA256,
             cases=[query.execute(row) for row in rows],
         )
     finally:
@@ -77,8 +76,6 @@ def metadata():
     # This four-row runner keeps invoke's ordinary budget; only the exhaustion
     # runner installs admission.generate's larger outer-call limit.
     result['outer_approach_instruction_limit'] = 2_000_000
-    result['admission_harness_sha256'] = result['harness_sha256']
-    result['harness_sha256'] = admission.base.proof.sha(Path(__file__).read_bytes())
     result['assumptions'] = [
         item for item in result['assumptions']
         if not item.startswith('Each control restores')

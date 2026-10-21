@@ -28,7 +28,7 @@ def generate():
             target_geometry=result['target_geometry'][0], in_range=result['returned'],
             distances=result['distances'], fire_error=row['results'][1]['returned'],
         ))
-    return dict(native_sha256=data['native_sha256'], source=SOURCE.name,
+    return dict(source=SOURCE.name,
                 source_sha256=digest(SOURCE.read_bytes()), rows=rows)
 
 
@@ -39,7 +39,6 @@ def metadata():
         'hand-calculated expected value contributes to the vectors.',
     ], substitutions=[], entry_points={'projected_original_in_range': 0x6F7220})
     result['source_sha256'] = digest(SOURCE.read_bytes())
-    result['harness_sha256'] = digest(Path(__file__).read_bytes())
     return result
 
 

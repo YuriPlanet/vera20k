@@ -1468,6 +1468,92 @@ fn a_selected_foreign_vehicle_selects_nothing() {
     }
 }
 
+/// The local planner's Planning Mode byte (`0x00AC4CF4`).
+struct PlanningMode(bool);
+
+impl crate::sim::world::LocalPlanningBoundary for PlanningMode {
+    fn leave_planning(
+        &self,
+        _: &Simulation,
+        _: &RuleSet,
+    ) -> Option<crate::sim::command::CommandEnvelope> {
+        None
+    }
+
+    fn planning_active(&self) -> bool {
+        self.0
+    }
+}
+
+/// `TechnoClass::Select` ends with its planning-node add (`0x006FC020` ->
+/// `0x00637840`). A passenger keeps its planned path through Limbo; when its
+/// selected transport dies, its Select (`0x00738174`) in Planning Mode also
+/// Selects the other member of its tail node, and outside it does not.
+#[test]
+fn a_reselected_escapee_in_planning_mode_selects_its_node_partner() {
+    let rules = rules();
+    for planning in [true, false] {
+        let mut sim = sim_on_arena(1, &rules);
+        let owner = sim.interner.intern("AlliedHuman");
+        sim.session.set_current_house_for_test(Some(owner));
+        let apc = spawn(&mut sim, &rules, "APC", "AlliedHuman", 10, 10);
+        let partner = spawn(&mut sim, &rules, "E1", "AlliedHuman", 20, 10);
+        let passenger = load_passengers(&mut sim, &rules, apc, "AlliedHuman", 1)[0];
+        // Same-frame planned moves to one cell share the tail node.
+        for id in [passenger, partner] {
+            let record = sim
+                .encode_planning_order_record(
+                    owner,
+                    &crate::sim::command::Command::Move {
+                        entity_id: id,
+                        target_rx: 15,
+                        target_ry: 15,
+                    },
+                )
+                .expect("planning record");
+            let command = sim.decode_native_command_record(&record, 0).unwrap();
+            assert!(sim.apply_command("AlliedHuman", &command.payload, Some(&rules)));
+        }
+        assert_eq!(
+            sim.planning_select_partners(passenger, true),
+            [passenger, partner]
+        );
+        sim.substrate
+            .entities
+            .get_mut(apc)
+            .unwrap()
+            .selection
+            .set_selected_for_test(true);
+        let boundary = PlanningMode(planning);
+        let warhead = sim.interner.intern("KILLWH");
+        let hit = EntityDamageEvent::direct_receiver(
+            apc,
+            100_000,
+            0,
+            RAD_NO_ATTACKER,
+            None,
+            warhead,
+            ORDINARY,
+        );
+        sim.commit_noncombat_aoe_hits(
+            &rules,
+            None,
+            &[hit],
+            crate::sim::world::FrameEffects::default().with_local_planning(&boundary),
+        );
+        let selected = |id: u64| {
+            sim.substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .selection
+                .is_selected()
+        };
+        assert!(selected(passenger));
+        assert_eq!(selected(partner), planning, "planning mode {planning}");
+    }
+}
+
 /// Retail `rulesmd.ini` and `artmd.ini` (the local `ini/`): the stock crew
 /// keys bind, and a power plant and an MCV killed through the production
 /// receiver leave stock crew with native health ranges.

@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -36,13 +35,6 @@
     "iterator_next": "0x00578290",
     "main_next": "0x0065C780",
     "return_to_mouse_load": "0x005BE65C"
-  },
-  "source_normalized_lf_sha256": {
-    "producer": "9cee10b0bc1b6fcfb15055cf7e8da057fd7580cb0e541fba1d75bdd437aeda83",
-    "native": "67a69b8e446a8134fbff1128c1fe15025350f329fc25585af29ea725746f2ceb",
-    "rng_owner": "ea176f7040a39a9bc3578c6f7f68562f8dda1526001a0148f66ce4133b8ab3c4",
-    "map_fixture": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305",
-    "lat_fixture": "6c28a1ab004aa2fbfbfec58382bc8653b451514e21daab802cc0666b7bb8c80c"
   },
   "payload_sha256": "669e16e2d1d0f89a62e03c21525ccb0c939d79b46b57a36c069f9841d7b0f646"
 }

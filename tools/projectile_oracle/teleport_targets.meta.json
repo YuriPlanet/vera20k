@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -29,5 +28,5 @@
     "precommit_stop": "0x00467B7A"
   },
   "replay_command": "python -m tools.projectile_oracle.ifv_lifecycle_controls --teleport-targets",
-  "payload_sha256": "dcdce624bea8968b1611eb21c85276409f11e28db6054d94a2f99e462e8abd8e"
+  "payload_sha256": "b4cd0f0389ca60aada9d9c5c2f6614ebc2c1df9cccb7254c975c55d94864ad9f"
 }

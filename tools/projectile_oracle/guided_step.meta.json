@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -26,5 +25,5 @@
     "proximity_setup": "0x004E1130",
     "proximity_check": "0x004E11F0"
   },
-  "payload_sha256": "a6297147f76a92ca136ba1877fcecca803162a8d39c7fa9928cb9c6717911c46"
+  "payload_sha256": "2f8321f07317b08ebd3464874250f54749a2e367c8d70b8e8cb15ca941584277"
 }

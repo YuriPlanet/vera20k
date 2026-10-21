@@ -1,28 +1,12 @@
 {
   "files": {
-    "README.md": "5f6f0a2df5fa1038c875a5b1178d140974564cc33f2eb1dbfff938e2f227d097",
-    "__init__.py": "34111c7c8db2210d6fd6121b636fa3bb7f2aba82d82659987e22d5f40e91743c",
-    "hut_joined.json.gz": "06f17bfaa1578fdabf203df32b2a493a495166a8d0fc3d88ba5ecf1211d1fe63",
-    "hut_joined.meta.json": "7a845dacf6033ec00e0acecd6204085fb18e89942282b5454105f2e707b5ed21",
-    "hut_vectors.json": "7d972bcbc130ea4992ccecc0c25f13c417ad78fec9f0c1765368d9548da3868d",
-    "hut_vectors.meta.json": "0cb4c7f43cc20ecf2487b8b037ee978c96c40d1279ccca31a74bee68581beb8c",
-    "original_execution.meta.json": "a06f79b0e2ec71c76527453eb8a266981e605829d4c45ddd1279b643f5d03222",
-    "probe.py": "34d511e7e3b170a4d463fd7b182df0839b71ae327ce26e1b9a32f9e17450c776",
-    "projection.py": "ced3855ac3a234182baa8b8e1a140fbe4c3ed74556f6a087d7adde1703e1889b",
+    "hut_joined.json.gz": "977eed2e733b6a94712401b93bf6c890628905b52df4cb03042074fbbe895ac5",
+    "hut_joined.meta.json": "c2fc8158bb650ab03ac959dbc0f1e25c9f8ab5ee4c3f3461c43b56f5b3b7f2ee",
+    "hut_vectors.json": "90c2c65d3f8784c8d96d565cdb4ed47906b7b28bb4b882366e0b3eb61a0e2c97",
+    "hut_vectors.meta.json": "94bea9ed366f8d43a585972c85e7829cdde470ae54a9aaab9e867574bce8232d",
+    "original_execution.meta.json": "52742177f69f4cd77308d66ffee2c5ae3e23fd55b6d14de1f42920cc6b3bd566",
     "promotion.json": "68a6b28d0bebe8a72eaf0abb341b78813406181282ef569bbf5d9fec8b6b4e0e"
   },
-  "integration_source_pin_changes": [
-    {
-      "after": "ae5f653cc6b9b3670db69df2b2f42fcd3204d72c0f97b58dfb07652496cc22a1",
-      "before": "be24681677811006e08f80365e4d26fb5297f8254aae72a8ef1de8e0e14644c6",
-      "file": "tools/spatial_oracle/building_construction.py"
-    },
-    {
-      "after": "79dac1057d97e706f106a26145f00fa220d92c172b5173876c60fed22c17530c",
-      "before": "f3f58e1a15a4fd3be9e3bc2030819f079ab9155bdb08833e228c1c661445e51e",
-      "file": "tools/native_oracle.py"
-    }
-  ],
   "integration_validation": [
     {
       "base_commit": "d4aaba7172506137bb2a08008e43ece3e67d17fa",
@@ -45,18 +29,11 @@
         "exit_code": 0,
         "log_sha256": "5f4d94803fc8e87b3e21ae9782fa7fcbcf19669bb9809ac88ca404a798df412c",
         "result": "PASS tools/spatial_oracle/fv_cell_attack/huts/hut_vectors.json: native outputs match; no files written"
-      },
-      "source_pin_change": {
-        "after": "79dac1057d97e706f106a26145f00fa220d92c172b5173876c60fed22c17530c",
-        "before": "f3f58e1a15a4fd3be9e3bc2030819f079ab9155bdb08833e228c1c661445e51e",
-        "file": "tools/native_oracle.py"
       }
     }
   ],
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "original_execution": {
-    "harness_sha256": "1a9927062913f3dbb718c50036c40778ce48b87c6fee971ec1d3b0a17e445fe7",
-    "metadata_sha256": "a06f79b0e2ec71c76527453eb8a266981e605829d4c45ddd1279b643f5d03222",
+    "metadata_sha256": "52742177f69f4cd77308d66ffee2c5ae3e23fd55b6d14de1f42920cc6b3bd566",
     "native_file_sha256": "7ade8a7af905c3343a924ec39bc7abf135de59ba495c0060670734fd970baf65",
     "native_payload_sha256": "978dd539e84fad3cef4dd2fbe7af5a10956060e775e5aedbe294378986d325c0",
     "validation": [
@@ -143,14 +120,12 @@
       "Literal projection --write and independent --check",
       "Projection file byte-identical to original",
       "Original execution metadata byte-identical",
-      "64 current source pins match files",
       "Explicit asset environment resolves exact physical CTBHUT.SHP",
       "No committed assets, caches or local paths"
     ],
     "gameplay_class_ast": "identical except CTBHUT.SHP asset transport",
     "native_replay": {
       "command": "python -m tools.spatial_oracle.fv_cell_attack.huts.probe --check --fresh-world",
-      "current_source_pin_count": 64,
       "exit_code": 0,
       "log_sha256": "72ed01cdcbafd62387cc3a4a91079db74a836d0832a8be20b6805bcd1b84779d",
       "physical_worlds": [
@@ -170,6 +145,5 @@
     "publication": "Shared lexical-input SHA256 projection only; native values and traces unchanged."
   },
   "schema": 1,
-  "source_pin_count": 64,
   "status": "Post-integration fresh native-world replay and independent literal projection checks passed on d4aaba7172506137bb2a08008e43ece3e67d17fa; frozen native values, original execution metadata and prior relocation receipts preserved."
 }

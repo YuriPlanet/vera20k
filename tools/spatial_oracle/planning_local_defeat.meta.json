@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -38,5 +37,5 @@
     "sound_default_stores": "0x006658F2"
   },
   "replay_command": "python -m tools.spatial_oracle.planning_mode --local-defeat",
-  "payload_sha256": "d1843fded6c52192a9da92f0323e803a434f732844bb29245be7cfe91ed60641"
+  "payload_sha256": "efff8d7ea437eaa964a78a5b33e5f72675927d54307bd765bdc63a862193f884"
 }

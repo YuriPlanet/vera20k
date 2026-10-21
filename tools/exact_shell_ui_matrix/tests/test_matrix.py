@@ -64,22 +64,18 @@ def _evidence(kind: str, *, resolutions: tuple[str, ...] = ()) -> dict[str, obje
             "scaling": "one-native-pixel-to-one-output-pixel",
             "surface_region": "client-backbuffer",
         }
-        native_sha = "b" * 64
         proof_domain = None
     elif kind == "exhaustive-proof":
         comparison = None
-        native_sha = None
         proof_domain = "Every input in the named matrix row state space"
     else:
         comparison = None
-        native_sha = None
         proof_domain = None
     return {
         "artifacts": [_artifact()],
         "comparison_contract": comparison,
         "id": "evidence:test-bundle",
         "kind": kind,
-        "native_executable_sha256": native_sha,
         "proof_domain": proof_domain,
     }
 

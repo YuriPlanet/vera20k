@@ -2320,18 +2320,16 @@ fn resolve_selection_mutation(
             continue;
         }
         native_selection_mode_reset = true;
-        // TechnoClass::Select ends with 0x00637840 (0x006FC020): in planning
-        // mode it Selects (vt+0x14C) each unselected member of the object's
-        // tail node; its AC4CF6 guard keeps those Selects from expanding.
-        // They run before the band-box callback clears the voice latch
-        // (0x004AC2FB), so they speak with their Select. Residual: members
-        // pass only `can_select_object`, not 6FBFA0's +0x41B/IsHumanPlayer
-        // gate or 5F4520's cross-owner Unselect_All (0x005F45AF..0x005F45F8);
-        // that differs only for another human player's plan.
-        if planning_active {
-            for member in sim.planning_tail_members(id) {
-                select(member, &mut ordered, &mut successful_adds);
-            }
+        // TechnoClass::Select ends with 0x00637840 (0x006FC020), whose one
+        // port names the tail-node partners to Select (vt+0x14C) here; these
+        // nested Selects do not expand again (AC4CF6). They run before the
+        // band-box callback clears the voice latch (0x004AC2FB), so they
+        // speak with their Select. Residual: members pass only
+        // `can_select_object`, not 6FBFA0's +0x41B/IsHumanPlayer gate or
+        // 5F4520's cross-owner Unselect_All (0x005F45AF..0x005F45F8); that
+        // differs only for another human player's plan.
+        for member in sim.planning_select_partners(id, planning_active) {
+            select(member, &mut ordered, &mut successful_adds);
         }
         if first_select_adds == 0 {
             first_select_adds = successful_adds.len();
@@ -2625,7 +2623,8 @@ mod item83_selection_order_tests {
             let command = sim.decode_native_command_record(&record, 0).unwrap();
             assert!(sim.apply_command("Local", &command.payload, Some(&rules)));
         }
-        assert_eq!(sim.planning_tail_members(42), vec![42, 43]);
+        assert_eq!(sim.planning_select_partners(42, true), vec![42, 43]);
+        assert!(sim.planning_select_partners(42, false).is_empty());
         let resolve = |current: Vec<u64>, select: Vec<u64>, planning| {
             resolve_selection_mutation(
                 &sim,

@@ -1,7 +1,6 @@
 {
   "schema_version": 1,
   "program": "gamemd.exe",
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "evidence": "astar_hills_markers.json",
   "saved": true,
   "readback": [

@@ -14,7 +14,7 @@ from unicorn.x86_const import (
 )
 
 from tools.native_oracle import (
-    NATIVE_SHA256, RET_MAGIC, NativeCallTrace, NativeExecutionError,
+    RET_MAGIC, NativeCallTrace, NativeExecutionError,
     finish_vectors, initialize_empty_windows_seh, provenance, run_checked,
 )
 from tools.projectile_oracle.bridge_render_art_state import ArtStateReader
@@ -658,7 +658,7 @@ def generate():
         rows.append(row)
         if name == 'stock_lifetime':
             retail = inputs
-    return dict(schema=1, native_sha256=NATIVE_SHA256, sources=source_files(),
+    return dict(schema=1, sources=source_files(),
                 scenario_rng_seed=31, main_rng_seed=31, retail=retail,
                 seeded_rng_state_hex=seeded_struct(31).hex(),
                 retail_projectiles=retail_projectiles(),

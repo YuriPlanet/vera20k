@@ -246,7 +246,7 @@ def generate():
                     for p in sorted(root.iterdir()) if p.is_file() and p.suffix.lower() != '.json']
     return dict(
         schema_version=1, kind='bounded-original-engineer-capture-accounting',
-        source='unicorn/gamemd.exe', native_sha256=native.NATIVE_SHA256,
+        source='unicorn/gamemd.exe',
         retail_files=retail_files,
         rules_building_layers=inputs.layers, engineer_layers=inputs.engineer_layers,
         native_building_entry_flags=inputs.building_entry,

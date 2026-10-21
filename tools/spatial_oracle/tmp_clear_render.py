@@ -13,7 +13,7 @@ from unicorn.x86_const import (
     UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_ECX,
     UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_ESP, UC_X86_REG_FPCW,
 )
-from tools.native_oracle import NATIVE_SHA256, RET_MAGIC, NativeCallTrace, configured_gamemd, finish_vectors, provenance, run_checked
+from tools.native_oracle import RET_MAGIC, NativeCallTrace, configured_gamemd, finish_vectors, provenance, run_checked
 from tools.spatial_oracle.bridge_shadow_render import (
     prepare as prepare_shared, CELL, POINT, CLIP, WIDTH, HEIGHT, COUNT,
     PIXELS, Z, A, ints, snapshot, physical_assets,
@@ -443,7 +443,7 @@ def generate():
             output=dict(top_scalar=top, common_scalar=common, bottom_scalar=bottom,
                 cell_normalized_rgb=list(struct.unpack('<3h', m.u.mem_read(CELL + 0x110, 6))),
                 convert_rgb_key=ints(m.u, m.read32(CELL + 0x34) + 0x198, 3))))
-    return dict(native_sha256=NATIVE_SHA256, inputs=inputs,
+    return dict(inputs=inputs,
                 surface=dict(width=WIDTH, height=HEIGHT, baseline=32768, bytes_per_pixel=2), rows=rows,
                 light_height_scene_lighting=neutral, light_height_controls=light_controls)
 
@@ -648,7 +648,7 @@ def generate_preview():
              for name, address in streams.items()}
     assert before == after and not draws
     assert reached >= {0x549E90, 0x549E50, 0x47BDB0, 0x661020, 0x661190, 0x544E00, 0x4814F0}
-    return dict(native_sha256=NATIVE_SHA256, inputs=inputs,
+    return dict(inputs=inputs,
         producer=dict(entry='00549E90', subtile_count=count, levels=13,
             bytes_per_level=4, table_hex=packed_table, brightness_f32_bits=f'{scale_bits:08x}',
             fraction_multiplier_f64_bits=f'{struct.unpack("<Q", u.mem_read(0x7ECD28, 8))[0]:016x}',
@@ -866,7 +866,7 @@ def generate_partial_redraw(*, detail=False):
                 phases=phases, calls=list(calls), rng_requests=list(requests)))
     finally:
         u.hook_del(hook)
-    data = dict(schema_version=1, native_sha256=NATIVE_SHA256, inputs=inputs,
+    data = dict(schema_version=1, inputs=inputs,
         scene=dict(cells=scene, map_size=map_size, registration_bounds=[0, 0, 32, 32],
                    every_draw_receiver_real=True,
                    camera=camera, lighting=lighting, native_shroud=identity,

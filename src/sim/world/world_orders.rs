@@ -181,6 +181,15 @@ impl Simulation {
     /// aircraft's What_Action answers 0 (`0x00417CC0` -> `0x006FFEC9`, cell
     /// `0x00417F80`). Producer-side, like `unit_repair_action`: an event sent
     /// before the object went berserk still executes.
+    ///
+    /// An object being warped out (vt+0x1D4) is not refused here: neither
+    /// the selection loop (`0x004AE829..0x004AE844`), Unit `0x00738890`,
+    /// Foot `0x004D74E0`, ClickedMission (`0x006FFBE0`) nor the MEGAMISSION
+    /// arm of Event::Execute (`0x004C71F6..0x004C74BA`) reads it. Its own
+    /// What_Action decides what it sends (Techno's warp arm, `0x006FFF03`,
+    /// though Unit's healer arm `0x0073FD7C` still answers Repair). The event
+    /// queues the mission and sets the target, which the next frozen AI frame
+    /// drops (`Simulation::temporal_ai_prologue`); the queued mission waits.
     pub fn click_order_receivers(&self, selection: &[u64]) -> Vec<u64> {
         selection
             .iter()
@@ -361,8 +370,14 @@ impl Simulation {
     /// arm and the rung (`0x007401C1..0x0074027A`) are not represented. With
     /// the base action still Select they answer Move for such a building
     /// whose CAN_LOAD admits the Unit when it is not in radio contact. They
-    /// matter only where the building arm's own gates refused (an unallied or
-    /// warped-out building, a computer's Unit), whose CAN_LOAD refuses too.
+    /// matter only where the building arm's own gates refused. An unallied
+    /// building or a computer's Unit fails CAN_LOAD's own alliance test
+    /// (`0x0043C2D0` case 0xF). A warped-out building is offline
+    /// (`TemporalGoOffline` `0x004521C0` clears +0x660), and CAN_LOAD answers
+    /// 10 for an offline building before its Bunker and UnitRepair arms; only
+    /// trigger action 62 (`0x006DE02E`, no warp test) puts it back online
+    /// mid-warp, and no stock map uses actions 60..62 (production-reader
+    /// census). DORMANT.
     ///
     /// RESIDUAL: the depot row first scans the Aircraft type's `Dock=` list
     /// (`+0x3E8`) for the building's type; one listed asks for a free radio

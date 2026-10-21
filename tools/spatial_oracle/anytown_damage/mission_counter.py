@@ -144,7 +144,7 @@ def generate():
     text_hash = packet_io.digest(bytes(q.u.mem_read(0x401000, 0x3E0000)))
     assert text_hash == q.resident.code_hash
     assert not q.pending, q.pending
-    return dict(native_sha256=owner.NATIVE_SHA256, text_sha256=text_hash,
+    return dict(text_sha256=text_hash,
                 input_sha256=packet_io.digest(inputs_raw), comparison=result,
                 instruction_readback=instruction_readback(q))
 

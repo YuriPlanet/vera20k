@@ -62,7 +62,6 @@
       "team_flag": 1
     }
   ],
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "retail_aimd": {
     "inner_sha256": "cd181596b2deaeacf7bba77e661ae4438d3f778efc0e38ae2b967c410bf3f931",
     "outer_sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d",

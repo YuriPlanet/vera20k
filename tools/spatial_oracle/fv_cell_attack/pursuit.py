@@ -4,14 +4,14 @@ External next-chain evidence. Existing native VM/COM/allocation owners execute;
 physical full-map facts and actor placement are supplied, not a Scenario load.
 All hierarchy levels are rebuilt by original instructions and compared with
 the separately preserved native live or post-load hierarchy corpus."""
-import importlib.util, json, struct, hashlib, sys, gzip
+import importlib.util, json, struct, hashlib, gzip
 from collections import deque
 from pathlib import Path
 from types import SimpleNamespace
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE, UC_HOOK_MEM_READ
 from unicorn.x86_const import *
 from capstone import Cs, CS_ARCH_X86, CS_MODE_32
-from tools.native_oracle import RET_MAGIC, run_checked, NATIVE_SHA256, _canonical, first_difference, provenance
+from tools.native_oracle import RET_MAGIC, run_checked, _canonical, first_difference, provenance
 from tools.spatial_oracle.anytown_damage.mission import Mission
 from tools.spatial_oracle.building_body_rules import SP, RULES, dwords
 HERE=Path(__file__).resolve().parent
@@ -290,7 +290,7 @@ def generate():
   q.close()
   del q
   __import__('gc').collect()
- return dict(schema=1,native_sha256=NATIVE_SHA256,original_constants=original_constants(),stages=stages)
+ return dict(schema=1,original_constants=original_constants(),stages=stages)
 
 
 def original_constants():
@@ -316,8 +316,6 @@ def metadata():
   'Reuse existing native readers, heap, physical input caches and Mission Windows/COM import seams. No range, candidate, admission, hierarchy, path cost, destination, mission, timer or RNG result is replaced. Original complete.text hash and code-write guard remain enforced.',
   'Head.alloc/Head.hook successful bounded allocator is reused for larger pathfinder/graph arrays. No custom VM, allocator algorithm, or graph/path algorithm is added. Inherited type visual5F8110/5F8CE0 boundaries return no shape during setup only.',
  ],entry_points=dict(unit_ctor=0x7353C0,drive_factory=0x6C4010,mission_dispatch=0x5B3060,mission_attack=0x4D4DC0,unit_approach=0x7414E0,foot_approach=0x4D5690,range=0x6F7220,cell_admission=0x4834A0,path_cost=0x42D170,hierarchy_preflight=0x42C290,unit_destination=0x741970,foot_destination=0x4D94B0,drive_destination=0x4AFD40,attack_rng=0x65C7E0))
- result['harness_sha256']=proof.sha(Path(__file__).read_bytes());result['range_fixture_sha256']=proof.sha(Path(proof.__file__).read_bytes())
- result['sources']={str(p.relative_to(proof.REPO)):proof.sha(p.read_bytes())for module in tuple(sys.modules.values())if(name:=getattr(module,'__file__',None))and(p:=Path(name).resolve()).is_relative_to(proof.REPO/'tools')and p.suffix=='.py'}
  result['native_packets']={str(p.relative_to(proof.REPO)):proof.sha(p.read_bytes())for p in (proof.FACTS,proof.REPO/'tools/spatial_oracle/anytown_navigation_restore.json.gz')}
  return result
 

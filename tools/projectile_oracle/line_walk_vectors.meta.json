@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -25,5 +24,5 @@
     "alliance": "0x004F9A50"
   },
   "replay_command": "python -m tools.projectile_oracle.shared_collision --line-walk",
-  "payload_sha256": "5e474e8a98943b5a0184a48a7ca23e35e94a51ec58dcfc8e8687fc8c5f3cf276"
+  "payload_sha256": "63e4a1c999f5b4c726cc867885ff9b06cb7eba43f238874e52e4bdaee8e3b169"
 }

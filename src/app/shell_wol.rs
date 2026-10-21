@@ -424,7 +424,7 @@ pub(crate) fn open_lobby(state: &mut AppState, postmatch: bool) {
     let Some(visit) = state.frontend.wol.as_ref() else {
         return;
     };
-    if visit.mode == Some(WolMode::QuickMatch) {
+    if matches!(visit.mode, Some(WolMode::QuickMatch | WolMode::QuickCoop)) {
         if postmatch {
             quick_match::postmatch(state);
         } else {
@@ -787,29 +787,7 @@ impl App {
                 Self::leave_shell_dialog(state, ShellExitThen::WolBack)
             }
             Some(WolWelcomeAction::Mode(mode)) => {
-                let controlled = state
-                    .frontend
-                    .wol
-                    .as_ref()
-                    .is_some_and(|visit| visit.provider != WolProvider::Unavailable);
-                if controlled
-                    && !matches!(
-                        mode,
-                        WolMode::CustomMatch
-                            | WolMode::MyInformation
-                            | WolMode::PlayBuddy
-                            | WolMode::QuickMatch
-                    )
-                {
-                    // Quick Co-op behind a working WOLAPI is a later chain.
-                    log::warn!(
-                        "WOL mode {} with a controlled service is not implemented; \
-                         0x10E stays",
-                        mode.native()
-                    );
-                } else {
-                    Self::leave_shell_dialog(state, ShellExitThen::WolAction(mode));
-                }
+                Self::leave_shell_dialog(state, ShellExitThen::WolAction(mode));
             }
             // No `Community` URL in the registry: nothing happens.
             Some(WolWelcomeAction::Community) | None => {}

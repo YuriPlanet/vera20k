@@ -30,9 +30,11 @@ def free(path):
         return False
 
 shared, checkout, report, status, edit = sys.argv[1:]
-with open(report, 'a') as handle:
-    handle.write(json.dumps({'shared': free(shared), 'checkout': free(checkout), 'cwd': os.getcwd(),
-                             'package': os.environ.get('CARGO_PKG_NAME')}) + '\\n')
+line = json.dumps({'shared': free(shared), 'checkout': free(checkout), 'cwd': os.getcwd(),
+                   'package': os.environ.get('CARGO_PKG_NAME')}) + '\\n'
+# Recorded executables run at once, and Windows appends from two processes can interleave.
+with file_lock(Path(report + '.lock'), time.monotonic() + 30), open(report, 'a') as handle:
+    handle.write(line)
 if edit:
     Path(edit).write_text('edited during the tests')
 sys.exit(int(status))
@@ -195,10 +197,21 @@ class CargoRunTests(unittest.TestCase):
         # Any feature difference gives `-p vera20k-core` its own core test
         # executable; src/Cargo.toml's dev-dependencies must then gain it.
         def tree(*selection):
-            listing = subprocess.run(
-                ['cargo', 'tree', '--locked', '--offline', *selection, '-e', 'normal,build,dev',
-                 '--prefix', 'none', '--no-dedupe', '-f', '{p} {f}'],
-                cwd=REPOSITORY, check=True, capture_output=True, text=True).stdout
+            try:
+                listing = subprocess.run(
+                    ['cargo', 'tree', '--locked', '--offline', *selection, '-e', 'normal,build,dev',
+                     '--prefix', 'none', '--no-dedupe', '-f', '{p} {f}'],
+                    cwd=REPOSITORY, check=True, capture_output=True, text=True).stdout
+            except FileNotFoundError:
+                self.skipTest('needs cargo')
+            except subprocess.CalledProcessError as error:
+                # A fresh machine has no locked crates in Cargo's cache; any other
+                # resolution error, such as a stale Cargo.lock, still fails.
+                offline = ('offline mode (via `--offline`)', "you're using offline mode",
+                           'but --offline was specified')
+                if any(text in error.stderr for text in offline):
+                    self.skipTest('needs the locked crates in Cargo\'s cache: run cargo fetch --locked')
+                raise
             features = {}
             for line in filter(None, listing.splitlines()):
                 package, version, *rest = line.replace(' (*)', '').split(' ')

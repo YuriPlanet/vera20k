@@ -5,11 +5,18 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleExecutable</key>
-	<string>vera20k</string>
+	<string>VERA20k</string>
+	<key>CFBundleIconFile</key>
+	<string>VERA20k</string>
 	<key>CFBundleIdentifier</key>
 	<string>io.github.yuriplanet.vera20k</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>zh-Hans</string>
+	</array>
 	<key>CFBundleName</key>
 	<string>VERA20k</string>
 	<key>CFBundlePackageType</key>
@@ -17,12 +24,26 @@
 	<key>CFBundleShortVersionString</key>
 	<string>@VERSION@</string>
 	<key>CFBundleVersion</key>
-	<string>@VERSION@</string>
+	<string>@BUILD@</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.strategy-games</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>11.0</string>
+	<string>@MINIMUM_MACOS@</string>
+	<key>LSSupportsGameMode</key>
+	<true/>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>VERA20k reads your Yuri's Revenge game files from this location.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>VERA20k reads your Yuri's Revenge game files from this location.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>VERA20k reads your Yuri's Revenge game files from this location.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Free software under the GNU GPL version 3. Not affiliated with or endorsed by Electronic Arts.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>VERA20k reads your Yuri's Revenge game files from this location.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>VERA20k reads your Yuri's Revenge game files from this location.</string>
 </dict>
 </plist>

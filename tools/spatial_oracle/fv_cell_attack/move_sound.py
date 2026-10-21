@@ -4,7 +4,7 @@ This composes the existing selected sound reader with Paid before its original
 full UnitType reader. Sound playback remains the inherited device boundary.
 """
 from pathlib import Path
-import hashlib, json, os, struct, sys
+import json, os, struct, sys
 from tools.spatial_oracle.anytown_damage import mtnk_attack
 from tools.native_oracle import finish_vectors, provenance
 
@@ -71,15 +71,11 @@ def generate():
         owner.Paid = original
 
 def metadata():
-    from tools.spatial_oracle.fv_cell_attack import paid_world as owner
     result = provenance(scope=__doc__, entry_points={
         'sound_registry':0x7510D0, 'sound_reader':0x750440,
         'unit_type_reader':0x747620, 'foot_ai':0x4DA530, 'move_draw':0x4DAACB},
         assumptions=['Original native SoundList/types bind the physical FV MoveSound before the full UnitType reader. Original paid Unit/Foot/Drive/Fire AI executes unchanged. Only the isolated healthy native physical-map continuation is measured.'],
         substitutions=['Inherited OS, asset IO and sound playback transport boundaries. No native sound index, RNG value, movement or firing result is replaced. Audio decoding/mixing and global audio RNG after playback entry are outside this receipt.'])
-    result['harness_sha256'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    result['sound_reader_owner_sha256'] = hashlib.sha256(Path(mtnk_attack.__file__).read_bytes()).hexdigest()
-    result['source_pins'] = owner.sources()
     return result
 
 if __name__ == '__main__':

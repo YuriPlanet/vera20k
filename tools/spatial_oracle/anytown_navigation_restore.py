@@ -4,7 +4,6 @@ import gc
 import gzip
 import hashlib
 import json
-import sys
 import struct
 
 from tools.native_oracle import _canonical, first_difference, provenance, finish_vectors
@@ -18,7 +17,6 @@ from unicorn.x86_const import (UC_X86_REG_ECX, UC_X86_REG_ESP, UC_X86_REG_EDI,
                                UC_X86_REG_ESI, UC_X86_REG_EBP)
 
 HERE = Path(__file__).resolve().parent
-ROOT = Path(nav_owner.__file__).resolve().parents[3]
 FROZEN = Path(nav_owner.__file__).with_name('navigation.json.gz')
 SOURCE_EVIDENCE = HERE / 'anytown_navigation_restore.native_bytes.json'
 FROZEN_SHA256 = 'a2197179f0818a7b2c231c8956601b2269df164db04e05d856b99db380a15d35'
@@ -286,13 +284,7 @@ def generate_retained_base():
 
 
 def metadata():
-    sources = {}
-    for module in list(sys.modules.values()):
-        if name := getattr(module, '__file__', None):
-            path = Path(name).resolve()
-            if path.suffix == '.py' and path.is_relative_to(ROOT / 'tools'):
-                sources[path.relative_to(ROOT).as_posix()] = sha(path.read_bytes())
-    result = provenance(
+    return provenance(
         scope=__doc__,
         assumptions=[
             'A fresh original full-map Navigation machine is created independently for each boundary. Its initial state and selected original damage/collapse/repair state and trace must equal the frozen Navigation packet exactly before rebuild.',
@@ -303,15 +295,12 @@ def metadata():
         ],
         substitutions=[
             'Reuse all physical reader, cell/TMP/Terrain preparation, bounded allocation/free, display, shroud and waterfall animation seams declared by frozen Navigation. No new native gameplay seam is introduced during581F50.',
-            'The successful LoadContent callsite is instruction-established and byte-checked against the pinned binary. This is a hierarchy-rebuild execution comparison, not a full native save/load run.',
+            'The successful LoadContent callsite is instruction-established and byte-checked against the loaded binary. This is a hierarchy-rebuild execution comparison, not a full native save/load run.',
         ],
         entry_points={'load_content': 0x67E730, 'load_hierarchy_call': 0x67E8CD,
                       'retained_save_block': 0x5BE727, 'retained_load_block': 0x5BE355,
                       'rebuild_all': 0x581F50, 'clear_vector': 0x588D60,
                       'build_level': 0x581F90, 'refresh_scratch': 0x42C1C0})
-    result.update(harness_sha256=sha(Path(__file__).read_bytes()),
-                  sources=dict(sorted(sources.items())))
-    return result
 
 
 def publish(data=generate, argv=None):
@@ -352,7 +341,6 @@ def compare_restored_prefix(prefix, *, native_path=None,
                          all_compared_equal=all(row['equal'] for row in checks.values())))
     count = 'three' if len(suffixes) == 3 else str(len(suffixes))
     return dict(schema=1, native_file=native_path.name,
-                native_sha256=sha(native_path.read_bytes()),
                 native_payload_sha256=sha(_canonical(native)),
                 scope=f'Complete class/height/base-ID planes,13 movement rows,base zone count,native map size and all ordered hierarchy IDs/padding/records/edges for {count} restored bridge states. No full native save/load or actor-world comparison.',
                 states=rows, all_compared_equal=all(row['all_compared_equal'] for row in rows))

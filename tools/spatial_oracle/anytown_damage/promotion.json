@@ -32,14 +32,12 @@
     "inputs.sound.selected",
     "inputs.special_flags.map_sections"
   ],
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "results": {
     "anytown_admission.json": {
       "original_file_sha256": "0dfb72bdf9c26ac2a4792ddbb139cfd3b6851594a1a26b59541fe2fa53528c84",
       "original_metadata_sha256": "862f5addd9bfe852060d572a1c8a585b72f1fd761f4253b99c3719932cd13ed4",
       "original_path": "anytown-damage-native/anytown_admission.json",
       "original_payload_sha256": "47dfe401f8f2ee7587c86fe4b004cfe50a181feff9ccbb51e89ddbb0e62e36ec",
-      "original_runner_sha256": "2c91aeb1e3c0eeb62875e867d3de62489abf3661b04a7ec21ec6223df068c53f",
       "published_payload_sha256": "3360c77c253e70751363379dc0bb3065215fefe7372de6c8db6fb230098b4317"
     },
     "anytown_geometry.json": {
@@ -47,39 +45,34 @@
       "original_metadata_sha256": "6a28c779e06c0288f85eee77c6f4ff89b0cc376e65d86dbd7a80710b3a32d8c9",
       "original_path": "anytown-damage-native/anytown_geometry.json",
       "original_payload_sha256": "e86df51f1ad34c7d80d60a7076976e689664b0ed316deecb85b21aa4c21bb164",
-      "original_runner_sha256": "588897b2946b88ba21d97bc3c5ae207eec39108032ef4093d7b88874ea2f4072",
       "published_payload_sha256": "e86df51f1ad34c7d80d60a7076976e689664b0ed316deecb85b21aa4c21bb164"
     },
     "anytown_occupants.json": {
       "original_file_sha256": "676ed480c1f20f5c29ac66cfc13860e096acf7e03e9856496f74bbad7b63de79",
       "original_metadata_sha256": "703d6ad6460c25c118027d8f0778caed41235e959ff0f6f7d57f1e69b18825ca",
       "original_path": "anytown-occupants-native/anytown_occupants.json",
-      "original_payload_sha256": "d8b774a051129e3efa0da6628f9f13f648d8e45585a0c897a3eb708cc2651c52",
-      "original_runner_sha256": "1b304732e2d56acf00a3f64cb4b4e2fbcddcb73e376507c9fae3ca5b8392644a",
-      "published_payload_sha256": "6ea3db41666839e30ecb7a63fc1ac548eb69278342c6bdad8d999ad7fd3e7416"
+      "original_payload_sha256": "b57a73977a85dec4af63b9b7d91ac128b7641840825a881d1331afc7cae4aecf",
+      "published_payload_sha256": "eb5622802a02672f3508bbdc959b7b27a904b65092cf694f5e4a25f9ec1cc0fb"
     },
     "anytown_resident.json": {
       "original_file_sha256": "b35dbfa1cea7a2ac42260a5c8c74823fe5d4694bb96020648ddc9c20b49043d7",
       "original_metadata_sha256": "74dd3c595c74a25b8f9decfaed7928a9e4bf7c3d9b311b561c865a85dfc1a1bc",
       "original_path": "anytown-damage-native/anytown_resident.json",
       "original_payload_sha256": "11b88bb7e8c5c90c5a457782e541396b11c8f8b9b13c079570de4f68a7f20876",
-      "original_runner_sha256": "9b9dab827db3672a22d120e28d1224b0d3e441fa75f4bf773d085f10b69202f7",
       "published_payload_sha256": "11b88bb7e8c5c90c5a457782e541396b11c8f8b9b13c079570de4f68a7f20876"
     },
     "mtnk_attack.json": {
       "original_file_sha256": "6da0a148b77fd3cc293d1575c34636f92af219ef28ee2aab1a8d8c144ace8097",
       "original_metadata_sha256": "9f477de145ca50f86c517d9524b5fe628fcfeb2dcfd061bcfb99a6fb7d116d0f",
       "original_path": "anytown-damage-native/attack/mtnk_attack.json",
-      "original_payload_sha256": "9791a935b30364e5f7653d3b08b0d803ac5b4f72653618878b6a8e0f6f720d51",
-      "original_runner_sha256": "da54f26b755d4720adec66d5f4225336cab7d11db587c099dba0f426b23cbe8a",
-      "published_payload_sha256": "afe2c2bd69c126644bef2e48185a31884d3013bf3e186ae71d7a4808eea3a66a"
+      "original_payload_sha256": "7edb49921317df47f4a8835d2d8020475c9e0fa6925f0ba254b38752d43c3784",
+      "published_payload_sha256": "d0467012cb3892212c1936128bc207478246d4ca636d06f51e560a948b4bf996"
     },
     "next_family_native.json": {
       "original_file_sha256": "bfcb05fcd9b6b430fda2a243dbd16dd1c651b323f5b2327c3d77fa87d47a05d2",
       "original_metadata_sha256": "086fb696f6fa80e946326e1281af3739ac2a80aa7e276f62e5296473601a3803",
       "original_path": "ground-wood-next/next_family_native.json",
       "original_payload_sha256": "f450622324604253812702e7f4b7d6dc133ac3553a0fd9634c1f1283f0c1c85b",
-      "original_runner_sha256": "2e6bce9453888d5b10a124a4ca7e38c8e024b89e495a13ea3ba60ef3bcd4ec19",
       "published_payload_sha256": "f450622324604253812702e7f4b7d6dc133ac3553a0fd9634c1f1283f0c1c85b"
     }
   },

@@ -67,7 +67,7 @@ VERA20K делают игроки для игроков, и последнее �
 
 Понадобится:
 
-- **Rust и Git:** [Rust](https://rustup.rs/) 1.88 или новее, установленный через rustup, и
+- **Rust и Git:** [Rust](https://rustup.rs/) 1.97 или новее, установленный через rustup, и
   [Git](https://git-scm.com/).
 - **Инструменты сборки:** на Windows — C++ Build Tools из Visual Studio, которые предложит
   установить установщик Rust; на macOS — `xcode-select --install`; в Debian и Ubuntu —

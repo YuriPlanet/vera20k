@@ -34,9 +34,10 @@ use crate::ui::wol_lobby::{GAME_CHANNEL, MEMBER_OPERATOR, WolChannel};
 use crate::ui::wol_quick_match::*;
 use crate::ui::wol_shell::WolMode;
 
-/// `0x0084A21C`: the Quick Match lobbies' prefix (Quick Co-op's is
-/// `0x0084A22C` `Lob_39_`).
+/// `0x0084A21C`: the Quick Match lobbies' prefix.
 pub(crate) const QUICK_MATCH_PREFIX: &str = "Lob_40_";
+/// `0x0084A22C`: the Quick Co-op lobbies' prefix (mode 2, `0x0079FD9E`).
+pub(crate) const QUICK_COOP_PREFIX: &str = "Lob_39_";
 /// `0x0084B698`: the key `0x00788800` joins a Quick Match lobby with (the
 /// same text as the custom lobbies' key).
 const QUICK_MATCH_KEY: &str = crate::ui::wol_lobby::LOBBY_KEY;
@@ -152,14 +153,22 @@ impl QuickMatchGlobals {
     }
 }
 
-/// The visit runs Quick Match (mode 1). Quick Co-op (mode 2) never reaches
-/// a runner here: the welcome refuses it.
+/// The visit runs the Quick Match runner: Quick Match (mode 1) or Quick
+/// Co-op (mode 2), which every runner path treats alike except the lobby
+/// prefix, the game channel's tournament and the load's start points.
 pub(crate) fn mode_active(state: &AppState) -> bool {
+    state.frontend.wol.as_ref().is_some_and(|visit| {
+        matches!(visit.mode, Some(WolMode::QuickMatch | WolMode::QuickCoop))
+    })
+}
+
+/// `[0xA8B244] == 2`: Quick Co-op.
+pub(crate) fn quick_coop(state: &AppState) -> bool {
     state
         .frontend
         .wol
         .as_ref()
-        .is_some_and(|visit| visit.mode == Some(WolMode::QuickMatch))
+        .is_some_and(|visit| visit.mode == Some(WolMode::QuickCoop))
 }
 
 fn globals(state: &AppState) -> Option<&QuickMatchGlobals> {
@@ -346,9 +355,14 @@ pub(super) fn run(state: &mut AppState) {
 /// `WOL:MatchingServerUnavailable`. Both boxes end the runner with 0; only
 /// the first clears the away text (`0x0079FD66`).
 pub(super) fn lobbies_listed(state: &mut AppState, lobbies: &[WolChannel]) {
+    let prefix = if quick_coop(state) {
+        QUICK_COOP_PREFIX
+    } else {
+        QUICK_MATCH_PREFIX
+    };
     let found = lobbies
         .iter()
-        .find(|channel| starts_with(&channel.name, QUICK_MATCH_PREFIX));
+        .find(|channel| starts_with(&channel.name, prefix));
     let Some(found) = found.cloned() else {
         let (key, clear_away) = if lobbies.is_empty() {
             ("WOL:NoMatchingAgentFound", true)

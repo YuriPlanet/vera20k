@@ -7,6 +7,8 @@ app = defines["app"]  # noqa: F821 -- dmgbuild runs this file with `defines` set
 files = [app]
 symlinks = {"Applications": "/Applications"}
 format = "UDZO"
+# hdiutil compresses at zlib level 1, its fastest, unless told otherwise.
+compression_level = 9
 
 background = "builtin-arrow"
 window_rect = ((200, 200), (640, 240))

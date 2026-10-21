@@ -201,8 +201,6 @@
       "signed_difference": 4
     }
   ],
-  "harness_sha256": "51b52ea0b0052fc11ce4976bca448305cd1b3ab45498162571251c2f5bfc2bda",
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "schema_version": 1,
   "scope": "Original AStar source/goal height producer joined to class7 goal-height tail.\n\nThe class7 verdict and post-hop current height (where specified) are supplied.\nNo full path/actor/rules or map-loading reachability claim for raw-byte controls.\n"
 }

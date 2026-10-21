@@ -1,7 +1,7 @@
 ; Windows installer for VERA20k. The Release workflow (.github/workflows/release.yml)
 ; compiles it with the Inno Setup 6 compiler on GitHub's Windows runner:
 ;
-;   ISCC /DAppVersion=<x.y.z> /DReleaseTag=<tag> /DPackageDir=<unpacked archive>
+;   ISCC /DAppVersion=<x.y.z> /DBuild=<YYYYMMDD-HHMMSS> /DPackageDir=<unpacked archive>
 ;        /DOutputDir=<dir> /DOutputBaseFilename=<name> vera20k.iss
 ;
 ; It installs the files of the Windows archive for the current user, without an
@@ -17,7 +17,7 @@
 ; 6ef32198e (Files/Languages); the Inno Setup 6 compiler does not ship it.
 
 #ifndef AppVersion
-  #error Define AppVersion, ReleaseTag, PackageDir, OutputDir and OutputBaseFilename
+  #error Define AppVersion, Build, PackageDir, OutputDir and OutputBaseFilename
 #endif
 
 [Setup]
@@ -25,7 +25,9 @@
 AppId={{9C9BFC32-A7B8-48ED-A428-72333354BDDB}
 AppName=VERA20k
 AppVersion={#AppVersion}
-AppVerName=VERA20k {#ReleaseTag}
+; The version and build, which stay true when a release republishes this
+; installer under a plain name.
+AppVerName=VERA20k {#AppVersion} (build {#Build})
 AppPublisher=VERA20k
 AppPublisherURL=https://github.com/YuriPlanet/vera20k
 AppSupportURL=https://github.com/YuriPlanet/vera20k/issues

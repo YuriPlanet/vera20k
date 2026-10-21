@@ -65,6 +65,7 @@ impl App {
     /// (`0x006ACEE0`), then the runner tears the dialog down: the teardown
     /// slide back to the Single Player page `0x100`.
     pub(super) fn handle_skirmish_back(state: &mut AppState) {
+        Self::note_skirmish_scenario(state);
         match crate::ui::skirmish_shell::pack_launch_session_without_start_validation(
             &state.frontend.skirmish_shell_state,
             state.frontend.scenario_catalog.shell_maps(),
@@ -246,6 +247,7 @@ impl App {
     /// Start Game on `0x102` (`0x006ACEE0` case `0x617`): validate and pack
     /// the session, then slide the dialog out before the launch.
     pub(crate) fn start_game_from_shell(state: &mut AppState) {
+        Self::note_skirmish_scenario(state);
         match crate::ui::skirmish_shell::launch_session(
             &state.frontend.skirmish_shell_state,
             state.frontend.scenario_catalog.shell_maps(),
@@ -424,6 +426,17 @@ impl App {
         {
             modal.replace_rows(rows, records, &layout, clicked);
         }
+    }
+
+    /// `[0xA8B254]` as the Skirmish dialog leaves it: its OnSetup and each
+    /// map change write the selection's record (`0x006AEB55`, `0x006AD961`,
+    /// `0x006ADB4B`).
+    fn note_skirmish_scenario(state: &mut AppState) {
+        let index = Self::current_choose_map_record_index(state).unwrap_or(0);
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .set_scenario_index(index);
     }
 
     pub(super) fn current_choose_map_record_index(state: &AppState) -> Option<usize> {

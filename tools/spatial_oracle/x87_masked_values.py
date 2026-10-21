@@ -1,4 +1,4 @@
-"""Unicorn x87 observations from isolated, pinned retail instructions.
+"""Unicorn x87 observations from isolated retail instructions.
 
 The harness supplies operand bits and sequences original instruction fragments;
 it does not execute their original parent control flow or model expected math.

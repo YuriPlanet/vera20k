@@ -1727,6 +1727,7 @@ fn retail_cold_start_and_noncampaign_prepass_match_verified_native_oracles() {
         &rules,
         &fixed_art,
         None,
+        &crate::rules::sound_ini::EvaRegistry::default(),
     )
     .expect("stock cold startup processes");
 
@@ -1859,6 +1860,7 @@ fn native_startup_prepass_repeat_and_reset_keep_each_phase_on_one_registry_owner
         &root,
         &fixed_art,
         None,
+        &crate::rules::sound_ini::EvaRegistry::default(),
     )
     .expect("synthetic startup processes");
     assert_eq!(boundaries, [1, 2, 4, 5, 12]);
@@ -1896,9 +1898,14 @@ fn native_startup_prepass_repeat_and_reset_keep_each_phase_on_one_registry_owner
     }
 
     let startup_state = startup.into_registry_state_discarding_events();
-    let (repeat, repeat_boundaries) =
-        process_native_rules_cold_start_inner(startup_state, &root, &fixed_art, None)
-            .expect("direct startup repeat processes retained state");
+    let (repeat, repeat_boundaries) = process_native_rules_cold_start_inner(
+        startup_state,
+        &root,
+        &fixed_art,
+        None,
+        &crate::rules::sound_ini::EvaRegistry::default(),
+    )
+    .expect("direct startup repeat processes retained state");
     assert_eq!(repeat_boundaries, [0, 0, 1, 1, 1]);
     assert_eq!(
         repeat

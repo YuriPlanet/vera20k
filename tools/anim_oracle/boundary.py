@@ -17,7 +17,7 @@ from unicorn.x86_const import (
     UC_X86_REG_ESI, UC_X86_REG_ESP,
 )
 from tools.native_oracle import (
-    NATIVE_SHA256, OracleError, finish_vectors, load_image, provenance, run_checked,
+    OracleError, finish_vectors, load_image, provenance, run_checked,
 )
 
 MEM = 0x21000000
@@ -29,10 +29,6 @@ STOPS = {
     0x4247F3: 'boundary_terminal',
     0x424B42: 'continue',
 }
-# The old payload called this its script identity, but it already differed from
-# the checked-in producer before this migration. Retain it only as history.
-LEGACY_PAYLOAD_SCRIPT_SHA256 = 'cf03db0129b23b7d84ca0a58eea54440e8d2776775f16b5823f7b485d6523c8e'
-PRE_MIGRATION_SOURCE_SHA256 = '772d6b62ad42455323e6456cb15beffd10e3d1d034a81efd9c9ef8f7a137dfca'
 
 
 def signed(value):
@@ -92,13 +88,13 @@ def generate():
         row = next(row for row in rows if row[:8] == [name, 1, stage, 1, 0, 0, 0, 1])
         if row[8:] != ['boundary_terminal', 1, 0, stage]:
             raise OracleError(f'Stock-shaped shadow endpoint changed: {row}')
-    # Preserve the original recorded disassembly span. The whole image digest
-    # additionally identifies bytes outside this prefix, including later stops.
+    # Preserve the original recorded disassembly span. Later stops execute from
+    # the loaded image without a recorded digest.
     raw = bytes(machine.mem_read(ENTRY, 0x4247B7 - ENTRY))
     native = [f'{instruction.address:08X}: {instruction.mnemonic} {instruction.op_str}'
               for instruction in Cs(CS_ARCH_X86, CS_MODE_32).disasm(raw, ENTRY)]
     return dict(
-        native_sha256=NATIVE_SHA256, region_sha256=hashlib.sha256(raw).hexdigest(),
+        region_sha256=hashlib.sha256(raw).hexdigest(),
         entry='0042468C', stops={
             'bounce': '004246DC after original neg/store',
             'boundary_loop': '004247B1 after original loop decrement and stage reset',
@@ -119,7 +115,7 @@ def metadata():
             'Fresh verified PE image and synthetic Anim/type memory. Each case supplies type bounds/flags, committed stage, frame step, remaining loop byte and constructor direction; entry ESI/EAX/EBX/EDI/ESP/EFLAGS match the previous fixture.',
             'One machine is reused across cases in the original order. The original case inputs are rewritten before each entry. No native constructor, CRT, floating-point startup, OS or scenario initialization executes.',
             'Each call must execute42468C and reach4246DC,4247B1,4247F3 or424B42 before the100-instruction/10-second limits. Boundary instructions themselves do not execute.',
-            'Recorded region_sha256/disassembly cover42468C..4247B7 only; the checked whole-image hash identifies the later terminal/continue paths as well.',
+            'Recorded region_sha256/disassembly cover42468C..4247B7 only; the later terminal/continue paths execute from the loaded image without a recorded digest.',
             'Stock-shaped bounds are supplied examples, not an ART/type loader witness. Signed/wrapping bounds characterize arithmetic and are not claimed to arise in retail.',
             'Stops precede downstream Next/destruction/epilogue consumers. No timer cadence, RNG ordering, detach calls, constructor or whole-frame lifecycle equivalence is claimed.',
         ],
@@ -127,15 +123,7 @@ def metadata():
         entry_points=dict(entry=ENTRY, bounce=0x4246DC, loop=0x4247B1,
                           terminal=0x4247F3, continuation=0x424B42),
     )
-    result.update(
-        harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        capstone=capstone.__version__,
-        historical_identity=dict(
-            removed_payload_script_sha256=LEGACY_PAYLOAD_SCRIPT_SHA256,
-            checked_in_producer_before_migration_sha256=PRE_MIGRATION_SOURCE_SHA256,
-            reason='The legacy script_sha256 field was already stale. Its historical value is retained here; current source identity has one sidecar owner. All other payload fields are checked against the legacy native observations.',
-        ),
-    )
+    result.update(capstone=capstone.__version__)
     return result
 
 

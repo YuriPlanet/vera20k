@@ -40,7 +40,7 @@ pub fn rival_arena(rules: &RuleSet, seed: u64) -> Simulation {
 }
 
 /// The same two-house arena with enough room for a mechanism's footprint.
-pub(crate) fn rival_arena_with_size(rules: &RuleSet, seed: u64, size: u16) -> Simulation {
+pub fn rival_arena_with_size(rules: &RuleSet, seed: u64, size: u16) -> Simulation {
     let mut sim = Simulation::with_seed(seed);
     flat_ground_with_size(&mut sim, rules, size);
     for (name, human) in [("Russians", false), ("Americans", true)] {

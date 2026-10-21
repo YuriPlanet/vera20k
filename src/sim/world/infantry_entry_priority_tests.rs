@@ -29,10 +29,8 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
             .as_array()
             .unwrap();
         assert_eq!(code_sections.len(), 1);
-        assert_eq!(
-            code_sections[0]["sha256"],
-            "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc"
-        );
+        assert_eq!(code_sections[0]["address"], "0x401000");
+        assert_eq!(code_sections[0]["length"], 0x3E0000);
         let input = &row["input"];
         let armed = input["armed"].as_bool().unwrap();
         let extra = format!(

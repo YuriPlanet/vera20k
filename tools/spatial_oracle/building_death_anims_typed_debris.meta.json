@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -34,5 +33,5 @@
     "death_anim_ctor": "0x00421EA0"
   },
   "replay_command": "python -m tools.spatial_oracle.building_death_anims --typed-debris",
-  "payload_sha256": "2cf64b284f2bb7d1c391f2798d1a167131d6a575bc8ce8848fbf17badd2679af"
+  "payload_sha256": "f5c0477a6e3e3a3daa27968e66b1522e7e6fed0dbc5701d347e4745f86c7a56f"
 }

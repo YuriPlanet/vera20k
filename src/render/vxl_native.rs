@@ -9,14 +9,58 @@
 //! 756590 adds Z words and dispatches the depth-tested leaves 757980/757BF0
 //! (leaf table `0x00846840`).
 //!
-//! RESIDUAL (UseBuffer): native clears its byte depth map (0xB1D5E0) over the
-//! previous draw's rect only (`0x00753EC5`), so depth written outside that
-//! rect survives into a later draw; here each draw starts from a clear map.
-//! The shadow draw (`0x00707280`) sets the flag twice and never clears it, so
-//! a shadow cache miss can leave it set for the next uncached voxel draw of
-//! any type until a UseBuffer body clears it; here the flag follows the
-//! drawn type only. A store at depth address 0xFFFF also writes one byte
-//! past both 64 KiB buffers, which is dropped here.
+//! RESIDUAL (UseBuffer state across draws). VERA always draws the ordinary
+//! style: each draw starts from a clear depth map and the flag follows the
+//! drawn type. Native keeps the colour buffer (0xB2FF78), depth map, the
+//! previous draw's crop rect (0xB2FB60..6C, stored by 754510 at
+//! `0x007546A1` and by 7542F0) and 0xB43180 across every draw. Each draw
+//! starts with 753E00: its first call (0x8467E0) clears both buffers whole;
+//! later calls clear the colour buffer over the previous rect, inclusive
+//! (whole when that rect leaves the map), and the depth map over the same
+//! rect only while the flag is set (`0x00753EC5`). The uncached part draw
+//! 706ED0 sets the flag for a UseBuffer type before its clear and clears it
+//! after; the uncached shadow draw 707280 sets it before its clear
+//! (`0x007072FC`) and again after (`0x0070744B`), and never clears it. While
+//! it is set every caller rasterizes depth-tested, and 706640 stores what a
+//! miss rendered. Reproducing this needs a runtime native-order software
+//! voxel pass with native's cache lifetime (related: issue #828); VERA bakes
+//! its atlas at load and its pose cache in presentation order.
+//!
+//! Retail UseBuffer types are HIND, SCHD, SCHP and SHAD: VehicleTypes with
+//! the Jumpjet locomotor, SpeedType=Hover and no BalloonHover, so the
+//! Aircraft shadow caller (`0x004148A0`) never runs for them. Their shadow
+//! goes Unit `0x0073C202..0x0073C5C4` -> `0x004DB0D0` (Jumpjet
+//! Is_To_Have_Shadow `0x0055ABE0` returns 1) -> `0x00706BD0`. The Unit key
+//! goes -1 only for BalloonHover (+0xD6A) or SpeedType Track/Wheel (+0x67C
+//! 1/2) (`0x0073C43F..0x0073C472`), none of the four, but 706BD0 drops the
+//! key for `DisableShadowCache=` (+0xDBF, ART read `0x0071598B`, stored at
+//! `0x007159A6`; tested at `0x00706C33`). Retail ART sets it, with
+//! `DisableVoxelCache=` (+0xDBE, `0x00706806`), on SHAD, PDPLANE and SPYP.
+//!
+//! Flag leak (per frame): each drawn SHAD (Night Hawk Transport) renders its
+//! body through 706ED0 every frame (set, draw, clear), then, after the body
+//! in `0x0073B470`, its shadow through 707280, which leaves the flag set. It
+//! stays set until the next SHAD body (next frame while one is drawn) or a
+//! HIND/SCHD/SCHP part cache miss; with no SHAD drawn any more, until such a
+//! miss. Meanwhile every voxel draw is depth-tested (two-pixel voxels,
+//! nearest wins, reversed section order): voxel bullets (`0x0046824A` calls
+//! 46B0C0 with no cache), voxel anim debris (`0x00749B70`), PDPLANE and
+//! SPYP bodies, key -1 crash and rocket bodies, and every other type's body,
+//! turret or barrel cache miss, whose image is then reused. Shadow stencils
+//! ignore the flag. Cached images last until `0x005F99E0` frees every
+//! type's caches and resets the 4,000,000-byte pool, called only when a
+//! store finds the pool full (`0x00706AE0`, `0x00706E38`). Which draws fall
+//! between a frame's last SHAD shadow and the next SHAD body depends on draw
+//! order (not traced); the look is not captured against retail.
+//!
+//! Stale depth (rare, not measured): a HIND/SCHD/SCHP part miss (clears the
+//! flag), a shadow cache hit, smaller flag-off draws, then a UseBuffer draw
+//! keeps the miss's depth outside the smaller rect and drops the new draw's
+//! voxels there that are not nearer. SHAD alone never leaves stale depth:
+//! its shadow sets the flag before clearing the body's rect.
+//!
+//! A store at depth address 0xFFFF also writes one byte past both 64 KiB
+//! buffers, which is dropped here.
 
 use super::{HvaFile, Mat4, Vec3, VxlFile};
 use crate::util::native_affine::{ftol, load, matrix_product, store, transform_point};

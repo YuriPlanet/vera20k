@@ -226,10 +226,9 @@ def action_case_set_digest(cases):
 
     A whole corpus digest is historical provenance, not a stable identity for
     twelve unchanged Move cases when a later mechanism appends more evidence.
-    Include the executable identity and every input, output and capture binding.
+    Include every input, output and capture binding.
     """
-    metadata = document(HERE / 'action_lines.meta.json')
-    scoped = dict(native_sha256=metadata['native_sha256'], cases=list(cases.values()))
+    scoped = dict(cases=list(cases.values()))
     return digest(json.dumps(scoped, sort_keys=True, separators=(',', ':')).encode())
 
 

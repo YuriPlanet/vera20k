@@ -310,6 +310,37 @@ mod tests {
         assert!(sim.substrate.pending_delete.is_empty());
     }
 
+    /// `BuildingClass::ReceiveDamage @ 0x00442230` returns 0 at `0x004423A3`
+    /// for a `BridgeRepairHut=`+`Immune=` type whatever ignoreDefenses says,
+    /// so BlowUpBridge's forced C4 (`0x0047DDAE`, ignoreDefenses 1) leaves a
+    /// retail CABHUT on the collapsing cell at full Health, and alive.
+    #[test]
+    fn bridge_ground_forced_c4_leaves_a_retail_bridge_repair_hut_untouched() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+            return;
+        };
+        let hut_type = rules.object("CABHUT").expect("retail CABHUT");
+        assert!(hut_type.bridge_repair_hut && hut_type.immune);
+        let mut sim = world(&rules);
+        let hut = place(&mut sim, &rules, "CABHUT", 4);
+        assert_eq!(
+            members(&sim, 4, 4).collect::<Vec<_>>(),
+            vec![CellObjectMember::Entity(hut)]
+        );
+        apply(
+            &mut sim,
+            &rules,
+            None,
+            4,
+            4,
+            crate::sim::world::FrameEffects::default(),
+        );
+        let hut = sim.substrate.entities.get(hut).unwrap();
+        assert_eq!(hut.health.current(), hut_type.strength);
+        assert!(hut.lifecycle.object_alive());
+        assert!(sim.substrate.pending_delete.is_empty());
+    }
+
     #[test]
     fn bridge_ground_forced_super_damages_an_occupied_tank_bunker() {
         // Stock Super has PenetratesBunker=yes. Without the ignoreDefenses

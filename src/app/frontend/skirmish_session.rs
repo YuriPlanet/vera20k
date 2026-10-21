@@ -165,6 +165,12 @@ pub(crate) struct MultiplayerShellRuntime {
     cooperative_country_roster: Vec<CooperativeCountryRosterEntry>,
     /// Process A8EB68, initialized0; independent of COOPMD AIDifficulty.
     cooperative_difficulty: i32,
+    /// `[0xA8B254]`, the multiplayer scenario index (catalog order, BSS 0).
+    /// Its writers are the setup dialogs' map changes (Skirmish, BC/BD,
+    /// C2/C9, Use Map) and Cooperative's `+0x20`; Quick Match's
+    /// SelectScenario (`0x005E7BF0`) leaves it, so Quick Co-op's `+0x20`
+    /// reads whatever an earlier setup left.
+    scenario_index: usize,
     gameplay_scenario_return_pending: bool,
 }
 
@@ -804,6 +810,7 @@ impl MultiplayerShellRuntime {
             cooperative_progress,
             cooperative_country_roster,
             cooperative_difficulty: 0,
+            scenario_index: 0,
             scenario_start_header: crate::map::preview::ScenarioStartHeader::default(),
             scenario_start_staging: Default::default(),
             gameplay_scenario_return_pending: false,
@@ -1139,6 +1146,15 @@ impl MultiplayerShellRuntime {
 
     pub(crate) fn cooperative_difficulty(&self) -> i32 {
         self.cooperative_difficulty
+    }
+
+    /// `[0xA8B254]`.
+    pub(crate) fn scenario_index(&self) -> usize {
+        self.scenario_index
+    }
+
+    pub(crate) fn set_scenario_index(&mut self, index: usize) {
+        self.scenario_index = index;
     }
 
     /// BC5DEE63/C278FA0A and received options5E4F44 retain this process integer.
@@ -1661,6 +1677,7 @@ mod tests {
             cooperative_progress,
             cooperative_country_roster: controlled_ten_country_roster(),
             cooperative_difficulty: 0,
+            scenario_index: 0,
             scenario_start_header: crate::map::preview::ScenarioStartHeader::default(),
             scenario_start_staging: Default::default(),
             gameplay_scenario_return_pending: false,
@@ -1689,6 +1706,7 @@ mod tests {
             cooperative_progress: CooperativeProgressState::default(),
             cooperative_country_roster: controlled_ten_country_roster(),
             cooperative_difficulty: 0,
+            scenario_index: 0,
             scenario_start_header: crate::map::preview::ScenarioStartHeader::default(),
             scenario_start_staging: Default::default(),
             gameplay_scenario_return_pending: false,

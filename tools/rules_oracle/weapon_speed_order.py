@@ -9,7 +9,7 @@ Original Process is void; its incidental EAX is deliberately not a success flag.
 from pathlib import Path
 import struct
 from unicorn import UC_HOOK_CODE
-from tools.native_oracle import NATIVE_SHA256,finish_vectors,provenance
+from tools.native_oracle import finish_vectors,provenance
 from tools.projectile_oracle.bridge_render_inputs import BulletReader
 from tools.spatial_oracle.building_body_rules import RULES,dwords
 
@@ -57,7 +57,7 @@ def chronology(cold_gravity=None):
  return dict(constructor=ctor,cold_audio_visual=cold,rows=rows)
 
 def generate():
- return dict(native_sha256=NATIVE_SHA256,sequences=[chronology(),chronology(6)])
+ return dict(sequences=[chronology(),chronology(6)])
 
 def metadata():
  return provenance(scope='Retained Weapon Speed and prior-pass Rules Gravity through complete original RulesClass Process',assumptions=[

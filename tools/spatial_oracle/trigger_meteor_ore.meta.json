@@ -1,5 +1,4 @@
 {
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "command": "RA2_DIR=~/ra2 PYTHONPATH=. ~/venv/bin/python ~/scratch/trigger-meteor-effects/ore_controls.py",
   "scope": "Original49F2F0 direction-table initializer, AnimAI423F0D..424294, original4399A0 conversion, SqrtApprox4CAC40, ftol and ScenarioRng; no instruction patch.",
   "boundaries": "Supplied AnimType radius/IsTiberium/Spawn pointer, above-deck local, 128-square map cells. Map/CanGerminate returns declared empty cells (dummy refuses, existing overlay refuses). Four formed Overlay types with base0. 5FC380 is an explicit output seam: stores chosen overlay or refuses, no constructor RNG. No original constructor/Mark parity claim; Rust uses production constructor with Clear-land inputs with Track=100%, no CellAnim and raw ground0/40 to realize those cases. Dirty rectangle and Display6D2790 are observation-only seams.",

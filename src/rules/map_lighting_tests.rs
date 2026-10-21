@@ -43,9 +43,15 @@ fn av_ambient_inputs_follow_native_reads_cold_handoffs_save_and_type_reset() {
     assert_eq!(state(&first), corpus["constructor"]);
     for row in corpus["cases"].as_array().unwrap() {
         let pass = cached_ini(&row["input"]["cache"]);
-        retained = process_native_rules_cold_start(retained, &pass, &IniFile::empty(), None)
-            .unwrap()
-            .into_registry_state_discarding_events();
+        retained = process_native_rules_cold_start(
+            retained,
+            &pass,
+            &IniFile::empty(),
+            None,
+            &crate::rules::sound_ini::EvaRegistry::default(),
+        )
+        .unwrap()
+        .into_registry_state_discarding_events();
         // Expose the cold reader's retained state without replaying its text.
         let processed = RulesLayerStack::new(IniFile::empty())
             .process_with_fixed_art_and_registry_state(&IniFile::empty(), retained)

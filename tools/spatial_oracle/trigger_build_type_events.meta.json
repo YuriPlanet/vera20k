@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -47,5 +46,5 @@
     "checkout_prerequisite": "ini/rulesmd.ini is the extracted retail RULESMD"
   },
   "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --build-type-events",
-  "payload_sha256": "bf9df527ea3884f5b77dbbed466c470e34a043ee748f527da93442d75f29efc4"
+  "payload_sha256": "34442b5be7d1e378d68a11a3f89c74a6d8346ba01b32f541d7dc27961c845d63"
 }

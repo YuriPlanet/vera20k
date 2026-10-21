@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -45,5 +44,5 @@
     "body": "0x0043D290"
   },
   "replay_command": "python -m tools.procedural_drawing_oracle.shroud --repair-wrench",
-  "payload_sha256": "425292e1d977af8121637efa44e4b9f24d90cc41b9e5232e83730a08a9fb2e5d"
+  "payload_sha256": "ab70742bbdf1eb2e56710a5348831a59f1b101ab8351352c523f394a3187fc77"
 }

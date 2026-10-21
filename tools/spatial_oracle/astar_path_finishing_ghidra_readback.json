@@ -1,11 +1,10 @@
 {
   "program": "gamemd.exe",
-  "ghidra_binary_identity_limit": "Program selector/language/base checked; native_sha256 is independently verified by the executable harness, not exposed by this Ghidra metadata.",
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "ghidra_binary_identity_limit": "Program selector/language/base checked; this Ghidra metadata does not identify the executable build.",
   "saved": true,
   "readback": {
     "address": "0056bcd0",
     "function_name": "MapClass__GetHouseThreatAtCell",
-    "comment": "[2026-10-01 VERA20k bridge path finishing] Corrected former Get_Slope_Cost_At_Cell label: original instructions inline native GetCell (512-stride allocated pointer or retained Dummy) and return a signed House threat-grid dword at House+0x59F0, index trunc0(CellCoord.x/4) + 130*trunc0(CellCoord.y/4). ECX=Map, stack args=(packed CellCoord pointer, House pointer). Not a slope or terrain speed query. Original42B420 calls this at the replacement-segment origin after concrete +1AC returns0 and marker0x40000 is clear, including coefficient0;42BE20 calls at each candidate before concrete +1AC when Foot4DC760 coefficient>1e-5. tools/spatial_oracle/astar_structural_height --finishing executes original42A3FE..42A423 reconstruction and both finishing passes, concreteUnit73F0A0 and this lookup with supplied House threat values; original text and all three RNG streams checked unchanged. Scalar prestates exclude full AStar/Scenario/MTNK construction and physical map loading. NativeexeSHA2561cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c. Port owner missing; do not infer slope behavior from prior name."
+    "comment": "[2026-10-01 VERA20k bridge path finishing] Corrected former Get_Slope_Cost_At_Cell label: original instructions inline native GetCell (512-stride allocated pointer or retained Dummy) and return a signed House threat-grid dword at House+0x59F0, index trunc0(CellCoord.x/4) + 130*trunc0(CellCoord.y/4). ECX=Map, stack args=(packed CellCoord pointer, House pointer). Not a slope or terrain speed query. Original42B420 calls this at the replacement-segment origin after concrete +1AC returns0 and marker0x40000 is clear, including coefficient0;42BE20 calls at each candidate before concrete +1AC when Foot4DC760 coefficient>1e-5. tools/spatial_oracle/astar_structural_height --finishing executes original42A3FE..42A423 reconstruction and both finishing passes, concreteUnit73F0A0 and this lookup with supplied House threat values; original text and all three RNG streams checked unchanged. Scalar prestates exclude full AStar/Scenario/MTNK construction and physical map loading. Port owner missing; do not infer slope behavior from prior name."
   }
 }

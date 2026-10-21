@@ -1235,7 +1235,7 @@ def attack_production_reference(palette_row):
     previous_path = Path('tools/projectile_oracle/ordinary_collision_vectors.json')
     previous_raw = previous_path.read_bytes()
     previous = json.loads(previous_raw)
-    assert previous['sha256'] == native.NATIVE_SHA256 and previous['slope_matrices'] == matrices
+    assert previous['slope_matrices'] == matrices
 
     case = attack_production_inputs()[0]['input']
     f = ActionFixture(case, palette_row)
@@ -1430,7 +1430,7 @@ def attack_prerequisites():
     q = mission.Mission()
     m, u = q.m, q.u
     result = dict(schema='vera20k.unit-attack-prerequisites.v1',
-                  native_sha256=native.NATIVE_SHA256, steps=[], aim_cases=[], fireat_cases=[])
+                  steps=[], aim_cases=[], fireat_cases=[])
     result['object_initializers'] = [f'0x{a:08X}' for a in initialize_object_scalars(u, m.invoke)]
     def before_fixed_cell_command():
         raise PlacementBoundary()

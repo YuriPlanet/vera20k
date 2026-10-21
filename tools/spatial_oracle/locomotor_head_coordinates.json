@@ -6686,10 +6686,6 @@
       },
       "fpcw_after": "0x0000",
       "fpcw_before": "0x0000",
-      "image_excluding_selected_table_sha256": {
-        "after": "4acf10ef6611d9caad4370ad1de277abb1572046c2378cbb99f5b2802c2ecdcd",
-        "before": "4acf10ef6611d9caad4370ad1de277abb1572046c2378cbb99f5b2802c2ecdcd"
-      },
       "initialized_packed_hex": "0000ffff0100ffff010000000100010000000100ffff0100ffff0000ffffffff",
       "instruction_count_required": 40,
       "kind": "cell",
@@ -7105,10 +7101,6 @@
       },
       "fpcw_after": "0x0000",
       "fpcw_before": "0x0000",
-      "image_excluding_selected_table_sha256": {
-        "after": "c8dbc3d1c4671589ffa5d430f1be05ff5fe19bcfb51050374b04af6ccf9f657a",
-        "before": "c8dbc3d1c4671589ffa5d430f1be05ff5fe19bcfb51050374b04af6ccf9f657a"
-      },
       "initialized_packed_hex": "0000000000ffffff0001000000ffffff00010000000000000001000000010000000000000001000000ffffff0001000000ffffff0000000000ffffff00ffffff",
       "instruction_count_required": 26,
       "kind": "lepton",
@@ -7412,10 +7404,6 @@
       },
       "fpcw_after": "0x0E7F",
       "fpcw_before": "0x0E7F",
-      "image_excluding_selected_table_sha256": {
-        "after": "4acf10ef6611d9caad4370ad1de277abb1572046c2378cbb99f5b2802c2ecdcd",
-        "before": "4acf10ef6611d9caad4370ad1de277abb1572046c2378cbb99f5b2802c2ecdcd"
-      },
       "initialized_packed_hex": "0000ffff0100ffff010000000100010000000100ffff0100ffff0000ffffffff",
       "instruction_count_required": 40,
       "kind": "cell",
@@ -7831,10 +7819,6 @@
       },
       "fpcw_after": "0x0E7F",
       "fpcw_before": "0x0E7F",
-      "image_excluding_selected_table_sha256": {
-        "after": "c8dbc3d1c4671589ffa5d430f1be05ff5fe19bcfb51050374b04af6ccf9f657a",
-        "before": "c8dbc3d1c4671589ffa5d430f1be05ff5fe19bcfb51050374b04af6ccf9f657a"
-      },
       "initialized_packed_hex": "0000000000ffffff0001000000ffffff00010000000000000001000000010000000000000001000000ffffff0001000000ffffff0000000000ffffff00ffffff",
       "instruction_count_required": 26,
       "kind": "lepton",

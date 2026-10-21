@@ -18,7 +18,7 @@ from unicorn.x86_const import (
     UC_X86_REG_ESP,
 )
 from tools.native_oracle import (
-    RET_MAGIC, NativeCallTrace, finish_vectors, image_sha256, provenance,
+    RET_MAGIC, NativeCallTrace, finish_vectors, provenance,
     run_checked,
 )
 from tools.projectile_oracle.bridge_render_inputs import BulletReader, lexical
@@ -815,7 +815,7 @@ def generate():
     rows = [native.visit('first_whole_unit_ai', 1, 0x7360C0),
             native.visit('retained_whole_unit_ai', 2, 0x7360C0),
             native.visit('retained_frame8', 8)]
-    result = dict(schema_version=1, native_sha256=image_sha256(), retail=retail,
+    result = dict(schema_version=1, retail=retail,
                 initialization=dict(type_constructor=native.type_constructor,
                     unit_art_constructor=native.unit_art_constructor,
                     art_input=native.art_input,

@@ -1,4 +1,4 @@
-VERA20k @VERSION@ (early alpha)
+VERA20k @VERSION@ (build @BUILD@, early alpha)
 
 VERA20k is a free, open-source reimplementation of Command & Conquer: Yuri's
 Revenge. It contains no game files: you need your own copy of Yuri's Revenge
@@ -32,8 +32,9 @@ REQUIREMENTS
     Run anyway.
   macOS: VERA20k is not notarized by Apple yet, so macOS blocks it the first
     time you open it. Click Done, open System Settings > Privacy & Security,
-    scroll down, click Open Anyway, enter your password and confirm. Each new
-    version asks once.
+    scroll down, click Open Anyway, enter your password and confirm. The
+    button stays for about an hour after the block; if it is gone, open
+    VERA20k again. Each new version asks once.
     The program-only archive needs Terminal instead: type cd and a space,
     drag its folder onto the Terminal window and press Return. Then run these
     two lines; the first removes macOS's "downloaded from the internet" mark

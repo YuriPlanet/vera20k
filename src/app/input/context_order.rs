@@ -497,9 +497,15 @@ pub(crate) fn attack_action(
     // RESIDUAL: the Unit's Attack reaches 740486 only when vt+0x310
     // (0x00700D10, 74041B..74042E) admits it, and is 0 otherwise. That test
     // refuses a Unit in a tube (Foot +0x684 >= 0) whose vt+0x4E4
-    // (0x00736D50) answers yes, and a Unit under EMP (vt+0x37C), which has
-    // no Rust producer. Not ported: a selected Unit hovering an object from
-    // inside a tube is rare.
+    // (0x00736D50) answers yes, and a Unit whose vt+0x37C (0x00746C90)
+    // answers yes: one under EMP (+0x504 > 0) or one counting down art
+    // `DeathFrames=` (+0x6D8 != -1, set at 0x00737DBF only when UnitType
+    // +0xE20 > 0). Not ported. EMP is UNREACHABLE: EMPulseClass::Apply
+    // (0x004C5718) is reached only from the unreferenced constructor
+    // 0x004C52B0. Neither `DeathFrames=` nor `DeployToFire=` appears in
+    // retail ARTMD/RULESMD, and for a human's Unit CanDeployNow needs
+    // DeployToFire= (its TickTank branch is computer-only), so both other
+    // arms are DORMANT.
     if action == AttackAction::Attack
         && matches!(
             actor.category(),
@@ -3112,6 +3118,15 @@ fn self_action(
             entity_id: target.stable_id,
         });
     }
+    // Building447286..4472E7's gap rung precedes its cargo rungs; its Self
+    // click queues Unload443514, which toggles the super-charge. Residual:
+    // a type both GapGenerator= and a factory would also take the primary
+    // tail4472EC and Event17 (44345F); no retail type is both.
+    if let Some(offered) = sim.gap_generator_self_action(target.stable_id, rules) {
+        return offered.then_some(Command::UnloadPassengers {
+            transport_id: target.stable_id,
+        });
+    }
     if let Some(command) = super::transport_orders::unload_command(entity, obj, Some(local_owner)) {
         return Some(command);
     }
@@ -3860,7 +3875,10 @@ fn shot_is_illegal(
 
 /// Building4436F0(1/6, cell): prepare archive event1E, then SELL16 for an
 /// UndeploysInto type. A failed FNPC emits no archive but still queues SELL,
-/// retaining an earlier archive. A factory announces only its queued rally.
+/// retaining an earlier archive, except that a Construction Yard archives its
+/// own Cell ([`crate::sim::world::Simulation::factory_rally_cell_input`]). A
+/// factory announces its rally click whether or not the search found a Cell
+/// (`0x00443A7B..0x00443A89` jumps to the announcement at `0x00443A2B`).
 ///
 /// The click loop clamps the Cell to the playfield first
 /// ([`crate::sim::world::Simulation::clamped_click_cell`]), then asks each
@@ -3908,15 +3926,18 @@ fn building_cell_orders(
             continue;
         }
         match sim.factory_rally_cell_input(id, cell, rules) {
-            Ok(Some((rx, ry))) => {
-                orders.push(Command::SetRally {
-                    rx,
-                    ry,
-                    producer_ids: vec![id],
-                });
+            Ok(found) => {
+                if let Some((rx, ry)) = found {
+                    orders.push(Command::SetRally {
+                        rx,
+                        ry,
+                        producer_ids: vec![id],
+                    });
+                }
+                // A missed search still reaches the announcement
+                // (`0x00443977` -> `0x00443A7B` -> `0x00443A2B`).
                 announce |= crate::app::match_runtime::eva_producers::rally_point_announces(object);
             }
-            Ok(None) => {}
             Err(error) => log::warn!("building cell input: {error}"),
         }
         if object.undeploys_into.is_some() {
@@ -4179,15 +4200,18 @@ fn building_object_orders(
             }
         }
         match sim.factory_rally_cell_input(id, cell, rules) {
-            Ok(Some((rx, ry))) => {
-                orders.push(Command::SetRally {
-                    rx,
-                    ry,
-                    producer_ids: vec![id],
-                });
+            Ok(found) => {
+                if let Some((rx, ry)) = found {
+                    orders.push(Command::SetRally {
+                        rx,
+                        ry,
+                        producer_ids: vec![id],
+                    });
+                }
+                // A missed search still reaches the announcement
+                // (`0x00443977` -> `0x00443A7B` -> `0x00443A2B`).
                 announce |= crate::app::match_runtime::eva_producers::rally_point_announces(object);
             }
-            Ok(None) => {}
             Err(error) => log::warn!("building object input: {error}"),
         }
     }

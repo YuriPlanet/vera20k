@@ -8,7 +8,7 @@ import struct,hashlib
 from pathlib import Path
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_ECX,UC_X86_REG_EAX,UC_X86_REG_ESP
-from tools.native_oracle import NATIVE_SHA256,finish_vectors,provenance
+from tools.native_oracle import finish_vectors,provenance
 from tools.spatial_oracle.building_body_rules import dwords
 from tools.spatial_oracle import bridge_target_composed as composed
 
@@ -42,7 +42,7 @@ def cell_centers():
   rows.append(dict(name=name,input_xy=xy,receiver='dummy' if receiver==0xABDC50 else 'cell_10_20',center_xyz=xyz,identity='dummy' if result==0xABDC50 else 'cell_10_20',dummy_xy=list(struct.unpack('<2h',u.mem_read(0xABDC50+0x24,4)))))
  return rows
 
-def generate():return dict(native_sha256=NATIVE_SHA256,rows=[execute(n)for n in('temporal_held_target','firer_lifted','target_limbo','target_cloaked')],cell_centers=cell_centers())
+def generate():return dict(rows=[execute(n)for n in('temporal_held_target','firer_lifted','target_limbo','target_cloaked')],cell_centers=cell_centers())
 def metadata():return provenance(scope=__doc__,entry_points={'techno_fire_error':0x6FC0B0,'target_center_lookup':0x6FC197,'sensor':0x4870D0,'cell_center':0x486840,'map_cell':0x565730},assumptions=['Full original TechnoGetFireError body, supplied inherited setup and explicit special lifecycle fields. No gate/query/sensor return substitutions.','Three separate Cell486840 thenMap565730 controls execute original bodies with a supplied retained Cell/dummy identity and coordinates; this leaf is not itself a whole FireError invocation.',
  'Target physical/missing-cellXYZ supplied; center identity retained by actual direct call. This FV receiver does not distinguish centerXY fromphysicalXY.'],substitutions=['Only preparation boundaries inherited from composed fixture.'])
 if __name__=='__main__':finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=metadata)

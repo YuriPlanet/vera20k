@@ -28,7 +28,7 @@ from unicorn.x86_const import (
 )
 from tools.native_oracle import (
     NativeCallTrace, RET_MAGIC, SCRATCH, STACK_BASE, STACK_SIZE, finish_vectors,
-    image_sha256, load_image, provenance, run_checked,
+    load_image, provenance, run_checked,
 )
 from tools.spatial_oracle.map_queries import dwords, packed
 
@@ -575,7 +575,7 @@ def bunker_install_metadata():
     return provenance(
         scope='Original bunker installation coordinate/facing/selector and Force_Track producers, bounded states1/2; native retail NATBNK Foundation reader',
         assumptions=[
-            'Same physical supported gamemd image as this sidecar identity; original Building/BuildingType/Unit vtables, Drive/base and Facing constructors, Facing Set_ROT/Snap/Set/Current/IsRotating execute',
+            'The configured physical gamemd image; original Building/BuildingType/Unit vtables, Drive/base and Facing constructors, Facing Set_ROT/Snap/Set/Current/IsRotating execute',
             'State1 begins459069 after candidate lookup, radio/contact admission, footprint clearance and scatter; ESI Building and EBP Unit are supplied. State1 writes state2; state2 begins459101 with that retained object/facing state',
             'Global frame100 is supplied, then advanced directly to original timer start+duration. Original waiting gate executes when duration is positive. Full frame scheduling, per-frame movement and intermediate turning are excluded',
             'Original Building447AC0 computes Foundation center;459069..4590F9 computes desired16 through original atan2/ftol/Set;459101..4591CE reads Current16, selects track, calls GetCoords/Drive Force_Track and writes speed/state3',
@@ -611,7 +611,7 @@ def generate_hover_mark_all():
                            on_bridge=on_bridge, stop_first=stop_first, mode=mode)
                 native = OriginalForceTrack(dict(bridge=structural))
                 rows.append(native.hover_mark_all(row))
-    return dict(schema=1, native_sha256=image_sha256(), cases=rows)
+    return dict(schema=1, cases=rows)
 
 
 def hover_mark_all_metadata():

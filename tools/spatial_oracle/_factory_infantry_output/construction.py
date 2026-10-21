@@ -8,16 +8,13 @@ import argparse, ast, copy, hashlib, importlib.util, json, struct, traceback
 
 HERE=Path(__file__).resolve().parent
 PARENT=HERE
-from .runtime import load_module, verify_callers, caller_sha
+from .runtime import load_module
 EXPECTED_MANIFEST='3ae9a5220673979933261a154bace85a2958404bfb8541bdb6a7b478b90fad15'
-EXPECTED_ADMITTED='97ce3a4e8cc4cf11d579c1f242122aff18e087e7a4ff0e717893d9291f43b872'
 
-def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 def load(name, p):
     return load_module(name, p)
 
 def generate(control='construction'):
-    verify_callers()
     adapter=load('sealed_admitted_prerequisite',PARENT/'admitted.py')
     producer=adapter.load('sealed_producer_prerequisite','producer.py')
     bc,native,er=producer.bc,producer.native,producer.er
@@ -66,7 +63,7 @@ def generate(control='construction'):
         opening['creation']=snap(f,p)
     # Extend only the immutable external caller adapter, retaining its native
     # constructor/Unlimbo/House corridors, hooks, guards and cleanup exclusions.
-    derive=next(n for n in ast.parse((PARENT/'admitted.py').read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='derive_setup')
+    derive=next(n for n in ast.parse((PARENT/'admitted.py').read_text(encoding='utf-8')).body if isinstance(n,ast.FunctionDef) and n.name=='derive_setup')
     class Derive(ast.NodeTransformer):
         def visit_Assign(self,n):
             if ast.unparse(n).startswith('fn = Hooks().visit(fn)'):
@@ -81,7 +78,7 @@ def generate(control='construction'):
             return self.generic_visit(n)
     derive=Derive().visit(derive)
     ns=dict(vars(adapter));ns.update(pre_unlimbo=pre_unlimbo,post_unlimbo=post_unlimbo,HumanIngress=HumanIngress)
-    mod=ast.fix_missing_locations(ast.Module(body=[derive],type_ignores=[]));derive_sha=hashlib.sha256(ast.dump(mod,include_attributes=False).encode()).hexdigest()
+    mod=ast.fix_missing_locations(ast.Module(body=[derive],type_ignores=[]))
     exec(compile(mod,str(HERE/'<derived-human-ingress-caller>'),'exec'),ns)
     def open_producer(f,p):
         u,r=f.u,f.read32;rows=[];completion=None
@@ -116,7 +113,7 @@ def generate(control='construction'):
         for h in hook_ids:u.hook_del(h)
         return opening
     # Remove all linked-prior opening stores from the immutable setup closure.
-    gen=next(n for n in ast.parse((PARENT/'admitted.py').read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='generate')
+    gen=next(n for n in ast.parse((PARENT/'admitted.py').read_text(encoding='utf-8')).body if isinstance(n,ast.FunctionDef) and n.name=='generate')
     class Opening(ast.NodeTransformer):
         def visit_FunctionDef(self,n):
             if n.name=='setup':
@@ -147,12 +144,12 @@ def generate(control='construction'):
             return self.generic_visit(n)
     gen=QueueNS().visit(gen)
     ns2=dict(vars(adapter));ns2.update(derive_setup=ns['derive_setup'],open_producer=open_producer,queue_start_frame=lambda:opening['frames'][-1]['frame']+1)
-    mod2=ast.fix_missing_locations(ast.Module(body=[gen],type_ignores=[]));queue_sha=hashlib.sha256(ast.dump(mod2,include_attributes=False).encode()).hexdigest()
+    mod2=ast.fix_missing_locations(ast.Module(body=[gen],type_ignores=[]))
     exec(compile(mod2,str(HERE/'<derived-construction-queue-caller>'),'exec'),ns2)
     fault=None;receipt=None
     try:receipt=ns2['observe_joined_prerequisites']()
     except Exception as e:fault=dict(type=type(e).__name__,message=str(e),traceback=traceback.format_exc())
-    return dict(schema_version=1,kind='native-admitted-construction-human-output-prerequisites',control=control,native_sha256=native.NATIVE_SHA256,driver_sha256=sha(__file__),parent_manifest_sha256=EXPECTED_MANIFEST,derive_ast_sha256=derive_sha,queue_ast_sha256=queue_sha,opening=opening,admitted_queue=receipt,fault=fault,
+    return dict(schema_version=1,kind='native-admitted-construction-human-output-prerequisites',control=control,parent_manifest_sha256=EXPECTED_MANIFEST,opening=opening,admitted_queue=receipt,fault=fault,
         bounds=['Whole selected GAPILE constructor/Unlimbo/House admission plus exact human HELLO-before-Unlimbo/C/BREAK order, then original construction-owner visits; no producer opening field is written by this driver.',
                 'The construction yard is separately whole native constructor/Unlimbo admitted at authored8,12, then originally expired after the producer opens; full MCV deployment/yard construction and building-factory charge/click ingress are excluded.',
                 'Original producer header/update/mission corridors and its live Anim visits execute. Whole BuildingAI/TechnoAI/HouseAI/MainTick/render/network/checksum remain excluded.',

@@ -633,10 +633,9 @@ def expiry_observer_validation(inputs):
 
 
 def generate_expiry():
-    from tools.native_oracle import NATIVE_SHA256
     inputs = expiry_inputs()
     rows = [expiry_row(inputs, case) for case in expiry_cases()]
-    return dict(schema_version=1, source='unicorn/gamemd.exe', native_sha256=NATIVE_SHA256,
+    return dict(schema_version=1, source='unicorn/gamemd.exe',
                 inputs=inputs.expiry_inputs, rows=rows, stock_body_readiness=expiry_body_readiness(inputs),
                 observer_validation=expiry_observer_validation(inputs))
 
@@ -716,7 +715,7 @@ def expiry_metadata():
                             for begin, end in EXPIRY_SPANS]
     p['legacy_payload_preserved'] = dict(rows=420,
         file_sha256='261582222f8dbf26484991d9c5cc35c2c4d54e28fabc5f6bf159a0d2d0669ec9',
-        meta_file_sha256='f9afe25a815ec6412d1a4b78034716b0fc3f8adc8696a13e665fdca7451a50bd')
+        meta_file_sha256='106a5062639f1a2291a3ab63f0f69f08888d9baebe755544155b97ca80e47631')
     return p
 
 

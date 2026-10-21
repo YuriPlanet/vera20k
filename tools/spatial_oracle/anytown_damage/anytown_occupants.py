@@ -209,7 +209,7 @@ def generate():
    print(json.dumps(dict(case=c,events=m.events2,calls=m.calls[-30:],snapshot=m.snapshot()),indent=2));raise
   rows.append(dict(input=c,initializers=m.initializers,native_inputs=m.inputs,extra_layers=m.extra_layers,result=result))
  jumpjet=[jumpjet_case(donor,t,mode) for mode in (0,1,256,257)]
- return dict(schema=1,native_sha256=NATIVE_SHA256,code_sha256=m.code_hash,fpcw_supplied=hex(m.u.reg_read(UC_X86_REG_FPCW)),base_reader_layers=m.layers,jumpjet=jumpjet,input=case,assets=donor.assets,overlay_rules=fields,sound=m.sound_input,cases=rows)
+ return dict(schema=1,code_sha256=m.code_hash,fpcw_supplied=hex(m.u.reg_read(UC_X86_REG_FPCW)),base_reader_layers=m.layers,jumpjet=jumpjet,input=case,assets=donor.assets,overlay_rules=fields,sound=m.sound_input,cases=rows)
 
 def metadata():
  from unicorn import Uc,UC_ARCH_X86,UC_MODE_32
@@ -231,8 +231,6 @@ def metadata():
  ],entry_points={'area_continuation':0x48A2B4,'driver':0x57CCF0,'span_notify':0x575EE0,'occupants':0x487A10,'can_enter':0x73F0A0,'drive_at_coord':0x4B4920,'unit_damage':0x737C90,'detach':0x70D4A0,'foot_restore':0x4D8F80,'unit_speed_postpass':0x7476D3,'jumpjet_reader':0x7151E5,'infantry_ctor_prefix':0x517A50,'infantry_can_enter':0x51BF90,'infantry_damage_boundary':0x517FA0})
  spans=[(0x48A2B4,0x48A2C4),(0x487A10,0x487C15),(0x70D4A0,0x70D581),(0x4D8F80,0x4D8FA7),(0x7013E0,0x701405),(0x7476D3,0x747711),(0x714CC8,0x714CE9),(0x7151E5,0x715227),(0x517A50,0x517B44)]
  p['original_slices']=[dict(start=hex(a),end_exclusive=hex(b),sha256=sha(bytes(u.mem_read(a,b-a))),hex=bytes(u.mem_read(a,b-a)).hex())for a,b in spans]
- p['harness_sha256']=sha(Path(__file__).read_bytes())
- p['helper_sources']={q.name:sha(q.read_bytes())for q in [HERE/'anytown_resident.py',HERE/'anytown_geometry.py',HERE/'next_family_native.py']}
  return p
 
 from .publication import finish_vectors

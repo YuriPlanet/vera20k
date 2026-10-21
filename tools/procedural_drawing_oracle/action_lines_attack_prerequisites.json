@@ -11826,7 +11826,6 @@
       "sha256": "2b937bd1720573e2a697558452df5efc4005b80cdabb5cadae4f99dcc831c3ea"
     }
   },
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "native_text_unchanged": true,
   "object_initializers": [
     "0x005F36F0",

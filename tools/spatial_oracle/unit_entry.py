@@ -13,7 +13,7 @@ import struct
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_ESP
 from tools.native_oracle import (
-    NATIVE_SHA256, SCRATCH, file_span, finish_vectors, image_bytes, provenance,
+    SCRATCH, file_span, finish_vectors, image_bytes, provenance,
 )
 from tools.spatial_oracle.map_queries import dwords, packed
 from tools.spatial_oracle.unit_scatter_state import ACTOR, TYPE, SP
@@ -286,7 +286,7 @@ def counter_mode_generate():
             case['overlay'] = 0
         rows.append(query(case, counter_control=dict(
             kind=kind, scenario_init_counter=scope, actual_game_mode=mode)))
-    return dict(schema_version=1, native_sha256=NATIVE_SHA256, rows=rows)
+    return dict(schema_version=1, rows=rows)
 
 
 def counter_mode_metadata():

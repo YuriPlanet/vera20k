@@ -524,6 +524,9 @@ fn install_setup(
     state.frontend.lan = None;
     state.frontend.multiplayer_setup = Some(MultiplayerSetupState::default());
     state.frontend.network_setup_protocol = Some(NetworkSetupProtocol::new(dialog, quick_match));
+    if !quick_match && state.match_state.session.host() {
+        note_scenario(state);
+    }
     if quick_match {
         // 0x117 stays up and takes the lines; no dialog opens.
         state.platform.window.request_redraw();
@@ -539,6 +542,35 @@ fn install_setup(
     shell_transition::invalidate_main_menu_dialog_instance(state);
     state.platform.window.request_redraw();
     Ok(())
+}
+
+/// `[0xA8B254]` after the host's map choice (BC open `0x005ED668`, Use Map
+/// `0x005E7370`, C2 `0x00790DFE`): the selected map's record, or 0 when it
+/// has none (`0x005ED660`). Quick Match's setup has no dialog and never
+/// writes it, nor does an options parse.
+/// RESIDUAL: a guest's dialog init writes it too (C9 `0x00792978` with the
+/// mode's `+0x44` default, the LAN lobby `0x005DCB3B`/`0x005DDA8C`); VERA's
+/// guests keep the previous value. Only a guest's `+0x20` before the host's
+/// C0 reads it.
+pub(super) fn note_scenario(state: &mut AppState) {
+    let index = state
+        .match_state
+        .session
+        .network_setup()
+        .and_then(|launch| launch.selected_map_file.as_deref())
+        .and_then(|file| {
+            state
+                .frontend
+                .scenario_catalog
+                .records()
+                .iter()
+                .position(|record| record.file_name.eq_ignore_ascii_case(file))
+        })
+        .unwrap_or(0);
+    state
+        .frontend
+        .multiplayer_shell_runtime
+        .set_scenario_index(index);
 }
 
 pub(crate) fn show_statics(state: &mut AppState) {

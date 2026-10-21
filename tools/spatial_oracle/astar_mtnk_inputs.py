@@ -6,7 +6,6 @@ Unit/Foot constructor prefix, Drive construction and the admitted Unlimbo coeffi
 copy execute. This does not execute whole ReadINI, Unlimbo, Scenario loading,
 placement, high-bridge Cell production, A* search or path finishing.
 """
-from pathlib import Path
 from types import SimpleNamespace
 import hashlib
 import struct
@@ -16,7 +15,7 @@ from unicorn.x86_const import (
     UC_X86_REG_ECX, UC_X86_REG_EIP, UC_X86_REG_ESI,
     UC_X86_REG_ESP,
 )
-from tools.native_oracle import NATIVE_SHA256, RET_MAGIC, provenance, run_checked
+from tools.native_oracle import RET_MAGIC, provenance, run_checked
 from tools.projectile_oracle.bridge_render_inputs import assets_root, lexical
 from tools.spatial_oracle.anytown_damage import navigation_inputs, next_family_native
 from tools.spatial_oracle.building_body_rules import SP, dwords
@@ -181,7 +180,7 @@ def generate():
     assert copied == final_type['threat_coefficient_f64_bits']
     assert before_copy == rng_state()
     assert m.original_text == sha(bytes(u.mem_read(0x401000, 0x3E0000)))
-    return dict(schema_version=1, native_sha256=NATIVE_SHA256, scope=__doc__,
+    return dict(schema_version=1, scope=__doc__,
                 startup=startup, theater_sha256=theater['sha256'],
                 type_constructor=m.mtnk_ctor, layers=layers, final_type=final_type,
                 unit_constructor=ctor, drive_constructor=drive_result,
@@ -209,6 +208,4 @@ def metadata():
             'No high-bridge flags, loaded Cells, actor placement, ordinary Move, A* or path finishing is established by this prerequisite witness.'],
         substitutions=[
             'Inherited successful bounded malloc/free and CRT TLS seams; physical archive/file loading and INI cache preparation are host supplied. No gameplay, scalar-reader, coefficient, RNG or constructor return is supplied.'])
-    owners = [Path(__file__), Path(navigation_inputs.__file__), Path(next_family_native.__file__)]
-    result['source_sha256'] = {str(p.relative_to(Path(__file__).resolve().parents[2])): sha(p.read_bytes()) for p in owners}
     return result

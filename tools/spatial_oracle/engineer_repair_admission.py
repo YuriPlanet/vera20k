@@ -165,7 +165,6 @@ from tools.spatial_oracle.building_body_rules import INI, SP
 from tools.spatial_oracle.refinery_dock import HOUSE, HTYPE, BLD, OTHER as OTHER_BUILDING, BLD_ITEMS, OTHER_ITEMS, cell
 from tools.rules_oracle import bridge_child_sound
 from tools.rules_oracle.bridge_anim_lists import HEAP
-from tools.native_oracle import NATIVE_SHA256
 
 JOINED_ROOT = Path(os.environ.get('VERA20K_ENGINEER_REPAIR_ASSETS',
                                  str(Path(os.environ.get('CARGO_TARGET_DIR', 'target')) / 'asset/engineer-repair/extract')))
@@ -1284,7 +1283,7 @@ def joined_generate():
     controls = action_controls(inputs)
     files = [dict(name=p.name, size=p.stat().st_size, sha256=hashlib.sha256(p.read_bytes()).hexdigest())
              for p in sorted(JOINED_ROOT.iterdir()) if p.is_file() and p.suffix.lower() != '.json']
-    return dict(schema_version=1, source='unicorn/gamemd.exe', native_sha256=NATIVE_SHA256,
+    return dict(schema_version=1, source='unicorn/gamemd.exe',
         retail_files=files, constructor_defaults=inputs.defaults,
         original_executable_sections=inputs.code_identity,
         constructor_repair_sound=inputs.constructor_repair_sound,

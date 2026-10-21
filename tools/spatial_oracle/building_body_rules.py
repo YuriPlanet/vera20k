@@ -40,11 +40,15 @@ def dwords(*values):
 
 
 class Fixture:
-    def __init__(self):
+    def __init__(self, *, stack_base=STACK_BASE):
+        # Ares occupies the stock fixture's default stack address. Keep the
+        # guest layout with this VM owner instead of rebinding module globals.
+        self.stack_base = stack_base
+        self.sp = stack_base + (SP - STACK_BASE)
         self.u = Uc(UC_ARCH_X86, UC_MODE_32)
         load_image(self.u)
         self.u.mem_map(SCRATCH, 0x10000)
-        self.u.mem_map(STACK_BASE, STACK_SIZE)
+        self.u.mem_map(self.stack_base, STACK_SIZE)
         self.u.mem_map(RET_MAGIC, 0x1000)
         self.u.reg_write(UC_X86_REG_FPCW, 0x0E7F)
         self.u.mem_write(TYPE + 0x1F8, b'TEST\0')
@@ -74,7 +78,7 @@ class Fixture:
         begin,end,key,offset=TRIPLES[which]
         self.ini(key,raw)
         u.mem_write(TYPE+offset, dwords(*initial))
-        u.reg_write(UC_X86_REG_ESP,SP)
+        u.reg_write(UC_X86_REG_ESP,self.sp)
         u.reg_write(UC_X86_REG_EBP,TYPE)
         u.reg_write(UC_X86_REG_EDI,TYPE+0x1F8)
         run_checked(u,begin,end)
@@ -83,8 +87,8 @@ class Fixture:
     def scalar(self, raw, key, default, fn):
         self.ini(key,raw)
         u=self.u
-        u.mem_write(SP,dwords(RET_MAGIC,TYPE+0x1F8,key,default))
-        u.reg_write(UC_X86_REG_ESP,SP)
+        u.mem_write(self.sp,dwords(RET_MAGIC,TYPE+0x1F8,key,default))
+        u.reg_write(UC_X86_REG_ESP,self.sp)
         u.reg_write(UC_X86_REG_ECX,INI)
         run_checked(u,fn,RET_MAGIC)
         value=u.reg_read(UC_X86_REG_EAX)
@@ -98,7 +102,7 @@ class Fixture:
         u.mem_write(SHP+6,struct.pack('<H',(count or 0)&65535))
         self.write(0x8871E0,RULES)
         u.mem_write(RULES+0x1518,struct.pack('<Q',int(speed_bits,16)))
-        u.reg_write(UC_X86_REG_ESP,SP)
+        u.reg_write(UC_X86_REG_ESP,self.sp)
         u.reg_write(UC_X86_REG_EBP,TYPE)
         u.reg_write(UC_X86_REG_EBX,0)
         u.reg_write(UC_X86_REG_EAX,0 if count is None else SHP)
@@ -108,7 +112,7 @@ class Fixture:
     def light_constructor(self):
         """Original literal stores; the wider Type constructor is excluded."""
         u = self.u
-        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_ESP, self.sp)
         u.reg_write(UC_X86_REG_ESI, TYPE)
         u.reg_write(UC_X86_REG_EBX, 0)
         run_checked(u, 0x45DE12, 0x45DE39)
@@ -127,8 +131,8 @@ class Fixture:
         if not admitted:
             u.mem_write(TYPE + 0x24, b'TEST\0')
             u.mem_write(INI, bytes(0x40))
-            u.mem_write(SP, dwords(RET_MAGIC, INI))
-            u.reg_write(UC_X86_REG_ESP, SP)
+            u.mem_write(self.sp, dwords(RET_MAGIC, INI))
+            u.reg_write(UC_X86_REG_ESP, self.sp)
             u.reg_write(UC_X86_REG_ECX, TYPE)
             run_checked(u, 0x45FE50, RET_MAGIC, required_addresses=(0x410A60, 0x526810))
             assert not (u.reg_read(UC_X86_REG_EAX) & 255)
@@ -141,14 +145,14 @@ class Fixture:
                     token = None
                 self.ini(key_address, token)
                 for register, value in (
-                    (UC_X86_REG_ESP, SP), (UC_X86_REG_EBP, TYPE),
+                    (UC_X86_REG_ESP, self.sp), (UC_X86_REG_EBP, TYPE),
                     (UC_X86_REG_ESI, INI), (UC_X86_REG_EBX, TYPE + 0x1F8),
                 ):
                     u.reg_write(register, value)
                 run_checked(u, begin, end,
                     required_addresses=(0x5276D0,) if key == 'LightVisibility'
                     else (0x5283D0, 0x7C5F00))
-                assert u.reg_read(UC_X86_REG_ESP) == SP
+                assert u.reg_read(UC_X86_REG_ESP) == self.sp
         return dict(authored_keys=values, section_present=admitted, before=before,
                     after=list(struct.unpack('<5i', u.mem_read(TYPE + 0xE30, 20))))
 

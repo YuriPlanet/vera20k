@@ -517,7 +517,7 @@ if __name__ == "__main__":
                 "The dialog is at (0, 0); no game is suspended behind the shell and the session globals are zero (no network session)",
                 "Record +0x68 (the class code the subclass installer stores) is Button 0, Static 2, anything else 0xB",
                 "0x103's 0x72B override reads Scenario+0x34B8; the fixture supplies a zeroed Scenario with that dword set to the case's side, 0 for allies and 1 for the Soviet/Yuri branch",
-                "The reference was regenerated with the supported Steam image 3e81a617...; its code addresses and file-backed section contents match the historical 1cdd1180... image (tools/native_oracle.md), and the pre-existing cases' children are unchanged",
+                "The reference was regenerated with another gamemd.exe build, and the pre-existing cases' children are unchanged",
             ],
             substitutions=[
                 "user32 window calls are served by a window model of the dialog and its children; any other import faults",

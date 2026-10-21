@@ -13,7 +13,13 @@ use crate::ui::wol_lobby::EX_INFO_VERSION;
 /// The controlled Quick Match lobby: its number reaches the created game's
 /// flags (`0x800 + [0xB77DD4]`).
 const QM_LOBBY: &str = "Lob_40_3";
+/// The Quick Co-op lobby (`Lob_39_`, `0x0079FD9E`).
+const QC_LOBBY: &str = "Lob_39_3";
 const QM_LOBBY_NUMBER: u32 = 3;
+/// Cooperative `+0x20` in a fresh process: stale `[0xA8B254]` 0 is no
+/// campaign, so it selects the first Allied map (`0x005C1B1D..0x005C1BA1`),
+/// which replaces the matchbot's.
+const QC_HOST_MAP: &str = "C1A01MD.MAP";
 /// The lobby's operator, the last in its user list.
 const MATCHBOT: &str = "matchbot";
 
@@ -135,7 +141,7 @@ impl WolCapture {
             WolTarget::QmServerUnavailable => lobbies(),
             _ => {
                 let mut channels = lobbies();
-                channels.push(qm_lobby(2));
+                channels.push(qm_lobby(self.target, 2));
                 channels
             }
         };
@@ -158,7 +164,7 @@ impl WolCapture {
                         == [
                             WolServiceRequest::ListBuddies,
                             WolServiceRequest::JoinChannel {
-                                channel: qm_lobby(2),
+                                channel: qm_lobby(self.target, 2),
                                 key: LOBBY_KEY.into(),
                             }
                         ],
@@ -182,7 +188,7 @@ impl WolCapture {
         service_event(
             state,
             WolServiceEvent::Joined(Ok(WolJoined {
-                channel: qm_lobby(3),
+                channel: qm_lobby(self.target, 3),
                 members: vec![
                     member(PEER, 0, ""),
                     member(MATCHBOT, MEMBER_OPERATOR, ""),
@@ -269,7 +275,7 @@ impl WolCapture {
                 self.expect_rows(state, frame, from, &[exit])?;
                 self.phase = WolPhase::Qm(QmPhase::Box("WOL:MatchFailExit"));
             }
-            WolTarget::QmGuestJoined => self.qm_guest(state, frame)?,
+            WolTarget::QmGuestJoined | WolTarget::QcGuestJoined => self.qm_guest(state, frame)?,
             _ => self.qm_host(state, frame)?,
         }
         Ok(())
@@ -393,7 +399,7 @@ impl WolCapture {
             channel.name == format!("{NICKNAME}'s_game")
                 && channel.kind == GAME_CHANNEL
                 && channel.max_users == 2
-                && channel.tournament == 1
+                && channel.tournament == i32::from(!self.target.quick_coop())
                 && channel.game_flags == 0x800 + QM_LOBBY_NUMBER
                 && key.is_empty(),
             "unexpected Quick Match game channel {channel:?}"
@@ -444,6 +450,11 @@ impl WolCapture {
         // follows without the advertisement.
         self.route.push(json!({"frame": frame,
             "guest_join_setup_requests": requests.iter().map(|r| format!("{r:?}")).collect::<Vec<_>>()}));
+        let expected_map = if self.target.quick_coop() {
+            Some(QC_HOST_MAP.to_owned())
+        } else {
+            options.launch.selected_map_file.clone()
+        };
         ensure!(
             requests.ends_with(&[
                 NetworkSetupRequest::ObserverSlot {
@@ -454,7 +465,11 @@ impl WolCapture {
                 NetworkSetupRequest::PublishOptions,
                 NetworkSetupRequest::RequestPings,
             ]) && !requests.contains(&NetworkSetupRequest::Advertise)
-                && launch.selected_map_file == options.launch.selected_map_file
+                && launch
+                    .selected_map_file
+                    .as_deref()
+                    .zip(expected_map.as_deref())
+                    .is_some_and(|(map, expected)| map.eq_ignore_ascii_case(expected))
                 && launch.humans.len() == 2,
             "the guest's join did not apply the matchbot's options: {requests:?}, map {:?} \
              (matchbot {:?}), humans {:?}",
@@ -466,9 +481,37 @@ impl WolCapture {
                 .map(|human| &human.name)
                 .collect::<Vec<_>>()
         );
+        // `+0x94` (`0x005E2FA0` from `0x007A6E5A`): the campaign with both
+        // names, before the slot names and options.
+        let campaign = requests.iter().position(|request| {
+            matches!(request, NetworkSetupRequest::PublishCooperativeCampaign(_))
+        });
+        if self.target.quick_coop() {
+            let expected = qc_campaign_text(NICKNAME, PEER);
+            ensure!(
+                campaign.is_some_and(|index| requests[index]
+                    == NetworkSetupRequest::PublishCooperativeCampaign(expected.clone())
+                    && requests[index + 1..]
+                        .iter()
+                        .any(|request| matches!(request, NetworkSetupRequest::PublishOptions))),
+                "the Quick Co-op join did not publish {expected:?} before the options: \
+                 {requests:?}"
+            );
+            ensure!(
+                launch.mode.class == crate::skirmish_modes::MpModeClass::Cooperative,
+                "the matchbot's options did not make Cooperative current"
+            );
+        } else {
+            ensure!(
+                campaign.is_none(),
+                "a Quick Match join published a campaign"
+            );
+        }
         self.event(
             frame,
-            "controlled guest joined; the matchbot's options applied",
+            json!({"controlled guest joined; the matchbot's options applied":
+                {"map": launch.selected_map_file, "matchbot_map": options.launch.selected_map_file,
+                 "countries": countries(state)}}),
         );
         service_event(
             state,
@@ -487,7 +530,8 @@ impl WolCapture {
         );
         let choices = setup_requests(state);
         self.route.push(json!({"frame": frame,
-            "after_guest_choices": choices.iter().map(|r| format!("{r:?}")).collect::<Vec<_>>()}));
+            "after_guest_choices": choices.iter().map(|r| format!("{r:?}")).collect::<Vec<_>>(),
+            "countries": countries(state)}));
         service_event(
             state,
             WolServiceEvent::PlayerReady {
@@ -528,6 +572,15 @@ impl WolCapture {
             qm::dialog(state).is_none()
                 && names.as_deref() == Some(&[NICKNAME.to_owned(), PEER.to_owned()][..]),
             "OnGameStart did not close 0x117 and open 0x130: {names:?}"
+        );
+        let quick_coop = state
+            .match_state
+            .session
+            .network_wol_start()
+            .is_some_and(|terms| terms.quick_coop);
+        ensure!(
+            quick_coop == self.target.quick_coop(),
+            "OnGameStart's terms read Quick Co-op {quick_coop}"
         );
         self.event(frame, "controlled OnGameStart: 0x117 closed, 0x130");
         setup::service_event(state, NetworkSetupEvent::VerifyStarted { pairs: true })?;
@@ -579,7 +632,7 @@ impl WolCapture {
             kind: GAME_CHANNEL,
             max_users: 2,
             users: 1,
-            tournament: 1,
+            tournament: i32::from(!self.target.quick_coop()),
             ping: -1,
             name: format!("{PEER}'s_game"),
             game_flags: 0x800 + QM_LOBBY_NUMBER,
@@ -634,6 +687,16 @@ impl WolCapture {
         // matchbot's rows (the host on 0, this user on 1) in the guest's own
         // node order, this user first.
         options.launch.humans.swap(0, 1);
+        if self.target.quick_coop() {
+            // The native host's C0 reaches the guest before its options
+            // (`0x007A7F02`), and those carry the map `+0x20` selected.
+            let text = qc_campaign_text(PEER, NICKNAME);
+            setup::service_event(state, NetworkSetupEvent::CooperativeCampaign(text.clone()))?;
+            self.event(frame, json!({"host C0": text}));
+            options.launch.selected_map_file = Some(QC_HOST_MAP.to_owned());
+            options.map_metadata =
+                crate::app::shell_network_setup::local_map_metadata(state, QC_HOST_MAP)?;
+        }
         setup::service_event(state, NetworkSetupEvent::HostSetup(options))?;
         let requests = setup_requests(state);
         // The parse's map check sends K1, then the Quick Match sink's A1.
@@ -699,13 +762,51 @@ impl WolCapture {
     }
 }
 
-/// The controlled Quick Match lobby with `users` users.
-fn qm_lobby(users: i32) -> WolChannel {
+/// The host's C0 for a fresh Allied record (variant 0 at each of its three
+/// stages), names in the host's order.
+fn qc_campaign_text(host: &str, guest: &str) -> String {
+    use crate::app::frontend::skirmish_session::cooperative::encode_name;
+    format!(
+        "C0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,{},{}",
+        encode_name(host.as_bytes()),
+        encode_name(guest.as_bytes())
+    )
+}
+
+/// Each human's country, `None` while Random.
+fn countries(state: &AppState) -> Vec<(String, Option<u16>)> {
+    state
+        .match_state
+        .session
+        .network_setup()
+        .map(|launch| {
+            launch
+                .humans
+                .iter()
+                .map(|human| {
+                    let slot = &human.slot;
+                    (
+                        human.name.clone(),
+                        (!slot.country_random).then(|| slot.country.raw_index()),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The controlled Quick Match (or Quick Co-op) lobby with `users` users.
+fn qm_lobby(target: WolTarget, users: i32) -> WolChannel {
     WolChannel {
         kind: 0,
         max_users: 100,
         users,
-        name: QM_LOBBY.into(),
+        name: if target.quick_coop() {
+            QC_LOBBY
+        } else {
+            QM_LOBBY
+        }
+        .into(),
         ping: -1,
         ..Default::default()
     }

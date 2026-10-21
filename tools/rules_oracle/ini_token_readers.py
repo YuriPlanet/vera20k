@@ -19,7 +19,7 @@ from pathlib import Path
 from unicorn import UC_HOOK_CODE, Uc, UC_ARCH_X86, UC_MODE_32
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EIP, UC_X86_REG_ESP
 
-from tools.native_oracle import (NATIVE_SHA256, RET_MAGIC, SCRATCH, STACK_BASE, STACK_SIZE,
+from tools.native_oracle import (RET_MAGIC, SCRATCH, STACK_BASE, STACK_SIZE,
                                  finish_vectors, load_image, provenance, run_checked)
 from tools.spatial_oracle.building_body_rules import (ENTRY, INDEX, INI, RAW, SECTION, SP,
                                                        TYPE, Fixture, dwords)
@@ -175,7 +175,6 @@ def generate():
     present, _ = reader.read_string('abc', 'default', 0x20)
     assert present == 'abc', 'the cached-entry fixture must reach the present value'
     return {
-        'native_sha256': NATIVE_SHA256,
         'atoi': [dict(raw=raw, output=crt.atoi(raw)) for raw in ATOI_ROWS],
         'strtok': [dict(raw=raw, tokens=crt.strtok(raw)) for raw in STRTOK_ROWS],
         'read_string': read_string_rows(reader),

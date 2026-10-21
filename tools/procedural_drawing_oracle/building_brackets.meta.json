@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -52,5 +51,5 @@
     "tmp": "0x00547CF0"
   },
   "replay_command": "python -m tools.procedural_drawing_oracle.shroud --building-brackets",
-  "payload_sha256": "f76e9338a41076756e4aeec391004f45f12ceccf4392ee6ef73c899f9be5425c"
+  "payload_sha256": "7253efa2b2c17477833011feb35e2f758615d21f4d8d21ae92eac47d124db609"
 }

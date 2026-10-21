@@ -853,7 +853,7 @@ pub(crate) fn board_passenger(
                 object.open_topped,
                 object.gunner,
                 object.infantry_absorb,
-                object.extra_power > 0,
+                object.extra_power.output() > 0,
             )
         })
     else {

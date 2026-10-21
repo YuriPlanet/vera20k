@@ -5,8 +5,7 @@ shared owners. This module only invokes original bodies and observes bytes.
 Four controls retain different explicit OS device premises. No source snapshot
 or external AST caller is loaded at runtime.
 """
-from pathlib import Path
-import hashlib, json, struct, sys, traceback
+import hashlib, json, struct
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import *
 from tools import native_oracle as native, native_inspect as inspect
@@ -268,9 +267,7 @@ def cadence(root, physical, meta, wave, *, prefix_only=False, observer=None):
 def finish(result,f,clock_calls,*,file_io=None,device_io=None,writes=None):
     result.update(original_code_unchanged=f.code_unchanged(),fault_pc=None if result['success']else f'0x{f.u.reg_read(UC_X86_REG_EIP):08X}',
         clock_calls=clock_calls,platform_calls=f.platform_audio.calls,requests=f.draws,advances=f.advances,
-        executed_pcs=[f'0x{x:08X}'for x in sorted(f.executed)],
-        source_receipts=[dict(module=name,path=str(Path(mod.__file__).resolve()),sha256=hashlib.sha256(Path(mod.__file__).read_bytes()).hexdigest())
-            for name,mod in sorted(sys.modules.items())if name.startswith('tools.')and getattr(mod,'__file__',None)and Path(mod.__file__).suffix=='.py'])
+        executed_pcs=[f'0x{x:08X}'for x in sorted(f.executed)])
     if file_io is not None:result['file_io']=file_io
     if device_io is not None:result['device_io']=device_io
     if writes is not None:result['observed_native_member_writes']=writes
