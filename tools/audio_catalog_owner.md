@@ -1,7 +1,10 @@
 # Process audio catalog ownership
 
-`ProcessAssets` selects immutable `AudioDefinitions` and at most one sample
-index when it first acquires retail assets. `NativeRulesProcessOwner` binds sound
+`ProcessAssets` selects immutable `AudioDefinitions` and one sample lookup
+owner when it first acquires retail assets. Stock builds select one BAG pair;
+`--features ares` admits the optional ordered multi-BAG catalog described in
+[the bounded Ares evidence](rules_oracle/ares_audio_bags.md).
+`NativeRulesProcessOwner` binds sound
 references through the exact same `Arc<SoundRegistry>` as app playback. Native
 Rules remains resident while the asset manager is leased. Map success, failure,
 cancellation and replacement retain the catalogs; `MatchAudioState` still owns

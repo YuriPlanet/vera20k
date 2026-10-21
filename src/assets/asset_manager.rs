@@ -23,6 +23,10 @@ use crate::assets::mix_hash::mix_hash;
 #[path = "asset_manager_ares_sidebar_tests.rs"]
 mod ares_sidebar_tests;
 
+#[cfg(test)]
+#[path = "asset_manager_audio_bags_tests.rs"]
+mod audio_bags_tests;
+
 /// A MIX archive with a human-readable name for logging and diagnostics.
 #[derive(Clone)]
 struct NamedArchive {
@@ -100,6 +104,9 @@ pub struct AudioIndexSources {
 pub struct LoadedAudioIndex {
     pub index: AudioIndex,
     pub sources: AudioIndexSources,
+    /// Further admitted pairs in append order. The first remains `sources`.
+    #[cfg(feature = "ares")]
+    pub additional_sources: Vec<AudioIndexSources>,
 }
 
 /// Parse a selected pair without making another source-selection decision.
@@ -108,23 +115,35 @@ pub fn load_audio_index_pair(
     idx: AssetResolutionRef<'_>,
     bag: AssetResolutionRef<'_>,
 ) -> Result<LoadedAudioIndex, AssetError> {
-    let identity = |source: AssetResolutionRef<'_>| AudioSourceIdentity {
-        source_archive: source.source_archive.to_owned(),
-        entry_id: source.entry_id,
-        payload_len: source.bytes.len(),
-        source_sha256: crate::util::sha256::sha256_hex(source.bytes),
-    };
-    let sources = AudioIndexSources {
-        idx: identity(idx),
-        bag: identity(bag),
-    };
+    let sources = audio_index_sources(idx, bag);
     let index = AudioIndex::from_idx_bag(idx.bytes, bag.bytes.to_vec()).ok_or_else(|| {
         AssetError::ParseError {
             format: "audio.idx".to_owned(),
             detail: format!("unsupported or truncated index from {}", idx.source_archive),
         }
     })?;
-    Ok(LoadedAudioIndex { index, sources })
+    Ok(LoadedAudioIndex {
+        index,
+        sources,
+        #[cfg(feature = "ares")]
+        additional_sources: Vec::new(),
+    })
+}
+
+fn audio_index_sources(
+    idx: AssetResolutionRef<'_>,
+    bag: AssetResolutionRef<'_>,
+) -> AudioIndexSources {
+    let identity = |source: AssetResolutionRef<'_>| AudioSourceIdentity {
+        source_archive: source.source_archive.to_owned(),
+        entry_id: source.entry_id,
+        payload_len: source.bytes.len(),
+        source_sha256: crate::util::sha256::sha256_hex(source.bytes),
+    };
+    AudioIndexSources {
+        idx: identity(idx),
+        bag: identity(bag),
+    }
 }
 
 /// A frozen resolver winner, not another archive search list. Archive storage
@@ -204,7 +223,7 @@ pub struct AssetManager {
     /// Mutable profile/seed/preview consumers read the filesystem directly.
     loose_files: HashMap<String, LooseAsset>,
     /// Selected at AudioSystem::Init, before later bulk/theater mounts.
-    audio_pair: SelectedAudioPair,
+    audio_pairs: Vec<SelectedAudioPair>,
     /// Frozen root-file policy shared by Rules, Art, AI and tooling.
     ini_roots: crate::util::ini_roots::IniRoots,
     /// Currently registered theater identity and its archive names.
@@ -235,7 +254,7 @@ impl Clone for AssetManager {
                     .clone(),
             ),
             loose_files: self.loose_files.clone(),
-            audio_pair: self.audio_pair.clone(),
+            audio_pairs: self.audio_pairs.clone(),
             ini_roots: self.ini_roots.clone(),
             active_theater: self.active_theater.clone(),
             active_theater_archives: self.active_theater_archives.clone(),
@@ -375,7 +394,7 @@ impl AssetManager {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: Self::open_loose_root(ra2_dir)?,
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
@@ -400,7 +419,7 @@ impl AssetManager {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: Self::open_loose_root(ra2_dir)?,
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
@@ -493,10 +512,23 @@ impl AssetManager {
                     .map(|_| name.to_owned()),
             })
         };
-        self.audio_pair = SelectedAudioPair {
-            idx: select("audio.idx"),
-            bag: select("audio.bag"),
-        };
+        #[cfg(not(feature = "ares"))]
+        let stems = vec!["audio".to_owned()];
+        // Installed hook4011C0 -> Audio_Load1005ADD0: audio, ares, audio01..99.
+        // Selection stays before bulk mounts. Executed native loop and merge:
+        // tools/rules_oracle/ares_audio_bags.{py,json,md}.
+        #[cfg(feature = "ares")]
+        let stems = ["audio".to_owned(), "ares".to_owned()]
+            .into_iter()
+            .chain((1..100).map(|i| format!("audio{i:02}")))
+            .collect::<Vec<_>>();
+        self.audio_pairs = stems
+            .into_iter()
+            .map(|stem| SelectedAudioPair {
+                idx: select(&format!("{stem}.idx")),
+                bag: select(&format!("{stem}.bag")),
+            })
+            .collect();
     }
 
     fn selected_audio_ref<'a>(
@@ -520,24 +552,71 @@ impl AssetManager {
         })
     }
 
-    /// Load the one startup-selected audio index. Call only when launch policy
+    /// Load the startup-selected catalog. Call only when launch policy
     /// enables the index: selection retains MIX handles without copying BAG
     /// data, and this method performs parsing and the index's owned BAG copy.
     /// Loose overrides already use the manager's existing byte snapshot.
-    /// No second archive or per-sample fallback follows an absent/invalid pair.
+    /// Stock has one strict pair; Ares skips invalid pairs in its frozen append
+    /// list. Neither mode retries another archive or backtracks per sample.
     pub fn load_audio_index(&self) -> Result<Option<LoadedAudioIndex>, AssetError> {
-        let (Some(idx), Some(bag)) = (&self.audio_pair.idx, &self.audio_pair.bag) else {
-            return Ok(None);
-        };
         let missing = |source: &SelectedAudioFile| AssetError::AssetNotFound {
             name: format!(
                 "retained audio entry {:08X} in {}",
                 source.entry_id, source.source_archive
             ),
         };
-        let idx_bytes = self.selected_audio_ref(idx).ok_or_else(|| missing(idx))?;
-        let bag_bytes = self.selected_audio_ref(bag).ok_or_else(|| missing(bag))?;
-        load_audio_index_pair(idx_bytes, bag_bytes).map(Some)
+        #[cfg(not(feature = "ares"))]
+        {
+            let Some(pair) = self.audio_pairs.first() else {
+                return Ok(None);
+            };
+            let (Some(idx), Some(bag)) = (&pair.idx, &pair.bag) else {
+                return Ok(None);
+            };
+            let idx_bytes = self.selected_audio_ref(idx).ok_or_else(|| missing(idx))?;
+            let bag_bytes = self.selected_audio_ref(bag).ok_or_else(|| missing(bag))?;
+            load_audio_index_pair(idx_bytes, bag_bytes).map(Some)
+        }
+        #[cfg(feature = "ares")]
+        {
+            let mut indexes = Vec::new();
+            let mut sources = Vec::new();
+            for pair in &self.audio_pairs {
+                let (Some(idx), Some(bag)) = (&pair.idx, &pair.bag) else {
+                    continue;
+                };
+                let Some(idx_bytes) = self.selected_audio_ref(idx) else {
+                    log::warn!("Ares audio pair skipped: {}", missing(idx));
+                    continue;
+                };
+                let Some(bag_bytes) = self.selected_audio_ref(bag) else {
+                    log::warn!("Ares audio pair skipped: {}", missing(bag));
+                    continue;
+                };
+                // Open1005AA00 rejects only this pair on short reads. The outer
+                // append loop continues, including when audio itself is absent.
+                let Some(index) =
+                    AudioIndex::from_ares_idx_bag(idx_bytes.bytes, bag_bytes.bytes.to_vec())
+                else {
+                    log::warn!(
+                        "Ares audio pair skipped: malformed index from {}",
+                        idx_bytes.source_archive
+                    );
+                    continue;
+                };
+                sources.push(audio_index_sources(idx_bytes, bag_bytes));
+                indexes.push(index);
+            }
+            let mut sources = sources.into_iter();
+            let Some(first) = sources.next() else {
+                return Ok(None);
+            };
+            Ok(Some(LoadedAudioIndex {
+                index: AudioIndex::merge_ares(indexes),
+                sources: first,
+                additional_sources: sources.collect(),
+            }))
+        }
     }
 
     /// Look up a file by name across all loaded archives.
@@ -1535,7 +1614,7 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: AssetManager::open_loose_root(ra2_dir).expect("open loose test root"),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
@@ -1665,10 +1744,16 @@ mod tests {
         write_audio_archive(&dir, "audiomd.mix", b"truncated", &[1, 2]);
         write_audio_archive(&dir, "audio.mix", &base, &[3, 4]);
         let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+        #[cfg(not(feature = "ares"))]
         assert!(matches!(
             manager.load_audio_index(),
             Err(AssetError::ParseError { .. })
         ));
+        #[cfg(feature = "ares")]
+        assert!(
+            manager.load_audio_index().unwrap().is_none(),
+            "Ares skips the malformed pair without opening another audio archive"
+        );
     }
 
     #[test]
@@ -1916,7 +2001,7 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
@@ -2000,7 +2085,7 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
@@ -2074,7 +2159,7 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
@@ -2116,7 +2201,7 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
@@ -2156,7 +2241,7 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
@@ -2197,7 +2282,7 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
@@ -2233,7 +2318,7 @@ mod tests {
                     bytes: OnceLock::from(Some(Box::from(&b"loose"[..]))),
                 },
             )]),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
@@ -2290,7 +2375,7 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
