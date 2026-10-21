@@ -103,17 +103,6 @@
             "static-research"
           ]
         },
-        "native_executable_sha256": {
-          "anyOf": [
-            {
-              "pattern": "^[0-9a-f]{64}$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "proof_domain": {
           "anyOf": [
             {
@@ -131,7 +120,6 @@
         "comparison_contract",
         "id",
         "kind",
-        "native_executable_sha256",
         "proof_domain"
       ],
       "type": "object"

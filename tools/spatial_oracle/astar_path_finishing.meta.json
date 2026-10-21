@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -38,5 +37,5 @@
     "Adjacent binary64 threshold controls are supplied finite coefficients. Original FPCW startup, FMUL and comparison instructions establish returned admission; no Python/Rust arithmetic supplies the result."
   ],
   "replay_command": "python -m tools.spatial_oracle.astar_structural_height --finishing",
-  "payload_sha256": "3129e32f9526e05f9ce64fdacc3b5e0c0e099b02257795c4220585841b215ebe"
+  "payload_sha256": "ed05b14941da568b3e084194c304af9bd89fd25bef8d40a3710dfd9958fb7915"
 }

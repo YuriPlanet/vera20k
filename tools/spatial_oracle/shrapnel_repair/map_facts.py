@@ -3,7 +3,7 @@ LCW cases follow src/util/lcw.rs; LZO is the installed liblzo2 decoder.
 Only exact authored INI spellings are inspected. No layered rules are inferred.
 """
 from pathlib import Path
-import base64, ctypes, ctypes.util, os, struct
+import base64, ctypes, ctypes.util, functools, os, struct
 
 def sections(b):
     out={}; section=None
@@ -40,15 +40,19 @@ def lcw(b):
             for j in range(n):out.append(out[p+j])
     return bytes(out)
 
-library=os.environ.get('VERA20K_LZO2_LIBRARY') or ctypes.util.find_library('lzo2')
-if not library:raise RuntimeError('Install liblzo2 or set VERA20K_LZO2_LIBRARY to its shared library')
-lib=ctypes.CDLL(library)
-lib.lzo1x_decompress_safe.argtypes=[ctypes.c_void_p,ctypes.c_size_t,ctypes.c_void_p,ctypes.POINTER(ctypes.c_size_t),ctypes.c_void_p]
-lib.lzo1x_decompress_safe.restype=ctypes.c_int
+@functools.cache
+def lzo2():
+    """liblzo2, loaded on first LZO use so that importing this module needs no native library."""
+    library=os.environ.get('VERA20K_LZO2_LIBRARY') or ctypes.util.find_library('lzo2')
+    if not library:raise RuntimeError('Install liblzo2 or set VERA20K_LZO2_LIBRARY to its shared library')
+    lib=ctypes.CDLL(library)
+    lib.lzo1x_decompress_safe.argtypes=[ctypes.c_void_p,ctypes.c_size_t,ctypes.c_void_p,ctypes.POINTER(ctypes.c_size_t),ctypes.c_void_p]
+    lib.lzo1x_decompress_safe.restype=ctypes.c_int
+    return lib
 
 def lzo(b,n):
     src=ctypes.create_string_buffer(b);dst=ctypes.create_string_buffer(n);size=ctypes.c_size_t(n)
-    r=lib.lzo1x_decompress_safe(src,len(b),dst,ctypes.byref(size),None)
+    r=lzo2().lzo1x_decompress_safe(src,len(b),dst,ctypes.byref(size),None)
     assert r==0 and size.value==n,(r,size.value,n)
     return dst.raw[:size.value]
 

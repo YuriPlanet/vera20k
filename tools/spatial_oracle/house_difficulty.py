@@ -14,7 +14,7 @@ import struct
 from pathlib import Path
 
 from tools.native_oracle import (SCRATCH, call, finish_vectors, image_bytes,
-                                 image_sha256, provenance)
+                                 provenance)
 
 SET_DIFFICULTY = 0x4F6EC0
 HOUSE, HOUSE_TYPE, RULES, TABLE = SCRATCH, SCRATCH + 0x6000, SCRATCH + 0x7000, SCRATCH + 0xF000
@@ -182,7 +182,7 @@ def reader_layers():
         rows.append(dict(name=name, sections=values, before=before, after=state(), reads=list(reads)))
         for span in original_code:
             assert bytes(m.u.mem_read(span['address'], len(span['bytes']))) == span['bytes']
-    return dict(native_sha256=image_sha256(), rulesmd_sha256=hashlib.sha256(raw).hexdigest(), layers=rows)
+    return dict(rulesmd_sha256=hashlib.sha256(raw).hexdigest(), layers=rows)
 
 
 def metadata(*, readers=False):

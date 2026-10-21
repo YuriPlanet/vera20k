@@ -372,8 +372,8 @@ production parity claim.
 
 The additive `ground_firing_receipt` creates a fresh `FootMissions` VM after
 all220 frozen rows and earlier receipts are collected. `preserved_payload` pins
-their canonical projection,7,335,318 bytes with SHA256
-`bbc321dd3de71f87a2762508df6e7bcd3845510e3cd2dc0458eefaaff29314a0`.
+their canonical projection,7,335,235 bytes with SHA256
+`a7f520feedbcc1adbc479951356a0bd6049d3626bb6003952b48fc51b013c995`.
 The old82/86/36/2/2/12 rows and every earlier receipt/RNG value remain unchanged.
 Its setup repeats the original E1/MTNK constructors, Drive/Walk factories,
 Unlimbo and registration, the existing Rules key-block receipts, and the full
@@ -447,8 +447,8 @@ tables must remain byte-identical. Whole Logic order, other actors and the
 inherited runtime/presentation boundaries remain excluded.
 
 The additive `stage_clock_receipt` appends only after the entire prior payload,
-including `ground_firing_receipt`, retains its canonical9,101,254-byte identity:
-`f7662e010a04347bc900c3d97887de09aaa7e40a90726bd66e11e50b6c1c5434`.
+including `ground_firing_receipt`, retains its canonical9,101,088-byte identity:
+`0fc230b21725dd9c13a84c548c76423f173b481057239d5e2b7899a1ad9f0dba`.
 It reuses the restored original-constructor VM from that firing receipt. The
 220 rows, eight firing controls, earlier receipts and every earlier RNG value
 remain unchanged.
@@ -511,8 +511,8 @@ stage/rate/timer/increment and caller contexts are explicit supplied inputs;
 native producers of those unusual states are outside this receipt.
 
 The additive `ground_emission_receipt` starts only after the entire prior
-10,896,182-byte canonical payload, including `stage_clock_receipt`, retains SHA256
-`e40988fa2524a3a11376a54add8a54014053252909db2e83128ae27e3c80fb3f`.
+10,895,933-byte canonical payload, including `stage_clock_receipt`, retains SHA256
+`35c0e43f412d76cf9cdd1dd65a4cb13801e7e979d672314de39f15574e4e6fb7`.
 It does not change any earlier row, receipt or RNG value. Four fresh instances of
 the existing `FootMissions` owner execute the declared accepted frame schedules:
 `1,2,3`, repeated `1,1,2,3`, gap `1,20,21`, and the supplied deck pose at `1,2,3`.
@@ -635,12 +635,11 @@ It therefore does not certify full renderer or pixel parity.
 ## Original Infantry frame selection
 
 `infantry_frame_selection_receipt` is appended after the entire earlier payload,
-including the80 modulo controls, retains its17,535,932-byte canonical SHA256
-`54a2a1f2b554a404ed0e6530b4dc2bdea0f666584bf03f1ed8f873bb45a28e91`.
+including the80 modulo controls, retains its17,535,517-byte canonical SHA256
+`94db9dcd2cb08ecbc23867f5e11f09f5cb1b2d1e3db7f29eebf491dbb59a8a09`.
 A fresh existing `FootMissions` VM executes whole original `518D80` through its
-`518F88` return. The521-byte body has SHA256
-`60ee1cdafdd13ab060a3fc6fc80794476f42f943d933090b63d41ced74714608` in the
-pinned native image above. No partial-function seam or semantic stand-in is used.
+`518F88` return; the receipt records its original521-byte body. No
+partial-function seam or semantic stand-in is used.
 
 The receipt reads all42 actual GI records produced by the existing physical ART
 and original E1 type/sequence readers. It contains336 `physical_rows` covering

@@ -1,6 +1,5 @@
 {
   "schema": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "native_checks": {
     "collision_families": {
       "ordinary_collision": {
@@ -88,9 +87,9 @@
     "optimization_invocation": "PYTHONOPTIMIZE=1 python -E -m unittest tools.tests.test_anytown_packet_receipt.PacketReceiptTests.test_child_assertions_survive_ignored_parent_optimization_environment"
   },
   "unchanged_golden_sha256": {
-    "tools/projectile_oracle/ordinary_collision_vectors.json": "d63b965ddeb1a12adb7fa200273273e2a2f0adeb48d0294ff9544dba467948c3",
+    "tools/projectile_oracle/ordinary_collision_vectors.json": "b641421d9ff59b89d8be2f9287a3cd06d6344e675a5319c83a3565372afd3ad9",
     "tools/projectile_oracle/shared_collision_vectors.json": "665683f47e344b966fe68a681cb0a3170202e4300fe22edf0c694d8e3dc5beef",
-    "tools/projectile_oracle/homing_impact_vectors.json": "a99eeb9facbab74785ad9a704ee27a2f695a72653e113a146c1df63bc58cfd9a"
+    "tools/projectile_oracle/homing_impact_vectors.json": "a56fdb035970dfa49237b44eeee4a3b9fc77e7f49f6bbfda7cfc01ee29441a5e"
   },
   "integration": {
     "upstream_main": "0be4174e",

@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -63,5 +62,5 @@
     "shadow_return": "0x00706602"
   },
   "replay_command": "python -m tools.procedural_drawing_oracle.shroud --infantry-berserk-body",
-  "payload_sha256": "7066da8d42fe3dd07885ab14c48b93cef733f15337af5954f448eac54446be0a"
+  "payload_sha256": "49f92646b47e7551bc4ecee33a2fe4d8b331a1c1925b5605c849f49da7e2ae63"
 }

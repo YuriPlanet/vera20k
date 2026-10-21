@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -34,7 +33,7 @@
   },
   "gi_reissue_evidence": {
     "manifest": "_walk_first_path/manifest.json",
-    "sha256": "eb53699b9766cc3958a132e1f51c1fe5ec442cefaa057afeb4803640544ebd58",
+    "sha256": "2500308576ef63dbc005c16742ce9d3e4af37bbd353f7073dfad8662f737d154",
     "histories": [
       "plain_A_B",
       "shift_A_B",
@@ -75,7 +74,7 @@
       "unit_undeploying_B"
     ],
     "selector": "walk_first_path.project_gi_reissue",
-    "check_scope": "Fresh legacy7setter/3head plus saved raw/source-bound GI selection; selected whole-history replay is --check-gi-reissue",
+    "check_scope": "Fresh legacy7setter/3head plus saved raw-bound GI selection; selected whole-history replay is --check-gi-reissue",
     "bounds": [
       "The existing corrected initialized no_rally bootstrap compares complete normalized primary/private payloads before retaining its live VM.",
       "Authored Cells20,20/21,20 and optional literal SHORT key words use actual Infantry WhatAction/CellClick, ordinary Foot resolver, Event111, local OutList/DoList and class51AA40. No Shift or class-flag1 queue semantics are inferred.",
@@ -94,5 +93,5 @@
       "Allocated Cell4,20 with Shift10/action2 reaches actual4DE1D0 and FNPC4,19. Native MapSize16,16/LocalSize0,0,32,32, full header/land/navigation and selected Cell inputs are retained. Every prior r7 selected field equals r8; failed40,20 fixture-prerequisite and31,20 non-distinguishing attempts remain immutable. No arbitrary terrain/shroud/zone/Dummy coverage claim."
     ]
   },
-  "payload_sha256": "a6503783b89b498df22be7a8647d2c12aec05c89efe8b0b7651288d155c4a298"
+  "payload_sha256": "4b4f4922f35f24ea99fb41721d369078cb020770443a5122af5a2b5de2eda55d"
 }

@@ -276,3 +276,82 @@ fn an_unpowered_gap_generator_unload_keeps_the_normal_radius_and_no_charge() {
     assert!(entity.gap_supercharged());
     assert!(sim.power_states[&owner].power_recheck_for_test());
 }
+
+/// The off edge reads the running client's own `+0x269` (`0x00454B9B`); in
+/// skirmish that is the current House's copy. A skirmish with the human
+/// (current) House and two AIs: the AI owner of a charged generator allies
+/// with the human under retail `AllyReveal=yes`. The remove bracket
+/// (`0x004F9B9A`, before the ally bit) takes the gap arm on the human's
+/// client and the re-add bracket (`0x004F9F4F`) the allied-Building arm, so
+/// the human's copy stays 0 while the owner's is 1. The outage then skips
+/// the removal and the super-charge reset: the charge and its drain survive.
+#[test]
+fn an_allied_current_house_without_the_gap_keeps_the_charge_through_the_outage() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    assert!(rules.general.ally_reveal, "retail AllyReveal=yes");
+    let mut sim = Simulation::with_seed(0x454B9B);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    for (name, human) in [("Russians", false), ("Americans", true), ("British", false)] {
+        let id = sim.interner.intern(name);
+        sim.houses
+            .register(HouseState::new(id, 0, None, human, 0, 10));
+    }
+    let owner = sim.interner.get("Russians").unwrap();
+    let player = sim.interner.get("Americans").unwrap();
+    sim.session.set_current_house_for_test(Some(player));
+    let grid = crate::sim::arena_fixture::flat_arena(&mut sim, rules);
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    let spawn = |sim: &mut Simulation, kind: &str, rx: u16, ry: u16| {
+        sim.spawn_object_at_height(kind, "Russians", rx, ry, 0, 0, rules)
+            .unwrap_or_else(|| panic!("{kind} spawns"))
+    };
+    let gap = spawn(&mut sim, "GAGAP", 16, 26);
+    for x in [1, 6, 11, 16, 21] {
+        spawn(&mut sim, "NANRCT", x, 2);
+    }
+    for _ in 0..4 {
+        run(&mut sim, rules, &grid, &[]);
+    }
+    click(&mut sim, rules, &grid, owner, gap);
+    run_until_charged(&mut sim, rules, &grid, gap, true);
+    run(&mut sim, rules, &grid, &[]);
+    assert_eq!(totals(&sim, owner), (10000, 9100));
+    let viewers = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(gap)
+            .unwrap()
+            .gap_generator
+            .viewers()
+            .clone()
+    };
+    assert!(viewers(&sim)[&player].active(), "the human's copy starts 1");
+
+    sim.make_ally(owner, player, rules, None, FrameEffects::default(), false);
+    let deposits = viewers(&sim);
+    assert!(deposits[&owner].active(), "the owner's copy is re-added");
+    assert!(!deposits[&player].active(), "the new ally's copy stays 0");
+
+    for x in 0..10 {
+        spawn(&mut sim, "GAGAP", 2 + 2 * x, 20);
+    }
+    for _ in 0..8 {
+        run(&mut sim, rules, &grid, &[]);
+    }
+    let entity = sim.substrate.entities.get(gap).unwrap();
+    assert!(
+        entity.gap_supercharged(),
+        "native skirmish keeps the charge"
+    );
+    // The kept 9000 drain holds the House in low power.
+    assert!(
+        !entity.building_last_operational.is_operational(),
+        "the outage ran the off edge"
+    );
+    assert_eq!(totals(&sim, owner), (10000, 10100));
+}

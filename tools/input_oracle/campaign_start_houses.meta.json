@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -84,5 +83,5 @@
   },
   "csf_sha256": "f3382231d7eb3bd713bf3908ecdba175a1b2e20d9d80fa2702e9ab84c3a79deb",
   "reproduce_command": "RA2_DIR='<retail-directory-containing-original-gamemd.exe>' VERA20K_CAMPAIGN_START_ASSETS='<extracted-retail-campaign-directory>' python -m tools.input_oracle.campaign_start --houses --check",
-  "payload_sha256": "16030419655daa5bb3720c1d1299545c9057ed31b730688226909d67f79f3d7b"
+  "payload_sha256": "e73f417d91b8e15ff6fe026bc2d0c593e95bb23e5529a967c99f16d3e60adf93"
 }

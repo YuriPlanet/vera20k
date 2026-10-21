@@ -93,5 +93,10 @@ hashbrown = { version = "0.16", default-features = false, features = ["default-h
 num-traits = { version = "0.2", features = ["libm"] }
 unicode-ident = "1"
 
+# winit's Wayland decorations (this is winit's cfg) enable tiny-skia's SIMD,
+# which adds bytemuck's aarch64_simd feature to the client build.
+[target.'cfg(all(unix, not(any(target_os = "redox", target_family = "wasm", target_os = "android", target_os = "ios", target_os = "macos"))))'.dev-dependencies]
+bytemuck = { version = "1", default-features = false, features = ["aarch64_simd"] }
+
 [lints]
 workspace = true

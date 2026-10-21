@@ -1,19 +1,4 @@
 {
-  "dependencies": {
-    "tools/native_oracle.py": "79dac1057d97e706f106a26145f00fa220d92c172b5173876c60fed22c17530c",
-    "tools/projectile_oracle/bridge_render_inputs.py": "4bfc6d80d7cd0d75f3db0123bb646011b6706f9195a8c1137e0f397941bff9e4",
-    "tools/projectile_oracle/flat_art.py": "2f663fbb2b8c88925dd8aa46e8be9216d580ec033bac3e08a138bcd0b272b7c6",
-    "tools/rmg_oracle/gen_rng_vectors.py": "bac5dde765d07d3f522b7281a21a8527869f5d4da59eb385e7f9fed7493775a2",
-    "tools/rules_oracle/bridge_anim_inputs.py": "f7f2941e11bbede50ffab19554a789e4e3e42f4969b04ad4e9697973e659d316",
-    "tools/rules_oracle/bridge_anim_lists.py": "2a7a96ea1e24f1129161e8fe5608c0ab69ac584ee6ad78fa91c43bd3ad072045",
-    "tools/rules_oracle/bridge_child_sound.py": "ea32c11dbb9f1ee1aeb3cdc1069605658ca100d864e90dacb3cd5bfe8f01c350",
-    "tools/rules_oracle/theater_general_reader.py": "a466f2d5d94e5f4d8908bed0a97c69cf2aeb2d9356694d0af107491349e7afbd",
-    "tools/spatial_oracle/__init__.py": "d2b8761741eec0f99f145b6b84c9efbe5e91a8d08b59b83ef67bef54c75f0415",
-    "tools/spatial_oracle/bridge_rim.py": "4227c24dcd27ea44a2de55a866057b1accffee8106c5029dedf0171b776fa32b",
-    "tools/spatial_oracle/building_body_rules.py": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
-    "tools/spatial_oracle/map_queries.py": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305",
-    "tools/spatial_oracle/mapgen_range.py": "df39b5ab3a2450c98dfa749a67826d5cb87f9d73086dc2511ff3261906724eef"
-  },
   "external_inputs": {
     "LANGRULE.INI": {
       "absent": true
@@ -55,30 +40,18 @@
       "sha256": "c32e412e938e1b9a0b29f89ff9bc0e6f410f75bc76701fb4acef6581fd19b438"
     }
   },
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "owned": {
-    "README.md": "083968022f16c7ec37154ad2735ba1d0353d2eb68ddec5662b765bb9f621472a",
-    "__init__.py": "181c307c7f2f1767bee7fc8812eb72698df94241d26c669526254bf13084e003",
-    "compare_production.py": "22b22c1635b4084a470acbf250ac8f0b0fd3803333225250da01889b0ea0f7cc",
     "hierarchy_composition.json.gz": "2dead6db5d98f3c012a1f485be4604fdd5751b983dbba1c79051960df366c32e",
-    "hierarchy_composition.meta.json": "bb14f1020bb6dd1460e6ffae12bbeefae22f40c4ce15e6514da5e8d5bb9c943d",
-    "hierarchy_composition.py": "a545496a5203c56d02dfed6d37da792c0f261b26db6b128db4ea57b9acc19ac0",
-    "map_facts.py": "8fec739ee85c0110096180ae7c7712ad96e5191752ec9362dc3d9eb21e5d6768",
-    "packet_io.py": "80d7a5dd328c47c9fe453d0048c5ae116feef741220537f1d1dc4e587387b865",
+    "hierarchy_composition.meta.json": "267db3513cdeb071e183f112d944e07cfb95db78418c70c0ce1c82b3a0878acb",
     "production_comparison.json": "241a02ac5ece0f6c443ffc7ac610a9447a835e19e6cb18d042f94f1d358c3e71",
-    "production_comparison.meta.json": "847832d1b5d6b5d4a7fe6445361df49fc260519eb1a86e8aea6132ecc7c0eef9",
+    "production_comparison.meta.json": "b60054333ea79b2c8b79a6bb286c021429e419ee7a9c0d8706c0eae692e6ae39",
     "production_inputs.json.gz": "8dd4c3e195ea17ebf5783a920869c91a11fc48a80a443e7806bcf516e1d7b6bd",
-    "production_inputs.py": "0e29a8c5bac7eb2f6f8819e6d54b2959045f3205e4930c162e96e479bef76289",
-    "promotion.json": "fa93a40e8578ac4fbab7e844020fb620da684102f9638cb7503388a886628e77",
-    "retail_inputs.py": "5386be531deb221b2abf0a06cf46371937a3134fd4fdde142a7d20fc97691400",
-    "retail_manifest.json": "9df77839f1c47a0849195b864f62f07cf5f92c9cfad65ad147e2bf729879c94f",
+    "promotion.json": "ebd1846edbf53b83eb9c4a7f6ccf1cd6c25be586910154e45480511ba11469d6",
+    "retail_manifest.json": "4d30c8cb43cad18dbb64a78f9848b70d9153a84ebe94d57478386e073854b395",
     "shrapnel_repair.json.gz": "cc7367d7fd3f99540a84c43004c8e9638420249224c709f7f6e8a9c9d716c555",
-    "shrapnel_repair.meta.json": "71dc629c56a9d483ff338a79bb0f0a4c33c8b2c76ec829031129721054351c7e",
-    "shrapnel_repair.py": "766d30e22188ef36c66a940eb4546ad52e025fa80e80c864a9644a1a4662b27c",
-    "validate_packet.py": "52ec7ec8d9b126b5d4bde9055b18618165240c39d27420c56d458fc7cc5260d4",
+    "shrapnel_repair.meta.json": "bb4b3bac604b382af5fab06d78d528ca4d1c08ddcba85d7fe9a7caae424230a9",
     "zone_composition.json.gz": "9e720b8740c2736074082ba4a09f26e93066204d022b28c7c85c5968d54e3ab0",
-    "zone_composition.meta.json": "d1f13de56c16216f10cd931ac5d6b33404afbdd02797b7904cb10efe9881b073",
-    "zone_composition.py": "0eb3b38561c804dd4bfbbfdb3e858babd2e9a1c2214f296eedfe6447901db73e"
+    "zone_composition.meta.json": "405d02126f988bc685a0efea8e373693b02548512fe29618b971b9419b4ffec4"
   },
   "runners": [
     "tools.spatial_oracle.shrapnel_repair.shrapnel_repair",
@@ -86,13 +59,7 @@
     "tools.spatial_oracle.shrapnel_repair.hierarchy_composition",
     "tools.spatial_oracle.shrapnel_repair.compare_production"
   ],
-  "runtime": {
-    "capstone": "5.0.7",
-    "lzo_version": 8352,
-    "python_requires": ">=3.10",
-    "unicorn": "2.1.4"
-  },
   "schema": 2,
   "scope": "Two physical hut selectors; empty low repair, resident Recalc, native full connectivity/hierarchy from supplied production planes. No native scenario loader, Engineer prefix, or occupied repair claim.",
-  "validation": "Separate --write then --check invocations; four native/comparison outputs and exact source/input/artifact manifest. Check is read-only."
+  "validation": "Separate --write then --check invocations; four native/comparison outputs and exact input/artifact manifest. Check is read-only."
 }

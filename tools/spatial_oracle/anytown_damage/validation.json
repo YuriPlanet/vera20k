@@ -12,7 +12,7 @@
     "cursor": {
       "boundaries": "Full587410 selected concrete-overlay path; direct query from both physical huts, original damage/repair preparations with inherited Resident seams. No UI/Engineer/structural-record/other-axis or Rust/production claim.",
       "native_cases": 8,
-      "original_and_published_payload_sha256": "2e605f8e8155de13d1407498daf4dede82d473b8374093685307194248bec7fb",
+      "original_and_published_payload_sha256": "444a1e344b60a42e0a77028582d1708246cf6a4bcadcbcccae7dc8fbb0b832e9",
       "original_external_write_and_independent_check_exit_codes": [
         0,
         0
@@ -30,8 +30,8 @@
       0
     ],
     "hut_original_files_unchanged": 14,
-    "hut_original_payload_sha256": "4b1f825f1300048af10cb3eef0b55e9f5a675d44bb7e49e17b33af9c768b51a3",
-    "hut_published_payload_sha256": "b6a0af36a3d5b945b380e3bb60f805aa632097f70267d56eb711e10970ad9765",
+    "hut_original_payload_sha256": "51a58c909583e7f362c6237257905df5148b4a850ffb03de4fd411f5230bbaa3",
+    "hut_published_payload_sha256": "a15bbe36b40348bbba40dee338cf07e575b64f0650cb8568a23321d076ce20fb",
     "hut_receipt": "hut_receipt.json",
     "hut_receipt_sha256": "3ad36a4ae8d8a853bc6da7957c28083ecfdf4068da65bd776e71b3dd7b086ab0",
     "mtnk_attack_flh_correction": {
@@ -55,7 +55,7 @@
     "navigation_receipt_sha256": "06a0a3e87b04d82b7494b0da4a9683fac1465ec12ce6f7c0727e6ef8db23ea55",
     "recorded_at_utc": "2026-09-27T19:25:52.967068+00:00",
     "rust_hut_projection": {
-      "canonical_payload_sha256": "964f5f63d29d890cb985eb89faebf59adfb153e3ee2b09473078f7191d1ffb92",
+      "canonical_payload_sha256": "98d561c0979135e8a3136927e4932e5b26c876ee24db7d620d587f58f64251f2",
       "file": "hut_test_vectors.json",
       "keys": [
         "cases[*].hut",
@@ -72,13 +72,7 @@
         0
       ]
     },
-    "scope": "Hut/cursor packaging, uncompressed native Rust projection and integration of independently frozen navigation. No mission_order promotion by this owner, Rust/Cargo/Git/Ghidra/CUA or new production run.",
-    "six_case_metadata_refresh": {
-      "new_sha256": "3b73ea582f5a468c612f9ab214fdfac30377dbfb1114c604bc85a3cab8da515d",
-      "old_sha256": "b5fa98187d9d2644800290ff833ef47bb0ea6a7fed86d1314817afc0b2200cb3",
-      "path": "tools/spatial_oracle/anytown_damage/validate_packet.py",
-      "reason": "Registers the separate eight-case cursor runner/receipt plus pure Rust projection; default physical inputs and six-case native payload remain unchanged. Hut was independently rewritten/checked solely to refresh metadata source identities."
-    }
+    "scope": "Hut/cursor packaging, uncompressed native Rust projection and integration of independently frozen navigation. No mission_order promotion by this owner, Rust/Cargo/Git/Ghidra/CUA or new production run."
   },
   "artifact_checks": {
     "compressed_result_bytes": 109164,
@@ -137,7 +131,6 @@
     ],
     "scope": "Three native mission witnesses plus pure Rust projection, supplied v8 first-shot/impact comparison and navigation four-state production comparison. No Cargo, Rust review, Ghidra or computer control."
   },
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "negative_guard": "Changing a native map-size output and calling --write raised OracleError before creating the requested output file.",
   "original_payloads_retained": {
     "anytown_admission.json": {
@@ -149,16 +142,16 @@
       "published": "e86df51f1ad34c7d80d60a7076976e689664b0ed316deecb85b21aa4c21bb164"
     },
     "anytown_occupants.json": {
-      "original": "d8b774a051129e3efa0da6628f9f13f648d8e45585a0c897a3eb708cc2651c52",
-      "published": "6ea3db41666839e30ecb7a63fc1ac548eb69278342c6bdad8d999ad7fd3e7416"
+      "original": "b57a73977a85dec4af63b9b7d91ac128b7641840825a881d1331afc7cae4aecf",
+      "published": "eb5622802a02672f3508bbdc959b7b27a904b65092cf694f5e4a25f9ec1cc0fb"
     },
     "anytown_resident.json": {
       "original": "11b88bb7e8c5c90c5a457782e541396b11c8f8b9b13c079570de4f68a7f20876",
       "published": "11b88bb7e8c5c90c5a457782e541396b11c8f8b9b13c079570de4f68a7f20876"
     },
     "mtnk_attack.json": {
-      "original": "9791a935b30364e5f7653d3b08b0d803ac5b4f72653618878b6a8e0f6f720d51",
-      "published": "afe2c2bd69c126644bef2e48185a31884d3013bf3e186ae71d7a4808eea3a66a"
+      "original": "7edb49921317df47f4a8835d2d8020475c9e0fa6925f0ba254b38752d43c3784",
+      "published": "d0467012cb3892212c1936128bc207478246d4ca636d06f51e560a948b4bf996"
     },
     "next_family_native.json": {
       "original": "f450622324604253812702e7f4b7d6dc133ac3553a0fd9634c1f1283f0c1c85b",
@@ -188,63 +181,6 @@
     }
   ],
   "recorded_at_utc": "2026-09-27T18:57:39.622944+00:00",
-  "resident_selection_compatibility_refresh": {
-    "all_31_frozen_payload_inputs_and_evidence_byte_identical": true,
-    "change": "ResidentRepair accepts an optional physical resident_cells selection for the joined Shrapnel hut witness. Omission preserves the original nine cells and native binding/Recalc order. No Anytown owner or gameplay body changed.",
-    "full_map_import_compatibility": {
-      "assertions": {
-        "changed_constructor_absent_from_all_selected_MROs": true,
-        "default_resident_cells": "[(x,y) for y in range(58,61) for x in range(114,117)]",
-        "full_map_geometry_inherits": "Geometry -> Repair, not ResidentRepair",
-        "native_values_unchanged": true,
-        "only_changed_AST_node": "ResidentRepair.__init__"
-      },
-      "current_source_sha256": "766d30e22188ef36c66a940eb4546ad52e025fa80e80c864a9644a1a4662b27c",
-      "guard_check_log_sha256": "f6141f29ab169823886a4082b62fec0149a2509df147dca67f8a887ccbc1578d",
-      "guard_sha256": "ce91c6f675354c217f046a9a3a4ced1c16346980c0d40573f3fb2a45ff5e4cc0",
-      "kind": "metadata-only source compatibility; no native execution repeated",
-      "original_execution_source_sha256": "5f510f31b235acd1749aee6da2f512fbf3381892355b45fd7c5b9bccd472d347",
-      "restore_sidecar": {
-        "current_sidecar_sha256": "8cce21fa5cf22632f017b2fe58be04fa75253ccc4bcc6e60df5d4eb2c2e77fb2",
-        "immutable_gzip_sha256": "9a5adacdd5af7dcd9e8697b5768382181ac7eb446ef38a006804eeb326cfa5b5",
-        "original_external_sidecar": "resident-repair-compatibility-before/tools/spatial_oracle/anytown_navigation_restore.meta.json",
-        "original_sidecar_sha256": "a5ab6571ac8ecec6940bcd17cdaf56e5cca93a454629ac4d0a18c2b167182946",
-        "payload_sha256": "062a367873176005b65afb2b0bddb1feb9a8c4bb48f6684c63092e9d07fea9db",
-        "sidecar": "tools/spatial_oracle/anytown_navigation_restore.meta.json",
-        "source_pin_count": 32
-      }
-    },
-    "historical_bridge_concrete_validation_unchanged": true,
-    "native_replays": [
-      {
-        "check_log_sha256": "6c90ea7ca1d29926b4c91b2918cd3d2cac6656bfbdb00697676539e42383275a",
-        "module": "tools.spatial_oracle.anytown_damage.hut",
-        "native_gzip_byte_identical": true,
-        "native_gzip_sha256": "624dface5dfb18ce8f517879c0dd1ced7b5cb24881cdbb2702b31899aa62b06f",
-        "write_and_independent_check_exit_codes": [
-          0,
-          0
-        ],
-        "write_log_sha256": "b125f196cf8547a11821627325c6490d3fc2743aa65b8b9d9a016e44a172382c"
-      },
-      {
-        "check_log_sha256": "4c667b5efceb4d801adcf69486e73b2bdee14a894be62e94368d5d56fd1a8c4d",
-        "module": "tools.spatial_oracle.anytown_damage.hut_cursor",
-        "native_gzip_byte_identical": true,
-        "native_gzip_sha256": "6b98261d5685e82bdd103cbfcd1b000dda37cf534bf172d0620fe96fa31d9aa4",
-        "write_and_independent_check_exit_codes": [
-          0,
-          0
-        ],
-        "write_log_sha256": "fb33ff574009231b18ca204066357906dd4d0755876d7d94f99dd3aed19caebf"
-      }
-    ],
-    "new_sha256": "766d30e22188ef36c66a940eb4546ad52e025fa80e80c864a9644a1a4662b27c",
-    "old_sha256": "5f510f31b235acd1749aee6da2f512fbf3381892355b45fd7c5b9bccd472d347",
-    "other_import_pins": "Navigation and mission import the changed module but do not call the extended ResidentRepair constructor. Their import hashes are a compatibility refresh; this record claims no new navigation or mission execution.",
-    "path": "tools/spatial_oracle/shrapnel_repair/shrapnel_repair.py",
-    "recorded_at_utc": "2026-09-27T22:44:37.139783+00:00"
-  },
   "retail_inputs": "24 exact physical files plus absent LANGRULE, bound through the two explicit environment directories; selected SHPs remain separate from the sparse bootstrap cache.",
   "runs": {
     "check": {
@@ -290,164 +226,6 @@
       "shrapnel_repair.json.gz": "c4cd94c99f567ac49672038cded92f4f3e2f1c7036447f87f3f2babf5769cbff",
       "zone_composition.json.gz": "a7008b47ac8382f99c5add830485014ffdcbacfb4316bb0c550e2c0a766bfb51"
     },
-    "shrapnel_physical_map_unchanged": true,
-    "shrapnel_receipt_changes": [
-      {
-        "new_sha256": "80d7a5dd328c47c9fe453d0048c5ae116feef741220537f1d1dc4e587387b865",
-        "old_sha256": "fbdd1a6f885b0e560bfffaf986ac45bc88073882dfae0de8e3233595156fa736",
-        "path": "tools/spatial_oracle/shrapnel_repair/packet_io.py"
-      },
-      {
-        "new_sha256": "8fec739ee85c0110096180ae7c7712ad96e5191752ec9362dc3d9eb21e5d6768",
-        "old_sha256": "f4e1fb324c5c55bd176286db7c4ba8018d9c5697fa4833dc490992f140cfff8f",
-        "path": "tools/spatial_oracle/shrapnel_repair/map_facts.py"
-      },
-      {
-        "new_sha256": "5f510f31b235acd1749aee6da2f512fbf3381892355b45fd7c5b9bccd472d347",
-        "old_sha256": "702bab5afbb218201c5b948ba5e6b4aaadfb77404c9d859f72fbf880fc02158d",
-        "path": "tools/spatial_oracle/shrapnel_repair/shrapnel_repair.py"
-      }
-    ],
-    "shrapnel_receipt_reason": "Optional publication configuration and shared physical MAP decoder only; old-versus-new full authored cell data and wrapper schema match; all existing native payloads unchanged. No full Shrapnel native replay performed for this packaging-only extension."
-  },
-  "shared_source_refresh": {
-    "aggregate_manifest": "After this record, run validate_packet --write --manifest-only and a separate --check --manifest-only. Those commands verify source/artifact/input hashes, frozen payload guards, four subreceipts and two projections; native checks above are separately executed.",
-    "default_comparator": {
-      "byte_identical_to_saved_navigation_comparison": true,
-      "new_production_execution": false,
-      "output": "wood-anytown-default-comparison.json",
-      "output_sha256": "35df6a325ec9b85b5d461554bb93e45248666290e24c4bf759326b82d6f6be5f",
-      "production_prefix": "concrete-v8",
-      "states": 4
-    },
-    "historical_concrete_pr_receipt_unchanged": true,
-    "immutable_payload_input_and_evidence_files_sha256": {
-      "tools/spatial_oracle/anytown_damage/anytown_admission.json.gz": "f54a757f89ec6542e9de8fe96cbc80ade5fdb883436fedab06bcf404c11a9851",
-      "tools/spatial_oracle/anytown_damage/anytown_geometry.json.gz": "5f517ae7b60a0d6928577e1ff4b4c548fe3a68c1d7139570fd1de62a12184a4f",
-      "tools/spatial_oracle/anytown_damage/anytown_occupants.json.gz": "cbbdcb37bf3eb340a036fd13cedd18c1b568f309a10a37f3d64954f5239520ab",
-      "tools/spatial_oracle/anytown_damage/anytown_resident.json.gz": "a7ec3411940bded3acb5e24874b73565d64ccdb8c7e1a852cc78a6f747783e37",
-      "tools/spatial_oracle/anytown_damage/hut.json.gz": "624dface5dfb18ce8f517879c0dd1ced7b5cb24881cdbb2702b31899aa62b06f",
-      "tools/spatial_oracle/anytown_damage/hut_callsite_bytes.json": "dd1210b17a429b1fefde113f12ddc74e2d95e23e9c961e5e1998c04fe7cf9bba",
-      "tools/spatial_oracle/anytown_damage/hut_cursor.json.gz": "6b98261d5685e82bdd103cbfcd1b000dda37cf534bf172d0620fe96fa31d9aa4",
-      "tools/spatial_oracle/anytown_damage/hut_cursor_native_bytes.json": "70763ad54713244975a668ecba9c34e5e64d431de54ab4fde9d95adc3ba9429c",
-      "tools/spatial_oracle/anytown_damage/hut_cursor_promotion.json": "dbb5b28b7f6e5ab42867305d2823c88460ba2303ad64bc2f654a42c0edfdaac7",
-      "tools/spatial_oracle/anytown_damage/hut_cursor_summary.json.gz": "d0cc4c79eb57a4e4f13ddcaa9eb1d49a06378d575bd29e282a051000377c7d89",
-      "tools/spatial_oracle/anytown_damage/hut_promotion.json": "8519a2f8335746a09d83bfdf11a35d80cd80d7d0d824d6551f44c864feb7a98f",
-      "tools/spatial_oracle/anytown_damage/hut_summary.json.gz": "d35da0044074ffbd6376315540df63a8732ec4523b04b7cf7832cccf069c2a19",
-      "tools/spatial_oracle/anytown_damage/hut_test_vectors.json": "b9f7fd6921bb04fd4bc29f54babf9ef04a7560dff1c6c1c632f2a0274aacfab4",
-      "tools/spatial_oracle/anytown_damage/mission.json.gz": "baf23f248ac724807b76f3102fee89bbf698dfe49dea1677047abc002be2a04f",
-      "tools/spatial_oracle/anytown_damage/mission_counter.input.json": "3ca42781e1b1e8385dabfa52170b625678c5be4231247ff8e300bcc4bf9ccdc8",
-      "tools/spatial_oracle/anytown_damage/mission_counter.json": "699a738930e8936a6544e6a873617246d2453852c88668c46184fe1eeb0a193c",
-      "tools/spatial_oracle/anytown_damage/mission_interleaving.input.json": "602ae9d3b9e686956bc542ef6f23276fee5f6f781fa44f9e2d939c47ba9e544b",
-      "tools/spatial_oracle/anytown_damage/mission_interleaving.json": "50c90949811e283202d40b2c1b8c0b15f0e200cabad8031d173f541d28f1100e",
-      "tools/spatial_oracle/anytown_damage/mission_promotion.json": "c2fab9ab3c87e5418a250344a67c6889dd696051cd246d1b03456929df818ce2",
-      "tools/spatial_oracle/anytown_damage/mission_test_vectors.json": "8934ab7c34d8738f8db6ff2bd0068ef14eb0874c4077cd89b74de3b944dfc32b",
-      "tools/spatial_oracle/anytown_damage/mtnk_attack.json.gz": "026569a44e60b1646066331faa60319d5d685b987c2507bea0921e5d07823280",
-      "tools/spatial_oracle/anytown_damage/navigation.json.gz": "a2197179f0818a7b2c231c8956601b2269df164db04e05d856b99db380a15d35",
-      "tools/spatial_oracle/anytown_damage/navigation_comparison.json": "35df6a325ec9b85b5d461554bb93e45248666290e24c4bf759326b82d6f6be5f",
-      "tools/spatial_oracle/anytown_damage/navigation_promotion.json": "5fe250b70786cb80f517ad799101fc47274052c928fd441b0d0dc3718f5d5098",
-      "tools/spatial_oracle/anytown_damage/next_family_native.json.gz": "0f6c0ad83e8922bdb1cdb2cd47934263f03dec74a9984dec6ad0ea764cbf5220",
-      "tools/spatial_oracle/anytown_damage/promotion.json": "d273aff7456ed9616d104b6e11f78c0f7785d4a9a8574f4447a95124b38d9505",
-      "tools/spatial_oracle/anytown_damage/retail_manifest.json": "5e8059c02cdbe854d2f549cf4caa40beff4fcdf2cf6d63bd7c7825023439ee67",
-      "tools/spatial_oracle/anytown_navigation_restore.json.gz": "9a5adacdd5af7dcd9e8697b5768382181ac7eb446ef38a006804eeb326cfa5b5",
-      "tools/spatial_oracle/anytown_navigation_restore.native_bytes.json": "601305dac5c814fe2b57a2046ea8ddb0a8ebbc247489ae871fc3631febd7c687",
-      "tools/spatial_oracle/anytown_navigation_restore.promotion.json": "da5dcc5e3f4a4dd587148ab73cf60efc8858485c22995c6f19638a8203a646bf",
-      "tools/spatial_oracle/bridge_concrete_validation.json": "f525edf60dfbca000e1b791e769dcb45a55fc9f764874d9d5e757d0de8cc5ab3"
-    },
-    "metadata_changes": [
-      {
-        "new_sha256": "a5ab6571ac8ecec6940bcd17cdaf56e5cca93a454629ac4d0a18c2b167182946",
-        "old_sha256": "27a48123aa269ecef3379172237de5da95a2828e776ba028b71159b845a92e93",
-        "path": "tools/spatial_oracle/anytown_navigation_restore.meta.json"
-      },
-      {
-        "new_sha256": "3e4f59bea857d6ba3d4a4aa6809f8a177a1eec00f177bd146fe49a36b4afaa8c",
-        "old_sha256": "73c5bf0949cd02ce867a4357ad8140f0d80ab98cc9019f253222011424e6fbb6",
-        "path": "tools/spatial_oracle/anytown_damage/anytown_occupants.meta.json"
-      }
-    ],
-    "native_checks": [
-      {
-        "exit_code": 0,
-        "log": "shrapnel-native-initialization/anytown_preservation_check.log",
-        "log_sha256": "4fdc57cd7a9cbfc12a00d6175d3d2b8e5f469da91d99e38d0978c18b20559e8c",
-        "result": "PASS navigation.json.gz: native outputs match; no files written",
-        "witness": "navigation"
-      },
-      {
-        "exit_code": 0,
-        "log": "low-wood-occupants-native/anytown-default-preservation-check.log",
-        "log_sha256": "f2f9ecbdf606d11d84fb45ee3f5572a53795dc8893b79b36a91de365d727bd09",
-        "result": "PASS anytown_occupants.json.gz: native outputs match; no files written",
-        "witness": "occupants"
-      },
-      {
-        "exit_code": 0,
-        "log": "shrapnel-native-initialization/anytown_restore_write.log",
-        "log_sha256": "4c02fec9d1da8bc2ab0727bf617e8e9da995bfb9fe9f310b4e88fc4d7383d86e",
-        "result": "WROTE anytown_restore_preserved.json.gz and anytown_restore_preserved.meta.json; native values match frozen packet",
-        "witness": "restore_write"
-      },
-      {
-        "exit_code": 0,
-        "log": "shrapnel-native-initialization/anytown_restore_check.log",
-        "log_sha256": "f70b942058e8e579b4133f3af485d124afe780ae40016c4a92c44675e204b143",
-        "result": "PASS anytown_restore_preserved.json.gz: native outputs match; no files written",
-        "witness": "restore_check"
-      }
-    ],
-    "navigation_receipt_sha256": "50288d2121b342f8d1087989b7614fc72f255097a91bab38c9e5452c37d9c803",
-    "prior_validation_sha256": "bc5a53c71a4416448f7e85f35dd89bab8a931a4bae2d2b66fac1a1f00184fdb0",
-    "reason": "Share the existing native occupants, full-map navigation, comparator and post-load rebuild owners with Shrapnel through explicit scene/factory/stage parameters. Original Anytown defaults are independently replayed with immutable result bytes.",
-    "recorded_at_utc": "2026-09-27T22:15:42.675218+00:00",
-    "restore": {
-      "all_recorded_source_hashes_current": true,
-      "external_and_repository_payload_byte_identical": true,
-      "external_output": "shrapnel-native-initialization/anytown_restore_preserved.json.gz",
-      "external_sidecar": "shrapnel-native-initialization/anytown_restore_preserved.meta.json",
-      "previous_sidecar_sha256": "27a48123aa269ecef3379172237de5da95a2828e776ba028b71159b845a92e93",
-      "reference": "tools/spatial_oracle/anytown_navigation_restore.json.gz",
-      "repository_payload_written": false,
-      "sha256": "9a5adacdd5af7dcd9e8697b5768382181ac7eb446ef38a006804eeb326cfa5b5",
-      "sidecar_sha256": "a5ab6571ac8ecec6940bcd17cdaf56e5cca93a454629ac4d0a18c2b167182946"
-    },
-    "scope": "Default Anytown source reuse and provenance refresh only; all original coverage limits remain. No new native whole-scenario, Cargo, production-scene or whole-bridge parity claim.",
-    "source_changes": [
-      {
-        "new_sha256": "2d60a0ff6e1febb46542361c849a96a8cc9b9384783d5bab09b339560c2c7cbd",
-        "old_sha256": "5836b1d4efa8ba1838185e60cb4962ded4bdb02a6fed672717474f2cdceb9192",
-        "path": "tools/spatial_oracle/anytown_damage/navigation.py"
-      },
-      {
-        "new_sha256": "aba234d20bd320102832b69c2a3a15a7f3ebcb131e4a5ab7b715c2bfe931e705",
-        "old_sha256": "bbfce3965c62fd3802ae60704b2b9465465cd618e8fd5d1f82188a73da8b5713",
-        "path": "tools/spatial_oracle/anytown_damage/navigation_inputs.py"
-      },
-      {
-        "new_sha256": "8bf700547df8a1e6deba099edfeb492ce48d07b187157ac261040bbd826f2cca",
-        "old_sha256": "249f7583a84b0e529b25b48b0ebf80bbf21d1e1adfd83d3d42ffdac6216c22a3",
-        "path": "tools/spatial_oracle/anytown_damage/navigation_compare.py"
-      },
-      {
-        "new_sha256": "9c6568395dff1c36fbcecc567bb698f9ba13b5551ec5b9592562ba271cf77778",
-        "old_sha256": "ffeca9bf9147d255c4cf312cae686aea57421cdc92cbfe3db00d873c510ab412",
-        "path": "tools/spatial_oracle/anytown_damage/anytown_occupants.py"
-      },
-      {
-        "new_sha256": "cf50907d8277f91abb92d0286a9489bbda45f0bd80ae319bec97d7d6e77f9d38",
-        "old_sha256": "348c26e6a890a605569498a9028198846b7c29198116dd255e6d9600712151c1",
-        "path": "tools/spatial_oracle/anytown_navigation_restore.py"
-      }
-    ]
-  },
-  "loader_compatibility_refresh": {
-    "kind": "Pinned loader source-provenance compatibility; no game-function replay",
-    "original_execution_source_sha256": "dd5dbf5f3532b0eb20d761b8637c18ca8033317b67e99481f633c45dec6b2de3",
-    "compatible_current_source_sha256": "f3f58e1a15a4fd3be9e3bc2030819f079ab9155bdb08833e228c1c661445e51e",
-    "evidence": "tools/spatial_oracle/shrapnel_damage/loader_compatibility.json",
-    "evidence_sha256": "c7050e54e7abe3bfb532bbb523f3ed2ea95ee6ffe603a6353f88dd17d64c2227",
-    "receipt": "tools/spatial_oracle/shrapnel_damage/loader_compatibility_receipt.json",
-    "native_payloads_unchanged": true,
-    "historical_execution_and_compatibility_records_preserved": true
+    "shrapnel_physical_map_unchanged": true
   }
 }

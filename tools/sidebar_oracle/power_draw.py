@@ -20,13 +20,13 @@ from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import *
 
 from types import SimpleNamespace
-from tools.native_oracle import NATIVE_SHA256, STACK_BASE, STACK_SIZE, RET_MAGIC, finish_vectors, provenance, run_checked
+from tools.native_oracle import STACK_BASE, STACK_SIZE, RET_MAGIC, finish_vectors, provenance, run_checked
 from tools.storage_oracle.saved_game_layout import code_guard, check_code
 from tools.sidebar_oracle.geometry import machine as base_machine, put32, call
 
 def machine():
     u=base_machine(); u.mem_map(0x21000000,0x40000); return u
-n=SimpleNamespace(machine=machine,HEAP=0x21000000,STACK=STACK_BASE,STOP=RET_MAGIC,put32=put32,EXPECTED=NATIVE_SHA256)
+n=SimpleNamespace(machine=machine,HEAP=0x21000000,STACK=STACK_BASE,STOP=RET_MAGIC,put32=put32)
 
 
 def shape_command(u, read32):
@@ -130,7 +130,6 @@ def collect():
     gates = [run(0, 12, (1, 1, 1), 2, force, dirty, visible)
              for force, dirty, visible in itertools.product((0, 1), repeat=3)]
     return {
-        'executable_sha256': n.EXPECTED,
         'executed': '0063fb20 through 0063fda5, excluding later RadarClass draw',
         'substitutions': [
             'Surface virtual +0x78 returns prepared [0,0,168,600] rectangle in caller output buffer.',

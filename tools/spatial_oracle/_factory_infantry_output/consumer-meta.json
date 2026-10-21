@@ -1,571 +1,17 @@
 {
   "schema": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "source_seal": {
     "manifest_sha256": "ee7444412ea59b8db7b37ab4b045a68050345597c2b1f3f70c2daf7f2e81addb",
-    "native_summary_sha256": "e6a2ec05b9bb765d43940043953473535e71768b836554fe87289b77b3019db0",
-    "historical_source_profile": {
-      "profile": "historical-gi-sale-snapshot-consumer-58",
-      "compatible_current_profile": false,
-      "modules": [
-        {
-          "module": "tools.native_inspect",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/ordinary-building-sale-research/source-snapshot/tools/native_inspect.py",
-          "sha256": "12038060971ec7a41da24e13a9851e23858fba4542c6e9a9f9ca17f3a8252087",
-          "repository_path": "tools/native_inspect.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/native_inspect.py",
-          "current_candidate_sha256": "12038060971ec7a41da24e13a9851e23858fba4542c6e9a9f9ca17f3a8252087",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.native_oracle",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/native_oracle.py",
-          "sha256": "79dac1057d97e706f106a26145f00fa220d92c172b5173876c60fed22c17530c",
-          "repository_path": "tools/native_oracle.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/native_oracle.py",
-          "current_candidate_sha256": "484e528d6d4c9bc6539126985897e60bc4f38ac7283a46b78e3264de81e4b21c",
-          "matches_current_candidate": false
-        },
-        {
-          "module": "tools.native_slope",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/native_slope.py",
-          "sha256": "737b8294db419d298d362029825a255ae70df9945bef4c8b588369a53eaf13de",
-          "repository_path": "tools/native_slope.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/native_slope.py",
-          "current_candidate_sha256": "737b8294db419d298d362029825a255ae70df9945bef4c8b588369a53eaf13de",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.projectile_oracle.bridge_render_inputs",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/projectile_oracle/bridge_render_inputs.py",
-          "sha256": "4bfc6d80d7cd0d75f3db0123bb646011b6706f9195a8c1137e0f397941bff9e4",
-          "repository_path": "tools/projectile_oracle/bridge_render_inputs.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/projectile_oracle/bridge_render_inputs.py",
-          "current_candidate_sha256": "4bfc6d80d7cd0d75f3db0123bb646011b6706f9195a8c1137e0f397941bff9e4",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.projectile_oracle.flat_art",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/projectile_oracle/flat_art.py",
-          "sha256": "2f663fbb2b8c88925dd8aa46e8be9216d580ec033bac3e08a138bcd0b272b7c6",
-          "repository_path": "tools/projectile_oracle/flat_art.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/projectile_oracle/flat_art.py",
-          "current_candidate_sha256": "2f663fbb2b8c88925dd8aa46e8be9216d580ec033bac3e08a138bcd0b272b7c6",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.projectile_oracle.guided_step",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/projectile_oracle/guided_step.py",
-          "sha256": "66862363b6ada9a83f71645f8d2f1684984bde8cd35cb52091607d40427e528e",
-          "repository_path": "tools/projectile_oracle/guided_step.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/projectile_oracle/guided_step.py",
-          "current_candidate_sha256": "66862363b6ada9a83f71645f8d2f1684984bde8cd35cb52091607d40427e528e",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.rmg_oracle.gen_rng_vectors",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/rmg_oracle/gen_rng_vectors.py",
-          "sha256": "bac5dde765d07d3f522b7281a21a8527869f5d4da59eb385e7f9fed7493775a2",
-          "repository_path": "tools/rmg_oracle/gen_rng_vectors.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/rmg_oracle/gen_rng_vectors.py",
-          "current_candidate_sha256": "bac5dde765d07d3f522b7281a21a8527869f5d4da59eb385e7f9fed7493775a2",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.rules_oracle.bridge_anim_inputs",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/rules_oracle/bridge_anim_inputs.py",
-          "sha256": "f7f2941e11bbede50ffab19554a789e4e3e42f4969b04ad4e9697973e659d316",
-          "repository_path": "tools/rules_oracle/bridge_anim_inputs.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/rules_oracle/bridge_anim_inputs.py",
-          "current_candidate_sha256": "d9b25e536250aab83bd42b9ff8a5a7f2417e603023389db4c70d72db2d443a4e",
-          "matches_current_candidate": false
-        },
-        {
-          "module": "tools.rules_oracle.bridge_anim_lists",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/rules_oracle/bridge_anim_lists.py",
-          "sha256": "2a7a96ea1e24f1129161e8fe5608c0ab69ac584ee6ad78fa91c43bd3ad072045",
-          "repository_path": "tools/rules_oracle/bridge_anim_lists.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/rules_oracle/bridge_anim_lists.py",
-          "current_candidate_sha256": "2a7a96ea1e24f1129161e8fe5608c0ab69ac584ee6ad78fa91c43bd3ad072045",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.rules_oracle.bridge_child_sound",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/rules_oracle/bridge_child_sound.py",
-          "sha256": "ea32c11dbb9f1ee1aeb3cdc1069605658ca100d864e90dacb3cd5bfe8f01c350",
-          "repository_path": "tools/rules_oracle/bridge_child_sound.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/rules_oracle/bridge_child_sound.py",
-          "current_candidate_sha256": "ea32c11dbb9f1ee1aeb3cdc1069605658ca100d864e90dacb3cd5bfe8f01c350",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.rules_oracle.bridge_landing_inputs",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/rules_oracle/bridge_landing_inputs.py",
-          "sha256": "489e7999c957edfc1141d6ca8b5d72e36e570cb4065b2f208564875ed81174e5",
-          "repository_path": "tools/rules_oracle/bridge_landing_inputs.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/rules_oracle/bridge_landing_inputs.py",
-          "current_candidate_sha256": "489e7999c957edfc1141d6ca8b5d72e36e570cb4065b2f208564875ed81174e5",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.rules_oracle.theater_general_reader",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/rules_oracle/theater_general_reader.py",
-          "sha256": "a466f2d5d94e5f4d8908bed0a97c69cf2aeb2d9356694d0af107491349e7afbd",
-          "repository_path": "tools/rules_oracle/theater_general_reader.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/rules_oracle/theater_general_reader.py",
-          "current_candidate_sha256": "a466f2d5d94e5f4d8908bed0a97c69cf2aeb2d9356694d0af107491349e7afbd",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.sidebar_oracle.stock",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/sidebar_oracle/stock.py",
-          "sha256": "62b855dba1836bf484bb6c112b9249003ff4427c3004a1ef3d95c3aac985ba9b",
-          "repository_path": "tools/sidebar_oracle/stock.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/sidebar_oracle/stock.py",
-          "current_candidate_sha256": "62b855dba1836bf484bb6c112b9249003ff4427c3004a1ef3d95c3aac985ba9b",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/__init__.py",
-          "sha256": "d2b8761741eec0f99f145b6b84c9efbe5e91a8d08b59b83ef67bef54c75f0415",
-          "repository_path": "tools/spatial_oracle/__init__.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/__init__.py",
-          "current_candidate_sha256": "d2b8761741eec0f99f145b6b84c9efbe5e91a8d08b59b83ef67bef54c75f0415",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.anim_bouncer_launch",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/anim_bouncer_launch.py",
-          "sha256": "6fa5df589e686573addd7843c16fae49a883c437f6dba3091d4f9c8d7b601055",
-          "repository_path": "tools/spatial_oracle/anim_bouncer_launch.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/anim_bouncer_launch.py",
-          "current_candidate_sha256": "6fa5df589e686573addd7843c16fae49a883c437f6dba3091d4f9c8d7b601055",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.anytown_damage",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/anytown_damage/__init__.py",
-          "sha256": "5cca8aa87d9e3c1c8ff349b7a2c105a2bdfbce58bb13acae9fbda5645ef8c66a",
-          "repository_path": "tools/spatial_oracle/anytown_damage/__init__.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/anytown_damage/__init__.py",
-          "current_candidate_sha256": "5cca8aa87d9e3c1c8ff349b7a2c105a2bdfbce58bb13acae9fbda5645ef8c66a",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.anytown_damage.anytown_geometry",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/anytown_damage/anytown_geometry.py",
-          "sha256": "012d148f0299bfa6aee589070fb87bfb8ad14ebd09cdc30c3b22bf11df562e69",
-          "repository_path": "tools/spatial_oracle/anytown_damage/anytown_geometry.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/anytown_damage/anytown_geometry.py",
-          "current_candidate_sha256": "012d148f0299bfa6aee589070fb87bfb8ad14ebd09cdc30c3b22bf11df562e69",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.anytown_damage.anytown_resident",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/anytown_damage/anytown_resident.py",
-          "sha256": "a3fd84ea7a7d038014fac37ebda4e72609f06662619506722fd11318b9d7f285",
-          "repository_path": "tools/spatial_oracle/anytown_damage/anytown_resident.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/anytown_damage/anytown_resident.py",
-          "current_candidate_sha256": "a3fd84ea7a7d038014fac37ebda4e72609f06662619506722fd11318b9d7f285",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.anytown_damage.inputs",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/anytown_damage/inputs.py",
-          "sha256": "c3e1732837e85deb628f04862aaab8cf72dc3e8ba2804ce55db5dc46f2a68f25",
-          "repository_path": "tools/spatial_oracle/anytown_damage/inputs.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/anytown_damage/inputs.py",
-          "current_candidate_sha256": "c3e1732837e85deb628f04862aaab8cf72dc3e8ba2804ce55db5dc46f2a68f25",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.anytown_damage.mission",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/anytown_damage/mission.py",
-          "sha256": "8d791318542167825e371ca8e720fb6c7a254b112baeb25c61ff104b3af60148",
-          "repository_path": "tools/spatial_oracle/anytown_damage/mission.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/anytown_damage/mission.py",
-          "current_candidate_sha256": "a59d99851fdf4d7f4f2ba6a547604e4b9cad7eb6fd57764c8dc7d12a0834e25a",
-          "matches_current_candidate": false
-        },
-        {
-          "module": "tools.spatial_oracle.anytown_damage.mission_publication",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/anytown_damage/mission_publication.py",
-          "sha256": "658212dba467967a1d2673b96279f45303c5ebc1c2d00033a6a01f49d3938f3e",
-          "repository_path": "tools/spatial_oracle/anytown_damage/mission_publication.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/anytown_damage/mission_publication.py",
-          "current_candidate_sha256": "658212dba467967a1d2673b96279f45303c5ebc1c2d00033a6a01f49d3938f3e",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.anytown_damage.mtnk_attack",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/anytown_damage/mtnk_attack.py",
-          "sha256": "629ce5742d89065c25f897b7ab2336a71f9c88c6176fa2e032e585c59f7113b3",
-          "repository_path": "tools/spatial_oracle/anytown_damage/mtnk_attack.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/anytown_damage/mtnk_attack.py",
-          "current_candidate_sha256": "629ce5742d89065c25f897b7ab2336a71f9c88c6176fa2e032e585c59f7113b3",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.anytown_damage.navigation",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/anytown_damage/navigation.py",
-          "sha256": "84b123f168898386752dae17ad9dec685b3f98ebe1e873c18d14f68c53abf8e4",
-          "repository_path": "tools/spatial_oracle/anytown_damage/navigation.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/anytown_damage/navigation.py",
-          "current_candidate_sha256": "84b123f168898386752dae17ad9dec685b3f98ebe1e873c18d14f68c53abf8e4",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.anytown_damage.navigation_inputs",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/anytown_damage/navigation_inputs.py",
-          "sha256": "a4971d093ed40dac72da16f52a5ddd33a27d9899cc7607c8ec4d01ebd7f5bd5f",
-          "repository_path": "tools/spatial_oracle/anytown_damage/navigation_inputs.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/anytown_damage/navigation_inputs.py",
-          "current_candidate_sha256": "a4971d093ed40dac72da16f52a5ddd33a27d9899cc7607c8ec4d01ebd7f5bd5f",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.anytown_damage.navigation_publication",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/anytown_damage/navigation_publication.py",
-          "sha256": "4d6d09e465e67bf3ed3415495f1efee7f51f069f8c762f53dbc7cb437be91211",
-          "repository_path": "tools/spatial_oracle/anytown_damage/navigation_publication.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/anytown_damage/navigation_publication.py",
-          "current_candidate_sha256": "4d6d09e465e67bf3ed3415495f1efee7f51f069f8c762f53dbc7cb437be91211",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.anytown_damage.next_family_native",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/anytown_damage/next_family_native.py",
-          "sha256": "b5545ca21bc1b678335dfe74f0eda02b3af4f013d37a965529243c0d170b8881",
-          "repository_path": "tools/spatial_oracle/anytown_damage/next_family_native.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/anytown_damage/next_family_native.py",
-          "current_candidate_sha256": "b5545ca21bc1b678335dfe74f0eda02b3af4f013d37a965529243c0d170b8881",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.anytown_damage.publication",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/anytown_damage/publication.py",
-          "sha256": "9331a5cc2c46ff487774b898918f267df740347dcb1745b23364703f9e24d650",
-          "repository_path": "tools/spatial_oracle/anytown_damage/publication.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/anytown_damage/publication.py",
-          "current_candidate_sha256": "9331a5cc2c46ff487774b898918f267df740347dcb1745b23364703f9e24d650",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.bridge_rim",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/bridge_rim.py",
-          "sha256": "5fdcf28d51a05e8e4fddbfd41cea0a5ac19b3ab80f01a87ee36cea5ced676b80",
-          "repository_path": "tools/spatial_oracle/bridge_rim.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/bridge_rim.py",
-          "current_candidate_sha256": "5fdcf28d51a05e8e4fddbfd41cea0a5ac19b3ab80f01a87ee36cea5ced676b80",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.building_art_transition",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/building_art_transition.py",
-          "sha256": "a747638632208a723b51acc11e3ca4a91560d63a08c85709eb514b153c867fbf",
-          "repository_path": "tools/spatial_oracle/building_art_transition.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/building_art_transition.py",
-          "current_candidate_sha256": "a747638632208a723b51acc11e3ca4a91560d63a08c85709eb514b153c867fbf",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.building_body_rules",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/building_body_rules.py",
-          "sha256": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
-          "repository_path": "tools/spatial_oracle/building_body_rules.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/building_body_rules.py",
-          "current_candidate_sha256": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.building_construction",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/building_construction.py",
-          "sha256": "9cf2225abea2029ba3b66ca8dae9433001e033c03e4e7056e0a9fd2af73fccf2",
-          "repository_path": "tools/spatial_oracle/building_construction.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/building_construction.py",
-          "current_candidate_sha256": "9cf2225abea2029ba3b66ca8dae9433001e033c03e4e7056e0a9fd2af73fccf2",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.building_death_anims",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/building_death_anims.py",
-          "sha256": "80a886dc1d708a8733efc205ba67ef3044611cb941d0934913d0171c608c93a9",
-          "repository_path": "tools/spatial_oracle/building_death_anims.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/building_death_anims.py",
-          "current_candidate_sha256": "2c411ebe503db16d01c3a799cb3f227d901ee2c3bc488ecb442fd90cfedcd303",
-          "matches_current_candidate": false
-        },
-        {
-          "module": "tools.spatial_oracle.building_slot_replacement",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/building_slot_replacement.py",
-          "sha256": "df61f9290ee457ce422414847879cb7c1ab2f0805d2fc20aa467b589ffd2c984",
-          "repository_path": "tools/spatial_oracle/building_slot_replacement.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/building_slot_replacement.py",
-          "current_candidate_sha256": "df61f9290ee457ce422414847879cb7c1ab2f0805d2fc20aa467b589ffd2c984",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.engineer_repair_admission",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/engineer_repair_admission.py",
-          "sha256": "44abd32d884efb782cb782bf01821a452cef1217e75bda5ac5f9d4b352a6e2e2",
-          "repository_path": "tools/spatial_oracle/engineer_repair_admission.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/engineer_repair_admission.py",
-          "current_candidate_sha256": "44abd32d884efb782cb782bf01821a452cef1217e75bda5ac5f9d4b352a6e2e2",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.fire_error",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/fire_error.py",
-          "sha256": "ea1137e160745ff92b8d7f87930fca15c307b3d8b7bca92a99d35e2526b9c402",
-          "repository_path": "tools/spatial_oracle/fire_error.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/fire_error.py",
-          "current_candidate_sha256": "ea1137e160745ff92b8d7f87930fca15c307b3d8b7bca92a99d35e2526b9c402",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.harvest_field",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/harvest_field.py",
-          "sha256": "047fd5d2333dcee593d93edfa92a69debd6ad2f7b5a53029711f3dde17b5e087",
-          "repository_path": "tools/spatial_oracle/harvest_field.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/harvest_field.py",
-          "current_candidate_sha256": "047fd5d2333dcee593d93edfa92a69debd6ad2f7b5a53029711f3dde17b5e087",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.infantry_entry_raw",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/infantry_entry_raw.py",
-          "sha256": "0f6c0ac2de9251b32931a04b6d6fedd982d624c7cd4a3a88c3d6e2f5e56fd5fd",
-          "repository_path": "tools/spatial_oracle/infantry_entry_raw.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/infantry_entry_raw.py",
-          "current_candidate_sha256": "0f6c0ac2de9251b32931a04b6d6fedd982d624c7cd4a3a88c3d6e2f5e56fd5fd",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.jumpjet_coordinates",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/jumpjet_coordinates.py",
-          "sha256": "922eee4b7841312e85abdc52e65a65869a071de05f9644873fb3c38f9facd3b9",
-          "repository_path": "tools/spatial_oracle/jumpjet_coordinates.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/jumpjet_coordinates.py",
-          "current_candidate_sha256": "922eee4b7841312e85abdc52e65a65869a071de05f9644873fb3c38f9facd3b9",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.jumpjet_entry_discovery",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/jumpjet_entry_discovery.py",
-          "sha256": "ff8fd5cd549000345331072acf19797e494ab629fca986afacd4cf392c954d14",
-          "repository_path": "tools/spatial_oracle/jumpjet_entry_discovery.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/jumpjet_entry_discovery.py",
-          "current_candidate_sha256": "ff8fd5cd549000345331072acf19797e494ab629fca986afacd4cf392c954d14",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.map_queries",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/map_queries.py",
-          "sha256": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305",
-          "repository_path": "tools/spatial_oracle/map_queries.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/map_queries.py",
-          "current_candidate_sha256": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.mapgen_range",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/mapgen_range.py",
-          "sha256": "df39b5ab3a2450c98dfa749a67826d5cb87f9d73086dc2511ff3261906724eef",
-          "repository_path": "tools/spatial_oracle/mapgen_range.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/mapgen_range.py",
-          "current_candidate_sha256": "df39b5ab3a2450c98dfa749a67826d5cb87f9d73086dc2511ff3261906724eef",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.object_health",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/object_health.py",
-          "sha256": "3e3fd3c18c9dcbfd169432641233dafcaf8f9ba21fa735f362972fdacb2e07c2",
-          "repository_path": "tools/spatial_oracle/object_health.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/object_health.py",
-          "current_candidate_sha256": "3e3fd3c18c9dcbfd169432641233dafcaf8f9ba21fa735f362972fdacb2e07c2",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.refinery_dock",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/refinery_dock.py",
-          "sha256": "f9fe38dbf9f185594630d6bbec8bcf7184c3d5d66466a37ab91035f46639a15d",
-          "repository_path": "tools/spatial_oracle/refinery_dock.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/refinery_dock.py",
-          "current_candidate_sha256": "c8fb2b33edc7c3100986fb78d90e663b820e10c35d6e450fe5bf923ddb0b8408",
-          "matches_current_candidate": false
-        },
-        {
-          "module": "tools.spatial_oracle.shrapnel_repair",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/shrapnel_repair/__init__.py",
-          "sha256": "181c307c7f2f1767bee7fc8812eb72698df94241d26c669526254bf13084e003",
-          "repository_path": "tools/spatial_oracle/shrapnel_repair/__init__.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/shrapnel_repair/__init__.py",
-          "current_candidate_sha256": "181c307c7f2f1767bee7fc8812eb72698df94241d26c669526254bf13084e003",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.shrapnel_repair.hierarchy_composition",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/shrapnel_repair/hierarchy_composition.py",
-          "sha256": "a545496a5203c56d02dfed6d37da792c0f261b26db6b128db4ea57b9acc19ac0",
-          "repository_path": "tools/spatial_oracle/shrapnel_repair/hierarchy_composition.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/shrapnel_repair/hierarchy_composition.py",
-          "current_candidate_sha256": "a545496a5203c56d02dfed6d37da792c0f261b26db6b128db4ea57b9acc19ac0",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.shrapnel_repair.map_facts",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/shrapnel_repair/map_facts.py",
-          "sha256": "8fec739ee85c0110096180ae7c7712ad96e5191752ec9362dc3d9eb21e5d6768",
-          "repository_path": "tools/spatial_oracle/shrapnel_repair/map_facts.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/shrapnel_repair/map_facts.py",
-          "current_candidate_sha256": "8fec739ee85c0110096180ae7c7712ad96e5191752ec9362dc3d9eb21e5d6768",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.shrapnel_repair.packet_io",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/shrapnel_repair/packet_io.py",
-          "sha256": "80d7a5dd328c47c9fe453d0048c5ae116feef741220537f1d1dc4e587387b865",
-          "repository_path": "tools/spatial_oracle/shrapnel_repair/packet_io.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/shrapnel_repair/packet_io.py",
-          "current_candidate_sha256": "80d7a5dd328c47c9fe453d0048c5ae116feef741220537f1d1dc4e587387b865",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.shrapnel_repair.production_inputs",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/shrapnel_repair/production_inputs.py",
-          "sha256": "0e29a8c5bac7eb2f6f8819e6d54b2959045f3205e4930c162e96e479bef76289",
-          "repository_path": "tools/spatial_oracle/shrapnel_repair/production_inputs.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/shrapnel_repair/production_inputs.py",
-          "current_candidate_sha256": "0e29a8c5bac7eb2f6f8819e6d54b2959045f3205e4930c162e96e479bef76289",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.shrapnel_repair.retail_inputs",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/shrapnel_repair/retail_inputs.py",
-          "sha256": "5386be531deb221b2abf0a06cf46371937a3134fd4fdde142a7d20fc97691400",
-          "repository_path": "tools/spatial_oracle/shrapnel_repair/retail_inputs.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/shrapnel_repair/retail_inputs.py",
-          "current_candidate_sha256": "bc6921d2b04a05e4778fe0c57d9badb3c9c7cf1b429ba807b7baf2b8e060e8d0",
-          "matches_current_candidate": false
-        },
-        {
-          "module": "tools.spatial_oracle.shrapnel_repair.shrapnel_repair",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/shrapnel_repair/shrapnel_repair.py",
-          "sha256": "766d30e22188ef36c66a940eb4546ad52e025fa80e80c864a9644a1a4662b27c",
-          "repository_path": "tools/spatial_oracle/shrapnel_repair/shrapnel_repair.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/shrapnel_repair/shrapnel_repair.py",
-          "current_candidate_sha256": "766d30e22188ef36c66a940eb4546ad52e025fa80e80c864a9644a1a4662b27c",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.shrapnel_repair.zone_composition",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/shrapnel_repair/zone_composition.py",
-          "sha256": "0eb3b38561c804dd4bfbbfdb3e858babd2e9a1c2214f296eedfe6447901db73e",
-          "repository_path": "tools/spatial_oracle/shrapnel_repair/zone_composition.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/shrapnel_repair/zone_composition.py",
-          "current_candidate_sha256": "0eb3b38561c804dd4bfbbfdb3e858babd2e9a1c2214f296eedfe6447901db73e",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.slave_manager",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/slave_manager.py",
-          "sha256": "257ef2d170d2f5bf01e001f1e46561374677168a2d32a21181ef684c3bdb662d",
-          "repository_path": "tools/spatial_oracle/slave_manager.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/slave_manager.py",
-          "current_candidate_sha256": "257ef2d170d2f5bf01e001f1e46561374677168a2d32a21181ef684c3bdb662d",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.smudge_can_place",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/smudge_can_place.py",
-          "sha256": "0771bef02dae6cb70028054efb6bc87cb532ec3d1f4038ab5def386c2e6461ec",
-          "repository_path": "tools/spatial_oracle/smudge_can_place.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/smudge_can_place.py",
-          "current_candidate_sha256": "0771bef02dae6cb70028054efb6bc87cb532ec3d1f4038ab5def386c2e6461ec",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.track_destination",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/track_destination.py",
-          "sha256": "1c7be1b2a2a6da24369fd987fc3c3dc196b9c8b6ebf8e63b288ce3187c8c049d",
-          "repository_path": "tools/spatial_oracle/track_destination.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/track_destination.py",
-          "current_candidate_sha256": "1c7be1b2a2a6da24369fd987fc3c3dc196b9c8b6ebf8e63b288ce3187c8c049d",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.unit_entry",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/unit_entry.py",
-          "sha256": "c79e273f002fbb921942676c3747068fcb1312574e66eaaafe8bf4286740b96e",
-          "repository_path": "tools/spatial_oracle/unit_entry.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/unit_entry.py",
-          "current_candidate_sha256": "18986785b9cc42d7c811aa0c37d352f5ddc9d8746bfa926b807e5f493e33f209",
-          "matches_current_candidate": false
-        },
-        {
-          "module": "tools.spatial_oracle.unit_scatter_state",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/unit_scatter_state.py",
-          "sha256": "9cb5b9726c02c8ef7e08aeadf006fecd90191341250f744e9307d5a62a63a4c3",
-          "repository_path": "tools/spatial_oracle/unit_scatter_state.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/unit_scatter_state.py",
-          "current_candidate_sha256": "9cb5b9726c02c8ef7e08aeadf006fecd90191341250f744e9307d5a62a63a4c3",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.unit_source_scatter",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/unit_source_scatter.py",
-          "sha256": "d2ce3dce6e7baff886f3bc6a30c545ec29e442e9866a39a0acb03c92268bbcc8",
-          "repository_path": "tools/spatial_oracle/unit_source_scatter.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/unit_source_scatter.py",
-          "current_candidate_sha256": "d2ce3dce6e7baff886f3bc6a30c545ec29e442e9866a39a0acb03c92268bbcc8",
-          "matches_current_candidate": true
-        },
-        {
-          "module": "tools.spatial_oracle.walk_head_occupation",
-          "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/source-snapshot/tools/spatial_oracle/walk_head_occupation.py",
-          "sha256": "d888f824965dc41badb92827d9f4befdf06eb1dd33559a3f68eadc3b7c54f6c8",
-          "repository_path": "tools/spatial_oracle/walk_head_occupation.py",
-          "current_candidate_path": "/Users/halvor/.codex/worktrees/object-completion/vera20k/tools/spatial_oracle/walk_head_occupation.py",
-          "current_candidate_sha256": "d888f824965dc41badb92827d9f4befdf06eb1dd33559a3f68eadc3b7c54f6c8",
-          "matches_current_candidate": true
-        }
-      ],
-      "differing_modules": [
-        "tools/native_oracle.py",
-        "tools/rules_oracle/bridge_anim_inputs.py",
-        "tools/spatial_oracle/anytown_damage/mission.py",
-        "tools/spatial_oracle/building_death_anims.py",
-        "tools/spatial_oracle/refinery_dock.py",
-        "tools/spatial_oracle/shrapnel_repair/retail_inputs.py",
-        "tools/spatial_oracle/unit_entry.py"
-      ],
-      "limits": [
-        "Executed through the immutable historical GI/Sale source snapshots retained by the sealed parents. Seven helpers differ from current59-source factory profile; no current-owner compatibility claim is made.",
-        "Durable current canonical-owner replay must compare complete outcomes and declare a new validated source profile before portable consumer acceptance."
-      ]
-    }
+    "native_summary_sha256": "e6a2ec05b9bb765d43940043953473535e71768b836554fe87289b77b3019db0"
   },
   "headers": {
     "setup": {
       "schema_version": 1,
-      "result": "failure",
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
-      "borrowed_sources": {
-        "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-joined-research/garrison-hot-inputs.native.py": "cfcd392b4be37988ab09db3c700d54931fcd6858d6e20fcb9ed937cf9f16aff5",
-        "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/ordinary-building-sale-prerequisites-research/observe-eva-sale-control.py": "55913ca565d5983f6aba9135b7a0b1c4a38a5094fc85136546cc4ce72706b7fe"
-      }
+      "result": "failure"
     },
     "consumer": {
       "schema": 1,
       "success": false,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
-      "borrowed_setup_owner": {
-        "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/gi-garrison-eva-research/observe-garrison-eva.py",
-        "sha256": "16757a4146b463b3b91d9919f77675118597125d260906d7545a56fcdadb2ff8",
-        "selected_physical_name": "EVA_UnitReady",
-        "borrowed_ast_sha256": "ffa6495f5426b3212f36d1a38fcbb7a704c10285cd3189c1d12caa5e9d979b81"
-      },
       "native_notification_input_receipt": {
         "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/barracks-output-runtime-route/notification-scalar-audit-20261003/native-observations.json",
         "sha256": "355ff4c13e29cb24960d52588005faa9aa039e3a44c4b856240d642562dacf99"
@@ -583,11 +29,6 @@
     "cadence": {
       "schema": 1,
       "success": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
-      "borrowed_owner": {
-        "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/barracks-unit-ready-consumer-research-20261003/observe-unit-ready-consumer.py",
-        "sha256": "46f7f895ca6211470402449f6037fb2bc36cf061642a419eda1cf8cfb4d45ead"
-      },
       "physical_wave": {
         "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/barracks-unit-ready-consumer-research-20261003/physical/extract/ceva062.wav",
         "bytes": 9354,
@@ -614,11 +55,6 @@
     "device": {
       "schema": 1,
       "success": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
-      "borrowed_owner": {
-        "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/barracks-unit-ready-consumer-research-20261003/observe-unit-ready-unpaused.py",
-        "sha256": "0f47fbf6d57ebeef1ad3bacfa504e2eda8c3aeb8e0dea160e156e881093b5cf7"
-      },
       "bounds": [
         "Existing real registered/positive-clock/initialized-radar UnitReady caller prior and actual winning ceva062.WAV stream/parser/decoder/native buffer Play at1034ms are reused without changing accepted packets or original code.",
         "Actual device-thread routine/parameter come from original AudioSetup CreateThread409511. Two original worker iterations are executed from4095B0 then resumed409844, stopping before original Sleep40983E. Real thread scheduling and hardware audio are excluded.",
@@ -630,11 +66,6 @@
     "radar": {
       "schema": 1,
       "success": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
-      "borrowed_owner": {
-        "path": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/barracks-unit-ready-consumer-research-20261003/observe-unit-ready-consumer.py",
-        "sha256": "46f7f895ca6211470402449f6037fb2bc36cf061642a419eda1cf8cfb4d45ead"
-      },
       "bounds": [
         "Original65F9B0 vector CRT, physical General scalar reads, kind6 insertion/dedup and registered UnitReady queue prior are reused. No accepted packet is modified.",
         "Consecutive presentationframe0..expiry and one whole65FDD0 TickVector then whole6603B0 Cleanup per frame are explicit supplied visit inputs. This matches the direct65336D TickVector/653374 RadarUpdate call relation and reached cleanup65786D body order, without executing the whole renderer or claiming real presentation cadence.",
@@ -654,7 +85,6 @@
   },
   "native_notification_input": {
     "schema": 1,
-    "native_binary_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "native_path": "/Users/halvor/Documents/vera20k-dev/game/Command and Conquer Red Alert II/gamemd.exe",
     "native_instruction_scope": "Original static caller/callee/vtable bytes plus unchanged existing-coordinate-owner execution and exact immutable P2 call extraction; not a new full gameplay replay.",
     "house_place_original_instructions": [
@@ -2641,7 +2071,6 @@
       {
         "parent": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/basic-factory-output-prerequisites-research/construction-primary.json",
         "sha256": "9ff9c219b81c93fe5671b6a153073c09aa4d14c04472baeff0a5680977c1963d",
-        "native_binary_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
         "code_unchanged": true,
         "calls": [
           {
@@ -2775,7 +2204,6 @@
       {
         "parent": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/basic-factory-output-prerequisites-research/blocked-preferred-attempt-2.json",
         "sha256": "6bd726fb29c2398b093baeedbbdd4d0f80ccf10d688a11e8bc2cc29fcb4ac9c4",
-        "native_binary_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
         "code_unchanged": true,
         "calls": [
           {
@@ -2910,7 +2338,6 @@
       {
         "parent": "/Users/halvor/Documents/vera20k-dev/evidence/object-completion/engineer-repair-20261002/basic-factory-output-prerequisites-research/blocked-all-primary.json",
         "sha256": "a106c1b7adb490eefbbb147470833b2a3174fd44134bdd29ef260b188533cc7a",
-        "native_binary_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
         "code_unchanged": true,
         "calls": [
           {
@@ -3183,28 +2610,28 @@
       "receipt": "unit-ready-unpaused-attempt-2.native.json",
       "bytes": 2128840,
       "sha256": "616e302efb835d4d0b6ff57c5597cb8b1a977c95727540ffb1383d69662c2b5f",
-      "full_native_observation_sha256": "f7edf35cd36127e56ff03d7c297a33f0c80d60a2503b729ec6431013adc50610",
+      "full_native_observation_sha256": "b3035957e0b65e1928d6ae572e4d682b4806488a76f1fdbdfaacb91b2de68e02",
       "canonical_historical_receipt_sha256": "416dbf662a58907eb5df3d90d40e8b71b7be14c26e91f75ccc0541ce4a11db2e"
     },
     "device": {
       "receipt": "unit-ready-device-completion-attempt-2.native.json",
       "bytes": 3408229,
       "sha256": "fffe98bb99d86f84f7333263fd9de897af54fb85e344faa3595f851750147804",
-      "full_native_observation_sha256": "88865f9c5fcae29f6f74750a7e9c00d7a58f2d2ea2dbbcc9a127ad0f612c96c9",
+      "full_native_observation_sha256": "875e3acd49c3c370aad6e11d533260b22e5a1fb9ce0c314baef8110dd9101ab7",
       "canonical_historical_receipt_sha256": "ccff4d8930e0134505aae1a81479825d6408c991a105f8b8208f9e591b8951c0"
     },
     "buffer": {
       "receipt": "unit-ready-buffer-completion-attempt-1.native.json",
       "bytes": 4279185,
       "sha256": "d2ad2a6b4f1f4477fed199b89d50b15881edc38d6f6e43a2b6247e0476c66a55",
-      "full_native_observation_sha256": "9a79cfd6d0555e020d561e2af99cd114c92cc3d8e08f1a9acb2735e1f9b26d9b",
+      "full_native_observation_sha256": "29399cb2208bfaed26c2e760cf414732526bcb19ace3cb883504e13afeb0a115",
       "canonical_historical_receipt_sha256": "76137951f44f39391335aac53858196f2739012f61a8b761e93460156980341e"
     },
     "radar": {
       "receipt": "unit-ready-radar-expiry-attempt-1.native.json",
       "bytes": 19287659,
       "sha256": "948b8727cd2f440a4a1b93ee086eb8d0e3ac1fbc8895c04cd2e4c3afa2b98dee",
-      "full_native_observation_sha256": "83d9b590549355bed3040cbd251ba9888fd913e422c469007ab40877bf3fb080",
+      "full_native_observation_sha256": "c210c5551bd039b60d9041a726511e1b382fb4091f5e3c504e61c188151c86bd",
       "canonical_historical_receipt_sha256": "93ac3bdbe58d34b2cd8b722b0ee235cc09ec401a160856efa8a0c4696ea86459"
     }
   },
@@ -3404,125 +2831,23 @@
       "sha256": "0d9dfda921258ad4f2e62a1f93df7f6aaa0bd2b58569d53a74883f24e67b4c68"
     }
   ],
-  "compatibility_status": "c60-compatible additive59 profile accepted for six complete original controls and full PCM; all three earlier maps, historical controls and exact exports preserved",
-  "caller_files": {
-    "consumer.py": {
-      "bytes": 32148,
-      "sha256": "4104001448537df917040352a578c6ff58145e05a3def737b54038f512ab2b16"
-    },
-    "consumer_setup.py": {
-      "bytes": 10573,
-      "sha256": "9a60ec7eb4554f4e91341ef714fe0752a80d58c326f7b51722efcc1117aaaa9f"
-    },
-    "consumer_runtime.py": {
-      "bytes": 14955,
-      "sha256": "4fc3c45c0152ff71df4db2bbf4df7ffec87d6ceb8efee844df8798540f74934a"
-    },
-    "fixture.py": {
-      "bytes": 41857,
-      "sha256": "7a059b4d04e6a0da64838525bae547604a3a9f61398fd4c471d839af567c1cf4"
-    },
-    "README.md": {
-      "bytes": 29569,
-      "sha256": "c56154d9fb4979cbf3afe3a9e93731e5d5b5251eb18b9be27f8315942a6993e5"
-    },
-    "pcm.py": {
-      "bytes": 12119,
-      "sha256": "b66d26e739d9504d1844736078db5b92e3cf014aaa10889a6fbf5c73298418a2"
-    }
-  },
-  "candidate_helper_files": {
-    "tools/native_oracle.py": "484e528d6d4c9bc6539126985897e60bc4f38ac7283a46b78e3264de81e4b21c",
-    "tools/spatial_oracle/__init__.py": "d2b8761741eec0f99f145b6b84c9efbe5e91a8d08b59b83ef67bef54c75f0415",
-    "tools/spatial_oracle/anim_bouncer_launch.py": "f038ac51504a1927efac0d5c65092fe5ddb7bcc4f9525e01bd71c3ca008d2ac3",
-    "tools/spatial_oracle/smudge_can_place.py": "0771bef02dae6cb70028054efb6bc87cb532ec3d1f4038ab5def386c2e6461ec",
-    "tools/spatial_oracle/building_death_anims.py": "2c411ebe503db16d01c3a799cb3f227d901ee2c3bc488ecb442fd90cfedcd303",
-    "tools/spatial_oracle/building_body_rules.py": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
-    "tools/spatial_oracle/map_queries.py": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305",
-    "tools/spatial_oracle/unit_scatter_state.py": "9cb5b9726c02c8ef7e08aeadf006fecd90191341250f744e9307d5a62a63a4c3",
-    "tools/spatial_oracle/unit_source_scatter.py": "d2ce3dce6e7baff886f3bc6a30c545ec29e442e9866a39a0acb03c92268bbcc8",
-    "tools/spatial_oracle/unit_entry.py": "18986785b9cc42d7c811aa0c37d352f5ddc9d8746bfa926b807e5f493e33f209",
-    "tools/spatial_oracle/track_destination.py": "1c7be1b2a2a6da24369fd987fc3c3dc196b9c8b6ebf8e63b288ce3187c8c049d",
-    "tools/spatial_oracle/refinery_dock.py": "c8fb2b33edc7c3100986fb78d90e663b820e10c35d6e450fe5bf923ddb0b8408",
-    "tools/spatial_oracle/harvest_field.py": "047fd5d2333dcee593d93edfa92a69debd6ad2f7b5a53029711f3dde17b5e087",
-    "tools/spatial_oracle/slave_manager.py": "257ef2d170d2f5bf01e001f1e46561374677168a2d32a21181ef684c3bdb662d",
-    "tools/spatial_oracle/building_construction.py": "65ddb0c37fc111758368780881ecbdca828c0153e9eb945f4e1ea72a20b9a438",
-    "tools/rules_oracle/bridge_anim_lists.py": "2a7a96ea1e24f1129161e8fe5608c0ab69ac584ee6ad78fa91c43bd3ad072045",
-    "tools/projectile_oracle/flat_art.py": "2f663fbb2b8c88925dd8aa46e8be9216d580ec033bac3e08a138bcd0b272b7c6",
-    "tools/rules_oracle/bridge_anim_inputs.py": "d9b25e536250aab83bd42b9ff8a5a7f2417e603023389db4c70d72db2d443a4e",
-    "tools/rules_oracle/bridge_child_sound.py": "ea32c11dbb9f1ee1aeb3cdc1069605658ca100d864e90dacb3cd5bfe8f01c350",
-    "tools/spatial_oracle/engineer_repair_admission.py": "bbbbe57e3953fc79d2e4508dccf258bed346807dce30cca989ae1a1874bb30b4",
-    "tools/spatial_oracle/time_to_build.py": "5d298a5744961484485c25f587abb2f848b6261580ee4180ebd0fbd870d7f249",
-    "tools/spatial_oracle/factory_cadence.py": "324fa00bb554187f9e0127cc48b5bd898e676e3ccb54e01323d66ada55ec47ff",
-    "tools/spatial_oracle/anytown_damage/__init__.py": "5cca8aa87d9e3c1c8ff349b7a2c105a2bdfbce58bb13acae9fbda5645ef8c66a",
-    "tools/projectile_oracle/bridge_render_inputs.py": "4bfc6d80d7cd0d75f3db0123bb646011b6706f9195a8c1137e0f397941bff9e4",
-    "tools/projectile_oracle/guided_step.py": "66862363b6ada9a83f71645f8d2f1684984bde8cd35cb52091607d40427e528e",
-    "tools/native_slope.py": "737b8294db419d298d362029825a255ae70df9945bef4c8b588369a53eaf13de",
-    "tools/spatial_oracle/shrapnel_repair/__init__.py": "181c307c7f2f1767bee7fc8812eb72698df94241d26c669526254bf13084e003",
-    "tools/rules_oracle/theater_general_reader.py": "a466f2d5d94e5f4d8908bed0a97c69cf2aeb2d9356694d0af107491349e7afbd",
-    "tools/spatial_oracle/shrapnel_repair/retail_inputs.py": "bc6921d2b04a05e4778fe0c57d9badb3c9c7cf1b429ba807b7baf2b8e060e8d0",
-    "tools/spatial_oracle/bridge_rim.py": "5fdcf28d51a05e8e4fddbfd41cea0a5ac19b3ab80f01a87ee36cea5ced676b80",
-    "tools/spatial_oracle/shrapnel_repair/map_facts.py": "8fec739ee85c0110096180ae7c7712ad96e5191752ec9362dc3d9eb21e5d6768",
-    "tools/rmg_oracle/gen_rng_vectors.py": "bac5dde765d07d3f522b7281a21a8527869f5d4da59eb385e7f9fed7493775a2",
-    "tools/spatial_oracle/mapgen_range.py": "df39b5ab3a2450c98dfa749a67826d5cb87f9d73086dc2511ff3261906724eef",
-    "tools/spatial_oracle/shrapnel_repair/production_inputs.py": "0e29a8c5bac7eb2f6f8819e6d54b2959045f3205e4930c162e96e479bef76289",
-    "tools/spatial_oracle/shrapnel_repair/packet_io.py": "80d7a5dd328c47c9fe453d0048c5ae116feef741220537f1d1dc4e587387b865",
-    "tools/spatial_oracle/shrapnel_repair/shrapnel_repair.py": "766d30e22188ef36c66a940eb4546ad52e025fa80e80c864a9644a1a4662b27c",
-    "tools/spatial_oracle/anytown_damage/inputs.py": "c3e1732837e85deb628f04862aaab8cf72dc3e8ba2804ce55db5dc46f2a68f25",
-    "tools/spatial_oracle/anytown_damage/publication.py": "9331a5cc2c46ff487774b898918f267df740347dcb1745b23364703f9e24d650",
-    "tools/spatial_oracle/anytown_damage/next_family_native.py": "b5545ca21bc1b678335dfe74f0eda02b3af4f013d37a965529243c0d170b8881",
-    "tools/spatial_oracle/anytown_damage/anytown_geometry.py": "012d148f0299bfa6aee589070fb87bfb8ad14ebd09cdc30c3b22bf11df562e69",
-    "tools/spatial_oracle/anytown_damage/anytown_resident.py": "a3fd84ea7a7d038014fac37ebda4e72609f06662619506722fd11318b9d7f285",
-    "tools/spatial_oracle/anytown_damage/mtnk_attack.py": "629ce5742d89065c25f897b7ab2336a71f9c88c6176fa2e032e585c59f7113b3",
-    "tools/spatial_oracle/anytown_damage/mission_publication.py": "658212dba467967a1d2673b96279f45303c5ebc1c2d00033a6a01f49d3938f3e",
-    "tools/spatial_oracle/anytown_damage/mission.py": "a59d99851fdf4d7f4f2ba6a547604e4b9cad7eb6fd57764c8dc7d12a0834e25a",
-    "tools/sidebar_oracle/stock.py": "62b855dba1836bf484bb6c112b9249003ff4427c3004a1ef3d95c3aac985ba9b",
-    "tools/rules_oracle/bridge_landing_inputs.py": "489e7999c957edfc1141d6ca8b5d72e36e570cb4065b2f208564875ed81174e5",
-    "tools/spatial_oracle/anytown_damage/navigation_inputs.py": "a4971d093ed40dac72da16f52a5ddd33a27d9899cc7607c8ec4d01ebd7f5bd5f",
-    "tools/spatial_oracle/anytown_damage/navigation_publication.py": "4d6d09e465e67bf3ed3415495f1efee7f51f069f8c762f53dbc7cb437be91211",
-    "tools/spatial_oracle/shrapnel_repair/zone_composition.py": "0eb3b38561c804dd4bfbbfdb3e858babd2e9a1c2214f296eedfe6447901db73e",
-    "tools/spatial_oracle/shrapnel_repair/hierarchy_composition.py": "a545496a5203c56d02dfed6d37da792c0f261b26db6b128db4ea57b9acc19ac0",
-    "tools/spatial_oracle/anytown_damage/navigation.py": "84b123f168898386752dae17ad9dec685b3f98ebe1e873c18d14f68c53abf8e4",
-    "tools/spatial_oracle/fire_error.py": "ea1137e160745ff92b8d7f87930fca15c307b3d8b7bca92a99d35e2526b9c402",
-    "tools/spatial_oracle/walk_head_occupation.py": "d888f824965dc41badb92827d9f4befdf06eb1dd33559a3f68eadc3b7c54f6c8",
-    "tools/spatial_oracle/jumpjet_coordinates.py": "922eee4b7841312e85abdc52e65a65869a071de05f9644873fb3c38f9facd3b9",
-    "tools/spatial_oracle/jumpjet_entry_discovery.py": "ff8fd5cd549000345331072acf19797e494ab629fca986afacd4cf392c954d14",
-    "tools/spatial_oracle/infantry_entry_raw.py": "0f6c0ac2de9251b32931a04b6d6fedd982d624c7cd4a3a88c3d6e2f5e56fd5fd",
-    "tools/spatial_oracle/object_health.py": "3e3fd3c18c9dcbfd169432641233dafcaf8f9ba21fa735f362972fdacb2e07c2",
-    "tools/spatial_oracle/building_art_transition.py": "a747638632208a723b51acc11e3ca4a91560d63a08c85709eb514b153c867fbf",
-    "tools/spatial_oracle/building_slot_replacement.py": "bd4ee5c9be5e0342ec571c193a7a5721ce147b8fd6edcf6146e59a561f589cde"
-  },
-  "host_comparison_exclusions": [
-    "borrowed_owner",
-    "borrowed_setup_owner",
-    "borrowed_sources",
-    "buffer_completion_owner",
-    "driver_sha256",
-    "parent_ast_sha256",
-    "source_receipts"
-  ],
   "retained_files": {
     "fixtures/unit-ready-consumer.json.gz": {
-      "bytes": 190761,
-      "sha256": "822c2b0d4a5ff47b2f605f64e039e2ea25d512476f6f820653cbeaa33e9f18ec",
-      "uncompressed_bytes": 4237273,
-      "uncompressed_sha256": "2709a1bbed29203cd9ad70353d487b8e68fe0997e0cbd21f452db137bbc723dd"
+      "bytes": 190804,
+      "sha256": "660db01509b651822c3c09ca083f5ee473092498bbf0ca45afb2a0c6b52d15a7",
+      "uncompressed_bytes": 4236645,
+      "uncompressed_sha256": "18de5285801e68a668c6574d8b1f8e565d6a779b5e1bee8d5e4f73ba2c0c871d"
     },
     "fixtures/unit-ready-consumer-rust.json": {
-      "bytes": 504732,
-      "sha256": "139d2c59774ab60956a39ad7c479d6a31c194bb7991a9c9f87431623ff261ad4"
+      "bytes": 504104,
+      "sha256": "813624148783efbb6cdc876337538d855d87f4a7c57b23aea97f645024fd583a"
     },
     "accepted/unit-ready-pcm.native.json.gz": {
-      "bytes": 324510,
-      "sha256": "4b5e86087f92c3a82190e55f023541bbff4de029062606075ea7798cbedc5b4a",
-      "uncompressed_bytes": 3096551,
-      "uncompressed_sha256": "1623d8fb6fd69bf6876ed7ab9b23ce74bb6580aad177bde5db80b2b7e1384700"
+      "bytes": 320778,
+      "sha256": "b6f14630725399ac0c66331ab8900655e626211c0db723e64b3168957b02c53b",
+      "uncompressed_bytes": 3075767,
+      "uncompressed_sha256": "850ef143731301610ae591d1751ecac65f4bd31e6f096f7e4f28949ae8782106"
     }
-  },
-  "public_caller": {
-    "path": "tools/spatial_oracle/factory_infantry_output.py",
-    "bytes": 15406,
-    "sha256": "82e65c76aaa452492d95efd05197d2c02877279c2d1239139b5698dda217c397"
   },
   "pcm_witness": {
     "source_receipt": {
@@ -3576,9 +2901,7 @@
       "observed_block_count": 18,
       "callback_output_bytes": 36612
     },
-    "replay_scope": "Read-only observer installed by the same buffer caller before original paused1000ms pump; all four original consumer observations remain unchanged.",
-    "historical_observer_sha256": "d1811aba118200fb755952e7f9944d265a284343d44987045fdb3ae21ebb8e9c",
-    "historical_current_profile_compatible": false
+    "replay_scope": "Read-only observer installed by the same buffer caller before original paused1000ms pump; all four original consumer observations remain unchanged."
   },
   "exports_before_pcm": {
     "fixtures/unit-ready-consumer.json.gz": {
@@ -3591,165 +2914,5 @@
       "bytes": 413770,
       "sha256": "cd21cf55bba6936308e8a79b96dc4be278186bfaada1c47b8c8565943b311980"
     }
-  },
-  "f178_compatibility_comparisons": [
-    {
-      "path": "basic-factory-output-consumer-portable-replay/consumer-final-candidate-all-attempt-1.json.gz",
-      "bytes": 2615016,
-      "sha256": "5263f2af1e9cea802a933f5520b43c8f9ab5b53593f5995a2703c2d5b6feccdc",
-      "canonical_receipt_sha256": "ebb1ddda259bc1b8487633a29362f4b1fafe957f461e415e24c49aa4f19c2804"
-    },
-    {
-      "path": "basic-factory-output-consumer-portable-replay/movement-no-rally-candidate-attempt-1.json.gz",
-      "bytes": 790213,
-      "sha256": "5f4751445c20ca1785d31fb6a4bc6714ee8949a01cb2f6be553b9b928abd1541",
-      "canonical_receipt_sha256": "0a2f10c8410cfa79678df5ceefe42c6c4c8e4fc2d9caff8def19941e5d50c17d"
-    },
-    {
-      "path": "basic-factory-output-consumer-portable-replay/movement-rally-candidate-attempt-1.json.gz",
-      "bytes": 1032575,
-      "sha256": "6bc3ffa19a0721cb701b8d2e6845030d08a512346c52ec0547963550ad20dcf5",
-      "canonical_receipt_sha256": "104e07e04f360920982047c23610a2921f0112bc3b4a49f1cbba3890d544ed08"
-    }
-  ],
-  "candidate_profile_audit": {
-    "source_head": "c60d196d548800cec5494ab1d48f5e022719bb81",
-    "profile_sha256": "d968facdfffc7248fae4d5c91469f30fe8e28e08d2888a92f2e0d2384345c977",
-    "changed_files": {
-      "tools/spatial_oracle/anim_bouncer_launch.py": {
-        "before": "6fa5df589e686573addd7843c16fae49a883c437f6dba3091d4f9c8d7b601055",
-        "after": "f038ac51504a1927efac0d5c65092fe5ddb7bcc4f9525e01bd71c3ca008d2ac3"
-      },
-      "tools/spatial_oracle/building_construction.py": {
-        "before": "9cf2225abea2029ba3b66ca8dae9433001e033c03e4e7056e0a9fd2af73fccf2",
-        "after": "65ddb0c37fc111758368780881ecbdca828c0153e9eb945f4e1ea72a20b9a438"
-      },
-      "tools/spatial_oracle/building_slot_replacement.py": {
-        "before": "df61f9290ee457ce422414847879cb7c1ab2f0805d2fc20aa467b589ffd2c984",
-        "after": "bd4ee5c9be5e0342ec571c193a7a5721ce147b8fd6edcf6146e59a561f589cde"
-      }
-    },
-    "reading": [
-      "anim_bouncer_launch.constructor_state now reads native Inactive+19B; independent SoundSuppression+198 retained as separate original-byte meaning.",
-      "building_construction.run_block adds optional keyword-only instruction_count; selected caller default remains10000 and body/register setup order unchanged.",
-      "building_slot_replacement imports/constants/additive expiry functions do not change the selected historical generate/metadata bodies; new expiry branch is independent of this caller."
-    ],
-    "compatibility": "Registered as c60-compatible after all six complete controls and full PCM observation matched; failed timeout retained, unchanged-budget device-only retry passed",
-    "profile_origin_source_head": "9bee532acb1c86b7edffb774743ba69d1704579f",
-    "source_integrations": [
-      {
-        "from_source_head": "9bee532acb1c86b7edffb774743ba69d1704579f",
-        "to_source_head": "c60d196d548800cec5494ab1d48f5e022719bb81",
-        "candidate_helper_changed_paths": [],
-        "inspection_owner_changed": false,
-        "inspection_owner_sha256": "12038060971ec7a41da24e13a9851e23858fba4542c6e9a9f9ca17f3a8252087",
-        "reading": "The c60 integration changes no path in the existing 59-file candidate profile or the separately pinned inspection owner. Existing candidate hashes and all accepted historical maps are unchanged. Native comparisons remain pending; source reading alone does not register compatibility."
-      }
-    ],
-    "registered_profile": "c60-compatible"
-  },
-  "c60_compatibility_comparison": {
-    "comparison_report": {
-      "path": "basic-factory-output-consumer-portable-replay/c60-complete-native-comparison-report.json",
-      "bytes": 10773,
-      "sha256": "f0c0a07270496dff9153e0e03821cec462e26dd7765445db75e847eea1c17412"
-    },
-    "comparison_receipts": [
-      {
-        "path": "basic-factory-output-consumer-portable-replay/c60-consumer-all-pcm-attempt-1.json.gz",
-        "bytes": 1883724,
-        "sha256": "84163a4f6c2103c267da052945d0c0ce1e5f17636a48a4ddbcea6685a2eb5e4e",
-        "json_bytes": 32859081,
-        "json_sha256": "7f7fc700e43d2e5853aaa505a12c56232228428bf85e93c1b74c8fe1ea9f5f5f",
-        "canonical_receipt_sha256": "1270e1ef051a77ee7e246360eb8b03d19d92d3f4f5d8c2d5300d67d5a16d1842",
-        "receipt_status": "FAIL",
-        "selected_controls": [
-          "cadence",
-          "buffer",
-          "radar"
-        ],
-        "selected_controls_status": "PASS",
-        "unaccepted_failed_control": "device"
-      },
-      {
-        "path": "basic-factory-output-consumer-portable-replay/c60-consumer-device-attempt-2.json.gz",
-        "bytes": 1206013,
-        "sha256": "4090e9393d4ecab72e1add68fcd65543c99bf068e206c7e534896bfc8eb8c2dd",
-        "json_bytes": 3546835,
-        "json_sha256": "115870c3a5efc049493e6df76c336eae44df4a9396ff619e9abe72edc35c13ca",
-        "canonical_receipt_sha256": "b262d1e1d1a6fa9b63aa5a75d2a0e10e54a4665638db0df5cb831ba5b45fc2d3",
-        "receipt_status": "PASS",
-        "selected_controls": [
-          "device"
-        ],
-        "selected_controls_status": "PASS",
-        "unchanged_input_and_budget_retry": true
-      },
-      {
-        "path": "basic-factory-output-consumer-portable-replay/c60-movement-no-rally-attempt-1.json.gz",
-        "bytes": 790403,
-        "sha256": "dad372dd870d2ffd91a9957c44ac5cafa60576f843920e392e3ea66fee0a809d",
-        "json_bytes": 41745961,
-        "json_sha256": "3521dda6283e4602b8e01357f7c7b8aa1c77824ebca0405aec15a155061c03d4",
-        "canonical_receipt_sha256": "50762ea2038727db2a6d8d4c05c26c32402662a7f63ca0e2aeda92f07103f7cf",
-        "receipt_status": "PASS",
-        "selected_control": "no_rally"
-      },
-      {
-        "path": "basic-factory-output-consumer-portable-replay/c60-movement-rally-attempt-1.json.gz",
-        "bytes": 1032669,
-        "sha256": "0bf68e6f85292376cc3289f1bf20c2455bc779c441499b20687b29b01cd36805",
-        "json_bytes": 61649448,
-        "json_sha256": "a51b33b3b7a3da2b3dfbf37836d21bf60744aa05bb307d122136965b807285f0",
-        "canonical_receipt_sha256": "41acd20f24d4615ff3c83e74033f26ea5eea817eb1cf696908b69a8ee4df6cc1",
-        "receipt_status": "PASS",
-        "selected_control": "rally"
-      }
-    ],
-    "complete_pcm_comparison": {
-      "complete_original_observation_equal": true,
-      "complete_original_observation_sha256": "3ec282c4e6ae4713bc8ef4192c149504a2008477129a1f1ca97ddf5800a41ecd",
-      "bytes": 36612,
-      "pcm_sha256": "e6c8dad9417324cff801a92a74ccf24a73e4acb5db55373669e46baae49d98a5",
-      "historical_witness_sha256": "1623d8fb6fd69bf6876ed7ab9b23ce74bb6580aad177bde5db80b2b7e1384700"
-    }
-  },
-  "prior_public_caller_versions": [
-    {
-      "path": "tools/spatial_oracle/factory_infantry_output.py",
-      "bytes": 11623,
-      "sha256": "f9c518b0263dcda0ebc8090820ccd068089002e57d2b3428e4979ad3d0e68bfb"
-    },
-    {
-      "path": "tools/spatial_oracle/factory_infantry_output.py",
-      "bytes": 12835,
-      "sha256": "db38f6dc1883d07c3749eca135f32671b8e6c92ee20c1a54fbb2ddbe97251a3b"
-    },
-    {
-      "path": "tools/spatial_oracle/factory_infantry_output.py",
-      "bytes": 15877,
-      "sha256": "65164f19608a1637f23746ec340ec0493de0cb85e0858c71be61f901e25844cc"
-    },
-    {
-      "path": "tools/spatial_oracle/factory_infantry_output.py",
-      "bytes": 15883,
-      "sha256": "00ffe06b0495f2593a29ccb4af8879a1f7f8768af205b3b4dc0914b93f82b437"
-    }
-  ],
-  "prior_fixture_caller_versions": [
-    {
-      "bytes": 37395,
-      "sha256": "3dca917146ad7094645f3e2ab35adf654bcd60c5344e3542f08beb4495b8a8c8"
-    },
-    {
-      "bytes": 39994,
-      "sha256": "26d7058f7ae09eda99085f8102f68ffdb16d65f4bf68bc5d5029328022dcc21e"
-    }
-  ],
-  "prior_readme_versions": [
-    {
-      "bytes": 24758,
-      "sha256": "3a309d2c4afec6c81da61ec1076eb5e2a7ad9d4e21917ec72716fbd7c2b46522"
-    }
-  ]
+  }
 }

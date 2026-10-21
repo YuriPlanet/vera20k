@@ -23,7 +23,7 @@ from unicorn.x86_const import (
 
 from tools.native_inspect import selected_ranges
 from tools.native_oracle import (
-    RET_MAGIC, finish_vectors, image_bytes, image_sha256, provenance, run_checked,
+    RET_MAGIC, finish_vectors, image_bytes, provenance, run_checked,
 )
 from tools.projectile_oracle.bridge_render_inputs import BulletReader, lexical
 from tools.rules_oracle.bridge_child_sound import Sound, sections
@@ -1241,7 +1241,7 @@ def house_controls():
 
 
 def generate_houses():
-    return dict(schema_version=1, native_sha256=image_sha256(),
+    return dict(schema_version=1,
                 stock_rows=[house_case(name, option) for name in ("all01umd.map", "sov01umd.map") for option in range(3)],
                 controls=house_controls(), edge_controls=edge_controls(),
                 allies_reader_controls=allies_reader_controls(), color_controls=color_controls(),
@@ -1412,7 +1412,7 @@ def generate_scenario_names():
             reader_rows.append(row)
             end()
         assert not m.asset_loaded
-        return dict(schema_version=1, native_sha256=image_sha256(), houses=house_rows,
+        return dict(schema_version=1, houses=house_rows,
             building_type=building_type, lookup_rows=lookup_rows, building_reader_rows=reader_rows,
             execution_checks=dict(complete_rng_bytes_per_stream=STRUCT_LEN,
                 all_three_rng_buffers_unchanged=True, original_executable_bytes_unchanged=True,
@@ -1445,7 +1445,7 @@ def scenario_names_metadata():
 
 
 def generate():
-    return dict(schema_version=1, native_sha256=image_sha256(), metadata=metadata_history(),
+    return dict(schema_version=1, metadata=metadata_history(),
                 metadata_controls=metadata_controls(), movies=movie_catalog(),
                 loading_geometry=loading_geometry(), mission_loading=mission_loading(),
                 progress_rows=progress_rows(), basic_start=basic_start_cases(),

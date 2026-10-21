@@ -268,6 +268,26 @@ pub(crate) fn load_rules_with_merged_ini(
     IniFile,
     crate::rules::process_owner::NativeScenarioRulesReceipt,
 )> {
+    load_rules_with_prefix_for_test(
+        asset_manager,
+        crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(mode_rules_override),
+        map_rules_overrides,
+    )
+}
+
+/// Same production owner as the ordinary fixture; the generated launch snapshot
+/// explicitly preserves Full_Init's RMG admission instead of inferring it from INI.
+#[cfg(test)]
+pub(crate) fn load_rules_with_prefix_for_test(
+    asset_manager: &AssetManager,
+    prefix: crate::rules::process_owner::NativeScenarioRulesPrefix<'_>,
+    map_rules_overrides: Option<&IniFile>,
+) -> Option<(
+    RuleSet,
+    IniFile,
+    IniFile,
+    crate::rules::process_owner::NativeScenarioRulesReceipt,
+)> {
     let audio = crate::rules::audio_sources::AudioDefinitions::select(asset_manager);
     let (_, _, mut native_owner) = load_startup_rules(
         asset_manager,
@@ -277,12 +297,7 @@ pub(crate) fn load_rules_with_merged_ini(
     .into_parts();
     let no_map = IniFile::from_str("");
     let (rules, processed_ini, fixed_art_ini, receipt) = native_owner
-        .load_scenario(
-            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
-                mode_rules_override,
-            ),
-            map_rules_overrides.unwrap_or(&no_map),
-        )
+        .load_scenario(prefix, map_rules_overrides.unwrap_or(&no_map))
         .map_err(|error| log::warn!("Failed native noncampaign rules rebuild: {error}"))
         .ok()?
         .into_parts();

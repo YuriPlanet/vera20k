@@ -10,7 +10,7 @@ import struct
 from pathlib import Path
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_ESP
-from tools.native_oracle import NATIVE_SHA256, RET_MAGIC, finish_vectors, provenance, run_checked
+from tools.native_oracle import RET_MAGIC, finish_vectors, provenance, run_checked
 from tools.projectile_oracle.ifv_fire_coord import prepare
 from tools.projectile_oracle.bridge_render_inputs import assets_root, lexical
 from tools.spatial_oracle.building_body_rules import RULES, SP, dwords
@@ -65,7 +65,7 @@ def generate():
     ret,mask,coord_arg,third=struct.unpack('<4I',u.mem_read(sp,16))
     assert coord_arg==coords and ret==0x4D9947
     u.hook_del(hook)
-    return dict(native_sha256=NATIVE_SHA256,constructor=constructor,layers=layers,
+    return dict(constructor=constructor,layers=layers,
         source_type=m.string(typ+0x24),selected_weapon=m.string(weapon+0x24),
         can_acquire=can,passive_gate=passive,greatest_threat_entry=dict(mask=mask,
         supplied_initial_mask=1,reference_xyz=list(struct.unpack('<3i',u.mem_read(coords,12))),third_argument=third),

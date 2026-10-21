@@ -1,6 +1,5 @@
 {
   "schema": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "source_seal": {
     "path": "basic-infantry-unlimbo-gate-context-research-20261003/manifest.json",
     "sha256": "68c0abc23dc667a0de7f7ad7538365d00b8beba32c4d7b44674b0b982ad1f828",
@@ -11,306 +10,28 @@
     }
   },
   "source_receipt_sha256": "596a331e05c2e46f880c37115432e6df0c620236c208336c904f192ed7bfe97d",
-  "complete_normalized_original_sha256": "3aba7a424ac397c2d13df9bffb80183772285d498522e0f4badbfbc0022c2c0c",
+  "complete_normalized_original_sha256": "dfb1438f10fce6aee2c3fb9f8bbecc39ca9fc535008ae62f8593e02c0e583a9e",
   "native_control_rows": 18,
-  "host_comparison_exclusions": [
-    "driver_sha256",
-    "imports"
-  ],
   "retained_files": {
     "accepted/infantry-unlimbo-gate.native.json.gz": {
-      "bytes": 31995,
-      "sha256": "8966e04c84ff853f7c3fc6d7c54f547a6a62d554bb7b3445dd70d77b71fb4cb8",
-      "uncompressed_bytes": 625741,
-      "uncompressed_sha256": "596a331e05c2e46f880c37115432e6df0c620236c208336c904f192ed7bfe97d"
+      "bytes": 31351,
+      "sha256": "b2aa4e85e9a26c8ecb448b7cd52532d5ff0ff201d9b88d947d6c64364cc1c640",
+      "uncompressed_bytes": 623939,
+      "uncompressed_sha256": "6686f3148b1afb35690983a340fec71c28020e45de9ebb9f1682a07bb0dd5f78"
     },
     "inputs/infantry-unlimbo-gate-retail.json": {
       "bytes": 3587,
       "sha256": "ec796146e329bd2e140fed65ab6b5abf8be4d39c8d0aaac16ad9d041f5b32c7c"
-    },
-    "compatibility/infantry-command-gate-r2.json.gz": {
-      "bytes": 40405,
-      "sha256": "4826b76e7e20e1f082b7c1978371932f4e4efd042ccec0bd6674dd63ed2cd6bc",
-      "uncompressed_bytes": 1052480,
-      "uncompressed_sha256": "e2f5ef51ecb54422c36a676f05cf06d6d78ec4a2d23ea66e17125d347a2f7caa"
-    },
-    "compatibility/infantry-command-gate-r1.failed.json.gz": {
-      "bytes": 33579,
-      "sha256": "1c915ce0abc7f6ab2d892d5eaabaa2448d9da1014ced700c4b6e434ac9ec02ba",
-      "uncompressed_bytes": 659335,
-      "uncompressed_sha256": "7a0897fddd0ebf7bfdb0410d2f8fe67f7bcea2c3fcaef652f9e1ef6ef1633a64"
-    },
-    "compatibility/infantry-command-gate-r2.source.json": {
-      "bytes": 8956,
-      "sha256": "7050c3d95074207bf8a94d8f6520000d54452230ffd5e4ff92993529b916da5a"
-    },
-    "compatibility/as-run-gate-r2/tools/native_oracle.py.gz": {
-      "bytes": 9747,
-      "sha256": "7cefd2984edcfda945df6a041cf1d6e94b1f2492ac1925540af630dea0feb5b5",
-      "uncompressed_bytes": 30050,
-      "uncompressed_sha256": "141fc5f3981b40d41869643c0350e3988e40be2e470cba8a0b4a77bb7df39b27"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/__init__.py.gz": {
-      "bytes": 73,
-      "sha256": "3802e5098916476dd0990a7f5358d8d2e3b0fe15219f9eb02533bae2c11a30d0",
-      "uncompressed_bytes": 53,
-      "uncompressed_sha256": "d2b8761741eec0f99f145b6b84c9efbe5e91a8d08b59b83ef67bef54c75f0415"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/aircraft_fire_location.py.gz": {
-      "bytes": 5014,
-      "sha256": "ea4abf79c5060f926440260b62c32b8b509448d87fa50aa01eed0ed7eccbadb2",
-      "uncompressed_bytes": 17071,
-      "uncompressed_sha256": "86b0b1d6380abfb185f8af8cecdd766de24a39b9656e9b930aaf6ac3f197f33c"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/building_body_rules.py.gz": {
-      "bytes": 2599,
-      "sha256": "108d1d939bc3946015df8432d1a6a36486f4946d94424fbba360c55cda313791",
-      "uncompressed_bytes": 6705,
-      "uncompressed_sha256": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/crate_ground_membership.py.gz": {
-      "bytes": 2222,
-      "sha256": "206d233733032f411f2c8374793d63adc328c508451d439ead628321fdd2b71f",
-      "uncompressed_bytes": 5847,
-      "uncompressed_sha256": "5c868d115062900bf0cbd15c53a89126c64e819784c5c579a40848c9d943cc2d"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/crate_speed_effect.py.gz": {
-      "bytes": 3034,
-      "sha256": "f9b066f3a51cc77ae3ae3c8aae0316717f9f864cc7fd04b9275c428d1d9174d1",
-      "uncompressed_bytes": 8320,
-      "uncompressed_sha256": "4884d5f647da1e480a6f70aba1fea900491eda1a9875852e0fe53e731834c411"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/fly_landing_phase.py.gz": {
-      "bytes": 4887,
-      "sha256": "379b5877c97c0ba393044ed286d5a7637c29b06aefe0bd0922ad61b237f1da77",
-      "uncompressed_bytes": 13973,
-      "uncompressed_sha256": "e5a25318a67748fb8112912d698083da9bcc7c3e6a90f8fce6fdd9bc4a4be6a1"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/infantry_entry_raw.py.gz": {
-      "bytes": 2007,
-      "sha256": "2323682a70c26b7b5cc3748b76ce0ff0b73cfa12f6130acb60c3e6fcef111477",
-      "uncompressed_bytes": 4711,
-      "uncompressed_sha256": "0f6c0ac2de9251b32931a04b6d6fedd982d624c7cd4a3a88c3d6e2f5e56fd5fd"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/jumpjet_coordinates.py.gz": {
-      "bytes": 2401,
-      "sha256": "a6118136611be89aff104e6f9e528be3359f5df9b2183476f547daf789fc70fe",
-      "uncompressed_bytes": 6303,
-      "uncompressed_sha256": "8e92cf2ad936306d7e6ed281eca6cadfe83043cb7a9d3df224f24093260d4555"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/jumpjet_entry_discovery.py.gz": {
-      "bytes": 6442,
-      "sha256": "b54c391e45176670a357f5b4d4b7eeff22fc073967f187600043a3a93a2eef2f",
-      "uncompressed_bytes": 20231,
-      "uncompressed_sha256": "78882a6434ffe2267f2c7b67e2a81aad295e3f749ea61911b5ec0e4488a6f21c"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/map_queries.py.gz": {
-      "bytes": 3828,
-      "sha256": "ecb937635a0ad53bd3590129349887cf6470ebd415634818430ff4673024bc6f",
-      "uncompressed_bytes": 10183,
-      "uncompressed_sha256": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/passenger_escape.py.gz": {
-      "bytes": 8023,
-      "sha256": "f6612c3020611cc051271b38200dd261a5899d83f437d94ec11c754b3d2a1b9e",
-      "uncompressed_bytes": 26653,
-      "uncompressed_sha256": "4c2da90f55922d0210f3aa43a99190b1ef01553efecc0b5a782f7203b2df2e4a"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/refinery_dock.py.gz": {
-      "bytes": 27445,
-      "sha256": "28a4b862bb93f4cd0093ed2817650b3aa8a07e955a9542cb49a55821f6a26466",
-      "uncompressed_bytes": 109091,
-      "uncompressed_sha256": "c8fb2b33edc7c3100986fb78d90e663b820e10c35d6e450fe5bf923ddb0b8408"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/track_destination.py.gz": {
-      "bytes": 5289,
-      "sha256": "cc25ae53d54d7037aad4a50b96f1d658d179fffb29c8d3ec443727624d378590",
-      "uncompressed_bytes": 16940,
-      "uncompressed_sha256": "db7ac918c743ce625bfaaa1c7a56f41d2336def4b42193cb1332fe0eb0d0912d"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/unit_entry.py.gz": {
-      "bytes": 6167,
-      "sha256": "64540118beb125f69f6681a5807e4c3ad6460345d2fa68477690b0a461004ff6",
-      "uncompressed_bytes": 20956,
-      "uncompressed_sha256": "18986785b9cc42d7c811aa0c37d352f5ddc9d8746bfa926b807e5f493e33f209"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/unit_scatter_state.py.gz": {
-      "bytes": 2784,
-      "sha256": "2f34cef004db00f2c44d9137b83d847197a4bb470430c57af4f589153c0eebb4",
-      "uncompressed_bytes": 6822,
-      "uncompressed_sha256": "c8269a41294316c97f990051506c4a9d9dbe923d8143a54a1a92c69645d2a112"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/unit_source_scatter.py.gz": {
-      "bytes": 3245,
-      "sha256": "c78dbfaf67105d6a610b3581c19fbdcf7ec8af43ee3f02cfe4bddcab23d6ad6f",
-      "uncompressed_bytes": 9212,
-      "uncompressed_sha256": "3384579566b40ebcc9d8d56d53a0736655eb3a15a6bf7f08730611b15852a009"
-    },
-    "compatibility/as-run-gate-r2/tools/spatial_oracle/walk_head_occupation.py.gz": {
-      "bytes": 4436,
-      "sha256": "03694512fa560d626d9b77be07f6c26bf308db00f88a0bd85dd93a68a3a6a03d",
-      "uncompressed_bytes": 14112,
-      "uncompressed_sha256": "d888f824965dc41badb92827d9f4befdf06eb1dd33559a3f68eadc3b7c54f6c8"
     }
   },
-  "public_caller": {
-    "path": "tools/spatial_oracle/factory_infantry_output.py",
-    "bytes": 15406,
-    "sha256": "82e65c76aaa452492d95efd05197d2c02877279c2d1239139b5698dda217c397"
-  },
-  "caller_files": {
-    "gate.py": {
-      "bytes": 19551,
-      "sha256": "554a897da80583b255b1c40144efe51ef45ad633b72d5f855e37d811940bf5f9"
-    },
-    "gate_runtime.py": {
-      "bytes": 12334,
-      "sha256": "82b49c39e89a7081cb8bc531528fcce539ba82bc702c9bb5edac31fc5e95f7fc"
-    },
-    "fixture.py": {
-      "bytes": 41857,
-      "sha256": "7a059b4d04e6a0da64838525bae547604a3a9f61398fd4c471d839af567c1cf4"
-    },
-    "README.md": {
-      "bytes": 29569,
-      "sha256": "c56154d9fb4979cbf3afe3a9e93731e5d5b5251eb18b9be27f8315942a6993e5"
-    }
-  },
-  "helper_profiles": {
-    "historical-passenger-14": {
-      "status": "Immutable historical passenger fixture imported by sealed Gate controls; current helper compatibility is a separate comparison",
-      "files": {
-        "tools/native_oracle.py": "79dac1057d97e706f106a26145f00fa220d92c172b5173876c60fed22c17530c",
-        "tools/spatial_oracle/__init__.py": "d2b8761741eec0f99f145b6b84c9efbe5e91a8d08b59b83ef67bef54c75f0415",
-        "tools/spatial_oracle/map_queries.py": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305",
-        "tools/spatial_oracle/walk_head_occupation.py": "d888f824965dc41badb92827d9f4befdf06eb1dd33559a3f68eadc3b7c54f6c8",
-        "tools/spatial_oracle/jumpjet_coordinates.py": "922eee4b7841312e85abdc52e65a65869a071de05f9644873fb3c38f9facd3b9",
-        "tools/spatial_oracle/jumpjet_entry_discovery.py": "ff8fd5cd549000345331072acf19797e494ab629fca986afacd4cf392c954d14",
-        "tools/spatial_oracle/infantry_entry_raw.py": "0f6c0ac2de9251b32931a04b6d6fedd982d624c7cd4a3a88c3d6e2f5e56fd5fd",
-        "tools/spatial_oracle/unit_scatter_state.py": "9cb5b9726c02c8ef7e08aeadf006fecd90191341250f744e9307d5a62a63a4c3",
-        "tools/spatial_oracle/unit_source_scatter.py": "d2ce3dce6e7baff886f3bc6a30c545ec29e442e9866a39a0acb03c92268bbcc8",
-        "tools/spatial_oracle/unit_entry.py": "c79e273f002fbb921942676c3747068fcb1312574e66eaaafe8bf4286740b96e",
-        "tools/spatial_oracle/track_destination.py": "1c7be1b2a2a6da24369fd987fc3c3dc196b9c8b6ebf8e63b288ce3187c8c049d",
-        "tools/spatial_oracle/refinery_dock.py": "f9fe38dbf9f185594630d6bbec8bcf7184c3d5d66466a37ab91035f46639a15d",
-        "tools/spatial_oracle/passenger_escape.py": "4c2da90f55922d0210f3aa43a99190b1ef01553efecc0b5a782f7203b2df2e4a",
-        "tools/spatial_oracle/building_body_rules.py": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643"
-      }
-    },
-    "c60-gate-compatible": {
-      "status": "Two complete public original replays match all18 sealed controls and the single native selector; three changed historical owners are bounded by the selected paths",
-      "source_head": "c60d196d548800cec5494ab1d48f5e022719bb81",
-      "profile_sha256": "7a27d92ec5c767f61f3078d24093a6e59a2b104c7a2756b1c6ed292bd2e191d1",
-      "files": {
-        "tools/native_oracle.py": "484e528d6d4c9bc6539126985897e60bc4f38ac7283a46b78e3264de81e4b21c",
-        "tools/spatial_oracle/__init__.py": "d2b8761741eec0f99f145b6b84c9efbe5e91a8d08b59b83ef67bef54c75f0415",
-        "tools/spatial_oracle/map_queries.py": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305",
-        "tools/spatial_oracle/walk_head_occupation.py": "d888f824965dc41badb92827d9f4befdf06eb1dd33559a3f68eadc3b7c54f6c8",
-        "tools/spatial_oracle/jumpjet_coordinates.py": "922eee4b7841312e85abdc52e65a65869a071de05f9644873fb3c38f9facd3b9",
-        "tools/spatial_oracle/jumpjet_entry_discovery.py": "ff8fd5cd549000345331072acf19797e494ab629fca986afacd4cf392c954d14",
-        "tools/spatial_oracle/infantry_entry_raw.py": "0f6c0ac2de9251b32931a04b6d6fedd982d624c7cd4a3a88c3d6e2f5e56fd5fd",
-        "tools/spatial_oracle/unit_scatter_state.py": "9cb5b9726c02c8ef7e08aeadf006fecd90191341250f744e9307d5a62a63a4c3",
-        "tools/spatial_oracle/unit_source_scatter.py": "d2ce3dce6e7baff886f3bc6a30c545ec29e442e9866a39a0acb03c92268bbcc8",
-        "tools/spatial_oracle/unit_entry.py": "18986785b9cc42d7c811aa0c37d352f5ddc9d8746bfa926b807e5f493e33f209",
-        "tools/spatial_oracle/track_destination.py": "1c7be1b2a2a6da24369fd987fc3c3dc196b9c8b6ebf8e63b288ce3187c8c049d",
-        "tools/spatial_oracle/refinery_dock.py": "c8fb2b33edc7c3100986fb78d90e663b820e10c35d6e450fe5bf923ddb0b8408",
-        "tools/spatial_oracle/passenger_escape.py": "4c2da90f55922d0210f3aa43a99190b1ef01553efecc0b5a782f7203b2df2e4a",
-        "tools/spatial_oracle/building_body_rules.py": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643"
-      },
-      "replay_receipts": [
-        {
-          "path": "basic-infantry-unlimbo-gate-portable-replay/public-gate-candidate-attempt-1.json.gz",
-          "bytes": 40156,
-          "sha256": "e60e72ee96303b40aa95f61cb8f7a254875176f06e7fe5d017e992f20b10ae8e",
-          "uncompressed_bytes": 1052000,
-          "uncompressed_sha256": "65f4f784670734546b6e8d9b0247154200c21a728bc8560f04274ea58bde05d0",
-          "original_json_sha256": "0566273c8578c2189b35a0c177908e0748391a5dfdf086d2e987f4b3241ca139",
-          "complete_normalized_original_sha256": "3aba7a424ac397c2d13df9bffb80183772285d498522e0f4badbfbc0022c2c0c"
-        },
-        {
-          "path": "basic-infantry-unlimbo-gate-portable-replay/public-gate-candidate-attempt-2.json.gz",
-          "bytes": 40156,
-          "sha256": "e60e72ee96303b40aa95f61cb8f7a254875176f06e7fe5d017e992f20b10ae8e",
-          "uncompressed_bytes": 1052000,
-          "uncompressed_sha256": "65f4f784670734546b6e8d9b0247154200c21a728bc8560f04274ea58bde05d0",
-          "original_json_sha256": "0566273c8578c2189b35a0c177908e0748391a5dfdf086d2e987f4b3241ca139",
-          "complete_normalized_original_sha256": "3aba7a424ac397c2d13df9bffb80183772285d498522e0f4badbfbc0022c2c0c"
-        }
-      ]
-    },
-    "infantry-command-gate-compatible": {
-      "status": "All18 complete original Gate observations and selected production fixture equal; current14 provider bodies plus four actually observed transitive imports recorded",
-      "source_head": "4475a1a73afbfc0ae7b289deeb58368e7b9b1050",
-      "files": {
-        "tools/native_oracle.py": "141fc5f3981b40d41869643c0350e3988e40be2e470cba8a0b4a77bb7df39b27",
-        "tools/spatial_oracle/__init__.py": "d2b8761741eec0f99f145b6b84c9efbe5e91a8d08b59b83ef67bef54c75f0415",
-        "tools/spatial_oracle/aircraft_fire_location.py": "86b0b1d6380abfb185f8af8cecdd766de24a39b9656e9b930aaf6ac3f197f33c",
-        "tools/spatial_oracle/building_body_rules.py": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
-        "tools/spatial_oracle/crate_ground_membership.py": "5c868d115062900bf0cbd15c53a89126c64e819784c5c579a40848c9d943cc2d",
-        "tools/spatial_oracle/crate_speed_effect.py": "4884d5f647da1e480a6f70aba1fea900491eda1a9875852e0fe53e731834c411",
-        "tools/spatial_oracle/fly_landing_phase.py": "e5a25318a67748fb8112912d698083da9bcc7c3e6a90f8fce6fdd9bc4a4be6a1",
-        "tools/spatial_oracle/infantry_entry_raw.py": "0f6c0ac2de9251b32931a04b6d6fedd982d624c7cd4a3a88c3d6e2f5e56fd5fd",
-        "tools/spatial_oracle/jumpjet_coordinates.py": "8e92cf2ad936306d7e6ed281eca6cadfe83043cb7a9d3df224f24093260d4555",
-        "tools/spatial_oracle/jumpjet_entry_discovery.py": "78882a6434ffe2267f2c7b67e2a81aad295e3f749ea61911b5ec0e4488a6f21c",
-        "tools/spatial_oracle/map_queries.py": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305",
-        "tools/spatial_oracle/passenger_escape.py": "4c2da90f55922d0210f3aa43a99190b1ef01553efecc0b5a782f7203b2df2e4a",
-        "tools/spatial_oracle/refinery_dock.py": "c8fb2b33edc7c3100986fb78d90e663b820e10c35d6e450fe5bf923ddb0b8408",
-        "tools/spatial_oracle/track_destination.py": "db7ac918c743ce625bfaaa1c7a56f41d2336def4b42193cb1332fe0eb0d0912d",
-        "tools/spatial_oracle/unit_entry.py": "18986785b9cc42d7c811aa0c37d352f5ddc9d8746bfa926b807e5f493e33f209",
-        "tools/spatial_oracle/unit_scatter_state.py": "c8269a41294316c97f990051506c4a9d9dbe923d8143a54a1a92c69645d2a112",
-        "tools/spatial_oracle/unit_source_scatter.py": "3384579566b40ebcc9d8d56d53a0736655eb3a15a6bf7f08730611b15852a009",
-        "tools/spatial_oracle/walk_head_occupation.py": "d888f824965dc41badb92827d9f4befdf06eb1dd33559a3f68eadc3b7c54f6c8"
-      },
-      "profile_sha256": "30954106ef7b1bcf86514de03a278e3ea0578230d414dce7489d6d8020e936c8",
-      "comparison_receipt": {
-        "path": "compatibility/infantry-command-gate-r2.json.gz",
-        "bytes": 40405,
-        "sha256": "4826b76e7e20e1f082b7c1978371932f4e4efd042ccec0bd6674dd63ed2cd6bc",
-        "uncompressed_bytes": 1052480,
-        "uncompressed_sha256": "e2f5ef51ecb54422c36a676f05cf06d6d78ec4a2d23ea66e17125d347a2f7caa"
-      },
-      "preserved_failed_census_receipt": {
-        "path": "compatibility/infantry-command-gate-r1.failed.json.gz",
-        "bytes": 33579,
-        "sha256": "1c915ce0abc7f6ab2d892d5eaabaa2448d9da1014ced700c4b6e434ac9ec02ba",
-        "uncompressed_bytes": 659335,
-        "uncompressed_sha256": "7a0897fddd0ebf7bfdb0410d2f8fe67f7bcea2c3fcaef652f9e1ef6ef1633a64"
-      },
-      "as_run_sources": {
-        "path": "compatibility/infantry-command-gate-r2.source.json",
-        "bytes": 8956,
-        "sha256": "7050c3d95074207bf8a94d8f6520000d54452230ffd5e4ff92993529b916da5a"
-      },
-      "complete_normalized_original_sha256": "3aba7a424ac397c2d13df9bffb80183772285d498522e0f4badbfbc0022c2c0c",
-      "coverage": "Prepared18 original Infantry Unlimbo/Gate controls only; historicalFoot4D7170 supplied success seam and all prior bounds remain. Newly transitive helper branches not executed in these controls are not certified."
-    }
-  },
-  "candidate_helper_files": {
-    "tools/native_oracle.py": "484e528d6d4c9bc6539126985897e60bc4f38ac7283a46b78e3264de81e4b21c",
-    "tools/spatial_oracle/__init__.py": "d2b8761741eec0f99f145b6b84c9efbe5e91a8d08b59b83ef67bef54c75f0415",
-    "tools/spatial_oracle/map_queries.py": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305",
-    "tools/spatial_oracle/walk_head_occupation.py": "d888f824965dc41badb92827d9f4befdf06eb1dd33559a3f68eadc3b7c54f6c8",
-    "tools/spatial_oracle/jumpjet_coordinates.py": "922eee4b7841312e85abdc52e65a65869a071de05f9644873fb3c38f9facd3b9",
-    "tools/spatial_oracle/jumpjet_entry_discovery.py": "ff8fd5cd549000345331072acf19797e494ab629fca986afacd4cf392c954d14",
-    "tools/spatial_oracle/infantry_entry_raw.py": "0f6c0ac2de9251b32931a04b6d6fedd982d624c7cd4a3a88c3d6e2f5e56fd5fd",
-    "tools/spatial_oracle/unit_scatter_state.py": "9cb5b9726c02c8ef7e08aeadf006fecd90191341250f744e9307d5a62a63a4c3",
-    "tools/spatial_oracle/unit_source_scatter.py": "d2ce3dce6e7baff886f3bc6a30c545ec29e442e9866a39a0acb03c92268bbcc8",
-    "tools/spatial_oracle/unit_entry.py": "18986785b9cc42d7c811aa0c37d352f5ddc9d8746bfa926b807e5f493e33f209",
-    "tools/spatial_oracle/track_destination.py": "1c7be1b2a2a6da24369fd987fc3c3dc196b9c8b6ebf8e63b288ce3187c8c049d",
-    "tools/spatial_oracle/refinery_dock.py": "c8fb2b33edc7c3100986fb78d90e663b820e10c35d6e450fe5bf923ddb0b8408",
-    "tools/spatial_oracle/passenger_escape.py": "4c2da90f55922d0210f3aa43a99190b1ef01553efecc0b5a782f7203b2df2e4a",
-    "tools/spatial_oracle/building_body_rules.py": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643"
-  },
-  "candidate_source_head": "c60d196d548800cec5494ab1d48f5e022719bb81",
-  "candidate_import_profile_sha256": "7a27d92ec5c767f61f3078d24093a6e59a2b104c7a2756b1c6ed292bd2e191d1",
   "selector_origin": {
     "path": "basic-infantry-unlimbo-gate-context-research-20261003/extract.py",
-    "sha256": "1f6887dbfae0a5832fbf35c284bb5391ffdd0548512e2222eb44fb464d1caf25",
     "owner": "fixture.py::infantry_unlimbo_gate"
   },
   "rust_fixture": {
     "path": "src/sim/world/world_spawn/fixtures/infantry_unlimbo_gate_native.json",
-    "bytes": 384904,
-    "sha256": "e4289aa1c1c613cf7b3d9540cd1a3b60f4b7ba25561fa01ea02501663ecaef8e"
+    "bytes": 384817,
+    "sha256": "5164c87a412eba0c35941c4d2f43582caf7fc4c219bbe1d812356859cb906529"
   },
   "retail_input_profile": {
     "accessor_result": true,
@@ -426,60 +147,5 @@
     "The oversized negative linear alias is native-only range evidence outside the current Rust position authority; the fixture includes17 representable rows.",
     "The cached INI reader takes its literal layer values from the retained production-query receipt. Its historical pathname is provenance and is never a fallback input path. No retail assets are copied.",
     "Full Gate constructor/mission scheduling and the Object/Techno/Foot/Idle Unlimbo lifecycle are excluded. The supplied-success Foot seam is retained exactly from passenger_escape.observe, not promoted to full entry proof."
-  ],
-  "compatibility_status": "Additive c60-gate-compatible14 registered after two complete public original comparisons; historical14 and all four earlier59 maps preserved",
-  "registration": {
-    "native_control_rows": 18,
-    "original_byte_spans": 16,
-    "complete_normalized_original_sha256": "3aba7a424ac397c2d13df9bffb80183772285d498522e0f4badbfbc0022c2c0c",
-    "normalized_top_level_source_keys": [
-      "driver_sha256",
-      "imports"
-    ],
-    "canonical_public_repeat_equal": true,
-    "changed_historical_helpers": {
-      "tools/native_oracle.py": {
-        "historical": "79dac1057d97e706f106a26145f00fa220d92c172b5173876c60fed22c17530c",
-        "current": "484e528d6d4c9bc6539126985897e60bc4f38ac7283a46b78e3264de81e4b21c"
-      },
-      "tools/spatial_oracle/unit_entry.py": {
-        "historical": "c79e273f002fbb921942676c3747068fcb1312574e66eaaafe8bf4286740b96e",
-        "current": "18986785b9cc42d7c811aa0c37d352f5ddc9d8746bfa926b807e5f493e33f209"
-      },
-      "tools/spatial_oracle/refinery_dock.py": {
-        "historical": "f9fe38dbf9f185594630d6bbec8bcf7184c3d5d66466a37ab91035f46639a15d",
-        "current": "c8fb2b33edc7c3100986fb78d90e663b820e10c35d6e450fe5bf923ddb0b8408"
-      }
-    },
-    "bounds": "Only the selected complete original paths are comparison-covered; helper branches not reached here remain outside this registration claim"
-  },
-  "prior_public_caller_versions": [
-    {
-      "path": "tools/spatial_oracle/factory_infantry_output.py",
-      "bytes": 12835,
-      "sha256": "db38f6dc1883d07c3749eca135f32671b8e6c92ee20c1a54fbb2ddbe97251a3b"
-    },
-    {
-      "path": "tools/spatial_oracle/factory_infantry_output.py",
-      "bytes": 15877,
-      "sha256": "65164f19608a1637f23746ec340ec0493de0cb85e0858c71be61f901e25844cc"
-    },
-    {
-      "path": "tools/spatial_oracle/factory_infantry_output.py",
-      "bytes": 15883,
-      "sha256": "00ffe06b0495f2593a29ccb4af8879a1f7f8768af205b3b4dc0914b93f82b437"
-    }
-  ],
-  "prior_fixture_caller_versions": [
-    {
-      "bytes": 39994,
-      "sha256": "26d7058f7ae09eda99085f8102f68ffdb16d65f4bf68bc5d5029328022dcc21e"
-    }
-  ],
-  "prior_readme_versions": [
-    {
-      "bytes": 24758,
-      "sha256": "3a309d2c4afec6c81da61ec1076eb5e2a7ad9d4e21917ec72716fbd7c2b46522"
-    }
   ]
 }

@@ -14,7 +14,7 @@ from unicorn.x86_const import (
     UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_ESP,
 )
 from tools.native_oracle import (
-    NATIVE_SHA256, RET_MAGIC, configured_gamemd, finish_vectors, provenance,
+    RET_MAGIC, configured_gamemd, finish_vectors, provenance,
     run_checked,
 )
 from tools.projectile_oracle.bridge_render_inputs import lexical
@@ -804,7 +804,7 @@ def generate_crate():
     assert body['draws'][0]['frame'] == 0
     assert body['draws'][0]['point'] == positive['draws'][0]['point']
     assert combined['draws'] == positive['draws']
-    return dict(native_sha256=NATIVE_SHA256,inputs=inputs,shapes=[shape],
+    return dict(inputs=inputs,shapes=[shape],
         surface=dict(width=WIDTH,height=HEIGHT,baseline=32768,bytes_per_pixel=2),
         rows=rows,outer_admission=outer,
         composition=dict(body=body,body_then_shadow=combined))
@@ -961,7 +961,7 @@ def generate_rubble():
     assert body['draws'][0]['frame'] == 3
     assert body['draws'][0]['point'] == positive['draws'][0]['point']
     assert combined['draws'] == positive['draws']
-    return dict(native_sha256=NATIVE_SHA256, inputs=inputs, shapes=[shape],
+    return dict(inputs=inputs, shapes=[shape],
                 surface=dict(width=WIDTH, height=HEIGHT, baseline=32768, bytes_per_pixel=2),
                 rows=rows, outer_admission=outer,
                 composition=dict(body=body, body_then_shadow=combined))
@@ -1016,7 +1016,7 @@ def generate():
                            native_rect=row['native_rect'],
                            mask_runs=[[x - canvas_top[0], y - canvas_top[1], n]
                                       for x, y, n, _color, _depth in row['output']['runs']]))
-    return dict(native_sha256=NATIVE_SHA256, inputs=inputs, shapes=shapes,
+    return dict(inputs=inputs, shapes=shapes,
                 surface=dict(width=WIDTH, height=HEIGHT, baseline=32768, bytes_per_pixel=2),
                 rows=rows, traversal=traversal(m), pixel_rows=pixel_rows(m))
 
@@ -1152,7 +1152,7 @@ def generate_body():
                                    clip=[0, 0, WIDTH, 24]), body=True)
     assert len(repeat['steps']) == 2 and repeat['steps'][0] == repeat['steps'][1]
     rows.append(repeat)
-    return dict(native_sha256=NATIVE_SHA256, inputs=inputs,
+    return dict(inputs=inputs,
                 surface=dict(width=WIDTH, height=HEIGHT, baseline=32768, bytes_per_pixel=2),
                 rows=rows, controls=controls, scenes=[body_overlap_scene(m, types)])
 
@@ -1269,7 +1269,7 @@ def generate_ore():
         rows.append(row)
     assert rows[-3]['output']['runs'] and not rows[-2]['output']['runs'] and not rows[-1]['output']['runs']
     from tools.spatial_oracle.ore_radar import generate as generate_radar
-    return dict(native_sha256=NATIVE_SHA256, inputs=inputs,
+    return dict(inputs=inputs,
                 surface=dict(width=WIDTH, height=HEIGHT, baseline=32768, bytes_per_pixel=2),
                 rows=rows, controls=controls, lifecycle=sequence, radar=generate_radar(m, types))
 
@@ -1479,7 +1479,7 @@ def generate_authored_fence(*, cpu_filename='authored_fence.json', wall_name='CA
             boundary='Map payload identity and terrain tuples match; native decoded GAWALL construction is a seam on authored empty cells. Selected AreaDamage histories are not normal paid World timing or RNG.')
     values=set(struct.unpack('<'+'H'*COUNT,u.mem_read(A,COUNT*2)))
     assert len(values)==1
-    return dict(native_sha256=NATIVE_SHA256,inputs=inputs,
+    return dict(inputs=inputs,
         surface=dict(width=WIDTH,height=HEIGHT,baseline=32768,bytes_per_pixel=2,a_uniform=True,a_value=values.pop()),rows=rows)
 
 
@@ -1609,7 +1609,7 @@ def generate_low_concrete_bridge():
         boundary='Executed isolated native mission states. World rawflags0 versus native flags2 is draw-equivalent only in the selected47F6A0/47F510/480110/47FB90/47FDE0 bodies: only bit80 is read there. No whole map loader, flag producer or native/full-match epoch equivalence is claimed.')
     values=set(struct.unpack('<'+'H'*COUNT,u.mem_read(A,COUNT*2)))
     assert values=={127}
-    return dict(native_sha256=NATIVE_SHA256,inputs=inputs,
+    return dict(inputs=inputs,
         surface=dict(width=WIDTH,height=HEIGHT,baseline=32768,bytes_per_pixel=2,a_uniform=True,a_value=values.pop()),rows=rows)
 
 
@@ -1660,7 +1660,7 @@ def generate_ore_natural():
     # records a component prior, not a native tactical/shroud producer claim.
     a_values = set(struct.unpack('<' + 'H' * COUNT, m.u.mem_read(A, COUNT * 2)))
     assert len(a_values) == 1, 'natural raster requires a uniform supplied A prior'
-    return dict(native_sha256=NATIVE_SHA256, inputs=inputs,
+    return dict(inputs=inputs,
                 surface=dict(width=WIDTH, height=HEIGHT, baseline=32768, bytes_per_pixel=2,
                              a_value=a_values.pop(), a_uniform=True), rows=rows)
 

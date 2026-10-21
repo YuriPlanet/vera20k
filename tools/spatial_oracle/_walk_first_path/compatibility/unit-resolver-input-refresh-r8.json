@@ -3,13 +3,13 @@
   "scope": "Every previously selected r7 native field equals the actual r8 replay; four paths are additive read-only original inputs. No global normalization or gameplay value replacement.",
   "prior_receipt": {
     "path": "compatibility/unit-resolver-prior-r7.json.gz",
-    "bytes": 851571,
-    "sha256": "8f75c4820578ef28f3ca07d2b216437d73084368fd313c0e1a0ea6b98a776007",
-    "uncompressed_bytes": 17437070,
-    "uncompressed_sha256": "db1ae2deeab80bfa97ea2b24102f83a3c2d6fc6b22dcfe692d4edf5183a84c09"
+    "bytes": 850905,
+    "sha256": "98fe52b30b22a42d040ffdc48e994d7d5d89f32b6c62e820879bbfb3b9dcf2f1",
+    "uncompressed_bytes": 17436100,
+    "uncompressed_sha256": "28a7f7eeba260aea6cb2baa35acdb159e76edcd00c15bd843ce3c0c5589952f2"
   },
-  "prior_projected_sha256": "aa2ab7cd2a2cd9d05762365281da259fd941296001d136484aaec5d09d6cc8a3",
-  "current_projected_sha256": "93a4dbe5ad70e32929d47d47ae75572d28c716fa5f10baef78e95a3d883a22fd",
+  "prior_projected_sha256": "ac07078e0b6385fed6efb37c35f705301039692da81e3f45efbaf1ef4467a80e",
+  "current_projected_sha256": "b61be58659df64509a17f6d7d0f012c562d180931546d6c7972fbcfe5c727525",
   "changed_paths": [],
   "added_paths": [
     "/ordered_calls/135/resolved_cell_fields",
@@ -17,10 +17,5 @@
     "/resolver_map_prior/cells",
     "/resolver_map_prior/navigation"
   ],
-  "selector": "walk_first_path.project_gi_reissue",
-  "current_source_sha256": {
-    "tools/spatial_oracle/walk_first_path.py": "74988ef139174e6e153623607d1906b5651afe870d246e32d91c630961012096",
-    "tools/spatial_oracle/_factory_infantry_output/initialized.py": "77c0d85bebf497122f63345626e3f5d5fa19891e2117a9986f5fc9245b4d7c6a",
-    "tools/spatial_oracle/walk_move_admission.py": "4bcc4da01463be56ce088d0356e44ab23f2ea637a68ff8a5ce26b86d0b7f1f89"
-  }
+  "selector": "walk_first_path.project_gi_reissue"
 }

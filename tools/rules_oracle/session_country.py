@@ -1,7 +1,7 @@
 """Session Country history on the existing physical Rules oracle owner."""
 from pathlib import Path
 import json,struct
-from tools.native_oracle import configured_gamemd,image_sha256
+from tools.native_oracle import configured_gamemd
 from tools.rules_oracle.weapon_speed_order import RetailRulesInputs,retail_history
 physical=None
 fixtures={}
@@ -47,7 +47,7 @@ def generate():
  m=retail_history(Inputs());r=m.alloc(0x2000);m.invoke(0x665650,r)
  rootini,_=m.load_physical_ini('RULESMD.INI');m.invoke(0x6722F0,r,(rootini,))
  retail=snapshot(m);m.check_code();m.close()
- return dict(native_sha256=image_sha256(),root=root,current=-3,rows=rows,retail_registered=retail)
+ return dict(root=root,current=-3,rows=rows,retail_registered=retail)
 
 
 class StartingInputs:

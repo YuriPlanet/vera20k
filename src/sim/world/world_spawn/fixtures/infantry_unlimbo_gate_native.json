@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "source_receipt_sha256": "596a331e05c2e46f880c37115432e6df0c620236c208336c904f192ed7bfe97d",
   "gate_reader": {
     "ctor_default": 0,

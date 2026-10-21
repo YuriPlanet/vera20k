@@ -698,7 +698,7 @@ def project_gi_reissue(result):
  history['ordered_calls']=[{k:v for k,v in row.items()
      if row.get('kind') in ('GI_SetDestination','Unit_SetDestination') or k not in ('before','after','at_ret8','state')}
      for row in history['ordered_calls']]
- return dict(native_sha256=result['native_sha256'],bootstrap=result['bootstrap'],**select(history))
+ return dict(bootstrap=result['bootstrap'],**select(history))
 
 
 def _gi_read_pinned(row,*,decode=True):
@@ -718,16 +718,13 @@ def _gi_read_pinned(row,*,decode=True):
 
 
 def saved_gi_reissues():
- """Check sealed raw/source identities and reselect saved native observations.
+ """Check sealed raw identities and reselect saved native observations.
 
  This is a saved-evidence check. --check-gi-reissue executes a selected whole
  history afresh; the normal corpus check still executes the original 7+3 rows.
  """
  from tools.spatial_oracle._factory_infantry_output import runtime as rt
  meta=json.loads((GI_EVIDENCE/'manifest.json').read_text())
- rt.verify_helpers()
- for files in meta['source_boundaries'].values():
-  for row in files.values():_gi_read_pinned(row,decode=False)
  for row in meta['compatibility_receipts'].values():_gi_read_pinned(row)
  for row in meta.get('original_instruction_receipts',[]):_gi_read_pinned(row)
  for row in meta.get('failed_observations',[]):
@@ -735,9 +732,6 @@ def saved_gi_reissues():
  output=[]
  for row in meta['histories']:
   original=_gi_read_pinned(row)
-  source=meta['source_boundaries'][row['source_boundary']]
-  for path,digest in original['source_sha256'].items():
-   rt.require(source[path]['uncompressed_sha256']==digest,'As-run GI source binding differs: '+path)
   selected=project_gi_reissue(original)
   rt.require(selected['name']==row['name'] and rt.canonical_sha(selected)==row['projected_sha256'],
       'Mechanical GI selection differs: '+row['name'])
@@ -755,33 +749,27 @@ def gi_evidence_identity():
  return dict(manifest='_walk_first_path/manifest.json',sha256=hashlib.sha256(raw).hexdigest(),
      histories=[row['name'] for row in meta['histories']],
      selector='walk_first_path.project_gi_reissue',
-     check_scope='Fresh legacy7setter/3head plus saved raw/source-bound GI selection; selected whole-history replay is --check-gi-reissue',
+     check_scope='Fresh legacy7setter/3head plus saved raw-bound GI selection; selected whole-history replay is --check-gi-reissue',
      bounds=meta['bounds'])
 
 
-def gi_reissue(name,assets,*,candidate=False):
+def gi_reissue(name,assets):
  """Fresh existing corrected bootstrap; no object/map/RNG initializer copy."""
- import hashlib
  from tools.spatial_oracle._factory_infantry_output import runtime as rt, initialized
  rt.configure_assets(assets)
  rt.require(name in GI_HISTORIES,'Unknown additive GI history')
  def run():
   return initialized.generate('no_rally',live_continuation=lambda f,final:GIMoveHistory(f,final,name).execute(),
       drive_startup=name.startswith('unit_'))
- if candidate:
-  with rt.candidate_helper_profile():original=run()
- else:original=run()
+ original=run()
  if original['status']!='PASS':return original
  identity=rt.metadata()['initialized_controls']['no_rally']
  row=original['live_continuation']
- result=dict(schema_version=1,status=row['status'],native_sha256=original['native_sha256'],
-     shared_helpers=original['shared_helpers'],
+ result=dict(schema_version=1,status=row['status'],
      bootstrap=dict(control='no_rally',complete_primary_native_equal=True,complete_private_native_equal=True,
          complete_primary_native_sha256=identity['complete_primary_sha256'],
          complete_private_native_sha256=identity['complete_private_sha256'],
          original_projection=identity['projection'],final_frame=identity['final_frame']),
-     source_sha256={str(Path(p).relative_to(rt.REPO_ROOT)):hashlib.sha256(Path(p).read_bytes()).hexdigest()
-         for p in (__file__,initialized.__file__,__import__('tools.spatial_oracle.walk_move_admission',fromlist=['x']).__file__)},
      history=row,bounds=['The existing corrected stock GAPILE/two-E1 produced bootstrap is compared completely before continuation.',
          'Authored click Cells20,20/21,20 and explicit OS key words enter actual Infantry+70/+140; caller auxiliary arguments are0.',
          'Options4E7E20/5FA350 defaults execute. GetKeyState at53EC9A and clicked Event timeGetTime646F20 are OS transport seams only.',
@@ -817,12 +805,11 @@ if __name__=='__main__':
   action.add_argument('--check-gi-reissue',choices=GI_HISTORIES)
   parser.add_argument('--assets',type=Path,required=True)
   parser.add_argument('--output',type=Path,required=True)
-  parser.add_argument('--candidate-helper-profile',action='store_true',help='Explicit unregistered comparison-only helper map')
   args=parser.parse_args()
   name=args.gi_reissue or args.check_gi_reissue
   rt.require(not args.output.exists(),'Refuse to overwrite native receipt')
   try:
-   result=gi_reissue(name,args.assets,candidate=args.candidate_helper_profile)
+   result=gi_reissue(name,args.assets)
    if args.check_gi_reissue and result.get('status')=='PASS':
     from tools.native_oracle import first_difference
     expected=[row for row in saved_gi_reissues() if row['name']==name]

@@ -30,10 +30,6 @@ from unicorn.x86_const import (
 
 from tools import oracle_sources
 
-# A fixed label, not an identity check: payload schemas written before the
-# hash checks were removed carry it, and finish_vectors accepts it only where
-# the existing reference already does. Any gamemd.exe build is accepted.
-NATIVE_SHA256 = "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
 IMAGE_BASE = 0x00400000
 # Preserve the original fixture mapping, including runtime globals in BSS.
 IMAGE_SIZE = 0x00A00000
@@ -234,14 +230,6 @@ def _image(path: Path) -> bytes:
 
 def image_bytes() -> bytes:
     return _image(configured_gamemd())
-
-
-def image_sha256() -> str:
-    """The [`NATIVE_SHA256`] label older payload schemas carry; not a file hash.
-
-    New corpora must not record it: finish_vectors refuses it outside those schemas.
-    """
-    return NATIVE_SHA256
 
 
 def _sections(data: bytes, *, image_base: int = IMAGE_BASE, image_size: int = IMAGE_SIZE):
@@ -544,36 +532,23 @@ def _hash_paths(value, digests, path="$", found=None) -> set[tuple[str, str]]:
     return found
 
 
-def _refuse_executable_hashes(target: Path, default_path: Path, documents) -> None:
+def _refuse_executable_hashes(target: Path, documents) -> None:
     """Refuse output that would publish a gamemd.exe hash (AGENTS.md).
 
     Every gamemd.exe build is the same game, so a corpus records what the
     executable computes, never which build ran it. The configured executable's
-    SHA-256 is refused anywhere. The NATIVE_SHA256 label is refused except at a
-    JSON path where an existing reference already carries it, so older schemas
-    stay checkable until their producers drop the field. Each document is
-    (reference suffix, or None for the payload; document; its serialized text).
+    SHA-256 is refused anywhere. Each document is (reference suffix, or None
+    for the payload; document; its serialized text).
     """
-    digests = {NATIVE_SHA256}
     try:
-        digests.add(hashlib.sha256(image_bytes()).hexdigest())
+        digest = hashlib.sha256(image_bytes()).hexdigest()
     except (OracleError, OSError):
-        pass  # Nothing here can have hashed an executable that is not readable.
+        return  # Nothing here can have hashed an executable that is not readable.
     refused = set()
     for suffix, document, text in documents:
-        lowered = text.lower()
-        if not any(digest in lowered for digest in digests):
-            continue
-        legacy = set()
-        for base in dict.fromkeys((target, default_path)):
-            reference = base if suffix is None else base.with_suffix(suffix)
-            if reference.is_file():
-                raw = reference.read_bytes()
-                existing = json.loads(gzip.decompress(raw) if reference.suffix == ".gz" else raw)
-                legacy.update(path for path, _ in _hash_paths(existing, {NATIVE_SHA256}))
-        name = (target if suffix is None else target.with_suffix(suffix)).name
-        refused.update(f"{name} {path}" for path, digest in _hash_paths(document, digests)
-                       if digest != NATIVE_SHA256 or path not in legacy)
+        if digest in text.lower():
+            name = (target if suffix is None else target.with_suffix(suffix)).name
+            refused.update(f"{name} {path}" for path, _ in _hash_paths(document, {digest}))
     if refused:
         locations = sorted(refused)
         more = f" and {len(locations) - 4} more" if len(locations) > 4 else ""
@@ -598,12 +573,13 @@ def finish_vectors(data, default_path: Path, *, provenance: dict, argv=None,
     deterministic full raw .json.gz archive. An optional raw-byte identity
     guards compaction of already accepted evidence. Without that guard,
     --write deliberately accepts a newly executed reference; --check still
-    compares the full archive, decompressed bytes and both metadata records.
+    compares the decompressed archive and both metadata records.
 
     Sidecars pin no repository source hashes (AGENTS.md): an edit to a shared
     helper must not fail a check whose native output is unchanged. The recorded
-    replay command says how the payload was made; it is not evidence. Neither
-    workflow proceeds with output that would publish a gamemd.exe hash.
+    replay command and runtime versions say how the payload was made; they are
+    not evidence (oracle_sources.evidence). Neither workflow proceeds with
+    output that would publish a gamemd.exe hash.
     """
     parser = argparse.ArgumentParser(description="Compare native outputs with recorded reference data")
     mode = parser.add_mutually_exclusive_group()
@@ -619,8 +595,8 @@ def finish_vectors(data, default_path: Path, *, provenance: dict, argv=None,
     sources = source_identity()
     data = data() if callable(data) else data
     provenance = provenance() if callable(provenance) else provenance
-    if any(key in provenance for key in (oracle_sources.REPLAY_FIELD, oracle_sources.LEGACY_SOURCE_FIELD)):
-        raise OracleError("finish_vectors records the replay command, and sidecars pin no sources")
+    if oracle_sources.REPLAY_FIELD in provenance:
+        raise OracleError("finish_vectors records the replay command")
     if replay := oracle_sources.replay_command():
         provenance = dict(provenance, replay_command=replay)
     # Normalize tuples before comparisons; reject NaN/Infinity in either workflow.
@@ -663,7 +639,7 @@ def finish_vectors(data, default_path: Path, *, provenance: dict, argv=None,
     if archive_record is not None:
         documents += [(".raw.json.gz", raw_document, raw_archive.decode("utf-8")),
                       (".raw.meta.json", archive_metadata, archive_metadata_text)]
-    _refuse_executable_hashes(target, default_path, documents)
+    _refuse_executable_hashes(target, documents)
     if args.write:
         target.parent.mkdir(parents=True, exist_ok=True)
         if archive_record is not None:
@@ -690,8 +666,8 @@ def finish_vectors(data, default_path: Path, *, provenance: dict, argv=None,
     if archive_record is not None:
         if not archive_path.is_file() or not archive_sidecar.is_file():
             raise OracleError(f"Full raw archive or provenance missing: {archive_path}")
-        expected_archive = archive_path.read_bytes()
-        if expected_archive != archive_bytes or gzip.decompress(expected_archive) != raw_archive:
+        # Compare the archive's content: another zlib build compresses it differently.
+        if gzip.decompress(archive_path.read_bytes()) != raw_archive:
             raise OracleMismatch(f"Full raw archive mismatch: {archive_path}")
         expected_archive_metadata = json.loads(archive_sidecar.read_text(encoding="utf-8"))
         if difference := first_difference(oracle_sources.evidence(expected_archive_metadata),

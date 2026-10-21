@@ -215,8 +215,7 @@ and actual pixel leaves; there is no argument-sink substitution in this mode.
 PYTHONDONTWRITEBYTECODE=1 python -m tools.procedural_drawing_oracle.shroud --unit-health --check
 ```
 
-`unit_health.json` and its sidecar retain the original executable identity and
-command. Normal STOCK_DIGITAL production asset lookup independently resolved
+`unit_health.json`'s sidecar retains the original command. Normal STOCK_DIGITAL production asset lookup independently resolved
 PIPS.SHP to `ra2md.mix/conqmd.mix` (21frames,1920bytes,
 SHA256`7525b25f80b5b67e9a5c2977b7624c4b3ce7ad9ce332169c4622eddb91c61486`),
 PIPBRD.SHP to `ra2.mix/conquer.mix` (272bytes,

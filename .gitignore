@@ -30,6 +30,7 @@ Thumbs.db
 /infodocs/
 
 /docs/*
+!/docs/ares.md
 !/docs/ares-generic-warhead.md
 !/docs/ini-roots.md
 !/docs/_config.yml
@@ -70,6 +71,7 @@ tools/vendor-eval/
 !/README.de.md
 !/README.zh-CN.md
 !/README.ar.md
+!/README.es.md
 !/README.ru.md
 !/README.th.md
 !/README.tr.md

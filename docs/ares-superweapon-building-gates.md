@@ -1,7 +1,7 @@
 # Optional Ares superweapon building gates
 
 Requires an explicit `--features ares` build. Default builds do not read or execute
-these extensions; see [build capability](../README.md#customization).
+these extensions; see [build capability](ares.md).
 
 Original implementation by **baixiong443**, who attributes the availability
 logic and regression scenarios to their earlier ra2-mono work and contributes

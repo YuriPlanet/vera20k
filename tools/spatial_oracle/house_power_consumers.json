@@ -29996,7 +29996,6 @@
     "Whole50BC90 executes with supplied current frame196, prior timer/cached totals/dirty flags and duration30/4/80/0. Its timer+2A8 dword comes from explicit entrySP-8 residue0 and has no represented reader. This establishes replacement semantics and the power-only dirty write, not ForceShield/Spy producer lifecycle or numeric conversion.",
     "Full Main/Scenario RNG buffers and original executable bytes match before/after. Ambient x87FPCW0E7F is supplied by the existing native fixture; no active-game invariant is claimed. This is not whole House AI/Logic, loader, rendering, audio-device or object equivalence."
   ],
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "radar_controls": [
     {
       "input": {

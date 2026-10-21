@@ -3075,6 +3075,10 @@ pub fn initialize_map_roster_houses(
         let country_name = house_state
             .country()
             .map(|country| sim.interner.resolve(country));
+        #[cfg(feature = "ares")]
+        house_state.read_scenario_factory_plan(country_name.and_then(|country| {
+            crate::sim::factory_owners::parent_or_self_country(rules, country)
+        }));
         house_state.assign_player_control(house.player_control == Some(true));
         if let Some(ini) = map_ini {
             house_state.initialize_scenario_parameters(

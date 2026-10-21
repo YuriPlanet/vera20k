@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from typing import NamedTuple
 import uuid
 
 GIB = 1024 ** 3
@@ -75,11 +76,16 @@ class CachePolicy:
                          (headroom, 'VERA20K_FREE_HEADROOM_GIB', '8'))))
 
 
-# A crate's newest finalized session built this recently belongs to current work:
-# the soft budgets never take it, only a short free-space reserve. Under the soft
-# budgets alone, passes on 2026-10-19 removed sessions minutes old, and 18% of
+# A pass evicts working sets whole, one cache profile at a time and the least
+# recently used first, so recent work keeps all of its own. An exceeded budget never
+# takes a profile used this recently; a short reserve does once every older profile
+# has gone. Passes used to take the oldest sessions of every cache instead, sparing
+# each crate's newest for 12 hours. Every cache had built within that window, so
+# the budgets went unmet, and the reserve took minutes-old sessions from active test
+# loops: on 2026-10-21 passes ran every 6-7 minutes, each removing 8-9 GiB that the
+# next builds compiled again. Under the soft budgets alone on 2026-10-19, 18% of
 # focused-test compiles took 75 s or more against a 32 s median.
-ACTIVE_SESSION_SECONDS = 12 * 60 * 60
+ACTIVE_PROFILE_SECONDS = 60 * 60
 # A registered cache whose checkout is gone, unused at least this long, is
 # reclaimed whatever the budgets; see _abandoned_roots. A run holds its checkout's
 # lock, so the wait only covers a checkout removed and recreated at the same path.
@@ -129,6 +135,29 @@ def _dependency_identity(path: Path) -> tuple | None:
         # _plain walks from root: a dangling symlink is rejected before its
         # nonexistent child can be mistaken for an already missing object.
         return None
+
+
+def _record_identity(path: Path) -> tuple | None:
+    """A runner record's identity (registry, latest record, label manifest).
+
+    The runner only replaces records whole, so each new version has a new inode;
+    an edit in place changes size or mtime. Ctime is left out: on the development
+    Mac on 2026-10-21 each rewrite of the registry or a latest record was followed
+    by a ctime change without a write, usually within a second but sometimes 15 s
+    or more later, and a 20 s pass that began just after a run registered blocked
+    on it.
+    """
+    try:
+        return ('record', *_identity(path)[:4])
+    except FileNotFoundError:
+        return None
+
+
+def _current_identity(path: Path, recorded) -> tuple | None:
+    """A watched input's identity now, in the form recorded for it."""
+    if recorded is not None and recorded[0] == 'record':
+        return _record_identity(path)
+    return _dependency_identity(path)
 
 
 def _inspection_revision() -> str:
@@ -229,11 +258,12 @@ def _reported_profile(target: Path, source: Path) -> str | None:
     return None
 
 
-def register_locked(root: Path, store: Path, target: Path, artifacts=()) -> list[Path]:
+def register_locked(root: Path, store: Path, target: Path, artifacts=(), profile=None) -> list[Path]:
     """Record even failed/check/unlabelled/custom-target invocations under owner lock.
 
-    Returns this checkout's other registered caches that still exist, so the
-    caller can report a split cache.
+    `profile` is the host profile directory the run builds into, if known; retention
+    ranks each profile of a cache by its last use. Returns this checkout's other
+    registered caches that still exist, so the caller can report a split cache.
     """
     from tools.cargo_run import build_store
     target.mkdir(parents=True, exist_ok=True)
@@ -249,9 +279,14 @@ def register_locked(root: Path, store: Path, target: Path, artifacts=()) -> list
     if not isinstance(prior, dict) or not isinstance(prior.get('profiles', []), list):
         raise ValueError('Malformed owned cache entry')
     profiles = set(prior.get('profiles', []))
-    profiles.update(profile for source in artifacts if (profile := _reported_profile(target, source)))
-    data['roots'][str(target)] = {'checkout': str(root), 'last_use_unix': time.time(),
-                                'profiles': sorted(profiles)}
+    profiles.update(found for source in artifacts if (found := _reported_profile(target, source)))
+    now = time.time()
+    # Use times only rank caches for eviction; a malformed record starts over.
+    uses = dict(recorded) if isinstance(recorded := prior.get('profile_use_unix'), dict) else {}
+    if profile is not None:
+        uses[profile] = now
+    data['roots'][str(target)] = {'checkout': str(root), 'last_use_unix': now,
+                                'profiles': sorted(profiles), 'profile_use_unix': uses}
     _write(path, data)
     return [Path(other) for other, entry in data['roots'].items()
             if other != str(target) and isinstance(entry, dict)
@@ -331,7 +366,12 @@ def _abandoned_output(cache: Path, path: Path) -> bool:
         ('.rustc_info.json',), ('.future-incompat-report.json',), ('CACHEDIR.TAG',))
 
 
-def _inputs(root: Path, store: Path, *, preserved_checks=None, profiles=None, notes=None):
+def _inputs(root: Path, store: Path, *, preserved_checks=None, profiles=None, notes=None, uses=None):
+    """Owned cache roots, protected executables and the inputs a pass watches.
+
+    `uses` receives each registered root's last use and, where its runs recorded
+    one, each host profile directory's; a malformed time only loses its rank.
+    """
     from tools.cargo_run import HOST_PROFILES, preserved_manifest, build_store, owned_target
     roots, binaries, watched, stores = set(), set(), {}, {}
     registry = store / 'cache-roots.json'
@@ -339,12 +379,20 @@ def _inputs(root: Path, store: Path, *, preserved_checks=None, profiles=None, no
         data = _json(registry)
         if not isinstance(data, dict) or type(data.get('schema')) is not int or data['schema'] != 1 or not isinstance(data.get('roots'), dict):
             raise ValueError('Malformed owned cache registry')
-        watched[registry] = _identity(registry)
+        watched[registry] = _record_identity(registry)
         for name, entry in data['roots'].items():
             if not isinstance(entry, dict):
                 raise ValueError('Malformed owned cache entry')
             if path := _owned_root(entry.get('checkout'), Path(name), store, stores):
                 roots.add(path)
+                if uses is not None:
+                    times = [(path, entry.get('last_use_unix'))]
+                    if isinstance(recorded := entry.get('profile_use_unix'), dict):
+                        times += [(path / profile, used) for profile, used in recorded.items()
+                                  if profile in HOST_PROFILES]
+                    for key, used in times:
+                        if type(used) in (int, float):
+                            uses[key] = max(uses.get(key, used), used)
                 declared = entry.get('profiles', [])
                 if not isinstance(declared, list):
                     raise ValueError('Malformed cache profiles')
@@ -364,7 +412,7 @@ def _inputs(root: Path, store: Path, *, preserved_checks=None, profiles=None, no
             directory, target, entries = preserved_manifest(store, label.name)
             manifest_path = directory / 'manifest.json'
             data = _json(manifest_path)
-            watched[manifest_path] = _identity(manifest_path)
+            watched[manifest_path] = _record_identity(manifest_path)
             # Schema-1 historical manifests did not necessarily record checkout.
             # Still verify/protect every executable; adopt only proven roots.
             if data.get('checkout') is not None:
@@ -390,7 +438,7 @@ def _inputs(root: Path, store: Path, *, preserved_checks=None, profiles=None, no
         # entries, and inspect any replacement binary as a live cache consumer.
         for record in sorted(latest.iterdir()):
             data = _json(record)
-            watched[record] = _identity(record)
+            watched[record] = _record_identity(record)
             if not isinstance(data, dict):
                 raise ValueError(f'Malformed latest build: {record}')
             for profile, entries in data.items():
@@ -419,8 +467,11 @@ def _inputs(root: Path, store: Path, *, preserved_checks=None, profiles=None, no
     return roots, binaries, watched
 
 
-def _files(root: Path, directory_states=None):
-    """Inventory without following directory links or accepting special files."""
+def _files(root: Path, directory_states=None, skipped=None):
+    """Inventory without following directory links or accepting special files.
+
+    `skipped` receives each directory that holds a link, reparse point or special file.
+    """
     pending = [root]
     while pending:
         base = pending.pop()
@@ -436,12 +487,12 @@ def _files(root: Path, directory_states=None):
                 # Real lstat is required for inode accounting and hardlink safety.
                 # https://docs.python.org/3.12/library/os.html#os.DirEntry.stat
                 info = path.lstat()
-                if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
-                    continue
-                if stat.S_ISDIR(info.st_mode):
+                if stat.S_ISDIR(info.st_mode) and not getattr(info, 'st_file_attributes', 0) & 0x400:
                     pending.append(path)
-                elif stat.S_ISREG(info.st_mode):
+                elif stat.S_ISREG(info.st_mode) and not getattr(info, 'st_file_attributes', 0) & 0x400:
                     yield path, info
+                elif skipped is not None:
+                    skipped.add(base)
 
 
 def _allocated(info) -> int:
@@ -505,6 +556,20 @@ def _magic(path: Path) -> bytes:
 MACH = {b'\xcf\xfa\xed\xfe', b'\xce\xfa\xed\xfe', b'\xfe\xed\xfa\xcf',
         b'\xfe\xed\xfa\xce', b'\xca\xfe\xba\xbe', b'\xbe\xba\xfe\xca',
         b'\xca\xfe\xba\xbf', b'\xbf\xba\xfe\xca'}
+# Compiler intermediates, Cargo bookkeeping and dep-info are never executables, so a
+# pass reads no magic from them: on 2026-10-21 it read 160,000 such files twice.
+NOT_EXECUTABLES = {'.o', '.obj', '.rlib', '.rmeta', '.a', '.bin', '.pdb', '.dwo', '.dwp',
+                   '.bc', '.d', '.json', '.timestamp'}
+# What rustc writes into an incremental session: the dependency graph, query cache,
+# work-product index and metadata, each codegen unit's object and, under ThinLTO
+# (the fast profile), its pre-LTO bitcode and the import keys. Before the last two
+# were listed no fast-profile session was eligible: on 2026-10-21 they held 17.5 of
+# the 38 GiB of incremental sessions in live caches.
+# https://github.com/rust-lang/rust/blob/1.90.0/compiler/rustc_codegen_ssa/src/back/write.rs
+# https://github.com/rust-lang/rust/blob/1.90.0/compiler/rustc_codegen_llvm/src/back/lto.rs
+SESSION_FILES = {'dep-graph.bin', 'dep-graph.part.bin', 'query-cache.bin', 'work-products.bin',
+                 'metadata.rmeta', 'thin-lto-past-keys.bin'}
+SESSION_SUFFIXES = ('.o', '.pre-lto.bc')
 
 
 def _stream(command: list[str], consume, *, env=None):
@@ -640,6 +705,63 @@ def _superseded(store: Path, roots, profiles, inventory, links, executables) -> 
     return superseded
 
 
+def _profile_uses(roots, profiles, uses: dict) -> dict:
+    """Each cache profile directory's last use, which ranks its working set.
+
+    The last run the registry records for the profile, else its cache's last run
+    (a run registers when it starts and when Cargo ends); 0 for a root no run
+    registered.
+    """
+    used = {}
+    for profile in profiles:
+        cache = next(cache for cache in roots if profile.is_relative_to(cache))
+        used[profile] = uses.get(profile, uses.get(cache, 0.0))
+    return used
+
+
+# Kinds of retention group, in the order a pass considers them.
+ABANDONED, DISPOSABLE, WORKING_SET = -1, 0, 1
+
+
+class _Group(NamedTuple):
+    """Files a pass removes together."""
+    paths: list
+    incremental: bool
+    age: int  # Newest st_mtime_ns of its paths.
+    kind: int
+    after: frozenset  # Older executables that must go first.
+    profile: Path | None  # The cache profile directory a working set belongs to.
+
+
+class _Eviction:
+    """Which groups one pass takes, in order; a profile's working set leaves whole.
+
+    An abandoned cache's output always goes; disposable files (superseded sessions,
+    orphaned objects, older executables) while any target is unmet. A working set
+    (each crate's newest finalized session in one cache profile directory) goes for
+    a short reserve, or for an exceeded budget once its profile is idle; see
+    ACTIVE_PROFILE_SECONDS. Taking any of it takes all of that profile's.
+    """
+
+    def __init__(self, policy: CachePolicy, free_target: int, used: dict, idle_before: float):
+        self.policy, self.free_target, self.used, self.idle_before = policy, free_target, used, idle_before
+        self.evicted = []  # Profiles in the order their working sets went.
+
+    def wanted(self, group: _Group, total: int, incremental: int, free: int) -> bool:
+        if group.kind == ABANDONED or group.profile in self.evicted or free < self.free_target:
+            return True
+        over = total > self.policy.cache_bytes or (
+            group.incremental and incremental > self.policy.incremental_bytes)
+        return over and (group.kind == DISPOSABLE or self.used[group.profile] < self.idle_before)
+
+    def take(self, group: _Group) -> bool:
+        """Note a group the pass takes; True when it starts its profile's eviction."""
+        if group.kind != WORKING_SET or group.profile in self.evicted:
+            return False
+        self.evicted.append(group.profile)
+        return True
+
+
 def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) -> dict:
     """Called ONLY while cargo_run holds its build lock; never apply an old plan."""
     from tools.cargo_run import build_processes
@@ -666,25 +788,27 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
         revision = _inspection_revision()
         directory_states = {path: _directory_identity(path) for path in (
             store, store / 'artifacts', store / 'latest') if path.exists()}
-        profiles = set()
-        roots, binaries, watched = _inputs(root, store, profiles=profiles, notes=receipt['notes'])
-        inventory = {path: info for cache in sorted(roots) for path, info in _files(cache, directory_states)}
+        profiles, uses, skipped = set(), {}, set()
+        roots, binaries, watched = _inputs(root, store, profiles=profiles, notes=receipt['notes'], uses=uses)
+        inventory = {path: info for cache in sorted(roots) for path, info in _files(cache, directory_states, skipped)}
         leftovers = {path: (cache, info) for cache in sorted(abandoned)
                      for path, info in _files(cache, directory_states)}
         inventory.update((path, info) for path, (_, info) in leftovers.items())
         total = _allocated_total(inventory.values())
-        increments = {path for path in inventory if any(path.is_relative_to(
-            profile / 'incremental') for profile in profiles)}
+        # Paths compare as strings below: Path.is_relative_to builds every parent,
+        # and over about 100,000 cache files it took most of each 40-60 s pass.
+        incremental_dirs = {os.path.join(profile, 'incremental', ''): profile for profile in profiles}
+        increments = {path for path in inventory if str(path).startswith(tuple(incremental_dirs))}
         incremental = _allocated_total(inventory[path] for path in increments)
         # An abandoned cache may be gone by the final measurement; its parent stays.
         devices = {cache.stat().st_dev: cache for cache in [
             *(cache.parent for cache in sorted(abandoned)), *sorted(roots)]}
         free = {str(device): shutil.disk_usage(cache).free for device, cache in devices.items()}
+        short = any(count < policy.min_free_bytes for count in free.values())
         receipt.update(roots=[str(path) for path in sorted(roots)], cache_allocated_bytes=total,
-                       incremental_allocated_bytes=incremental, free_before=free,
+                       incremental_allocated_bytes=incremental, free_before=free, reserve_short=short,
                        selected_files=[], protected_files=0)
-        pressure = bool(leftovers) or total > policy.cache_bytes or incremental > policy.incremental_bytes or any(
-            count < policy.min_free_bytes for count in free.values())
+        pressure = bool(leftovers) or total > policy.cache_bytes or incremental > policy.incremental_bytes or short
         if not pressure:
             receipt['state'] = 'under_budget'
         else:
@@ -704,10 +828,10 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
             # No dependence on Unix executable bits (Windows does not have them).
             for path, info in inventory.items():
                 # An abandoned cache's own executables protect nothing; it goes whole.
-                if path in leftovers or path.suffix in {
-                        '.o', '.obj', '.rlib', '.rmeta', '.a', '.bin', '.pdb', '.dwo', '.dwp'}:
+                if path in leftovers or not info.st_size or path.suffix in NOT_EXECUTABLES:
                     continue
-                if _magic(path) in MACH | {b'\x7fELF'} or _magic(path)[:2] == b'MZ':
+                magic = _magic(path)
+                if magic in MACH | {b'\x7fELF'} or magic[:2] == b'MZ':
                     binaries.add(path)
             links = _CacheLinks(inventory, increments)
             superseded = _superseded(store, roots, profiles, inventory, links, binaries - published)
@@ -738,28 +862,38 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                 if missing:
                     receipt['degraded_debug_inputs'][str(binary)] = sorted(missing)
             receipt['protected_files'] = len(protected)
-            # Each group: paths, incremental, age, newest session, executables first removed.
-            groups = [([path], False, inventory[path].st_mtime_ns, 0, frozenset())
+            groups = [_Group([path], False, inventory[path].st_mtime_ns, DISPOSABLE, frozenset(), None)
                       for path in sorted(superseded - protected)]
             # Only exact Cargo profile/deps *.rcgu.o; never arbitrary *.o.
+            deps = {profile / 'deps' for profile in profiles}
             for path, info in inventory.items():
-                if (path.name.endswith('.rcgu.o') and path.parent in {profile / 'deps' for profile in profiles}
+                if (path.name.endswith('.rcgu.o') and path.parent in deps
                         and links.eligible(path) and path not in protected):
-                    groups.append(([path], False, info.st_mtime_ns, 0, frozenset(needed.get(path, ()))))
+                    groups.append(_Group([path], False, info.st_mtime_ns, DISPOSABLE,
+                                         frozenset(needed.get(path, ())), None))
             # Cargo output of an abandoned cache goes first, whatever the budgets.
             for path, (cache, info) in leftovers.items():
                 if _abandoned_output(cache, path) and links.eligible(path) and path not in protected:
-                    groups.append(([path], False, info.st_mtime_ns, -1, frozenset()))
-            sessions = {}
+                    groups.append(_Group([path], False, info.st_mtime_ns, ABANDONED, frozenset(), None))
+            sessions, session_profiles = {}, {}
             for path in increments:
-                # Cargo incremental/<crate-hash>/s-<session>/{objects,*.bin}.
-                parents = path.parents
-                session = next((parent for parent in parents if parent.name.startswith('s-')
-                                and parent.parent.parent in {profile / 'incremental' for profile in profiles}), None)
-                if session:
+                # Cargo incremental/<crate-hash>/s-<session>/<files>.
+                text = str(path)
+                prefix = next(prefix for prefix in incremental_dirs if text.startswith(prefix))
+                crate, _, rest = text[len(prefix):].partition(os.sep)
+                name, _, rest = rest.partition(os.sep)
+                if name.startswith('s-') and rest:
+                    session = prefix + crate + os.sep + name
                     sessions.setdefault(session, []).append(path)
+                    session_profiles[session] = incremental_dirs[prefix]
+            sessions = {Path(session): paths for session, paths in sessions.items()}
+            session_profiles = {Path(session): profile for session, profile in session_profiles.items()}
             newest = {}
             for session, paths in sessions.items():
+                # rustc starts from a crate's newest finalized session; one still
+                # being written, or left by a stopped build, never replaces it.
+                if session.name.endswith('-working'):
+                    continue
                 age = max(inventory[path].st_mtime_ns for path in paths)
                 previous = newest.get(session.parent)
                 if previous is None or (age, str(session)) > (previous[0], str(previous[1])):
@@ -772,59 +906,54 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                 if session.name.endswith('-working'):
                     continue
                 if any(path in protected or not links.eligible(path)
-                       or not (path.suffix == '.o' or path.name in {
-                           'dep-graph.bin', 'dep-graph.part.bin', 'query-cache.bin',
-                           'work-products.bin', 'metadata.rmeta'}) for path in paths):
+                       or not (path.name in SESSION_FILES or path.name.endswith(SESSION_SUFFIXES))
+                       for path in paths):
                     continue
-                # Links/special entries are not in inventory: don't partially
-                # delete a session containing any such unknown input.
-                entries = list(session.rglob('*'))
-                if any(path.is_symlink() or getattr(path.lstat(), 'st_file_attributes', 0) & 0x400
-                       or not (path.is_file() or path.is_dir()) for path in entries):
+                # Links and special entries are not in inventory: don't partially
+                # delete a session containing any such unknown input. A file added
+                # since the inventory changes a directory the preflight compares.
+                if any(directory == session or directory.is_relative_to(session) for directory in skipped):
                     continue
-                if set(paths) != {path for path in entries if path.is_file()}:
-                    continue
-                groups.append((sorted(paths), True, max(inventory[path].st_mtime_ns for path in paths),
-                               int(newest[session.parent][1] == session),
-                               frozenset().union(*(needed.get(path, ()) for path in paths))))
-            # Hottest sessions remain useful until cold caches cannot meet pressure.
-            # An object an older executable names sorts after it, never alone first.
+                kind = WORKING_SET if newest[session.parent][1] == session else DISPOSABLE
+                groups.append(_Group(sorted(paths), True, max(inventory[path].st_mtime_ns for path in paths),
+                                     kind, frozenset().union(*(needed.get(path, ()) for path in paths)),
+                                     session_profiles[session] if kind == WORKING_SET else None))
+            used = _profile_uses(roots, profiles, uses)
+            # Disposable files go oldest first; an object an older executable names
+            # sorts after it, never alone first. Working sets follow, whole cache
+            # profiles least recently used first.
             groups.sort(key=lambda group: (
-                group[3], max([group[2], *(inventory[path].st_mtime_ns for path in group[4])]),
-                bool(group[4]), str(group[0][0])))
+                group.kind, used[group.profile] if group.kind == WORKING_SET else 0.0,
+                str(group.profile or ''), max([group.age, *(inventory[path].st_mtime_ns for path in group.after)]),
+                bool(group.after), str(group.paths[0])))
             # A short reserve is restored with headroom; see CachePolicy.
-            free_target = policy.min_free_bytes + (policy.free_headroom_bytes if any(
-                count < policy.min_free_bytes for count in free.values()) else 0)
-            active_since = time.time_ns() - ACTIVE_SESSION_SECONDS * 1_000_000_000
-
-            def wanted(is_incremental, age, newest, total_now, incremental_now, free_now):
-                if newest < 0 or free_now < free_target:
-                    return True
-                if newest and age >= active_since:
-                    return False  # Recent work's newest session; see ACTIVE_SESSION_SECONDS.
-                return total_now > policy.cache_bytes or (
-                    is_incremental and incremental_now > policy.incremental_bytes)
-
+            free_target = policy.min_free_bytes + (policy.free_headroom_bytes if short else 0)
+            idle_before = time.time() - ACTIVE_PROFILE_SECONDS
+            receipt['profile_last_use'] = {str(profile): used[profile] for profile in sorted(
+                {group.profile for group in groups if group.kind == WORKING_SET})}
+            unchanged = _Eviction(policy, free_target, used, idle_before)
             receipt['removable_groups'] = sum(
-                wanted(is_incremental, age, newest, total, incremental, free[str(inventory[paths[0]].st_dev)])
-                for paths, is_incremental, age, newest, _ in groups)
+                unchanged.wanted(group, total, incremental, free[str(inventory[group.paths[0]].st_dev)])
+                for group in groups)
             selected, projected_free, projected_total, projected_incremental = [], dict(free), total, incremental
             projection, chosen = _CacheLinks(inventory, increments), set()
-            for paths, is_incremental, age, newest, after in groups:
-                device = str(inventory[paths[0]].st_dev)
-                if not wanted(is_incremental, age, newest, projected_total,
-                              projected_incremental, projected_free[device]):
+            plan = _Eviction(policy, free_target, used, idle_before)
+            for group in groups:
+                device = str(inventory[group.paths[0]].st_dev)
+                if not plan.wanted(group, projected_total, projected_incremental, projected_free[device]):
                     continue
-                if not after <= chosen:
+                if not group.after <= chosen:
                     continue
-                selected.append((paths, is_incremental))
-                chosen.update(paths)
-                for path in paths:
+                plan.take(group)
+                selected.append(group.paths)
+                chosen.update(group.paths)
+                for path in group.paths:
                     released, incremental_released = projection.remove(path)
                     projected_total -= released
                     projected_incremental -= incremental_released
                     projected_free[device] += released
-            receipt['selected_files'] = [str(path) for paths, _ in selected for path in paths]
+            receipt['selected_files'] = [str(path) for paths in selected for path in paths]
+            receipt['evicted_profiles'] = list(map(str, plan.evicted))
             receipt['projected_removed_allocated_bytes'] = total - projected_total
             receipt['projected_remaining_cache_bytes'] = projected_total
             receipt['projected_remaining_incremental_bytes'] = projected_incremental
@@ -837,7 +966,7 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
             if not abandoned <= _abandoned_roots(root, store):
                 raise ValueError('Abandoned cache ownership changed during inspection')
             for path, identity in watched.items():
-                if _dependency_identity(path) != identity:
+                if _current_identity(path, identity) != identity:
                     raise ValueError(f'Debug dependency changed during inspection: {path}')
             # Preflight every eligible fallback too: APFS clones/snapshots can
             # reclaim less than allocated bytes, requiring further cold entries.
@@ -856,16 +985,22 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                 if _directory_identity(path) != identity:
                     raise ValueError(f'Cache/build discovery directory changed: {path}')
             if not dry_run:
-                receipt['selected_files'] = []
+                receipt['selected_files'], receipt['evicted_profiles'] = [], []
                 remaining_total, remaining_incremental, checked_at = total, incremental, 0.0
                 removed = set()
-                for paths, is_incremental, age, newest, after in groups:
+                eviction = _Eviction(policy, free_target, used, idle_before)
+                # Cache parents change from our unlinks; label/latest
+                # directories do not. Keep checking those publications.
+                caches = tuple(os.path.join(cache, '') for cache in roots | abandoned)
+                publications = {path: identity for path, identity in directory_states.items()
+                                if not os.path.join(path, '').startswith(caches)}
+                for group in groups:
+                    paths = group.paths
                     device = inventory[paths[0]].st_dev
                     actual_free = shutil.disk_usage(devices[device]).free
-                    if not wanted(is_incremental, age, newest, remaining_total,
-                                  remaining_incremental, actual_free):
+                    if not eviction.wanted(group, remaining_total, remaining_incremental, actual_free):
                         continue
-                    if not after <= removed:
+                    if not group.after <= removed:
                         continue
                     if time.monotonic() - checked_at >= 1:
                         if build_processes():
@@ -873,14 +1008,14 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                         if abandoned and not abandoned <= _abandoned_roots(root, store):
                             raise ValueError('Abandoned cache ownership changed before deletion')
                         for path, identity in watched.items():
-                            if _dependency_identity(path) != identity:
+                            if _current_identity(path, identity) != identity:
                                 raise ValueError(f'Debug dependency changed before deletion: {path}')
-                        # Cache parents change from our unlinks; label/latest
-                        # directories do not. Keep checking those publications.
-                        for path, identity in directory_states.items():
-                            if not any(path.is_relative_to(cache) for cache in roots | abandoned) and _directory_identity(path) != identity:
+                        for path, identity in publications.items():
+                            if _directory_identity(path) != identity:
                                 raise ValueError(f'Build publication changed before deletion: {path}')
                         checked_at = time.monotonic()
+                    if eviction.take(group):
+                        receipt['evicted_profiles'].append(str(group.profile))
                     receipt['selected_files'].extend(str(path) for path in paths)
                     for path in paths:
                         key = links.keys[path]
@@ -988,8 +1123,8 @@ def trim(root: Path, policy: CachePolicy, timeout: float, *, dry_run=False) -> d
 
 
 # The soft budgets are enforced after a build at most this often; see retention_due.
-# They no longer take recent work's sessions, and a short reserve always gets a
-# pass, so an interval pass reclaims only cold caches.
+# They take no working set of a profile used within ACTIVE_PROFILE_SECONDS, and a
+# short reserve always gets a pass, so an interval pass reclaims only idle caches.
 AUTOMATIC_INTERVAL_SECONDS = 2 * 60 * 60
 
 
@@ -1011,13 +1146,17 @@ def _cache_state(root: Path, store: Path) -> str:
     """Digest of every input that decides which files a pass may remove.
 
     Removability depends on the registered roots and profiles, the protected
-    executables and the cache trees, never on the budgets or free space. Creating,
-    removing or relinking a cache file changes its directory's identity.
+    executables, the cache trees and which profiles are idle, never on the budgets
+    or free space. Creating, removing or relinking a cache file changes its
+    directory's identity.
     """
-    profiles = set()
-    roots, binaries, _ = _inputs(root, store, profiles=profiles)
+    profiles, uses = set(), {}
+    roots, binaries, _ = _inputs(root, store, profiles=profiles, uses=uses)
+    idle_before = time.time() - ACTIVE_PROFILE_SECONDS
     state = [sorted(map(str, roots)), sorted(map(str, profiles)),
-             sorted((str(path), _identity(path)) for path in binaries)]
+             sorted((str(path), _identity(path)) for path in binaries),
+             sorted(str(profile) for profile, used in _profile_uses(roots, profiles, uses).items()
+                    if used < idle_before)]
     directories = []
     abandoned = _abandoned_roots(root, store)
     state.append(sorted(map(str, abandoned)))
@@ -1039,17 +1178,23 @@ def _cache_state(root: Path, store: Path) -> str:
     return hashlib.sha256(json.dumps(state).encode()).hexdigest()
 
 
-def _futile_pass(root: Path, store: Path) -> Path | None:
+def _futile_pass(root: Path, store: Path, policy: CachePolicy, volumes) -> Path | None:
     """Receipt of a recent pass whose result a new pass would only repeat.
 
     That pass found nothing removable, and nothing that decides removability has
-    changed since. The interval bounds trust in the digest, as for the budgets.
+    changed since. The interval bounds trust in the digest, as for the budgets. A
+    short reserve takes working sets the budgets leave, so while it is short only a
+    pass that found it short counts.
     """
     if (last := _last_applied_pass(store)) is None:
         return None
     path, receipt, finished = last
+    try:
+        short = any(shutil.disk_usage(volume).free < policy.min_free_bytes for volume in volumes)
+    except OSError:
+        short = True
     if (receipt.get('state') != 'trimmed' or receipt.get('errors') != []
-            or receipt.get('removable_groups') != 0
+            or receipt.get('removable_groups') != 0 or (short and receipt.get('reserve_short') is not True)
             or not 0 <= time.time() - finished < AUTOMATIC_INTERVAL_SECONDS):
         return None
     try:
@@ -1084,12 +1229,12 @@ def retention_due(root: Path, store: Path, policy: CachePolicy, volumes) -> bool
     return not isinstance(reported, list) or not {str(path) for path in abandoned} <= set(reported)
 
 
-def automatic_locked(root: Path, store: Path, policy: CachePolicy):
+def automatic_locked(root: Path, store: Path, policy: CachePolicy, volumes=()):
     # Below the reserve every build requests a pass before and after Cargo. Once
     # the rest of the cache is protected, each pass inventoried it again to remove
     # nothing: on 2026-10-18 ten such passes of 78-140 s held the shared lock
     # between 09:35 and 11:15 while builds queued. Admission still measures.
-    if futile := _futile_pass(root, store):
+    if futile := _futile_pass(root, store, policy, volumes):
         print(f'Cache retention: skipped; no removable cache since {futile}',
               file=sys.stderr, flush=True)
         return

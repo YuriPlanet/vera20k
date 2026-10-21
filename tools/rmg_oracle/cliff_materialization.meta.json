@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -40,5 +39,5 @@
     "raw": "0x0065C780"
   },
   "replay_command": "python -m tools.rmg_oracle.cliff_materialization",
-  "payload_sha256": "db756dc05f94f65d54bc09ee7735e023702ed0221f52d062c78d1b64a4452558"
+  "payload_sha256": "8d3a5d0f7d7497d78cb714c69b46110dc25779680d620a06899e5b0c6c33698a"
 }

@@ -1,21 +1,6 @@
 {
   "schema_version": 1,
   "base_commit": "c60d196d548800cec5494ab1d48f5e022719bb81",
-  "validated_source_sha256": "c7cd6b66f2634dbb8f540b1a21aa001be02bd5072a4cc6819e02cb99f28f5931",
-  "source_identity_note": "The full suite, CI clippy and seven initial release pairs used full_suite_source_sha256. One critic then requested an allocation-free shared classifier; test module declarations were reordered for formatting. The focused checks, all three GPU correctness tests and final release repeat below validate the resulting Rust source hashes. validated_source_sha256 is the retained final release identity, before these final documentation/receipt updates.",
-  "rust_sources": {
-    "src/app/frontend/skirmish.rs": "5d3f115f35bb1af11ddc87a84376be2802f910fe9d113a09ad970529dff71be7",
-    "src/app/presentation/instances/bridges.rs": "6df4960fda82b6c070967ee8288a2a0d210f6bd19aa6699a154555ce59f8785f",
-    "src/app/presentation/render/bridge_shadow_gpu_tests.rs": "51d468b694d92cf4bbaa8fc6fafe4ac93b89672a33b1f80de8e4e995836a5a57",
-    "src/app/presentation/render/build_instances.rs": "331743042b2ccd64b3c728defcd28bde4c8744ec685386ef10aaebd85533a274",
-    "src/app/presentation/render/draw_passes.rs": "2a69818d938f76fd460dd58a1d079e6c111a04f59498f2165a3c98340839f534",
-    "src/app/presentation/render/mod.rs": "67c2eed17f628b69219f80f90cda3863d272eb17a2583e69e1b33e78c482b176",
-    "src/render/bridge_atlas.rs": "3520946f91b9a2ced90a80ba5c6e6f5521b9d342e60a089e73d7f927ed2c31d7",
-    "src/render/overlay_atlas.rs": "00eeee98f6c75c0f876eb3a7a152d6da3c1ddf9350e80c261b901968edd00109",
-    "src/render/terrain_draw.rs": "f6ac0fce8b91b690fe4cfc7193db17edac29c738db2b1a1ba13812f5443c4bbc",
-    "src/render/terrain_draw_gpu_tests.rs": "d298bb4283744f7fecba1428a97a8f0f0cea03e0f12284dc31abeefaac52656f",
-    "src/sim/world/bridge_test_evidence.rs": "0626034c01ca62fb94c43b70591ad2b1e1b01fe530c5367d36c8804fad666915"
-  },
   "checks": [
     {
       "command": "python -m tools.spatial_oracle.bridge_shadow_render --check",
@@ -54,25 +39,11 @@
     }
   ],
   "artifacts": {
-    "bridge_shadow_render.production.json": "fd71740035137069185c4039107460c565ed964d694ace79cd6ff9871e97374a",
+    "bridge_shadow_render.production.json": "7988a4de38c4f99454caf311c53b50337cd07562b6536a03e18d2a17281a8d6d",
     "bridge_shadow_render.timing.json": "8a7b5f1568ffeb5909960fdbf138937eea2545f6d86b4bbf02ee0e657c8ef25b",
     "bridge_shadow_render.lifecycle.json": "9b6bbf50983ced68fb2e50629ad18a73eddc102d271d1a2b8bbca68c05ca9e16"
   },
   "scope": "Native caller/raster comparison is bounded by bridge_shadow_render.meta.json; live lifecycle and whole app captures are Rust production validation, not whole-game or native full-scene parity. GPU-only timestamp duration is unavailable on this Metal run.",
-  "full_suite_source_sha256": "84ea91318e43ebec6acd9967468b3e63f2bf31ea8993edaa6d1ce7713b849af5",
-  "initial_rust_sources": {
-    "src/app/frontend/skirmish.rs": "5d3f115f35bb1af11ddc87a84376be2802f910fe9d113a09ad970529dff71be7",
-    "src/app/presentation/instances/bridges.rs": "6df4960fda82b6c070967ee8288a2a0d210f6bd19aa6699a154555ce59f8785f",
-    "src/app/presentation/render/bridge_shadow_gpu_tests.rs": "51d468b694d92cf4bbaa8fc6fafe4ac93b89672a33b1f80de8e4e995836a5a57",
-    "src/app/presentation/render/build_instances.rs": "331743042b2ccd64b3c728defcd28bde4c8744ec685386ef10aaebd85533a274",
-    "src/app/presentation/render/draw_passes.rs": "2a69818d938f76fd460dd58a1d079e6c111a04f59498f2165a3c98340839f534",
-    "src/app/presentation/render/mod.rs": "e29c0dcd8669ca6052140bf19a8fafc54593857d1b8bfc43c8974305864290ac",
-    "src/render/bridge_atlas.rs": "a33eca5778d9e777cffca3520587cb82610991b59767dbd287c5e6da469e3cf4",
-    "src/render/overlay_atlas.rs": "00eeee98f6c75c0f876eb3a7a152d6da3c1ddf9350e80c261b901968edd00109",
-    "src/render/terrain_draw.rs": "f6ac0fce8b91b690fe4cfc7193db17edac29c738db2b1a1ba13812f5443c4bbc",
-    "src/render/terrain_draw_gpu_tests.rs": "d298bb4283744f7fecba1428a97a8f0f0cea03e0f12284dc31abeefaac52656f",
-    "src/sim/world/bridge_test_evidence.rs": "0626034c01ca62fb94c43b70591ad2b1e1b01fe530c5367d36c8804fad666915"
-  },
   "post_review": {
     "review": "One independent read-only pass; no blocking correctness defect. Accepted P3 per-overlay allocation finding in the existing shared classifier. No second review.",
     "review_report": "critic.md",

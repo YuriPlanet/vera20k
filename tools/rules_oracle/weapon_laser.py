@@ -170,7 +170,7 @@ def physical_detail(layers):
 
 def generate():
     layers = physical_layers()
-    return dict(native_sha256=native.image_sha256(), controls=controls(),
+    return dict(controls=controls(),
                 physical_prism=physical_prism(layers), detail=detail_controls(),
                 physical_detail=physical_detail(layers))
 

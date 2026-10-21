@@ -1408,7 +1408,7 @@ def generate():
     machine.check()
     raster_rows = [consumed_raster(row) for row in raster_rows]
     assert physical_inputs_before == identities(root, map_path), 'physical input drift'
-    return dict(schema_version=1, native_sha256=native.image_sha256(), inputs=donor.inputs,
+    return dict(schema_version=1, inputs=donor.inputs,
         tables=machine.tables,
         numeric_constants=dict(step_f32_le_hex=bytes(machine.u.mem_read(0x7F6BB0, 4)).hex(),
             snap_f64_le_hex=bytes(machine.u.mem_read(0x7F6DE8, 8)).hex(),

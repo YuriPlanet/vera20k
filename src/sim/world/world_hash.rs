@@ -1017,6 +1017,11 @@ impl Simulation {
     fn hash_houses(&self, hasher: &mut impl Hasher) {
         for (owner, house) in &self.houses {
             owner.hash(hasher);
+            #[cfg(feature = "ares")]
+            if !house.permanent_factory_plans().is_empty() {
+                b"ares-permanent-factory-plans-v1".hash(hasher);
+                house.permanent_factory_plans().hash(hasher);
+            }
             //House50D610/50D320 history survives object death and affects
             //future restoration. The House owns its ordered private records.
             house.hash_initial_records(hasher);
@@ -1745,6 +1750,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         animation.finished().hash(hasher);
     }
     entity.owner().hash(hasher);
+    #[cfg(feature = "ares")]
+    if let Some(country) = entity.original_factory_country() {
+        b"ares-original-factory-country-v1".hash(hasher);
+        country.hash(hasher);
+    }
     // Techno+14C survives ChangeOwner and controls an AI building capture's
     // automatic sale. Preserve the untouched-owner stream, but distinguish
     // objects transferred from different constructor houses.

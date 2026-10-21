@@ -10,7 +10,7 @@ from unicorn.x86_const import *
 from tools.projectile_oracle.bridge_render_art_state import ArtStateReader
 from tools.projectile_oracle.bridge_render_inputs import lexical, assets_root
 from tools.spatial_oracle.building_body_rules import SP, INI, RULES, dwords
-from tools.native_oracle import image_sha256, run_checked, RET_MAGIC
+from tools.native_oracle import run_checked, RET_MAGIC
 
 class TrailMachine(ArtStateReader):
     def __init__(self, detail=2, override=None, pixel=False, width=64, height=96):
@@ -349,8 +349,7 @@ def generate():
     for render_pass in (0,1,2,3):
         m=TrailMachine();m.produce();cadence.append(m.tactical_composite(render_pass))
     m=TrailMachine();frame_passes=[m.render_frame_passes(gate,redraw) for gate in (0,1) for redraw in (0,2)]
-    return dict(native_sha256=image_sha256(),
-        source_files={f:hashlib.sha256((assets_root()/f).read_bytes()).hexdigest() for f in ('ARTMD.INI','RULESMD.INI','MPBattleMD.ini','Hills.map','dragon.shp')},
+    return dict(source_files={f:hashlib.sha256((assets_root()/f).read_bytes()).hexdigest() for f in ('ARTMD.INI','RULESMD.INI','MPBattleMD.ini','Hills.map','dragon.shp')},
         type_layers=m.type_layers,reader_controls=reader_controls(),rgb_stack_controls=rgb_stack_controls(),rows=rows,disabled=disabled,
         options=options_controls(),persistence=persistence,pixels=pixels,
         tactical_composite=cadence,render_frame_passes=frame_passes,registry=registry_controls(),retained=retained_controls(),
@@ -384,8 +383,7 @@ def metadata():
         (0x5f5e80,0x5f5f16),(0x474b50,0x474c0b),(0x4beac0,0x4bf645),
         (0x4c1b50,0x4c1b76),(0x4cac40,0x4cacae),(0x6d4582,0x6d4678),
         (0x5fa350,0x5fa377),(0x5fa776,0x5fa7b4)]
-    return dict(native_sha256=image_sha256(),
-        command='VERA20K_PROJECTILE_RENDER_ASSETS=/path/to/extracted-inputs python -m tools.projectile_oracle.line_trail --check',
+    return dict(command='VERA20K_PROJECTILE_RENDER_ASSETS=/path/to/extracted-inputs python -m tools.projectile_oracle.line_trail --check',
         coverage='Selected DRAGON Object producer, LineTrail registry/update/draw/detach and bounded Bullet save/load',
         substitutions=[
             'Physical extracted INI bytes become supplied cached native INI indices; no original archive walk',
@@ -404,12 +402,7 @@ def metadata():
             "Four mixed-alpha rows supply (0,1,63,127,255)[(x//9+y//7)%5] per pixel, exercising X/Y/Z-dominant and reversed/clipped4BEAC0 walks. This establishes that consumer's A sample, not the scene ABuffer producer."],
         original_slices=[dict(start=f'{a:08X}',end_exclusive=f'{b:08X}',
             sha256=hashlib.sha256(bytes(m.u.mem_read(a,b-a))).hexdigest(),
-            hex=bytes(m.u.mem_read(a,b-a)).hex()) for a,b in spans],
-        dependencies={p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in (
-            'tools/projectile_oracle/line_trail.py',
-            'tools/projectile_oracle/bridge_render_art_state.py',
-            'tools/projectile_oracle/bridge_render_inputs.py',
-            'tools/spatial_oracle/building_body_rules.py','tools/native_oracle.py')})
+            hex=bytes(m.u.mem_read(a,b-a)).hex()) for a,b in spans])
 
 if __name__=='__main__':
     import argparse

@@ -3,7 +3,40 @@
 //! below cover their connection to VERA's existing CanBuild gate order.
 
 use super::*;
+use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
 use crate::sim::world::{FrameEffects, UninitContext};
+
+const PRODUCTION_FACTORY: &str = "ARES_PREREQ_FACTORY";
+
+/// Keep the component's original Building ordinals and prerequisite inputs;
+/// append an independent actual factory through the production Rules reader.
+fn prerequisite_rules_with_factory(ini: IniFile) -> RuleSet {
+    let mut layers = RulesLayerStack::new(ini);
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str(
+            "[Countries]\n0=C0\n1=C1\n\
+         [BuildingTypes]\n0=ARES_PREREQ_FACTORY\n\
+         [ARES_PREREQ_FACTORY]\nStrength=100\nFactory=UnitType\nOwner=C0,C1\n\
+         [Q]\nOwner=C0,C1\n[DIRECT]\nOwner=C0,C1\n[GROUP]\nOwner=C0,C1\n",
+        ),
+    );
+    RuleSet::from_rules_layers(&layers).unwrap()
+}
+
+fn spawn_prerequisite_factory(sim: &mut Simulation, rules: &RuleSet) {
+    // Explicit IDs1/2 in the upgrade fixtures and subsequent lifecycle objects
+    // remain distinct. This type is absent from all tested prerequisite lists.
+    crate::sim::production::tests::spawn_structure(
+        sim,
+        rules,
+        10_000,
+        "H0",
+        PRODUCTION_FACTORY,
+        30,
+        30,
+    );
+}
 
 #[test]
 fn house_prerequisites_match_executed_controls() {
@@ -31,7 +64,7 @@ fn house_prerequisites_match_executed_controls() {
             .map_or_else(String::new, |host| {
                 format!("[B]\nPowersUpBuilding={host}\n")
             });
-        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        let rules = prerequisite_rules_with_factory(IniFile::from_str(&format!(
             "[Countries]\n0=C0\n\
              [BuildingTypes]\n0=A\n1=B\n2=COLLIDE\n\
              [VehicleTypes]\n0=TANK\n1=Q\n[InfantryTypes]\n0=INF\n\
@@ -43,8 +76,7 @@ fn house_prerequisites_match_executed_controls() {
                 members.join(",")
             },
             alternate.join(",")
-        )))
-        .unwrap();
+        )));
         let mut sim = Simulation::new();
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
@@ -137,6 +169,7 @@ fn house_prerequisites_match_executed_controls() {
             entries.iter().all(owns)
         };
         assert_eq!(result, row["result"].as_bool().unwrap(), "{}", row["name"]);
+        spawn_prerequisite_factory(&mut sim, &rules);
         let mut query = rules.object("Q").unwrap().clone();
         if any {
             query.prerequisite_override = entries;
@@ -154,7 +187,7 @@ fn house_prerequisites_match_executed_controls() {
 }
 
 fn lifecycle_world(query_section: &str) -> (Simulation, RuleSet, InternedId) {
-    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+    let rules = prerequisite_rules_with_factory(IniFile::from_str(&format!(
         "[Countries]\n0=C1\n\
          [BuildingTypes]\n0=MEMBER\n1=MISSING\n\
          [VehicleTypes]\n0=ALT\n1=Q\n\
@@ -163,9 +196,9 @@ fn lifecycle_world(query_section: &str) -> (Simulation, RuleSet, InternedId) {
          [MEMBER]\nStrength=100\nCapturable=yes\nNeedsEngineer=yes\n\
          [ALT]\nStrength=100\n\
          [Q]\nStrength=100\n{query_section}\n"
-    )))
-    .unwrap();
-    let (sim, owner) = sim_for(&json!({}), &rules);
+    )));
+    let (mut sim, owner) = sim_for(&json!({}), &rules);
+    spawn_prerequisite_factory(&mut sim, &rules);
     (sim, rules, owner)
 }
 
@@ -283,7 +316,7 @@ fn generic_override_precedes_tech_and_prerequisites_then_checks_build_limit() {
 
 #[test]
 fn installed_upgrade_direct_and_group_requirements_follow_host_lifecycle() {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
+    let rules = prerequisite_rules_with_factory(IniFile::from_str(
         "[Countries]\n0=C1\n\
          [BuildingTypes]\n0=HOST\n1=UPGRADE\n2=OTHER\n\
          [VehicleTypes]\n0=DIRECT\n1=GROUP\n\
@@ -293,9 +326,9 @@ fn installed_upgrade_direct_and_group_requirements_follow_host_lifecycle() {
          [OTHER]\nStrength=100\n\
          [DIRECT]\nTechLevel=1\nPrerequisite=UPGRADE\n\
          [GROUP]\nTechLevel=1\nPrerequisite=installed\n",
-    ))
-    .unwrap();
+    ));
     let (mut sim, owner) = sim_for(&json!({}), &rules);
+    spawn_prerequisite_factory(&mut sim, &rules);
     let other = sim.interner.get("H1").unwrap();
     let host = sim.spawn_object("HOST", "H1", 10, 10, 0, &rules).unwrap();
     sim.spawn_object("OTHER", "H0", 14, 10, 0, &rules).unwrap();
@@ -374,7 +407,27 @@ fn installed_upgrade_scan_does_not_filter_online_health_or_selling() {
 
     // Ares1000830F..835F reads the matched host's Type and fixed3 slots;
     // no health, limbo, online, mission or upgrade-count field is read.
-    let (mut sim, rules, owner) = upgrade_prerequisite_world();
+    // This leaf needs a separate working production factory: the prerequisite
+    // host below is deliberately made unhealthy/offline/Selling by the test.
+    let rules = prerequisite_rules_with_factory(IniFile::from_str(
+        "[Countries]\n0=C1\n[VehicleTypes]\n0=Q\n\
+         [BuildingTypes]\n0=HOST\n1=UPGRADE\n2=OTHER\n\
+         [Q]\nTechLevel=1\nPrerequisite=UPGRADE\n\
+         [HOST]\nStrength=100\nUpgrades=3\n\
+         [UPGRADE]\nStrength=100\nPowersUpBuilding=HOST\n\
+         [OTHER]\nStrength=100\n",
+    ));
+    let (mut sim, owner) = sim_for(&json!({}), &rules);
+    for (id, name, x) in [(1, "HOST", 10), (2, "OTHER", 14)] {
+        crate::sim::production::tests::spawn_structure(&mut sim, &rules, id, "H0", name, x, 10);
+    }
+    let upgrade = sim.interner.get("UPGRADE").unwrap();
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_building_upgrades_for_test(0, [None, None, Some(upgrade)]);
+    spawn_prerequisite_factory(&mut sim, &rules);
     let host = sim.substrate.entities.get_mut(1).unwrap();
     host.health.set_for_test(0);
     host.set_building_online_for_test(false);

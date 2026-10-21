@@ -1,4 +1,4 @@
-"""The replay command a native run records."""
+"""The replay command a native run records, and what a check compares."""
 from pathlib import Path
 import os
 import shlex
@@ -61,10 +61,17 @@ class ReplayCommandTests(unittest.TestCase):
         self.assertIsNone(sources.replay_command([], main_module('unittest')))
         self.assertIsNone(sources.replay_command([], main_module(file='/elsewhere/tool.py')))
 
-    def test_the_replay_command_and_legacy_source_and_gamemd_pins_are_not_evidence(self):
-        metadata = {'native_sha256': 'n', 'payload_sha256': 'p', sources.REPLAY_FIELD: 'python -m tools.x',
-                    sources.LEGACY_SOURCE_FIELD: {'tools/x.py': '0' * 64}}
-        self.assertEqual(sources.evidence(metadata), {'payload_sha256': 'p'})
+    def test_the_replay_command_and_runtime_versions_are_not_evidence(self):
+        compression = {'format': 'gzip', 'level': 9, 'zlib_runtime': '1.3.1'}
+        archive = {'file': 'x.raw.json.gz', 'sha256': 'g', 'bytes': 3, 'uncompressed_sha256': 'u',
+                   'compression': compression}
+        metadata = {'payload_sha256': 'p', 'scope': 's', sources.REPLAY_FIELD: 'python -m tools.x',
+                    'unicorn_binding': '2.1.4', 'unicorn_core': [2, 1, 0], 'raw_archive': archive}
+        self.assertEqual(sources.evidence(metadata), {
+            'payload_sha256': 'p', 'scope': 's',
+            'raw_archive': {'file': 'x.raw.json.gz', 'uncompressed_sha256': 'u',
+                            'compression': {'format': 'gzip', 'level': 9}}})
+        self.assertEqual(archive['compression'], compression)
 
 
 if __name__ == '__main__':

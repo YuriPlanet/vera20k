@@ -106,6 +106,5 @@
       "operand": "0x65c7e0"
     }
   ],
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "source": "Verified original PE mapped by tools.native_oracle.load_image; Capstone decodes at observed instruction boundaries."
 }

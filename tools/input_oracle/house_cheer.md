@@ -15,8 +15,8 @@ python -m tools.input_oracle.selection_navigation --house-cheer --write
 
 The original selection, keyboard-registration and Infantry-cheer payloads are
 separate references. This option does not regenerate them. In particular,
-`spatial_oracle/infantry_cheer.meta.json` records a Steam executable identity;
-it supplies no current-image keyboard, event, House-scan or sound evidence.
+`spatial_oracle/infantry_cheer.json` supplies no keyboard, event, House-scan or
+sound evidence.
 
 The 15 retained histories contain 34 visits. Their inputs supply the current
 House index, Rules rate, signed last/current simulation frames, the Session+300

@@ -371,19 +371,16 @@ class IdentityAndReferenceTests(unittest.TestCase):
                 oracle._image.cache_clear()
                 self.addCleanup(oracle._image.cache_clear)
                 self.assertEqual(oracle._image(self.target), data)
-        self.assertEqual(oracle.image_sha256(), oracle.NATIVE_SHA256)
         metadata = oracle.provenance(scope="synthetic", assumptions=["not native evidence"],
                                      substitutions=[], entry_points={"test": CODE})
         self.assertNotIn("native_sha256", metadata)
 
-    def test_check_ignores_and_write_drops_a_legacy_native_hash(self):
+    def test_another_runtime_version_is_not_a_provenance_change(self):
         self.finish({"value": 42}, "--write")
-        sidecar = self.target.with_suffix(".meta.json")
-        legacy = dict(self.sidecar(), native_sha256="recorded-by-an-older-runner")
-        sidecar.write_text(json.dumps(legacy))
-        self.assertIn("PASS", self.finish({"value": 42}))
-        self.finish({"value": 42}, "--write")
-        self.assertNotIn("native_sha256", self.sidecar())
+        before = self.files()
+        provenance = dict(self.metadata, unicorn_binding="2.1.5", unicorn_core=[2, 2, 0])
+        self.assertIn("PASS", self.finish({"value": 42}, provenance=provenance))
+        self.assertEqual(before, self.files())
 
     def test_the_configured_executables_hash_is_never_published(self):
         digest = self.configure_executable()
@@ -392,40 +389,21 @@ class IdentityAndReferenceTests(unittest.TestCase):
         provenance = dict(self.metadata, gamemd_sha256=digest)
         with self.assertRaisesRegex(oracle.OracleError, r"vectors\.meta\.json \$\.gamemd_sha256"):
             self.finish({"value": 42}, "--write", provenance=provenance)
+        with self.assertRaisesRegex(oracle.OracleError, r"vectors\.raw\.json\.gz \$\.rows\[\*\]\.build"):
+            self.finish({"rows": [{"build": digest}], "value": 1}, "--write",
+                        projection=lambda raw: {"value": raw["value"]})
         self.assertEqual(self.files(), {})
         # A reference that already holds this build's hash is not grandfathered.
         self.target.write_text(json.dumps({"build": digest.upper()}))
         with self.assertRaisesRegex(oracle.OracleError, "Remove these fields from the producer"):
             self.finish({"build": digest.upper()})
 
-    def test_the_legacy_label_passes_only_where_the_reference_carries_it(self):
+    def test_another_builds_hash_is_compared_as_ordinary_payload(self):
+        # Only the configured executable's own hash is recognized. Every build
+        # is the same game, so no other build's hash is named in code.
         self.configure_executable()
-        label = oracle.image_sha256()
-        legacy = {"native_sha256": label, "rows": [{"image": label, "value": 1}]}
-        self.target.write_text(json.dumps(legacy, indent=2) + "\n")
-        self.assertIn("PASS", self.finish(legacy))
-        grown = dict(legacy, rows=legacy["rows"] * 2)
-        self.finish(grown, "--write")
-        other = self.target.with_name("elsewhere.json")
-        self.finish(grown, "--write", "--output", str(other))
-        added = dict(grown, rows=[dict(row, build=label) for row in grown["rows"]])
-        with self.assertRaisesRegex(oracle.OracleError, r"vectors\.json \$\.rows\[\*\]\.build\."):
-            self.finish(added, "--write")
-        self.assertEqual(json.loads(self.target.read_text()), grown)
-
-    def test_a_new_corpus_or_another_builds_reference_cannot_carry_the_label(self):
-        self.configure_executable()
-        label = oracle.image_sha256()
-        with self.assertRaisesRegex(oracle.OracleError, r"vectors\.json \$\.native_sha256"):
-            self.finish({"native_sha256": label}, "--write")
-        with self.assertRaisesRegex(oracle.OracleError, r"vectors\.raw\.json\.gz \$\.build"):
-            self.finish({"build": label, "value": 1}, "--write",
-                        projection=lambda raw: {"value": raw["value"]})
-        self.assertEqual(self.files(), {})
-        # Another build recorded its own hash; this run reports the label there.
-        self.target.write_text(json.dumps({"native_sha256": "ab" * 32}))
-        with self.assertRaisesRegex(oracle.OracleError, "Refusing to publish a gamemd.exe hash"):
-            self.finish({"native_sha256": label})
+        self.target.write_text(json.dumps({"value": "ab" * 32}))
+        self.assertIn("PASS", self.finish({"value": "ab" * 32}))
 
     def test_explicit_missing_path_does_not_fall_back(self):
         (self.target.parent / "gamemd.exe").write_bytes(b"fallback must not be selected")
@@ -464,7 +442,7 @@ class IdentityAndReferenceTests(unittest.TestCase):
     def test_provenance_change_rejects_matching_payload(self):
         self.finish({"value": 42}, "--write")
         with self.assertRaisesRegex(oracle.OracleError, "Provenance mismatch"):
-            self.finish({"value": 42}, provenance=dict(self.metadata, unicorn_core=[2, 2, 0]))
+            self.finish({"value": 42}, provenance=dict(self.metadata, scope="another claim"))
 
     def test_projection_preserves_full_raw_and_checks_deterministic_archive(self):
         data = {"value": 42, "raw": {"bytes": "001122", "retained": [1, 2, 3]}}
@@ -487,6 +465,20 @@ class IdentityAndReferenceTests(unittest.TestCase):
         self.assertEqual(before, {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in before})
         self.finish(data, "--write", projection=projection)
         self.assertEqual(archive.read_bytes(), compressed)
+
+    def test_projection_accepts_an_archive_another_zlib_compressed(self):
+        data = {"value": 42, "raw": [1, 2, 3]}
+        projection = lambda raw: {"value": raw["value"]}
+        self.finish(data, "--write", projection=projection)
+        archive = self.target.with_suffix(".raw.json.gz")
+        archive.write_bytes(gzip.compress(gzip.decompress(archive.read_bytes()), compresslevel=1, mtime=0))
+        for suffix in (".meta.json", ".raw.meta.json"):
+            sidecar = self.target.with_suffix(suffix)
+            metadata = json.loads(sidecar.read_text())
+            metadata["raw_archive"].update(sha256="0" * 64, bytes=1)
+            metadata["raw_archive"]["compression"]["zlib_runtime"] = "another build"
+            sidecar.write_text(json.dumps(metadata))
+        self.assertIn("PASS", self.finish(data, projection=projection))
 
     def test_projection_optional_raw_hash_guard_rejects_before_publication(self):
         data = {"value": 42, "raw": [1, 2, 3]}
@@ -569,7 +561,7 @@ class IdentityAndReferenceTests(unittest.TestCase):
             self.finish({'value': 43}, source_paths={'helper': source})
         with self.assertRaisesRegex(oracle.OracleMismatch, 'Provenance mismatch'):
             self.finish({'value': 42}, source_paths={'helper': source},
-                        provenance=dict(self.metadata, unicorn_core=[2, 2, 0]))
+                        provenance=dict(self.metadata, scope='another claim'))
         self.assertEqual(before, self.files())
 
     def test_the_replay_command_is_recorded_but_not_evidence(self):
@@ -583,19 +575,9 @@ class IdentityAndReferenceTests(unittest.TestCase):
             self.assertIn('PASS', self.finish({'value': 42}))
         self.assertEqual(before, self.files())
 
-    def test_a_legacy_source_pin_from_another_branch_passes_and_write_drops_it(self):
-        self.finish({'value': 42}, '--write')
-        legacy = dict(self.sidecar(), source_normalized_lf_sha256={'tools/helper.py': '0' * 64})
-        self.target.with_suffix('.meta.json').write_text(json.dumps(legacy, indent=2) + '\n',
-                                                         encoding='utf-8')
-        self.assertIn('PASS', self.finish({'value': 42}))
-        self.finish({'value': 42}, '--write')
-        self.assertNotIn('source_normalized_lf_sha256', self.sidecar())
-
-    def test_producer_cannot_supply_source_pins_or_the_replay_command(self):
-        for name in ('source_normalized_lf_sha256', 'replay_command'):
-            with self.subTest(name=name), self.assertRaisesRegex(oracle.OracleError, 'pin no sources'):
-                self.finish({'value': 42}, '--write', provenance=dict(self.metadata, **{name: {}}))
+    def test_producer_cannot_supply_the_replay_command(self):
+        with self.assertRaisesRegex(oracle.OracleError, 'records the replay command'):
+            self.finish({'value': 42}, '--write', provenance=dict(self.metadata, replay_command='x'))
         self.assertFalse(self.target.exists())
 
     def test_help_does_not_evaluate_native_callables(self):

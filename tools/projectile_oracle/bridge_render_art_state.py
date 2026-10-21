@@ -8,7 +8,7 @@ import hashlib
 import json
 import struct
 from pathlib import Path
-from tools.native_oracle import NATIVE_SHA256, finish_vectors, provenance
+from tools.native_oracle import finish_vectors, provenance
 from tools.projectile_oracle.bridge_render_inputs import BulletReader, assets_root, lexical
 
 class ArtStateReader(BulletReader):
@@ -162,7 +162,7 @@ def retail():
     return dict(sources=sources, art_sha256=hashlib.sha256(art_raw).hexdigest(), excluded_duplicate_art_sections=excluded, rows=results)
 
 def generate():
-    return dict(native_sha256=NATIVE_SHA256, controls=controls(), retail=retail())
+    return dict(controls=controls(), retail=retail())
 
 def metadata():
     return provenance(scope='Full original BulletType constructor and retained ART reads across rules layers, plus physical retail referenced projectile type inputs', assumptions=[

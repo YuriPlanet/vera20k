@@ -251,12 +251,13 @@ impl Simulation {
         if let Some((_, radius)) = self.gap_operational_state(id, rules) {
             // `0x00454B91..0x00454BEB`: the off edge's removal (`+0x269` set)
             // also drops a super-charge.
+            let deciding_client = self.gap_supercharge_deciding_client();
             let deposited = self.substrate.entities.get(id).is_some_and(|entity| {
-                entity
-                    .gap_generator
-                    .viewers
-                    .values()
-                    .any(|deposit| deposit.active)
+                let viewers = &entity.gap_generator.viewers;
+                match deciding_client {
+                    Some(house) => viewers.get(&house).is_some_and(|deposit| deposit.active),
+                    None => viewers.values().any(|deposit| deposit.active),
+                }
             });
             let viewers = self.gap_viewers();
             for viewer in viewers {
@@ -280,17 +281,54 @@ impl Simulation {
         self.update_building_anim_power(id, operational, rules);
     }
 
+    /// Whose `+0x269` gates the off edge's removal and super-charge reset
+    /// (`0x00454B9B`): native reads the running client's own copy, written by
+    /// gap add `0x006FB170` (`0x006FB1CD`) and remove `0x006FB470`
+    /// (`0x006FB4BB`). Their PlayerPtr (`0x00A83D4C`) test passes on every
+    /// client in play, so the copies differ only through the reveal and
+    /// alliance brackets below. In a single-client game the running client is
+    /// the current House, so its viewer's deposit decides. `None` asks
+    /// whether any viewer holds a deposit.
+    ///
+    /// Residual: `None` for a network game, where the current House is
+    /// client-local (absent from the peer hash) and must not decide the
+    /// shared super-charge and its 9000 drain, and for a session without a
+    /// current House (headless, a bare fixture). Native multiplayer desyncs
+    /// whenever the clients' copies disagree, so it gives no single answer;
+    /// `any` is VERA's deterministic stand-in. The copies diverge in two ways
+    /// (case 1 runs in `gap_supercharge_tests` for the skirmish answer):
+    /// 1. Trigger: Make_Ally under `[AudioVisual] AllyReveal=yes` (retail) while
+    ///    the generator is operational. The remove bracket (`0x004F9B9A`,
+    ///    before the ally bit) takes the gap arm on the new ally's client and
+    ///    the re-add bracket (`0x004F9F4F`) takes the allied-Building arm, so
+    ///    that client keeps 0 until a later add on it: the generator's next on
+    ///    edge, the Mission_Unload toggle's re-add (`0x0044E29D..0x0044E36B`),
+    ///    a Make_Enemy re-add bracket (`0x004FA1E3`) or an owner change's
+    ///    remove/re-add (`0x00448260`).
+    /// 2. Trigger: a one-client map transition (Reveal or Reset_Shroud for
+    ///    PlayerPtr: SpySat gain or loss, a reveal crate, a trigger) after the
+    ///    generator stops being operational and before its Update edge; the
+    ///    re-add rechecks the lost operational state and leaves 0.
+    ///
+    /// Effect in a network game: a client holding 0 keeps the charge and the
+    /// extra drain where VERA drops both; downstream, the kept drain can hold
+    /// the owner in low power on that client. Frequency: rare. Case 1 needs
+    /// an alliance with a charged generator's owner followed by its power
+    /// loss with none of those re-adds in between (an owner toggling the
+    /// charge already re-adds); case 2 needs a same-frame coincidence.
+    fn gap_supercharge_deciding_client(&self) -> Option<InternedId> {
+        if self.session.game_mode().is_network() {
+            return None;
+        }
+        self.session.current_house()
+    }
+
     /// The off edge's super-charge reset (`0x00454BAF..0x00454BEB`): clear
     /// `+0x268`/`+0x669`, dirty House+5778 and restore `+0x26C` to
     /// `GapRadiusInCells=` (`Type+0xCD2`). Its closing add (vt+0x414,
     /// `0x006FB170`) rechecks the operational state the edge just lost, so it
-    /// deposits nothing.
-    ///
-    /// Residual: native gates this on each client's own `+0x269`; VERA asks
-    /// whether any viewer holds a deposit, so the one flag stays
-    /// deterministic. They differ only when a SpySat or alliance bracket
-    /// removed one client's deposit without re-adding it before this edge
-    /// (the re-add rechecks the same operational state), so not in play.
+    /// deposits nothing. It runs only inside the removal that
+    /// [`Self::gap_supercharge_deciding_client`]'s deposit admits.
     fn drop_gap_supercharge(&mut self, id: u64, radius: i32) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;

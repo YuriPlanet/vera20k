@@ -1443,7 +1443,6 @@
   ],
   "native_identity": {
     "limits": "File-backed byte identity for explicit spans; sizes do not assert exhaustive function or caller coverage.",
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "spans": [
       {
         "address": "0x51aa40",
@@ -88524,7 +88523,6 @@
     ]
   ],
   "refused_enter_native_identity": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "spans": [
       {
         "address": "0x51a488",
@@ -379066,7 +379064,6 @@
     "sequence": "ClegSequence"
   },
   "transport_native_identity": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "spans": [
       {
         "address": "0x746e20",

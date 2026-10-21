@@ -268,7 +268,7 @@ CI clippy set passed with `VERA20K_REQUIRE_RETAIL_INI=1`: **9,567 passed,
 0 failed, 231 ignored**; clippy exited 0 with existing repository warnings.
 The simulation field ratchet passed at **2,532 baseline/current fields**.
 The [validation receipt](bridge_shadow_render.validation.json) records exact
-commands, source/log hashes and the corrected lifecycle fixture's separate run.
+commands, log hashes and the corrected lifecycle fixture's separate run.
 
 ```sh
 VERA20K_REQUIRE_RETAIL_INI=1 python -m tools.cargo_run -- test --workspace --lib

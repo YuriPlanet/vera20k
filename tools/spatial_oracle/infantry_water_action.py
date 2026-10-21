@@ -140,7 +140,6 @@ def constructor_and_retail_receipts():
     from tools.rules_oracle.bridge_child_sound import Sound, sections as sound_sections
     from tools.projectile_oracle.bridge_render_inputs import lexical
     from tools.spatial_oracle.building_body_rules import INI, RULES, dwords
-    from tools.native_oracle import NATIVE_SHA256
 
     class Water(FootMissions):
         def observe(self, u, address, size, data):
@@ -324,7 +323,7 @@ def constructor_and_retail_receipts():
                      water_state=signed(q.e1 + 0x6E8),
                      doing=signed(q.e1 + 0x6C4),
                      ready_returned_al=q.e1_ready & 255),
-                 native_sha256=NATIVE_SHA256, text_sha256=text_before,
+                 text_sha256=text_before,
                  sound_registry_boundary='Original selected physical SoundList registration; Voc configuration/sample IO/playback excluded, audio gate8464ACfalse.')]
         + readers + rows)
 

@@ -1,5 +1,4 @@
 {
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "replay_command": "python -m tools.storage_oracle.shell_text_lines --text-label",
   "payload_sha256": "e73ed187f34bfe7cd8352528c66c74c1f5d54f68b7fa5050a99f4e50206704a0"
 }

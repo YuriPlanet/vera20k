@@ -52,7 +52,6 @@ def metadata():
         'after selected original570050 repair or57BAA0 damage returns. Four independent '
         'VMs match the frozen Shrapnel initial/state/trace exactly before581F50.'
     )
-    result['harness_sha256'] = shared.sha(Path(__file__).read_bytes())
     result['rebuild_owner'] = 'tools/spatial_oracle/anytown_navigation_restore.py'
     result['navigation_owner'] = 'tools/spatial_oracle/anytown_damage/navigation.py'
     return result

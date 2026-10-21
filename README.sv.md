@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K huvudbild" width="100%">
 
 <p align="center" dir="ltr">
-  <strong>Svenska</strong> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <strong>Svenska</strong> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Senaste körningen av bibliotekstesterna för macOS (startas manuellt)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="Bibliotekstester för macOS" height="23" align="middle"></a>
@@ -93,8 +93,15 @@ portar sedan dess beteende till Rust och kontrollerar det med
 
 ## Anpassning
 
-Valfria funktioner (t.ex. från Ares) ska kunna konfigureras via INI-filer, med möjlighet
-att slå på och av dem i klienten där det är lämpligt.
+VERA20K fungerar som standard precis som originalspelet. Varje ny funktion, även tillägg från
+moddar som Ares, måste vara avstängd tills den slås på med något av följande:
+
+- **Ett byggalternativ**, till exempel `--features ares` för de [Ares-tillägg](docs/ares.md) som stöds.
+- **Ett lobbyalternativ i spelet**, som väljs för varje match.
+- **En INI-nyckel**, som sätts av en mod eller en karta.
+
+För att starta skirmish-matcher eller kampanjer i YR för en spelare från en CnCNet-klient, se
+[installationen av offlineklienten](integrations/cncnet/README.md).
 
 ## Bidra
 

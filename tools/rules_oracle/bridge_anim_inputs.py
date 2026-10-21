@@ -11,7 +11,7 @@ from pathlib import Path
 from tools.rules_oracle.bridge_anim_lists import Lists,HEAP
 from tools.projectile_oracle.flat_art import crc
 from tools.spatial_oracle.building_body_rules import INI,SP,dwords
-from tools.native_oracle import run_checked,RET_MAGIC,NATIVE_SHA256,finish_vectors,provenance
+from tools.native_oracle import run_checked,RET_MAGIC,finish_vectors,provenance
 from unicorn.x86_const import *
 DEFAULT_ASSETS=Path(os.environ.get('CARGO_TARGET_DIR','target'))/'asset/bridge-anim-inputs/extract'
 ROOT=Path(os.environ.get('VERA20K_BRIDGE_ANIM_ASSETS',str(DEFAULT_ASSETS)))
@@ -189,7 +189,7 @@ def generate():
  for scorch,crater in [('yes','no'),('no','yes')]:
   controls.extend(read_types(ROOT,{'DBRIS1LG':{'Scorch':scorch,'Crater':crater}},['DBRIS1LG']))
  assert [(r['scorch'],r['crater']) for r in controls]==[(True,False),(False,True)]
- return dict(schema_version=1,native_sha256=NATIVE_SHA256,
+ return dict(schema_version=1,
              art_sha256=hashlib.sha256(raw).hexdigest(),art_bytes=len(raw),
              rows=rows,asymmetric_flag_controls=controls,production_export_checks=checks)
 

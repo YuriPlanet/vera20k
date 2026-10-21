@@ -1006,10 +1006,6 @@
             }
           },
           "binary_sources": {
-            "gamemd.exe": {
-              "bytes": 5286504,
-              "sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-            },
             "initial_palette_cache/120mm.shp": {
               "bytes": 48,
               "sha256": "4c98740538c483eb9ff631d852b2a963eb08928763f1d8383e8098e3a5d6ab3b"
@@ -119932,10 +119928,6 @@
             }
           },
           "binary_sources": {
-            "gamemd.exe": {
-              "bytes": 5286504,
-              "sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-            },
             "initial_palette_cache/120mm.shp": {
               "bytes": 48,
               "sha256": "4c98740538c483eb9ff631d852b2a963eb08928763f1d8383e8098e3a5d6ab3b"
@@ -239300,7 +239292,6 @@
       ]
     }
   ],
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "schema_version": 1,
   "surface": {
     "a_uniform": true,

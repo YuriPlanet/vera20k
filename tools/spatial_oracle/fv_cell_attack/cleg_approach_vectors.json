@@ -6832,7 +6832,6 @@
     "rtti_entry": "00523340",
     "vtable": "007eb058"
   },
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "numeric": {
     "fpcw": 3647,
     "neighbor_offsets": [

@@ -17,8 +17,6 @@ use crate::app::frontend::skirmish::{
 use crate::app::loading::fresh_scenario::{
     FreshMapMaterialization, FreshScenarioLoadContextDescriptor, FreshScenarioParts,
 };
-#[cfg(test)]
-use crate::app::loading::init_helpers::load_rules_with_merged_ini;
 use crate::app::loading::init_helpers::{
     DebugSpawnMarch, build_tile_atlas, cells_by_distance_from, parse_debug_spawn_march_env,
     parse_debug_spawn_units_env, theater_ext_for,
@@ -2050,12 +2048,15 @@ impl MapLoadInitial {
             Some(&match_launch_descriptor.session().mode.override_file),
         )
         .expect("select the generated-map mode INI layer");
-        let (mut rules, rules_ini, art_ini, native_rules_receipt) = load_rules_with_merged_ini(
-            asset_manager,
-            mode_override_ini.as_ref(),
-            Some(&map_data.ini),
-        )
-        .expect("retail generated-map rules");
+        let (mut rules, rules_ini, art_ini, native_rules_receipt) =
+            crate::app::loading::init_helpers::load_rules_with_prefix_for_test(
+                asset_manager,
+                crate::rules::process_owner::NativeScenarioRulesPrefix::RandomMap(
+                    mode_override_ini.as_ref(),
+                ),
+                Some(&map_data.ini),
+            )
+            .expect("retail generated-map rules");
         rules.install_art_data(ArtRegistry::from_ini(&art_ini));
         let infantry_sequences =
             crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini);
@@ -2801,7 +2802,11 @@ pub(crate) fn load_map_from_initial(
     } else {
         None
     };
-    let rules_prefix = if game_mode_nonzero {
+    let rules_prefix = if materialization == FreshMapMaterialization::AcceptedGenerated {
+        crate::rules::process_owner::NativeScenarioRulesPrefix::RandomMap(
+            mode_override_ini.as_ref(),
+        )
+    } else if game_mode_nonzero {
         crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
             mode_override_ini.as_ref(),
         )

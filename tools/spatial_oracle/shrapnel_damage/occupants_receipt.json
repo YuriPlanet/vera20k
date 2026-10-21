@@ -1,6 +1,5 @@
 {
   "schema": 2,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "native_cases": 7,
   "stages_per_case": 2,
   "timer_cases": 4,
@@ -10,38 +9,30 @@
     "occupants_gzip_sha256": "dae34d6ac6325a51ea22d7658eac9061042fc09807ab59f5216e7d0d1e3b5f66",
     "timer_original_case_values_sha256": "f3af7eba4981a8f9430a48d4eaf6727f8c996cde77e5025ce0c34addc001298d",
     "timer_native_output_bytes_preserved_on_portable_copy": true,
-    "metadata_change": "The integrated timer metadata adds the repository-relative observer source to the shared import census. Native case values and original-source excerpts are unchanged by promotion.",
     "joined_published_payload_sha256": "d2681c0e7a294205e2c7b0bd0f3b0c15802e78063c007b921f8dc88ff38c6030",
     "joined_gzip_sha256": "b3f72c9d9f6b6f47bd937c47609489f89b72aec8bed9a9c9400435c42ac8a3b3",
     "request_boundary_packet_and_projection_unchanged": true,
     "joined_scope": "The separate joined packet executes original Anim constructors/Unlimbo/Logic/Display/Start and Bouncer initialization in the existing occupant VM; v1 request-boundary values remain unchanged."
   },
   "owned_artifacts_sha256": {
-    "occupants.py": "031c1a01698f314f4f9398ebc715cb354caeb4e8e96ff0da93f5b3d330000864",
     "occupants.json.gz": "dae34d6ac6325a51ea22d7658eac9061042fc09807ab59f5216e7d0d1e3b5f66",
     "occupants.meta.json": "cd5b7c467bdbe7e84c68127c7bcd62113e9d652a73729995b35686169c0af7fb",
     "occupants_promotion.json": "f6310661ca8d30bd288d939ec49b1925fd6a984c6fc086f60d931e1140a8922e",
-    "occupants_test_vectors.py": "dba865474bcfc3fe0d89585357e1bcacbf5c457bebdd832214958cb55507553a",
-    "occupants_test_vectors.json": "71519e46bd5569a552c3a8ccdc97472dd8f186654be1666534ea0a1f272754b8",
-    "occupants_test_vectors.meta.json": "b20a61133fdf07bde48074ddd9b5b13440baf833f0542c284afbce4e9c457067",
-    "occupants_timer.py": "7b11fe8ebb1e25da981d517dae93bc8c3ee9ec4f9cca258264e93e408efdfa66",
+    "occupants_test_vectors.json": "ae4a42c25de1547e2650b3da180081b16c2fa90865b5f8af213df492b2f56bb1",
+    "occupants_test_vectors.meta.json": "a991a8f1376910e15781d3b812d699d9a2445c0ec3e84e1229d05b86c5ef4800",
     "occupants_timer.json": "5822123e0c30aa6cbf2b53ee6db4a8bd7419e58086320a7f91cbac47e1f740a2",
     "occupants_timer.meta.json": "babeef4ef5ade964b07c19cf370947bc3de572570fed01eb7d7e02ef5713a7ee",
-    "occupants.md": "840a27dcbfc91457b6bbc1ded93e93692a14083823a7167bf36cab1bd52404a1",
-    "occupants_joined.py": "222666742e93a87573c621336f4c3b18a2ca30a6ff0b74c4877344ba1b570261",
     "occupants_joined.json.gz": "b3f72c9d9f6b6f47bd937c47609489f89b72aec8bed9a9c9400435c42ac8a3b3",
     "occupants_joined.meta.json": "008519388be3a6b590409f869cf39a7187550654ae3f69d4c08beb1ff1abd5ef",
     "occupants_joined_promotion.json": "b6469e803fd0f7bf9b7f659e2c9583fe6199084fe9def63e1e50860747013056",
-    "occupants_joined_test_vectors.py": "1b5e51b661295eb0cd00882919cf43843c8a7d99e849be1d02eda174101d0ec2",
-    "occupants_joined_test_vectors.json": "2d709c8f60986c6ddf1c4507a39719056829faf07265bb3adc160496edf56d84",
-    "occupants_joined_test_vectors.meta.json": "ecd5a8dc501c28cdd1b4ff5049f98eff87012025e609aa22f7fd8ba7fa0eb55e"
+    "occupants_joined_test_vectors.json": "efc439c879c4298e3506f8c0b9509e9a20dea34f355b361b4cf4f9da50552748",
+    "occupants_joined_test_vectors.meta.json": "fa8417c6418fcd3d813612d98f44a185aff694433cfe1bdc2db02c36b314a291"
   },
   "shared_owner": {
     "path": "tools/spatial_oracle/anytown_damage/anytown_occupants.py",
-    "sha256": "9c6568395dff1c36fbcecc567bb698f9ba13b5551ec5b9592562ba271cf77778",
     "change": "Optional scene data selects Shrapnel coordinates, map layer and already-admitted low caller. Default Anytown native bodies and published values remain unchanged.",
-    "anytown_frozen_gzip_sha256": "cbbdcb37bf3eb340a036fd13cedd18c1b568f309a10a37f3d64954f5239520ab",
-    "anytown_sidecar_sha256": "3e4f59bea857d6ba3d4a4aa6809f8a177a1eec00f177bd146fe49a36b4afaa8c"
+    "anytown_frozen_gzip_sha256": "696b24143884bed7770758c8d37b80ad61f53f0041a4e295a8ef09a8494ab05f",
+    "anytown_sidecar_sha256": "385c22fdbbfc6cdd7cbf7ff310670562c04624b5d2cbfc753ed6911ec5c1d034"
   },
   "independent_validation": [
     {
@@ -93,7 +84,6 @@
   "joined_native_cases": 7,
   "shared_anim_decoder": {
     "path": "tools/spatial_oracle/anim_bouncer_launch.py",
-    "sha256": "6fa5df589e686573addd7843c16fae49a883c437f6dba3091d4f9c8d7b601055",
     "change": "Add observational constructor_state decoder; existing Machine, execution and anim_state output remain unchanged. No new VM or native constructor implementation.",
     "frozen_native_payload_sha256": "8bc739d84367a72a4c1fa63cd33d589ec6cadedf39ed141fde889c3d4e12e2b6"
   },
@@ -103,34 +93,5 @@
     "logic_display": "Ordered original vectors use canonical mtnk/mtnk2/anim_0... identities. Membership is never inferred from Alive or Limbo.",
     "native_ids": "Absolute native IDs remain full packet; projection subtracts directly read pre-controller Scenario+214 cursor to compare local constructor allocation order.",
     "bounce": "Full native raw body retained. Rust compares physical fields and RNG, while its existing axis/angle versus native quaternion presentation residual remains explicit."
-  },
-  "source_pin_refresh": {
-    "path": "tools/spatial_oracle/shrapnel_repair/shrapnel_repair.py",
-    "previous_sha256": "5f510f31b235acd1749aee6da2f512fbf3381892355b45fd7c5b9bccd472d347",
-    "current_sha256": "766d30e22188ef36c66a940eb4546ad52e025fa80e80c864a9644a1a4662b27c",
-    "reason": "Optional resident_cells input permits the separate hut caller to supply a larger physical TMP strip. Default nine-cell coordinates and Recalc order remain unchanged.",
-    "native_replayed": [
-      "occupants --write then separate --check: PASS",
-      "occupants_joined --write then separate --check: PASS",
-      "occupants_timer --write then separate --check: PASS"
-    ],
-    "native_and_projection_payload_bytes_unchanged": {
-      "occupants.json.gz": "dae34d6ac6325a51ea22d7658eac9061042fc09807ab59f5216e7d0d1e3b5f66",
-      "occupants_test_vectors.json": "71519e46bd5569a552c3a8ccdc97472dd8f186654be1666534ea0a1f272754b8",
-      "occupants_timer.json": "5822123e0c30aa6cbf2b53ee6db4a8bd7419e58086320a7f91cbac47e1f740a2",
-      "occupants_joined.json.gz": "b3f72c9d9f6b6f47bd937c47609489f89b72aec8bed9a9c9400435c42ac8a3b3",
-      "occupants_joined_test_vectors.json": "2d709c8f60986c6ddf1c4507a39719056829faf07265bb3adc160496edf56d84"
-    },
-    "scope": "Only these executions are claimed replayed by this receipt; Anytown enclosing receipts and historical concrete validation remain separately owned."
-  },
-  "loader_compatibility_refresh": {
-    "kind": "Pinned loader source-provenance compatibility; no game-function replay",
-    "original_execution_source_sha256": "dd5dbf5f3532b0eb20d761b8637c18ca8033317b67e99481f633c45dec6b2de3",
-    "compatible_current_source_sha256": "f3f58e1a15a4fd3be9e3bc2030819f079ab9155bdb08833e228c1c661445e51e",
-    "evidence": "tools/spatial_oracle/shrapnel_damage/loader_compatibility.json",
-    "evidence_sha256": "c7050e54e7abe3bfb532bbb523f3ed2ea95ee6ffe603a6353f88dd17d64c2227",
-    "receipt": "tools/spatial_oracle/shrapnel_damage/loader_compatibility_receipt.json",
-    "native_payloads_unchanged": true,
-    "historical_execution_and_compatibility_records_preserved": true
   }
 }

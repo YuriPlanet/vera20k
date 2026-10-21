@@ -74,7 +74,6 @@ def metadata():
  return provenance(scope=__doc__,assumptions=['Original UnitType7470D0 constructor; supplied lexical INI indexes over physical RULESMD, MPBattleMD, map; original Image ReadString528A10 caller arguments (ObjectType5F933B) and original ART Voxel block5F961C..5F963A. Missing LANGRULE has no layer. Active MPBattleMD is byte-identical to original packet MPBattle.INI.', 'Original selected-type dispatch73D30E..73D359 reaches actual Unit+55473B470 when native Voxel and supplied resident VXL pointer presence are true; a missing-pointer control bypasses. Preceding disguise/type selection and actual asset pointer installation into this UnitType are excluded.', 'Actual original Cell487A10→Unit damage produces sinking on retained ordinary AEGIS; full ShipDrawMatrix69F670 runs for explicit stable facing0/8/16/24, constructor flat slope, no rocking and completed timer. Native startup camera and native matrix multiply compose output.', 'Existing repository render_native executes full original VXL/HVA/VPL loads, HVA scaling, box transformation, native rectangle production, sorting and raster. Original code consumes all physical file bytes. Source crop offsets and destination-relative bounds stay separate. FPCW0E7F supplied; ambient original process setting not inferred from this fixture.', 'Native cold and cached dirty-rectangle blocks7068EE..7069F6 and70755D..707678 execute with empty accumulator and original raster-derived destination bounds placed at128,128 cached-surface anchor. These outputs feed the unchanged original Unit clip slice twice. No full composited Unit draw dispatch, RGB palette, surface blit or GPU claim.'],substitutions=['Inherited object setup and original receiver boundaries from naval_occupants; INI lexical cache boundaries.', 'File vtable open/read/seek/close expose immutable retail VXL/HVA/VPL bytes; operator new returns distinct mapped storage in repository raster helper. No raster gameplay/math result substituted.', 'Selected-type frame, VXL-pointer presence and retained renderer locals are supplied interior composition inputs.'],entry_points={'art_voxel_reader':0x5F961C,'selected_draw_route':0x73D30E,'unit_body':0x73B470,'ship_matrix':0x69F670,'vxl_load':0x755DB0,'hva_load':0x5BD5C0,'raster':0x754510,'cold_dirty':0x7068EE,'cached_dirty':0x70755D,'unit_clip':0x73BEA4})
 def ground_generate(*,drone=False):
  from tools.voxel_oracle.barrel_pitch import native_arm,native_offset_scale,STARTUP_FPCW
- from tools.native_oracle import NATIVE_SHA256
  root=Path(os.environ.get('VERA20K_SHRAPNEL_INPUTS',str(ASSETS)))
  model='GTNK' if drone else 'DEST'
  names=(model+'.VXL',model+'.HVA','VOXELS.VPL')
@@ -114,7 +113,7 @@ def ground_generate(*,drone=False):
      child=render_native(files[base+'.VXL'],files[base+'.HVA'],files['VOXELS.VPL'],matrix)
      row['rasters'][part]=dict(rect=child['rect'],pixels=child['pixels'])
   rows.append(row)
- return dict(schema=1,native_sha256=NATIVE_SHA256,files={name:dict(bytes=len(raw),sha256=sha(raw)) for name,raw in files.items()},
+ return dict(schema=1,files={name:dict(bytes=len(raw),sha256=sha(raw)) for name,raw in files.items()},
   camera_bits=list(struct.unpack('<12I',camera)),offset_scale_bits=struct.unpack('<Q',scale)[0],cases=rows)
 
 

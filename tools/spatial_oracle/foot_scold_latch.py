@@ -12,7 +12,7 @@ from capstone import Cs, CS_ARCH_X86, CS_MODE_32, CS_AC_WRITE
 from capstone.x86_const import X86_OP_MEM
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import *
-from tools.native_oracle import (NATIVE_SHA256, image_bytes, _sections,
+from tools.native_oracle import (image_bytes, _sections,
                                 run_checked, RET_MAGIC, finish_vectors, provenance)
 from tools.rules_oracle.bridge_child_sound import Sound, sections
 from tools.rules_oracle.bridge_anim_inputs import Reader
@@ -332,7 +332,7 @@ def generate():
     missing = m.scold_block({'AudioVisual': {}}, 'missing-key control')
     empty = m.scold_block({'AudioVisual': {'ScoldSound': ''}}, 'empty-value control')
     invalid = m.scold_block({'AudioVisual': {'ScoldSound': 'NotARegisteredSound'}}, 'unknown-name control')
-    return dict(native_sha256=NATIVE_SHA256, constructor=constructor(),
+    return dict(constructor=constructor(),
                 imported_latch=[imported_latch(v) for v in (0, 1, 255)],
                 scold_guard=[scold_guard(v) for v in (0, 1, 255)],
                 paid_tails=[paid_tail(n, v) for n in (

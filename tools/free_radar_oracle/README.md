@@ -5,7 +5,7 @@ Run `python -m tools.free_radar_oracle.oracle` from the repository root, with
 The command compares results without writing the fixture.
 
 The preserved original fixture has SHA256
-`f434e555f94f9f68cbcd8247a000fdf93bf661df79611152d251045d8930ef4d`.
+`f40f4e4befe6ba2bbcb1511ab11470cbc18323fed537bd8014d2c87039b62cb8`.
 Its `probe_sha256` identifies the original local evidence producer; the portable
 runner here uses the shared checked-execution owner and independently compares
 every parser, reset, decision and nonlocal result.

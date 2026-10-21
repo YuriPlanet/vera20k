@@ -75,7 +75,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python -m tools.spatial_oracle.shrapnel_d
 ```
 
 The first command independently executes both native cases and compares the
-immutable publication payload and source sidecar. The second mechanically
+immutable publication payload and its sidecar. The second mechanically
 extracts Rust values using `project_joined_cases`, preserving every receiver,
 timer, constructor, membership and RNG result. It adds observed hut calls,
 initial span and final Display dirty byte. Display is already dirty before this

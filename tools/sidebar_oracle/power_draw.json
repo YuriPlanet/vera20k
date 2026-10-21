@@ -245776,7 +245776,6 @@
     "shape_global": "00ac4e74",
     "surface": "prepared sidebar surface"
   },
-  "executable_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "executed": "0063fb20 through 0063fda5, excluding later RadarClass draw",
   "gate_count": 8,
   "gates": [

@@ -4,7 +4,7 @@ from pathlib import Path
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import *
 from tools.projectile_oracle import guided_step as g
-from tools.native_oracle import run_checked,NATIVE_SHA256,finish_vectors,provenance
+from tools.native_oracle import run_checked,finish_vectors,provenance
 from tools.spatial_oracle.building_body_rules import SP,RULES,dwords
 
 def specs():
@@ -57,7 +57,7 @@ def generate():
   assert failure is None,(name,failure)
   row['prepared']=dict(old=old,velocity=velocity,target_kind='none' if target is None else 'aircraft' if target=='aircraft' else 'cell',target_cell=list(target) if isinstance(target,tuple) else None,unique_id=100,binary_frame=1,level=6,slope=0,maximum_speed=g.i32(u,b+0x110),acceleration=g.i32(u,p+0x2d0),course_lock_duration=g.i32(u,p+0x2e0),airburst=bool(u.mem_read(p+0x294,1)[0]),very_high=bool(u.mem_read(p+0x299,1)[0]),level_flight=bool(u.mem_read(p+0x29d,1)[0]),safety_altitude=g.i32(u,r+0x5a0),missile_rot_var_bits=bytes(u.mem_read(r+0x598,8)).hex())
   rows.append(row)
- return dict(native_sha256=NATIVE_SHA256,initial=initial,scope='Expanded supplied incoming guided-step controls; full original4668BD..467B7A and reached native getters/homing/floor. Type overrides use full original reader, runtime counters/velocities/target lifecycle are supplied. No world commit/launch or damage in this corpus.',rows=rows)
+ return dict(initial=initial,scope='Expanded supplied incoming guided-step controls; full original4668BD..467B7A and reached native getters/homing/floor. Type overrides use full original reader, runtime counters/velocities/target lifecycle are supplied. No world commit/launch or damage in this corpus.',rows=rows)
 def metadata():
  return provenance(scope='Thirty-one expanded original guided-flight controls before coordinate commit',assumptions=[
   'Full original4668BD..467B7A executes, including reached HomingTrack5B20F0, native target getters, Cell lookups and floor. Each row starts from the same original Bullet constructor/configure state and native physical HoverMissile/AAHeatSeeker2 reader setup in guided_step.create.',

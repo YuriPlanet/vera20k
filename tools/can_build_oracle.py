@@ -653,7 +653,7 @@ def produced_history_case(row):
 
 
 def produced_history_generate():
-    return dict(schema_version=1, native_sha256=native.image_sha256(),
+    return dict(schema_version=1,
                 cases=[produced_history_case(row) for row in produced_history_inputs()])
 
 
@@ -1010,7 +1010,7 @@ def secret_lab_generate():
         secret_getter('unit only', {'unit': 'U'}, None),
         secret_getter('building only', {'building': 'B'}, None),
     ]
-    return dict(schema_version=1, native_sha256=native.image_sha256(),
+    return dict(schema_version=1,
                 assignment=assignments, getter=getters, admission=secret_admission(),
                 readers=secret_readers())
 
@@ -1200,7 +1200,7 @@ def construction_options_generate():
                 dict(name='captured lab grants Grant while offline', grant='Grant'),
                 dict(name='release admits grant', online_action='resume', grant='Grant')],
     )))
-    return dict(schema_version=1, native_sha256=native.image_sha256(), rows=rows)
+    return dict(schema_version=1, rows=rows)
 
 
 def construction_options_metadata():

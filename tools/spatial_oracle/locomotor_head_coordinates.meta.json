@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -38,6 +37,6 @@
     "ship_chain": "0x006A120A"
   },
   "capstone_version": "5.0.7",
-  "payload_sha256": "1eefc8ff72d7c353895cb8647043f622d96137df43d52066f29e4582e621365e",
+  "payload_sha256": "4726136f38f3cb621e8715ac9f2304586468b6fed8cbecc77b5d1ca0ee5a648c",
   "replay_command": "python -m tools.spatial_oracle.locomotor_head_coordinates"
 }

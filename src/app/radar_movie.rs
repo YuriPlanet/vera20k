@@ -6,7 +6,7 @@
 //! Native evidence: Steam gamemd,653963/6578F0/6579E0 and the executed
 //! prerequisite/lifecycle controls in the ALL01 native evidence packet.
 //! Queued pause transitions: original657BFA/657C7D controls in
-//! tools/scenario_pause.json; the sidecar records the executable identity.
+//! tools/scenario_pause.json.
 //! GPU/rodio, failed media decode and missing device are Rust substitutes;
 //! full native copy/final-paint and saved raw Radar fields remain unproven.
 

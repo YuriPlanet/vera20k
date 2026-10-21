@@ -1343,7 +1343,6 @@
       "sha256": "37bd29c741fbe235411c8416e78abd41a59c57f935f60a4fbf091e501462c23e"
     }
   ],
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "native_type_inputs": [
     {
       "building_facing": 0,

@@ -13,7 +13,7 @@ from capstone import Cs, CS_ARCH_X86, CS_MODE_32
 from capstone.x86_const import X86_OP_MEM, X86_OP_REG
 from unicorn import UC_HOOK_MEM_WRITE
 from unicorn.x86_const import *
-from tools.native_oracle import NATIVE_SHA256, run_checked, provenance, finish_vectors
+from tools.native_oracle import run_checked, provenance, finish_vectors
 from tools.rules_oracle.bridge_anim_inputs import Reader, crc
 from tools.spatial_oracle.building_body_rules import INI, SP, dwords
 
@@ -235,11 +235,10 @@ def generate():
         row = dict(name='mixed_ordinal_' + str(ordinal), input_text=text, **m.read(text))
         row['ordinal_projection'] = m.project(ordinal, base)
         projection.append(row)
-    return dict(schema_version=1, native_sha256=NATIVE_SHA256, read_contract=contract,
+    return dict(schema_version=1, read_contract=contract,
                 cases=rows, physical=physical, projection_cases=projection,
                 instruction_spans=[dict(begin=hex(a), end=hex(b), sha256=sha(raw))
-                                   for (a, b), raw in zip(m.spans, m.code_before)],
-                harness_sha256=sha(Path(__file__).read_bytes()))
+                                   for (a, b), raw in zip(m.spans, m.code_before)])
 
 
 def metadata():

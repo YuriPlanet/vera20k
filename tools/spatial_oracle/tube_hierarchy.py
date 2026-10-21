@@ -5,7 +5,7 @@ from pathlib import Path
 
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_ESP, UC_X86_REG_EBP, UC_X86_REG_EIP, UC_X86_REG_FPCW
-from tools.native_oracle import RET_MAGIC, STACK_BASE, STACK_SIZE, NATIVE_SHA256, finish_vectors, load_image, provenance, run_checked
+from tools.native_oracle import RET_MAGIC, STACK_BASE, STACK_SIZE, finish_vectors, load_image, provenance, run_checked
 from tools.spatial_oracle.map_queries import dwords, packed
 from tools.spatial_oracle.bridge_records import MAP, TABLE, CELLS, TUBES, TUBE_TABLE, RECORDS, DUMMY
 

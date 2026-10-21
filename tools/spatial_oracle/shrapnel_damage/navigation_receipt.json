@@ -1,7 +1,6 @@
 {
   "schema_version": 1,
   "date": "2026-09-28",
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "native_text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
   "scope": "Original full-map Shrapnel initialization, retained wooden damage/repair navigation and original post-load hierarchy rebuilding. Complete planes and ordered graphs are compared; full native Scenario loading, actor commands, save streams and raster output are excluded.",
   "input_proof": {
@@ -44,25 +43,13 @@
     ]
   },
   "artifacts": {
-    "tools/spatial_oracle/shrapnel_damage/navigation.py": "c27c82592fe681cee2e9f599751fb1aca0b9bd62bd0c5acd90ef48ce6e5335c2",
     "tools/spatial_oracle/shrapnel_damage/navigation.json.gz": "5145c4fab77dcdef1d3bdc99c9b056c5afca11495a9c14deaf2573ed7e877674",
     "tools/spatial_oracle/shrapnel_damage/navigation.meta.json": "8b9c4d4572c78ad5587207c617f60ab29c91e4a4f3d995f82df110cedf83508b",
     "tools/spatial_oracle/shrapnel_damage/navigation_promotion.json": "51365fd104d30062e72f4a7e77824562268548597ee5234b7985a3f96ee66a8b",
-    "tools/spatial_oracle/shrapnel_damage/navigation_compare.py": "b41d31cf575286437b16c248be0f5e47dd1c6536de875f8c6e60df0593a4427d",
-    "tools/spatial_oracle/shrapnel_damage/navigation_restore.py": "5df2335a7e1adff7d6e06c8c35320d2372dc8c238e5424c625d663b533ce7023",
-    "tools/spatial_oracle/shrapnel_damage/navigation_restore.json.gz": "f7256a8c96fb850f90845cca46ef81ed96ce90380d43ca6279c3047fe765c5db",
+    "tools/spatial_oracle/shrapnel_damage/navigation_restore.json.gz": "a8953c56fa32d9af11c629e2fd1fa09b1e39433fe2294b08e6908890a734cecc",
     "tools/spatial_oracle/shrapnel_damage/navigation_restore.meta.json": "85c95c151927508b0cbe4047b8d57e79ee13bcf0cd54ffa334d09ad23651ea40",
-    "tools/spatial_oracle/shrapnel_damage/navigation_restore_promotion.json": "ea7a6daa0cfd36e584b7994ea7a4b065e6df72e1b040c76b61c87b69d5967272",
-    "tools/spatial_oracle/shrapnel_damage/navigation.md": "295f9a5d809bbf86161fd8950d2fc465145195a956ec1f02f4965b770baeabb5"
+    "tools/spatial_oracle/shrapnel_damage/navigation_restore_promotion.json": "802fe1d9b05818fcc63ecaa33a1a595020eb2d64d7a82a9e7d707a5758ed614e"
   },
-  "shared_owner_source_pins": {
-    "tools/spatial_oracle/anytown_damage/navigation_inputs.py": "aba234d20bd320102832b69c2a3a15a7f3ebcb131e4a5ab7b715c2bfe931e705",
-    "tools/spatial_oracle/anytown_damage/navigation.py": "2d60a0ff6e1febb46542361c849a96a8cc9b9384783d5bab09b339560c2c7cbd",
-    "tools/spatial_oracle/anytown_damage/navigation_compare.py": "8bf700547df8a1e6deba099edfeb492ce48d07b187157ac261040bbd826f2cca",
-    "tools/spatial_oracle/anytown_navigation_restore.py": "cf50907d8277f91abb92d0286a9489bbda45f0bd80ae319bec97d7d6e77f9d38",
-    "tools/native_oracle.py": "f3f58e1a15a4fd3be9e3bc2030819f079ab9155bdb08833e228c1c661445e51e"
-  },
-  "source_pin_check": "All 33 navigation and 35 restore current imported source hashes match their sidecars. Completed native runs used the preserved original identities; separate ResidentRepair and loader compatibility records justify subsequent current source pins without new game-function execution or changed results.",
   "native_replay_logs": [
     {
       "external_log": "promoted_write.log",
@@ -104,7 +91,7 @@
     "navigation_file": "tools/spatial_oracle/anytown_damage/navigation.json.gz",
     "navigation_sha256": "a2197179f0818a7b2c231c8956601b2269df164db04e05d856b99db380a15d35",
     "restore_file": "tools/spatial_oracle/anytown_navigation_restore.json.gz",
-    "restore_sha256": "9a5adacdd5af7dcd9e8697b5768382181ac7eb446ef38a006804eeb326cfa5b5",
+    "restore_sha256": "8e2d0d02e0d5bd2632742622d420e917a75188a9056bedef08ecb6069fb8bea0",
     "restore_external_payload_byte_identical": true,
     "restore_external_sidecar": "anytown_restore_preserved.meta.json",
     "restore_external_sidecar_sha256": "a5ab6571ac8ecec6940bcd17cdaf56e5cca93a454629ac4d0a18c2b167182946",
@@ -275,7 +262,7 @@
     "src/sim/world/bridge_wood_damage_tests.rs::retail_wood_force_fire_collapses_then_engineer_rebuilds"
   ],
   "reproduction": {
-    "environment": "Run from the repository root with PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.; configure SHA-pinned gamemd, RA2_DIR and VERA20K_SHRAPNEL_INPUTS as navigation.md describes. Shared Anytown replay additionally needs VERA20K_ANYTOWN_INPUTS.",
+    "environment": "Run from the repository root with PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.; configure gamemd.exe, RA2_DIR and VERA20K_SHRAPNEL_INPUTS as navigation.md describes. Shared Anytown replay additionally needs VERA20K_ANYTOWN_INPUTS.",
     "native": [
       "python -m tools.spatial_oracle.shrapnel_damage.navigation --write",
       "python -m tools.spatial_oracle.shrapnel_damage.navigation --check",
@@ -295,99 +282,5 @@
     "Complete Main/Scenario/MapGen states and original startup FPCW are retained. Initial seed0 states are supplied individually; whole Scenario-load RNG chronology is excluded.",
     "Original581F50 runs over independently reconstructed frozen source states. Shared LoadContent/MouseLoad byte evidence supports call order and retained source fields; full save-stream/object-swizzle execution is excluded.",
     "Production joins exclude actor occupancy, RNG and the differently formatted Dummy. Every represented plane/graph and exported representative cell is compared without tolerances."
-  ],
-  "source_compatibility_refresh": {
-    "before_receipt_sha256": "05c617bfccc974ff9534e24d81d7163e7a790989777e23666adec9850fcd962e",
-    "external_receipt": "resident_repair_compatibility.json",
-    "external_receipt_sha256": "1af44304591ee8472277b9977f78fb6ac6187d28c6b3bfecbb266daa8fca199d",
-    "external_check": "resident_repair_compatibility_check.log",
-    "external_check_sha256": "f6141f29ab169823886a4082b62fec0149a2509df147dca67f8a887ccbc1578d",
-    "schema": 1,
-    "kind": "metadata-only source compatibility; no native execution repeated",
-    "source": "tools/spatial_oracle/shrapnel_repair/shrapnel_repair.py",
-    "original_execution_source_sha256": "5f510f31b235acd1749aee6da2f512fbf3381892355b45fd7c5b9bccd472d347",
-    "current_source_sha256": "766d30e22188ef36c66a940eb4546ad52e025fa80e80c864a9644a1a4662b27c",
-    "assertions": {
-      "only_changed_AST_node": "ResidentRepair.__init__",
-      "changed_constructor_absent_from_all_selected_MROs": true,
-      "default_resident_cells": "[(x,y) for y in range(58,61) for x in range(114,117)]",
-      "full_map_geometry_inherits": "Geometry -> Repair, not ResidentRepair",
-      "native_values_unchanged": true
-    },
-    "selected_class_mros": {
-      "anytown_navigation": [
-        "tools.spatial_oracle.anytown_damage.navigation.Navigation",
-        "tools.spatial_oracle.anytown_damage.anytown_geometry.Geometry",
-        "tools.spatial_oracle.shrapnel_repair.shrapnel_repair.Repair",
-        "tools.spatial_oracle.bridge_rim.OriginalRim",
-        "builtins.object"
-      ],
-      "shrapnel_navigation": [
-        "tools.spatial_oracle.shrapnel_damage.navigation.Navigation",
-        "tools.spatial_oracle.anytown_damage.navigation.Navigation",
-        "tools.spatial_oracle.anytown_damage.anytown_geometry.Geometry",
-        "tools.spatial_oracle.shrapnel_repair.shrapnel_repair.Repair",
-        "tools.spatial_oracle.bridge_rim.OriginalRim",
-        "builtins.object"
-      ],
-      "anytown_restore": [
-        "tools.spatial_oracle.anytown_navigation_restore.RestoreProbe",
-        "tools.spatial_oracle.anytown_damage.navigation.Navigation",
-        "tools.spatial_oracle.anytown_damage.anytown_geometry.Geometry",
-        "tools.spatial_oracle.shrapnel_repair.shrapnel_repair.Repair",
-        "tools.spatial_oracle.bridge_rim.OriginalRim",
-        "builtins.object"
-      ],
-      "shrapnel_restore": [
-        "tools.spatial_oracle.shrapnel_damage.navigation_restore.RestoreProbe",
-        "tools.spatial_oracle.anytown_navigation_restore.RestoreProbe",
-        "tools.spatial_oracle.shrapnel_damage.navigation.Navigation",
-        "tools.spatial_oracle.anytown_damage.navigation.Navigation",
-        "tools.spatial_oracle.anytown_damage.anytown_geometry.Geometry",
-        "tools.spatial_oracle.shrapnel_repair.shrapnel_repair.Repair",
-        "tools.spatial_oracle.bridge_rim.OriginalRim",
-        "builtins.object"
-      ]
-    },
-    "sidecars": [
-      {
-        "sidecar": "tools/spatial_oracle/shrapnel_damage/navigation.meta.json",
-        "original_sidecar_sha256": "58a48c401cc2655b8247ec74a0feb2ecc1b1800bc56f602cdc7f33ee9ac4d9f0",
-        "current_sidecar_sha256": "6848f6197cb6e71e2cdd7e35e374379f78c45974302dec79451ac6158315571c",
-        "original_external_sidecar": "resident-repair-compatibility-before/tools/spatial_oracle/shrapnel_damage/navigation.meta.json",
-        "immutable_gzip_sha256": "5145c4fab77dcdef1d3bdc99c9b056c5afca11495a9c14deaf2573ed7e877674",
-        "payload_sha256": "24cc5905dbfaacc31ab11f93bdb1314e8b58b8f463d619b245908b234e95d50c",
-        "source_pin_count": 33
-      },
-      {
-        "sidecar": "tools/spatial_oracle/shrapnel_damage/navigation_restore.meta.json",
-        "original_sidecar_sha256": "db15b33699bc688fb960a099685e8ee0460e166373a1818063b49c38a40a2133",
-        "current_sidecar_sha256": "24caeef1a12d81dc592fe363f14dda599bd4487788454fd67e40e9cb2abffa09",
-        "original_external_sidecar": "resident-repair-compatibility-before/tools/spatial_oracle/shrapnel_damage/navigation_restore.meta.json",
-        "immutable_gzip_sha256": "f7256a8c96fb850f90845cca46ef81ed96ce90380d43ca6279c3047fe765c5db",
-        "payload_sha256": "6738d955e14fe244a99b8442338c1a4aa85b4ad72051e0516e88c4e8b05510c5",
-        "source_pin_count": 35
-      },
-      {
-        "sidecar": "tools/spatial_oracle/anytown_navigation_restore.meta.json",
-        "original_sidecar_sha256": "a5ab6571ac8ecec6940bcd17cdaf56e5cca93a454629ac4d0a18c2b167182946",
-        "current_sidecar_sha256": "8cce21fa5cf22632f017b2fe58be04fa75253ccc4bcc6e60df5d4eb2c2e77fb2",
-        "original_external_sidecar": "resident-repair-compatibility-before/tools/spatial_oracle/anytown_navigation_restore.meta.json",
-        "immutable_gzip_sha256": "9a5adacdd5af7dcd9e8697b5768382181ac7eb446ef38a006804eeb326cfa5b5",
-        "payload_sha256": "062a367873176005b65afb2b0bddb1feb9a8c4bb48f6684c63092e9d07fea9db",
-        "source_pin_count": 32
-      }
-    ],
-    "guard_sha256": "ce91c6f675354c217f046a9a3a4ced1c16346980c0d40573f3fb2a45ff5e4cc0"
-  },
-  "loader_compatibility_refresh": {
-    "kind": "Pinned loader source-provenance compatibility; no game-function replay",
-    "original_execution_source_sha256": "dd5dbf5f3532b0eb20d761b8637c18ca8033317b67e99481f633c45dec6b2de3",
-    "compatible_current_source_sha256": "f3f58e1a15a4fd3be9e3bc2030819f079ab9155bdb08833e228c1c661445e51e",
-    "evidence": "tools/spatial_oracle/shrapnel_damage/loader_compatibility.json",
-    "evidence_sha256": "c7050e54e7abe3bfb532bbb523f3ed2ea95ee6ffe603a6353f88dd17d64c2227",
-    "receipt": "tools/spatial_oracle/shrapnel_damage/loader_compatibility_receipt.json",
-    "native_payloads_unchanged": true,
-    "historical_execution_and_compatibility_records_preserved": true
-  }
+  ]
 }

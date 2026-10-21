@@ -15,7 +15,7 @@ from unicorn.x86_const import (
     UC_X86_REG_ESP,
 )
 from tools.native_oracle import (
-    NATIVE_SHA256, RET_MAGIC, STACK_BASE, STACK_SIZE, finish_vectors,
+    RET_MAGIC, STACK_BASE, STACK_SIZE, finish_vectors,
     load_image, provenance, run_checked,
 )
 
@@ -233,8 +233,7 @@ def generate():
                                                         u.mem_read(z, width * 2)))))
         sequences.append(dict(case, steps=steps, final_colors=steps[-1]['colors'],
                               final_depths=steps[-1]['depths']))
-    return dict(native_sha256=NATIVE_SHA256,
-                leaves={k: f'{v:08X}' for k, v in LEAVES.items()},
+    return dict(leaves={k: f'{v:08X}' for k, v in LEAVES.items()},
                 mask=mask, rows=rows, packed=packed, stencil=stencil,
                 sequence_cases=sequences), binaries[0]
 

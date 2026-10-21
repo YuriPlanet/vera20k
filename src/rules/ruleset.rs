@@ -4054,6 +4054,8 @@ pub struct RuleSet {
     ares_prerequisites: Option<GenericPrerequisites>,
     /// Immutable projection of NativeRulesRegistryState's ordered armor catalog.
     ares_armors: Option<crate::rules::ares_armor::ArmorCatalog>,
+    #[cfg(feature = "ares")]
+    ares_global_controls: crate::rules::native_processing::AresGlobalControls,
     /// Derived type-membership index for the lifecycle hooks; rebuilt together
     /// with the RuleSet after every load/reset/pass. The catalog above is its
     /// only source of truth. This cache is not serialized or hashed separately.
@@ -4192,6 +4194,21 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
+    /// RulesExt+14A indexed by native House difficulty0/1/2 (hardest first).
+    /// Only the compiled Ares CanBuild owner consumes this retained policy.
+    pub fn ares_ai_bypasses_build_limit(&self, difficulty_index: usize) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            self.ares_global_controls
+                .ai_bypasses_build_limit(difficulty_index)
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            let _ = difficulty_index;
+            false
+        }
+    }
+
     pub(crate) fn reveal_trigger_radius(&self) -> i32 {
         self.reveal_trigger_radius
     }
@@ -4455,6 +4472,26 @@ impl RuleSet {
                 .find(|object| object.category == category && object.id == name)
             {
                 object.gunner_turrets = *gunner_turrets;
+            }
+        }
+        #[cfg(feature = "ares")]
+        for (category, name, state) in processed.factory_owner_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == category && object.id == name)
+            {
+                object.project_factory_owners(state);
+            }
+        }
+        #[cfg(feature = "ares")]
+        for (name, state) in processed.explicit_factory_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == ObjectCategory::Building && object.id == name)
+            {
+                object.project_explicit_factory(state);
             }
         }
         for (category, name, references) in processed.techno_reference_states() {
@@ -5381,6 +5418,8 @@ impl RuleSet {
             prerequisite_lists: Default::default(),
             ares_prerequisites: None,
             ares_armors: processed.ares_armors().cloned(),
+            #[cfg(feature = "ares")]
+            ares_global_controls: processed.ares_global_controls().clone(),
             ares_prerequisite_alternates: HashSet::new(),
             terrain_rules,
             tiberium_types,
@@ -5612,6 +5651,19 @@ impl RuleSet {
             .copied()
     }
 
+    /// Installed Ares Building Find10007E50, shared with BuiltAt's current-pass
+    /// vector reader. Runtime upgrade queries use the current registered IDs,
+    /// rejecting none/<none> before the first case-insensitive stored-ID hit.
+    pub fn ares_find_building(&self, token: &str) -> Option<i32> {
+        crate::rules::native_processing::ares_type_index_of_name(
+            token,
+            self.type_array_ids(ObjectCategory::Building)
+                .iter()
+                .map(String::as_str),
+        )
+        .map(|index| i32::try_from(index).expect("BuildingTypes exceeds native i32 index space"))
+    }
+
     /// Resolve a TaskForce member through the exact native family order used
     /// by `gamemd.exe 0x004C4EF0`: Infantry, Unit, then Aircraft. BuildingType
     /// is never searched.
@@ -5799,7 +5851,7 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        // v34: retain Country starting-veterancy type membership across Rules passes.
+        // v34: Country starting-veterancy; optional extensions add domains below.
         b"rules-simulation-config-v34".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
         b"country-parent-v1".hash(&mut hasher);
@@ -5839,6 +5891,19 @@ impl RuleSet {
         crate::rules::ARES_ENABLED.hash(&mut hasher);
         #[cfg(feature = "ares")]
         {
+            b"ares-global-controls-v1".hash(&mut hasher);
+            self.ares_global_controls.hash(&mut hasher);
+            b"ares-factory-owners-v1".hash(&mut hasher);
+            self.object_list
+                .iter()
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.factory_owners_hash_state(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+                .hash(&mut hasher);
             // A previous Process can retain this manual-action policy even
             // when the current source stack contains only invalid tokens.
             b"ares-no-manual-fire-v1".hash(&mut hasher);
@@ -6807,6 +6872,16 @@ impl RuleSet {
     /// Resolve a country name to its stable `[Countries]` registration index.
     pub fn country_index(&self, id: &str) -> Option<CountryIdx> {
         self.country_indices.get(&id.to_ascii_uppercase()).copied()
+    }
+
+    /// Installed Ares1001BA90 shared Find: first stored-ID match, sentinel
+    /// rejection and no alias/ParentCountry expansion. Callers own self fallback.
+    /// Native controls: rules_oracle/ares_country_veterancy.json parent_find.
+    pub fn ares_find_country(&self, token: &str) -> Option<CountryIdx> {
+        crate::rules::native_processing::ares_country_index_of_name(
+            token,
+            self.country_ids.iter().map(String::as_str),
+        )
     }
 
     /// HouseRead500A05 calls ReadHouseType475540: an absent Country maps

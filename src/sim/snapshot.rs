@@ -339,6 +339,9 @@ pub enum SnapshotRestoreError {
     },
     #[error("invalid saved multiplayer session: {reason}")]
     InvalidMultiplayerSession { reason: &'static str },
+    #[cfg(feature = "ares")]
+    #[error("invalid saved factory-source Country reference: {reason}")]
+    InvalidFactoryCountry { reason: &'static str },
     #[error("entity {object_id} is a live infantryman with the dying mark")]
     InvalidInfantryDyingMark { object_id: u64 },
     #[error("house {owner} has invalid serialized outcome state: {reason}")]
@@ -1941,6 +1944,9 @@ impl Simulation {
         prepare_terrain_assets: Option<&mut SnapshotTerrainAssetPreparation<'_>>,
     ) -> Result<SnapshotMapRestoreOutput, SnapshotRestoreError> {
         self.validate_type_tech_levels(rules)?;
+        #[cfg(feature = "ares")]
+        self.validate_factory_country_references(rules)
+            .map_err(|reason| SnapshotRestoreError::InvalidFactoryCountry { reason })?;
         self.validate_disk_lasers_after_restore(rules)
             .map_err(
                 |(object_id, reason)| SnapshotRestoreError::InvalidDiskLaserState {

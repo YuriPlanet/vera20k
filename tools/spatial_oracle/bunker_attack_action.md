@@ -110,10 +110,9 @@ LeftUp restarts action-line timer25 at4ABFAE ->70D150. Those later effects are
 instruction evidence and existing-owner production tests, not this bounded
 window execution. No detach appears in the measured immediate route.
 
-Historical sidecars and payloads keep their recorded executable hashes as inert
-history; any `gamemd.exe` replays them (see
-[evidence identity](../native_oracle.md#evidence-identity)). Do not relabel or
-rebaseline old evidence.
+Any `gamemd.exe` copy replays these payloads (see
+[evidence identity](../native_oracle.md#evidence-identity)). Do not rebaseline
+old evidence.
 
 ## Attack acknowledgement
 

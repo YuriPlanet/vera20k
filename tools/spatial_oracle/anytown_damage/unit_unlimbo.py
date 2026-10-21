@@ -18,7 +18,7 @@ from unicorn.x86_const import (
 )
 
 from tools.native_oracle import (
-    NATIVE_SHA256, RET_MAGIC, SCRATCH, call as native_call, file_span, finish_vectors, image_bytes, provenance, run_checked,
+    RET_MAGIC, SCRATCH, call as native_call, file_span, finish_vectors, image_bytes, provenance, run_checked,
 )
 from tools.spatial_oracle.building_body_rules import SP, RULES, dwords
 from . import foot_missions
@@ -1619,7 +1619,7 @@ def generate_factory_exit_coordinate_rows():
 
 def generate():
     direct, factory = cases()
-    result = dict(schema_version=1, native_sha256=NATIVE_SHA256,
+    result = dict(schema_version=1,
                   visceroid_reader_receipt=UnitUnlimboControls(
                       direct_case('visceroid_reader'), 'direct').visceroid_reader_receipt(),
                   direct_rows=[], factory_rows=[], stage_rows=[], factory_exit_radio_rows=[],
@@ -2056,8 +2056,7 @@ def metadata():
 
 
 def source_paths():
-    # Reuse the existing Mission's transitive inventory, preserving its historical
-    # receipt. New outputs bind current source hashes without republishing old ones.
+    # Reuse the existing Mission's transitive inventory for the run's source check.
     paths = foot_missions.source_paths()
     # The native run executes no Rust; the Rust consumers' own tests compare them.
     for relative in ('tools/spatial_oracle/anytown_damage/unit_unlimbo.py',

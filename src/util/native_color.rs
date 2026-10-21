@@ -1,7 +1,7 @@
 //! Encoded RGB arithmetic shared by native presentation and particle callers.
 //! Original661190 and661020 use x87 before clamping and truncating bytes.
 //! Their float arguments are already narrowed by the caller. Native controls:
-//! tools/spatial_oracle/tmp_preview.json (binary identity in its sidecar).
+//! tools/spatial_oracle/tmp_preview.json.
 
 use super::native_x87::{NativeF32Bits, NativeX87Error, X87Chop53, X87Ordering, X87Value};
 

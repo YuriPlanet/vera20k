@@ -482,7 +482,9 @@ def _run(root: Path, args: list[str], label: str | None, timeout: float, policy,
             shared.enter_context(build_lock(store / 'cargo.lock', deadline - time.monotonic()))
         if output and output.exists():
             raise ValueError(f'Label already exists; choose a new label: {output}')
-        if others := register_locked(root, store, target):
+        # Retention ranks each profile of a cache by its runs; see _cargo_cache.
+        profile = profile_directory(options)
+        if others := register_locked(root, store, target, profile=profile):
             print('Note: this checkout also has caches at ' + ', '.join(map(str, others))
                   + '; one cache per checkout is intended (CARGO_TARGET_DIR differs between '
                   'sessions, or the other cache predates the primary-checkout default)',
@@ -500,7 +502,7 @@ def _run(root: Path, args: list[str], label: str | None, timeout: float, policy,
         # restoring the reserve, and the reserve is cheap to measure.
         if below_reserve():
             with times.timing('cache retention'):
-                automatic_locked(root, store, policy)
+                automatic_locked(root, store, policy, volumes)
         # Admission uses a fresh measurement after cleanup, not projected file
         # allocation or a retention receipt. A protected cache must never cause
         # another compile to consume the remaining volume reserve.
@@ -513,7 +515,7 @@ def _run(root: Path, args: list[str], label: str | None, timeout: float, policy,
                 'before retrying; protected files were preserved.')
         # A profile's first build in this cache starts from another cache's
         # dependency outputs; see tools/_cargo_seed.py.
-        if (profile := profile_directory(options)) and not (target / profile).exists():
+        if profile and not (target / profile).exists():
             try:
                 if summary := seed(root, store, target, profile):
                     print(summary, file=sys.stderr, flush=True)
@@ -584,10 +586,10 @@ def _run(root: Path, args: list[str], label: str | None, timeout: float, policy,
                     staging.rename(output)
                 print(f'Preserved build: {output}', flush=True)
         finally:
-            register_locked(root, store, target, artifacts)
+            register_locked(root, store, target, artifacts, profile=profile)
             if retention_due(root, store, policy, volumes):
                 with times.timing('cache retention'):
-                    automatic_locked(root, store, policy)
+                    automatic_locked(root, store, policy, volumes)
         shared.close()
         if record:
             with times.timing('tests'):

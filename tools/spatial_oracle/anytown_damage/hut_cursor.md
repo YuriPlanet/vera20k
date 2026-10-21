@@ -10,7 +10,7 @@ The complete original mapped `.text` remains SHA256
 `4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc`
 after every measured call. No native instruction is patched. The canonical
 payload SHA256 is
-`2e605f8e8155de13d1407498daf4dede82d473b8374093685307194248bec7fb`.
+`444a1e344b60a42e0a77028582d1708246cf6a4bcadcbcccae7dc8fbb0b832e9`.
 
 ## Executed input and result
 
@@ -78,8 +78,8 @@ prerequisite seams are not cursor-result substitutions.
 [`hut_cursor.json.gz`](hut_cursor.json.gz) includes every preparatory and query trace, all scan candidates
 and evolving selections, directed lookup requests/results, cell writes and full
 before/after states, return registers, frame and complete RNG states.
-[`hut_cursor.meta.json`](hut_cursor.meta.json) pins every imported repository Python source and records
-the exact boundaries. [`hut_cursor_promotion.json`](hut_cursor_promotion.json) pins every original artifact.
+[`hut_cursor.meta.json`](hut_cursor.meta.json) records the exact boundaries.
+[`hut_cursor_promotion.json`](hut_cursor_promotion.json) pins every original artifact.
 [`hut_cursor_receipt.json`](hut_cursor_receipt.json) records the promoted replay;
 [`hut_cursor_summary.json.gz`](hut_cursor_summary.json.gz) is the original result projection.
 The earlier six-case `anytown-hut-native` packet remains byte-for-byte unchanged.
@@ -87,7 +87,7 @@ The earlier six-case `anytown-hut-native` packet remains byte-for-byte unchanged
 ## Replay
 
 From the repository root, use the native-oracle Python/Unicorn environment,
-the matching original executable and the two local asset roots described in
+the original retail executable and the two local asset roots described in
 `tools/spatial_oracle/anytown_damage/retail_manifest.json`. LANGRULE is absent.
 
 ```sh

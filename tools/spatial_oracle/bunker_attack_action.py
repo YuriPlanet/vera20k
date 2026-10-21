@@ -14,7 +14,7 @@ import sys
 
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE, UC_HOOK_MEM_READ
 from unicorn.x86_const import *
-from tools.native_oracle import load_image, run_checked, STACK_BASE, STACK_SIZE, SCRATCH, RET_MAGIC, image_sha256, NativeCallTrace
+from tools.native_oracle import load_image, run_checked, STACK_BASE, STACK_SIZE, SCRATCH, RET_MAGIC, NativeCallTrace
 from tools.spatial_oracle.map_queries import dwords
 from tools import native_oracle
 from tools.native_oracle import finish_vectors, provenance
@@ -606,7 +606,7 @@ def generate_allied_objects():
         ('move_multiple',dict(voice_ids=[101,202,303])),
         ('direct_disabled_still_draws',dict(caller_entry='0x00708FC0',voices_enabled=False)),
     )]
-    return dict(schema=1,native_sha256=image_sha256(),
+    return dict(schema=1,
         retail_inputs=retail_inputs,
         action_controls=[run(case,allied_continuation) for case in controls],
         unarmed_object_controls=[run(allied_case(
@@ -825,7 +825,7 @@ def generate_attack_order_voice():
         voices.append(dict(base,name=name+'_override',weapon_voice_slots=slots,
             raw_veterancy_bits=0x40000000 if index%2 else 0,
             **(dict(selector_boundary=1) if index>=2 else {})))
-    return dict(schema=1,native_sha256=image_sha256(),readers=readers,
+    return dict(schema=1,readers=readers,
                 voice_controls=[voice_control(spec,attack=True) for spec in voices])
 
 
@@ -944,7 +944,7 @@ def generate_move_order_voice():
         spec('harvest_move_fallback',two,caller_entry='0x00709060'),
         spec('capture_empty_fallback','unknown_with_unbound_scalars',caller_entry='0x00708DC0'),
         spec('scalar_direct_nonhuman',bound,caller_entry='0x00709020',actor_owner='other')]
-    return dict(schema=1,native_sha256=image_sha256(),readers=readers,
+    return dict(schema=1,readers=readers,
                 voice_controls=[voice_control(case,move=True) for case in voices])
 
 

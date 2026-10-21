@@ -3304,13 +3304,11 @@ def super_charge_generate(root, *, receipt_path=None):
         house_refresh_controls=[super_charge_house_refresh(inputs, low, frame)
             for low, frame in ((False, 15), (False, 16), (True, 15))])
     if receipt_path is not None:
-        from tools.native_oracle import image_sha256
         receipt_path = Path(receipt_path).resolve()
         if receipt_path.is_relative_to(Path(__file__).parents[2].resolve()):
             raise ValueError('Detailed native receipts must remain outside the repository')
         receipt_path.parent.mkdir(parents=True, exist_ok=True)
-        receipt_path.write_text(json.dumps(dict(native_sha256=image_sha256(),
-            producer='tools.spatial_oracle.trigger_action_values --super-charge',
+        receipt_path.write_text(json.dumps(dict(producer='tools.spatial_oracle.trigger_action_values --super-charge',
             vectors=data), indent=2) + '\n', encoding='utf-8')
     for category in ('dispatch_controls', 'native_edge_controls', 'setter_controls',
                      'sequence_controls', 'house_refresh_controls'):
@@ -3348,7 +3346,6 @@ def super_charge_metadata():
 def superweapon_state_native_inputs():
     """Physical MD layers and original readers for the selected ALL03 path."""
     from tools.input_oracle.campaign_start import prepare_house_rules
-    from tools.native_oracle import image_sha256
     directory = configured_gamemd().parent
     names = ('RULESMD.INI', 'LANGRULE.INI', 'ALL03UMD.INI', 'ALL03UMD.MAP')
     payloads, sources = {}, []
@@ -3527,7 +3524,7 @@ def superweapon_state_native_inputs():
         tag=reader.string(reader.u.reg_read(UC_X86_REG_EBP)),
         read_string_capacity=128, boundary='0044FAF8 before Building allocation')
     reader.check_code(); f.check_code()
-    receipt = dict(native_sha256=image_sha256(), sources=sources,
+    receipt = dict(sources=sources,
         registry=registry, layers=layers, house_inputs=houses, country_registration=registrations,
         routes=routes, waypoints=waypoints,
         provider=values['Structures']['1033236'], provider_read=provider_read,
@@ -5481,7 +5478,6 @@ def all_to_hunt_action_controls():
 
 def all_to_hunt_garrison_controls():
     # Same VM, original map/CRT/allocator and seed owners as existing controls.
-    from tools.native_oracle import image_sha256
     from tools.spatial_oracle.unit_source_scatter import make_source_fixture, CELLS, SCENARIO as scenario
     f = ActionFixture()
     u, _, read = make_source_fixture(dict(seed=31, live_entry=True), uc=f.u)
@@ -5700,8 +5696,7 @@ def all_to_hunt_garrison_controls():
             rng_calls=list(rng_calls),raw_draws=list(raw_draws),
             rng_full_before=before if row.get('live_scatter') else None,
             rng_full_after=after if row.get('live_scatter') else None))
-    return dict(native_sha256=image_sha256(),
-        priors=dict(building_xyz=[2688,2688,0],foundation_index=3,
+    return dict(priors=dict(building_xyz=[2688,2688,0],foundation_index=3,
             native_foundation_dimensions=[read(0x8192B8+12),read(0x819310+12)],
             foot_health=100,foot_current_mission=5,foot_queued_mission=-1,
             human_by_foot=[True,False],team_present_by_foot=[False,True],
@@ -5785,8 +5780,8 @@ def all_to_hunt_retail_inputs():
 
 
 def all_to_hunt_generate():
-    from tools.native_oracle import image_sha256,NATIVE_FPCW
-    return dict(schema_version=1,native_sha256=image_sha256(),native_fpcw=f'0x{NATIVE_FPCW:X}',
+    from tools.native_oracle import NATIVE_FPCW
+    return dict(schema_version=1,native_fpcw=f'0x{NATIVE_FPCW:X}',
         action6=all_to_hunt_action_controls(),garrison=all_to_hunt_garrison_controls(),
         retail=all_to_hunt_retail_inputs())
 
@@ -6016,7 +6011,7 @@ def crate_retail_inputs():
 
 
 def crate_generate():
-    from tools.native_oracle import image_sha256,file_span,image_bytes
+    from tools.native_oracle import file_span,image_bytes
     from tools.spatial_oracle.crate_pickup import execute as pickup_execute
     from tools.spatial_oracle.tag_lifecycle import PowerEventControls,execute as tag_execute
     placement=[crate_placement_control(case) for case in (
@@ -6073,7 +6068,7 @@ def crate_generate():
         ('overlay_constructor',0x5FC380,0x12E),('overlay_uninit',0x5F65F0,0x92),
         ('overlay_destructor',0x5FDF70,0x96),('object_destructor',0x5F3B80,0x204),
         ('overlay_type_constructor_defaults',0x5FE250,0x70),('cell_anim_read',0x5FE865,0x58))
-    return dict(schema_version=1,native_sha256=image_sha256(),
+    return dict(schema_version=1,
         placement_controls=placement,pickup_controls=pickups,event_controls=m.predicates,
         classification=classification,predicate_rng_seed31=predicate_rng,logic_histories=histories,
         retail=crate_retail_inputs(),bytes={name:dict(address=f'{a:08X}',size=n,
@@ -6365,7 +6360,6 @@ def wakeup_retail_inputs():
 
 
 def wakeup_generate():
-    from tools.native_oracle import image_sha256
 
     f = WakeupFixture()
     cases = []
@@ -6408,7 +6402,7 @@ def wakeup_generate():
     actors = [{}, dict(current=23), dict(current=6)]
     cases.append(dict(name='action81_global_order', action_kind=81,
         actors=actors, techno_order=[1, 2, 0]))
-    return dict(schema=1, native_sha256=image_sha256(),
+    return dict(schema=1,
         scope='Actions81..83 live Tag/Mission deferred Guard queue',
         rng_seed=31, mission_priors=dict(suspended=17, handler_state=137,
             mission_start_frame=31, ai_counter=19, dispatch_start=113,
@@ -6769,8 +6763,8 @@ def ai_activation_retail():
 
 
 def ai_activation_generate():
-    from tools.native_oracle import image_sha256, NATIVE_FPCW
-    return dict(schema_version=1, native_sha256=image_sha256(), native_fpcw=f'0x{NATIVE_FPCW:X}',
+    from tools.native_oracle import NATIVE_FPCW
+    return dict(schema_version=1, native_fpcw=f'0x{NATIVE_FPCW:X}',
         actions=ai_activation_action_controls(), histories=ai_activation_histories(), retail=ai_activation_retail())
 
 
@@ -6816,7 +6810,6 @@ def chrono_reinforcement_retail():
 
 
 def chrono_reinforcement_generate(fixture=None):
-    from tools.native_oracle import image_sha256
     from tools.spatial_oracle.team_creation import (reinforcement_fixture,execute_reinforcement_rows,
         initialize_chrono_unit,execute_chrono_reinforcement_rows)
     from tools.spatial_oracle.anytown_damage import anytown_resident
@@ -6869,7 +6862,7 @@ def chrono_reinforcement_generate(fixture=None):
         for key in ('rng_before','rng_after'):row[key]=intern(row[key])
         if row['creation']:row['creation']['rng']=intern(row['creation']['rng'])
         for step in row.get('process',[]):step['rng']=intern(step['rng'])
-    return dict(schema_version=1,native_sha256=image_sha256(),retail=retail,
+    return dict(schema_version=1,retail=retail,
         unit_geometry_startup=q.unit_geometry_startup,
         geometry_prior=geometry_prior,
         type_reads=q.chrono_unit_reads,rng_states=states,cases=rows,
@@ -7113,9 +7106,8 @@ def tech_level_lifecycle():
 
 
 def tech_level_generate(root, *, production=True):
-    from tools.native_oracle import image_sha256
     retail,layers=tech_level_retail()
-    return dict(schema=1,native_sha256=image_sha256(),retail=retail,
+    return dict(schema=1,retail=retail,
         dispatch_controls=tech_level_dispatch_controls(),scalar_layers=layers,
         lifecycle=tech_level_lifecycle(),
         production_history=tech_level_production_history(root) if production else None)
@@ -7219,7 +7211,6 @@ def explosion_weapon_fields(m):
 def do_explosion_generate(*,receipt_path=None):
     """Two independent physical map Process branches from one full root state."""
     from tools.rules_oracle.weapon_speed_order import RetailRulesInputs,retail_history
-    from tools.native_oracle import image_sha256
     inputs=RetailRulesInputs(configured_gamemd().parent);m=retail_history(inputs);failure=None
     try:
         root=m.campaign_root(('ALL06UMD.MAP','SOV03UMD.MAP'))
@@ -7240,7 +7231,7 @@ def do_explosion_generate(*,receipt_path=None):
         receipt.update(inis=[row for row in requests if row['file'].upper().endswith(('.INI','.MAP'))],
             request_count=len(requests),absent_count=sum(row['absent'] for row in requests),
             requests_sha256=hashlib.sha256(json.dumps(requests,sort_keys=True).encode()).hexdigest())
-        return dict(schema_version=1,native_sha256=image_sha256(),sources=receipt,
+        return dict(schema_version=1,sources=receipt,
             startup=dict(arena_bytes=0xC000000,physical=root['physical'],initializers=root['initializers'],
                 optional_pass_guards=root['optional'],initialization_depth=root['initialization_depth'],
                 theater=root['theater'],root_weapons=root['weapons']),
@@ -7361,7 +7352,7 @@ def _map_lighting_ambient_controls():
                 u.hook_del(h)
                 f.check_code()
                 rows.append(dict(input=dict(value=value, storm=storm, nuke=nuke, chrono=chrono, dominator=dominator, current=87, target=43, normal=87, timer=[12, 8]), definition=definition, returned=result, after=dict(normal=f.integer(SCENARIO + 13608), current=f.integer(SCENARIO + 13612), target=f.integer(SCENARIO + 13616), normal_rgb_ground_level=list(struct.unpack('<5i', u.mem_read(SCENARIO + 13620, 20))), timer=[f.integer(SCENARIO + 4680), f.integer(SCENARIO + 4688)]), calls=calls, rng_before=before, rng_after=f.rng_hashes()))
-    return dict(native_sha256=native.image_sha256(), cases=rows, scope='Original action constructor/token reader/Execute73; supplied scenario/global priors; no consumer timing or render output claim')
+    return dict(cases=rows, scope='Original action constructor/token reader/Execute73; supplied scenario/global priors; no consumer timing or render output claim')
 
 def _map_lighting_flash_controls():
     f = ActionFixture()
@@ -7506,7 +7497,7 @@ def _map_lighting_flash_controls():
             creation_admission.append(observation)
         assert all(bytes(u.mem_read(start, len(raw))) == raw for start, raw in original_code.items())
     f.check_code()
-    return dict(native_sha256=native.image_sha256(), warhead_inputs=inputs,
+    return dict(warhead_inputs=inputs,
         constants=constants, cases=rows, creation_admission=creation_admission,
         hysteresis_history=hysteresis_history,
         creation_code_sha256={f'{start:08X}': hashlib.sha256(raw).hexdigest()
@@ -7574,7 +7565,7 @@ def _map_lighting_ambient_history():
         rows.append(dict(frame=frame, normal=f.integer(SCENARIO + 13608), current=f.integer(SCENARIO + 13612), target=f.integer(SCENARIO + 13616), timer=[f.integer(SCENARIO + 4680), f.integer(SCENARIO + 4688)], events=list(events)))
     u.hook_del(h)
     f.check_code()
-    return dict(native_sha256=native.image_sha256(), definition=definition, constructor_rates=ctor, layers=layers, rates=rates(), initial=dict(normal=60, current=60, target=60, timer=[0, 0]), rows=rows, rng_before=before, rng_after=f.rng_hashes(), scope='Original Rules constructor then AudioVisual retained ReadDouble66B5D7..66B625 using physical selected key caches, then Execute73 and actual Logic55B33D..55B4D7. Declared initial map60 and sparse frame observations; cell relight/redraw output sinks only. Whole physical INI load/Process/mode chronology, gameplay and pixels excluded.')
+    return dict(definition=definition, constructor_rates=ctor, layers=layers, rates=rates(), initial=dict(normal=60, current=60, target=60, timer=[0, 0]), rows=rows, rng_before=before, rng_after=f.rng_hashes(), scope='Original Rules constructor then AudioVisual retained ReadDouble66B5D7..66B625 using physical selected key caches, then Execute73 and actual Logic55B33D..55B4D7. Declared initial map60 and sparse frame observations; cell relight/redraw output sinks only. Whole physical INI load/Process/mode chronology, gameplay and pixels excluded.')
 
 def _map_lighting_rate_controls():
     from tools.spatial_oracle.building_body_rules import SP
@@ -7599,7 +7590,7 @@ def _map_lighting_rate_controls():
         assert u.reg_read(UC_X86_REG_ESP) == SP
         rows.append(dict(input=case, before=before, after=state()))
     f.check_code()
-    return dict(native_sha256=native.image_sha256(), constructor=ctor, cases=rows, scope='Original Rules constructor and retained AudioVisual two-key reader66B5D7..66B625; declared ordered cached keys. Physical lexical-empty elision and full Process not included. Cached-empty and malformed float reads expose uninitialized output and are excluded; physical empty omission is separate.')
+    return dict(constructor=ctor, cases=rows, scope='Original Rules constructor and retained AudioVisual two-key reader66B5D7..66B625; declared ordered cached keys. Physical lexical-empty elision and full Process not included. Cached-empty and malformed float reads expose uninitialized output and are excluded; physical empty omission is separate.')
 
 def map_lighting_generate():
     physical = _map_lighting_retail()
@@ -7609,7 +7600,6 @@ def map_lighting_generate():
     selected_waypoints = {str(130): retail_map['Waypoints']['130']}
     retail_map['Waypoints'] = selected_waypoints
     return dict(schema_version=1,
-        native_sha256=native.image_sha256(),
         retail=dict(map=retail_map,rules=physical['RULESMD.INI']),
         ambient_controls=_map_lighting_ambient_controls()['cases'],
         flash_controls=_map_lighting_flash_controls(),
@@ -7848,7 +7838,6 @@ def nuke_strike_flight(root):
 
 
 def nuke_strike_generate(root):
-    from tools.native_oracle import image_sha256
     previous=os.environ.get('VERA20K_PROJECTILE_RENDER_ASSETS')
     os.environ['VERA20K_PROJECTILE_RENDER_ASSETS']=str(root)
     try:
@@ -7865,7 +7854,7 @@ def nuke_strike_generate(root):
         rows.append(nuke_strike_dispatch_case('signed_cell_negative',(-2,-32768),17,
             ground=-104,damage=-17,weapon_speed=255,incoming_house=True))
         rows.append(nuke_strike_dispatch_case('fire_refused',(67,19),1,fire_accepts=False))
-        return dict(schema_version=1,native_sha256=image_sha256(),sources=sources,
+        return dict(schema_version=1,sources=sources,
             retail=retail,dispatch_controls=rows,production_flight=nuke_strike_flight(root))
     finally:
         if previous is None:os.environ.pop('VERA20K_PROJECTILE_RENDER_ASSETS',None)

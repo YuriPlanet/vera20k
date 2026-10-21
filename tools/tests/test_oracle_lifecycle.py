@@ -65,7 +65,6 @@ with ExitStack() as stack:
         guards.extend(stack.enter_context(patch.object(owner, name,
                       side_effect=RuntimeError('forbidden cache operation: ' + name)))
                       for owner, name in ((native_oracle, 'configured_gamemd'),
-                                          (native_oracle, 'image_sha256'),
                                           (Path, 'read_bytes'),
                                           (pickle, 'load'), (pickle, 'loads')))
     if module == 'tools.control_group_text_oracle':

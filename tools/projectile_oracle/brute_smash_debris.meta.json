@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -37,5 +36,5 @@
     "metallic_reader": "0x0066DA90"
   },
   "replay_command": "python -m tools.projectile_oracle.ifv_isolated_tail --brute-debris",
-  "payload_sha256": "25b6dd5d6785f21735dabfe152d637b87d1774bf1bc2849b97f3704313019c72"
+  "payload_sha256": "77f57b5376d9526e10e45d1198ff9055a0945ef3e4552e36823ad01fd5ac468e"
 }

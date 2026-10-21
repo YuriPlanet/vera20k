@@ -173,7 +173,7 @@ def generate():
                     campaign=house_color(control_table,16,campaign=True,scheme_index=-1))
     assert all(c['normal']==c['campaign'] for c in controls)
     assert fallback['normal']==fallback['campaign']
-    return dict(native_sha256=native.NATIVE_SHA256, rulesmd_sha256=hashlib.sha256(raw).hexdigest(),
+    return dict(rulesmd_sha256=hashlib.sha256(raw).hexdigest(),
                 constructor_palette_index=default_index, colors=rows, index_controls=controls,
                 negative_scheme=fallback,
                 laser_rgb565_domain=laser_rgb565_domain(),

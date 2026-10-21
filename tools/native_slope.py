@@ -1,6 +1,6 @@
 """Checked retail startup slope matrices shared by native fixtures.
 
-The pinned image supplies the original CRT/control-word and matrix initializer
+The loaded image supplies the original CRT/control-word and matrix initializer
 bodies. A reset-style FPCW, scratch stack and return sentinel are supplied; this
 does not execute complete Windows startup. No behavioral hooks or code patches
 are installed. Each call completes before the next initializer uses its state.
@@ -12,7 +12,7 @@ from pathlib import Path
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32
 from unicorn.x86_const import UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_ESP, UC_X86_REG_FPCW
 
-from tools.native_oracle import NATIVE_FPCW, NATIVE_SHA256, finish_vectors, load_image, provenance, run_checked
+from tools.native_oracle import NATIVE_FPCW, finish_vectors, load_image, provenance, run_checked
 
 
 _BASE, _SP, _STOP = 0x20000000, 0x2000E000, 0x30000000
@@ -89,7 +89,7 @@ def slope_blend_vectors():
         cases.append(dict(input=dict(from_slope=source, to_slope=target,
             phase_bits=struct.unpack('<Q', struct.pack('<d', phase))[0]),
             matrix_bits=list(struct.unpack('<12I', uc.mem_read(output, 48)))))
-    return dict(native_sha256=NATIVE_SHA256, fpcw_before=fpcw_before,
+    return dict(fpcw_before=fpcw_before,
         fpcw=uc.reg_read(UC_X86_REG_FPCW),
         cached_control_822d80=struct.unpack('<H', uc.mem_read(0x822D80, 2))[0],
         matrices=[list(struct.unpack('<12I', uc.mem_read(0xB45188 + 48 * slope, 48))) for slope in range(21)],

@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="Заглавное изображение VERA20K" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <strong>Русский</strong> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <strong>Русский</strong> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Последний запуск тестов библиотеки на macOS (запускаются вручную)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="Тесты библиотеки на macOS" height="23" align="middle"></a>
@@ -94,8 +94,15 @@ Ghidra, затем переносят его поведение на Rust и п�
 
 ## Настройка
 
-Необязательные возможности (например, из Ares) должны настраиваться через INI-файлы,
-с переключателями в клиенте там, где это уместно.
+По умолчанию VERA20K ведёт себя так же, как оригинальная игра. Каждая новая функция, включая
+расширения из модов вроде Ares, должна оставаться выключенной, пока её не включат одним из способов:
+
+- **Параметром сборки**, например `--features ares` для поддерживаемых [расширений Ares](docs/ares.md).
+- **Параметром в игровом лобби**, который выбирается для каждого матча.
+- **Ключом INI**, который задаёт мод или карта.
+
+Чтобы запускать одиночные схватки или кампании YR через клиент CnCNet, см.
+[настройку офлайн-клиента](integrations/cncnet/README.md).
 
 ## Как помочь
 

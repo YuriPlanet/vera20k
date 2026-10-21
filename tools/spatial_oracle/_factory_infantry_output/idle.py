@@ -10,12 +10,8 @@ import argparse, ast, hashlib, importlib.util, json, struct, traceback
 
 HERE = Path(__file__).resolve().parent
 P2 = HERE
-from .runtime import load_module, receipt_path, read_accepted, verify_callers, compare_primary
+from .runtime import load_module, read_accepted, compare_primary
 P2_MANIFEST = '3b42b8512826dc477250a2b894585724db4cb35264770618729c8fd47a083bf5'
-PRIOR = receipt_path('rally')
-PRIOR_SHA = '00632f4d2610f63a4afe53513bd7441d834d51d8c46ee67480c7fbb17ad893e6'
-NO_RALLY_PRIOR = receipt_path('no_rally')
-NO_RALLY_SHA = '9ff9c219b81c93fe5671b6a153073c09aa4d14c04472baeff0a5680977c1963d'
 VTABLE = 0x7EB058
 SLOTS = (0x2C, 0x48, 0x174, 0x184, 0x1D8, 0x1E8, 0x2AC, 0x430, 0x480, 0x484, 0x4AC, 0x4D0, 0x544)
 SPANS = {
@@ -56,12 +52,10 @@ def load(name, p):
 
 
 def generate(repeat=True, control='rally', capture=None):
-    prior_path,prior_sha = (PRIOR,PRIOR_SHA) if control=='rally' else (NO_RALLY_PRIOR,NO_RALLY_SHA)
     parent_driver=P2 / ('exit.py' if control=='rally' else 'construction.py')
-    verify_callers()
     read_accepted(control)  # verifies exact decompressed original P2 bytes
     original = load('immutable_p2_idle_observation', parent_driver)
-    original_vtable_receipt = json.loads((HERE / 'native-infantry-vtable.json').read_text())
+    original_vtable_receipt = json.loads((HERE / 'native-infantry-vtable.json').read_text(encoding='utf-8'))
     original_vtable_bytes = bytes.fromhex(original_vtable_receipt['result']['bytes'])
     declared_slots = {hex(o): struct.unpack_from('<I', original_vtable_bytes, o)[0] for o in SLOTS}
     events, writes, setters, streams, stream_index, registry = [], [], [], {}, {}, {}
@@ -243,7 +237,7 @@ def generate(repeat=True, control='rally', capture=None):
         hooks.extend([u.hook_add(UC_HOOK_CODE,observe),u.hook_add(UC_HOOK_MEM_WRITE,written)])
         vm.update(snapshot=snapshot,complete_row=complete_row,rng_refs=rng_refs)
 
-    fn=next(n for n in ast.parse(Path(original.__file__).read_text()).body
+    fn=next(n for n in ast.parse(Path(original.__file__).read_text(encoding='utf-8')).body
         if isinstance(n,ast.FunctionDef) and n.name=='generate')
     class Observer(ast.NodeTransformer):
         def visit_FunctionDef(self,node):
@@ -254,7 +248,6 @@ def generate(repeat=True, control='rally', capture=None):
             return self.generic_visit(node)
     fn=Observer().visit(fn)
     module=ast.fix_missing_locations(ast.Module(body=[fn],type_ignores=[]))
-    ast_sha=hashlib.sha256(ast.dump(module,include_attributes=False).encode()).hexdigest()
     ns=dict(vars(original));ns.update(install_observer=install_observer)
     exec(compile(module,str(HERE/'<observation-only-idle-caller>'),'exec'),ns)
     receipt=None;comparison=None;post=[];fault=None
@@ -297,9 +290,7 @@ def generate(repeat=True, control='rally', capture=None):
                 vm['f'].u.hook_del(h)
     return dict(schema_version=1,kind='observation-only-real-produced-gi-idle-latch',
         control=control,
-        native_sha256=original_vtable_receipt['native_sha256'],driver_sha256=sha(__file__),
-        parent_manifest_sha256=P2_MANIFEST,parent_driver_sha256=sha(original.__file__),
-        derived_observer_ast_sha256=ast_sha,primary_comparison=comparison,
+        parent_manifest_sha256=P2_MANIFEST,primary_comparison=comparison,
         original_infantry_vtable=dict(address=VTABLE,source=str(HERE/'native-infantry-vtable.json'),
             sha256=sha(HERE/'native-infantry-vtable.json'),slots=declared_slots),
         live_virtual_identities=list(registry.values()),primary_boundary=primary_boundary,

@@ -19,8 +19,8 @@ from unicorn.x86_const import (
 )
 
 from tools.native_oracle import (
-    NATIVE_SHA256, RET_MAGIC, SCRATCH, NativeCallTrace, finish_vectors,
-    image_sha256, provenance, run_checked,
+    RET_MAGIC, SCRATCH, NativeCallTrace, finish_vectors,
+    provenance, run_checked,
 )
 from tools.input_oracle.fast_scroll import (
     DISPLAY, byte, i32, put8, return_from_sink,
@@ -2095,7 +2095,6 @@ def i32_value(value):
 
 def house_cheer_generate():
     return dict(schema_version=1, source="unicorn/gamemd.exe",
-        native_sha256=image_sha256(),
         cases=[house_cheer_case(spec) for spec in house_cheer_inputs()])
 
 

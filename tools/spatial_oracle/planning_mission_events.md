@@ -13,7 +13,7 @@ stopping at entry to enqueue `0x6521C0`. Twelve controls cover existing
 Attack/Move/AreaGuard/AttackMove and Enter7, Capture8, Eaten9, Harvest10,
 Unload16 (NULL or building-self Target), Sabotage17 and Patrol25.
 The publication wrapper changes only the planning byte at event offset `0x1D`.
-The adjacent metadata pins the executable and supplied tokens. This is record
+The adjacent metadata records the supplied tokens. This is record
 construction/copy evidence, not complete gameplay or input admission parity.
 `sim::command::tests::destination_missions_preserve_native_constructor_and_planning_fields`
 consumes these native outputs. It excludes the numeric value of a NULL auxiliary
