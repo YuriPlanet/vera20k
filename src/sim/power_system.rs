@@ -495,9 +495,14 @@ fn recalculate_power_for_owner(
         // construction-state exclusion.
 
         // A building being warped out gives and takes nothing
-        // (GetPowerOutput `0x0044E7C7`, GetPowerDrain `0x0044E885`). The
-        // drain's online-latch test (`0x0044E88F`) adds nothing while the
-        // warp is the latch's only represented writer.
+        // (GetPowerOutput `0x0044E7C7`, GetPowerDrain `0x0044E885`).
+        // RESIDUAL: the online-latch (+0x660) tests that zero output and
+        // drain (`0x0044E855`, `0x0044E88F`) are not applied. Besides warp,
+        // map placement (`world_spawn.rs`), trigger actions
+        // (`trigger_runtime.rs`) and EVENT_POWEROFF (`world_commands.rs`)
+        // write the latch through `go_building_offline`. Dormant on stock
+        // maps: none places a `Powered=0` structure or uses those actions,
+        // and no input pushes EVENT_POWEROFF. Custom maps can reach it.
         if entity.is_warped_out() {
             continue;
         }

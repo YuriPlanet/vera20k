@@ -106,15 +106,16 @@ rodio = { version = "0.22", default-features = false, features = ["playback"] }
 # existing core dependency already pins the same libc version in Cargo.lock.
 libc = "0.2"
 
-# --- macOS application icon ---
+# --- macOS application icon and game folder chooser ---
 # macOS has no per-window icon; the Dock shows NSApplication's icon image, which
-# `app::window_icon` sets at startup. objc2 0.6 and Foundation 0.3 are the
-# versions already in the lock (via cpal), and AppKit 0.3 matches them; default
-# features are off because they enable every AppKit framework class.
+# `app::window_icon` sets at startup. The app bundle's first launch asks for the
+# game folder with NSOpenPanel (`app::app_bundle`). objc2 0.6 and Foundation 0.3
+# are the versions already in the lock (via cpal), and AppKit 0.3 matches them;
+# default features are off because they enable every AppKit framework class.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage", "NSResponder"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSWindow"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSString", "NSURL"] }
 
 [dev-dependencies]
 # Client tests use core's test fixtures and helpers.

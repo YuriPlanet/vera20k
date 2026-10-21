@@ -16,6 +16,9 @@ use anyhow::Result;
 use winit::event_loop::EventLoop;
 
 fn main() -> Result<()> {
+    // A launch from the macOS app bundle works in the app's data folder. Enter
+    // it before the logger opens logs/ there.
+    let app_bundle = vera20k::app::app_bundle::enter_data_folder();
     let log_path = match vera20k::util::logging::init_file_logger("ra2") {
         Ok(path) => {
             eprintln!("Logging to {}", path.display());
@@ -41,7 +44,7 @@ fn main() -> Result<()> {
         log::info!("Log file: {}", path.display());
     }
 
-    let result = run();
+    let result = run(app_bundle);
     if let Err(error) = &result {
         log::error!("VERA20k exited with an error: {error:#}");
     }
@@ -49,7 +52,7 @@ fn main() -> Result<()> {
     result
 }
 
-fn run() -> Result<()> {
+fn run(app_bundle: bool) -> Result<()> {
     let launch_mode =
         vera20k::app::frontend::launch::parse_launch_args(std::env::args_os().skip(1))?;
 
@@ -108,7 +111,11 @@ fn run() -> Result<()> {
             // Pass the parsed process policy to its consumers: options,
             // audio and retained asset ownership.
             log::info!("Retail startup switches: {options:?}");
-            vera20k::app::App::new(options)
+            let mut app = vera20k::app::App::new(options);
+            if app_bundle {
+                app.ask_for_game_folder_first();
+            }
+            app
         }
         vera20k::app::frontend::launch::AppLaunchMode::Spawn(options) => {
             vera20k::app::App::new_spawn(options)?

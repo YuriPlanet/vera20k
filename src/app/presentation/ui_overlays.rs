@@ -162,12 +162,13 @@ fn admitted_techno_observer(
 /// Native `DrawHealthBar @0x006F64A0` guards its class `vt+0x450` pip/status
 /// tail after the health strip. It admits CurrentPlayer's allies directly; the
 /// other arm tests the object's current-player display bit at Techno+0x210.
-/// That bit has no Rust owner yet, so this covers the common current-owned /-
-/// allied path and leaves the non-allied display-bit arm as a bounded residual.
+/// Its only writers found (the constructor 0x006F2D05, 0x0044162A and the
+/// ChangeOwner clears 0x00448324/0x00448DB3) store zero, so the non-allied
+/// arm is dormant and only the current-owned / allied path is modelled.
 /// Building6F67DC..67FE also admits CanBeOccupied/PipsDrawForAll; the
 /// mobile caller never reads the latter.709B61 suppresses the complete
 /// Building Tiberium tail. All pip/group consumers share these decisions.
-/// Source: procedural_drawing_oracle/absorber_pips; +210 remains unresolved.
+/// Source: procedural_drawing_oracle/absorber_pips.
 fn entity_status_pips_drawable(
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
@@ -590,8 +591,9 @@ pub(crate) fn build_building_status_render_instances(
         {
             continue;
         }
-        //43E7EF's separate non-allied Techno+210 display-bit producer is
-        //still an explicit status-owner residual; do not invent its state.
+        //43E7EF's separate non-allied Techno+210 display-bit arm is
+        //dormant: no writer found sets the bit nonzero (see
+        //entity_status_pips_drawable).
         let Some(object) = sim.interner().object_type(entity.type_ref(), rules) else {
             continue;
         };

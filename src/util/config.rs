@@ -149,7 +149,8 @@ impl GameConfig {
         Self::load_from(&working_dir, &executable)
     }
 
-    pub(crate) fn load_from(working_dir: &Path, executable: &Path) -> Result<Self> {
+    /// [`GameConfig::load`] for a process with this working directory and executable.
+    pub fn load_from(working_dir: &Path, executable: &Path) -> Result<Self> {
         let root = retail_asset_root_from_executable(executable)?;
         for directory in [working_dir, root.as_path()] {
             let path = directory.join(CONFIG_FILE_NAME);
@@ -213,12 +214,8 @@ impl GameConfig {
                 continue;
             }
             if line.starts_with('[') {
-                let header = line.split('#').next().unwrap_or_default().trim_end();
-                section = header
-                    .strip_prefix('[')
-                    .and_then(|header| header.strip_suffix(']'))
-                    .with_context(|| format!("line {line_number}: unterminated `[section]`"))?
-                    .trim();
+                section = section_name(line)
+                    .with_context(|| format!("line {line_number}: unterminated `[section]`"))?;
                 continue;
             }
             let (key, value) = line
@@ -284,6 +281,81 @@ impl GameConfig {
             profile: ProfileConfig::default(),
         }
     }
+}
+
+/// `contents` with `[paths] key` set to `value`, for code that writes a
+/// config: the key's line is replaced, else its commented-out example
+/// (`# key = …`), else the line goes under the first `[paths]` header, or into
+/// a new `[paths]` section at the end. Every other line is kept.
+pub fn set_paths_key(contents: &str, key: &str, value: &str) -> String {
+    let contents = contents.strip_prefix('\u{feff}').unwrap_or(contents);
+    let newline = if contents.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let assigns = |line: &str| {
+        line.split_once('=')
+            .is_some_and(|(name, _)| name.trim() == key)
+    };
+    let mut lines: Vec<String> = contents.lines().map(str::to_owned).collect();
+    let (mut header, mut assigned, mut example) = (None, None, None);
+    let mut section = "";
+    for (index, line) in lines.iter().enumerate() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            section = section_name(line).unwrap_or_default();
+            if section == "paths" && header.is_none() {
+                header = Some(index);
+            }
+            continue;
+        }
+        if section != "paths" {
+            continue;
+        }
+        match line.strip_prefix('#') {
+            Some(comment) if example.is_none() && assigns(comment) => example = Some(index),
+            Some(_) => {}
+            None if assigns(line) => assigned = Some(index),
+            None => {}
+        }
+    }
+    let assignment = format!("{key} = {}", basic_string(value));
+    match (assigned.or(example), header) {
+        (Some(index), _) => lines[index] = assignment,
+        (None, Some(index)) => lines.insert(index + 1, assignment),
+        (None, None) => {
+            if lines.last().is_some_and(|line| !line.trim().is_empty()) {
+                lines.push(String::new());
+            }
+            lines.push("[paths]".to_owned());
+            lines.push(assignment);
+        }
+    }
+    let mut text = lines.join(newline);
+    text.push_str(newline);
+    text
+}
+
+/// The name in a `[section]` header line, or None when it is unterminated.
+fn section_name(line: &str) -> Option<&str> {
+    let header = line.split('#').next().unwrap_or_default().trim_end();
+    Some(header.strip_prefix('[')?.strip_suffix(']')?.trim())
+}
+
+/// `text` as a TOML basic string, the form [`parse_string`] reads back.
+fn basic_string(text: &str) -> String {
+    let mut quoted = String::from('"');
+    for c in text.chars() {
+        match c {
+            '"' => quoted.push_str("\\\""),
+            '\\' => quoted.push_str("\\\\"),
+            c if c.is_control() => quoted.push_str(&format!("\\u{:04X}", u32::from(c))),
+            c => quoted.push(c),
+        }
+    }
+    quoted.push('"');
+    quoted
 }
 
 /// A TOML basic string (`"…"`, with backslash escapes) or literal string
@@ -513,6 +585,51 @@ mod tests {
         let config = fixture.load().unwrap();
         assert_eq!(config.paths.ra2_dir, fixture.0.join("app"));
         assert_eq!(config.paths.settings_dir(), config.paths.ra2_dir.as_path());
+    }
+
+    #[test]
+    fn set_paths_key_replaces_the_line_or_its_commented_example() {
+        let edited = "# mine\r\n[paths]\r\nra2_dir = 'old' # moved\r\n# settings_dir = \".\"\r\n\
+                      [profile]\r\nname = \"指挥官\"\r\n";
+        let folder = r#"C:\Games\"RA2""#;
+        let text = set_paths_key(
+            &set_paths_key(edited, "ra2_dir", folder),
+            "settings_dir",
+            ".",
+        );
+        assert_eq!(
+            text,
+            "# mine\r\n[paths]\r\nra2_dir = \"C:\\\\Games\\\\\\\"RA2\\\"\"\r\nsettings_dir = \".\"\r\n\
+             [profile]\r\nname = \"指挥官\"\r\n"
+        );
+        let config = GameConfig::parse(&text).unwrap();
+        assert_eq!(config.paths.ra2_dir, Path::new(folder));
+        assert_eq!(config.paths.settings_dir(), Path::new("."));
+        assert_eq!(config.profile.player_name(), Some("指挥官"));
+    }
+
+    #[test]
+    fn set_paths_key_adds_a_missing_key_or_section() {
+        assert_eq!(
+            set_paths_key(
+                "[other]\nra2_dir = 'keep'\n[paths]\nra2_dir = 'x'\n",
+                "settings_dir",
+                "."
+            ),
+            "[other]\nra2_dir = 'keep'\n[paths]\nsettings_dir = \".\"\nra2_dir = 'x'\n"
+        );
+        let text = set_paths_key(
+            "\u{feff}[profile]\nname = 'p'",
+            "ra2_dir",
+            "/Games/RA2\u{1}",
+        );
+        assert_eq!(
+            text,
+            "[profile]\nname = 'p'\n\n[paths]\nra2_dir = \"/Games/RA2\\u0001\"\n"
+        );
+        let config = GameConfig::parse(&text).unwrap();
+        assert_eq!(config.paths.ra2_dir, Path::new("/Games/RA2\u{1}"));
+        assert_eq!(config.profile.player_name(), Some("p"));
     }
 
     #[test]

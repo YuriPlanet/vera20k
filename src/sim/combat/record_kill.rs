@@ -140,11 +140,15 @@ impl KillSource {
 /// credit their launcher's house; if the launcher dies during the missile's
 /// flight, the kill goes uncredited.
 ///
-/// NOT routed yet, because each site would need a `&RuleSet` threaded into a
-/// function that does not take one: the Iron Curtain and Genetic Mutator
-/// infantry kills, aircraft self-destruct, passengers dying with their
-/// transport (`world::lifecycle`) or with a collapsing bridge, and passengers
-/// ejected by a sell. Those victims book a Loss with no matching Kill.
+/// The Iron Curtain and Genetic Mutator infantry kills, aircraft
+/// self-destruct and a collapsing bridge's members reach it through
+/// ReceiveDamage; passengers dying with their transport through
+/// `Simulation::kill_passengers`.
+///
+/// NOT routed yet: an absorbed passenger whose sell or survivor ejection
+/// fails is UnInit without the RecordKill before it (Mission_Selling
+/// `0x0044A573`, SpawnSurvivors `0x00442FE5`), so it books no Loss (nor,
+/// for SpawnSurvivors, the killer's credit).
 fn record_the_kill(
     entities: &mut EntityStore,
     houses: &mut crate::sim::houses::Houses,

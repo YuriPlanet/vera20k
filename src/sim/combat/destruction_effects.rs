@@ -52,7 +52,8 @@
 //! - The `DeathFrames=` completion (`0x00736381`), dead on stock, is not
 //!   wired.
 //! - DestroyAnim's palette (TechnoType `+0xDF0`/`+0xDD0` -> anim
-//!   `+0xD4`/`+0xDC`) is presentation and not carried.
+//!   `+0xD4`/`+0xDC`, `0x00441D2F..0x00441D61`) is carried as the anim's
+//!   extra-building-scheme remap (`AnimRemap::ExtraBuildingScheme`).
 //! - Steps with no stock trigger or no VERA state: 2 (radar-spy bits `+0x210`),
 //!   3 and 4 (CloakGenerator, LaserFencePost), 9 (FIRE3 on each cardinal
 //!   neighbour of an `Explodes=` building whose cell holds an overlay with

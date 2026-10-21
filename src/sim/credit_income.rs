@@ -233,10 +233,10 @@ pub(crate) fn produce_cash_on_grand_opening(
 /// else `Spend_Money(-amount)` (`0x0043FDAA..0x0043FDD1`).
 ///
 /// The two warp gates ahead of the block (`IsWarpingOut` `+0x270` at
-/// `0x0043FD0C`, `IsBeingWarped` `+0x271` at `0x0043FD1E`) jump past it; VERA
-/// has no chrono-warp bytes on a building, so the block always runs.
-/// Residual trigger: a captured derrick inside a Chronosphere warp — the
-/// native timer dies on the skipped frame, VERA's keeps paying.
+/// `0x0043FD0C`, `IsBeingWarped` `+0x271` at `0x0043FD1E`) jump past it. In
+/// VERA the object turn's temporal prologue (`temporal_ai_prologue`) returns
+/// for a warped building before this step, so a timer whose expiry frame
+/// falls inside the warp dies as natively.
 pub(crate) fn produce_cash_step(sim: &mut Simulation, stable_id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(stable_id) else {
         return;

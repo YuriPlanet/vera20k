@@ -870,9 +870,10 @@ pub struct ObjectType {
     /// weapon slot 0 instead of 1 (`0x0070DD70`).
     pub spray_attack: bool,
     /// `DistributedFire=` — the type spreads fire across several nearby targets
-    /// instead of committing to one. VERA parses it only to keep those types
-    /// OFF the single-target passive-acquire commit; the spread-fire mechanism
-    /// itself is not implemented. Default no.
+    /// instead of committing to one. GreatestThreat collects its candidates
+    /// (`combat::greatest_threat`), the entity's distributed-fire state picks
+    /// the next one (`0x00709550`), and FireAt drops the fired target
+    /// (`0x006FF872..0x006FF8EB`, `combat::world_fire`). Default no.
     pub distributed_fire: bool,
     /// `VHPScan=` estimated-health filtering/scoring; native default None.
     pub vhp_scan: VhpScan,

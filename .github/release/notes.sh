@@ -64,6 +64,7 @@ row_count=0
 for spec in '*-windows-x64-*-setup.exe|Windows x64 installer' \
             '*-windows-x64-*.zip|Windows x64' \
             '*-linux-x64-*.tar.gz|Linux x64' \
+            '*-macos-arm64-*.dmg|macOS Apple Silicon app' \
             '*-macos-arm64-*.tar.gz|macOS Apple Silicon'; do
   pattern="${spec%%|*}"
   label="${spec#*|}"
@@ -126,9 +127,11 @@ EOF
 ### Downloads
 
 On Windows, the installer is easiest: it finds your Yuri's Revenge folder and
-sets everything up. Otherwise, extract an archive straight into your Yuri's
-Revenge folder, or keep it in its own folder and point \`config.toml\` at the game
-(see the README.txt inside).
+sets everything up. On macOS, open the \`.dmg\` and drag VERA20k into
+Applications; it asks for your Yuri's Revenge folder when it first opens.
+Otherwise, extract an archive straight into your Yuri's Revenge folder, or keep
+it in its own folder and point \`config.toml\` at the game (see the README.txt
+inside).
 
 | download | platform |
 |---|---|

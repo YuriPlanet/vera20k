@@ -1125,8 +1125,9 @@ pub(crate) fn snapshot_get_rof(
     let firer = substrate.entities.get(snap.stable_id);
     super::rof::get_rof(
         &super::rof::RofQuery {
-            // RESIDUAL: a building's own Ammo (`+0x2FC`) is not kept;
-            // no retail building sets `Ammo=`.
+            // RESIDUAL: a building's own Ammo (`+0x2FC`) is not kept. The
+            // retail buildings with `Ammo=` (CAAIRP, CAPOWR: 5) are unarmed,
+            // so none reaches GetROF.
             building_ammo: None,
             weapon: rof_weapon,
             live,

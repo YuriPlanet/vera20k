@@ -5457,14 +5457,21 @@ impl Simulation {
     /// is raised to zero. Both arms first test the type's count and the
     /// building's own `+0x6E4` "actually placed on the map" byte.
     ///
-    /// There is no new-owner add in that block. `ChangeOwner` gives the counts to
-    /// the new house through the virtual `Grand_Opening(1)` it calls at
-    /// `0x00448CEF`, whose entry (`0x00445F80`, `mov al,[ebp+0x6E4]`) reaches the
-    /// add at `0x00446382..0x004463B4` for the current owner — so this function
-    /// must not credit anyone, and its caller must run it with the *passed* old
-    /// owner: `TechnoClass::ChangeOwner` has already written the new owner by
-    /// then, which is why an earlier version that read the entity's current
-    /// owner back never took the counters off the house that lost the building.
+    /// There is no new-owner add in that block. Natively the new house gains the
+    /// counts in `ChangeOwner`'s tail (`0x00449201..0x00449223`, gated on the
+    /// type's counts only). The virtual `Grand_Opening(1)` it calls at
+    /// `0x00448CEF` jumps past its own add (`0x00446382..0x004463B4`) when
+    /// `+0x6E4` is set (`0x00445FD0`). VERA makes the new owner's add in
+    /// `grand_opening` instead, which nets the same for a placed building.
+    /// RESIDUAL: a capture with `+0x6E4` clear gains the counts twice natively
+    /// (opening and tail) and once in VERA. Unreachable in stock skirmish: the
+    /// self-heal types are map tech buildings, opened at placement.
+    ///
+    /// So this function must not credit anyone, and its caller must run it
+    /// with the *passed* old owner: `TechnoClass::ChangeOwner` has already
+    /// written the new owner by then, which is why an earlier version that read
+    /// the entity's current owner back never took the counters off the house
+    /// that lost the building.
     pub(crate) fn remove_old_owner_self_heal(
         &mut self,
         stable_id: u64,
@@ -6063,9 +6070,9 @@ impl Simulation {
         // A hospital's or machine shop's self-heal counts leave the old house
         // here (`0x00448AC8..0x00448B04`, `0x00448B0A..0x00448B46`, each arm
         // gated on the type's count and the building's own `+0x6E4` byte). The
-        // new house gains them from the `Grand_Opening(1)` below — the one
-        // `ChangeOwner` calls at `0x00448CEF` — not from this block, so the
-        // counters move exactly once.
+        // new house gains them from the `Grand_Opening(1)` below, standing in
+        // for native's tail add (see `remove_old_owner_self_heal`), not from
+        // this block, so the counters move exactly once.
         if category == EntityCategory::Structure {
             self.remove_old_owner_self_heal(stable_id, old_owner, rules);
         }

@@ -323,6 +323,18 @@ const KNOWN_NESTED_MIX_NAMES: &[&str] = &[
     "urbann.mix",
 ];
 
+/// Active Yuri's Revenge requires both masters, in this order.
+pub const MASTER_ARCHIVES: [&str; 2] = ["ra2md.mix", "ra2.mix"];
+
+/// Whether `dir` is a Yuri's Revenge install folder: it holds both master
+/// archives, however the install spells their case. A folder chooser checks
+/// this before any archive is opened.
+pub fn holds_master_archives(dir: &Path) -> bool {
+    MASTER_ARCHIVES
+        .iter()
+        .all(|name| crate::util::case_insensitive_path::find(dir, name).is_some())
+}
+
 impl AssetManager {
     /// Consume a newly assembled provider, then freeze one root choice before
     /// consumers receive it. This never mounts an archive or changes a winner.
@@ -406,9 +418,9 @@ impl AssetManager {
             manager.mount_named_archive(&format!("expandmd{index:02}.mix"), false)?;
         }
 
-        // Active Yuri's Revenge requires both masters, in this order.
-        manager.mount_named_archive("ra2md.mix", true)?;
-        manager.mount_named_archive("ra2.mix", true)?;
+        for name in MASTER_ARCHIVES {
+            manager.mount_named_archive(name, true)?;
+        }
 
         for name in ["cachemd.mix", "cache.mix", "localmd.mix", "local.mix"] {
             manager.mount_named_archive(name, true)?;
@@ -1536,6 +1548,16 @@ mod tests {
     fn make_new_format_mix(name: &str, body: &[u8]) -> MixArchive {
         MixArchive::from_bytes(make_new_format_mix_bytes(name, body))
             .expect("new-format test mix should parse")
+    }
+
+    #[test]
+    fn an_install_folder_holds_both_masters_in_any_case() {
+        let dir = TestDirectory::new("masters");
+        std::fs::write(dir.path().join("RA2MD.MIX"), b"").unwrap();
+        assert!(!holds_master_archives(dir.path()));
+        std::fs::write(dir.path().join("Ra2.mix"), b"").unwrap();
+        assert!(holds_master_archives(dir.path()));
+        assert!(!holds_master_archives(&dir.path().join("missing")));
     }
 
     #[test]

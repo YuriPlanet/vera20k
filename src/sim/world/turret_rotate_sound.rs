@@ -31,11 +31,12 @@
 //! empty handle is omitted. Current facing cannot reconstruct this control
 //! history, so the bit is retained rather than recomputed.
 //!
-//! Instruction reading indicates that non-buildings leave `+0x4A0` zero:
-//! `Turret=` vehicles use the separate `+0x3A0` barrel facing, and a whole-image
-//! operand scan finds no other nonzero writer. On that basis, VERA omits their
-//! empty-handle operations and runs this state machine for structures only.
-//! Non-building execution has not been compared against native.
+//! VERA runs this state machine for structures only. A `Turret=` Unit also
+//! writes `+0x4A0`: `UnitClass::Facing_Update` stores its `+0x3A0` facing's
+//! `Is_Rotating` there (`0x00736BE9..0x00736C03`). RESIDUAL, dormant: no stock
+//! Unit sets `TurretRotateSound=` (only GTGCAN and CAEAST02 do), so no Unit
+//! plays the sound. Non-building execution has not been compared against
+//! native.
 //!
 //! Evidence: instruction-level reading of `gamemd.exe` (`BuildingClass::Update`,
 //! `TechnoClass::AI_Update`, `FacingClass::Is_Rotating`, `TechnoClass::Limbo`'s

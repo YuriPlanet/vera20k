@@ -8,6 +8,12 @@ GETTING STARTED
 If you used the Windows installer, you are set: it wrote config.toml in the
 install folder. To use another game folder, run the installer again.
 
+On macOS, drag VERA20k from the disk image into Applications and open it (the
+first time, see REQUIREMENTS). It asks for your Yuri's Revenge folder, then
+keeps config.toml, its settings, logs, saves and replays in
+~/Library/Application Support/VERA20k (in Finder, choose Go > Go to Folder).
+To use another game folder, change ra2_dir in that config.toml.
+
 Otherwise, either:
   - copy these files into your Yuri's Revenge folder (the one with gamemd.exe)
     and start vera20k there, or
@@ -23,11 +29,14 @@ REQUIREMENTS
   A GPU with Vulkan, DirectX 12 or Metal.
   Windows: SmartScreen may warn about an unknown app; choose More info, then
     Run anyway.
-  macOS: the program is not notarized by Apple yet, so macOS refuses to open
-    it as downloaded. Open Terminal, type cd and a space, drag this folder
-    onto the Terminal window and press Return. Then run these two lines; the
-    first removes macOS's "downloaded from the internet" mark from this one
-    program, and you only need it once:
+  macOS: VERA20k is not notarized by Apple yet, so macOS blocks it the first
+    time you open it. Click Done, open System Settings > Privacy & Security,
+    scroll down, click Open Anyway, enter your password and confirm. Each new
+    version asks once.
+    The program-only archive needs Terminal instead: type cd and a space,
+    drag its folder onto the Terminal window and press Return. Then run these
+    two lines; the first removes macOS's "downloaded from the internet" mark
+    from this one program, and you only need it once:
       xattr -d com.apple.quarantine vera20k
       ./vera20k
   Linux: needs ALSA (libasound2) and a Vulkan driver.

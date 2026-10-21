@@ -222,6 +222,14 @@ impl ApplicationHandler for App {
         if self.state.is_some() {
             return;
         }
+        // Asked once AppKit has launched and activated the app; macOS keeps a
+        // chooser from any other process behind the app the player was using.
+        if std::mem::take(&mut self.ask_for_game_folder) && !super::app_bundle::ensure_game_folder()
+        {
+            log::info!("No game folder chosen; exiting");
+            event_loop.exit();
+            return;
+        }
         log::info!("Application resumed — creating window and GPU context");
         let capture_dimensions = match (self.shell_capture.as_ref(), self.tactical_capture.as_ref())
         {

@@ -291,6 +291,38 @@ jobs:
           if (Test-Path (Join-Path $app 'vera20k.exe')) { throw 'uninstall left vera20k.exe behind' }
           if (-not (Test-Path (Join-Path $app 'config.toml'))) { throw 'uninstall removed config.toml' }
           Write-Output 'Installer: refused, installed, upgraded and uninstalled as expected.'
+      # macOS also gets the program as VERA20k.app on a disk image: it keeps its
+      # files in ~/Library/Application Support/VERA20k and asks for the Yuri's
+      # Revenge folder on its first launch (.github/release/macos).
+      - name: macOS app
+        if: runner.os == 'macOS'
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          NAME: ${{ steps.package.outputs.name }}
+        run: bash .github/release/macos/app.sh "dist/$NAME" "dist/$NAME.dmg"
+      # Check the image's layout and signature and start the packaged app, so a
+      # broken disk image stops the release here instead of reaching players.
+      - name: Test the macOS app
+        if: runner.os == 'macOS'
+        timeout-minutes: 10
+        env:
+          NAME: ${{ steps.package.outputs.name }}
+        run: |
+          set -euo pipefail
+          mount="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "dist/$NAME.dmg" > /dev/null
+          trap 'hdiutil detach "$mount" > /dev/null || true' EXIT
+          app="$mount/VERA20k.app"
+          test -L "$mount/Applications"
+          test -f "$mount/README.txt"
+          codesign --verify --strict --verbose=2 "$app"
+          # Started from the bundle, it works in its data folder: the usage
+          # switch logs there and exits before the folder chooser or a window.
+          data="$HOME/Library/Application Support/VERA20k"
+          rm -rf "$data"
+          (cd / && "$app/Contents/MacOS/vera20k" -h > /dev/null)
+          grep -q 'VERA20k .* starting' "$data/logs/ra2.log"
+          echo 'macOS app: signed, on the disk image, and starting in its data folder.'
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
@@ -298,6 +330,7 @@ jobs:
             dist/*.zip
             dist/*.tar.gz
             dist/*-setup.exe
+            dist/*.dmg
           if-no-files-found: error
 
   publish:

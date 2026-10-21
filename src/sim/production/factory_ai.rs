@@ -45,8 +45,8 @@
 //! - The try-later branch also copies an uninitialised stack word into the
 //!   timer's middle field (`+0x554`, `0x004501F1`), which no reader uses.
 //! - Mobile products leave through [`exit_produced_object`], the same
-//!   `Exit_Object` arms a human's placement takes. Its residuals: the
-//!   refinery arm and the Infantry arm's Cloning Vat copies.
+//!   `Exit_Object` arms a human's placement takes, including the Infantry
+//!   arm's Cloning Vat copies. Its residual: the refinery arm's Unit exit.
 
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
