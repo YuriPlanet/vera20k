@@ -10,6 +10,8 @@ this corpus. No gameplay callable is replaced by a supplied success result.
 import hashlib
 import argparse
 import os
+import json
+import tempfile
 import struct
 from pathlib import Path
 from types import SimpleNamespace
@@ -795,8 +797,8 @@ def edge_controls():
     return rows
 
 
-def allies_reader_controls():
-    m = CampaignReader()
+def allies_reader_controls(machine=None):
+    m = machine if machine is not None else CampaignReader()
     names = ["A", "B", "C"]
     array = m.read32(0xA8022C)
     for i, name in enumerate(names):
@@ -818,6 +820,155 @@ def allies_reader_controls():
     rows.append(dict(sections=values, default=4, result=output))
     m.check_code()
     return dict(registry=names, delimiter_hex="2c00", rows=rows)
+
+
+def ares_allies_hook_outputs(ares):
+    """Execute the two enrolled handlers; return their register-frame writes.
+
+    Probe owns the Ares image mapping. CampaignReader uses its established
+    stock stack address, which overlaps the DLL address range, so these are
+    deliberately separate VMs. Only observed hook-frame outputs are transported
+    into the original reader VM; no Syringe loader/trampoline is executed.
+    """
+    from tools import native_oracle as native
+    from tools.rules_oracle.ares_prerequisites import Probe
+    m = Probe.__new__(Probe)
+    m.input_bytes = ares, image_bytes()
+    Probe.__init__(m)
+    frame, pending = m.alloc(0x30), m.alloc(8)
+    m.write(frame + 0x14, pending)  # Register frame's saved ESP.
+    m.write(pending, 0x20018000)  # Declared old local buffer; never dereferenced.
+    m.write(pending + 4, 0x80)
+    m.write(frame + 0x20, 0x20018000)  # Saved ECX before first strtok.
+    read_return = m.call(0x1005BED0, frame)
+    buffer, capacity = m.read(pending), m.read(pending + 4)
+    strtok_return = m.call(0x1005BEF0, frame)
+    strtok_buffer = m.read(frame + 0x20)
+    assert read_return == strtok_return == 0 and buffer == strtok_buffer
+    for rva, offset, length, _virtual, flags in native._sections(
+            ares, image_base=0x10000000, image_size=0xE0000):
+        if flags & 0x20000000:
+            assert bytes(m.u.mem_read(0x10000000 + rva, length)) == ares[offset:offset + length]
+    return dict(read_handler=0x1005BED0, strtok_handler=0x1005BEF0,
+                read_handler_return=read_return, strtok_handler_return=strtok_return,
+                buffer=buffer, capacity=capacity, strtok_buffer=strtok_buffer)
+
+
+def generate_ares_allies(ares):
+    """Native reader controls with explicit, observed Ares hook-frame transport."""
+    from tools.native_oracle import OracleError
+    from tools.rules_oracle.ares_prerequisites import ARES_SHA256
+    output = ares_allies_hook_outputs(ares)
+    read_events, lookup_events = [], []
+    enabled = False
+    pending_read = None
+    with tempfile.TemporaryDirectory(prefix="vera20k-allies-native-") as root:
+        m = CampaignReader(Path(root))
+        # The original fixture's unused stack range already contains this
+        # runtime buffer address. No DLL code is copied over that VM's stack.
+        assert any(begin <= output["buffer"] and
+                   output["buffer"] + output["capacity"] <= end + 1
+                   for begin, end, _permission in m.u.mem_regions())
+        m.u.mem_write(output["buffer"], bytes(output["capacity"]))
+
+        def transport(u, pc, _size, _data):
+            nonlocal pending_read
+            if pc in (0x65C6D0, 0x65C780, 0x65C7E0, 0x661C10, 0x7258D0):
+                raise OracleError(f"Unexpected RNG/detach in Allies reader: {pc:08X}")
+            if enabled and pc == 0x47527C:
+                # Transfer only the already-executed handler's pending
+                # ReadString stack words. Native47527C onward still executes.
+                sp = u.reg_read(UC_X86_REG_ESP)
+                u.mem_write(sp, dwords(output["buffer"], output["capacity"]))
+            elif enabled and pc == 0x475297:
+                u.reg_write(UC_X86_REG_ECX, output["strtok_buffer"])
+            elif pc == 0x528A10:
+                sp = u.reg_read(UC_X86_REG_ESP)
+                if m.read32(sp) == 0x47528F:
+                    event = dict(feature="ares" if enabled else "stock",
+                                 capacity=m.read32(sp + 20))
+                    read_events.append(event)
+                    pending_read = event, m.read32(sp + 16)
+            elif pc == 0x47528F and pending_read is not None:
+                event, buffer = pending_read
+                count = u.reg_read(UC_X86_REG_EAX)
+                event.update(returned_count=count,
+                             copied=bytes(u.mem_read(buffer, count)).decode("latin1"))
+                pending_read = None
+            elif pc == 0x50C170:
+                #4752AB MOV ECX,EAX passes strtok's token directly to
+                #50C170; its return index feeds the original masked shift.
+                ptr = u.reg_read(UC_X86_REG_ECX)
+                raw = bytearray()
+                for at in range(output["capacity"]):
+                    value = u.mem_read(ptr + at, 1)[0]
+                    if value == 0:
+                        break
+                    raw.append(value)
+                else:
+                    raise OracleError("Unterminated original FromName token")
+                if not raw:
+                    raise OracleError("Original strtok must not pass an empty FromName token")
+                lookup_events.append(raw.decode("latin1"))
+
+        hook = m.u.hook_add(UC_HOOK_CODE, transport)
+        before = m.rng_state()
+        stock = allies_reader_controls(m)
+        reference = json.loads((HERE / "campaign_start_houses.json").read_text(encoding="utf8"))
+        assert stock == reference["allies_reader_controls"], "original27 controls changed"
+        enabled = True
+        controls = allies_reader_controls(m)
+        extended = []
+        # Realistic long-name roster, not a mod map or extracted resource.
+        long_names = [f"Group{i:02d}LongName" for i in range(19)]
+        for name, names, value in [
+            ("nineteen_long_names", long_names, ",".join(long_names)),
+            ("extended_last_byte_included", ["A", "B", "C"], "X" * 2045 + ",B"),
+            ("extended_last_byte_cut", ["A", "B", "C"], "X" * 2046 + ",B"),
+        ]:
+            array = m.read32(0xA8022C)
+            for index, house_name in enumerate(names):
+                house = m.alloc(0x16020)
+                m.u.mem_write(house + 0x15FF4, house_name.encode("ascii") + b"\0")
+                m.u.mem_write(array + 4 * index, dwords(house))
+            m.u.mem_write(0xA80238, dwords(len(names)))
+            row = dict(name=name, registry=names, value=value, observations={})
+            for active in (False, True):
+                enabled = active
+                m.ordered_ini({"Control": {"Allies": value}})
+                read_begin, lookup_begin = len(read_events), len(lookup_events)
+                result = m.invoke(0x475260, INI,
+                                  (m.cstring("Control"), m.cstring("Allies"), 0))
+                row["observations"]["ares" if active else "stock"] = dict(
+                    result=result, reads=read_events[read_begin:],
+                    looked_up=lookup_events[lookup_begin:])
+            extended.append(row)
+        assert m.rng_state() == before
+        m.check_code()
+        m.u.hook_del(hook)
+    return dict(schema_version=1, ares_sha256=ARES_SHA256,
+                hook_frame_transport=output, allies_reader_controls=controls,
+                inherited_stock_controls=dict(count=len(stock["rows"]),
+                    source="campaign_start_houses.json:allies_reader_controls"),
+                extended_controls=extended, rng_unchanged=True,
+                boundary="Ares handlers execute separately; observed stack/ECX outputs are transported into unchanged original475260. Syringe loader/trampoline and full DLL startup are not executed.")
+
+
+def ares_allies_metadata():
+    return provenance(
+        scope="Original475260 Allies reader with separately executed enrolled Ares buffer handlers and explicit hook-frame transport.",
+        entry_points=dict(read_houses_list=0x475260, read_string=0x528A10,
+                          house_from_name=0x50C170, read_buffer_handler=0x1005BED0,
+                          strtok_buffer_handler=0x1005BEF0),
+        assumptions=[
+            "Synthetic exact-name House registry and cached lexical INI entries use the existing CampaignReader owner. No game assets or mod maps are inputs.",
+            "The two identified Ares handlers execute in existing Probe VM. Observed pending-stack pointer/capacity and saved-ECX outputs are explicitly transported at original47527C/475297 in a separate CampaignReader VM. This is not Syringe loader, patch/trampoline or complete Ares startup execution.",
+            "Original ReadString, comma-only strtok, FromName and32bit bitmask body execute unchanged. Stock27 controls are executed and compared to the prior native corpus; Ares27 counterparts and19-name/2047-byte boundaries are newly observed.",
+            "Original executable and mapped Ares executable sections remain unchanged; no RNG stream may change, and observed RNG/detach entries are rejected."
+        ], substitutions=[
+            "Inherited BulletReader cached INI/allocation/CRT TLS transport and fixture runtime empty buffer; declared House names/storage and registry order supplied.",
+            "Ares hook register-frame/stack storage supplied only as ABI transport; observed handler outputs are copied into the native reader VM, with original continuation instructions executing there. No parser, lookup, mask result or gameplay return is supplied."
+        ])
 
 
 def color_controls():
@@ -1568,10 +1719,22 @@ if __name__ == "__main__":
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--houses", action="store_true")
     selection.add_argument("--scenario-names", action="store_true")
+    selection.add_argument("--ares-allies", action="store_true")
+    parser.add_argument("--ares-dll", type=Path, default=os.environ.get("VERA20K_ARES_DLL"))
     args, remaining = parser.parse_known_args()
-    generator = generate_scenario_names if args.scenario_names else generate_houses if args.houses else generate
-    filename = "campaign_house_names.json" if args.scenario_names else "campaign_start_houses.json" if args.houses else "campaign_start.json"
-    evidence = scenario_names_metadata if args.scenario_names else lambda: metadata(houses=args.houses)
-    finish_vectors(generator, HERE / filename,
-                   provenance=evidence, argv=remaining,
-                   source_paths=source_paths())
+    if args.ares_allies:
+        from tools.rules_oracle.ares_prerequisites import ARES_SHA256, identified_bytes
+        if args.ares_dll is None:
+            parser.error("Set VERA20K_ARES_DLL or supply --ares-dll")
+        ares = identified_bytes(args.ares_dll, ARES_SHA256)
+        paths = source_paths()
+        paths["ares_vm_owner"] = HERE.parent / "rules_oracle/ares_prerequisites.py"
+        finish_vectors(lambda: generate_ares_allies(ares), HERE / "ares_allies_reader.json",
+                       provenance=ares_allies_metadata, argv=remaining, source_paths=paths)
+    else:
+        generator = generate_scenario_names if args.scenario_names else generate_houses if args.houses else generate
+        filename = "campaign_house_names.json" if args.scenario_names else "campaign_start_houses.json" if args.houses else "campaign_start.json"
+        evidence = scenario_names_metadata if args.scenario_names else lambda: metadata(houses=args.houses)
+        finish_vectors(generator, HERE / filename,
+                       provenance=evidence, argv=remaining,
+                       source_paths=source_paths())

@@ -25,3 +25,4 @@ Supported extensions:
 - [UnitDelivery](ares-unit-delivery.md)
 - [INI Include and inheritance](ini-directives.md). The read-only `asset ini-expand` probe works
   in every build.
+- [Extended authored House ally lists](../tools/input_oracle/ares_allies_reader.md).
