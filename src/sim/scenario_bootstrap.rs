@@ -2952,8 +2952,13 @@ mod tests {
     // ParentCountry and owns nothing.
     const CONTROLLED_STOCK_COUNTRIES: &str = "[Countries]\n0=Americans\n1=Alliance\n2=French\n3=Germans\n4=British\n5=Africans\n6=Arabs\n7=Confederation\n8=Russians\n9=YuriCountry\n[Sides]\nAllied=Americans,Alliance,French,Germans,British\nSoviet=Africans,Arabs,Confederation,Russians\nThirdSide=YuriCountry\n[Americans]\nParentCountry=Americans\n[Alliance]\nParentCountry=Alliance\n[French]\nParentCountry=French\n[Germans]\nParentCountry=Germans\n[British]\nParentCountry=British\n[Africans]\nParentCountry=Africans\n[Arabs]\nParentCountry=Arabs\n[Confederation]\nParentCountry=Confederation\n[Russians]\nParentCountry=Russians\n[YuriCountry]\nParentCountry=YuriCountry\n";
 
+    /// Layer a test's source over the Countries fixture, so its own Country
+    /// keys join the fixture's sections; a fresh load would keep only the
+    /// first of two same-named sections.
     fn launch_fixture_ini(source: &str) -> IniFile {
-        IniFile::from_str(&format!("{CONTROLLED_STOCK_COUNTRIES}{source}"))
+        let mut ini = IniFile::from_str(CONTROLLED_STOCK_COUNTRIES);
+        ini.merge(&IniFile::from_str(source));
+        ini
     }
 
     #[test]
