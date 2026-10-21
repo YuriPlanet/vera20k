@@ -106,7 +106,7 @@ fn ares_country_loading_attempt_freezes_early_palette_color_and_binds_late_text(
             .country_loading_text_hsv(early.country),
         Some([17, 128, 240])
     );
-    let early_rgb = early.text_rgb;
+    let early_rgb = early.text_rgb.expect("the Country names a loading color");
     prepare_map(&mut session);
     let LoadingStage::Prepared(prepared) = &mut session.stage else {
         panic!("prepared");

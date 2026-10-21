@@ -601,7 +601,8 @@ struct EarlyCountryLoading {
     country: crate::rules::ruleset::CountryIdx,
     palette_name: String,
     palette: Option<crate::assets::pal_file::Palette>,
-    text_rgb: [f32; 3],
+    /// `None` keeps the stock AlliedLoad/SovietLoad text color.
+    text_rgb: Option<[f32; 3]>,
 }
 
 impl NativeLoadingScreenState {
@@ -693,8 +694,12 @@ impl NativeLoadingScreenState {
         // Ares1002F8F0 publishes this signed index once for the loading
         // attempt; negative resumes the stock side-color branch above.
         #[cfg(feature = "ares")]
-        if let Some(early) = self.early_country_loading.as_ref() {
-            self.text_rgb = early.text_rgb;
+        if let Some(text_rgb) = self
+            .early_country_loading
+            .as_ref()
+            .and_then(|early| early.text_rgb)
+        {
+            self.text_rgb = text_rgb;
         }
         self.progress_ramp = *ramps.ramp(self.color_index);
         for row in &mut self.progress_row.participants {
@@ -839,7 +844,7 @@ fn ordinary_country_loading_index(
     if launch.local_player().is_observer() {
         return None;
     }
-    Some(launch.humans.first()?.slot.country.index())
+    Some(launch.local_slot().country.index())
 }
 
 #[cfg(feature = "ares")]
@@ -869,10 +874,11 @@ fn bind_early_country_loading(
     };
     let text_rgb = owner
         .country_loading_text_hsv(index)
-        .map(|hsv| normalize_rgb(hsv_to_rgb(hsv)))
-        .unwrap_or([1.0; 3]);
+        .map(|hsv| normalize_rgb(hsv_to_rgb(hsv)));
     native.local_side_index = side;
-    native.text_rgb = text_rgb;
+    if let Some(text_rgb) = text_rgb {
+        native.text_rgb = text_rgb;
+    }
     native.early_country_loading = Some(EarlyCountryLoading {
         country: index,
         palette_name,
@@ -2125,12 +2131,15 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         .and_then(|session| session.native.as_ref())
         .and_then(|native| native.late_country_loading.as_ref())
         .map(|country| {
-            let file = country
+            // A template this formatter does not support omits only the
+            // background, like missing custom art; it never fails the screen.
+            country
                 .background_file(width == LoadingScreenWidth::W640)
-                .ok_or_else(|| anyhow::anyhow!("Unsupported Country loading printf template"))?;
-            Ok::<_, anyhow::Error>(file)
-        })
-        .transpose()?;
+                .unwrap_or_else(|| {
+                    log::warn!("Unsupported Country loading printf template; omitting background");
+                    String::new()
+                })
+        });
     let art = crate::render::loading_screen_chrome::LoadingScreenArtInput {
         variant,
         #[cfg(feature = "ares")]

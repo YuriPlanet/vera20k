@@ -2248,24 +2248,14 @@ impl Default for NativeRulesRegistryState {
 impl NativeRulesRegistryState {
     /// Read one presentation HSV from the retained paired Colors registry.
     /// Native66D3A0 appends kind1 then kind53 for each entry; Ares loading
-    /// stores a kind1 ordinal. Negative indices resume the stock side branch.
+    /// stores a kind1 ordinal. A negative index is no override: the loading
+    /// screen's own stock AlliedLoad/SovietLoad branch keeps the color.
     /// The process owner exposes the value, never the mutable/raw registry.
     #[cfg(feature = "ares")]
-    pub(crate) fn loading_text_hsv(&self, index: i32, side: i32) -> Option<[u8; 3]> {
-        let (name, value) = if let Ok(index) = usize::try_from(index) {
-            // This representation is owned by allocate_colors; both native
-            // variants share one HSV. No final RuleSet list participates.
-            self.colors.get(index / 2)?
-        } else {
-            let wanted = if side == 0 {
-                "AlliedLoad"
-            } else {
-                "SovietLoad"
-            };
-            self.colors
-                .iter()
-                .find(|(name, _)| name.eq_ignore_ascii_case(wanted))?
-        };
+    pub(crate) fn loading_text_hsv(&self, index: i32) -> Option<[u8; 3]> {
+        // This representation is owned by allocate_colors; both native
+        // variants share one HSV. No final RuleSet list participates.
+        let (name, value) = self.colors.get(usize::try_from(index).ok()? / 2)?;
         let mut section = IniSection::new("Colors".into());
         section.set(name, value);
         Some(crate::rules::color_scheme::read_scheme_hsv(&section, name))

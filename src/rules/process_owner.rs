@@ -341,17 +341,18 @@ impl NativeRulesProcessOwner {
 
     /// Early Ares6847B7 loading color, resolved against this same retained
     /// registry before E_multi or the later mode/map Rules reset can change it.
+    /// `None` when the Country sets no color, leaving the stock side color.
     #[cfg(feature = "ares")]
     pub fn country_loading_text_hsv(
         &self,
         index: crate::rules::ruleset::CountryIdx,
     ) -> Option<[u8; 3]> {
-        let (loading, side) = self.country_loading(index)?;
+        let (loading, _) = self.country_loading(index)?;
         self.registry
             .as_ref()
             .expect("Rules transition reentered")
             .registry_state()
-            .loading_text_hsv(loading.color_index(), side)
+            .loading_text_hsv(loading.color_index())
     }
 
     /// Refresh derived frontend country/side fields without replaying Process
