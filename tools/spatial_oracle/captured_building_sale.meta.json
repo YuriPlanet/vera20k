@@ -118,5 +118,5 @@
     }
   },
   "replay_command": "python -m tools.spatial_oracle.captured_building_sale",
-  "payload_sha256": "6adbe90af788f8a94a7e753ad6c4a031bf0f6355891d745f611eab02b945687c"
+  "payload_sha256": "3ee2b783879e8f3a476894fa03c7486aef8dfee540dce7e80a279e63b1814ebd"
 }

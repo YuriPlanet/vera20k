@@ -23,9 +23,6 @@ not open the executable or retail inputs. The payload records retail input
 hashes and reader-derived type values; the sidecar records the payload hash
 and inherited platform boundaries. The shared publisher checks source
 stability during generation without persisting repository-source hashes.
-`native_image_sha256` records a measured digest of the file actually loaded;
-it is not an acceptance gate. The shared `native_oracle.NATIVE_SHA256`
-constant is a legacy label and is not used as this measured identity.
 
 ## Joined and cropped boundaries
 

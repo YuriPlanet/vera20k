@@ -239,7 +239,6 @@ def generate():
     inputs = engineer.prepare_joined_inputs(root)
     typ = inputs.types['GAPOWR']
     result = dict(schema=1, source='unicorn/gamemd.exe',
-        native_image_sha256=hashlib.sha256(native.image_bytes()).hexdigest(),
         native_type=dict(name='GAPOWR', strength=inputs.read32(typ + 0xA0), cost=inputs.read32(typ + 0x610)),
         upgrade_types=[dict(name=name, cost=inputs.read32(inputs.types[name] + 0x610),
             super_weapon=signed(inputs.u, inputs.types[name] + 0x16F0),
