@@ -636,7 +636,10 @@ impl WolCapture {
             ping: -1,
             name: format!("{PEER}'s_game"),
             game_flags: 0x800 + QM_LOBBY_NUMBER,
-            ex_info: format!("{EX_INFO_VERSION},0,0,0,0,"),
+            ex_info: format!(
+                "{EX_INFO_VERSION},{},0,0,0,",
+                crate::app::shell_wol::lobby::local_ini_hash(state).unwrap_or(0)
+            ),
             ..Default::default()
         };
         service_event(

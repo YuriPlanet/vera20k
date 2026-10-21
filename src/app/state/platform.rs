@@ -94,6 +94,12 @@ pub(crate) struct PlatformState {
     /// A sealed capture's exact surface. Present only in capture runs, which
     /// keep it through match launch and never zoom or go full screen.
     pub(crate) capture_client_size: Option<PhysicalSize<u32>>,
+    /// Whether the windowed window still has to be put on the Display choice's
+    /// screen. Set when the window comes back from full screen, because winit
+    /// restores the placement it saved on entry and does that on its own
+    /// thread, so the choice is re-asserted over the next passes until the
+    /// window is really there. Presentation-only, never serialized.
+    pub(crate) recenter_windowed: bool,
 }
 
 impl PlatformState {
@@ -119,6 +125,7 @@ impl PlatformState {
             frame_pacer: LocalFramePacer::new(),
             game_config,
             capture_client_size,
+            recenter_windowed: false,
         }
     }
 

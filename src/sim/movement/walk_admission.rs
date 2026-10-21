@@ -319,11 +319,13 @@ impl Simulation {
         let destination = super::path_batch::code2_ladder_destination(actor)
             .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
         // A batched re-path waits for the next frame's batch as if the +640
-        // timer still ran (`path_batch`, a proposed deviation).
+        // timer still ran (`path_batch`, a proposed deviation), unless it
+        // heads for the Foot's own cell.
         if Self::defer_path_search(
             &mut self.path_batch,
             &self.resolved_terrain,
             &self.overlay_grid,
+            &self.substrate.entities,
             id,
             super::path_batch::WaitingRequest::Code2Ladder { urgency },
         ) {

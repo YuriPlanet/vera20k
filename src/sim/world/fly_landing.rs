@@ -436,7 +436,7 @@ impl Simulation {
         if layer == Some(DisplayLayer::GROUND) {
             self.clear_fly_foot_destination(id, rules, frame_effects);
             radio::broadcast(self, id, RadioMessage::Tether, rules, frame_effects);
-            self.refresh_object_sight(id, rules, 0);
+            self.refresh_object_sight(id, rules, 0, frame_effects);
             //567DA0 updates client fog edges/redraw requests. VERA's
             // ShroudBuffer rebuilds from this owner when its generation
             // changes; there is no second simulation fog-edge authority.

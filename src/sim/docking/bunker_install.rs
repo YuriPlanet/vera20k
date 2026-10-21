@@ -550,12 +550,17 @@ mod tests {
         (sim, bunker, tank)
     }
 
+    /// Entry from every side, with serial path searches and with the batched
+    /// ones real matches run (`movement::path_batch`). Batched, the tank's
+    /// request at the end of its install track heads for its own cell and
+    /// runs in the same call, so its Find_Path failure stops the tank and the
+    /// walls rise (#2448).
     #[test]
     fn retail_tank_bunker_entry_completes_through_full_world_frames() {
         let Some(rules) = retail_bunker_rules() else {
             return;
         };
-        for start in [
+        let starts = [
             (6, 6),
             (10, 6),
             (14, 6),
@@ -564,8 +569,17 @@ mod tests {
             (10, 14),
             (6, 14),
             (6, 10),
-        ] {
+        ];
+        for (batched, start) in [false, true]
+            .into_iter()
+            .flat_map(|batched| starts.map(|start| (batched, start)))
+        {
             let (mut sim, bunker, tank) = retail_bunker_entry(&rules, start);
+            if batched {
+                sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+                sim.batch_path_searches();
+            }
+            let case = format!("{start:?}, {}", if batched { "batched" } else { "serial" });
 
             let mut trace = Vec::new();
             let mut previous = None;
@@ -591,7 +605,7 @@ mod tests {
                     }
                     assert!(
                         step <= 64,
-                        "entry from {start:?} jumped {step} leptons in one frame"
+                        "entry from {case} jumped {step} leptons in one frame"
                     );
                 }
                 previous_xy = xy;
@@ -614,12 +628,12 @@ mod tests {
             let unit = sim.substrate.entities.get(tank).unwrap();
             assert!(
                 slide_samples >= 3,
-                "entry from {start:?} must drive through intermediate positions"
+                "entry from {case} must drive through intermediate positions"
             );
             assert_eq!(
                 rt(&sim, bunker).state(),
                 BunkerState::Occupied,
-                "entry from {start:?} stalled: {trace:#?}; position={:?} moving={:?} nav={:?}",
+                "entry from {case} stalled: {trace:#?}; position={:?} moving={:?} nav={:?}",
                 object_get_coords(unit, sim.resolved_terrain.as_ref()),
                 movement::motion_query::is_moving(unit),
                 unit.navigation.nav_com()
@@ -633,11 +647,11 @@ mod tests {
             assert_eq!(building.bunker.occupant(), Some(tank));
             assert!(
                 building.building_art.anim_slots()[10].is_some(),
-                "front wall animation"
+                "entry from {case}: front wall animation"
             );
             assert!(
                 building.building_art.anim_slots()[11].is_some(),
-                "rear wall animation"
+                "entry from {case}: rear wall animation"
             );
         }
     }

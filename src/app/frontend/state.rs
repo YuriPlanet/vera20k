@@ -168,6 +168,9 @@ pub(crate) struct FrontendState {
     pub(crate) score_page: Option<crate::ui::score_shell::ScorePage>,
     /// Campaign victory dialog `0x103`, separate from Skirmish score dialog `0x108`.
     pub(crate) campaign_score_page: Option<crate::ui::campaign_score_shell::CampaignScorePage>,
+    /// The LAN co-op result dialog `0xBC6` between missions. Its `SCRBK`
+    /// background is held in `campaign_score_art`.
+    pub(crate) coop_score_page: Option<crate::ui::coop_score_shell::CoopScorePage>,
     /// `0x108`'s side art, loaded for the open page (`0x0072D730`) and
     /// released with it (`0x0072D780`).
     pub(crate) score_art: Option<crate::render::main_menu_shell_chrome::ScoreArt>,

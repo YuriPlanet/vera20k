@@ -150,6 +150,7 @@ pub mod mind_control_rules;
 pub mod missile_spawn;
 pub mod mission_data;
 pub mod movies;
+pub mod native_ini_hash;
 pub mod native_processing;
 pub mod object_type;
 pub mod overlay_types;

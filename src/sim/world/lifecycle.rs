@@ -741,8 +741,21 @@ pub enum LifecycleOutput {
         stable_id: u64,
     },
     /// ObjectDetachAll5F52EF..5F5306 hands the follow camera back when it
-    /// follows this object, whatever the argument and the Deselect gate.
+    /// follows this object, whatever the argument and the Deselect gate. A
+    /// logic Select's Unselect_All emits one per object it deselects
+    /// (Deselect `0x005F4503..0x005F4513`), which a later Select in the same
+    /// frame may select again.
     FollowReleased {
+        stable_id: u64,
+    },
+    /// A Select (`TechnoClass::Select @ 0x006FBFA0`, vt+0x14C) the game made
+    /// itself rather than local input: its ObjectClass::Select
+    /// (`0x005F4520`) inserted the object into the client's current-objects
+    /// vector (`0x00A8ECB8`), before its Selected tag event (`0x006FBFE4`).
+    /// Outputs follow Select call order: the actor, each partner as
+    /// `0x00637840` Selects it, and any Select a tag event starts in between.
+    /// Input Selects write the app's selection ledger themselves.
+    ObjectSelected {
         stable_id: u64,
     },
     /// DispatchPointerExpired7258D0 reaches navigation733160 at7259B1

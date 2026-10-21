@@ -9,7 +9,7 @@ mod cooperative;
 pub(crate) use cooperative::chooser_rows as cooperative_chooser_rows;
 mod service;
 pub(crate) use service::{HostOptions, NetworkSetupEvent, poll, service_event};
-mod view;
+pub(crate) mod view;
 mod wol;
 pub(crate) use actions::{apply_action, commit_map_selection, commit_start, open_choose_map};
 pub(crate) use view::view;

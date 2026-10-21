@@ -667,7 +667,13 @@ impl App {
                 // screens with no native analogue (a load failure, a
                 // trigger-driven campaign end) carry no model and keep the
                 // non-art card.
-                let score_rendered = if Self::campaign_score_shell_active(state) {
+                let score_rendered = if crate::app::input::coop_score::active(state) {
+                    crate::app::frontend::skirmish_shell_render::render_coop_score(
+                        state,
+                        &mut encoder,
+                        &output.texture,
+                    )?
+                } else if Self::campaign_score_shell_active(state) {
                     matches!(
                         crate::app::frontend::shell_transition::render_shell_first_paint_slide(
                             state,

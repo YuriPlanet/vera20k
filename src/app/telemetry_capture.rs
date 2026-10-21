@@ -13,7 +13,7 @@ use crate::rules::locomotor_type::SpeedType;
 use crate::sim::movement::motion_query;
 use crate::sim::telemetry::{
     DebugPanel, EntityDesc, LandRow, MinerDebug, PathStep, ProcessStats, SelectedDebug,
-    TELEMETRY_MAX_NAME_BYTES, TelemetrySnapshot,
+    SessionContext, TELEMETRY_MAX_NAME_BYTES, TelemetrySnapshot,
 };
 use crate::sim::world::Simulation;
 
@@ -122,6 +122,23 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
         .telemetry_tick_rate
         .rate(std::time::Instant::now());
     snapshot.timing = Some(timing);
+    let sim = &runtime.simulation;
+    snapshot.session = Some(SessionContext {
+        map_name: bounded_text(sim.session().map_name(), TELEMETRY_MAX_NAME_BYTES),
+        // The app's GameMode holder, not the world's copy read a second way.
+        game_mode: state.match_state.session_mode().as_str().to_owned(),
+        game_speed: speed,
+        local_owner: state
+            .match_state
+            .local_player_owner()
+            .map(|owner| bounded_text(owner, TELEMETRY_MAX_NAME_BYTES)),
+        local_outcome: sim
+            .session()
+            .current_house()
+            .and_then(|owner| sim.ready_outcome_for_owner(owner))
+            .map(|outcome| outcome.kind),
+        build_stamp: crate::app::frontend::status_screen::BUILD_STAMP.to_owned(),
+    });
     snapshot.debug = Some(capture_debug(state, &runtime.simulation));
     snapshot.process = Some(capture_process(state));
     // Mean per observed frame, accumulated only while a client is watching.

@@ -80,6 +80,7 @@ fn spawn_returning_miner(s: &mut Scene, cell: (u16, u16)) -> u64 {
         .set_handler_state(MinerState::ReturnToRefinery.cursor());
     entity.miner.as_mut().unwrap().set_cargo_for_test(vec![
         CargoBale {
+            tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(0),
             resource_type: ResourceType::Ore,
             value: 25,
         };

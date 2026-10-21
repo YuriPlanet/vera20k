@@ -748,6 +748,7 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
     sim.refresh_high_flying_sight_before_process(
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -782,6 +783,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     sim.refresh_high_flying_sight_before_process(
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -810,6 +812,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     sim.refresh_high_flying_sight_before_process(
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -836,6 +839,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     sim.refresh_high_flying_sight_before_process(
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -857,6 +861,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     sim.refresh_high_flying_sight_before_process(
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -877,6 +882,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     sim.refresh_high_flying_sight_before_process(
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate

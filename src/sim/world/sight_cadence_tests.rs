@@ -186,7 +186,7 @@ fn exact_zero_sight_gate_differs_from_empty_walk_and_override() {
     assert!(admission.latched);
     assert_eq!(admission.radius, -1);
     assert!(admission.cells.is_empty());
-    sim.refresh_object_sight(zero, &rules, 3);
+    sim.refresh_object_sight(zero, &rules, 3, crate::sim::world::FrameEffects::default());
     assert!(sim.fog.sight_is_latched(zero, owner));
     assert_eq!(
         sim.fog.sight_admissions_for_test()[&(zero, owner)].radius,
@@ -1618,7 +1618,7 @@ fn a_reveal_before_navigation_publication_tests_the_cell_heights() {
     assert_ne!(early, flat, "the cliff hides cells before publication");
     let grid = PathGrid::from_resolved_terrain(sim.resolved_terrain.as_ref().unwrap());
     sim.install_fixture_path_grid(Some(&grid));
-    sim.refresh_object_sight(id, &rules, 0);
+    sim.refresh_object_sight(id, &rules, 0, crate::sim::world::FrameEffects::default());
     assert_eq!(
         sim.fog.sight_admission(id, owner).unwrap().cells,
         early,
@@ -1684,7 +1684,7 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
         .spawn_object("MTNK", "Russians", 8, 22, 0, &rules)
         .unwrap();
     // The Spy Plane's kind of reveal: a radius that replaces its Sight=.
-    sim.refresh_object_sight(tank, &rules, 7);
+    sim.refresh_object_sight(tank, &rules, 7, crate::sim::world::FrameEffects::default());
     let tank_sight = sim.fog.sight_admission(tank, russians).unwrap().clone();
     assert_eq!(tank_sight.radius, 7);
     assert!(!sim.fog.sight_is_latched(standing, americans));
@@ -1859,7 +1859,7 @@ fn make_ally_refreshes_own_sight_after_admission_and_skips_a_refused_repeat() {
             .discovery
             .discovered_by_current_house()
     );
-    sim.refresh_object_sight(id, &rules, 7);
+    sim.refresh_object_sight(id, &rules, 7, crate::sim::world::FrameEffects::default());
     let before = sim.fog.sight_admission(id, player).unwrap().clone();
     assert_eq!(before.radius, 7);
     sim.substrate

@@ -11,7 +11,8 @@
 //! through the test-only `get_for_test`.
 //!
 //! Active `gamemd.exe` treats raw section and key names as case-sensitive.
-//! A fresh load retains duplicate nonempty section bodies. Empty keys, values,
+//! A fresh load retains duplicate nonempty section bodies, and later copies
+//! of a key for `SaveToPipe` (lookups see the first). Empty keys, values,
 //! and physical section bodies are not inserted. Arbitrary duplicate-name
 //! lookup remains a native CRC/qsort exactification residual.
 //! Native registry allocation and ordered RulesClass passes live in
@@ -49,6 +50,12 @@ pub struct IniSection {
     /// Raw INIs leave this empty. The compatibility projection retains it so
     /// typed readers can use the current live field as the next pass default.
     projected_values: HashMap<String, Vec<String>>,
+    /// Later copies of a key in a fresh load, which native keeps in its
+    /// entry list (`LoadFromStraw` `0x00525A60`) and `SaveToPipe` writes:
+    /// `(physical index, key, value)`. Lookups never see them, and a saved
+    /// game does not keep them: only a fresh load is hashed.
+    #[serde(skip)]
+    duplicate_entries: Vec<(usize, String, String)>,
 }
 
 // A standalone retained Type reader body uses this same admission as a whole
@@ -79,6 +86,7 @@ impl<'de> serde::Deserialize<'de> for IniSection {
             entries: saved.entries,
             key_order: saved.key_order,
             projected_values: saved.projected_values,
+            duplicate_entries: Vec::new(),
         })
     }
 }
@@ -90,6 +98,7 @@ impl IniSection {
             entries: HashMap::new(),
             key_order: Vec::new(),
             projected_values: HashMap::new(),
+            duplicate_entries: Vec::new(),
         }
     }
 
@@ -117,6 +126,9 @@ impl IniSection {
     /// is intentionally outside the ordinary-retail contract.
     fn insert_initial(&mut self, key: &str, value: &str) {
         if self.entries.contains_key(key) {
+            let index = self.key_order.len() + self.duplicate_entries.len();
+            self.duplicate_entries
+                .push((index, key.to_string(), value.to_string()));
             return;
         }
         self.key_order.push(key.to_string());
@@ -140,6 +152,24 @@ impl IniSection {
                 self.set(key, value);
             }
         }
+    }
+
+    /// Every loaded entry in file order, later copies of a key included.
+    fn physical_entries(&self) -> impl Iterator<Item = (&str, &str)> {
+        let mut first = self
+            .key_order
+            .iter()
+            .map(|key| (key.as_str(), self.get(key).unwrap_or_default()));
+        let mut duplicates = self.duplicate_entries.iter().peekable();
+        (0..self.key_order.len() + self.duplicate_entries.len()).filter_map(move |index| {
+            if duplicates.peek().is_some_and(|(at, ..)| *at == index) {
+                duplicates
+                    .next()
+                    .map(|(_, key, value)| (key.as_str(), value.as_str()))
+            } else {
+                first.next()
+            }
+        })
     }
 
     /// The section every reader sees when the named section is absent: no
@@ -253,8 +283,20 @@ impl IniFile {
     /// Parse arbitrary bytes by zero-extending each byte to a Unicode scalar.
     /// This mirrors gamemd's ordinary byte-to-wide helper; INI data is not
     /// interpreted as UTF-8, CP1252, or the Windows active code page.
+    ///
+    /// `ReadINITextLine` (`0x0065D5C0`) flags the end of the file when it
+    /// reaches it without an LF, and `LoadFromStraw` discards the line read
+    /// on that call: a last line without a line feed is not loaded.
+    /// Executed controls: tools/storage_oracle/ini_crc (`unterminated_last_*`).
+    /// RESIDUAL: loading into an INI that already holds sections (the
+    /// `0x00525BFA` arm, e.g. loose `*.PKT` files at `0x00699B58`) puts that
+    /// last entry before testing the flag; VERA has no such merge load.
     pub fn from_bytes(data: &[u8]) -> Result<Self, RulesError> {
-        let text = crate::util::native_string::widen_bytes(data);
+        let complete = data
+            .iter()
+            .rposition(|byte| *byte == b'\n')
+            .map_or(&[][..], |end| &data[..=end]);
+        let text = crate::util::native_string::widen_bytes(complete);
         Ok(Self::from_str(&text))
     }
 
@@ -331,9 +373,14 @@ impl IniFile {
             return;
         }
 
-        // Semicolon truncation happens before the first-equals split. `#` has
-        // no comment meaning in the active parser.
-        let payload = strtrim_ascii(line.split_once(';').map_or(line, |(head, _)| head));
+        // Semicolon truncation happens before the first-equals split, and
+        // only a cut line is trimmed whole (`0x00525F3A`): otherwise the key
+        // and value are trimmed alone, so `strtrim`'s trailing bound applies
+        // to the value's own leading run. `#` has no comment meaning in the
+        // active parser.
+        let payload = raw_line
+            .split_once(';')
+            .map_or(raw_line, |(head, _)| strtrim_ascii(head));
         let Some((key, value)) = payload.split_once('=') else {
             return;
         };
@@ -469,6 +516,50 @@ impl IniFile {
         }
         hasher.finish()
     }
+
+    /// `INIClass::SaveToPipe` (`0x00526470`) as every GetCRC input reads it:
+    /// with comments off, `LoadFromStraw` leaves no column pads or inline
+    /// comments, so each section is `[name]\r\n` and one `key=value\r\n`
+    /// per entry, in list order, with `\r\n` before every section but the
+    /// first. `skip` names a section the load removed first.
+    fn save_to_pipe(&self, skip: Option<&str>) -> Vec<u8> {
+        let skipped = skip.and_then(|name| self.first_section.get(name).copied());
+        let mut bytes = Vec::new();
+        for (index, section) in self.sections.iter().enumerate() {
+            if Some(index) == skipped {
+                continue;
+            }
+            if !bytes.is_empty() {
+                bytes.extend_from_slice(b"\r\n");
+            }
+            bytes.push(b'[');
+            bytes.extend(crate::util::native_string::narrow_widened(&section.name));
+            bytes.extend_from_slice(b"]\r\n");
+            for (key, value) in section.physical_entries() {
+                bytes.extend(crate::util::native_string::narrow_widened(key));
+                bytes.push(b'=');
+                bytes.extend(crate::util::native_string::narrow_widened(value));
+                bytes.extend_from_slice(b"\r\n");
+            }
+        }
+        bytes
+    }
+
+    /// `CCINIClass::GetCRC` (`0x00476D80`): `CRCEngine` (`0x004A1DE0`) over
+    /// the SHA-1 digest (`0x0069E9E0`) of the INI's `SaveToPipe` bytes.
+    pub fn native_crc(&self) -> u32 {
+        crc_of_pipe(&self.save_to_pipe(None))
+    }
+
+    /// GetCRC after a digest-checked load (`ReadCCFile(file, 1, 0)`,
+    /// `0x0047424A..0x004742E3`): `[Digest]` is removed before the hash.
+    pub fn digest_checked_crc(&self) -> u32 {
+        crc_of_pipe(&self.save_to_pipe(Some("Digest")))
+    }
+}
+
+fn crc_of_pipe(bytes: &[u8]) -> u32 {
+    crate::assets::mix_hash::crc_engine(&crate::util::sha1::sha1_bytes(bytes))
 }
 
 /// Whether a type factory answers null for this exact name.

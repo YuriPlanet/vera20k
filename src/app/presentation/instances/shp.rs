@@ -713,10 +713,15 @@ pub(crate) fn build_shp_instances(
                 instance,
             });
             // Unit73CE5E/73CEAD -> Foot41C090 -> Techno705E00 draws
-            // the embedded stencil after the body. Infantry's separate
-            // INFSHDW draw above remains before its body.
-            if entity.category() == EntityCategory::Unit
-                && let Some(body_entry) = entry
+            // the embedded stencil after the body. Infantry51958A also calls
+            // this shared Techno draw. Its separate airborne INFSHDW draw
+            // above remains before its body.
+            // Native positive/NoShadow controls:
+            // tools/procedural_drawing_oracle/infantry_embedded_shadow.json.
+            if matches!(
+                entity.category(),
+                EntityCategory::Unit | EntityCategory::Infantry
+            ) && let Some(body_entry) = entry
                 && let Some(shadow) = embedded_shp_shadow_piece(
                     atlas,
                     state
@@ -848,7 +853,8 @@ pub(crate) fn build_shp_instances(
 }
 
 /// Techno705E00's embedded-shadow admission, also used when a Unit draws
-/// a TerrainType image. Unit GetHeight5F5F40 must be zero (70600C..70603F);
+/// a TerrainType image. Unit/Infantry GetHeight5F5F40 must be zero
+/// (Infantry class15 dispatch705FA6..705FB2, shared70600C..70603F);
 /// the existing isolated query includes live ramp and OnBridge height.
 fn embedded_shp_shadow_admitted(
     object: Option<&crate::rules::object_type::ObjectType>,
@@ -858,11 +864,13 @@ fn embedded_shp_shadow_admitted(
 ) -> bool {
     matches!(decision.native_visual_state, 0 | 1)
         && !object.is_some_and(|object| object.no_shadow)
-        && (entity.category() != EntityCategory::Unit
-            || crate::sim::movement::air_movement::queried_flight_height(entity, cells) == 0)
+        && (!matches!(
+            entity.category(),
+            EntityCategory::Unit | EntityCategory::Infantry
+        ) || crate::sim::movement::air_movement::queried_flight_height(entity, cells) == 0)
 }
 
-/// The common embedded second-half shadow owner used by Building and Unit
+/// The common embedded second-half shadow owner used by Building, Unit and Infantry
 /// `TechnoClass_DrawSHP @ 0x00705E00` paths. Its caller passes the actual body
 /// frame key/entry/instance and the same admitted native visual-state result;
 /// this function does not infer a second frame, anchor, or visibility decision.
@@ -1023,24 +1031,26 @@ fn infantry_air_shadow_piece(
 /// Building draw43DA80 uses the current primary facing and retained +148 HVA
 /// counter; C0 pitches by +370 and stays on frame0 when a B8 turret exists.
 /// The same cache key owns both parts, except during either part's recoil.
-/// Executed controls: tools/voxel_oracle/building_barrel.json.
+/// Executed controls: tools/voxel_oracle/building_barrel.json; the stock guns'
+/// original rasters: tools/voxel_oracle/building_gun_raster.json.
 ///
 /// The blit Z seed is Building vtable `0x7E3EBC+0x2EC` (`0x43E900`): it returns
 /// `-AdjustForZ(this+0xA4)` plus `TurretAnimZAdjust` (`type+0x11E8`) when
 /// `TurretAnimIsVoxel` (`type+0x16C5`) admits the voxel arm. The voxel blits pass
-/// it as their Z argument: `0x707206`/`0x7073F1` (uncached `0x707280`) and
-/// `0x707706` (cached `0x707480`), plus the unit draws `0x73B33D`/`0x73B3B2`/
-/// `0x73B412`, `0x73C772` and `0x73D236`. Shared `Techno` draw `0x705E00` reaches
-/// the slot only on its `GetType()` 2 and 15 arms; Building is type 6 (`0x459EC0`)
-/// and jumps past it, so a building's own SHP draw never takes the adjustment:
+/// it as their Z argument: `0x707206` (uncached `0x706ED0`), `0x7073F1` (uncached
+/// shadow `0x707280`) and `0x707706` (cached `0x707480`), plus the unit draws
+/// `0x73B33D`/`0x73B3B2`/`0x73B412`, `0x73C772` and `0x73D236`. Shared `Techno`
+/// draw `0x705E00` reaches the slot only on its `GetType()` 2 and 15 arms;
+/// Building is type 6 (`0x459EC0`) and jumps past it, so a building's own SHP
+/// draw never takes the adjustment:
 /// Without it a gun loses the depth test to its own body and is clipped by the
 /// base it stands on. Retail voxel-turret values: `NASAM`/`NALASR` `-20`,
 /// `NAFLAK`/`YAGGUN` `-40`, `YAREFN` `-50`, `GTGCAN` `-60`, `CAOUTP` `-140`,
 /// `CAEAST02` `-150`; `TESLA`/`ATESLA` set `-100` with no `TurretAnimIsVoxel`.
 ///
-/// RESIDUAL: the gun blit carries no BUILDNGZ z-shape, while the cached native
-/// route reaches `0x437A10`, whose second-shape arm subtracts a per-pixel z byte.
-/// Pre-existing; the adjustment now rides on top of it.
+/// Neither gun blit takes a z-shape: 706ED0's 4AF2A0 call has none, and 707480
+/// passes 437A10 a null one (`0x7076B7`, pushed at `0x7076F6`), so its per-pixel
+/// adjustment row is the loader-zeroed `0x89C568`. The gun pieces carry none either.
 ///
 /// It is not a ground-layer sort bias: the building's cell sort key reads only
 /// `TurretAnimIsVoxel` (+32 leptons) and `Gate` (-16 leptons), so the turret
@@ -1119,11 +1129,13 @@ fn emit_building_turret_vxl(
         let Some(entry) = unit_atlas.get(key) else {
             continue;
         };
-        // TurretAnimX/Y are screen-pixel offsets at the building draw point.
-        // The existing +3 raster-origin adjustment remains a small alignment
-        // residual; the missing-barrel comparison does not establish it.
+        // 43DA80 submits the building draw point plus TurretAnimX/Y. A cache
+        // miss (706ED0) blits the 754510 crop at that point plus the rect
+        // origin (`0x007071CB..0x007071E2`); a hit (707480) draws what 6C89E0
+        // cached from the same origin and rows (`0x006C8A16..0x006C8A3C`,
+        // `0x007076A2..0x007076CE`). The atlas entry is that crop and origin.
         let tx = building_sx + anim_x as f32 + entry.offset_x + ox;
-        let ty = building_sy + anim_y as f32 + entry.offset_y + 3.0 + oy;
+        let ty = building_sy + anim_y as f32 + entry.offset_y + oy;
         // Building43DA80 -> Techno Draw0x2800: test Z, never write it.
         let policy = BlitPolicy::z_read(SpriteEncoding::Voxel);
         pieces.push(PlannedBuildingPieceInstance {
@@ -1657,7 +1669,11 @@ fn emit_building_anims(
             (
                 tint,
                 crate::app::presentation::lighting::anim_palette_light(
-                    light_grid, cell, config, false,
+                    light_grid,
+                    cell,
+                    config,
+                    false,
+                    instance.remap().as_ref(),
                 ),
             )
         };
@@ -1703,6 +1719,11 @@ fn emit_building_anims(
                     },
                     viewport,
                     legacy_policy: policy.render_z,
+                    bounce_drop_px: super::anim_draw::anim_bounce_drop_px(
+                        sim,
+                        instance,
+                        [coord.x, coord.y, coord.z],
+                    ),
                     body: SpriteInstance {
                         depth: anim_depth,
                         tint: anim_tint,

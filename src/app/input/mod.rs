@@ -5,6 +5,7 @@
 pub(crate) mod camera;
 pub(crate) mod chat;
 pub(crate) mod commands;
+pub(crate) mod coop_score;
 pub(crate) mod context_order;
 pub(crate) mod cursor;
 pub(crate) mod connection;
@@ -18,6 +19,7 @@ pub(crate) mod in_game_options;
 pub(crate) mod messages;
 pub(crate) mod pause_menu;
 pub(crate) mod planning_mode;
+pub(crate) mod radar;
 pub(crate) mod sidebar_eva;
 pub(crate) mod state;
 pub(crate) mod superweapon_cameo;

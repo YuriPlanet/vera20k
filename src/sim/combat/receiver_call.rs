@@ -40,7 +40,7 @@ fn infantry_spared_mutation(
     warhead: &WarheadType,
     terrain: Option<&ResolvedTerrainGrid>,
 ) -> bool {
-    const MUTATE_INF_DEATH: u8 = 9;
+    const MUTATE_INF_DEATH: i32 = 9;
     target.category() == EntityCategory::Infantry
         && warhead.inf_death == MUTATE_INF_DEATH
         && crate::sim::movement::air_movement::current_fly_height(target, terrain) > 0

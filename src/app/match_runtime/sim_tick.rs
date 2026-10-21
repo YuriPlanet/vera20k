@@ -166,12 +166,18 @@ pub(crate) fn drive_local_player_outcome_voice_wait(state: &mut AppState, wall_m
         .scenario_elapsed_clock
         .stop_buckets(wall_ms);
     let elapsed_seconds = elapsed_score_ticks / 60;
+    // 0x0055D0C5: the router runs the mode's +0xA0 before GameExit.
+    let cooperative = crate::app::cooperative_round::applies(state);
+    if cooperative {
+        crate::app::cooperative_round::mission_ended(state, elapsed_score_ticks);
+    }
     let title = crate::app::match_runtime::scenario_exit::outcome_title(outcome).to_string();
     let detail = crate::app::match_runtime::scenario_exit::outcome_detail(outcome).to_string();
     let destination = crate::app::match_runtime::scenario_exit::scenario_exit_destination(
         state.match_state.session_mode(),
         outcome,
         state.match_state.map_basic.skip_score.unwrap_or(false),
+        cooperative,
         title,
         detail,
         || build_campaign_score_screen_model(state, elapsed_score_ticks),
@@ -1257,7 +1263,10 @@ fn advance_one_simulation_frame(
                 .combat_lights
                 .commit_frame(drained_combat_lights);
         }
-        crate::app::input::dispatch::reconcile_selection_order_after_sim(state);
+        crate::app::input::dispatch::reconcile_selection_order_after_sim(
+            state,
+            &drained_lifecycle_outputs,
+        );
         // Trigger Focus/lock effects precede TacticalAI in this Logic visit.
         // Coordinates were resolved by simulation before its final hash.
         apply_trigger_effects(state, &trigger_effects);
@@ -1333,7 +1342,8 @@ fn advance_one_simulation_frame(
                 | LifecycleOutput::BuildingPlacementRetry { .. }
                 | LifecycleOutput::BuildingPlacementSucceeded { .. }
                 | LifecycleOutput::BuildingProductionAbandoned { .. }
-                | LifecycleOutput::FollowReleased { .. } => {}
+                | LifecycleOutput::FollowReleased { .. }
+                | LifecycleOutput::ObjectSelected { .. } => {}
                 LifecycleOutput::ObjectPointerExpired { stable_id } => {
                     state
                         .match_state

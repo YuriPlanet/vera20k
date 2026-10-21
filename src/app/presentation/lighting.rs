@@ -161,16 +161,20 @@ pub(crate) fn building_palette_light(
     )
 }
 
-/// AnimClass DrawIt 00423280..00423354: explicit cell drawer selects cell
-/// common; otherwise global ANIM Convert selects top. AltPalette selects the
-/// first ColorScheme (one row), not the player's 53-row scheme.
+/// AnimClass DrawIt 00423280..00423354: an instance Convert at `+0xD4` draws
+/// and returns before the `AltPalette` override, so that flag cannot narrow the
+/// draw to one row; an explicit cell drawer selects cell common; otherwise the
+/// global ANIM Convert selects top. AltPalette selects the first ColorScheme
+/// (one row), not the player's 53-row scheme.
 pub(crate) fn anim_palette_light(
     grid: &CellLightGrid,
     cell: (u16, u16),
     config: Option<&crate::rules::art_data::AnimTypeRuntimeConfig>,
     cell_drawer: bool,
+    remap: Option<&crate::sim::anim_class::AnimRemap>,
 ) -> crate::render::palette_light::PaletteLight {
     use crate::render::palette_light::PaletteLight;
+    use crate::sim::anim_class::AnimRemap;
     let brightness = if config.is_some_and(|c| c.use_normal_light) {
         1000
     } else {
@@ -184,6 +188,26 @@ pub(crate) fn anim_palette_light(
     };
     if cell_drawer {
         PaletteLight::cell(grid, cell, false).with_brightness(brightness)
+    } else if matches!(
+        remap,
+        Some(AnimRemap::House(_) | AnimRemap::ExtraBuildingScheme(_))
+    ) {
+        // `0x004232A3..0x004232C9` selects the instance Convert and jumps to the
+        // draw, so the `AltPalette` swap at `0x004232E2` never runs for it.
+        // `ObjectClass::Paradrop @ 0x005F5940` (`0x005F5AFE..0x005F5B19`) stores
+        // the owner's `Techno705D70` scheme there — the same 53-row ColorScheme
+        // Convert [`body_palette_light`] gives a body — so the shroud's A still
+        // picks a row and a descending canopy darkens with its cell.
+        //
+        // RESIDUAL: `AnimRemap::ColorScheme` takes the same native branch but
+        // carries OverlayClass's Tiberium Convert, whose row count is
+        // unmeasured, so a CellAnim whose art sets `AltPalette=` still draws one
+        // row and stays undarkened at a shroud edge. Trigger: every such draw.
+        // Presentation only; no simulation or determinism risk.
+        PaletteLight::color_scheme(
+            grid.palette_rgb(grid.profiles().default_profile_id()),
+            brightness,
+        )
     } else if config.is_some_and(|c| c.alt_palette) {
         // Default AltPalette uses B054D4[0], the neutral N1 ColorScheme.
         //68C710 supplies RGB1000;53AD4D skips default schemes with N<=1.

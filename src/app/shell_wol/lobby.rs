@@ -317,8 +317,16 @@ fn admission_context(state: &AppState) -> AdmissionContext {
     AdmissionContext {
         quick_match: super::quick_match::mode_active(state),
         clan_id: squad_id(state),
-        local_hash: None,
+        local_hash: local_ini_hash(state),
     }
+}
+
+/// `[0xB77E04] ^ [0xB77E08] ^ [0xB77E00]`.
+pub(crate) fn local_ini_hash(state: &AppState) -> Option<i32> {
+    state
+        .process_assets
+        .native_ini_hashes()
+        .map(|hashes| hashes.combined())
 }
 
 /// The current channel's kind for the room tests `0x0077D940`/`0x0077D970`:
@@ -1273,15 +1281,15 @@ fn send_create(state: &mut AppState, channel: WolChannel, key: String, observe: 
 /// `0x00789B60`'s record (`0x10C` bytes): type `0x29`, `"%s's_game"` of the
 /// nickname, 7 users, the 0x629 byte (absent, 0) as tournament, the clan
 /// and resolution bits plus the chat-lobby number `[0xB77DD4]` as game
-/// flags. `width` is Options' ScreenWidth `[0xA8EB84]`. The exInfo
-/// (`0x0077E7A0`) needs the INI hashes VERA has no owner of and is left
-/// empty; `+0x04 = 1` has no field here.
+/// flags. `width` is Options' ScreenWidth `[0xA8EB84]`; `ex_info` is
+/// `0x0077E7A0`'s text (`0x00789D05`). `+0x04 = 1` has no field here.
 fn created_channel(
     nickname: &str,
     clan: bool,
     limit: bool,
     width: i32,
     lobby_number: i32,
+    ex_info: String,
 ) -> WolChannel {
     let mut game_flags = 0u32;
     if clan {
@@ -1299,8 +1307,38 @@ fn created_channel(
         max_users: CREATE_MAX_USERS,
         name: format!("{nickname}'s_game"),
         game_flags: game_flags.wrapping_add(lobby_number as u32),
+        ex_info,
         ..Default::default()
     }
+}
+
+/// `0x0077E7A0` at Create: the hash, then `0x005E94D0`/`0x005E9580`/
+/// `!0x005E9560` over the slot array `[0xA8DA90]`, and the scenario
+/// `[0xA8B8E0]` (the record at `[0xA8B254]`, as `SelectScenario`
+/// `0x005E7BF0` copies it). WOL entry (`0x00786390` -> `0x005E8B60`)
+/// fills every slot with the Open or Closed sentinel: no AI, no observer
+/// and no open observer slot.
+/// RESIDUAL: a setup earlier in the visit leaves its own slots, which
+/// native publishes instead; the C2 republish (`0x0078F000`) that
+/// replaces the record is not ported (chain H).
+fn create_ex_info(state: &AppState) -> String {
+    let index = state.frontend.multiplayer_shell_runtime.scenario_index();
+    let scenario = state
+        .frontend
+        .scenario_catalog
+        .records()
+        .get(index)
+        .map(|record| record.file_name.clone())
+        .unwrap_or_default();
+    ExInfo {
+        version: EX_INFO_VERSION,
+        hash: local_ini_hash(state).unwrap_or(0),
+        ai_players: 0,
+        observer_taken: 0,
+        observer_open: 0,
+        scenario,
+    }
+    .write()
 }
 
 /// `0x00789B60` after `0xC3` OK.
@@ -1315,7 +1353,9 @@ fn create_confirmed(
     let (width, _) = options_screen(state);
     let globals = &mut state.frontend.wol_lobby_globals;
     globals.limit_resolution = limit;
-    let channel = created_channel(&nickname, clan, limit, width, globals.lobby_number);
+    let lobby_number = globals.lobby_number;
+    let ex_info = create_ex_info(state);
+    let channel = created_channel(&nickname, clan, limit, width, lobby_number, ex_info);
     // The key goes to +0xD7 with spaces made '_'; the popup's observe byte
     // becomes the observer preference [0xAC10C8].
     let key = password.replace(' ', "_");
@@ -3283,8 +3323,32 @@ fn user_help(state: &AppState, name: &str, member: Option<&WolMember>) -> String
     help
 }
 
+/// `0x00780D90`: `TXT_RANDOM_MAP_DESCRIPTION` for `RandMap.Sed`, else the
+/// description (`+0x00`) of the first scenario record (`[0xA8B8CC]`)
+/// whose file name (`+0x58`) equals `scenario` without case; empty when
+/// none does.
+fn scenario_description(state: &AppState, scenario: &str) -> String {
+    use crate::util::native_string::crt_strcmpi;
+    use std::cmp::Ordering;
+    if crt_strcmpi(scenario, crate::app::shell_random_map::RANDMAP_SED_FILE) == Ordering::Equal {
+        return csf(
+            state,
+            crate::app::shell_random_map::RANDOM_MAP_DESCRIPTION_KEY,
+        );
+    }
+    state
+        .frontend
+        .scenario_catalog
+        .records()
+        .iter()
+        .find(|record| crt_strcmpi(&record.file_name, scenario) == Ordering::Equal)
+        .map(|record| record.display_name.clone())
+        .unwrap_or_default()
+}
+
 /// `0x00780E30`: the host (the name up to `'`, at most 10 characters), the
-/// ping and the map; the map name lookup `0x00780D90` is not ported.
+/// ping, then `", "` and the map when exInfo names a scenario `0x00780D90`
+/// knows.
 fn game_help(state: &AppState, row: &WolGameRow) -> String {
     let host: String = row
         .name
@@ -3302,7 +3366,19 @@ fn game_help(state: &AppState, row: &WolGameRow) -> String {
             &[crate::assets::csf_file::CsfArg::Int(i64::from(row.ping))],
         )
     };
-    format!("{}, {ping}", user_help(state, &host, None))
+    let mut help = format!("{}, {ping}", user_help(state, &host, None));
+    let scenario = lobby(state)
+        .and_then(|lobby| lobby.games.get(row.record))
+        .map(|channel| channel.ex_info().scenario)
+        .unwrap_or_default();
+    if !scenario.is_empty() {
+        let name = scenario_description(state, &scenario);
+        if !name.is_empty() {
+            help.push_str(", ");
+            help.push_str(&name);
+        }
+    }
+    help
 }
 
 #[cfg(test)]
@@ -3370,7 +3446,7 @@ mod tests {
             member("e", 11),
             member("f", 9),
         ];
-        let mut channel = created_channel("Tester", true, false, 1024, 0);
+        let mut channel = created_channel("Tester", true, false, 1024, 0, String::new());
         let terms = start_terms_for(&channel, &members);
         assert_eq!(terms.tournament, 2);
         assert_eq!(
@@ -3415,22 +3491,22 @@ mod tests {
 
     #[test]
     fn the_created_record_carries_name_users_and_flags() {
-        let channel = created_channel("Tester", false, false, 1024, 3);
+        let channel = created_channel("Tester", false, false, 1024, 3, "25,7,0,0,1,x".into());
         assert_eq!(channel.name, "Tester's_game");
         assert_eq!((channel.kind, channel.max_users), (GAME_CHANNEL, 7));
         assert_eq!((channel.game_flags, channel.flags), (3, 0));
-        assert!(channel.ex_info.is_empty());
-        let limited = created_channel("Tester", true, true, 800, 0);
+        assert_eq!(channel.ex_info, "25,7,0,0,1,x");
+        let limited = created_channel("Tester", true, true, 800, 0, String::new());
         assert_eq!(limited.game_flags, GAME_CLAN | GAME_LIMIT_800);
-        let limited = created_channel("Tester", false, true, 640, 1);
+        let limited = created_channel("Tester", false, true, 640, 1, String::new());
         assert_eq!(limited.game_flags, GAME_LIMIT_640 + 1);
         // A limited game's screen admission matches its bit.
         assert_eq!(
-            created_channel("a", false, true, 800, 0).screen_limit(),
+            created_channel("a", false, true, 800, 0, String::new()).screen_limit(),
             800
         );
         assert_eq!(
-            created_channel("a", false, true, 640, 0).screen_limit(),
+            created_channel("a", false, true, 640, 0, String::new()).screen_limit(),
             640
         );
     }

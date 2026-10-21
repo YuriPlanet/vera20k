@@ -70,7 +70,10 @@ use crate::sim::world::Simulation;
 /// v28: `terrain` gained per-cell land type, ramp slope and bridge deck rise,
 /// so the dashboard can tell water from land, slope a ramp instead of walling
 /// it, and lift a high bridge deck off its ground.
-pub const TELEMETRY_SCHEMA_VERSION: u32 = 28;
+/// v29: `session` — which match a stream belongs to: map name, `GameMode`, the
+/// game speed the pacer uses, the local player and its accepted result, and the
+/// running binary's version stamp.
+pub const TELEMETRY_SCHEMA_VERSION: u32 = 29;
 
 /// One house row of a [`ReportPoint`]: just what the report's party table and
 /// pie captions read.
@@ -596,6 +599,27 @@ pub struct CheatReport {
     pub power_forced: bool,
 }
 
+/// Which match a stream belongs to. App-filled like every other non-sim
+/// section: the header needs the session's identity, and the entity wall alone
+/// cannot tell a campaign stage from a skirmish on the same map.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SessionContext {
+    /// The loaded scenario's map file name, bounded like every other wire name.
+    pub map_name: String,
+    /// `GameMode` (`0x00A8B238`) as the engine's own variant spelling.
+    pub game_mode: String,
+    /// The scenario speed, clamped the way the frame pacer clamps it.
+    pub game_speed: u8,
+    /// The pinned local player's house; `None` when the scenario names none.
+    pub local_owner: Option<String>,
+    /// The local player's accepted result, present once its SavourDelay has
+    /// expired — the same query the app's outcome presentation and simulation
+    /// termination share, so the header never shows a result still in flight.
+    pub local_outcome: Option<crate::sim::house_state::HouseOutcomeKind>,
+    /// The running binary's version stamp, from `CARGO_PKG_VERSION`.
+    pub build_stamp: String,
+}
+
 /// One dashboard sample: the whole wire payload per snapshot.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TelemetrySnapshot {
@@ -607,6 +631,8 @@ pub struct TelemetrySnapshot {
     /// Map dimensions in cells; frames the dashboard's ground plane.
     pub map_width: u16,
     pub map_height: u16,
+    /// App-filled session identity; `None` until the app layer fills it.
+    pub session: Option<SessionContext>,
     /// The map's elevation grid; app-filled and sent once per map (first
     /// publish after a client attaches, and again after a map loads), so the
     /// dashboard can build real terrain. `None` on every other publish.
@@ -859,6 +885,7 @@ impl Simulation {
             binary_frame: self.session.binary_frame(),
             map_width: self.session.map_width(),
             map_height: self.session.map_height(),
+            session: None,
             terrain: None,
             entities_total,
             houses,

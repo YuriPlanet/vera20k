@@ -275,7 +275,7 @@ fn veterancy_navigation_keeps_shared_snapshot_without_pointer_expiry() {
         .selection
         .set_selected_for_test(false);
 
-    reconcile_selection_order_for_sim(&mut input, &sim, Some(&rules));
+    reconcile_selection_order_for_sim(&mut input, &sim, Some(&rules), &[]);
 
     assert_eq!(input.category_navigation.candidates, [20, 40, 50]);
     assert_eq!(input.type_select.selection_scope_view().0, "health");
@@ -1151,7 +1151,7 @@ fn combatant_native_cleanup_boundaries_reconcile_without_resetting_map_scope() {
             // after lifecycle/refusal. Matching selected bits alone must not
             // keep that provisional ledger alive once its queue is empty.
             assert!(sim.pending_command_snapshot().is_empty());
-            reconcile_selection_order_for_sim(&mut input, &sim, Some(&rules));
+            reconcile_selection_order_for_sim(&mut input, &sim, Some(&rules), &[]);
             assert_eq!(
                 input.selection_order,
                 boundary_ids(cleanup),
@@ -1266,7 +1266,7 @@ fn combatant_pending_transport_uses_selection_queue_and_keeps_native_cleanup_sco
             Command::Stop { entity_id: 40 }
         };
         sim.queue_command(CommandEnvelope::new(owner, 2, command));
-        reconcile_selection_order_for_sim(&mut input, &sim, Some(&rules));
+        reconcile_selection_order_for_sim(&mut input, &sim, Some(&rules), &[]);
         assert_eq!(input.selection_order_pending, queued_selection);
         assert_eq!(
             input.selection_order,
@@ -1288,7 +1288,7 @@ fn combatant_pending_transport_uses_selection_queue_and_keeps_native_cleanup_sco
         for command in due {
             let _ = sim.apply_command("local", &command.payload, Some(&rules));
         }
-        reconcile_selection_order_for_sim(&mut input, &sim, Some(&rules));
+        reconcile_selection_order_for_sim(&mut input, &sim, Some(&rules), &[]);
         assert!(!input.selection_order_pending);
         assert!(input.selection_order.is_empty());
         assert_eq!(input.type_select.selection_scope_view().0, "combatant");

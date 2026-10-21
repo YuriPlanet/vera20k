@@ -22,6 +22,8 @@ pub(crate) const LOBBY_PREFIX: &str = "Lob_41_";
 pub(crate) const LOBBY_KEY: &str = "zotclot9";
 /// `0x00777B50`: the exInfo version (`[0x822D1C]`).
 pub(crate) const EX_INFO_VERSION: i32 = 25;
+/// The byte every exInfo caller terminates its 80-byte buffer at.
+const EX_INFO_BYTES: usize = 40;
 /// `0x00788180` skips lobbies with at least this many users (`cmp 0x19`).
 const LOBBY_CROWDED: i32 = 0x1A;
 
@@ -95,6 +97,27 @@ impl ExInfo {
             observer_open,
             scenario: tokens.next().unwrap_or_default().to_owned(),
         }
+    }
+
+    /// `0x0077E7A0`'s `"%d,%d,%d,%d,%d,%s"`, terminated at byte 40 as
+    /// every caller does before use (`0x00789D15`, `0x007A5827`,
+    /// `0x0078F1C5`, `0x0077FF83`), which can cut the scenario name.
+    pub(crate) fn write(&self) -> String {
+        let mut text = format!(
+            "{},{},{},{},{},{}",
+            self.version,
+            self.hash,
+            self.ai_players,
+            self.observer_taken,
+            self.observer_open,
+            self.scenario
+        );
+        let mut end = text.len().min(EX_INFO_BYTES);
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+        text
     }
 
     /// `f4 || f5`: one of the max users is the observer slot.
@@ -511,8 +534,8 @@ pub(crate) struct AdmissionContext {
     pub(crate) quick_match: bool,
     /// `[0xB77DE4]`: the user's squad id.
     pub(crate) clan_id: i32,
-    /// Rules ^ AI ^ Art of `0x00476D80`; VERA has no owner of those INI
-    /// CRCs, so the hash comparison is skipped while this is `None`.
+    /// Rules ^ AI ^ Art (`crate::rules::native_ini_hash`); `None` only
+    /// without the process sources, which skips the comparison.
     pub(crate) local_hash: Option<i32>,
 }
 
@@ -663,6 +686,26 @@ mod tests {
         let info = ExInfo::parse("25,,3");
         assert_eq!((info.version, info.hash, info.ai_players), (25, 3, 0));
         assert_eq!(info.scenario, "");
+    }
+
+    #[test]
+    fn ex_info_writes_six_fields_cut_at_byte_forty() {
+        let info = ExInfo {
+            version: 25,
+            hash: -1_234_567_890,
+            ai_players: 2,
+            observer_taken: 0,
+            observer_open: 1,
+            scenario: "yrmap.map".into(),
+        };
+        assert_eq!(info.write(), "25,-1234567890,2,0,1,yrmap.map");
+        assert_eq!(ExInfo::parse(&info.write()), info);
+        let long = ExInfo {
+            scenario: "a_scenario_name_of_thirty_bytes.map".into(),
+            ..info
+        };
+        assert_eq!(long.write(), "25,-1234567890,2,0,1,a_scenario_name_of_");
+        assert_eq!(long.write().len(), 40);
     }
 
     #[test]

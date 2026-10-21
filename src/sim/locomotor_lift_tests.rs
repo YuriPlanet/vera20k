@@ -148,6 +148,55 @@ fn lift(rules: &RuleSet) -> (Simulation, PathGrid, u64, u64) {
     (sim, grid, magnetron, tank)
 }
 
+/// Imbue710326/710352 supplies both NavCom and Foot+6AD. UnitAI7365E8
+/// still runs Facing_Update, whose736BB1 gate preserves an idle turret's
+/// aim until the lift ends. The native idle_navcom_magnetron control in
+/// turret_cadence.json pins that gate; this checks its production callers.
+#[test]
+fn retail_magnetron_lift_keeps_the_victims_idle_turret_aim() {
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    let (mut sim, grid) = arena(&rules);
+    // Directional diplomacy stops the victim acquiring the Magnetron before
+    // the beam lands, leaving a distinct idle aim for the lift to preserve.
+    sim.house_alliances_mut_for_test()
+        .entry("RUSSIANS".into())
+        .or_default()
+        .insert("AMERICANS".into());
+    let magnetron = spawn(&mut sim, &rules, "TELE", "Americans", 10, 16);
+    let tank = spawn(&mut sim, &rules, "MTNK", "Russians", 16, 16);
+    let heading = entity(&sim, tank)
+        .barrel_facing
+        .as_ref()
+        .unwrap()
+        .destination();
+    order(
+        &mut sim,
+        "Americans",
+        Command::Attack {
+            attacker_id: magnetron,
+            target_id: tank,
+        },
+    );
+    assert!(run_until(&mut sim, &rules, &grid, 120, |sim| {
+        entity(sim, tank).lift.swap_active()
+    }));
+    let mut checked = 0;
+    for _ in 0..120 {
+        let held = entity(&sim, tank);
+        if !held.lift.swap_active() || held.navigation.nav_com().is_none() {
+            break;
+        }
+        assert!(held.attack_target.target().is_none());
+        assert_eq!(held.barrel_facing.as_ref().unwrap().destination(), heading);
+        checked += 1;
+        let commands = sim.take_due_commands();
+        sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33);
+    }
+    assert!(checked > 60, "the held tank passes the idle turret dwell");
+}
+
 /// Held all the way, the tank reaches the cell beside the Magnetron that the
 /// Jumpjet's `Move_To` found free (`0x0054B275..0x0054B2D9`; the Magnetron's
 /// own cell is taken), is let go there by State 3's arrival (`0x0054C1CB`)

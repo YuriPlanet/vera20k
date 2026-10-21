@@ -63,7 +63,6 @@ pub use spotlight::BuildingSpotlight;
 mod infantry_death;
 mod jumpjet_cruise;
 pub use infantry_death::InfantryDeathPostlude;
-#[cfg(any(test, feature = "test-support"))]
 pub use infantry_death::InfantryDeathSequence;
 mod aircraft_attack;
 mod aircraft_enter;

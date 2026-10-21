@@ -590,6 +590,17 @@ impl ScenarioGameMode {
     pub const fn is_nonzero(self) -> bool {
         !matches!(self, Self::Campaign)
     }
+    /// The stable wire spelling shared by every consumer that names a session's
+    /// `GameMode` as text (dashboard telemetry).
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Campaign => "campaign",
+            Self::Lan => "lan",
+            Self::Wol => "wol",
+            Self::Skirmish => "skirmish",
+            Self::Other => "other",
+        }
+    }
     /// Queue_AI647260 routes the active LAN/WOL values to its multiplayer body.
     pub const fn command_queue_route(self) -> crate::sim::world::CommandQueueRoute {
         if self.is_network() {

@@ -271,11 +271,32 @@ fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm(
     // Default N1 schemes are skipped by53AD4D, independently of N53 and
     // cell caches (68C710 RGB1000;4232E2 selects B054D4[0]+30C).
     assert_eq!(
-        anim_palette_light(&lights.grid, (0, 0), art.anim_runtime_config("ALT"), false),
+        anim_palette_light(
+            &lights.grid,
+            (0, 0),
+            art.anim_runtime_config("ALT"),
+            false,
+            None,
+        ),
         PaletteLight::new([1000; 3], 1, brightness, true)
     );
+    // The same AltPalette type with an instance Convert at+0xD4 draws before
+    //4232E2 swaps that one-row scheme in, so it keeps the 53-row selection
+    // Paradrop5F5AFE stored: the shroud's A still selects a row.
     assert_eq!(
-        anim_palette_light(&lights.grid, (0, 0), None, false),
+        anim_palette_light(
+            &lights.grid,
+            (0, 0),
+            art.anim_runtime_config("ALT"),
+            false,
+            Some(&crate::sim::anim_class::AnimRemap::House(
+                crate::sim::intern::InternedId::default()
+            )),
+        ),
+        expected
+    );
+    assert_eq!(
+        anim_palette_light(&lights.grid, (0, 0), None, false, None),
         PaletteLight::plain(53, brightness)
     );
     //555E50 constructs a new Convert with Storm RGB even though the

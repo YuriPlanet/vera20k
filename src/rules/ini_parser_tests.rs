@@ -270,3 +270,55 @@ fn content_hash_is_deterministic_and_value_sensitive() {
     let c = IniFile::from_str("; header\n[General]\nBuildSpeed = .7   ; speed\nFlightLevel=1500\n");
     assert_eq!(a.content_hash(), c.content_hash());
 }
+
+/// Retail AIMD.INI carries `[Digest] 1=` (base64 SHA-1), which
+/// `ReadCCFile(file, 1, 0)` compares at `0x004742FA` against SHA-1 of the
+/// `SaveToPipe` bytes without `[Digest]`. Retail bytes, not prior Rust,
+/// fix the serialization of a file without padding or comments.
+#[test]
+fn aimd_digest_matches_its_save_to_pipe_bytes() {
+    let Some(ai) = crate::rules::retail_ini_fixture::retail_ini("aimd.ini") else {
+        return;
+    };
+    let stored = ai.section_or_empty("Digest").read_string("1", "", 0x40);
+    let digest = crate::util::sha1::sha1_bytes(&ai.save_to_pipe(Some("Digest")));
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut encoded = String::new();
+    for chunk in digest.chunks(3) {
+        let bits = chunk.iter().enumerate().fold(0_u32, |bits, (index, byte)| {
+            bits | u32::from(*byte) << (16 - 8 * index)
+        });
+        for index in 0..4 {
+            encoded.push(if index <= chunk.len() {
+                char::from(ALPHABET[(bits >> (18 - 6 * index) & 63) as usize])
+            } else {
+                '='
+            });
+        }
+    }
+    assert_eq!(encoded, stored);
+}
+
+/// `SaveToPipe` streams captured from native `GetCRC` on the synthetic
+/// controls of tools/storage_oracle/ini_crc: duplicate keys and sections,
+/// empty sections, spacing, comments and an unterminated last line.
+#[test]
+fn save_to_pipe_matches_the_native_streams() {
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/storage_oracle/ini_crc.json",
+    ))
+    .unwrap();
+    for case in corpus["synthetic"].as_array().unwrap() {
+        if case["absent"].as_bool() == Some(true) {
+            continue;
+        }
+        let input = case["input"].as_str().unwrap();
+        let ini = IniFile::from_bytes(&crate::util::native_string::narrow_widened(input)).unwrap();
+        assert_eq!(
+            crate::util::native_string::widen_bytes(&ini.save_to_pipe(None)),
+            case["stream"].as_str().unwrap(),
+            "{}",
+            case["name"]
+        );
+    }
+}

@@ -1,7 +1,7 @@
 //! FootAI4DA692..4DA7AA: admitted high-flying sight refresh before Process.
 //! Per-viewer clocks preserve the original local-player admission boundary;
 //! House/view-cache reconciliation never advances these clocks or emits events.
-use super::{Simulation, UninitContext};
+use super::{FrameEffects, Simulation, UninitContext};
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::resolved_terrain::{AllocatedCellOrder, ROW_NEIGHBORS};
@@ -1793,7 +1793,13 @@ impl Simulation {
     /// Carryall_Pickup's pair (`0x00416C6D`/`0x00416C81`) is dormant, as the
     /// pickup is: it needs an AircraftType with `Carryall=`, which no retail
     /// type sets (`retail_aircraft_types_are_not_carryalls`).
-    pub(crate) fn refresh_object_sight(&mut self, stable_id: u64, rules: &RuleSet, radius: i32) {
+    pub(crate) fn refresh_object_sight(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+        radius: i32,
+        effects: FrameEffects<'_>,
+    ) {
         let config = self.sight_reveal_config(rules);
         if !self
             .substrate
@@ -1803,7 +1809,7 @@ impl Simulation {
         {
             return;
         }
-        let context = UninitContext::new(rules, None);
+        let context = UninitContext::new(rules, None).with_effects(effects);
         //The two functions each re-read their receiver after callbacks.
         self.release_object_sight_with_context(stable_id, context);
         self.update_object_sight_with_context(stable_id, radius, None, context);
@@ -2230,6 +2236,7 @@ impl Simulation {
         &mut self,
         stable_id: u64,
         rules: &RuleSet,
+        effects: FrameEffects<'_>,
     ) {
         let frame = self.session.binary_frame();
         let Some(entity) = self.substrate.entities.get(stable_id) else {
@@ -2280,7 +2287,7 @@ impl Simulation {
         }
         let config = self.sight_reveal_config(rules);
         //The two leaves reload their own receiver after synchronous discovery.
-        let context = UninitContext::new(rules, None);
+        let context = UninitContext::new(rules, None).with_effects(effects);
         for &viewer in &due {
             self.release_object_sight_for_viewer(stable_id, viewer, &config, context);
             self.update_object_sight_with_context(stable_id, 0, Some(viewer), context);

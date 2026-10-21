@@ -916,7 +916,11 @@ pub(super) fn dropdown_selected_row_rect(
     scale: ShellScale,
 ) -> Option<RectPx> {
     let visible_rows = combo_dropdown_visible_row_count(shell, maps, id);
-    let selected = selected_combo_item_index(shell, maps, id)?;
+    let selected = shell
+        .open_combo_dropdown
+        .filter(|open| open.id == id)
+        .and_then(|open| open.hot_row)
+        .or_else(|| selected_combo_item_index(shell, maps, id))?;
     if selected < top_index || selected >= top_index + visible_rows {
         return None;
     }
@@ -934,6 +938,70 @@ mod tests {
     use super::*;
     use crate::render::skirmish_shell_chrome::{TRACKBAR_FRAMES, trackbar_frame_slot};
     use crate::ui::skirmish_shell::COMBO_DROPDOWN_SCROLLBAR_BUTTON_H;
+
+    #[test]
+    fn skirmish_dropdown_highlight_follows_pointer_without_committing_selection() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        use crate::ui::skirmish_shell::{
+            combo_arrow_hit_rect, combo_rect, compute_layout, compute_responsive_layout,
+            handle_option_mouse_down, handle_option_mouse_move, selected_combo_item,
+        };
+
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Countries]\n0=Americans\n1=Russians\n[Americans]\nMultiplay=yes\nUIName=NAME:Americans\n[Russians]\nMultiplay=yes\nUIName=NAME:Russians\n",
+        ))
+        .unwrap();
+        for layout in [
+            compute_layout(800, 600),
+            compute_responsive_layout(1600, 1200),
+        ] {
+            for id in [
+                SkirmishComboId::AiType(0),
+                SkirmishComboId::Side(0),
+                SkirmishComboId::Color(0),
+                SkirmishComboId::Team(0),
+            ] {
+                let mut shell = SkirmishShellState::default();
+                shell.refresh_country_catalog(&rules);
+                let maps = [];
+                let selected = selected_combo_item(&shell, id);
+                let arrow = combo_arrow_hit_rect(combo_rect(&layout, id).unwrap(), layout.scale);
+                handle_option_mouse_down(&mut shell, &layout, &maps, arrow.x, arrow.y);
+                assert_eq!(shell.open_combo_dropdown.unwrap().id, id);
+                let content = combo_dropdown_content_rect(&shell, &layout, &maps, id).unwrap();
+
+                // Move through two rows, including a row other than the saved
+                // choice. The renderer must follow each move immediately.
+                for index in [0, 1] {
+                    let row = combo_dropdown_row_rect(content, layout.scale, index);
+                    handle_option_mouse_move(&mut shell, &layout, &maps, row.x + 1, row.y + 1);
+                    assert_eq!(
+                        dropdown_selected_row_rect(&shell, &maps, id, 0, content, layout.scale),
+                        Some(row),
+                        "{id:?}, row {index}, scale {:?}",
+                        layout.scale,
+                    );
+                    assert_eq!(selected_combo_item(&shell, id), selected);
+                }
+
+                // Leaving the popup retains its last hot row. Dismissing it
+                // must discard the preview when the control opens again.
+                handle_option_mouse_move(&mut shell, &layout, &maps, -1, -1);
+                assert_eq!(
+                    dropdown_selected_row_rect(&shell, &maps, id, 0, content, layout.scale),
+                    Some(combo_dropdown_row_rect(content, layout.scale, 1)),
+                );
+                handle_option_mouse_down(&mut shell, &layout, &maps, -1, -1);
+                handle_option_mouse_down(&mut shell, &layout, &maps, arrow.x, arrow.y);
+                let saved_index = selected_combo_item_index(&shell, &maps, id).unwrap();
+                assert_eq!(
+                    dropdown_selected_row_rect(&shell, &maps, id, 0, content, layout.scale),
+                    Some(combo_dropdown_row_rect(content, layout.scale, saved_index)),
+                );
+            }
+        }
+    }
 
     #[test]
     fn skirmish_swatches_match_the_native_fixed_table() {

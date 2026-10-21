@@ -152,6 +152,16 @@ pub(crate) fn hover_object_at_point(
         CellObjectMember::Entity(id) => id,
         CellObjectMember::Terrain(id) => return Some(HoverObject::Terrain(id)),
     };
+    hover_object_by_id(sim, stable_id, local_owner)
+}
+
+/// Classify an identity already picked by a retained input source (radar or
+/// tactical). Do not perform another geometric pick at its coordinates.
+pub(crate) fn hover_object_by_id(
+    sim: &crate::sim::world::Simulation,
+    stable_id: u64,
+    local_owner: &str,
+) -> Option<HoverObject> {
     let entity = sim.entities().get(stable_id)?;
     let is_structure = entity.category() == EntityCategory::Structure;
     // What_Action asks the actor's house, here the local player's
@@ -290,7 +300,9 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
     let admitted = (!current_selection.is_empty() || !picked.is_mission_only())
         && static_selection_gate(picked, type_str, rules, require_playfield_membership);
     // A shift-click adds when the selection it is joining is the local player's,
-    // whatever was clicked. The native ACTION_SELECT arm asks
+    // whatever was clicked. The native toggle-select arm (action 8,
+    // `cmp ebx, 8` at 0x004ABD24; the ordinary ACTION_SELECT arm at
+    // 0x004ABDC5..0x004ABE4A is the one that clears first) asks
     // `HouseClass__IsHumanPlayer(CurrentObjects[0]->Owner)` — 0x004ABD42 loads
     // `CurrentObjects[0]`, calls its owner virtual `+0x3C`, and 0x004ABD50 calls
     // 0x0050B6F0, whose real test is `house == g_PlayerPtr`; a false answer at
@@ -298,22 +310,23 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
     // selected, never on whether the clicked object matches it.
     //
     // Enemy clicks genuinely reach this arm. `TechnoClass__What_Action_OnObject`
-    // 0x006FFEC0 short-circuits to ACTION_SELECT at 0x00700107 whenever the
+    // 0x006FFEC0 short-circuits to toggle-select (`mov eax, 8` at 0x00700107)
+    // whenever the
     // Shift pair `DAT_00A8EC08`/`0C` is down and the Ctrl pair is not — gated on
     // `IsHumanPlayer` of the SELECTED object's owner `[ESI+0x21C]`, with no test
     // on the clicked object at all.
     //
     // That first test is only half the decision. The arm's add branch calls the
-    // clicked object's vtable `+0x14C` Select (TechnoClass vtable base
-    // 0x007F4960, slot 0x007F4AAC = `TechnoClass__Select` 0x006FBFA0), which
-    // always reaches `ObjectClass__Select` 0x005F4520. With a non-empty
-    // selection that body compares `IsHumanPlayer` of the NEW object against
-    // `IsHumanPlayer` of `CurrentObjects[0]` (0x005F45D2/0x005F45DF): differing
-    // answers fall to `Unselect_All_With_Mode_Reset` 0x0048DC90 at 0x005F45F8,
-    // and equal answers keep the selection only when that answer was true
-    // (0x005F45EF/0x005F45F6). So the selection survives a shift-click only when
-    // BOTH sides are the local player's — shift-clicking an enemy while your own
-    // army is selected drains the army and leaves the enemy alone selected.
+    // clicked object's vtable `+0x14C` Select (`TechnoClass__Select`
+    // 0x006FBFA0, 0x004ABDBA), whose `ObjectClass__Select` 0x005F4520 runs
+    // `Unselect_All_With_Mode_Reset` 0x0048DC90 (0x005F45AF..0x005F45F8) when
+    // the new object is not the player's. The selection ledger owns that Select
+    // (`resolve_selection_mutation`): shift-clicking an enemy while your own
+    // army is selected drains the army and leaves the enemy alone selected,
+    // and an enemy that Select refuses leaves the army selected.
+    // Residual: a pick this gate refuses answers no snapshot, so it starts no
+    // action-line timer; native starts it after the toggle arm (0x004ABFAE).
+    // Visible only as a missing line flash on such a refused Shift-click.
     //
     // VERA-internal: gamemd always has a `g_PlayerPtr`, so it has no answer for
     // "the local house is unknown". Sandbox and test callers pass no owner, and
@@ -330,9 +343,8 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
         .first()
         .and_then(|id| entities.get(*id))
         .is_some_and(owner_is_local);
-    let picked_is_local = owner_is_local(picked);
 
-    if !additive || current_selection.is_empty() || !selection_is_local || !picked_is_local {
+    if !additive || current_selection.is_empty() || !selection_is_local {
         return Some(SelectionMutation {
             clear: true,
             select: admitted.then_some(picked_sid).into_iter().collect(),

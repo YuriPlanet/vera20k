@@ -27,7 +27,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::LandType;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::NavTargetRef;
-use crate::sim::miner::{MinerState, ResourceType};
+use crate::sim::miner::MinerState;
 use crate::sim::ore_growth::OreGrowthState;
 use crate::sim::rng::SimRng;
 use crate::sim::tiberium::test_support;
@@ -83,7 +83,31 @@ fn rules_for_with(
     );
     edit(&mut text, &mut art);
     let overlays = test_support::tiberium_rules_text();
-    text.push_str(&overlays[overlays.find("[OverlayTypes]").unwrap()..]);
+    let mut overlays = overlays[overlays.find("[OverlayTypes]").unwrap()..].to_owned();
+    // Complete the stock ordinal table through image4 without changing the
+    // common two-type fixture used by unrelated tests. Native reader range:
+    // TiberiumClass::ReadINI721C5C..721CD6; live controls are in harvest_field.py.
+    let mut extra_entries = String::new();
+    let mut extra_tiberium = Vec::new();
+    for raw_key in 125..=169 {
+        let name = match raw_key {
+            130..=149 => format!("TIB2_{:02}", raw_key - 129),
+            150..=169 => format!("TIB3_{:02}", raw_key - 149),
+            _ => format!("FILL{raw_key:03}"),
+        };
+        extra_entries.push_str(&format!("{raw_key}={name}\n"));
+        if name.starts_with("TIB") {
+            extra_tiberium.push(name);
+        }
+    }
+    // The native lexical reader selects the first section with this name;
+    // extend its list rather than creating a second OverlayTypes section.
+    let list_end = overlays.find("\n[").unwrap();
+    overlays.insert_str(list_end + 1, &extra_entries);
+    text.push_str(&overlays);
+    for name in extra_tiberium {
+        text.push_str(&format!("[{name}]\nTiberium=yes\nLand=Tiberium\n"));
+    }
     for land in LandType::ALL.iter().take(9) {
         text.push_str(&format!(
             "[{}]\nFoot=100%\nTrack=100%\nWheel=100%\nBuildable=yes\n",
@@ -125,6 +149,8 @@ fn overlay_name(kind: u64, variant: u64) -> String {
     match kind {
         0 => format!("TIB{:02}", variant + 1),
         1 => format!("GEM{:02}", variant + 1),
+        2 => format!("TIB2_{:02}", variant + 1),
+        3 => format!("TIB3_{:02}", variant + 1),
         other => panic!("tiberium {other}"),
     }
 }
@@ -195,7 +221,7 @@ pub(super) fn row_scene_with(input: &Value, edit: impl FnOnce(&mut String, &mut 
     s.sim.ore_growth_state = OreGrowthState::new(33, 33);
     s.sim
         .ore_growth_state
-        .reset_native_tiberium_classes_for_rect((16, 16), 2, frame);
+        .reset_native_tiberium_classes_for_rect((16, 16), 4, frame);
     for queued in input["spread_queued"].as_array().into_iter().flatten() {
         s.sim
             .ore_growth_state
@@ -346,21 +372,23 @@ pub(super) fn compare_state(s: &Scene, row: &Value, context: &str) {
         native["harvesting"].as_u64().unwrap(),
         "{context}: Unit+0x6D2"
     );
-    let count = |kind| {
+    let count = |slot| {
         entity
             .miner
             .as_ref()
             .into_iter()
             .flat_map(|miner| miner.cargo())
-            .filter(|bale| bale.resource_type == kind)
+            .filter(|bale| usize::from(bale.tiberium_type.0) == slot)
             .count() as f64
     };
     let storage = native["storage"].as_array().unwrap();
-    assert_eq!(
-        (count(ResourceType::Ore), count(ResourceType::Gem)),
-        (storage[0].as_f64().unwrap(), storage[1].as_f64().unwrap()),
-        "{context}: cargo"
-    );
+    for slot in 0..4 {
+        assert_eq!(
+            count(slot),
+            storage[slot].as_f64().unwrap(),
+            "{context}: native slot{slot}"
+        );
+    }
     let owner = s.sim.interner.get("Americans").unwrap();
     assert_eq!(
         u64::from(s.sim.houses[&owner].harvester_no_ore()),

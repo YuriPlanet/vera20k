@@ -124,6 +124,7 @@ fn ares_no_manual_fire_native_modifier_cursors_use_the_shared_action() {
                             (17, 16),
                             modifier,
                             crate::app::types::OrderMode::Move,
+                            true,
                         )
                     })
             };
@@ -205,6 +206,13 @@ fn retail_weapon_cursor_overrides_survive_distance() {
                 Some(expected),
                 "{actor_type} -> {target_type} x={x}"
             );
+            // Native radar653F04 keeps C4's16, but excludes the weapon
+            // override64 (retail Tanya/Sapper on a tank) and Boris's71.
+            assert_eq!(
+                crate::app::input::radar::RadarAction::kept(feedback).is_some(),
+                actor_type == "TANY" && target_type == "NAPOWR",
+                "radar admission: {actor_type} -> {target_type} x={x}"
+            );
             assert_eq!(
                 sim.state_hash(),
                 before,
@@ -236,6 +244,7 @@ fn retail_cell_chords_have_their_native_cursors() {
             (30, 30),
             modifier,
             crate::app::types::OrderMode::Move,
+            true,
         );
         assert_eq!(
             cursor_id_for_feedback(feedback),
@@ -271,6 +280,7 @@ fn retail_ctrl_alt_over_shroud_is_a_move_for_a_foot() {
             cell,
             OrderModifier::GuardArea,
             crate::app::types::OrderMode::Move,
+            true,
         ))
     };
     let guards = |sim: &Simulation, cell| {
@@ -407,6 +417,7 @@ fn native_modifier_controls_match_production_cursor_queries() {
                         (17, 16),
                         modifier,
                         crate::app::types::OrderMode::Move,
+                        true,
                     )
                 })
         };

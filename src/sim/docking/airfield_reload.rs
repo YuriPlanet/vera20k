@@ -26,6 +26,24 @@
 //! The docked aircraft answers those messages itself: RELOAD takes one
 //! round (`0x00419109`, `0x006F4C9C`), REPAIR heals a step for its price,
 //! and QUERY_RELOADED is ROGER with no Target and full Ammo (`0x00419153`).
+//!
+//! Only Enter is skipped: a contact on any other mission that answers
+//! NEED_TO_MOVE with ROGER, as an aircraft that is not moving does
+//! (`0x00419274..0x004192A8`), is serviced. An aircraft on its pad that holds
+//! a Target refuses QUERY_RELOADED, so Guard's UnitReload re-queue
+//! (`world::techno_ai::building_missions`, `0x00449970..0x004499B5`) brings
+//! the airfield here, and the next frame this arm queues Sleep on it, on
+//! Guard or on an Attack that has not yet left the pad. Unless its own Guard
+//! visit queues Attack over that Sleep in the same frame, its Fly Process
+//! commences it (`0x004CCB84..0x004CCBAD`); asleep with a Target and at least
+//! half its type's Ammo it answers RELOAD with ROGER
+//! (`0x00419109..0x00419131`), so it is never released while it holds that
+//! Target. Mission_Attack's state 1 (`0x00418031`) gives it a destination off
+//! the pad, and Assign_Destination's pad tail sends the airfield OVER_OUT
+//! (`0x0041AD86..0x0041ADA6`). This arm no longer reaches it after that, but a
+//! Sleep it queued earlier in that frame still commences at AircraftClass::AI's
+//! Ready/Commence (`0x0041504A..0x00415058`; the takeoff shuts the Fly Process
+//! gate), and the aircraft flies on asleep.
 
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;

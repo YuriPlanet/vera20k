@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original 754510 raster of the nine stock building gun images at eight 43DA80 facings, level, plus the GTGCAN barrel raised one step; native rect and blitted crop",
+  "assumptions": [
+    "Physical retail VXL/HVA and VOXELS.VPL entries from ra2md.mix -> localmd.mix, then ra2.mix -> local.mix; asset metadata identifies them, no file bytes are serialized. Rust consumers load the same files through the production asset owner and check length/SHA256.",
+    "Matrices come from this module's 43DA80 draw: TurretOffset 0, no recoil, HVA frame 0, supplied point [100,200] and TurretAnimX/Y [3,-60]. Stock ART leaves TurretOffset unset for all eight buildings; the Rust consumer checks that through the production reader.",
+    "The shared raster owner executes 753D00, 753E00, the per-section products, 7540F0 and 754510 as 706ED0 orders them, with original x87 0E7F and startup camera/light/viewer. No mirror flag; UseBuffer clear.",
+    "The crop is rect[2..5] of the fixed 256x256 buffer at 0xB2FF78; 706ED0 (0x007071CB..0x00707235) blits it at point + rect[0..1] through 4AF2A0 and 6C89E0 (0x006C8A16..0x006C8A3C) stores the same origin and rows for 707480. Those blits are read from instructions, not executed here.",
+    "Each row keeps the six rect words, the crop SHA256, its lit pixel count and lit bounds. Every lit raster byte lies inside the crop. Lighting pages, cache lifetime, the RLE blit, palette conversion and surface pixels are outside this corpus."
+  ],
+  "substitutions": [
+    "Existing raster owner: immutable file vtable IO and bounded allocation.",
+    "Existing 43DA80 draw: supplied cell and Techno DrawVoxel interception, as the draw corpus."
+  ],
+  "entry_points": {
+    "building_draw_arm": "0x0043DFC1",
+    "techno_draw_voxel": "0x00706640",
+    "render": "0x00706ED0",
+    "submit_box": "0x007540F0",
+    "sort_rasterize": "0x00754510",
+    "cache_store": "0x006C89E0",
+    "cache_blit": "0x00707480"
+  },
+  "replay_command": "python -m tools.voxel_oracle.building_barrel --raster",
+  "payload_sha256": "5f77f80886718472360b583448aec5440a32019aa74d2efff4f6d54885216c3b"
+}

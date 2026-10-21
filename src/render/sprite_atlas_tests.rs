@@ -821,10 +821,113 @@ fn raw_infantry_atlas_bounds_signed_records_without_aliasing_indices() {
             Some(&art),
         );
         assert_eq!(sources["RAWGI"].as_ref().unwrap().shp.frames.len(), 2);
+        assert_eq!(
+            infantry_asset_frames(
+                rules
+                    .animation_sequence("RAWGI")
+                    .unwrap()
+                    .infantry_actions()
+                    .unwrap(),
+                2,
+            )
+            .into_iter()
+            .collect::<HashSet<_>>(),
+            expected,
+            "{row}: signed records still select the same body frames"
+        );
         let frames: HashSet<_> = needed.iter().map(|key| key.frame).collect();
-        assert_eq!(frames, expected, "{row}");
+        assert_eq!(
+            frames,
+            HashSet::from([0, 1]),
+            "{row}: body and shadow residency"
+        );
         assert!(needed.iter().all(|key| key.frame < 2), "{row}");
     }
+}
+
+#[test]
+#[ignore = "requires GPU; synthetic nonempty Infantry shadow through the production atlas and shared Techno shadow owner"]
+fn infantry_nonempty_shadow_is_uploaded_and_selected_from_the_second_half() {
+    use crate::app::presentation::instances::embedded_shp_shadow_piece;
+    use crate::render::batch::{BatchRenderer, SpriteInstance};
+    use crate::render::draw_state::{DrawDecision, DrawState};
+    use crate::render::tactical_draw_plan::{BlitPolicy, SpriteEncoding};
+    use crate::render::terrain_draw_gpu_tests::Gpu;
+
+    let directory = StoredFrameTestDirectory::new();
+    directory.write_raw_and_rle_frames("BOUNDGI.SHP", [8, 8], [0, 0, 6, 4]);
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let (world, interner) = one_object_world("RAWGI", EntityCategory::Infantry);
+    let (rules, art) = raw_infantry_atlas_rules("");
+    let gpu = Gpu::new();
+    let batch = BatchRenderer::new_with_device(
+        &gpu.device,
+        &gpu.queue,
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+    );
+    let palette = Palette::from_bytes(&[0; 768]).unwrap();
+    let colors = HouseColorMap::from([("Americans".to_string(), HouseColorIndex(0))]);
+    let atlas = build_sprite_atlas(
+        &gpu.device,
+        &gpu.queue,
+        &batch,
+        &world,
+        &assets,
+        &palette,
+        "tem",
+        "TEMPERATE",
+        Some(&rules),
+        Some(&art),
+        &colors,
+        &[],
+        &HashSet::new(),
+        &HashSet::new(),
+        None,
+        None,
+        Some(&interner),
+    )
+    .unwrap();
+    let key = ShpSpriteKey {
+        palette_context: ShpPaletteContext::Legacy,
+        type_id: "RAWGI".to_string(),
+        facing: 0,
+        frame: 0,
+        house_color: HouseColorIndex(0),
+    };
+    let body = atlas.get(&key).unwrap();
+    let selected = embedded_shp_shadow_piece(
+        &atlas,
+        rules.object("RAWGI"),
+        world.values().next().unwrap(),
+        None,
+        &key,
+        body,
+        SpriteInstance::default(),
+        DrawDecision {
+            visible: true,
+            state: DrawState::default(),
+            native_visual_state: 0,
+        },
+        BlitPolicy::z_read(SpriteEncoding::Plain),
+    )
+    .expect("ground Infantry draws the same embedded stencil as other SHP Technos");
+    let shadow_key = ShpSpriteKey { frame: 1, ..key };
+    let shadow = atlas
+        .get(&shadow_key)
+        .expect("physical second half is resident");
+    assert_eq!(selected.instance.uv_origin, shadow.uv_origin);
+    let page = &atlas.page(shadow.page as usize).unwrap().texture;
+    let origin = [
+        (shadow.uv_origin[0] * page.width as f32).round() as u32,
+        (shadow.uv_origin[1] * page.height as f32).round() as u32,
+    ];
+    let size = shadow.pixel_size.map(|value| value as u32);
+    let pixels = gpu.read_uint_texels(&page.view, origin, size);
+    assert_eq!(pixels.iter().filter(|&&index| index != 0).count(), 2);
+    assert!(
+        pixels.contains(&0),
+        "transparent mask holes remain transparent"
+    );
 }
 
 #[test]

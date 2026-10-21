@@ -243,7 +243,20 @@ mod tests {
             &art,
         )
         .unwrap();
-        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+        // The oracle writes the Type's name fields directly, leaving an
+        // unnamed variant empty where ReadINI would copy the normal name into
+        // it (`parse_building_anims`).
+        let mut registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
+        for config in &mut registry.get_mut("SUPERB").unwrap().building_anims {
+            let slot = config.native_slot;
+            if !names.contains_key(format!("{slot}/1").as_str()) {
+                config.damaged_variant = None;
+            }
+            if !names.contains_key(format!("{slot}/2").as_str()) {
+                config.garrisoned_variant = None;
+            }
+        }
+        rules.install_art_data(registry);
         if let Some(minutes) = charged_anim_time {
             assert_eq!(
                 rules.object("SUPERB").unwrap().charged_anim_time.to_bits(),

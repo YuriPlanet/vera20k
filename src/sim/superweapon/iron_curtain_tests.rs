@@ -21,7 +21,8 @@ const IRON_CURTAIN: &str = "IronCurtainSpecial";
 /// The keys the launch and its overrides read, with an Iron Curtain, a Foot
 /// (MTNK), a Teleport Foot the warp latch can hold (CMIN), an Organic Foot
 /// (DLPH, on land), a Terror Drone (DRON), an infantryman (E1) and a 1x1
-/// building (GAPILL).
+/// building (GAPILL). `C4Warhead=Super` has retail's `InfDeath=2`, so a
+/// curtained infantryman dies into a corpse.
 const RULES: &str = "\
 [General]\nIronCurtainInvokeAnim=IRONBLST\n\
 [CombatDamage]\nC4Warhead=Super\nIronCurtainDuration=750\n\
@@ -43,7 +44,7 @@ Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
 [Invisible]\nInviso=yes\n\
 [GAPILL]\nStrength=400\nArmor=concrete\n\
 [Warheads]\n0=Super\n1=Parasite\n\
-[Super]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+[Super]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\nInfDeath=2\n\
 [Parasite]\nVerses=100%,100%,100%,100%,100%,100%,0%,0%,0%,0%,0%\nParasite=yes\n";
 
 /// [`RULES`] with `extra` merged over it and the invoke anim bound (12

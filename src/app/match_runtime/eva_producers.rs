@@ -8,7 +8,7 @@
 //! tables that pick a line per superweapon. Lines gamemd speaks inside the
 //! click handler itself (before its `EventClass` is queued) are app events
 //! and live next to the click: `crate::app::input::sidebar_eva`,
-//! `crate::app::input::commands::place_ready_building_at_cursor`,
+//! `crate::app::input::commands::place_ready_building_at_cell`,
 //! `crate::app::input::context_order` (rally).
 //!
 //! # `PlayEVA` census (75 xrefs, `get_xrefs_to 0x00752700`; plus the five

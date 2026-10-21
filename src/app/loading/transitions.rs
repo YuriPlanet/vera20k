@@ -551,6 +551,15 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         crate::app::match_bootstrap::LoadingStartup::Network(prepared) => {
             state.match_state.session.assert_network_start(&prepared);
             state.match_state.startup.clear();
+            // A co-op continuation's GameExit tail (`0x00685D7A` victory,
+            // `0x0068639A` defeat) restores the record after Start_Scenario.
+            if let Some(record) = prepared.carry_over()
+                && let Some(runtime) = state.match_state.sim_runtime.as_mut()
+            {
+                runtime
+                    .simulation
+                    .restore_campaign_carry_over(record, &runtime.resources.rules);
+            }
             Ok(())
         }
         crate::app::match_bootstrap::LoadingStartup::UnverifiedLegacy { .. }

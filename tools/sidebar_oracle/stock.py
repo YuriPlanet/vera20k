@@ -56,3 +56,17 @@ def stock_archives():
 
 def stock_bytes(archive,name):
  return stock_archives()[archive][mix_hash(name)]
+
+@lru_cache(maxsize=1)
+def local_archives():
+ """YR's localmd.mix, then RA2's local.mix."""
+ root=configured_gamemd().parent
+ return [(f'{top} -> {inner}',mix(mix((root/top).read_bytes())[mix_hash(inner)]))
+   for top,inner in (('ra2md.mix','localmd.mix'),('ra2.mix','local.mix'))]
+
+def local_file(name):
+ """(archive, bytes) from the first of local_archives() holding name."""
+ for archive,table in local_archives():
+  if (raw:=table.get(mix_hash(name))) is not None:
+   return archive,raw
+ raise FileNotFoundError(name)

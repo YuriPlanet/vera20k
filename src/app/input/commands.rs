@@ -404,7 +404,14 @@ pub(crate) fn try_repair_sell_mode_click(state: &mut AppState) -> bool {
     true
 }
 
-pub(crate) fn place_ready_building_at_cursor(state: &mut AppState, type_id: &str) {
+/// BandBox_LeftUp's placement branch (`0x004ABA16..0x004ABC67`) for the
+/// clicked `cursor_cell`: the tactical click's Cell, or the radar release's
+/// (`0x00653D58`).
+pub(crate) fn place_ready_building_at_cell(
+    state: &mut AppState,
+    type_id: &str,
+    cursor_cell: (u16, u16),
+) {
     // The original producer refuses a null current product and uses the
     // issuer captured by ManualPlace, rather than choosing a House again.
     let Some(issuer) = state.match_state.input.building_placement_issuer() else {
@@ -420,11 +427,6 @@ pub(crate) fn place_ready_building_at_cursor(state: &mut AppState, type_id: &str
     };
     // LeftUp4ABA16..4ABA59 uses its supplied clicked Cell and recomputes
     // proximity, rather than latching the previous draw's coordinate/result.
-    let cursor_cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-        state,
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
-    );
     let (origin, in_build_area) = state
         .match_state
         .sim_runtime
@@ -449,6 +451,12 @@ pub(crate) fn place_ready_building_at_cursor(state: &mut AppState, type_id: &str
     let (rx, ry) = origin;
     // Visibility1181 is latched by UpdateFoundationCenter4A94DA. LeftUp
     // checks it after the freshly recomputed proximity1180(4ABAA4/4ABAB2).
+    // RESIDUAL: gamemd latches it from the tactical gadget only
+    // (`0x004AAC10` calls `0x004A91B0` at `0x004AAD04`); this preview follows
+    // the cursor's screen point over the sidebar too. Trigger: a radar
+    // placement (`0x00653D58`) in a shrouded game. Effect: it tests the Cell
+    // behind the radar rather than the last tactical one, so it may refuse
+    // or admit differently. Frequency: rare.
     let visible = state
         .match_state
         .input
@@ -538,13 +546,24 @@ pub(crate) fn launch_super_weapon_at_cursor(state: &mut AppState, section: &str)
         return;
     }
 
-    let owner: String = resolve_owner(state);
-    let sw_type_id = intern_in_sim(state, section);
-    let (rx, ry) = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
+    let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
         state,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
+    launch_super_weapon_at_cell(state, section, cell);
+}
+
+/// BandBox_LeftUp's SPECIAL_PLACE (`0x004AC20C`) for `section` at the clicked
+/// `(rx, ry)`: the tactical click's Cell, or the radar release's
+/// (`0x00653D58`), whose action names no pointer target to admit.
+pub(crate) fn launch_super_weapon_at_cell(
+    state: &mut AppState,
+    section: &str,
+    (rx, ry): (u16, u16),
+) {
+    let owner: String = resolve_owner(state);
+    let sw_type_id = intern_in_sim(state, section);
     queue_super_weapon_click(state, &owner, sw_type_id, (rx, ry));
     log::info!(
         "SuperWeapon launch queued: owner={} section={} cell=({}, {}) issue_frame=current",

@@ -3171,6 +3171,8 @@ fn walking_combat_test_rules() -> RuleSet {
 }
 
 fn combat_rules_with_keys(infantry_keys: &str, tank_keys: &str, extra: &str) -> RuleSet {
+    // Both warheads take the Die1 arm (`InfDeath=1`, retail [SA]'s): the
+    // lethal-hit tests keep their victim's corpse through its die sequence.
     let mut ini: IniFile = IniFile::from_str(&format!(
         "[InfantryTypes]\n0=E1\n\n\
          [VehicleTypes]\n0=MTNK\n1=AMCV\n\n\
@@ -3182,8 +3184,9 @@ fn combat_rules_with_keys(infantry_keys: &str, tank_keys: &str, extra: &str) -> 
          [GACNST]\nStrength=1000\nArmor=wood\nConstructionYard=yes\nUndeploysInto=AMCV\n\n\
          [M60]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\n\n\
          [105mm]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\n\n\
-         [SA]\nVerses=100%,100%,100%,90%,70%,25%,100%,25%,25%,0%,0%\n\n\
-         [AP]\nVerses=100%,100%,90%,75%,75%,75%,60%,30%,20%,0%,0%\n[Clear]\nBuildable=yes\n",
+         [SA]\nVerses=100%,100%,100%,90%,70%,25%,100%,25%,25%,0%,0%\nInfDeath=1\n\n\
+         [AP]\nVerses=100%,100%,90%,75%,75%,75%,60%,30%,20%,0%,0%\nInfDeath=1\n\
+         [Clear]\nBuildable=yes\n",
     ));
     ini.merge(&IniFile::from_str(extra));
     RuleSet::from_ini_with_fixed_art_for_test(

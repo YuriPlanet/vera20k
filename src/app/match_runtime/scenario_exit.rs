@@ -128,6 +128,12 @@ pub(crate) enum ScenarioExitDestination {
     /// Campaign defeat bypasses `0x108`: GameExit::Defeat plays the Lose
     /// movie and asks `TXT_TO_REPLAY` instead (`0x00686060..0x006860F6`).
     CampaignDefeat,
+    /// A network Cooperative mission: GameExit's mode vt+8 arm draws the
+    /// empty backdrop instead of `0x108` (`0x00685851..0x0068586A`), then
+    /// runs `+0xA8`, the result dialog BC6.
+    CooperativeResult {
+        victory: bool,
+    },
     MainMenu,
 }
 
@@ -165,6 +171,7 @@ pub(crate) fn scenario_exit_destination(
     mode: super::session::SessionMode,
     outcome: crate::sim::house_state::HouseOutcomeKind,
     skip_score: bool,
+    cooperative: bool,
     title: String,
     detail: String,
     campaign_score: impl FnOnce() -> crate::ui::campaign_score_shell::CampaignScoreScreenModel,
@@ -180,6 +187,9 @@ pub(crate) fn scenario_exit_destination(
             ScenarioExitDestination::CampaignVictoryContinue
         }
         Some(CampaignOutcomeRoute::DefeatPrompt) => ScenarioExitDestination::CampaignDefeat,
+        None if cooperative => ScenarioExitDestination::CooperativeResult {
+            victory: outcome == crate::sim::house_state::HouseOutcomeKind::Victory,
+        },
         None => ScenarioExitDestination::Score {
             title,
             detail,
@@ -363,6 +373,7 @@ mod tests {
             SessionMode::Campaign,
             Victory,
             false,
+            false,
             "victory".into(),
             "detail".into(),
             || campaign_model.clone(),
@@ -378,6 +389,7 @@ mod tests {
             SessionMode::Campaign,
             Victory,
             true,
+            false,
             "victory".into(),
             "detail".into(),
             || panic!("SkipScore must continue without a score model"),
@@ -392,6 +404,7 @@ mod tests {
             SessionMode::Campaign,
             Defeat,
             false,
+            false,
             "defeat".into(),
             "detail".into(),
             || panic!("campaign defeat does not build a score model"),
@@ -402,6 +415,7 @@ mod tests {
         let skirmish = scenario_exit_destination(
             SessionMode::Skirmish,
             Victory,
+            false,
             false,
             "victory".into(),
             "detail".into(),
@@ -414,6 +428,21 @@ mod tests {
         assert!(matches!(
             skirmish,
             ScenarioExitDestination::Score { model, .. } if model.side == 3
+        ));
+
+        let cooperative = scenario_exit_destination(
+            SessionMode::Lan,
+            Defeat,
+            false,
+            true,
+            "defeat".into(),
+            "detail".into(),
+            || panic!("co-op must not build campaign score"),
+            || panic!("co-op skips the multiplayer score dialog"),
+        );
+        assert!(matches!(
+            cooperative,
+            ScenarioExitDestination::CooperativeResult { victory: false }
         ));
     }
 

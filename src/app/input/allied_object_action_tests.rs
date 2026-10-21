@@ -259,7 +259,7 @@ fn native_ivan_bomb_feedback(name: &str) -> crate::app::types::CursorFeedbackKin
     assert_eq!(row["output"]["boundary"], "returned");
     match row["output"]["action"].as_u64().unwrap() {
         53 => crate::app::types::CursorFeedbackKind::IvanBomb,
-        54 => crate::app::types::CursorFeedbackKind::Invalid,
+        54 => crate::app::types::CursorFeedbackKind::NoIvanBomb,
         other => panic!("unexpected native Ivan consumer action {other}"),
     }
 }

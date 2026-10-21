@@ -210,23 +210,38 @@ fn remapped_free_anim_keeps_its_existing_material_and_replay_route() {
 
 #[test]
 fn free_anim_material_transport_preserves_special_draw_fallbacks() {
+    use crate::render::terrain_draw::TerrainPiece;
     for (name, keys, flags, alpha, selector) in [
         ("ORDINARY", "", 0x600, 1., 4),
         ("FLAT", "Flat=yes\n", 0x600, 1., 4),
         // The constructor's existing selector is ORed by DrawIt, not replaced.
         ("INHERITED", "", 0x602, 1., 6),
+        // DrawIt has no Bouncer/IsMeteor body arm: 4237AE draws their bodies,
+        // after the separate HasBounce ground shadow.
+        ("BOUNCER", "Bouncer=yes\n", 0x600, 1., 4),
+        ("METEOR", "IsMeteor=yes\n", 0x600, 1., 4),
         ("RING1", "", 0x600, 0.5, 0),
         ("TILED", "Tiled=yes\n", 0x600, 0.5, 0),
-        ("BOUNCER", "Bouncer=yes\n", 0x600, 0.5, 0),
-        ("METEOR", "IsMeteor=yes\n", 0x600, 0.5, 0),
     ] {
         let (sim, rules, id, atlas) = fixture(name, keys, flags, 0);
+        let bounce = sim.anim(id).unwrap().bounce().is_some();
+        assert_eq!(bounce, matches!(name, "BOUNCER" | "METEOR"), "{name}");
         let out = emit(&sim, &rules, id, &atlas);
         assert_eq!(out.len(), 1, "{name}: real Display instance admitted");
         assert_eq!(out[0].parent.id, id);
-        assert_eq!(out[0].pieces.len(), 1, "{name}");
+        let count = 1 + usize::from(bounce);
+        assert_eq!(out[0].pieces.len(), count, "{name}");
+        if bounce {
+            let ground = &out[0].pieces[0];
+            assert_eq!(
+                ground.target,
+                ObjectTexture::SpriteAtlasEdit(2, TerrainPiece::Shadow),
+                "{name}"
+            );
+            assert_eq!(ground.render_z, RenderZPolicy::ReadOnly, "{name}");
+        }
         let layer_index = out[0].parent.layer.0 as usize;
-        let piece = &out[0].pieces[0];
+        let piece = out[0].pieces.last().unwrap();
         assert_eq!(piece.target, ObjectTexture::ShpPage(2), "{name}");
         assert_eq!(piece.render_z, RenderZPolicy::ReadOnly, "{name}");
         let instance = &piece.instance;
@@ -249,14 +264,14 @@ fn free_anim_material_transport_preserves_special_draw_fallbacks() {
         }
         let layers = lower_object_instances(out);
         let layer = &layers[layer_index];
-        assert_eq!(layer.owners, [id], "{name}");
-        assert_eq!(layer.runs.len(), 1, "{name}");
+        assert_eq!(layer.owners, vec![id; count], "{name}");
+        assert_eq!(layer.runs.len(), count, "{name}");
         assert_eq!(
-            layer.runs[0].packed_parent,
+            layer.runs.last().unwrap().packed_parent,
             (selector != 0).then_some(id),
             "{name}: actual replay route"
         );
-        assert_eq!(layer.instances[0].alpha, alpha, "{name}");
+        assert_eq!(layer.instances.last().unwrap().alpha, alpha, "{name}");
     }
 }
 

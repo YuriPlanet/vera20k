@@ -496,7 +496,8 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         }) {
             return false;
         }
-        self.sim.refresh_object_sight(id, rules, 0);
+        self.sim
+            .refresh_object_sight(id, rules, 0, self.frame_effects);
         let location = self.location();
         let here = self.cell_of([location[0], location[1]]);
         if self.holds_air_slot_at(here) {

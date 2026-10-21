@@ -478,6 +478,70 @@ fn damaged_active_anim_variant_uses_own_frame_metadata() {
     assert_eq!(damaged.loop_end, 39);
 }
 
+/// A building slot's normal, damaged and garrisoned names.
+fn slot_names(entry: &ArtEntry, slot: u8) -> (&str, Option<&str>, Option<&str>) {
+    let config = entry
+        .building_anims
+        .iter()
+        .find(|config| config.native_slot == slot)
+        .unwrap();
+    (
+        &config.anim_type,
+        config
+            .damaged_variant
+            .as_ref()
+            .map(|v| v.anim_type.as_str()),
+        config
+            .garrisoned_variant
+            .as_ref()
+            .map(|v| v.anim_type.as_str()),
+    )
+}
+
+/// ReadINI copies a slot's normal name into its empty damaged and garrisoned
+/// fields (`parse_building_anims` cites each copy); an authored variant stays,
+/// and the PowerUp loop makes no copy.
+#[test]
+fn absent_variant_names_take_the_normal_name_except_power_ups() {
+    let ini = IniFile::from_str(
+        "[B]\n\
+         IdleAnim=IDLE\n\
+         ActiveAnim=ACT\n\
+         ActiveAnimDamaged=ACTD\n\
+         SpecialAnimGarrisoned=SPECG\n\
+         PowerUp1Anim=PUP\n",
+    );
+    let reg = ArtRegistry::from_ini(&ini);
+    let entry = reg.get("B").unwrap();
+    assert_eq!(slot_names(entry, 18), ("IDLE", Some("IDLE"), Some("IDLE")));
+    assert_eq!(slot_names(entry, 3), ("ACT", Some("ACTD"), Some("ACT")));
+    assert_eq!(slot_names(entry, 10), ("", None, Some("SPECG")));
+    assert_eq!(slot_names(entry, 0), ("PUP", None, None));
+}
+
+/// Retail refineries through the production ART reader: the Slave Miner
+/// refinery's IdleAnim, GAREFN's ore lights and both unload anims declare no
+/// variant and keep their normal names; NAREFN's authored damaged lights stay.
+#[test]
+fn retail_refinery_anims_without_variants_keep_their_normal_names() {
+    let Some(art_ini) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
+        return;
+    };
+    let reg = crate::rules::retail_ini_fixture::art_registry(&art_ini);
+    let names = |section: &str, slot| slot_names(reg.get(section).unwrap(), slot);
+    let unchanged = |name| (name, Some(name), Some(name));
+    assert_eq!(names("YAREFN", 18), unchanged("YAREFN_A"));
+    for (slot, light) in (3..=6).zip(["GAREFNL1", "GAREFNL2", "GAREFNL3", "GAREFNL4"]) {
+        assert_eq!(names("GAREFN", slot), unchanged(light));
+    }
+    assert_eq!(names("GAREFN", 10), unchanged("GAREFNOR"));
+    assert_eq!(names("NAREFN", 10), unchanged("NAREFNOR"));
+    assert_eq!(
+        names("NAREFN", 3),
+        ("NAREFNL1", Some("NAREFNL1D"), Some("NAREFNL1"))
+    );
+}
+
 #[test]
 fn test_resolve_declared_palette_id() {
     let ini: IniFile = IniFile::from_str("[TEST]\nImage=TESTART\n\n[TESTART]\nPalette=anim\n");

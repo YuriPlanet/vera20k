@@ -1,8 +1,8 @@
 /**
- * Schema mirror of `src/sim/telemetry.rs` (v28); keep both in step.
+ * Schema mirror of `src/sim/telemetry.rs` (v29); keep both in step.
  */
 
-export const SCHEMA_VERSION = 28;
+export const SCHEMA_VERSION = 29;
 
 export type EntityCategory = "Unit" | "Infantry" | "Aircraft" | "Structure";
 
@@ -355,12 +355,28 @@ export interface LogBatch {
   lines: LogRecord[];
 }
 
+/** Which match a stream belongs to (schema v29); app-filled, null until it is. */
+export interface SessionContext {
+  map_name: string;
+  /** `GameMode` as the engine spells it: campaign | lan | wol | skirmish | other. */
+  game_mode: string;
+  /** The scenario speed, clamped the way the frame pacer clamps it. */
+  game_speed: number;
+  /** The pinned local player's house; null when the scenario names none. */
+  local_owner: string | null;
+  /** The local player's accepted result, null until its SavourDelay expired. */
+  local_outcome: "Victory" | "Defeat" | null;
+  /** The running binary's version stamp. */
+  build_stamp: string;
+}
+
 export interface TelemetrySnapshot {
   version: number;
   tick: number;
   binary_frame: number;
   map_width: number;
   map_height: number;
+  session: SessionContext | null;
   /** Elevation grid, sent once per map (schema v28); null on other snapshots. */
   terrain: TerrainGrid | null;
   entities_total: number;

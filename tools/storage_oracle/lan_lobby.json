@@ -11312,6 +11312,106 @@
       "control": 1439,
       "dialog": 189,
       "key": "STT:GuestButtonAccept"
+    },
+    {
+      "control": 1745,
+      "dialog": 3014,
+      "key": "STT:MPCampScoreContinue"
+    },
+    {
+      "control": 1472,
+      "dialog": 3014,
+      "key": "STT:MPCampScoreQuit"
+    },
+    {
+      "control": 1002,
+      "dialog": 3014,
+      "key": "STT:MPScoreLabelTime"
+    },
+    {
+      "control": 1921,
+      "dialog": 3014,
+      "key": "STT:MPScoreLabelPlayer"
+    },
+    {
+      "control": 1923,
+      "dialog": 3014,
+      "key": "STT:MPScoreLabelKills"
+    },
+    {
+      "control": 1925,
+      "dialog": 3014,
+      "key": "STT:MPScoreLabelLosses"
+    },
+    {
+      "control": 1927,
+      "dialog": 3014,
+      "key": "STT:MPScoreLabelBuilt"
+    },
+    {
+      "control": 1929,
+      "dialog": 3014,
+      "key": "STT:MPScoreLabelScore"
+    },
+    {
+      "control": 1042,
+      "dialog": 3014,
+      "key": "STT:MPScoreLabelPlayer"
+    },
+    {
+      "control": 1697,
+      "dialog": 3014,
+      "key": "STT:HostComboCountry"
+    },
+    {
+      "control": 1754,
+      "dialog": 3014,
+      "key": "STT:HostPictureFlag"
+    },
+    {
+      "control": 1314,
+      "dialog": 3014,
+      "key": "STT:HostComboColor"
+    },
+    {
+      "control": 1699,
+      "dialog": 3014,
+      "key": null
+    },
+    {
+      "control": 1842,
+      "dialog": 3014,
+      "key": "STT:MPScoreLabelDifficulty"
+    },
+    {
+      "control": 1344,
+      "dialog": 3014,
+      "key": "STT:HostEditInput"
+    },
+    {
+      "control": 1343,
+      "dialog": 3014,
+      "key": "STT:HostEditOutput"
+    },
+    {
+      "control": 1128,
+      "dialog": 3014,
+      "key": null
+    },
+    {
+      "control": 1448,
+      "dialog": 3014,
+      "key": null
+    },
+    {
+      "control": 1918,
+      "dialog": 3014,
+      "key": null
+    },
+    {
+      "control": 1746,
+      "dialog": 3014,
+      "key": null
     }
   ],
   "setup_layouts": [
@@ -18310,6 +18410,3436 @@
         }
       ],
       "dialog": 189,
+      "height": 480,
+      "width": 640
+    },
+    {
+      "children": [
+        {
+          "class": "Button",
+          "id": 1745,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B000",
+            "0x0060B950"
+          ],
+          "rect": [
+            644,
+            241,
+            156,
+            42
+          ],
+          "template": [
+            424,
+            149,
+            109,
+            23
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1693,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            57,
+            55,
+            76,
+            17
+          ],
+          "template": [
+            38,
+            34,
+            50,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1694,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            237,
+            55,
+            70,
+            17
+          ],
+          "template": [
+            158,
+            34,
+            46,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1695,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            159,
+            55,
+            58,
+            17
+          ],
+          "template": [
+            106,
+            34,
+            38,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1696,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            327,
+            55,
+            70,
+            17
+          ],
+          "template": [
+            218,
+            34,
+            46,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1931,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            417,
+            55,
+            70,
+            17
+          ],
+          "template": [
+            278,
+            34,
+            46,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1921,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            56,
+            81,
+            94,
+            17
+          ],
+          "template": [
+            37,
+            50,
+            62,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1925,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            242,
+            81,
+            58,
+            17
+          ],
+          "template": [
+            161,
+            50,
+            38,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1923,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            155,
+            81,
+            58,
+            17
+          ],
+          "template": [
+            103,
+            50,
+            38,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1927,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            329,
+            81,
+            58,
+            17
+          ],
+          "template": [
+            219,
+            50,
+            38,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1929,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            416,
+            81,
+            61,
+            17
+          ],
+          "template": [
+            277,
+            50,
+            40,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1922,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            56,
+            104,
+            94,
+            17
+          ],
+          "template": [
+            37,
+            64,
+            62,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1926,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            242,
+            104,
+            58,
+            17
+          ],
+          "template": [
+            161,
+            64,
+            38,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1924,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            155,
+            104,
+            58,
+            17
+          ],
+          "template": [
+            103,
+            64,
+            38,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1928,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            329,
+            104,
+            58,
+            17
+          ],
+          "template": [
+            219,
+            64,
+            38,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1930,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            416,
+            104,
+            61,
+            17
+          ],
+          "template": [
+            277,
+            64,
+            40,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1002,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            477,
+            8,
+            135,
+            17
+          ],
+          "template": [
+            318,
+            5,
+            89,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1685,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B550",
+            "0x0060B950"
+          ],
+          "rect": [
+            10,
+            578,
+            475,
+            21
+          ],
+          "template": [
+            1,
+            356,
+            316,
+            12
+          ]
+        },
+        {
+          "class": "Button",
+          "id": 1472,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B350",
+            "0x0060B950"
+          ],
+          "rect": [
+            644,
+            535,
+            156,
+            42
+          ],
+          "template": [
+            424,
+            346,
+            109,
+            23
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1480,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            507,
+            55,
+            55,
+            17
+          ],
+          "template": [
+            338,
+            34,
+            36,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1802,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            506,
+            81,
+            55,
+            17
+          ],
+          "template": [
+            337,
+            50,
+            36,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1803,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            506,
+            104,
+            57,
+            17
+          ],
+          "template": [
+            337,
+            64,
+            37,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1684,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B1D0",
+            "0x0060B950"
+          ],
+          "rect": [
+            635,
+            3,
+            162,
+            17
+          ],
+          "template": [
+            425,
+            1,
+            107,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 4294967295,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            29,
+            10,
+            100,
+            17
+          ],
+          "template": [
+            19,
+            6,
+            66,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1947,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            51,
+            141,
+            82,
+            17
+          ],
+          "template": [
+            34,
+            87,
+            54,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1918,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            144,
+            141,
+            108,
+            17
+          ],
+          "template": [
+            96,
+            87,
+            71,
+            10
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1041,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            110,
+            167,
+            151,
+            121
+          ],
+          "template": [
+            73,
+            103,
+            100,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1746,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            80,
+            167,
+            28,
+            21
+          ],
+          "template": [
+            53,
+            103,
+            18,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1697,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            333,
+            167,
+            118,
+            121
+          ],
+          "template": [
+            222,
+            103,
+            78,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1754,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            278,
+            167,
+            49,
+            21
+          ],
+          "template": [
+            185,
+            103,
+            32,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1698,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            468,
+            167,
+            39,
+            120
+          ],
+          "template": [
+            312,
+            103,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1042,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            110,
+            195,
+            151,
+            121
+          ],
+          "template": [
+            73,
+            120,
+            100,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1747,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            80,
+            195,
+            28,
+            21
+          ],
+          "template": [
+            53,
+            120,
+            18,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1296,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            333,
+            195,
+            118,
+            121
+          ],
+          "template": [
+            222,
+            120,
+            78,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1755,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            278,
+            195,
+            49,
+            21
+          ],
+          "template": [
+            185,
+            120,
+            32,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1314,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            468,
+            195,
+            39,
+            120
+          ],
+          "template": [
+            312,
+            120,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1128,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B1D0",
+            "0x0060B950"
+          ],
+          "rect": [
+            644,
+            37,
+            145,
+            113
+          ],
+          "template": [
+            432,
+            23,
+            96,
+            69
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1772,
+          "inset_override": 14,
+          "placement": [
+            "0x0060B1D0",
+            "0x0060B950"
+          ],
+          "rect": [
+            650,
+            167,
+            136,
+            17
+          ],
+          "template": [
+            434,
+            103,
+            90,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1448,
+          "inset_override": 14,
+          "placement": [
+            "0x0060B1D0",
+            "0x0060B950"
+          ],
+          "rect": [
+            650,
+            189,
+            136,
+            34
+          ],
+          "template": [
+            434,
+            116,
+            90,
+            20
+          ]
+        },
+        {
+          "class": "ListBox",
+          "id": 1343,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            11,
+            369,
+            612,
+            160
+          ],
+          "template": [
+            7,
+            227,
+            407,
+            98
+          ]
+        },
+        {
+          "class": "Edit",
+          "id": 1344,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            11,
+            533,
+            612,
+            21
+          ],
+          "template": [
+            7,
+            328,
+            407,
+            12
+          ]
+        },
+        {
+          "class": "msctls_trackbar32",
+          "id": 1842,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            183,
+            258,
+            267,
+            22
+          ],
+          "template": [
+            122,
+            159,
+            177,
+            13
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1944,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            168,
+            236,
+            58,
+            14
+          ],
+          "template": [
+            112,
+            145,
+            38,
+            8
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1945,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            296,
+            236,
+            76,
+            14
+          ],
+          "template": [
+            197,
+            145,
+            50,
+            8
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1946,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            416,
+            236,
+            61,
+            14
+          ],
+          "template": [
+            277,
+            145,
+            40,
+            8
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1043,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            95,
+            574,
+            151,
+            121
+          ],
+          "template": [
+            63,
+            353,
+            100,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1748,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            65,
+            574,
+            28,
+            21
+          ],
+          "template": [
+            43,
+            353,
+            18,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1299,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            296,
+            574,
+            118,
+            121
+          ],
+          "template": [
+            197,
+            353,
+            78,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1756,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            248,
+            574,
+            49,
+            21
+          ],
+          "template": [
+            165,
+            353,
+            32,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1315,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            416,
+            574,
+            39,
+            120
+          ],
+          "template": [
+            277,
+            353,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1044,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            96,
+            579,
+            151,
+            121
+          ],
+          "template": [
+            64,
+            356,
+            100,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1749,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            66,
+            579,
+            28,
+            21
+          ],
+          "template": [
+            44,
+            356,
+            18,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1310,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            297,
+            579,
+            118,
+            121
+          ],
+          "template": [
+            198,
+            356,
+            78,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1757,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            249,
+            579,
+            49,
+            21
+          ],
+          "template": [
+            166,
+            356,
+            32,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1316,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            417,
+            579,
+            39,
+            120
+          ],
+          "template": [
+            278,
+            356,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1045,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            93,
+            579,
+            151,
+            121
+          ],
+          "template": [
+            62,
+            356,
+            100,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1750,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            63,
+            579,
+            28,
+            21
+          ],
+          "template": [
+            42,
+            356,
+            18,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1300,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            294,
+            579,
+            118,
+            121
+          ],
+          "template": [
+            196,
+            356,
+            78,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1758,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            246,
+            579,
+            49,
+            21
+          ],
+          "template": [
+            164,
+            356,
+            32,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1317,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            414,
+            579,
+            39,
+            120
+          ],
+          "template": [
+            276,
+            356,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1046,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            90,
+            575,
+            151,
+            121
+          ],
+          "template": [
+            60,
+            354,
+            100,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1751,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            60,
+            575,
+            28,
+            21
+          ],
+          "template": [
+            40,
+            354,
+            18,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1311,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            291,
+            575,
+            118,
+            121
+          ],
+          "template": [
+            194,
+            354,
+            78,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1759,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            243,
+            575,
+            49,
+            21
+          ],
+          "template": [
+            162,
+            354,
+            32,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1318,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            411,
+            575,
+            39,
+            120
+          ],
+          "template": [
+            274,
+            354,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1047,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            89,
+            575,
+            151,
+            121
+          ],
+          "template": [
+            59,
+            354,
+            100,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1752,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            59,
+            575,
+            28,
+            21
+          ],
+          "template": [
+            39,
+            354,
+            18,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1312,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            290,
+            575,
+            118,
+            121
+          ],
+          "template": [
+            193,
+            354,
+            78,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1760,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            242,
+            575,
+            49,
+            21
+          ],
+          "template": [
+            161,
+            354,
+            32,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1319,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            410,
+            575,
+            39,
+            120
+          ],
+          "template": [
+            273,
+            354,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1048,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            90,
+            575,
+            151,
+            121
+          ],
+          "template": [
+            60,
+            354,
+            100,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1753,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            60,
+            575,
+            28,
+            21
+          ],
+          "template": [
+            40,
+            354,
+            18,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1313,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            291,
+            575,
+            118,
+            121
+          ],
+          "template": [
+            194,
+            354,
+            78,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1761,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            243,
+            575,
+            49,
+            21
+          ],
+          "template": [
+            162,
+            354,
+            32,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1320,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            411,
+            575,
+            39,
+            120
+          ],
+          "template": [
+            274,
+            354,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1699,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            524,
+            167,
+            39,
+            120
+          ],
+          "template": [
+            349,
+            103,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1700,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            524,
+            195,
+            39,
+            120
+          ],
+          "template": [
+            349,
+            120,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1701,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            458,
+            579,
+            31,
+            120
+          ],
+          "template": [
+            305,
+            356,
+            20,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1702,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            458,
+            579,
+            31,
+            120
+          ],
+          "template": [
+            305,
+            356,
+            20,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1703,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            456,
+            579,
+            31,
+            120
+          ],
+          "template": [
+            304,
+            356,
+            20,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1704,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            458,
+            579,
+            31,
+            120
+          ],
+          "template": [
+            305,
+            356,
+            20,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1706,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            458,
+            579,
+            31,
+            120
+          ],
+          "template": [
+            305,
+            356,
+            20,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1707,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            458,
+            579,
+            31,
+            120
+          ],
+          "template": [
+            305,
+            356,
+            20,
+            73
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1839,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            11,
+            296,
+            612,
+            64
+          ],
+          "template": [
+            7,
+            182,
+            407,
+            39
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1820,
+          "inset_override": 37,
+          "placement": [
+            "0x0060B1D0",
+            "0x0060B950"
+          ],
+          "rect": [
+            670,
+            47,
+            93,
+            55
+          ],
+          "template": [
+            446,
+            29,
+            61,
+            33
+          ]
+        }
+      ],
+      "dialog": 3014,
+      "height": 600,
+      "width": 800
+    },
+    {
+      "children": [
+        {
+          "class": "Button",
+          "id": 1745,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B000",
+            "0x0060B950"
+          ],
+          "rect": [
+            484,
+            241,
+            156,
+            42
+          ],
+          "template": [
+            424,
+            149,
+            109,
+            23
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1693,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            57,
+            55,
+            76,
+            17
+          ],
+          "template": [
+            38,
+            34,
+            50,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1694,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            237,
+            55,
+            70,
+            17
+          ],
+          "template": [
+            158,
+            34,
+            46,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1695,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            159,
+            55,
+            58,
+            17
+          ],
+          "template": [
+            106,
+            34,
+            38,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1696,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            327,
+            55,
+            70,
+            17
+          ],
+          "template": [
+            218,
+            34,
+            46,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1931,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            417,
+            55,
+            70,
+            17
+          ],
+          "template": [
+            278,
+            34,
+            46,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1921,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            56,
+            81,
+            94,
+            17
+          ],
+          "template": [
+            37,
+            50,
+            62,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1925,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            242,
+            81,
+            58,
+            17
+          ],
+          "template": [
+            161,
+            50,
+            38,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1923,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            155,
+            81,
+            58,
+            17
+          ],
+          "template": [
+            103,
+            50,
+            38,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1927,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            329,
+            81,
+            58,
+            17
+          ],
+          "template": [
+            219,
+            50,
+            38,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1929,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            416,
+            81,
+            61,
+            17
+          ],
+          "template": [
+            277,
+            50,
+            40,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1922,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            56,
+            104,
+            94,
+            17
+          ],
+          "template": [
+            37,
+            64,
+            62,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1926,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            242,
+            104,
+            58,
+            17
+          ],
+          "template": [
+            161,
+            64,
+            38,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1924,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            155,
+            104,
+            58,
+            17
+          ],
+          "template": [
+            103,
+            64,
+            38,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1928,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            329,
+            104,
+            58,
+            17
+          ],
+          "template": [
+            219,
+            64,
+            38,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1930,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            416,
+            104,
+            61,
+            17
+          ],
+          "template": [
+            277,
+            64,
+            40,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1002,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            477,
+            8,
+            135,
+            17
+          ],
+          "template": [
+            318,
+            5,
+            89,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1685,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B550",
+            "0x0060B950"
+          ],
+          "rect": [
+            10,
+            458,
+            475,
+            21
+          ],
+          "template": [
+            1,
+            356,
+            316,
+            12
+          ]
+        },
+        {
+          "class": "Button",
+          "id": 1472,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B350",
+            "0x0060B950"
+          ],
+          "rect": [
+            484,
+            409,
+            156,
+            42
+          ],
+          "template": [
+            424,
+            346,
+            109,
+            23
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1480,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            507,
+            55,
+            55,
+            17
+          ],
+          "template": [
+            338,
+            34,
+            36,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1802,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            506,
+            81,
+            55,
+            17
+          ],
+          "template": [
+            337,
+            50,
+            36,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1803,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            506,
+            104,
+            57,
+            17
+          ],
+          "template": [
+            337,
+            64,
+            37,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1684,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B1D0",
+            "0x0060B950"
+          ],
+          "rect": [
+            475,
+            3,
+            162,
+            17
+          ],
+          "template": [
+            425,
+            1,
+            107,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 4294967295,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            29,
+            10,
+            100,
+            17
+          ],
+          "template": [
+            19,
+            6,
+            66,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1947,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            51,
+            141,
+            82,
+            17
+          ],
+          "template": [
+            34,
+            87,
+            54,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1918,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            144,
+            141,
+            108,
+            17
+          ],
+          "template": [
+            96,
+            87,
+            71,
+            10
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1041,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            110,
+            167,
+            151,
+            121
+          ],
+          "template": [
+            73,
+            103,
+            100,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1746,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            80,
+            167,
+            28,
+            21
+          ],
+          "template": [
+            53,
+            103,
+            18,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1697,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            333,
+            167,
+            118,
+            121
+          ],
+          "template": [
+            222,
+            103,
+            78,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1754,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            278,
+            167,
+            49,
+            21
+          ],
+          "template": [
+            185,
+            103,
+            32,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1698,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            468,
+            167,
+            39,
+            120
+          ],
+          "template": [
+            312,
+            103,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1042,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            110,
+            195,
+            151,
+            121
+          ],
+          "template": [
+            73,
+            120,
+            100,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1747,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            80,
+            195,
+            28,
+            21
+          ],
+          "template": [
+            53,
+            120,
+            18,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1296,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            333,
+            195,
+            118,
+            121
+          ],
+          "template": [
+            222,
+            120,
+            78,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1755,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            278,
+            195,
+            49,
+            21
+          ],
+          "template": [
+            185,
+            120,
+            32,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1314,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            468,
+            195,
+            39,
+            120
+          ],
+          "template": [
+            312,
+            120,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1128,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B1D0",
+            "0x0060B950"
+          ],
+          "rect": [
+            484,
+            37,
+            145,
+            113
+          ],
+          "template": [
+            432,
+            23,
+            96,
+            69
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1772,
+          "inset_override": 14,
+          "placement": [
+            "0x0060B1D0",
+            "0x0060B950"
+          ],
+          "rect": [
+            490,
+            167,
+            136,
+            17
+          ],
+          "template": [
+            434,
+            103,
+            90,
+            10
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1448,
+          "inset_override": 14,
+          "placement": [
+            "0x0060B1D0",
+            "0x0060B950"
+          ],
+          "rect": [
+            490,
+            189,
+            136,
+            34
+          ],
+          "template": [
+            434,
+            116,
+            90,
+            20
+          ]
+        },
+        {
+          "class": "ListBox",
+          "id": 1343,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            11,
+            369,
+            612,
+            160
+          ],
+          "template": [
+            7,
+            227,
+            407,
+            98
+          ]
+        },
+        {
+          "class": "Edit",
+          "id": 1344,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            11,
+            533,
+            612,
+            21
+          ],
+          "template": [
+            7,
+            328,
+            407,
+            12
+          ]
+        },
+        {
+          "class": "msctls_trackbar32",
+          "id": 1842,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            183,
+            258,
+            267,
+            22
+          ],
+          "template": [
+            122,
+            159,
+            177,
+            13
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1944,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            168,
+            236,
+            58,
+            14
+          ],
+          "template": [
+            112,
+            145,
+            38,
+            8
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1945,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            296,
+            236,
+            76,
+            14
+          ],
+          "template": [
+            197,
+            145,
+            50,
+            8
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1946,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            416,
+            236,
+            61,
+            14
+          ],
+          "template": [
+            277,
+            145,
+            40,
+            8
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1043,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            95,
+            574,
+            151,
+            121
+          ],
+          "template": [
+            63,
+            353,
+            100,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1748,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            65,
+            574,
+            28,
+            21
+          ],
+          "template": [
+            43,
+            353,
+            18,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1299,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            296,
+            574,
+            118,
+            121
+          ],
+          "template": [
+            197,
+            353,
+            78,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1756,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            248,
+            574,
+            49,
+            21
+          ],
+          "template": [
+            165,
+            353,
+            32,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1315,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            416,
+            574,
+            39,
+            120
+          ],
+          "template": [
+            277,
+            353,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1044,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            96,
+            579,
+            151,
+            121
+          ],
+          "template": [
+            64,
+            356,
+            100,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1749,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            66,
+            579,
+            28,
+            21
+          ],
+          "template": [
+            44,
+            356,
+            18,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1310,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            297,
+            579,
+            118,
+            121
+          ],
+          "template": [
+            198,
+            356,
+            78,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1757,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            249,
+            579,
+            49,
+            21
+          ],
+          "template": [
+            166,
+            356,
+            32,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1316,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            417,
+            579,
+            39,
+            120
+          ],
+          "template": [
+            278,
+            356,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1045,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            93,
+            579,
+            151,
+            121
+          ],
+          "template": [
+            62,
+            356,
+            100,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1750,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            63,
+            579,
+            28,
+            21
+          ],
+          "template": [
+            42,
+            356,
+            18,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1300,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            294,
+            579,
+            118,
+            121
+          ],
+          "template": [
+            196,
+            356,
+            78,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1758,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            246,
+            579,
+            49,
+            21
+          ],
+          "template": [
+            164,
+            356,
+            32,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1317,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            414,
+            579,
+            39,
+            120
+          ],
+          "template": [
+            276,
+            356,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1046,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            90,
+            575,
+            151,
+            121
+          ],
+          "template": [
+            60,
+            354,
+            100,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1751,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            60,
+            575,
+            28,
+            21
+          ],
+          "template": [
+            40,
+            354,
+            18,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1311,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            291,
+            575,
+            118,
+            121
+          ],
+          "template": [
+            194,
+            354,
+            78,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1759,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            243,
+            575,
+            49,
+            21
+          ],
+          "template": [
+            162,
+            354,
+            32,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1318,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            411,
+            575,
+            39,
+            120
+          ],
+          "template": [
+            274,
+            354,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1047,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            89,
+            575,
+            151,
+            121
+          ],
+          "template": [
+            59,
+            354,
+            100,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1752,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            59,
+            575,
+            28,
+            21
+          ],
+          "template": [
+            39,
+            354,
+            18,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1312,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            290,
+            575,
+            118,
+            121
+          ],
+          "template": [
+            193,
+            354,
+            78,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1760,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            242,
+            575,
+            49,
+            21
+          ],
+          "template": [
+            161,
+            354,
+            32,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1319,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            410,
+            575,
+            39,
+            120
+          ],
+          "template": [
+            273,
+            354,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1048,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            90,
+            575,
+            151,
+            121
+          ],
+          "template": [
+            60,
+            354,
+            100,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1753,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            60,
+            575,
+            28,
+            21
+          ],
+          "template": [
+            40,
+            354,
+            18,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1313,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            291,
+            575,
+            118,
+            121
+          ],
+          "template": [
+            194,
+            354,
+            78,
+            74
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1761,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            243,
+            575,
+            49,
+            21
+          ],
+          "template": [
+            162,
+            354,
+            32,
+            12
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1320,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            411,
+            575,
+            39,
+            120
+          ],
+          "template": [
+            274,
+            354,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1699,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            524,
+            167,
+            39,
+            120
+          ],
+          "template": [
+            349,
+            103,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1700,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            524,
+            195,
+            39,
+            120
+          ],
+          "template": [
+            349,
+            120,
+            25,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1701,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            458,
+            579,
+            31,
+            120
+          ],
+          "template": [
+            305,
+            356,
+            20,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1702,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            458,
+            579,
+            31,
+            120
+          ],
+          "template": [
+            305,
+            356,
+            20,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1703,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            456,
+            579,
+            31,
+            120
+          ],
+          "template": [
+            304,
+            356,
+            20,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1704,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            458,
+            579,
+            31,
+            120
+          ],
+          "template": [
+            305,
+            356,
+            20,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1706,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            458,
+            579,
+            31,
+            120
+          ],
+          "template": [
+            305,
+            356,
+            20,
+            73
+          ]
+        },
+        {
+          "class": "ComboBox",
+          "id": 1707,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            458,
+            579,
+            31,
+            120
+          ],
+          "template": [
+            305,
+            356,
+            20,
+            73
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1839,
+          "inset_override": 0,
+          "placement": [
+            "0x0060B950"
+          ],
+          "rect": [
+            11,
+            296,
+            612,
+            64
+          ],
+          "template": [
+            7,
+            182,
+            407,
+            39
+          ]
+        },
+        {
+          "class": "Static",
+          "id": 1820,
+          "inset_override": 37,
+          "placement": [
+            "0x0060B1D0",
+            "0x0060B950"
+          ],
+          "rect": [
+            510,
+            47,
+            93,
+            55
+          ],
+          "template": [
+            446,
+            29,
+            61,
+            33
+          ]
+        }
+      ],
+      "dialog": 3014,
       "height": 480,
       "width": 640
     }

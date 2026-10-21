@@ -35,13 +35,13 @@ mod refinery_reach_tests;
 pub(crate) use self::harvest_mission::mission_harvest;
 pub(crate) use self::miner_system::extract_bale;
 pub(crate) use self::refinery_dock::{
-    clear_unload_anim_for_destination, clear_unload_latch, mission_unload, pay_refinery_owner,
-    per_cell_release_dock_contact,
+    clear_unload_anim_for_destination, clear_unload_latch, drain_first_slot, mission_unload,
+    pay_refinery_owner, per_cell_release_dock_contact,
 };
 
 use crate::rules::object_type::ObjectType;
 
-/// Which kind of resource a map cell or cargo bale contains.
+/// Ore/gem presentation classification; not a native TiberiumClass identity.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -129,8 +129,43 @@ impl MinerState {
 /// pushes it into the miner's cargo hold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CargoBale {
+    /// Native StorageClass slot. Grouping and payment use this identity;
+    /// multiple types can have the same ore/gem presentation classification.
+    pub tiberium_type: crate::rules::tiberium_type::TiberiumTypeId,
+    /// Presentation only, derived from the harvested type's Image.
     pub resource_type: ResourceType,
     pub value: u16,
+}
+
+impl CargoBale {
+    /// Unit Harvest_Ore_Tick73D450 and Infantry Harvest522E70 preserve the
+    /// Cell's native Tiberium index when storing the reduction. Value comes
+    /// from that TiberiumClass, not the many-to-one Image classification.
+    /// Native executions: spatial_oracle/harvest_field.json ore_tick rows.
+    fn from_reduction(
+        reduction: crate::sim::tiberium::ReduceTiberiumOutcome,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Option<Self> {
+        if reduction.removed_amount == 0 {
+            return None;
+        }
+        Self::of_type(reduction.tiberium_type?, reduction.resource_type?, rules)
+    }
+
+    /// One bale of a native Tiberium index, valued from that TiberiumClass.
+    pub fn of_type(
+        tiberium_type: crate::rules::tiberium_type::TiberiumTypeId,
+        resource_type: ResourceType,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Option<Self> {
+        let ty = rules.tiberium_types.get(tiberium_type)?;
+        Some(Self {
+            tiberium_type,
+            resource_type,
+            // Retain the existing whole-bale/u16 credit representation.
+            value: ty.value.clamp(0, i32::from(u16::MAX)) as u16,
+        })
+    }
 }
 
 /// Tunable configuration for the miner/refinery/resource system.
@@ -138,12 +173,6 @@ pub struct CargoBale {
 /// Ship with RA2-like defaults; override for balance mods.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MinerConfig {
-    // -- Bale values --
-    /// Credits per ore bale.
-    pub ore_bale_value: u16,
-    /// Credits per gem bale.
-    pub gem_bale_value: u16,
-
     // -- Cargo capacities (in bales) --
     /// War Miner bale capacity (1000 / 25 = 40 bales for ore).
     pub war_miner_capacity: u16,
@@ -154,47 +183,10 @@ pub struct MinerConfig {
 impl Default for MinerConfig {
     fn default() -> Self {
         Self {
-            ore_bale_value: 25,
-            gem_bale_value: 50,
             // War Miner: 40 bales * 25 = 1000 ore, 40 * 50 = 2000 gems
             war_miner_capacity: 40,
             // Chrono Miner: 20 bales * 25 = 500 ore, 20 * 50 = 1000 gems
             chrono_miner_capacity: 20,
-        }
-    }
-}
-
-impl MinerConfig {
-    /// Create a `MinerConfig` from a full `RuleSet`, sourcing per-bale credit
-    /// values from the `[Tiberiums]` registry so ore/gem payout tracks the mod's
-    /// `Value=` overrides instead of hardcoded constants.
-    ///
-    /// Ore payout comes from the first `[Tiberiums]` entry (Riparius/ore image)
-    /// and gem payout from the second (Cruentus/gem image), matching the native
-    /// tiberium-type ordering. A registry entry that is absent or non-positive
-    /// keeps the stock default (25 ore / 50 gem), so stock output stays
-    /// byte-identical.
-    pub fn from_rules(rules: &crate::rules::ruleset::RuleSet) -> Self {
-        let defaults = Self::default();
-        let bale_value = |id: crate::rules::tiberium_type::TiberiumTypeId, fallback: u16| -> u16 {
-            rules
-                .tiberium_types
-                .get(id)
-                .map(|t| t.value)
-                .filter(|&v| v > 0)
-                .map(|v| v.min(u16::MAX as i32) as u16)
-                .unwrap_or(fallback)
-        };
-        Self {
-            ore_bale_value: bale_value(
-                crate::rules::tiberium_type::TiberiumTypeId(0),
-                defaults.ore_bale_value,
-            ),
-            gem_bale_value: bale_value(
-                crate::rules::tiberium_type::TiberiumTypeId(1),
-                defaults.gem_bale_value,
-            ),
-            ..defaults
         }
     }
 }
@@ -387,74 +379,5 @@ mod tests {
             crate::rules::object_type::ObjectCategory::Infantry,
         );
         assert_eq!(miner_kind_for_object(&non_harvester), None);
-    }
-
-    #[test]
-    fn from_rules_sources_bale_values_from_tiberiums() {
-        use crate::rules::ini_parser::IniFile;
-        use crate::rules::ruleset::RuleSet;
-
-        // Full-skeleton ruleset (so from_ini succeeds) with modded ore/gem Value=.
-        let ini = IniFile::from_str(
-            "[InfantryTypes]\n\
-             [VehicleTypes]\n\
-             0=HARV\n\
-             [AircraftTypes]\n\
-             [BuildingTypes]\n\
-             0=GAREFN\n\
-             [HARV]\n\
-             Name=War Miner\n\
-             Harvester=yes\n\
-             [GAREFN]\n\
-             Name=Ore Refinery\n\
-             Refinery=yes\nDockUnload=yes\n\
-             [Tiberiums]\n\
-             0=Riparius\n\
-             1=Cruentus\n\
-             [Riparius]\n\
-             Name=Tiberium Riparius\n\
-             Image=1\n\
-             Value=77\n\
-             [Cruentus]\n\
-             Name=Tiberium Cruentus\n\
-             Image=2\n\
-             Value=88\n",
-        );
-        let rules = RuleSet::from_ini(&ini).expect("rules");
-        let cfg = MinerConfig::from_rules(&rules);
-        assert_eq!(
-            cfg.ore_bale_value, 77,
-            "ore bale value comes from [Riparius] Value="
-        );
-        assert_eq!(
-            cfg.gem_bale_value, 88,
-            "gem bale value comes from [Cruentus] Value="
-        );
-    }
-
-    #[test]
-    fn from_rules_empty_tiberiums_keeps_stock_defaults() {
-        use crate::rules::ini_parser::IniFile;
-        use crate::rules::ruleset::RuleSet;
-
-        // No [Tiberiums] section -> stock byte-identical 25/50.
-        let ini = IniFile::from_str(
-            "[InfantryTypes]\n\
-             [VehicleTypes]\n\
-             0=HARV\n\
-             [AircraftTypes]\n\
-             [BuildingTypes]\n\
-             0=GAREFN\n\
-             [HARV]\n\
-             Name=War Miner\n\
-             Harvester=yes\n\
-             [GAREFN]\n\
-             Name=Ore Refinery\n\
-             Refinery=yes\nDockUnload=yes\n",
-        );
-        let rules = RuleSet::from_ini(&ini).expect("rules");
-        let cfg = MinerConfig::from_rules(&rules);
-        assert_eq!(cfg.ore_bale_value, 25);
-        assert_eq!(cfg.gem_bale_value, 50);
     }
 }

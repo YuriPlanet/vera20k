@@ -80,6 +80,10 @@ pub(crate) const FPS_COUNTER_LABEL: &str = "FPS Counter";
 pub(crate) const FPS_COUNTER_HELP: &str = "Show frames per second in the top-left corner. Off at every start; Ctrl+Alt+F also switches it.";
 pub(crate) const SHIFT_QUEUE_HELP: &str =
     "Shift-click an infantry, vehicle or aircraft cameo to queue several at once.";
+pub(crate) const DISPLAY_LABEL: &str = "Display";
+pub(crate) const DISPLAY_HELP: &str = "Which screen the game opens on. Auto follows the system.";
+/// The Display list's first row: the window system's own choice.
+pub(crate) const DISPLAY_AUTO_LABEL: &str = "Auto";
 /// The main page's button to VERA's page, and that page's heading.
 pub(crate) const VERA_OPTIONS_LABEL: &str = "VERA20K Options";
 pub(crate) const VERA_OPTIONS_HELP: &str =
@@ -253,11 +257,77 @@ impl SidebarSize {
     }
 }
 
-/// The page's two lists.
+/// One screen the Display list offers, as the window layer reported it when the
+/// page opened. VERA's own data: no profile or native code names a monitor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DisplayChoice {
+    /// The window system's own name, `[VERA] Display=`'s value. Windows answers
+    /// `\\.\DISPLAY1`; the list shows the part after the last backslash.
+    pub(crate) id: String,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    /// The mode's refresh rate, when the window system reports one.
+    pub(crate) refresh_millihertz: Option<u32>,
+}
+
+impl DisplayChoice {
+    /// The row's text, `DISPLAY1: 1920x1080: 60Hz`. A screen that reports no
+    /// refresh rate says so instead of guessing one.
+    pub(crate) fn label(&self) -> String {
+        let name = self
+            .id
+            .rsplit_once('\\')
+            .map_or(self.id.as_str(), |(_, tail)| tail);
+        let rate = match self.refresh_millihertz {
+            // A rate the backend does not know, and the zero some virtual
+            // adapters report for a mode they do not drive, both read as
+            // "unknown" rather than as a refresh rate of zero.
+            Some(millihertz) if millihertz > 0 => format!("{}Hz", millihertz / 1000),
+            _ => "unknown Hz".to_owned(),
+        };
+        format!("{name}: {}x{}: {rate}", self.width, self.height)
+    }
+}
+
+/// Which screen the game opens on: the player's pick, or the window system's.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) enum DisplayTarget {
+    /// `[VERA] Display=` absent or empty: no screen is named and the window
+    /// is never moved, so it opens wherever the window system puts it, as in
+    /// every build before this option.
+    #[default]
+    Auto,
+    /// A [`DisplayChoice::id`]. A screen that is gone at the next launch leaves
+    /// the id here and opens on the system's choice, like the deleted `Zoom`
+    /// steps below.
+    Fixed(String),
+}
+
+impl DisplayTarget {
+    /// The `[VERA] Display=` value: empty for Auto, otherwise the id.
+    pub(crate) fn ini_value(&self) -> &str {
+        match self {
+            Self::Auto => "",
+            Self::Fixed(id) => id,
+        }
+    }
+    /// An empty or absent key reads as Auto; any other value names a screen,
+    /// whether or not it is attached now.
+    pub(crate) fn from_ini_value(value: &str) -> Self {
+        if value.is_empty() {
+            Self::Auto
+        } else {
+            Self::Fixed(value.to_owned())
+        }
+    }
+}
+
+/// The page's lists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LauncherComboId {
     Zoom,
     Sidebar,
+    Display,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -421,6 +491,8 @@ pub(crate) enum LauncherOptionsEvent {
     Cue(LauncherCue),
     ZoomSelected(Zoom),
     SidebarSelected(SidebarSize),
+    /// The Display list's pick, applied to the window at once.
+    DisplaySelected(DisplayTarget),
     FullScreenChanged(bool),
     OriginalShapeChanged(bool),
     YrOriginalStyleChanged(bool),
@@ -568,6 +640,11 @@ pub(crate) struct OptionsDialogState {
     labels: LauncherOptionsLabels,
     values: LauncherOptionsValues,
     zoom: Zoom,
+    /// The screens the Display list offers, as the window layer reported them
+    /// when this dialog was built. VERA's own list; no profile stores it.
+    displays: Vec<DisplayChoice>,
+    /// The Display list's current pick.
+    display: DisplayTarget,
     /// The list that is open, if any.
     open_combo: Option<LauncherComboId>,
     launcher_audio_available: bool,
@@ -586,7 +663,14 @@ pub(crate) struct OptionsDialogState {
 impl Default for OptionsDialogState {
     fn default() -> Self {
         let labels = LauncherOptionsLabels::resolve(&|_| None);
-        Self::new(labels, LauncherOptionsValues::default(), Zoom::Auto, false)
+        Self::new(
+            labels,
+            LauncherOptionsValues::default(),
+            Zoom::Auto,
+            false,
+            Vec::new(),
+            DisplayTarget::Auto,
+        )
     }
 }
 
@@ -595,11 +679,15 @@ impl OptionsDialogState {
     /// creates each fresh `0xD5` parent, while primary-proc slice
     /// `0x0055FDB0..0x0056047A` admits initial positions and preserves the
     /// resource Detail/Difficulty/Scroll captions until a changed notification.
+    /// `displays` and `display` are VERA's own Display list, which gamemd's
+    /// `0xD5` has no control for.
     pub(crate) fn new(
         labels: LauncherOptionsLabels,
         mut values: LauncherOptionsValues,
         zoom: Zoom,
         launcher_audio_available: bool,
+        displays: Vec<DisplayChoice>,
+        display: DisplayTarget,
     ) -> Self {
         values.detail_position = admitted_initial_position(i64::from(values.detail_position), 1);
         values.difficulty_position =
@@ -622,6 +710,8 @@ impl OptionsDialogState {
             labels,
             values,
             zoom,
+            displays,
+            display,
             open_combo: None,
             launcher_audio_available,
             capture: None,
@@ -631,6 +721,13 @@ impl OptionsDialogState {
             pending_page: None,
             shell_interaction: shell::ShellInteraction::default(),
         }
+    }
+
+    /// The screens the Display list offers, in the window layer's order. The
+    /// shell's own drawing reads the field; only the tests need them back.
+    #[cfg(test)]
+    pub(crate) fn displays(&self) -> &[DisplayChoice] {
+        &self.displays
     }
 
     pub(crate) const fn launcher_audio_available(&self) -> bool {
@@ -872,6 +969,23 @@ impl OptionsDialogState {
             .push(LauncherOptionsEvent::SidebarSelected(size));
     }
 
+    /// The Display list publishes its pick at once too: the window moves to
+    /// that screen straight away. Picking the screen already chosen, or one the
+    /// window layer did not list, changes nothing.
+    pub(crate) fn select_display(&mut self, display: DisplayTarget) {
+        self.open_combo = None;
+        let listed = match &display {
+            DisplayTarget::Auto => true,
+            DisplayTarget::Fixed(id) => self.displays.iter().any(|choice| &choice.id == id),
+        };
+        if !listed || self.display == display {
+            return;
+        }
+        self.display = display.clone();
+        self.pending_events
+            .push(LauncherOptionsEvent::DisplaySelected(display));
+    }
+
     /// gamemd-derived: `OptionsClass__ShowLauncherDialog @ 0x0055FC80` gives
     /// Back, Network, Keyboard, and terminal completion distinct parent
     /// results; the first admitted result owns the frame's teardown path.
@@ -929,6 +1043,8 @@ mod tests {
             LauncherOptionsValues::default(),
             Zoom::Percent(200),
             audio,
+            Vec::new(),
+            DisplayTarget::Auto,
         )
     }
 
@@ -990,6 +1106,8 @@ mod tests {
             },
             Zoom::Auto,
             true,
+            Vec::new(),
+            DisplayTarget::Auto,
         );
         // Retail opens with the positions named (TXT_LOW/HARD/SLOWEST here).
         assert_eq!(state.detail_caption, "Low");
@@ -1342,5 +1460,113 @@ mod tests {
             Some(LauncherParentResult::Network)
         );
         assert_eq!(state.drain_output().result, None);
+    }
+
+    fn display_settings() -> Vec<DisplayChoice> {
+        vec![
+            DisplayChoice {
+                id: "\\\\.\\DISPLAY1".to_owned(),
+                width: 1920,
+                height: 1080,
+                refresh_millihertz: Some(60_000),
+            },
+            DisplayChoice {
+                id: "\\\\.\\DISPLAY2".to_owned(),
+                width: 2560,
+                height: 1440,
+                refresh_millihertz: Some(143_999),
+            },
+            DisplayChoice {
+                id: "\\\\.\\DISPLAY3".to_owned(),
+                width: 800,
+                height: 600,
+                refresh_millihertz: None,
+            },
+        ]
+    }
+
+    #[test]
+    fn display_rows_name_the_device_size_and_rate() {
+        let choices = display_settings();
+        // Only the device name's last segment shows; the full name persists.
+        assert_eq!(choices[0].label(), "DISPLAY1: 1920x1080: 60Hz");
+        // A rate that is not a whole number of hertz still reads as its
+        // truncated figure, so a 143.999 Hz panel says 143Hz, not 144Hz.
+        assert_eq!(choices[1].label(), "DISPLAY2: 2560x1440: 143Hz");
+        // A screen that reports no rate says so instead of inventing one.
+        assert_eq!(choices[2].label(), "DISPLAY3: 800x600: unknown Hz");
+    }
+
+    #[test]
+    fn display_target_round_trips_through_its_ini_value() {
+        assert_eq!(DisplayTarget::Auto.ini_value(), "");
+        assert_eq!(DisplayTarget::from_ini_value(""), DisplayTarget::Auto);
+        // A name the machine no longer has is kept: unplugging a screen must
+        // not silently rewrite the player's choice.
+        let named = DisplayTarget::Fixed("\\\\.\\DISPLAY2".to_owned());
+        assert_eq!(named.ini_value(), "\\\\.\\DISPLAY2");
+        assert_eq!(
+            DisplayTarget::from_ini_value(named.ini_value()),
+            named,
+            "a retained name survives a restart"
+        );
+    }
+
+    #[test]
+    fn display_list_offers_auto_then_every_attached_screen() {
+        let mut state = OptionsDialogState::new(
+            labels(),
+            LauncherOptionsValues::default(),
+            Zoom::Auto,
+            true,
+            display_settings(),
+            DisplayTarget::Auto,
+        );
+        assert_eq!(state.displays().len(), 3);
+        assert_eq!(
+            state.display_choices(),
+            [
+                DisplayTarget::Auto,
+                DisplayTarget::Fixed("\\\\.\\DISPLAY1".to_owned()),
+                DisplayTarget::Fixed("\\\\.\\DISPLAY2".to_owned()),
+                DisplayTarget::Fixed("\\\\.\\DISPLAY3".to_owned()),
+            ]
+        );
+
+        // Picking a screen applies at once, like Zoom and Sidebar.
+        state.select_display(DisplayTarget::Fixed("\\\\.\\DISPLAY2".to_owned()));
+        assert_eq!(
+            state.drain_output().events,
+            [LauncherOptionsEvent::DisplaySelected(DisplayTarget::Fixed(
+                "\\\\.\\DISPLAY2".to_owned()
+            ))]
+        );
+        // Picking it again asks for nothing: the window is already there.
+        state.select_display(DisplayTarget::Fixed("\\\\.\\DISPLAY2".to_owned()));
+        assert!(state.drain_output().events.is_empty());
+        // A screen the window layer did not list cannot be picked.
+        state.select_display(DisplayTarget::Fixed("\\\\.\\DISPLAY9".to_owned()));
+        assert!(state.drain_output().events.is_empty());
+        // Auto is always available, so a stale saved name is recoverable.
+        state.select_display(DisplayTarget::Auto);
+        assert_eq!(
+            state.drain_output().events,
+            [LauncherOptionsEvent::DisplaySelected(DisplayTarget::Auto)]
+        );
+    }
+
+    #[test]
+    fn a_saved_screen_that_is_gone_still_opens_on_auto() {
+        // The profile keeps a name this desktop no longer has. The face shows
+        // it, so the player can see what is saved, and Auto is one row away.
+        let state = OptionsDialogState::new(
+            labels(),
+            LauncherOptionsValues::default(),
+            Zoom::Auto,
+            true,
+            display_settings(),
+            DisplayTarget::Fixed("\\\\.\\DISPLAY7".to_owned()),
+        );
+        assert_eq!(state.display_choices().len(), 4);
     }
 }

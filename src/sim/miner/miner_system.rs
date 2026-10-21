@@ -16,7 +16,7 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::miner::{CargoBale, Miner, MinerConfig, MinerState, ResourceType};
+use crate::sim::miner::{CargoBale, Miner, MinerState};
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::locomotor::MovementLayer;
@@ -303,7 +303,6 @@ pub(crate) fn unit_ai_nudge_off_refinery_pad(
 pub(super) fn process_miner(
     sim: &mut Simulation,
     rules: &RuleSet,
-    config: &MinerConfig,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
     frame_effects: FrameEffects<'_>,
@@ -332,9 +331,7 @@ pub(super) fn process_miner(
     let state_before = format!("{:?}", snap.state);
     match snap.state {
         MinerState::SearchOre => harvest_looking(sim, rules, overlay_registry, snap, frame_effects),
-        MinerState::Harvest => {
-            harvest_cutting(sim, rules, config, overlay_registry, snap, frame_effects)
-        }
+        MinerState::Harvest => harvest_cutting(sim, rules, overlay_registry, snap, frame_effects),
         // Native return/finding-home state has no per-frame exit: every
         // dispatch leaves through the default Rate epilogue.
         MinerState::ReturnToRefinery => {
@@ -529,7 +526,6 @@ fn load_rate(rules: &RuleSet) -> u32 {
 fn harvest_cutting(
     sim: &mut Simulation,
     rules: &RuleSet,
-    config: &MinerConfig,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
     frame_effects: FrameEffects<'_>,
@@ -551,7 +547,7 @@ fn harvest_cutting(
     {
         return;
     }
-    if harvest_ore_tick(sim, rules, config, overlay_registry, snap) {
+    if harvest_ore_tick(sim, rules, overlay_registry, snap) {
         return;
     }
     snap.miner.harvesting = false;
@@ -599,8 +595,7 @@ pub(crate) fn harvest_ore_tick_for_test(
     id: u64,
 ) -> bool {
     let mut snap = build_miner_snapshot(sim, id).expect("a dispatchable miner");
-    let config = MinerConfig::from_rules(rules);
-    let ok = harvest_ore_tick(sim, rules, &config, overlay_registry, &mut snap);
+    let ok = harvest_ore_tick(sim, rules, overlay_registry, &mut snap);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.miner = Some(snap.miner);
     }
@@ -621,13 +616,11 @@ pub(crate) fn harvest_ore_tick_for_test(
 ///   density-0 cell clears for nothing: false, stage untouched.
 ///
 /// RESIDUAL: the Weeder= branch (`0x0073D4F4`, `HarvesterLoadRate * 3`),
-/// dormant (no retail Weeder=). Cargo is integer bales per Ore/Gem kind where
-/// native keeps float `StorageClass` slots per tiberium type (see the Unload
-/// payout residual).
+/// dormant (no retail Weeder=). Cargo retains native tiberium identities but uses whole bales
+/// where native keeps float StorageClass amounts (see the Unload residual).
 fn harvest_ore_tick(
     sim: &mut Simulation,
     rules: &RuleSet,
-    config: &MinerConfig,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
 ) -> bool {
@@ -672,22 +665,13 @@ fn harvest_ore_tick(
         rules,
         overlay_registry,
     );
-    let Some(resource_type) = reduction
-        .resource_type
-        .filter(|_| reduction.removed_amount > 0)
-    else {
+    let Some(bale) = CargoBale::from_reduction(reduction, rules) else {
         return false;
     };
-    let value = match resource_type {
-        ResourceType::Ore => config.ore_bale_value,
-        ResourceType::Gem => config.gem_bale_value,
-    };
-    snap.miner
-        .cargo
-        .extend((0..reduction.removed_amount).map(|_| CargoBale {
-            resource_type,
-            value,
-        }));
+    snap.miner.cargo.extend(std::iter::repeat_n(
+        bale,
+        usize::from(reduction.removed_amount),
+    ));
     arm_stage(&mut sim.substrate, id, now, load_rate(rules));
     true
 }
@@ -994,7 +978,6 @@ pub(crate) fn extract_bale(
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     cell: (u16, u16),
-    config: &MinerConfig,
 ) -> Option<CargoBale> {
     let outcome = Simulation::reduce_tiberium_at_with_native_context(
         terrain_objects,
@@ -1011,18 +994,7 @@ pub(crate) fn extract_bale(
         rules,
         overlay_registry,
     );
-    if outcome.removed_amount == 0 {
-        return None;
-    }
-    let resource_type = outcome.resource_type?;
-    let value = match resource_type {
-        ResourceType::Ore => config.ore_bale_value,
-        ResourceType::Gem => config.gem_bale_value,
-    };
-    Some(CargoBale {
-        resource_type,
-        value,
-    })
+    CargoBale::from_reduction(outcome, rules)
 }
 
 /// One `FootClass::Find_Docking_Bay @ 0x004DF040` pass for a miner or an

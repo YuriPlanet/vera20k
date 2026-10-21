@@ -11,7 +11,10 @@ mod trackbars;
 
 #[cfg(test)]
 use self::combos::{combo_dropdown_max_top_index, top_index_from_scrollbar_track_click};
-use self::combos::{handle_combo_mouse_down, set_open_combo_top_index, top_index_from_thumb_y};
+use self::combos::{
+    handle_combo_mouse_down, handle_combo_mouse_move, set_open_combo_top_index,
+    top_index_from_thumb_y,
+};
 
 pub use combos::{
     available_color_choices, available_start_choices, combo_dropdown_content_rect,
@@ -147,6 +150,8 @@ pub enum ChooseMapHoverTarget {
 pub struct OpenComboDropdown {
     pub id: SkirmishComboId,
     pub top_index: usize,
+    /// The popup's preview row; the saved choice changes only on a click.
+    pub hot_row: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

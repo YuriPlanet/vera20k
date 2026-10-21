@@ -13,11 +13,11 @@ use std::collections::HashMap;
 /// action-to-row switch into `tools/mouse_oracle/cursor_table.json`, which
 /// `cursor_rows_match_the_compiled_descriptor_table` checks this against.
 ///
-/// Two switches read that table. The tactical one is `SetCursorFromAction`'s
-/// main jump table (`0x004AB884`, indexed by action - 1). The radar one is its
-/// mini switch (byte table `0x004AB838` indexed by action, jump table
-/// `0x004AB7D0`), which the RadarClass mouse handler (`0x006539D0`) reaches
-/// with `mini = 1`; a row whose `miniFrame` is `-1` falls back to its main set
+/// Two switches read that table. Revealed cells use `SetCursorFromAction`'s
+/// main jump table (`0x004AB884`, indexed by action - 1). Shrouded cells use
+/// byte table `0x004AB838` and jump table `0x004AB7D0` instead. RadarClass
+/// (`0x006539D0`) passes `mini = 1` to either branch; a row whose
+/// `miniFrame` is `-1` falls back to its main set
 /// even under the mini flag (`0x005BDCA3`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum CursorId {
@@ -57,9 +57,9 @@ pub(crate) enum CursorId {
     /// Radar (minimap) cursor sets — the `miniFrame`/`miniCount` pair of a
     /// descriptor row, shown when the original's RadarClass mouse handler
     /// (`0x006539D0`) passes `mini = 1` into `SetCursorFromAction`
-    /// (`0x004AAE90`). The mini switch (byte table `0x004AB838` indexed by
-    /// action, jump table `0x004AB7D0`) is its own action-to-row map and is
-    /// NOT the tactical one. Row 0's mini set is the plain arrow the radar
+    /// (`0x004AAE90`). Its normal action switch picks the row over revealed
+    /// cells; the shroud switch uses byte table4AB838 / jump table4AB7D0.
+    /// Row 0's mini set is the plain arrow the radar
     /// defaults to once the keep-table filter drops the action.
     DefaultMini,
     /// Row 19's mini set — the NoMove mini (mini switch action 2 -> row 19).
@@ -289,9 +289,8 @@ const CURSOR_DEFS: &[(CursorId, usize, usize, u64, CursorHotspot)] = &[
     (CursorId::NoDeploy, 119, 1, 0, CursorHotspot::CenterMiddle),
     // --- Radar (minimap) cursor sets: the miniFrame/miniCount pairs ---
     // Row 18 (Move)'s mini set. The RadarClass mouse handler (0x006539D0)
-    // reaches it through the mini switch: actions 1 (Move) and 5 land on
-    // row 18, and action 2 (NoMove) takes row 18 while a drag owns the
-    // radar and row 19 otherwise.
+    // uses it for Move1 and for Attack5 in the shroud switch. Revealed
+    // Attack5 instead uses row20/21; ordinary NoMove2 uses row19.
     (
         CursorId::MinimapMove,
         42,

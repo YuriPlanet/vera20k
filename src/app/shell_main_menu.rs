@@ -51,6 +51,13 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next battle frame lays out and draws the sidebar at this size.
         self.persistence.options_profile.sidebar = size;
     }
+    fn set_display(&mut self, display: crate::ui::main_menu_dialogs::options::DisplayTarget) {
+        // Applied at once, like Full Screen: the window moves to the picked
+        // screen (or back to the system's choice) before the page is accepted.
+        self.persistence.options_profile.display = display.clone();
+        let displays = crate::app::display_target::current_displays(&self.platform.window);
+        crate::app::display_target::apply(&self.platform.window, &displays, &display);
+    }
     fn set_full_screen(&mut self, full_screen: bool) {
         App::set_full_screen(self, full_screen);
     }
@@ -617,6 +624,19 @@ impl App {
     /// scenario stream back to the offline shell, retaining the runtime and
     /// presentation resources.
     pub(super) fn close_finished_scenario(state: &mut AppState) {
+        Self::retire_finished_scenario(state);
+        Self::persist_returned_session_toggles(state);
+        state.frontend.score_page = None;
+        state.frontend.campaign_score_page = None;
+        // 0x0072D780 releases the score art.
+        state.frontend.score_art = None;
+        state.frontend.campaign_score_art = None;
+        state.frontend.screen = GameScreen::MainMenu;
+    }
+
+    /// The teardown every finished scenario shares, the co-op continuation
+    /// included, which never reaches Main_Game's shell return.
+    pub(crate) fn retire_finished_scenario(state: &mut AppState) {
         // Main_Game48CEBF also retires ScenarioStarted after score Continue;
         // source: original gamemd.exe Main_Game48CCC0 (EBX=0 at48CCD4).
         if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
@@ -624,15 +644,8 @@ impl App {
         }
         crate::app::match_runtime::sim_tick::flush_replay_log(state);
         Self::capture_returned_multiplayer_scenario(state);
-        Self::persist_returned_session_toggles(state);
         state.match_state.startup.clear();
         state.match_state.scenario_elapsed_clock.reset();
-        state.frontend.score_page = None;
-        state.frontend.campaign_score_page = None;
-        // 0x0072D780 releases the score art.
-        state.frontend.score_art = None;
-        state.frontend.campaign_score_art = None;
-        state.frontend.screen = GameScreen::MainMenu;
         state.match_state.input.zoom_level = 1.0;
         state.match_state.input.zoom_target = 1.0;
     }
@@ -640,7 +653,7 @@ impl App {
     /// PrepareSession re-enters the active mode's shell: LAN starts a new BB,
     /// WOL its lobby 0x113, Skirmish a new0x102. The session keeps the
     /// admitted network return owner.
-    pub(super) fn resume_shell_after_match(state: &mut AppState) {
+    pub(crate) fn resume_shell_after_match(state: &mut AppState) {
         if state.frontend.external_launch {
             Self::start_quit_cascade(state);
             return;
@@ -831,12 +844,19 @@ Details: {details}"
                 .and_then(|csf| csf.get(key))
                 .map(str::to_owned)
         });
+        // The Display list is VERA's own: it reads the screens attached now, so
+        // a screen plugged in or removed since the last launch shows correctly.
+        let displays = crate::app::display_target::current_displays(&state.platform.window)
+            .iter()
+            .map(|display| display.choice().clone())
+            .collect();
         let dialog = launcher_dialog_from_profile(
             &state.persistence.options_profile,
             labels,
             state.platform.window.fullscreen().is_some(),
             state.renderer.fps_overlay.is_visible(),
             state.audio.launcher_audio_available,
+            displays,
         );
         state.frontend.options_dialog = Some(dialog);
     }

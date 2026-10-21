@@ -1274,6 +1274,7 @@ impl App {
         let layout = Self::skirmish_shell_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
         Self::update_skirmish_shell_status_help(state, &layout, x, y);
+        let dropdown_before = state.frontend.skirmish_shell_state.open_combo_dropdown;
         crate::ui::skirmish_shell::handle_option_mouse_move(
             &mut state.frontend.skirmish_shell_state,
             &layout,
@@ -1281,6 +1282,9 @@ impl App {
             x,
             y,
         );
+        if state.frontend.skirmish_shell_state.open_combo_dropdown != dropdown_before {
+            state.platform.window.request_redraw();
+        }
         Self::drain_skirmish_shell_ui_sounds(state);
     }
 

@@ -292,6 +292,15 @@ def _presentation_clock(value: Any, ticks: int, segments=None, *,
     return dict(clock)
 
 
+def _presentation_schedule(clock: dict[str, Any]) -> dict[str, Any]:
+    """Comparable consumed times from a validated transcript, excluding tooltip output."""
+    if 'draws' not in clock:
+        return clock  # Explicitly admitted legacy wall-clock evidence has no draws.
+    return {**clock, 'draws': [
+        {key: value for key, value in row.items() if key != 'tooltip'}
+        for row in clock['draws']]}
+
+
 def _bounded_int(value: Any, label: str, minimum: int, maximum: int) -> int:
     number = require_int(value, label)
     if not minimum <= number <= maximum:
@@ -3444,7 +3453,8 @@ def compare_runs(before: Path, after: Path, *,
                 raise ValidationError(f'{name} input bytes differ; observations are not comparable')
         require_value(right.capture.clock['policy'], left.capture.clock['policy'],
                       'presentation_clock.policy')
-        _require_equal(right.capture.clock, left.capture.clock, 'presentation_clock')
+        _require_equal(_presentation_schedule(right.capture.clock),
+                       _presentation_schedule(left.capture.clock), 'presentation_clock')
         compared_fields = ('initial', 'final', 'map_source', 'exact_step_count', 'unit_atlas')
         if ('observations' in left.capture.evidence) != ('observations' in right.capture.evidence):
             raise ValidationError('observation policies differ between child generations')
@@ -3455,6 +3465,8 @@ def compare_runs(before: Path, after: Path, *,
         differences = [difference for name in compared_fields
                        for difference in _differences(left.capture.evidence[name],
                                                       right.capture.evidence[name], name)]
+        differences.extend(_differences(left.capture.clock, right.capture.clock,
+                                        'presentation_clock'))
         differences.extend(_differences(left.capture.frame_format, right.capture.frame_format,
                                         'frame.surface_format'))
         if left.capture.frame.raw != right.capture.frame.raw:

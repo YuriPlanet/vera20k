@@ -36,6 +36,10 @@ const NETWORK_SECTION: &str = "Network";
 const VERA_SECTION: &str = "VERA";
 /// Destination units `OptionsClass__ReadFromINI` passes for NetID (`push 0xC8`).
 const NET_ID_UNITS: usize = 0xC8;
+/// Destination units `[VERA] Display=`'s ReadString copies into. A VERA key, so
+/// the capacity is ours: a device name is at most `\\.\DISPLAY` plus a few
+/// digits, and 64 leaves room for a backend that names screens differently.
+const DISPLAY_CAPACITY: usize = 64;
 const SCREEN_SIZE_UNSET: i32 = -1;
 const DEFAULT_SCREEN_WIDTH: i32 = 800;
 const DEFAULT_SCREEN_HEIGHT: i32 = 600;
@@ -141,6 +145,12 @@ pub(crate) struct RetailOptionsProfile {
     /// service instead of showing `TXT_APIMISSING`: the Options page's
     /// developer box. Off by default; no real service exists yet.
     pub(crate) wol_test_service: bool,
+    /// `[VERA] Display=`: the screen the game opens on, by the window system's
+    /// own name (`\\.\DISPLAY1`). Absent or empty means the system's choice,
+    /// which is how every earlier build behaved. A name no longer attached
+    /// stays here and opens on the system's choice, like [`Self::zoom`]'s
+    /// unknown steps.
+    pub(crate) display: crate::ui::main_menu_dialogs::options::DisplayTarget,
 }
 
 /// The two process-start products obtained from one physical `RA2MD.INI`
@@ -202,6 +212,7 @@ impl Default for RetailOptionsProfile {
             shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             wol_test_service: false,
+            display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
         }
     }
 }
@@ -218,7 +229,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 9],
+    pub(crate) vera: [(&'static str, String); 10],
 }
 
 impl RetailOptionsLoad {
@@ -424,6 +435,10 @@ impl RetailOptionsProfile {
                 vera.read_int("ShiftQueueCount", self.shift_queue_count as i32),
             );
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
+            if let Some(value) = vera.read_name("Display", DISPLAY_CAPACITY) {
+                self.display =
+                    crate::ui::main_menu_dialogs::options::DisplayTarget::from_ini_value(value);
+            }
         }
     }
 
@@ -519,6 +534,7 @@ impl RetailOptionsProfile {
                     "RenderInterpolation",
                     format_bool(self.render_interpolation).to_string(),
                 ),
+                ("Display", self.display.ini_value().to_owned()),
             ],
         }
     }
@@ -1339,6 +1355,53 @@ mod tests {
         assert!(reread.retained_profile.shift_queue);
         assert!(reread.retained_profile.wol_test_service);
         assert_eq!(reread.retained_profile.shift_queue_count, 7);
+    }
+
+    #[test]
+    fn display_preference_round_trips_through_the_vera_section() {
+        use crate::ui::main_menu_dialogs::options::DisplayTarget;
+        let startup = RetailStartupOptions::default();
+        // Absent and empty both mean Auto: the system chooses, as every
+        // earlier build did.
+        for input in [
+            b"".as_slice(),
+            b"[VERA]\n".as_slice(),
+            b"[VERA]\nDisplay=\n".as_slice(),
+        ] {
+            assert_eq!(
+                load_snapshot(&startup, input).retained_profile.display,
+                DisplayTarget::Auto
+            );
+        }
+        // A named screen survives a restart even when it is unplugged now; the
+        // window layer falls back at use, never at read.
+        let named = load_snapshot(&startup, b"[VERA]\nDisplay=\\\\.\\DISPLAY2\n");
+        assert_eq!(
+            named.retained_profile.display,
+            DisplayTarget::Fixed("\\\\.\\DISPLAY2".to_owned())
+        );
+        // The writer emits the key in the VERA block, and a re-read agrees.
+        let profile = RetailOptionsProfile {
+            display: DisplayTarget::Fixed("\\\\.\\DISPLAY1".to_owned()),
+            ..RetailOptionsProfile::default()
+        };
+        let output = profile.transform_ra2md(b"[Video]\r\nScreenWidth=800\r\n");
+        assert!(
+            String::from_utf8_lossy(&output).contains("Display=\\\\.\\DISPLAY1\r\n"),
+            "{}",
+            String::from_utf8_lossy(&output)
+        );
+        assert_eq!(
+            load_snapshot(&startup, &output).retained_profile.display,
+            DisplayTarget::Fixed("\\\\.\\DISPLAY1".to_owned())
+        );
+        // Auto writes an empty value, which reads back as Auto.
+        let auto =
+            RetailOptionsProfile::default().transform_ra2md(b"[VERA]\nDisplay=\\\\.\\DISPLAY1\n");
+        assert_eq!(
+            load_snapshot(&startup, &auto).retained_profile.display,
+            DisplayTarget::Auto
+        );
     }
 
     #[test]

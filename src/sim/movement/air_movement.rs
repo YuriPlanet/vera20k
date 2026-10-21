@@ -207,8 +207,9 @@ pub fn queried_flight_height(
 }
 
 /// Object5F5F40: retained Location less the live ground and optional deck.
-/// Both Techno and Terrain queries use the same ground/height boundary.
-pub(crate) fn object_height_in_query(
+/// Techno, Terrain and the Anim draw (DrawIt42310A) queries use the same
+/// ground/height boundary; a draw passes its isolated query.
+pub fn object_height_in_query(
     coord: DriveCoord,
     on_bridge: bool,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,

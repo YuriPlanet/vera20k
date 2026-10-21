@@ -1,6 +1,7 @@
 //! `asset sound <NAME>` and `asset bag-ls` — the audio bag, headlessly.
 //!
-//! Production uses the one startup-selected `audio.idx`/`audio.bag` pair.
+//! Production uses its startup-selected catalog: the stock pair, or the
+//! optional ordered Ares BAG set.
 //! Each file follows the shared resolver, including independent loose overrides.
 //! Explicit `--bag` requests inspect a named archive or loose diagnostic pair.
 //! See [process audio owner](../../tools/audio_catalog_owner.md) for source/lifetime evidence.
@@ -112,12 +113,14 @@ impl Default for SoundOptions {
     }
 }
 
-/// One opened `.idx`/`.bag` pair plus the provenance string for the report.
+/// One opened catalog plus its pair provenance for the report.
 struct OpenBag {
     index: AudioIndex,
     /// How this pair was opened, e.g. `AUDIOMD.MIX -> audio.idx/audio.bag`.
     identity: String,
     sources: AudioIndexSources,
+    #[cfg(feature = "ares")]
+    additional_sources: Vec<AudioIndexSources>,
 }
 
 /// `asset sound <NAME>` — one bag entry's header, decoded length, and
@@ -183,6 +186,8 @@ pub fn sound(
     Ok(SoundReport {
         bag: bag.identity,
         sources: Some(bag.sources),
+        #[cfg(feature = "ares")]
+        additional_sources: bag.additional_sources,
         entry_count,
         matched: 1,
         shown: 1,
@@ -206,6 +211,8 @@ pub fn bag_ls(
         return Ok(SoundReport {
             bag: NO_BAG_IDENTITY.to_string(),
             sources: None,
+            #[cfg(feature = "ares")]
+            additional_sources: Vec::new(),
             entry_count: 0,
             matched: 0,
             shown: 0,
@@ -244,6 +251,8 @@ pub fn bag_ls(
     Ok(SoundReport {
         bag: bag.identity,
         sources: Some(bag.sources),
+        #[cfg(feature = "ares")]
+        additional_sources: bag.additional_sources,
         entry_count: reachable.len(),
         matched: matched.len(),
         shown: rows.len(),
@@ -252,7 +261,7 @@ pub fn bag_ls(
     })
 }
 
-/// Open the production pair, or one explicitly requested diagnostic override.
+/// Open the production catalog, or one explicitly requested diagnostic pair.
 fn open_bag(asset_manager: &AssetManager, opts: &SoundOptions) -> (Option<OpenBag>, Vec<String>) {
     let mut warnings = Vec::new();
     let Some(requested) = opts.bag.as_deref() else {
@@ -260,7 +269,14 @@ fn open_bag(asset_manager: &AssetManager, opts: &SoundOptions) -> (Option<OpenBa
             Ok(Some(loaded)) => (Some(opened_pair(loaded)), warnings),
             Ok(None) => (
                 None,
-                vec!["startup audio.idx/audio.bag pair is unavailable".to_owned()],
+                vec![
+                    if cfg!(feature = "ares") {
+                        "startup Ares audio catalog has no valid pair"
+                    } else {
+                        "startup audio.idx/audio.bag pair is unavailable"
+                    }
+                    .to_owned(),
+                ],
             ),
             Err(error) => (None, vec![error.to_string()]),
         };
@@ -342,9 +358,20 @@ fn opened_pair(loaded: LoadedAudioIndex) -> OpenBag {
         "IDX from {}; BAG from {}",
         loaded.sources.idx.source_archive, loaded.sources.bag.source_archive
     );
+    #[cfg(feature = "ares")]
+    let identity = if loaded.additional_sources.is_empty() {
+        identity
+    } else {
+        format!(
+            "{identity}; {} additional Ares BAG pair(s), see additional_sources",
+            loaded.additional_sources.len()
+        )
+    };
     OpenBag {
         index: loaded.index,
         sources: loaded.sources,
+        #[cfg(feature = "ares")]
+        additional_sources: loaded.additional_sources,
         identity,
     }
 }

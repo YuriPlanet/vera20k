@@ -758,6 +758,16 @@ impl HouseTracking {
         counts.get(&type_id).copied().unwrap_or(0)
     }
 
+    /// The sum of the four on-map counters' totals (`CounterClass+0x10` of
+    /// `+0x5550`, `+0x5564`, `+0x5578` and `+0x558C`), as the co-op score
+    /// rows add them (`0x0049B7E0`).
+    pub(crate) fn active_total(&self) -> i32 {
+        wrapping_total(&self.active_building_types)
+            .wrapping_add(self.active_units())
+            .wrapping_add(self.active_infantry())
+            .wrapping_add(self.active_aircraft())
+    }
+
     fn active_units(&self) -> i32 {
         wrapping_total(&self.active_unit_types)
     }

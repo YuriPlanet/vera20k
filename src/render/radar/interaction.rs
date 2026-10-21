@@ -18,6 +18,15 @@ pub(crate) struct NativeRadarCameraTarget {
     pub(crate) tracker_hit: Option<u64>,
 }
 
+/// `GetObjectAtRadarPixel @ 0x00656750`, before RadarClass applies its
+/// viewport-size clamp. Orders use this cell and retained object identity;
+/// only camera centering uses `NativeRadarCameraTarget`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NativeRadarInputTarget {
+    pub(crate) cell: (u16, u16),
+    pub(crate) tracker_hit: Option<u64>,
+}
+
 /// The signed-word clamp in the live RadarClass input owner
 /// `0x00653D7A..0x00653E66`.
 ///
@@ -80,6 +89,21 @@ fn signed_tracker_or_inverse_cell(
     tracker_cell: Option<(i16, i16)>,
 ) -> (i16, i16) {
     tracker_cell.unwrap_or_else(|| surface.surface_pixel_to_signed_cell(pixel))
+}
+
+fn native_input_target_at_pixel(
+    surface: super::geometry::NativeRadarSurfaceGeometry,
+    tracker: &super::tracker::RetainedRadarTracker,
+    simulation: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    pixel: (i32, i32),
+) -> NativeRadarInputTarget {
+    let hit = tracker_object_signed_cell(tracker, simulation, rules, pixel);
+    let signed = signed_tracker_or_inverse_cell(surface, pixel, hit.map(|(_, cell)| cell));
+    NativeRadarInputTarget {
+        cell: (signed.0 as u16, signed.1 as u16),
+        tracker_hit: hit.map(|(id, _)| id),
+    }
 }
 
 fn tracker_object_signed_cell(
@@ -187,6 +211,27 @@ impl MinimapRenderer {
 
     /// `RadarClass::GetObjectAtRadarPixel @ 0x00656750`: screen to generated
     /// pixel, reverse tracker lookup, then exact x87 cell inverse fallback.
+    pub(crate) fn native_input_target_in_rect(
+        &self,
+        screen: (f32, f32),
+        rect: [f32; 4],
+        simulation: &crate::sim::world::Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Option<NativeRadarInputTarget> {
+        let surface = self.native_radar_surface?;
+        let pixel =
+            NativeRadarScreenGeometry::new(surface, rect).screen_to_surface_pixel(screen)?;
+        Some(native_input_target_at_pixel(
+            surface,
+            &self.radar_tracker,
+            simulation,
+            rules,
+            pixel,
+        ))
+    }
+
+    /// RadarClass camera branch `0x00653D7A..0x00653EA0` applies the
+    /// viewport-size clamp after the shared radar pick.
     pub(crate) fn native_click_target_in_rect(
         &self,
         screen_x: f32,
@@ -201,14 +246,16 @@ impl MinimapRenderer {
         map_size: (i32, i32),
         tactical_size: (i32, i32),
     ) -> Option<NativeRadarCameraTarget> {
-        let surface = self.native_radar_surface?;
-        let pixel = NativeRadarScreenGeometry::new(surface, [rect_x, rect_y, rect_w, rect_h])
-            .screen_to_surface_pixel((screen_x, screen_y))?;
-        let hit = tracker_object_signed_cell(&self.radar_tracker, simulation, rules, pixel);
-        let signed = signed_tracker_or_inverse_cell(surface, pixel, hit.map(|(_, cell)| cell));
+        let input = self.native_input_target_in_rect(
+            (screen_x, screen_y),
+            [rect_x, rect_y, rect_w, rect_h],
+            simulation,
+            rules,
+        )?;
+        let signed = (input.cell.0 as i16, input.cell.1 as i16);
         let mut target =
             native_camera_target_from_signed(signed, map_size, tactical_size, terrain)?;
-        target.tracker_hit = hit.map(|(id, _)| id);
+        target.tracker_hit = input.tracker_hit;
         Some(target)
     }
 
@@ -637,9 +684,12 @@ mod tests {
             update.origin = pixel;
             tracker.update_object(update, false);
         }
-        let hit = tracker_object_signed_cell(&tracker, sim, rules, pixel);
-        let tracked = hit.map(|(_, cell)| cell);
-        let signed = signed_tracker_or_inverse_cell(surface, pixel, tracked);
+        let input_target = native_input_target_at_pixel(surface, &tracker, sim, rules, pixel);
+        assert_eq!(
+            input_target.tracker_hit,
+            (input["tracked"] != false).then_some(id)
+        );
+        let signed = (input_target.cell.0 as i16, input_target.cell.1 as i16);
         let expected = pair(&call("radar_pick")["cell"]);
         assert_eq!(
             (i32::from(signed.0), i32::from(signed.1)),

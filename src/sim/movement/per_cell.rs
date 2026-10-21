@@ -258,7 +258,7 @@ impl Simulation {
         // that `MapClass::Resize` (`0x00565C10`) allocates cells over, so no
         // arrival in a real cell fails it.
         if reason == PerCellReason::Arrival && self.per_cell_owner_alive(id) {
-            self.refresh_object_sight(id, rules, 0);
+            self.refresh_object_sight(id, rules, 0, effects);
             self.refresh_object_sight_border(id, UninitContext::new(rules, registry));
         }
         // Unit PerCell2 739EC0: after MCV retry, +6D1==0 admits
@@ -838,7 +838,7 @@ impl Simulation {
             // current-XYZ/cached-radius+3 Map567DA0 border, before the water
             // and rock check.
             if reason == PerCellReason::Arrival && self.per_cell_owner_alive(id) {
-                self.refresh_object_sight(id, rules, 0);
+                self.refresh_object_sight(id, rules, 0, effects);
                 self.refresh_object_sight_border(id, UninitContext::new(rules, registry));
             }
             if self.per_cell_owner_alive(id) {

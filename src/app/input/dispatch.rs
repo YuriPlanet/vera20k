@@ -17,12 +17,12 @@ use winit::keyboard::KeyCode;
 
 use crate::app::AppState;
 use crate::app::input::commands::{
-    cancel_build_by_type, cycle_active_producer, cycle_local_owner, place_ready_building_at_cursor,
+    cancel_build_by_type, cycle_active_producer, cycle_local_owner, place_ready_building_at_cell,
     place_starter_base_for_local_owner, preferred_local_owner, preferred_local_owner_name,
     queue_build_by_type, queue_house_cheer, schedule_command, spawn_test_units_for_local_owner,
     suspend_build,
 };
-use crate::app::input::context_order::try_queue_context_order_at_screen_point;
+use crate::app::input::context_order::{ContextOrderTarget, try_queue_context_order};
 use crate::app::input::entity_pick::{
     SelectionMutation, compute_box_selection_snapshot_with_playfield,
     compute_click_selection_snapshot_with_playfield,
@@ -289,11 +289,7 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                 if !state.match_state.input.tactical_mouse.end_left_press() {
                     return;
                 }
-                band_box_left_up(state);
-                // `0x00731CF0` ends the attack-move mode (`0x00B0FE58`) before
-                // each of BandBox_LeftUp's returns (`0x004ABC67`, `0x004ABC85`,
-                // `0x004AC294`), whatever the release did.
-                state.match_state.input.queued_order_mode = OrderMode::Move;
+                band_box_left_up(state, LeftUp::Tactical);
             }
         }
         MouseButton::Right => {
@@ -325,21 +321,104 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
     }
 }
 
-/// `DisplayClass::BandBox_LeftUp @ 0x004AB9B0` for a left release that held
-/// the capture.
-fn band_box_left_up(state: &mut AppState) {
+/// What reaches `DisplayClass::BandBox_LeftUp @ 0x004AB9B0`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum LeftUp {
+    /// A tactical left release that held the capture, at the cursor. The
+    /// release resolves its own pick and action (`0x00693271..0x0069328B`).
+    Tactical,
+    /// The radar's release (`0x00653D58`): `GetObjectAtRadarPixel`'s pick
+    /// and whether the action the radar kept is a superweapon's
+    /// ([`crate::app::input::radar`]).
+    Radar {
+        target: crate::render::radar::NativeRadarInputTarget,
+        super_weapon: bool,
+    },
+}
+
+/// `DisplayClass::BandBox_LeftUp @ 0x004AB9B0`. `0x00731CF0` ends the
+/// attack-move mode (`0x00B0FE58`) before each of its returns
+/// (`0x004ABC67`, `0x004ABC85`, `0x004AC294`), whatever the release did.
+pub(crate) fn band_box_left_up(state: &mut AppState, click: LeftUp) {
+    left_up_branches(state, click);
+    state.match_state.input.queued_order_mode = OrderMode::Move;
+}
+
+fn left_up_branches(state: &mut AppState, click: LeftUp) {
     // Repair / Sell cursor modes consume the click — toggle repair or
     // sell the own building under the cursor. The mode stays active
-    // (sticky) so the player can act on several buildings in a row.
-    if crate::app::input::commands::try_repair_sell_mode_click(state) {
+    // (sticky) so the player can act on several buildings in a row. The
+    // radar's keep table has no repair or sell action.
+    if matches!(click, LeftUp::Tactical)
+        && crate::app::input::commands::try_repair_sell_mode_click(state)
+    {
         return;
     }
-    if let Some(section) = state.armed_super_weapon_type().map(str::to_owned) {
-        crate::app::input::commands::launch_super_weapon_at_cursor(state, &section);
-        return;
-    }
+    // A pending placement takes the clicked Cell, whatever the action
+    // (`0x004ABA16..0x004ABC67`).
     if let Some(type_id) = state.armed_building_type().map(str::to_owned) {
-        place_ready_building_at_cursor(state, &type_id);
+        let cell = match click {
+            LeftUp::Tactical => crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
+                state,
+                state.match_state.input.cursor_x,
+                state.match_state.input.cursor_y,
+            ),
+            LeftUp::Radar { target, .. } => target.cell,
+        };
+        place_ready_building_at_cell(state, &type_id, cell);
+        return;
+    }
+    let LeftUp::Radar {
+        target,
+        super_weapon,
+    } = click
+    else {
+        tactical_left_up(state);
+        return;
+    };
+    // The selection's dispatch, each object asking its own What_Action
+    // (`Selection__DispatchMultiUnitOrder @ 0x004AE750`, at `0x004ABF94`), a
+    // superweapon action included; for one SPECIAL_PLACE follows
+    // (`0x004AC20C`). The radar never hands over a Select action, so a click
+    // the dispatch leaves to selection selects nothing.
+    //
+    // RESIDUAL: BandBox_LeftUp drops a picked object whose VisualCharacter
+    // is Hidden (`0x004AB9DF..0x004AB9EF`); the radar's pick is not tested.
+    // Trigger: a radar dot of an object hidden from the player. Effect: the
+    // order may target it. Frequency: rare.
+    // RESIDUAL: the dispatch hands Cell actions other than 1, 2 and 0x33
+    // the second Cell (-1,-1) (`0x004AE8FC`), which ClickedMission reads
+    // only into a Planning Mode record (`0x006FFC30`); VERA has no second
+    // Cell. Trigger: a kept superweapon, or a Cell Harvest, Guard or Attack,
+    // in Planning Mode. Effect: that record's third target. Frequency: rare.
+    try_queue_context_order(state, ContextOrderTarget::Radar(target), true);
+    if super_weapon && let Some(section) = state.armed_super_weapon_type().map(str::to_owned) {
+        crate::app::input::commands::launch_super_weapon_at_cell(state, &section, target.cell);
+    }
+}
+
+/// The tactical release past the placement branch: the superweapon's
+/// SPECIAL_PLACE, a planning node's connection, the band box and the click.
+fn tactical_left_up(state: &mut AppState) {
+    // DetermineAction answers the armed superweapon's action only with
+    // nothing selected (`0x00692610..0x00692673`); with a selection it is the
+    // best object's What_Action, which the click below dispatches. With
+    // nothing selected the dispatch has no receiver, so SPECIAL_PLACE alone
+    // remains.
+    if let Some(section) = state.armed_super_weapon_type().map(str::to_owned)
+        && selected_stable_ids_in_order(
+            state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .map(|rt| &rt.simulation),
+            state.rules(),
+            &state.match_state.input.selection_order,
+            state.match_state.input.selection_order_pending,
+        )
+        .is_empty()
+    {
+        crate::app::input::commands::launch_super_weapon_at_cursor(state, &section);
         return;
     }
     if crate::app::input::planning_mode::connect_at_cursor(state) {
@@ -418,7 +497,8 @@ fn band_box_left_up(state: &mut AppState) {
         route_click_action_before_type_select(action, |sx, sy| {
             // A resolved context dispatch consumes the click
             // even when its receiver admits no command.
-            try_queue_context_order_at_screen_point(state, sx, sy, true).then_some(())
+            try_queue_context_order(state, ContextOrderTarget::ScreenPoint(sx, sy), true)
+                .then_some(())
         },),
         ClickActionRoute::ContextOrder(())
     ) {
@@ -690,29 +770,18 @@ fn band_caught_drawn_object(
 }
 
 /// Minimap mouse body (routed here when the minimap ClickRegion consumes the
-/// edge). gamemd (decompile 0x006539D0) centers the tactical view on press
-/// edges (left OR right) and IGNORES held motion — there is no continuous
-/// camera-follow (the held branch is dropped in `handle_cursor_moved_in_game`).
+/// edge): `RadarClass::Action @ 0x006539D0` ([`crate::app::input::radar`]).
+/// It ignores held motion — there is no continuous camera-follow (the held
+/// branch is dropped in `handle_cursor_moved_in_game`) — and a right release
+/// only releases the gadget's sticky capture.
 pub(crate) fn minimap_mouse(state: &mut AppState, button: MouseButton, btn_state: ElementState) {
     if crate::app::input::campaign_input::is_locked(state) {
         return;
     }
-    match button {
-        MouseButton::Left => {
-            if btn_state.is_pressed() {
-                crate::app::presentation::sidebar_render::try_begin_minimap_drag(state);
-            } else if state.match_state.input.minimap_dragging {
-                state.match_state.input.minimap_dragging = false;
-            }
-        }
-        MouseButton::Right
-            // A right-press centers the view on the clicked cell (no command);
-            // right-release just releases the gadget's sticky capture.
-            if btn_state.is_pressed()
-                && crate::app::presentation::sidebar_render::is_cursor_over_minimap(state)
-            => {
-                crate::app::presentation::sidebar_render::update_camera_from_minimap_cursor(state);
-            }
+    match (button, btn_state.is_pressed()) {
+        (MouseButton::Left, true) => crate::app::input::radar::left_press(state),
+        (MouseButton::Left, false) => crate::app::input::radar::left_release(state),
+        (MouseButton::Right, true) => crate::app::input::radar::right_press(state),
         _ => {}
     }
 }
@@ -2074,21 +2143,73 @@ pub(crate) fn selected_stable_ids_in_order(
     if selection_order_pending {
         ordered
     } else {
-        admit_missing_selected_ids(ordered, sim, rules)
+        admit_missing_selected_ids(ordered, sim, rules, &[])
+    }
+}
+
+/// The frame's Selects the game made itself
+/// ([`crate::sim::world::LifecycleOutput::ObjectSelected`]), in call order.
+fn logic_selects(outputs: &[crate::sim::world::LifecycleOutput]) -> Vec<u64> {
+    outputs
+        .iter()
+        .filter_map(|output| match output {
+            crate::sim::world::LifecycleOutput::ObjectSelected { stable_id } => Some(*stable_id),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Insert the frame's logic Selects (`logic_selects`, in call order) into the
+/// ledger with ObjectClass::Select's front/back rule. Only an unselected
+/// object's Select succeeds, so an entry already in a committed ledger left
+/// the vector at its Deselect (`0x005F44A0` removes it from `0x00A8ECB8`) and
+/// re-enters at its last Select. A pending ledger is input's newest order,
+/// which the simulation has not yet committed; its entries keep their place.
+fn admit_logic_selects(
+    ordered: &mut VecDeque<u64>,
+    members: &mut HashSet<u64>,
+    sim: &crate::sim::world::Simulation,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    logic_selects: &[u64],
+    committed: bool,
+) {
+    if logic_selects.is_empty() {
+        return;
+    }
+    if committed {
+        let reselected: HashSet<_> = logic_selects.iter().copied().collect();
+        ordered.retain(|id| !reselected.contains(id));
+        members.retain(|id| !reselected.contains(id));
+    }
+    for (index, &id) in logic_selects.iter().enumerate() {
+        let last = !logic_selects[index + 1..].contains(&id);
+        if last
+            && sim
+                .entities()
+                .get(id)
+                .is_some_and(|entity| entity.selection.is_selected())
+            && members.insert(id)
+        {
+            insert_selected_id(ordered, id, sim, rules);
+        }
     }
 }
 
 /// Selection membership is a transient index, never an iteration authority.
-/// The ledger keeps prior order; lifecycle transfers still enter in entity-store
-/// order, with the same native front/back insertion as input selection. A deque
-/// avoids shifting the whole list for each missing armed object.
+/// The ledger keeps prior order; the frame's logic Selects enter in call
+/// order ([`admit_logic_selects`]); other lifecycle transfers (the raw Select
+/// writers) still enter in entity-store order, with the same native
+/// front/back insertion as input selection. A deque avoids shifting the whole
+/// list for each missing armed object.
 fn admit_missing_selected_ids(
     ordered: Vec<u64>,
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
+    logic_selects: &[u64],
 ) -> Vec<u64> {
     let mut members: HashSet<_> = ordered.iter().copied().collect();
     let mut ordered = VecDeque::from(ordered);
+    admit_logic_selects(&mut ordered, &mut members, sim, rules, logic_selects, true);
     for entity in sim.entities().values() {
         if entity.selection.is_selected() && members.insert(entity.stable_id()) {
             insert_selected_id(&mut ordered, entity.stable_id(), sim, rules);
@@ -2111,8 +2232,12 @@ fn selection_membership_committed(sim: &crate::sim::world::Simulation, ordered: 
 }
 
 /// Synchronize the app ledger after the due selection commands and lifecycle
-/// removals have committed for this frame.
-pub(crate) fn reconcile_selection_order_after_sim(state: &mut AppState) {
+/// removals have committed for this frame. `outputs` are the frame's
+/// lifecycle facts, whose logic Selects enter in call order.
+pub(crate) fn reconcile_selection_order_after_sim(
+    state: &mut AppState,
+    outputs: &[crate::sim::world::LifecycleOutput],
+) {
     let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
         state.match_state.input.selection_order.clear();
         state.match_state.input.selection_order_pending = false;
@@ -2124,6 +2249,7 @@ pub(crate) fn reconcile_selection_order_after_sim(state: &mut AppState) {
         &mut state.match_state.input,
         &runtime.simulation,
         Some(&runtime.resources.rules),
+        &logic_selects(outputs),
     );
 }
 
@@ -2133,6 +2259,7 @@ fn reconcile_selection_order_for_sim(
     input: &mut crate::app::input::state::MatchInputState,
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
+    logic_selects: &[u64],
 ) {
     // Navigation733160 consumes actual pointer expiry through LifecycleOutput,
     // independently of this membership ledger. Alive/Health/Deselect alone
@@ -2142,6 +2269,7 @@ fn reconcile_selection_order_for_sim(
         rules,
         &input.selection_order,
         input.selection_order_pending,
+        logic_selects,
     );
     input.selection_order = order;
     input.selection_order_pending = pending;
@@ -2150,25 +2278,42 @@ fn reconcile_selection_order_for_sim(
 /// Shared reconciliation decision for the live input ledger and a saved
 /// local-view record. The simulation's command queue remains authoritative;
 /// observing a save boundary neither drains nor applies queued commands.
+/// `logic_selects` are the just-finished frame's logic Selects; a save
+/// boundary, between frames, has none.
 pub(crate) fn selection_order_for_world(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     order: &[u64],
     pending: bool,
+    logic_selects: &[u64],
 ) -> (Vec<u64>, bool) {
     if pending && sim.has_pending_selection_commands() {
-        return (
-            order
-                .iter()
-                .copied()
-                .filter(|id| {
-                    sim.entities()
-                        .get(*id)
-                        .is_some_and(|entity| entity.lifecycle.object_alive())
-                })
-                .collect(),
-            true,
-        );
+        let mut ordered: VecDeque<u64> = order
+            .iter()
+            .copied()
+            .filter(|id| {
+                sim.entities()
+                    .get(*id)
+                    .is_some_and(|entity| entity.lifecycle.object_alive())
+            })
+            .collect();
+        // Native Selects all write the one vector at once, so a logic Select
+        // joins the provisional ledger too.
+        //
+        // RESIDUAL: native commits an input Select at input time, before any
+        // later logic Select; here the queued snapshot commits after it.
+        // Trigger: a logic Select (crew, escaping passenger, released
+        // parasite or their planning partners) while a selection snapshot
+        // is queued. Effect: this ledger holds that object beside the
+        // input's members, even across owners, and the logic Select's
+        // Unselect_All tests and drains the older committed selection; then
+        // the snapshot deselects the object, which native keeps (alone,
+        // across owners). Frequency: only within a selection input's command
+        // latency. Downstream risk: the selection, its Follow and the next
+        // orders' recipients.
+        let mut members = ordered.iter().copied().collect();
+        admit_logic_selects(&mut ordered, &mut members, sim, rules, logic_selects, false);
+        return (ordered.into(), true);
     }
     // MainTick55D8AB/55D8B4 commits local Select before Logic55DC9E.
     // A consumed snapshot may have been refused or then deselected by
@@ -2184,7 +2329,7 @@ pub(crate) fn selection_order_for_world(
                 .is_some_and(|entity| entity.selection.is_selected())
         })
         .collect();
-    let reconciled = admit_missing_selected_ids(reconciled, sim, rules);
+    let reconciled = admit_missing_selected_ids(reconciled, sim, rules, logic_selects);
     debug_assert!(selection_membership_committed(sim, &reconciled));
     (reconciled, false)
 }
@@ -2303,12 +2448,41 @@ fn resolve_selection_mutation(
     let mut members: HashSet<_> = ordered.iter().copied().collect();
     let mut successful_adds = Vec::new();
     let mut first_select_adds = 0;
-    let mut select = |id: u64, ordered: &mut VecDeque<u64>, adds: &mut Vec<u64>| {
+    // Every input Select is vt+0x14C, TechnoClass::Select (0x006FBFA0 in
+    // each Techno vtable; click 0x004ABDBA/0x004ABE72, band 0x004AC2F1,
+    // team 0x00731344/0x0073156C, the type, combatant, category and
+    // next-object walks): its gate (`techno_select_admits`), then
+    // ObjectClass::Select (0x005F4520, called only from 0x006FBFC7): the
+    // admission against the newest ledger and placement and, into a
+    // non-empty selection, Unselect_All (0x0048DC90 at 0x005F45F8,
+    // `select_unselects_all`) against the ledger's first entry, whose
+    // Deselects (0x005F44A0) release Follow, before the insert. So the
+    // player's object drains another house's selection, and the reverse.
+    // VERA-only residual: the trainer's Reveal Map lets the picker reach an
+    // enemy the current house has not discovered, and this gate refuses it
+    // (gamemd has no presentation-only reveal). Debug builds only.
+    let select = |id: u64,
+                  ordered: &mut VecDeque<u64>,
+                  members: &mut HashSet<u64>,
+                  adds: &mut Vec<u64>,
+                  follow_target: &mut Option<u64>| {
         if placement_armed
             || members.contains(&id)
+            || !sim.techno_select_admits(id)
             || !rules.is_some_and(|rules| sim.can_select_object(id, rules))
         {
             return false;
+        }
+        if ordered
+            .front()
+            .is_some_and(|&first| sim.select_unselects_all(first, id))
+        {
+            for removed in ordered.drain(..) {
+                members.remove(&removed);
+                if *follow_target == Some(removed) {
+                    *follow_target = None;
+                }
+            }
         }
         members.insert(id);
         adds.push(id);
@@ -2316,7 +2490,13 @@ fn resolve_selection_mutation(
         true
     };
     for &id in &mutation.select {
-        if !select(id, &mut ordered, &mut successful_adds) {
+        if !select(
+            id,
+            &mut ordered,
+            &mut members,
+            &mut successful_adds,
+            &mut follow_target,
+        ) {
             continue;
         }
         native_selection_mode_reset = true;
@@ -2324,12 +2504,17 @@ fn resolve_selection_mutation(
         // port names the tail-node partners to Select (vt+0x14C) here; these
         // nested Selects do not expand again (AC4CF6). They run before the
         // band-box callback clears the voice latch (0x004AC2FB), so they
-        // speak with their Select. Residual: members pass only
-        // `can_select_object`, not 6FBFA0's +0x41B/IsHumanPlayer gate or
-        // 5F4520's cross-owner Unselect_All (0x005F45AF..0x005F45F8); that
-        // differs only for another human player's plan.
+        // speak with their Select. A connect (0x0063AD50) can put another
+        // house's object on the player's node; its Select drains the ledger
+        // like any other.
         for member in sim.planning_select_partners(id, planning_active) {
-            select(member, &mut ordered, &mut successful_adds);
+            select(
+                member,
+                &mut ordered,
+                &mut members,
+                &mut successful_adds,
+                &mut follow_target,
+            );
         }
         if first_select_adds == 0 {
             first_select_adds = successful_adds.len();
@@ -2460,6 +2645,46 @@ mod item83_selection_order_tests {
         assert!(selected_stable_ids_in_order(None, Some(&rules), &[10], false).is_empty());
     }
 
+    /// The game's own Selects (TechnoClass::Select vt+0x14C from Logic, e.g.
+    /// a reselected escapee and its planning-node partners) reach the vector
+    /// in call order through ObjectClass::Select's front/back rule
+    /// (`0x005F468C`/`0x005F470E`), not in entity-store order. A ledger entry
+    /// whose byte was cleared and set again left the vector at its Deselect
+    /// (`0x005F44A0`) and re-enters at its last Select.
+    #[test]
+    fn logic_selects_enter_the_ledger_in_call_order() {
+        use super::selection_order_for_world;
+        use crate::sim::command::{Command, CommandEnvelope};
+        let (mut sim, rules) = mixed_selection_fixture();
+        let read = |sim: &Simulation, prior: &[u64], pending, selects: &[u64]| {
+            selection_order_for_world(sim, Some(&rules), prior, pending, selects)
+        };
+        // Store order would give [30, 10, 20, 50].
+        assert_eq!(read(&sim, &[20], false, &[50, 30, 10]).0, [10, 30, 20, 50]);
+        // The last of repeated Selects places the object; an object whose
+        // Select was undone (40) stays out.
+        assert_eq!(
+            read(&sim, &[20, 50], false, &[10, 30, 40, 10]).0,
+            [10, 30, 20, 50]
+        );
+        assert_eq!(
+            read(&sim, &[10, 20, 30, 50], false, &[20]).0,
+            [10, 30, 50, 20]
+        );
+        // A queued input Select keeps its provisional place; a logic Select
+        // joins the provisional ledger.
+        let owner = sim.intern("Americans");
+        sim.queue_command(CommandEnvelope::new(
+            owner,
+            2,
+            Command::Select {
+                entity_ids: vec![20],
+                additive: false,
+            },
+        ));
+        assert_eq!(read(&sim, &[20], true, &[30, 20]), (vec![30, 20], true));
+    }
+
     #[test]
     fn selection_pending_clears_only_when_committed_membership_matches() {
         let (sim, _) = mixed_selection_fixture();
@@ -2588,8 +2813,10 @@ mod item83_selection_order_tests {
         let kind = sim.intern("TESTUNIT");
         sim.houses_mut_for_test()
             .register(crate::sim::house_state::HouseState::new(
-                local, 0, None, false, 0, 10,
+                local, 0, None, true, 0, 10,
             ));
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
         for id in [42, 43, 44] {
             let mut entity = GameEntity::new_at_frame_zero_for_test(
                 id,
@@ -2671,6 +2898,243 @@ mod item83_selection_order_tests {
             },
         );
         assert!(effects.successful_adds.is_empty());
+    }
+
+    /// The current human house `Local` with units 42, 43 and 44 and a
+    /// computer house `Enemy` with units 50 and 51, out of Limbo; the
+    /// `discovered` enemy units have `+0x41B` set.
+    fn two_house_fixture(discovered: &[u64]) -> (Simulation, RuleSet) {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=TESTUNIT\n[TESTUNIT]\n",
+        ))
+        .expect("selection fixture rules");
+        let mut sim = Simulation::new();
+        let local = sim.intern("Local");
+        let enemy = sim.intern("Enemy");
+        let kind = sim.intern("TESTUNIT");
+        for (house, index, human) in [(local, 0, true), (enemy, 1, false)] {
+            sim.houses_mut_for_test()
+                .register(crate::sim::house_state::HouseState::new(
+                    house, index, None, human, 0, 10,
+                ));
+        }
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
+        for (id, owner) in [
+            (42, local),
+            (43, local),
+            (44, local),
+            (50, enemy),
+            (51, enemy),
+        ] {
+            let mut entity = GameEntity::new_at_frame_zero_for_test(
+                id,
+                1,
+                1,
+                0,
+                0,
+                owner,
+                Health::new(100),
+                kind,
+                EntityCategory::Unit,
+                0,
+                5,
+                false,
+            );
+            entity.lifecycle.set_in_limbo_for_test(false);
+            entity
+                .discovery
+                .set_discovered_by_current_house_for_test(discovered.contains(&id));
+            sim.entities_mut_for_test().insert(entity);
+        }
+        (sim, rules)
+    }
+
+    /// Put each actor on the player's node at (5, 7) in turn: the player's
+    /// by a planned move, another house's by a connect (`0x0063AD50`).
+    fn plan_to_shared_node(sim: &mut Simulation, rules: &RuleSet, actors: &[u64]) {
+        use crate::sim::command::Command;
+        let local = sim.intern("Local");
+        for &actor in actors {
+            let record = if sim.house_is_human_player(sim.entities().get(actor).unwrap().owner()) {
+                sim.encode_planning_order_record(
+                    local,
+                    &Command::Move {
+                        entity_id: actor,
+                        target_rx: 5,
+                        target_ry: 7,
+                    },
+                )
+            } else {
+                sim.encode_plan_connect_record(local, actor, (5, 7))
+            }
+            .unwrap();
+            let command = sim.decode_native_command_record(&record, 0).unwrap();
+            assert!(sim.apply_command("Local", &command.payload, Some(rules)));
+        }
+    }
+
+    /// A connect (`0x0063AD50`) can put another house's object on the
+    /// player's node. Each partner Select passes TechnoClass::Select's gate
+    /// (`0x006FBFA3..0x006FBFC3`: discovered `+0x41B` or the human player's)
+    /// and ObjectClass::Select's Unselect_All against the first selected
+    /// object (`0x005F45AF..0x005F45F8`), through the simulation's owners.
+    #[test]
+    fn a_planning_partner_of_another_house_passes_the_select_gate_and_unselects_all() {
+        use super::{SelectionMutation, resolve_selection_mutation};
+        for discovered in [true, false] {
+            let (mut sim, rules) = two_house_fixture(if discovered { &[50] } else { &[] });
+            plan_to_shared_node(&mut sim, &rules, &[42, 50, 43, 51]);
+            assert_eq!(sim.planning_select_partners(42, true), [42, 50, 43, 51]);
+            let effects = resolve_selection_mutation(
+                &sim,
+                Some(&rules),
+                vec![],
+                Some(42),
+                false,
+                true,
+                &SelectionMutation {
+                    clear: true,
+                    select: vec![42],
+                    ..Default::default()
+                },
+            );
+            if discovered {
+                // 50 drains 42 (Follow with it); 43 drains 50; 51 is refused.
+                assert_eq!(effects.ordered, [43]);
+                assert_eq!(effects.successful_adds, [42, 50, 43]);
+                assert_eq!(effects.follow_target, None);
+            } else {
+                assert_eq!(effects.ordered, [42, 43]);
+                assert_eq!(effects.successful_adds, [42, 43]);
+            }
+        }
+    }
+
+    /// Recall (`0x007311C0`) clears, then Selects each member through
+    /// vt+0x14C (`0x00731344`). When the first member's tail node ends on
+    /// another house's discovered object, that partner is left alone in the
+    /// selection, and the next member's own Select drains it
+    /// (`0x005F45AF..0x005F45F8`).
+    #[test]
+    fn a_later_member_select_drains_another_houses_planning_partner() {
+        use super::{SelectionMutation, resolve_selection_mutation};
+        let (mut sim, rules) = two_house_fixture(&[50]);
+        plan_to_shared_node(&mut sim, &rules, &[42, 50]);
+        assert_eq!(sim.planning_select_partners(42, true), [42, 50]);
+        let effects = resolve_selection_mutation(
+            &sim,
+            Some(&rules),
+            vec![],
+            None,
+            false,
+            true,
+            &SelectionMutation {
+                clear: true,
+                select: vec![42, 44],
+                ..Default::default()
+            },
+        );
+        assert_eq!(effects.ordered, [44]);
+        assert_eq!(effects.successful_adds, [42, 50, 44]);
+    }
+
+    /// The band callback (`0x004AC2B0`) Selects only the player's objects
+    /// (vt+0x14C at `0x004AC2F1`), and a Shift drag skips the clear. A
+    /// selected enemy is current-objects `[0]`, so the first Select runs
+    /// Unselect_All (`0x005F45F8`), whose Deselect also releases Follow.
+    #[test]
+    fn a_shift_band_over_own_units_drains_a_selected_enemy() {
+        use super::{SelectionMutation, resolve_selection_mutation};
+        let (sim, rules) = two_house_fixture(&[50]);
+        let order: Vec<u64> = sim
+            .entities()
+            .values()
+            .map(|entity| entity.stable_id())
+            .collect();
+        let mutation = crate::app::input::entity_pick::compute_box_selection_snapshot(
+            sim.entities(),
+            &order,
+            &order,
+            &[50],
+            None,
+            Some("Local"),
+            -1.0e6,
+            -1.0e6,
+            1.0e6,
+            1.0e6,
+            true,
+            Some(&rules),
+            None,
+            Some(sim.interner()),
+        )
+        .expect("the band caught objects");
+        assert_eq!(
+            mutation,
+            SelectionMutation {
+                select: vec![42, 43, 44],
+                ..Default::default()
+            }
+        );
+        let effects = resolve_selection_mutation(
+            &sim,
+            Some(&rules),
+            vec![50],
+            Some(50),
+            false,
+            false,
+            &mutation,
+        );
+        assert_eq!(effects.ordered, [42, 43, 44]);
+        assert_eq!(effects.successful_adds, [42, 43, 44]);
+        assert_eq!(effects.follow_target, None);
+    }
+
+    /// A Shift click while the player's units are selected is the toggle
+    /// arm's Select (`0x004ABDBA`), which clears nothing itself. For an enemy
+    /// its ObjectClass::Select drains the units (`0x005F45AF..0x005F45F8`);
+    /// TechnoClass::Select's gate (`0x006FBFA3..0x006FBFC3`) refuses an
+    /// undiscovered one first, which leaves them selected.
+    #[test]
+    fn a_shift_click_on_an_enemy_selects_it_through_select() {
+        use super::{SelectionMutation, resolve_selection_mutation};
+        let (sim, rules) = two_house_fixture(&[50]);
+        for (enemy, ordered) in [(50, vec![50]), (51, vec![42, 43])] {
+            let (x, y) = crate::render::locomotor_visual::screen_position(
+                sim.entities().get(enemy).unwrap(),
+            );
+            let mutation = crate::app::input::entity_pick::compute_click_selection_snapshot(
+                sim.entities(),
+                &[enemy],
+                &[42, 43],
+                None,
+                Some("Local"),
+                x,
+                y,
+                true,
+                Some(&rules),
+                Some(sim.interner()),
+            )
+            .expect("the click picked the enemy");
+            assert_eq!(
+                mutation,
+                SelectionMutation {
+                    select: vec![enemy],
+                    ..Default::default()
+                }
+            );
+            let effects = resolve_selection_mutation(
+                &sim,
+                Some(&rules),
+                vec![42, 43],
+                Some(42),
+                false,
+                false,
+                &mutation,
+            );
+            assert_eq!(effects.ordered, ordered, "enemy {enemy}");
+            assert_eq!(effects.follow_target, (enemy == 51).then_some(42));
+        }
     }
 }
 
@@ -3201,8 +3665,9 @@ fn reassign_control_group(
     assign_control_group(groups, slot, target_members);
 }
 
-/// Keep the current legal selection intact when Shift+digit adds eligible
-/// control-group members. Ordinary click selection may include enemy objects.
+/// Shift+digit (AddTeam `0x007314C0`) clears nothing and Selects each group
+/// member after the current selection; each Select runs the ledger's gate and
+/// Unselect_All, so a lone selected enemy is drained by the first member.
 fn append_group_members_to_selection(mut selected: Vec<u64>, group: &[u64]) -> Vec<u64> {
     selected.extend_from_slice(group);
     selected
@@ -4269,22 +4734,45 @@ mod control_group_tests {
     }
 
     #[test]
-    fn shift_group_add_preserves_a_legitimately_selected_enemy() {
+    fn shift_group_add_drains_a_selected_enemy() {
         use crate::sim::world::Simulation;
 
+        let rules = crate::rules::ruleset::RuleSet::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str("[VehicleTypes]\n0=MTNK\n[MTNK]\n"),
+        )
+        .expect("group fixture rules");
         let mut sim = Simulation::new();
         let local = house(&mut sim, "Local", false, true);
         let enemy = house(&mut sim, "Enemy", false, false);
         group_entity(&mut sim, 10, local);
         group_entity(&mut sim, 11, enemy);
+        for id in [10, 11] {
+            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            entity.lifecycle.set_in_limbo_for_test(false);
+        }
 
         let live_group = live_group_members(Some(&sim), &[10, 11]);
         assert_eq!(live_group, [10], "only eligible group members are recalled");
-        assert_eq!(
-            append_group_members_to_selection(vec![11], &live_group),
-            [11, 10],
-            "Shift+digit keeps the ordinary click-selected enemy and adds the eligible group"
+        // AddTeam (0x007314C0) clears nothing and Selects each eligible
+        // member (vt+0x14C at 0x0073156C); the click-selected enemy is
+        // current-objects [0], so that Select's Unselect_All
+        // (0x005F45AF..0x005F45F8) drains it.
+        let calls = append_group_members_to_selection(vec![11], &live_group);
+        assert_eq!(calls, [11, 10]);
+        let effects = super::resolve_selection_mutation(
+            &sim,
+            Some(&rules),
+            vec![11],
+            None,
+            false,
+            false,
+            &super::SelectionMutation {
+                select: calls,
+                ..Default::default()
+            },
         );
+        assert_eq!(effects.ordered, [10]);
+        assert_eq!(effects.successful_adds, [10]);
     }
 
     #[test]

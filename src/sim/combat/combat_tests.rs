@@ -1876,11 +1876,14 @@ fn make_structure_entity(
     entity
 }
 
+/// `damage_events` holds each killing call's record; an infantryman's death
+/// arm reads its warhead's InfDeath.
 fn run_combat_death_handoff(
     entities: &mut EntityStore,
     rules: &RuleSet,
     interner: &mut crate::sim::intern::StringInterner,
     dead_entities: &[u64],
+    damage_events: &[EntityDamageEvent],
 ) -> DeathEffects {
     let mut occupancy = OccupancyGrid::new();
     let mut houses = crate::sim::houses::Houses::default();
@@ -1900,7 +1903,7 @@ fn run_combat_death_handoff(
         &mut scenario_rng,
         &mut handled_deaths,
         dead_entities,
-        &[],
+        damage_events,
         None,
         None,
         None,
@@ -1979,7 +1982,7 @@ fn lifecycle_authority_immediate_combat_death_reaches_uninit_without_precleanup(
     store.insert(observer);
 
     let mut interner = test_interner();
-    let result = run_combat_death_handoff(&mut store, &rules, &mut interner, &[1]);
+    let result = run_combat_death_handoff(&mut store, &rules, &mut interner, &[1], &[]);
 
     assert_eq!(result.immediate_uninit_ids, vec![1]);
     assert_eq!(result.despawned_ids, vec![1]);
@@ -2042,7 +2045,7 @@ fn lifecycle_authority_combat_leaves_transport_cargo_for_carrier_uninit() {
     store.insert(make_entity(3, "MTNK", 6, 5, 300));
 
     let mut interner = test_interner();
-    let result = run_combat_death_handoff(&mut store, &rules, &mut interner, &[1]);
+    let result = run_combat_death_handoff(&mut store, &rules, &mut interner, &[1], &[]);
 
     assert_eq!(result.immediate_uninit_ids, vec![1]);
     let carrier = store.get(1).unwrap();
@@ -2061,7 +2064,7 @@ fn lifecycle_authority_combat_leaves_transport_cargo_for_carrier_uninit() {
 
 #[test]
 fn lifecycle_authority_animated_combat_handoff_changes_only_health_and_sequence() {
-    let rules = infantry_fire_frame_rules();
+    let rules = infantry_fire_frame_rules_with("[SA]\nInfDeath=1\n");
     let mut store = EntityStore::new();
 
     let mut dead = make_infantry_entity(1, "E1", 5, 5, 0);
@@ -2082,7 +2085,9 @@ fn lifecycle_authority_animated_combat_handoff_changes_only_health_and_sequence(
     store.insert(observer);
 
     let mut interner = test_interner();
-    let result = run_combat_death_handoff(&mut store, &rules, &mut interner, &[1]);
+    // The killing call's record: its InfDeath=1 warhead takes the Die1 arm.
+    let killing = EntityDamageEvent::area(1, 125, 0, RAD_NO_ATTACKER, None, interner.intern("SA"));
+    let result = run_combat_death_handoff(&mut store, &rules, &mut interner, &[1], &[killing]);
 
     assert!(result.immediate_uninit_ids.is_empty());
     assert_eq!(result.despawned_ids, vec![1]);
@@ -10832,7 +10837,7 @@ fn a_dying_buildings_debris_leaves_from_its_centre() {
     store.insert(building);
     let mut interner = test_interner();
 
-    let effects = run_combat_death_handoff(&mut store, &rules, &mut interner, &[2]);
+    let effects = run_combat_death_handoff(&mut store, &rules, &mut interner, &[2], &[]);
 
     let debris = interner.intern("DBRIS1LG");
     let spawns: Vec<_> = effects

@@ -1092,6 +1092,11 @@ without assuming presentation state resets with the simulation clock. The
 projection shares the100000-draw budget and does not add simulation observation
 samples.
 
+Comparison requires matching clock policies and consumed draw times. Tooltip
+projections are observed output: changes at any draw are reported as `MISMATCH`
+under `presentation_clock.draws[index].tooltip`, even when the final frame is
+unchanged. Malformed transcripts or different clock schedules remain `INVALID`.
+
 The required v4 `render.neutral_input` has exactly
 `{"static_default_cursor":true,"camera_input_idle":true}`. Rust verifies these
 prerequisites and render readiness on every draw before publishing the final
@@ -1203,6 +1208,16 @@ used immediately by the mouse press.
 The existing local-key gesture policy carries that projection even without a key.
 A moving tracker hit follows its object's virtual+4C navigation coordinate before
 the radar's signed clamp, Cell ground center and immediate camera update.
+
+[`map_observation.radar-orders.example.json`](map_observation.radar-orders.example.json)
+builds a Soviet radar and conscript on stock XMP03T4 through ordinary production.
+It clicks the minimap before selection, selects the conscript, clicks a different
+minimap position, then holds Z for two more clicks and releases it. Inspect the
+gesture receipts for the camera-only first click, the selected unit's Move command
+with an unchanged camera, and two PlanningRecord commands followed by the release
+commit. The final planning path should retain two nodes with editing disabled.
+These are Rust production-input observations; they do not establish whole-run
+native equivalence.
 
 ## Literal keyboard gestures
 
@@ -1500,13 +1515,13 @@ parts; the resident and last-build sprite counts stay at 2,400 throughout these
 captures. These measurements exclude other caches and driver allocations.
 
 The [building comparison](voxel_oracle/building_barrel.md) executes original
-loader and draw instructions; the [recoil comparison](voxel_oracle/recoil.md)
-executes readers, firing gates and complete update histories. These bounded
-component comparisons and production captures do not establish native pixel
-parity. Native cache-pool lifetime, custom barrel overrides, upgrade-provided
-turrets and EMP cannon missions remain separate mechanisms. The retained
-three-pixel drawing anchor and measured subpixel float rounding remain visual
-residuals.
+loader and draw instructions and the stock guns' rasters; the
+[recoil comparison](voxel_oracle/recoil.md) executes readers, firing gates and
+complete update histories. These bounded component comparisons and production
+captures do not establish native pixel parity. Native cache-pool lifetime, custom
+barrel overrides, upgrade-provided turrets and EMP cannon missions remain separate
+mechanisms. Measured subpixel float rounding of a translated gun remains a visual
+residual.
 
 ## V3 rocket pitch observation
 

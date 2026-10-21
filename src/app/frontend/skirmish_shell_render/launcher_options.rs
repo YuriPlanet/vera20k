@@ -217,6 +217,7 @@ fn build_text(
                 dialog.shell_checkbox_checked(LauncherCheckboxId::OriginalShape),
             ),
             LauncherComboId::Sidebar => dialog.shell_selected_sidebar(layout).label().to_owned(),
+            LauncherComboId::Display => dialog.shell_display_label(),
         };
         out.push(text_draw(
             font,
@@ -416,6 +417,7 @@ pub(crate) fn render_launcher_options(
                 .into_iter()
                 .map(|size| size.label().to_owned())
                 .collect(),
+            LauncherComboId::Display => dialog.shell_display_rows(),
         };
         for (i, row_text) in rows.iter().enumerate() {
             let rect = popup.row_rect(i);

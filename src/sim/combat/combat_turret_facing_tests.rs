@@ -379,8 +379,8 @@ TurretAnimIsVoxel={}\n\n\
 /// shot, hull turns, and FacingClass interpolation — turret current and
 /// desired facing and the `+0x6AF` latch, frame for frame, through VERA's
 /// `facing_update` and `apply_unit_facing`. Rows exercising arms VERA does not
-/// model on this path (OmniFire, TurretLocked, a Battle Bunker, Magnetron,
-/// a NavCom, no weapon) are left out, as are
+/// model on this path (OmniFire, TurretLocked, a Battle Bunker, no weapon)
+/// are left out, as are
 /// targets off the map (negative world coordinates), which VERA's cell
 /// positions cannot hold.
 #[test]
@@ -411,18 +411,10 @@ fn turret_cadence_matches_the_original() {
         let int = |key: &str| input[key].as_i64().unwrap_or(0);
         let turret_spins = int("turret_spins") != 0;
         let weapon = &input["weapon"];
-        let navcom_events = input["events"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|event| event["kind"].as_str().unwrap().contains("navcom"));
         if weapon["present"] != 1
             || weapon["omni_fire"] != 0
             || weapon["turret_locked"] != 0
             || int("bunkered") != 0
-            || int("magnetron") != 0
-            || !input["navcom_coord"].is_null()
-            || navcom_events
             || (int("hull_rot") != int("turret_rot") && !turret_spins)
             || off_map(input)
         {
@@ -470,6 +462,13 @@ fn turret_cadence_matches_the_original() {
         unit.turret_rotation_latch
             .set_for_test(int("latch_init") != 0);
         unit.set_unit_simple_deploy_for_test(int("deployed") != 0, false, false);
+        unit.lift.set_swap_active_for_test(int("magnetron") != 0);
+        let mut navcom = GameEntity::test_default(3, "MTNK", "Americans", 0, 0);
+        if !input["navcom_coord"].is_null() {
+            place(&mut navcom, coord(&input["navcom_coord"]));
+            unit.navigation
+                .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::object(3)));
+        }
         let mut target = GameEntity::test_default(2, "GAPILE", "Soviet", 0, 0);
         if !input["target_coord"].is_null() {
             place(&mut target, coord(&input["target_coord"]));
@@ -477,6 +476,7 @@ fn turret_cadence_matches_the_original() {
         }
         sim.substrate.entities.insert(unit);
         sim.substrate.entities.insert(target);
+        sim.substrate.entities.insert(navcom);
         use_test_interner(&mut sim);
         let start = int("start") as u32;
         let events = input["events"].as_array().unwrap();
@@ -501,6 +501,25 @@ fn turret_cadence_matches_the_original() {
                             .unwrap()
                             .attack_target
                             .set_for_test(None);
+                    }
+                    "navcom_coord" => {
+                        place(sim.substrate.entities.get_mut(3).unwrap(), coord(value));
+                        sim.substrate
+                            .entities
+                            .get_mut(1)
+                            .unwrap()
+                            .navigation
+                            .set_nav_com_for_test(Some(
+                                crate::sim::components::NavTargetRef::object(3),
+                            ));
+                    }
+                    "clear_navcom" => {
+                        sim.substrate
+                            .entities
+                            .get_mut(1)
+                            .unwrap()
+                            .navigation
+                            .set_nav_com_for_test(None);
                     }
                     "last_fire" => {
                         sim.substrate
@@ -571,6 +590,6 @@ fn turret_cadence_matches_the_original() {
         }
         compared += 1;
     }
-    assert!(compared >= 40, "only {compared} rows compared");
+    assert!(compared >= 52, "only {compared} rows compared");
     assert!(issues.is_empty(), "{}", issues.join("\n"));
 }

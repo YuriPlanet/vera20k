@@ -46,6 +46,25 @@
 //! then arms its own delayed shot, whose damage grows with the count
 //! ([`prism_arm`], [`ObjectSubstrate::take_support_bonus`](crate::sim::world::ObjectSubstrate::take_support_bonus)).
 //!
+//! An unarmed Mission_Guard of a UnitRepair, UnitReload or Bunker type
+//! (`+0x16A9/+0x16AA/+0x16AB`) queues Repair without Commence from two arms:
+//! at status 1 for a contact in Enter under 64 leptons that answers
+//! NEED_TO_MOVE with ROGER, returning 1 with no draw (`0x00449817..
+//! 0x00449950`), and, for a UnitReload type only, from any status when its
+//! first contact refuses QUERY_RELOADED and answers NEED_TO_MOVE with ROGER,
+//! before the Rate tail's draw (`0x00449970..0x004499B5`). Neither writes
+//! `+0x6DD`: UpdateAnimation sets it on every frame its stage does not step
+//! while BState is -1 or the stage rate (`+0x10C`) is 0 (`0x00451205..
+//! 0x00451218`), past its turret gate (`0x00451145..0x0045116F`). So a
+//! building without a turret on its idle body (rate 0), as every stock type
+//! of the three is, commences that Repair at the after-AI ready check of the
+//! same frame (`0x0043FF91..0x0043FFAD`) and runs its handler
+//! (`docking::building_dock::mission_repair`) on the next. An airfield whose
+//! first contact sits stopped in Enter and refuses QUERY_RELOADED therefore
+//! alternates Guard and Repair every frame, one Scenario draw per Guard
+//! visit, until that contact changes: its Repair skips a contact in Enter and
+//! queues Guard (`docking::airfield_reload`).
+//!
 //! Evidence: `tools/spatial_oracle/building_guard_attack.json`, replayed in
 //! the tests below: Mission_Guard's returns and Scenario draws per arm,
 //! Mission_Attack's return and actions per fire-error code,
@@ -63,14 +82,10 @@
 //! The house-color Prism support/main lasers now emit ordered copied births
 //! through `combat::laser` and share the app LaserDraw/DSurface owner. The
 //! remaining non-house randomized spread path belongs to DrawBeam550260.
-//! - UnitReload/Bunker Guard contact admission remains with those separate
-//!   families (449817..499B5). UnitRepair's raw-distance/NEED_MOVE/Repair
-//!   queue is ported here; DOCK_NOW independently supplies its ready latch.
-//!   Trigger: airfield reload or bunker entry. Effect: Guard's queued mission
-//!   and Scenario draw count still differ on those paths. Foundation waiters
-//!   and the full arrival position producer are bounded by the depot corpus.
-//!   WeaponsFactory ClearBibArea449540 is dormant with retail data because
-//!   every stock WeaponsFactory retains HasStupidGuardMode.
+//! - Guard's status-1 contact arm: foundation waiters and the full arrival
+//!   position producer are bounded by the depot corpus. WeaponsFactory
+//!   ClearBibArea449540 is dormant with retail data because every stock
+//!   WeaponsFactory retains HasStupidGuardMode.
 //! - Voxel HVA frames now reach `emit_building_turret_vxl`: original43DA80
 //!   selects +148 modulo the turret's frames (or the barrel's frames on the
 //!   barrel-only arm); a separate barrel uses frame0. Native component
@@ -756,9 +771,12 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
         );
         entity.mission.set_handler_state(1);
     }
-    if status == 1 && obj.unit_repair {
-        //449815..44994A: scan contacts in slot order, raw GetCoords 3D
-        //distance <64 (no Building foundation discount), then NEED_MOVE.
+    // `0x00449817..0x00449833`: UnitRepair, UnitReload or Bunker
+    // (`+0x16A9/+0x16AA/+0x16AB`) takes the contact arm.
+    if status == 1 && (obj.unit_repair || obj.unit_reload || obj.bunker) {
+        //449839..44994A: scan contacts in slot order, raw GetCoords 3D
+        //distance <64 (no Building foundation discount), then NEED_MOVE;
+        //on ROGER queue Repair and return 1 with no Scenario draw.
         let contacts: Vec<_> = sim
             .substrate
             .entities
@@ -808,6 +826,34 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
                 );
                 return 1;
             }
+        }
+    }
+    // `0x00449970..0x004499B5`, reached from every status: a UnitReload
+    // type in radio contact (`0x0065AE30`, any slot filled) asks its first
+    // contact QUERY_RELOADED 0x1D (vt+0x274, `0x0065ACB0`: slot 0 only, 0
+    // when it is empty); unless that is ROGER it sends NEED_TO_MOVE 0x13 the
+    // same way, and on ROGER queues Repair without Commence (vt+0x1E8). It
+    // falls through to the Rate tail and its draw either way.
+    if obj.unit_reload
+        && sim
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| !entity.radio_contacts.is_empty())
+    {
+        use crate::sim::radio::{RadioMessage, RadioResponse, transmit_to_contact};
+        if transmit_to_contact(sim, id, RadioMessage::QueryReloaded, rules, ctx.effects)
+            != RadioResponse::Roger
+            && transmit_to_contact(sim, id, RadioMessage::NeedToMove, rules, ctx.effects)
+                == RadioResponse::Roger
+        {
+            let _ = sim.mission_queue_exact(
+                id,
+                MissionId::from_known(MissionType::Repair),
+                0,
+                sim.session.binary_frame(),
+                &LiveReadyInputProvider { rules },
+            );
         }
     }
     // `0x004499BB..0x00449A36`: Rate for a depot, three times it otherwise.

@@ -1062,7 +1062,7 @@ fn sprite_palette_for_key(
 
 /// Every sprite key one object (type, house colour) can be drawn with: a
 /// structure's body, source-bound raw Infantry records, or a generic layout.
-/// Return Structure/Unit body keys for paired shadows without scanning the
+/// Return body keys for paired shadows without scanning the
 /// complete atlas key set for every newly admitted type and house colour.
 fn insert_object_keys(
     needed: &mut HashSet<ShpSpriteKey>,
@@ -1081,7 +1081,10 @@ fn insert_object_keys(
             frame,
             house_color: color_idx,
         };
-        if matches!(category, EntityCategory::Structure | EntityCategory::Unit) {
+        if matches!(
+            category,
+            EntityCategory::Structure | EntityCategory::Unit | EntityCategory::Infantry
+        ) {
             body_keys.push(key.clone());
         }
         needed.insert(key);
@@ -1241,7 +1244,7 @@ fn infantry_asset_frames(
 /// still supplies the Infantry source and signed record bank.
 ///
 /// Return decoded object sources for the render pass to consume, so each
-/// Infantry type's frame membership and each Structure/Unit's shadow frames are
+/// Infantry type's frame membership and each SHP object's shadow frames are
 /// computed from its resolved SHP once per refresh, independent of house colour.
 fn insert_new_object_keys<'a>(
     needed: &mut HashSet<ShpSpriteKey>,
@@ -1322,7 +1325,10 @@ fn insert_new_object_keys<'a>(
             infantry_frames,
         );
 
-        if matches!(category, EntityCategory::Structure | EntityCategory::Unit) {
+        if matches!(
+            category,
+            EntityCategory::Structure | EntityCategory::Unit | EntityCategory::Infantry
+        ) {
             // Resolve the actual theater/rules-selected object source once and
             // retain it for rendering. Its physical frame count establishes
             // the embedded shadow half; Type.Image text alone does not.
@@ -1343,8 +1349,9 @@ fn insert_new_object_keys<'a>(
             {
                 let shadow_start = raw_count / 2;
                 // Techno7064C2..7064CD adds half the physical SHP count
-                // to the selected body frame. Include every admitted Unit
-                // pose, not just Structure's first four body frames.
+                // to the selected body frame. Infantry51958A calls this same
+                // Techno draw; retain its companions too, including nonempty
+                // mod masks (many retail infantry shadows are empty).
                 needed.extend(
                     body_keys
                         .into_iter()

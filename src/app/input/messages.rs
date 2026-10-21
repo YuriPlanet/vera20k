@@ -459,6 +459,18 @@ pub(crate) fn post_wol_connection_lost(state: &mut AppState) {
     post_grey_row(state, "TXT_WOL_CONNLOST", true, false);
 }
 
+/// Cooperative `+0xA0`'s save result (`0x005C37B7..0x005C381F`):
+/// `TXT_COOP_SAVE_SUCCESS` or `TXT_COOP_SAVE_FAILED`, a Grey row with its
+/// sound.
+pub(crate) fn post_cooperative_save_result(state: &mut AppState, saved: bool) {
+    let key = if saved {
+        "TXT_COOP_SAVE_SUCCESS"
+    } else {
+        "TXT_COOP_SAVE_FAILED"
+    };
+    post_grey_row(state, key, true, false);
+}
+
 /// A row in `GadgetClass::GetColorScheme` (`0x004E12D0`, "Grey"), flags
 /// 0x16, `MessageDelay * 900`; `text` is a CSF key when `localize`.
 fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool) {

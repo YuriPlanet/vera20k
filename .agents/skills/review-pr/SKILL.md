@@ -106,8 +106,13 @@ oracles, scripts) until steps 1 and 2 are clean.
 - Before merging, inspect the exact author/account mapping, subject, body and
   trailers the merge will produce, including GitHub's generated defaults. Resolve
   unexpected identities, unrequested personal names and duplicate credit first.
-  If GitHub's squash would replace the contributor with the PR opener, prepare
-  one combined commit and use a merge method that preserves its author.
+- GitHub's squash authors its commit with the account's profile name and default
+  commit email, not the identity on the PR's commits, even when the contributor
+  opened the PR. Squash only when an earlier squash of that account read back
+  with its verified identity. Otherwise keep the identity on the contributor's
+  own commits: rebase-merge a single commit, or prepare one combined commit with
+  that author and rebase-merge it. When the branch is not editable, use a merge
+  commit.
 - After merging, read back the resulting commit and verify the same attribution.
   Report a mismatch and resolve it before further merges. Do not rewrite shared
   history without the user's explicit authorization.

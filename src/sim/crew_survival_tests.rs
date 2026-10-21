@@ -1551,7 +1551,157 @@ fn a_reselected_escapee_in_planning_mode_selects_its_node_partner() {
         };
         assert!(selected(passenger));
         assert_eq!(selected(partner), planning, "planning mode {planning}");
+        // The partner's Select runs inside the escapee's, so it enters the
+        // current-objects vector right after it, whatever the store order.
+        let expected: &[u64] = if planning {
+            &[passenger, partner]
+        } else {
+            &[passenger]
+        };
+        assert_eq!(logic_selects(&sim), expected, "planning mode {planning}");
     }
+}
+
+/// The game's own Selects ([`crate::sim::world::LifecycleOutput::ObjectSelected`])
+/// this frame, in call order.
+fn logic_selects(sim: &Simulation) -> Vec<u64> {
+    sim.lifecycle_outputs
+        .as_slice()
+        .iter()
+        .filter_map(|output| match output {
+            crate::sim::world::LifecycleOutput::ObjectSelected { stable_id } => Some(*stable_id),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Queue a same-frame planned move for each of `ids` to one cell, so they
+/// share a tail node in that order.
+fn plan_moves_to(sim: &mut Simulation, rules: &RuleSet, ids: &[u64], cell: (u16, u16)) {
+    let owner = sim.interner.intern("AlliedHuman");
+    for &id in ids {
+        let record = sim
+            .encode_planning_order_record(
+                owner,
+                &crate::sim::command::Command::Move {
+                    entity_id: id,
+                    target_rx: cell.0,
+                    target_ry: cell.1,
+                },
+            )
+            .expect("planning record");
+        let command = sim.decode_native_command_record(&record, 0).unwrap();
+        assert!(sim.apply_command("AlliedHuman", &command.payload, Some(rules)));
+    }
+}
+
+/// The planning-node add's guard `0x00AC4CF6` spans its whole partner loop
+/// (set `0x00637853`, cleared `0x0063789F`), so a Select that a partner's
+/// Selected tag event (`0x006FBFE4`, event 33) starts does not expand. Here
+/// the partner is a selected APC whose tag explodes a weapon on it (action
+/// 42, DoExplosionAt `0x006E2390`); its escaping passenger is Selected
+/// (`0x00738174`) inside the loop and must not pull in its own node partner.
+#[test]
+fn a_select_started_by_a_partners_tag_event_does_not_expand() {
+    let rules = rules();
+    let mut sim = sim_on_arena(1, &rules);
+    let owner = sim.interner.intern("AlliedHuman");
+    sim.session.set_current_house_for_test(Some(owner));
+    let actor = spawn(&mut sim, &rules, "E1", "AlliedHuman", 20, 10);
+    let apc = spawn(&mut sim, &rules, "APC", "AlliedHuman", 10, 10);
+    let escapee_partner = spawn(&mut sim, &rules, "E1", "AlliedHuman", 24, 10);
+    let passenger = load_passengers(&mut sim, &rules, apc, "AlliedHuman", 1)[0];
+    plan_moves_to(&mut sim, &rules, &[actor, apc], (15, 15));
+    plan_moves_to(&mut sim, &rules, &[passenger, escapee_partner], (18, 18));
+    assert_eq!(sim.planning_select_partners(actor, true), [actor, apc]);
+    assert_eq!(
+        sim.planning_select_partners(passenger, true),
+        [passenger, escapee_partner]
+    );
+    // SUICIDEBLAST (50, BLASTWH) at waypoint A on the APC finishes it.
+    sim.substrate
+        .entities
+        .get_mut(apc)
+        .unwrap()
+        .health
+        .set_for_test(10);
+    let weapon = (0..64)
+        .find(|&index| {
+            rules
+                .weapon_by_array_index(index)
+                .is_some_and(|weapon| weapon.id == "SUICIDEBLAST")
+        })
+        .expect("weapon array ordinal");
+    sim.session
+        .install_waypoints(&std::collections::HashMap::from([(
+            0,
+            crate::map::waypoints::Waypoint {
+                index: 0,
+                rx: 10,
+                ry: 10,
+            },
+        )]));
+    let map = crate::map::map_file::MapFile::from_bytes(
+        format!(
+            "[Map]\nSize=0,0,32,32\nLocalSize=0,0,32,32\n\
+             [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
+             [Triggers]\nBLOW=AlliedHuman,<none>,Blow,0,1,1,1,0\n\
+             [Events]\nBLOW=1,33,0,0\n\
+             [Actions]\nBLOW=1,42,0,{weapon},0,0,0,0,A\n\
+             [Tags]\nBLOW_TAG=0,Blow,BLOW\n"
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    sim.initialize_trigger_definitions(
+        &map,
+        &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
+        None,
+        None,
+    );
+    sim.classify_map_triggers(&rules);
+    sim.attach_object_trigger_tag(apc, Some("BLOW_TAG"));
+    sim.lifecycle_outputs.clear_for_test();
+
+    let boundary = PlanningMode(true);
+    assert!(sim.techno_select(
+        actor,
+        true,
+        crate::sim::world::UninitContext::new(&rules, None).with_effects(
+            crate::sim::world::FrameEffects::default().with_local_planning(&boundary)
+        ),
+    ));
+    let selected = |sim: &Simulation, id: u64| {
+        sim.substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.selection.is_selected())
+    };
+    assert!(
+        sim.substrate
+            .entities
+            .get(apc)
+            .is_none_or(|entity| !entity.lifecycle.object_alive()),
+        "the tag destroyed it"
+    );
+    assert!(selected(&sim, passenger));
+    assert!(!selected(&sim, escapee_partner));
+    assert_eq!(logic_selects(&sim), [actor, apc, passenger]);
+    // The guard is clear again: a later Select of the escapee expands.
+    sim.substrate
+        .entities
+        .get_mut(passenger)
+        .unwrap()
+        .selection
+        .set_selected_for_test(false);
+    assert!(sim.techno_select(
+        passenger,
+        true,
+        crate::sim::world::UninitContext::new(&rules, None).with_effects(
+            crate::sim::world::FrameEffects::default().with_local_planning(&boundary)
+        ),
+    ));
+    assert!(selected(&sim, escapee_partner));
 }
 
 /// Retail `rulesmd.ini` and `artmd.ini` (the local `ini/`): the stock crew

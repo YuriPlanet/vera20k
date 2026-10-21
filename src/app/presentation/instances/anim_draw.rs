@@ -1,9 +1,12 @@
-//! Ordinary AnimClass DrawIt422CA0 body and optional shadow passes.
+//! AnimClass DrawIt422CA0: the HasBounce ground shadow, the ordinary or Flat
+//! body and the optional Shadow= pass.
 //!
 //! Callers retain admission, palette selection, coordinates and Display order.
-//! This owner resolves the two source rectangles and their separate draw flags.
-//! Tiled, bouncing/meteor and the special RING1 path retain their previous body
-//! presentation; their separate native draw arms are outside this port.
+//! This owner resolves the source rectangles and their separate draw flags.
+//! Tiled and the special RING1 path retain their previous body presentation;
+//! their separate native draw arms are outside this port. Bouncer and IsMeteor
+//! types have no body arm of their own: the instance's HasBounce byte only adds
+//! the ground shadow ahead of the ordinary or Flat body.
 
 use super::helpers::{
     apply_shape_z_adjust, compute_sprite_depth_params_lifted, in_view, lifted_z_adjust,
@@ -34,6 +37,51 @@ pub(super) struct AnimDrawInput<'a> {
     pub axis: DepthAxis,
     pub viewport: [f32; 4],
     pub legacy_policy: RenderZPolicy,
+    /// The HasBounce ground shadow's drop below `point`, from
+    /// [`anim_bounce_drop_px`]. `None` draws no ground shadow.
+    pub bounce_drop_px: Option<i32>,
+}
+
+/// DrawIt4233D2 pushes 2601 for the HasBounce ground shadow: Darken, Center,
+/// the untested 400 and the read-only Z bit 2000, whatever the body's flags.
+/// Select_Blitter490B90 picks DarkenZRead (leaves 492D20 plain, 496820 RLE).
+const BOUNCE_SHADOW_FLAGS: u32 = 0x2601;
+
+/// `AdjustForZ(GetHeight)`, which DrawIt adds to the draw point for the
+/// HasBounce ground shadow (`Anim+0x194`, tested at 423358), or `None` without
+/// a bounce body. The constructor sets HasBounce only for Bouncer= and IsMeteor=
+/// types (4222EA); the simulation's bounce body is that byte.
+///
+/// GetHeight (vtable +1C8, Object5F5F40, called at 42310A) measures the stored
+/// Location against Map578080's ground there, and anims never set OnBridge.
+/// A free anim stores its absolute coordinate, so this takes the drawn
+/// (possibly interpolated) one; an attached anim stores its owner-relative
+/// coordinate (SetOwnerObject424B50), which GetHeight reads unchanged.
+pub(super) fn anim_bounce_drop_px(
+    sim: &crate::sim::world::Simulation,
+    anim: &crate::sim::anim_class::AnimObject,
+    drawn: [i32; 3],
+) -> Option<i32> {
+    if anim.bounce().is_none() {
+        return None;
+    }
+    let [x, y, z] = match anim.owner_entity() {
+        None => drawn,
+        Some(_) => {
+            let stored = anim.world_coord();
+            [stored.x, stored.y, stored.z]
+        }
+    };
+    // Rendering must not stamp the simulation's shared dummy cell.
+    let cells = sim
+        .resolved_terrain()
+        .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+    let height = crate::sim::movement::air_movement::object_height_in_query(
+        crate::sim::components::DriveCoord { x, y, z },
+        false,
+        cells.as_ref(),
+    );
+    Some(crate::util::native_x87::adjust_for_z_standard(height))
 }
 
 /// Convert490B90/490E50: a write bit takes precedence over either read bit.
@@ -49,9 +97,11 @@ fn depth_policy(flags: u32) -> RenderZPolicy {
     }
 }
 
+/// Whether the body takes the ported ordinary/Flat arms (4237AE/423728).
+/// Tiled and the special RING1 path are excluded; a Bouncer or IsMeteor body
+/// takes them like any other, after its HasBounce ground shadow.
 pub(super) fn ordinary_anim_type(name: &str, config: Option<&AnimTypeRuntimeConfig>) -> bool {
-    !name.eq_ignore_ascii_case("RING1")
-        && config.is_none_or(|config| !config.tiled && !config.bouncer && !config.is_meteor)
+    !name.eq_ignore_ascii_case("RING1") && config.is_none_or(|config| !config.tiled)
 }
 
 pub(super) fn anim_draw_pieces(
@@ -70,7 +120,7 @@ pub(super) fn anim_draw_pieces(
         body.source_palette = entry.source_palette;
     }
     let ordinary = ordinary_anim_type(&input.key.type_id, input.config);
-    let mut pieces = Vec::with_capacity(2);
+    let mut pieces = Vec::with_capacity(3);
     let visible = |instance: &SpriteInstance| {
         in_view(
             instance.position[0],
@@ -84,6 +134,12 @@ pub(super) fn anim_draw_pieces(
             200.0,
         )
     };
+    // HasBounce423358 precedes the building tint and every body arm.
+    if let Some(shadow) =
+        bounce_ground_shadow(&input, body).filter(|shadow| visible(&shadow.instance))
+    {
+        pieces.push(shadow);
+    }
     if !ordinary {
         if let Some(entry) = input.entry.filter(|_| visible(&body)) {
             pieces.push(ObjectPieceInstance {
@@ -176,6 +232,51 @@ pub(super) fn anim_draw_pieces(
         });
     }
     pieces
+}
+
+/// DrawIt423358..4233E9: the body's frame (ESP+2C) through the body's Convert
+/// (ESP+30), at `point + (0, AdjustForZ(GetHeight) + YDrawOffset)`, with no
+/// remap, Z term `YDrawOffset - AdjustForZ(GetCoordZ)`, gradient 0, intensity
+/// 1000 and no colour word. The Darken leaf reads only the frame's nonzero
+/// indices: it stores `(destination >> 1) & 0x7BEF` where the strict signed Z
+/// test admits and never writes Z (executed for these 2601 leaves:
+/// tools/projectile_oracle/bridge_render.md). An empty body frame has no
+/// entry, so it draws no shadow either.
+fn bounce_ground_shadow(
+    input: &AnimDrawInput<'_>,
+    body: SpriteInstance,
+) -> Option<ObjectPieceInstance> {
+    let (drop, entry) = (input.bounce_drop_px?, input.entry?);
+    let y_draw_offset = input.config.map_or(0, |config| config.y_draw_offset);
+    let row = input.point[1] + drop as f32;
+    let mut shadow = body;
+    // The atlas offset carries YDrawOffset, as the body's does.
+    shadow.position = [input.point[0] + entry.offset_x, row + entry.offset_y];
+    shadow.draw_state = DrawState::from_native_selector(0, 1);
+    shadow.palette_light = shadow
+        .palette_light
+        .with_brightness(1000)
+        .with_colour_word(0);
+    shadow.alpha = 1.0;
+    shadow.depth = apply_shape_z_adjust(
+        compute_sprite_depth_params_lifted(
+            input.axis.origin_y,
+            input.axis.world_height,
+            row,
+            input.lift_px,
+        ),
+        0,
+        input.axis.world_height,
+    );
+    // The atlas offset's YDrawOffset rides the Z term, as natively.
+    shadow.z_adjust = lifted_z_adjust(input.lift_px, y_draw_offset);
+    shadow.z_gradient = pack_z_gradient(ZGradient::Flat, false);
+    shadow.zshape_origin = [0.0; 2];
+    Some(ObjectPieceInstance {
+        target: ObjectTexture::SpriteAtlasEdit(entry.page as usize, TerrainPiece::Shadow),
+        render_z: depth_policy(BOUNCE_SHADOW_FLAGS),
+        instance: shadow,
+    })
 }
 
 #[cfg(test)]

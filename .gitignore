@@ -85,5 +85,8 @@ tools/vendor-eval/
 # throwaway verification build dir (parallel-session exe lock workaround)
 /target-verify/
 
+# Scratch area for deletes and one-off scripts; never a deliverable.
+/_trash/
+
 # Dashboard build dependencies; compiled JS is intentionally tracked.
 /tools/telemetry-dashboard/node_modules/

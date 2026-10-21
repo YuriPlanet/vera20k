@@ -32,6 +32,11 @@ use std::sync::Arc;
 
 pub(crate) use crate::sim::scenario_session::ScenarioGameMode as SessionMode;
 
+mod cooperative_round;
+pub(crate) use cooperative_round::{
+    CooperativeRoundEvent, CooperativeRoundOptions, CooperativeRoundState, CooperativeRoundStep,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NetworkReturnContext {
     LanLobby,
@@ -152,6 +157,15 @@ enum NetworkPhase {
         /// Live source membership indexes the immutable historical launch.
         connected: Vec<usize>,
     },
+    /// The co-op result dialog BC6 between missions: the finished start,
+    /// the round's own roster (the next mission's, which the master's
+    /// `+0x68`/`0x0069B8C0` or a received `0x32` changes) and its readiness.
+    CooperativeRound {
+        previous: Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
+        connected: Vec<usize>,
+        launch: SkirmishLaunchSession,
+        round: CooperativeRoundState,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -177,6 +191,18 @@ pub(crate) enum NetworkLoadingRequest {
         recipients: Vec<usize>,
         byte: u8,
     },
+    /// BC6's `0x26` to every node.
+    CooperativeReady,
+    /// BC6's `0x24` (Quit) to every node.
+    CooperativeLeave,
+    /// The master's `0x34`.
+    CooperativeBegin,
+    /// The master's `0x32` to every bound human slot.
+    CooperativeOptions(CooperativeRoundOptions),
+    /// A guest's `0x23`.
+    CooperativeAck,
+    /// The master's `0x31`.
+    CooperativeGo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -461,12 +487,15 @@ impl MatchSession {
             NetworkPhase::Lobby => None,
             NetworkPhase::Setup { launch, .. } => Some(launch),
             NetworkPhase::Frozen { startup, .. } => Some(startup.launch_session()),
+            NetworkPhase::CooperativeRound { launch, .. } => Some(launch),
         }
     }
 
     fn editable_network_setup(&mut self) -> anyhow::Result<&mut SkirmishLaunchSession> {
         match self.network.as_mut().map(|network| &mut network.phase) {
-            Some(NetworkPhase::Setup { launch, .. }) => Ok(launch),
+            Some(
+                NetworkPhase::Setup { launch, .. } | NetworkPhase::CooperativeRound { launch, .. },
+            ) => Ok(launch),
             _ => anyhow::bail!("network setup is not editable"),
         }
     }
@@ -1681,21 +1710,7 @@ impl MatchSession {
             "accepted host seed differs from admitted setup seed"
         );
         network.proposed_seed = Some(agreed_seed);
-        anyhow::ensure!(
-            launch.house_roster_is_consistent(),
-            "network House constructor cache disagrees with the participant roster"
-        );
-        crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(launch.clone())
-            .map_err(|error| anyhow::anyhow!("network assignments unresolved: {error}"))?;
-        anyhow::ensure!(
-            launch
-                .selected_map_file
-                .as_deref()
-                .is_some_and(|file| !file.is_empty()
-                    && file.trim() == file
-                    && !file.eq_ignore_ascii_case("auto")),
-            "network start requires an exact map selection"
-        );
+        admit_network_start_roster(launch)?;
         let max_ahead_frames = network
             .max_ahead_frames
             .ok_or_else(|| anyhow::anyhow!("network start requires accepted timing"))?;
@@ -1775,7 +1790,10 @@ impl MatchSession {
     /// One in-battle chat packet to `recipients`.
     pub(crate) fn request_chat(&mut self, recipients: Vec<usize>, text: String) {
         if let Some(network) = self.network.as_mut()
-            && matches!(network.phase, NetworkPhase::Frozen { .. })
+            && matches!(
+                network.phase,
+                NetworkPhase::Frozen { .. } | NetworkPhase::CooperativeRound { .. }
+            )
         {
             network
                 .loading_requests
@@ -1844,7 +1862,10 @@ impl MatchSession {
 
     pub(crate) fn network_connected_source_indices(&self) -> &[usize] {
         match self.network.as_ref().map(|network| &network.phase) {
-            Some(NetworkPhase::Frozen { connected, .. }) => connected,
+            Some(
+                NetworkPhase::Frozen { connected, .. }
+                | NetworkPhase::CooperativeRound { connected, .. },
+            ) => connected,
             _ => &[],
         }
     }
@@ -2030,11 +2051,33 @@ fn validate_network_rows(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A start's admission, shared by the first start and a co-op
+/// continuation: a consistent House roster, resolved assignments and an
+/// exact map.
+fn admit_network_start_roster(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        launch.house_roster_is_consistent(),
+        "network House constructor cache disagrees with the participant roster"
+    );
+    crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(launch.clone())
+        .map_err(|error| anyhow::anyhow!("network assignments unresolved: {error}"))?;
+    anyhow::ensure!(
+        launch
+            .selected_map_file
+            .as_deref()
+            .is_some_and(|file| !file.is_empty()
+                && file.trim() == file
+                && !file.eq_ignore_ascii_case("auto")),
+        "network start requires an exact map selection"
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{MatchSession, NetworkRoom, SessionMode};
 
-    fn network_fixture() -> crate::skirmish_launch::SkirmishLaunchSession {
+    pub(super) fn network_fixture() -> crate::skirmish_launch::SkirmishLaunchSession {
         let profile: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/map_observation.command-bar.example.json",
         ))

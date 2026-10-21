@@ -11,7 +11,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::SpeedCostProfile;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::house_state::HouseState;
-use crate::sim::miner::{CargoBale, MinerConfig, MinerKind, MinerState, ResourceType};
+use crate::sim::miner::{CargoBale, MinerKind, MinerState, ResourceType};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::PathGrid;
@@ -338,7 +338,7 @@ fn spawn_stock_refinery(
     id
 }
 
-fn arm_full_ore_return(sim: &mut Simulation, entity_id: u64, config: &MinerConfig) {
+fn arm_full_ore_return(sim: &mut Simulation, entity_id: u64, rules: &RuleSet) {
     let entity = sim
         .substrate
         .entities
@@ -346,9 +346,13 @@ fn arm_full_ore_return(sim: &mut Simulation, entity_id: u64, config: &MinerConfi
         .expect("miner entity");
     let miner = entity.miner.as_mut().expect("miner component");
     miner.cargo = (0..miner.capacity_bales)
-        .map(|_| CargoBale {
-            resource_type: ResourceType::Ore,
-            value: config.ore_bale_value,
+        .map(|_| {
+            CargoBale::of_type(
+                crate::rules::tiberium_type::TiberiumTypeId(0),
+                ResourceType::Ore,
+                rules,
+            )
+            .expect("rules list the first Tiberium type")
         })
         .collect();
     entity
@@ -736,7 +740,6 @@ fn production_harv_outbound_drive_uses_rule_profile() {
 #[test]
 fn production_stock_harv_far_return_drive_uses_rule_profile() {
     let oracle = outbound_contract_oracle();
-    let config = MinerConfig::from_rules(&oracle.rules);
     let refinery_anchor = (10, 10);
     let refinery_type = oracle.rules.object("GAREFN").expect("GAREFN");
     let queueing = refinery_type.queueing_cell;
@@ -766,7 +769,7 @@ fn production_stock_harv_far_return_drive_uses_rule_profile() {
     install_world(&mut sim, &oracle, &grid, &[], true);
     let refinery_id = spawn_stock_refinery(&mut sim, &oracle, refinery_anchor);
     let entity_id = spawn_stock_miner(&mut sim, &oracle, "HARV", MinerKind::War);
-    arm_full_ore_return(&mut sim, entity_id, &config);
+    arm_full_ore_return(&mut sim, entity_id, &oracle.rules);
 
     let start = position_tuple(&sim, entity_id);
     // Mission_Harvest's shared delay-jitter RNG tail remains a separate scheduler residual.
@@ -837,7 +840,6 @@ fn production_stock_harv_far_return_drive_uses_rule_profile() {
 #[test]
 fn gsi_04_07_placement_miner_return_threads_live_wall_neighbor_authority() {
     let oracle = outbound_contract_oracle();
-    let config = MinerConfig::from_rules(&oracle.rules);
     let refinery_anchor = (24, 31);
     let refinery_type = oracle.rules.object("GAREFN").expect("GAREFN");
     let queueing = refinery_type.queueing_cell;
@@ -882,7 +884,7 @@ fn gsi_04_07_placement_miner_return_threads_live_wall_neighbor_authority() {
         let refinery_id = spawn_stock_refinery(&mut sim, &oracle, refinery_anchor);
         rock_where_grid_blocks(&mut sim, &grid);
         let miner_id = spawn_stock_miner(&mut sim, &oracle, "HARV", MinerKind::War);
-        arm_full_ore_return(&mut sim, miner_id, &config);
+        arm_full_ore_return(&mut sim, miner_id, &oracle.rules);
 
         let overlays = sim.overlay_grid.as_mut().expect("live overlay grid");
         overlays.place_overlay(30, 33, overlay_id, 0);
@@ -967,7 +969,6 @@ fn gsi_04_07_placement_miner_return_threads_live_wall_neighbor_authority() {
 #[test]
 fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
     let oracle = outbound_contract_oracle();
-    let config = MinerConfig::from_rules(&oracle.rules);
     let refinery_anchor = (10, 10);
     let original = (32, 29);
     let refinery_type = oracle.rules.object("GAREFN").expect("GAREFN");
@@ -1014,7 +1015,7 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
         );
     }
 
-    arm_full_ore_return(&mut sim, entity_id, &config);
+    arm_full_ore_return(&mut sim, entity_id, &oracle.rules);
 
     let (
         nav_before,
@@ -1306,7 +1307,6 @@ fn production_cmin_arrival_clears_navcom_same_tick_and_releases_drive() {
 #[test]
 fn cmin_full_close_return_warps_onto_the_pad_and_deposits() {
     let oracle = outbound_contract_oracle();
-    let config = MinerConfig::from_rules(&oracle.rules);
     let refinery_anchor = (10, 10);
     let pad = crate::sim::radio::receive::dock_pad_cell(refinery_anchor.0, refinery_anchor.1);
     let mut sim = production_sim(0xDEB6, &oracle);
@@ -1322,7 +1322,7 @@ fn cmin_full_close_return_warps_onto_the_pad_and_deposits() {
     install_world(&mut sim, &oracle, &grid, &[], true);
     let refinery_id = spawn_stock_refinery(&mut sim, &oracle, refinery_anchor);
     let entity_id = spawn_stock_miner(&mut sim, &oracle, "CMIN", MinerKind::Chrono);
-    arm_full_ore_return(&mut sim, entity_id, &config);
+    arm_full_ore_return(&mut sim, entity_id, &oracle.rules);
     let credits_before = crate::sim::production::credits_for_owner(&sim, "Americans");
 
     let mut warped_at = None;
@@ -1366,7 +1366,13 @@ fn cmin_full_close_return_warps_onto_the_pad_and_deposits() {
     let paid = crate::sim::production::credits_for_owner(&sim, "Americans") - credits_before;
     assert_eq!(
         paid,
-        i32::from(config.ore_bale_value) * i32::from(get_capacity(&sim, entity_id)),
+        oracle
+            .rules
+            .tiberium_types
+            .get(crate::rules::tiberium_type::TiberiumTypeId(0))
+            .expect("first Tiberium type")
+            .value
+            * i32::from(get_capacity(&sim, entity_id)),
         "the whole hold is paid"
     );
 
@@ -1408,7 +1414,6 @@ fn get_capacity(sim: &Simulation, entity_id: u64) -> u16 {
 #[test]
 fn cmin_second_cycle_leaves_the_pad_and_reharvests() {
     let oracle = outbound_contract_oracle();
-    let config = MinerConfig::from_rules(&oracle.rules);
     let refinery_anchor = (10, 10);
     let ore: &[(u16, u16)] = &[(22, 18), (23, 18), (22, 19), (23, 19)];
     let mut sim = production_sim(0xDEB7, &oracle);
@@ -1433,7 +1438,7 @@ fn cmin_second_cycle_leaves_the_pad_and_reharvests() {
     }
     let _refinery_id = spawn_stock_refinery(&mut sim, &oracle, refinery_anchor);
     let entity_id = spawn_stock_miner(&mut sim, &oracle, "CMIN", MinerKind::Chrono);
-    arm_full_ore_return(&mut sim, entity_id, &config);
+    arm_full_ore_return(&mut sim, entity_id, &oracle.rules);
 
     let mut deposited_at = None;
     for tick in 0..3000u32 {
@@ -1546,17 +1551,13 @@ fn outbound_contract_matches_selected_retail_hills_battle() {
         assert_miner_object_contract(&miner_contract_rules, rules, id);
     }
 
-    let contract_miner = MinerConfig::from_rules(&miner_contract_rules);
-    let retail_miner = MinerConfig::from_rules(rules);
-    assert_eq!(retail_miner.ore_bale_value, contract_miner.ore_bale_value);
-    assert_eq!(retail_miner.gem_bale_value, contract_miner.gem_bale_value);
+    let riparius = crate::rules::tiberium_type::TiberiumTypeId(0);
     assert_eq!(
-        retail_miner.war_miner_capacity,
-        contract_miner.war_miner_capacity
-    );
-    assert_eq!(
-        retail_miner.chrono_miner_capacity,
-        contract_miner.chrono_miner_capacity
+        rules.tiberium_types.get(riparius).map(|ty| ty.value),
+        miner_contract_rules
+            .tiberium_types
+            .get(riparius)
+            .map(|ty| ty.value)
     );
     assert_eq!(
         rules.general.harvester_dump_frames,

@@ -507,12 +507,10 @@ pub(crate) fn try_begin_minimap_drag(state: &mut AppState) -> bool {
     if !is_cursor_over_minimap(state) {
         return false;
     }
-    // RadarClass input @ 0x006539D0 routes ordinary selected objects to the
-    // camera branch before DisplayClass::BandBox_LeftUp. A minimap press never
-    // gains selected-unit Move/AttackMove precedence.
+    // Capture the region for the release; Radar653CC0..653D6F decides
+    // separately whether this press centers the view or awaits an order.
     state.match_state.input.minimap_dragging = true;
     state.match_state.input.selection_state.cancel_drag();
-    update_camera_from_minimap_cursor(state);
     true
 }
 
@@ -548,6 +546,26 @@ pub(crate) fn minimap_camera_target(
             (tactical_w as i32, tactical_h as i32),
         )
     })
+}
+
+/// The order/cursor target precedes the camera branch's viewport clamp in
+/// RadarClass::Input (`0x00653ABC` versus `0x00653D7A`).
+pub(crate) fn minimap_input_target(
+    state: &AppState,
+) -> Option<crate::render::radar::NativeRadarInputTarget> {
+    let rect = active_minimap_screen_rect(state);
+    let runtime = state.match_state.sim_runtime.as_ref()?;
+    state
+        .match_state
+        .match_presentation
+        .minimap
+        .as_ref()?
+        .native_input_target_in_rect(
+            sidebar_cursor(state),
+            [rect.x, rect.y, rect.w, rect.h],
+            &runtime.simulation,
+            &runtime.resources.rules,
+        )
 }
 
 pub(crate) fn minimap_object_click_position(state: &AppState, id: u64) -> Option<[u32; 2]> {

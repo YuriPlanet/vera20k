@@ -1,9 +1,15 @@
 """Original building voxel loader and draw submission boundaries.
 
 python -m tools.voxel_oracle.building_barrel --check (or explicit --write)
+
+--raster instead rasterizes every stock building gun through the shared
+original Render core at its 43DA80 matrix, reading the physical models from
+the configured install's MIX archives.
 """
 from pathlib import Path
+import hashlib
 import struct
+import sys
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import (
     UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_ECX,
@@ -193,7 +199,94 @@ def generate():
     return dict(source='unicorn/gamemd.exe',loader_cases=loader_rows,draw_cases=draw_rows)
 
 
-if __name__ == '__main__':
+# Stock TurretAnimIsVoxel buildings and the B8/C0 images 45FA90 gives them.
+STOCK_GUNS = (('GTGCAN', 'GTGCANTUR', 'GTGCANBARL'), ('NAFLAK', 'FLAKTUR', None),
+              ('YAREFN', 'SMINTUR', None), ('NASAM', None, 'SAM'), ('NALASR', None, 'LASER'),
+              ('YAGGUN', None, 'YAGGUN'), ('CAOUTP', None, 'OUTP'), ('CAEAST02', None, 'CAHEAD'))
+
+
+def gun_raster():
+    """Each stock gun part's original 754510 raster at its 43DA80 matrix.
+
+    The crop is what 706ED0 blits through 4AF2A0 and 6C89E0 stores for 707480:
+    rect[2..5] of the fixed 256x256 raster buffer, drawn at point + rect[0..1].
+    """
+    from tools.sidebar_oracle.stock import local_file
+    from tools.voxel_oracle.raster import render_native
+    assets, files = {}, {}
+
+    def read(name):
+        if name not in files:
+            archive, raw = local_file(name)
+            files[name] = raw
+            assets[name] = dict(archive=archive, bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+        return files[name]
+
+    vpl = read('VOXELS.VPL')
+    rows = []
+    for building, turret, barrel in STOCK_GUNS:
+        images = dict(turret=turret, barrel=barrel)
+        # GTGCAN's barrel also draws raised one FireAngle step.
+        for pitch in (0x4000, 0x3800) if building == 'GTGCAN' else (0x4000,):
+            for step in range(0, 32, 4):
+                submitted = draw(raw=step << 11, pitch=pitch, turret=turret is not None,
+                                 barrel=barrel is not None)
+                for event in submitted['draws']:
+                    if pitch != 0x4000 and event['part'] != 'barrel':
+                        continue
+                    # One HVA frame: the raster owner reads frame zero.
+                    assert event['frame'] == 0, event
+                    image = images[event['part']]
+                    native = render_native(read(image + '.VXL'), read(image + '.HVA'), vpl,
+                                           struct.pack('<12I', *event['matrix_bits']))
+                    _, _, x, y, width, height = native['rect']
+                    buffer = bytearray(65536)
+                    for index, value in native['pixels']:
+                        buffer[index] = value
+                    crop = b''.join(buffer[(y + row) * 256 + x:(y + row) * 256 + x + width]
+                                    for row in range(height))
+                    lit = [(i % width, i // width) for i, value in enumerate(crop) if value]
+                    # Every lit raster byte lies inside the blitted crop.
+                    assert len(lit) == len(native['pixels']), (building, image, step)
+                    rows.append(dict(building=building, part=event['part'], image=image,
+                                     primary_raw=step << 11, barrel_raw=pitch, point=event['point'],
+                                     matrix_bits=event['matrix_bits'], rect=native['rect'],
+                                     crop_sha256=hashlib.sha256(crop).hexdigest(), crop_lit=len(lit),
+                                     crop_lit_bounds=[min(p[0] for p in lit), min(p[1] for p in lit),
+                                                      max(p[0] for p in lit), max(p[1] for p in lit)]))
+    return dict(source='unicorn/gamemd.exe', assets=assets, draws=rows)
+
+
+def gun_raster_metadata():
+    return provenance(
+        scope='Original 754510 raster of the nine stock building gun images at eight 43DA80 facings, level, plus the GTGCAN barrel raised one step; native rect and blitted crop',
+        assumptions=[
+            'Physical retail VXL/HVA and VOXELS.VPL entries from ra2md.mix -> localmd.mix, then ra2.mix -> local.mix; asset metadata identifies them, no file bytes are serialized. Rust consumers load the same files through the production asset owner and check length/SHA256.',
+            'Matrices come from this module\'s 43DA80 draw: TurretOffset 0, no recoil, HVA frame 0, supplied point [100,200] and TurretAnimX/Y [3,-60]. Stock ART leaves TurretOffset unset for all eight buildings; the Rust consumer checks that through the production reader.',
+            'The shared raster owner executes 753D00, 753E00, the per-section products, 7540F0 and 754510 as 706ED0 orders them, with original x87 0E7F and startup camera/light/viewer. No mirror flag; UseBuffer clear.',
+            'The crop is rect[2..5] of the fixed 256x256 buffer at 0xB2FF78; 706ED0 (0x007071CB..0x00707235) blits it at point + rect[0..1] through 4AF2A0 and 6C89E0 (0x006C8A16..0x006C8A3C) stores the same origin and rows for 707480. Those blits are read from instructions, not executed here.',
+            'Each row keeps the six rect words, the crop SHA256, its lit pixel count and lit bounds. Every lit raster byte lies inside the crop. Lighting pages, cache lifetime, the RLE blit, palette conversion and surface pixels are outside this corpus.',
+        ],
+        substitutions=['Existing raster owner: immutable file vtable IO and bounded allocation.',
+                       'Existing 43DA80 draw: supplied cell and Techno DrawVoxel interception, as the draw corpus.'],
+        entry_points={'building_draw_arm': 0x43DFC1, 'techno_draw_voxel': 0x706640,
+                      'render': 0x706ED0, 'submit_box': 0x7540F0, 'sort_rasterize': 0x754510,
+                      'cache_store': 0x6C89E0, 'cache_blit': 0x707480})
+
+
+SOURCES = {'producer': Path(__file__),
+           'shared_barrel_pitch': Path('tools/voxel_oracle/barrel_pitch.py'),
+           'shared_lighting': Path('tools/voxel_oracle/lighting.py')}
+
+
+if __name__ == '__main__' and '--raster' in sys.argv:
+    args = sys.argv[1:]
+    args.remove('--raster')
+    finish_vectors(gun_raster, Path(__file__).with_name('building_gun_raster.json'),
+                   provenance=gun_raster_metadata, argv=args,
+                   source_paths={**SOURCES, 'shared_raster': Path('tools/voxel_oracle/raster.py'),
+                                 'stock_archives': Path('tools/sidebar_oracle/stock.py')})
+elif __name__ == '__main__':
     finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=lambda:provenance(
         scope='BuildingType45FA90 loader names/slots/failure retention; Building43DA80 turret and barrel submissions, facing order, HVA frames, cache keys and original matrices',
         assumptions=['C locale CRT globals zero; original makepath, strupr, strstr and strncpy execute.',
@@ -206,6 +299,4 @@ if __name__ == '__main__':
         entry_points={'building_loader':0x45FA90,'building_draw_arm':0x43DFC1,
             'facing_current':0x4C93D0,'rotate_y':0x5AF080,'rotate_z':0x5AF1A0,
             'translate':0x5AE8F0,'translate_x':0x5AE980,'camera_copy':0x754BE0,'matrix_product':0x5AF980}),
-        source_paths={'producer':Path(__file__),
-            'shared_barrel_pitch':Path('tools/voxel_oracle/barrel_pitch.py'),
-            'shared_lighting':Path('tools/voxel_oracle/lighting.py')})
+        source_paths=SOURCES)

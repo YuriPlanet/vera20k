@@ -12,7 +12,7 @@ use winit::event::{MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
-use winit::window::{Fullscreen, Window, WindowAttributes, WindowId};
+use winit::window::{Window, WindowAttributes, WindowId};
 
 use crate::app::match_runtime::sim_tick;
 use crate::app::presentation::render;
@@ -38,9 +38,13 @@ pub(crate) mod campaign_defeat;
 pub(crate) mod campaign_victory;
 pub(crate) mod chrono_screen;
 mod cncnet;
+mod cooperative_round;
 #[cfg(feature = "debug-tools")]
 pub(crate) mod debug_tools;
 pub(crate) mod diagnostics;
+/// Which screen the game opens on: the Display list's own translation between
+/// VERA's profile value and the window system's monitors.
+pub(crate) mod display_target;
 mod frame;
 pub mod frontend;
 mod handler;

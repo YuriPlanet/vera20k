@@ -1843,26 +1843,39 @@ fn berserk_selection_click(
     left_release(sim, rules, action, hover.map(|target| target.stable_id))
 }
 
-/// Attempt to issue a context-sensitive order at the given screen point.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ContextOrderTarget {
+    ScreenPoint(f32, f32),
+    Radar(crate::render::radar::NativeRadarInputTarget),
+}
+
+/// Attempt to issue a context-sensitive order at the given input target.
 ///
 /// Returns `true` when context dispatch consumed the click, including a refused
 /// event, and `false` when the click should fall through to selection handling.
 ///
 /// When `select_friendly_clicks` is true, clicks on friendly units/structures
 /// return `false` so the caller can treat them as selection clicks instead.
-pub(crate) fn try_queue_context_order_at_screen_point(
+pub(crate) fn try_queue_context_order(
     state: &mut AppState,
-    screen_x: f32,
-    screen_y: f32,
+    target: ContextOrderTarget,
     select_friendly_clicks: bool,
 ) -> bool {
     if state.match_state.sim_runtime.is_none() {
         return false;
     }
-    let (world_x, world_y) =
-        crate::app::match_runtime::sim_tick::screen_point_to_world(state, screen_x, screen_y);
-    let (target_rx, target_ry) =
-        crate::app::match_runtime::sim_tick::screen_point_to_world_cell(state, screen_x, screen_y);
+    let (target_rx, target_ry) = match target {
+        ContextOrderTarget::ScreenPoint(x, y) => {
+            crate::app::match_runtime::sim_tick::screen_point_to_world_cell(state, x, y)
+        }
+        ContextOrderTarget::Radar(target) => target.cell,
+    };
+    let world_point = match target {
+        ContextOrderTarget::ScreenPoint(x, y) => Some(
+            crate::app::match_runtime::sim_tick::screen_point_to_world(state, x, y),
+        ),
+        ContextOrderTarget::Radar(_) => None,
+    };
     // Retail modifier map: Ctrl = force fire, Alt = force move,
     // Ctrl+Shift = attack move, Ctrl+Alt = guard area. Shift alone only makes a
     // Cell's What_Action answer Move — see `OrderModifier` for the full
@@ -1929,16 +1942,26 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 selected_units.push(sid);
             }
         }
-        let hover_object = hover_object_at_point(
-            crate::app::input::entity_pick::PresentedWorld {
-                sim,
-                interpolation: &state.match_state.match_presentation.interpolation,
-            },
-            world_x,
-            world_y,
-            &owner,
-            state.match_state.sandbox_full_visibility,
-        );
+        let hover_object = match target {
+            ContextOrderTarget::ScreenPoint(..) => {
+                let (world_x, world_y) = world_point.expect("tactical input has a world point");
+                hover_object_at_point(
+                    crate::app::input::entity_pick::PresentedWorld {
+                        sim,
+                        interpolation: &state.match_state.match_presentation.interpolation,
+                    },
+                    world_x,
+                    world_y,
+                    &owner,
+                    state.match_state.sandbox_full_visibility,
+                )
+            }
+            // Radar653C6A asks What_Action for the tracker identity returned
+            // by656750, never the tactical object at the camera-clamped cell.
+            ContextOrderTarget::Radar(target) => target
+                .tracker_hit
+                .and_then(|id| crate::app::input::entity_pick::hover_object_by_id(sim, id, &owner)),
+        };
         let hover = hover_object.and_then(HoverObject::techno);
         // Techno700082 -> Action8 precedes Infantry/Unit class actions.
         // Let the selection consumer handle Shift over a visible object;

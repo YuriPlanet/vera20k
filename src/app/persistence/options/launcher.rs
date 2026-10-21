@@ -8,7 +8,7 @@
 use super::audio::{AudioVolume, AudioVolumeOperations, apply_volume};
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::ui::main_menu_dialogs::options::{
-    LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels, LauncherOptionsPacked,
+    DisplayTarget, LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels, LauncherOptionsPacked,
     LauncherOptionsValues, LauncherParentResult, OptionsDialogState, SidebarSize, Zoom,
     admitted_initial_position, admitted_volume_position,
 };
@@ -57,13 +57,21 @@ pub(crate) fn launcher_dialog_from_profile(
     full_screen: bool,
     fps_counter: bool,
     launcher_audio_available: bool,
+    displays: Vec<crate::ui::main_menu_dialogs::options::DisplayChoice>,
 ) -> OptionsDialogState {
     let values = LauncherOptionsValues {
         full_screen,
         fps_counter,
         ..launcher_values_from_profile(profile)
     };
-    OptionsDialogState::new(labels, values, profile.zoom, launcher_audio_available)
+    OptionsDialogState::new(
+        labels,
+        values,
+        profile.zoom,
+        launcher_audio_available,
+        displays,
+        profile.display.clone(),
+    )
 }
 
 /// Concrete effects admitted by one launcher UI frame.
@@ -74,6 +82,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn play_cue(&mut self, cue: LauncherCue);
     fn store_zoom(&mut self, zoom: Zoom);
     fn store_sidebar(&mut self, size: SidebarSize);
+    /// Move the window to the picked screen, or hand it back to the system.
+    fn set_display(&mut self, display: DisplayTarget);
     fn set_full_screen(&mut self, full_screen: bool);
     fn store_original_shape(&mut self, original_shape: bool);
     fn store_yr_original_style(&mut self, yr_original_style: bool);
@@ -94,6 +104,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::Cue(cue) => operations.play_cue(cue),
         LauncherOptionsEvent::ZoomSelected(zoom) => operations.store_zoom(zoom),
         LauncherOptionsEvent::SidebarSelected(size) => operations.store_sidebar(size),
+        LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
         LauncherOptionsEvent::FullScreenChanged(full_screen) => {
             operations.set_full_screen(full_screen);
         }

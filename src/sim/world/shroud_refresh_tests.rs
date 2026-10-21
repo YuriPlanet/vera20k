@@ -1663,7 +1663,7 @@ fn no_edge_make_enemy_matches_native_human_source_controls() {
             .unwrap();
         assert!(sim.entities().get(id).unwrap().sight.is_zero());
         // Supplied native camera cache, before its current position changes.
-        sim.refresh_object_sight(id, &rules, 6);
+        sim.refresh_object_sight(id, &rules, 6, crate::sim::world::FrameEffects::default());
         assert!(sim.fog.sight_is_latched(id, player));
         let input = &row["inputs"];
         let entity = sim.substrate.entities.get_mut(id).unwrap();

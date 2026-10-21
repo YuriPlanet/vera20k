@@ -3881,6 +3881,52 @@ mod tests {
     }
 
     #[test]
+    fn native_tiberium_cargo_identity_roundtrips_and_changes_miner_and_slave_hashes() {
+        use crate::rules::tiberium_type::TiberiumTypeId;
+        use crate::sim::miner::{CargoBale, Miner, MinerConfig, MinerKind, ResourceType};
+        for slave in [false, true] {
+            let mut sim = Simulation::new();
+            let mut entity =
+                crate::sim::game_entity::GameEntity::test_default(1, "HARV", "Americans", 4, 5);
+            let cargo = vec![CargoBale {
+                tiberium_type: TiberiumTypeId(2),
+                resource_type: ResourceType::Ore,
+                value: 25,
+            }];
+            if slave {
+                entity.slave = crate::sim::slave_manager::SlaveLink::for_test(None, cargo);
+            } else {
+                let mut miner = Miner::new(MinerKind::War, &MinerConfig::default(), 40);
+                miner.set_cargo_for_test(cargo);
+                entity.miner = Some(miner);
+            }
+            sim.substrate.entities.insert(entity);
+            // Native loading resets Scenario RNG to Seed(0). Keep that
+            // independent rule out of this cargo persistence/hash comparison.
+            sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+            let hash = sim.state_hash();
+            let bytes = GameSnapshot::save(&sim, 0, 0, "native cargo identity", 0);
+            let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+            assert_eq!(restored.state_hash(), hash);
+            let entity = restored.substrate.entities.get_mut(1).unwrap();
+            let mut cargo = if slave {
+                entity.slave.cargo().to_vec()
+            } else {
+                entity.miner.as_ref().unwrap().cargo().to_vec()
+            };
+            assert_eq!(cargo[0].tiberium_type, TiberiumTypeId(2));
+            // Same presentation/value/amount; only the native slot differs.
+            cargo[0].tiberium_type = TiberiumTypeId(0);
+            if slave {
+                entity.slave = crate::sim::slave_manager::SlaveLink::for_test(None, cargo);
+            } else {
+                entity.miner.as_mut().unwrap().set_cargo_for_test(cargo);
+            }
+            assert_ne!(restored.state_hash(), hash, "slave={slave}");
+        }
+    }
+
+    #[test]
     fn slave_manager_roundtrips_and_hashes_its_nodes_and_links() {
         use crate::sim::slave_manager::{ManagerState, SlaveManager, SlaveNode, SlaveState};
         let mut sim = Simulation::new();
@@ -3902,6 +3948,7 @@ mod tests {
             // Slave 3 carries one level of gems.
             let cargo = (stable_id == 3)
                 .then_some(crate::sim::miner::CargoBale {
+                    tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(1),
                     resource_type: crate::sim::miner::ResourceType::Gem,
                     value: 50,
                 })

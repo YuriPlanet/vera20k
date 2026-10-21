@@ -29,7 +29,7 @@ impl App {
     /// Main_Game's post-scenario write `0x00699450` (`0x0048CF79`): the
     /// TauntsOn and ScrollText switches persist after a LAN or WOL scenario
     /// returns. Skirmish and campaign never write them.
-    pub(super) fn persist_returned_session_toggles(state: &mut AppState) {
+    pub(crate) fn persist_returned_session_toggles(state: &mut AppState) {
         if state.match_state.session_mode().is_network() {
             state
                 .frontend
@@ -711,6 +711,11 @@ impl App {
             Some(crate::app::match_runtime::scenario_exit::ScenarioExitDestination::CampaignDefeat) => {
                 Self::begin_campaign_defeat(state)
             }
+            Some(
+                crate::app::match_runtime::scenario_exit::ScenarioExitDestination::CooperativeResult {
+                    victory,
+                },
+            ) => crate::app::cooperative_round::open_result(state, victory),
             Some(crate::app::match_runtime::scenario_exit::ScenarioExitDestination::MainMenu) => {
                 Self::return_to_main_menu(state);
             }

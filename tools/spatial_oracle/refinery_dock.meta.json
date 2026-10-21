@@ -89,5 +89,6 @@
     "give_tiberium": "0x004F9610",
     "random_ranged": "0x0065C7E0"
   },
-  "payload_sha256": "6e71b0e1665f645b55fbb99248855da81d4d06d1899423b617dd6165c96ca018"
+  "replay_command": "python -m tools.spatial_oracle.refinery_dock",
+  "payload_sha256": "2e69cce15fb84ecb3cf65d5b5703ddd74b87ae3be57c27d747fd6da3e78222ee"
 }

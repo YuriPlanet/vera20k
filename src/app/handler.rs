@@ -125,11 +125,25 @@ impl App {
     /// `initialize`). The resize that follows re-fits the menus and the zoom.
     /// The window's new state reaches the profile through
     /// `follow_window_full_screen`.
+    ///
+    /// Full screen covers the Display list's screen, not whichever one the
+    /// window happens to touch, so entering full screen never changes screens.
+    /// The window is centred on that screen first: `winit` saves the placement
+    /// it restores on leaving full screen while it enters, so the windowed
+    /// window then comes back on the same screen the choice names
+    /// ([`crate::app::display_target`]).
     pub(crate) fn set_full_screen(state: &mut AppState, full_screen: bool) {
-        state
-            .platform
-            .window
-            .set_fullscreen(full_screen.then_some(winit::window::Fullscreen::Borderless(None)));
+        let window = state.platform.window.clone();
+        if !full_screen {
+            window.set_fullscreen(None);
+            return;
+        }
+        let displays = crate::app::display_target::current_displays(&window);
+        let target = state.persistence.options_profile.display.clone();
+        crate::app::display_target::center_windowed(&window, &displays, &target);
+        window.set_fullscreen(Some(crate::app::display_target::fullscreen_for(
+            &displays, &target,
+        )));
     }
 
     /// The window owns full screen while the game runs, and can change it by
@@ -138,6 +152,12 @@ impl App {
     /// next launch agree with what the player sees. A resize alone would miss
     /// leaving full screen on macOS: winit clears the state only after the
     /// exit animation's last resize.
+    ///
+    /// Leaving full screen also re-asserts the Display choice's screen: winit
+    /// puts the window back at the placement it saved on entry, which is not
+    /// the chosen screen when the choice changed while the window was full
+    /// screen. That restore lands on winit's own thread, so the placement is
+    /// re-asserted every pass until the window really is on that screen.
     fn follow_window_full_screen(state: &mut AppState) {
         if state.platform.capture_client_size.is_some() {
             return;
@@ -146,6 +166,26 @@ impl App {
         #[cfg(target_os = "macos")]
         if !full_screen {
             show_menu_bar_and_dock_after_full_screen();
+        }
+        if full_screen {
+            state.platform.recenter_windowed = false;
+        } else {
+            let leaving_full_screen = state.persistence.options_profile.full_screen;
+            let displays = crate::app::display_target::current_displays(&state.platform.window);
+            let on_choice = crate::app::display_target::window_is_on(
+                &state.platform.window,
+                &displays,
+                &state.persistence.options_profile.display,
+            );
+            let pending = leaving_full_screen || state.platform.recenter_windowed;
+            if pending && !on_choice {
+                crate::app::display_target::center_windowed(
+                    &state.platform.window,
+                    &displays,
+                    &state.persistence.options_profile.display,
+                );
+            }
+            state.platform.recenter_windowed = pending && !on_choice;
         }
         state.persistence.options_profile.full_screen = full_screen;
         if let Some(dialog) = state.frontend.options_dialog.as_mut() {
@@ -675,6 +715,10 @@ impl ApplicationHandler for App {
                     crate::app::input::keyboard::key(state, &event);
                     return;
                 }
+                if crate::app::input::coop_score::active(state) {
+                    crate::app::input::coop_score::key(state, &event);
+                    return;
+                }
                 if state.frontend.network_options.is_some() {
                     crate::app::input::network_options::key(state, &event);
                     return;
@@ -1060,6 +1104,9 @@ impl ApplicationHandler for App {
                 if Self::wol_active(state) {
                     Self::handle_wol_mouse_move(state);
                 }
+                if crate::app::input::coop_score::active(state) {
+                    crate::app::input::coop_score::cursor_moved(state);
+                }
                 if Self::score_shell_active(state) {
                     Self::handle_score_shell_mouse_move(state);
                 }
@@ -1210,7 +1257,9 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
-                if Self::campaign_score_shell_active(state) {
+                if crate::app::input::coop_score::active(state) {
+                    crate::app::input::coop_score::mouse(state, button, btn_state.is_pressed());
+                } else if Self::campaign_score_shell_active(state) {
                     if button == MouseButton::Left {
                         if btn_state.is_pressed() {
                             Self::handle_campaign_score_mouse_down(state);
@@ -1316,6 +1365,9 @@ impl ApplicationHandler for App {
                 crate::app::shell_wol::poll(state),
                 crate::app::shell_network_setup::poll(state),
                 crate::app::input::multiplayer_setup::poll(state),
+                crate::app::input::coop_score::active(state)
+                    .then(|| crate::app::input::coop_score::poll(state))
+                    .flatten(),
                 crate::app::input::sound::poll_scroll_repeat(state),
                 Self::poll_movie_list_scroll(state),
                 Self::poll_choose_map_scroll(state),

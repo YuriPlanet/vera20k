@@ -1202,7 +1202,13 @@ fn eject_from_aircraft(
     .is_ok();
     // `0x00415565`: and goes back once the ejector returns.
     if picked_up {
-        sim.foot_place_down(aircraft_id, rules, overlay_registry, &mut |_, _| {});
+        sim.foot_place_down(
+            aircraft_id,
+            rules,
+            overlay_registry,
+            &mut |_, _| {},
+            effects,
+        );
     }
     ejected
 }

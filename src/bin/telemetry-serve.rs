@@ -26,7 +26,7 @@ use vera20k_core::sim::combat::Health;
 use vera20k_core::sim::components::DriveCoord;
 use vera20k_core::sim::house_state::HouseState;
 use vera20k_core::sim::runtime::{SimResources, SimRuntime};
-use vera20k_core::sim::telemetry::TerrainGrid;
+use vera20k_core::sim::telemetry::{SessionContext, TerrainGrid};
 use vera20k_core::sim::world::Simulation;
 
 /// Entities per house per category.
@@ -126,6 +126,7 @@ fn build_world(seed: u32, per_category: u16, structures: u16) -> Simulation {
     let mut sim = Simulation::synthetic(
         u64::from(seed),
         &vera20k_core::sim::scenario_session::ScenarioDescriptor {
+            map_name: "synthetic.map".to_owned(),
             map_width: DEFAULT_MAP_SIDE,
             map_height: DEFAULT_MAP_SIDE,
             ..Default::default()
@@ -437,6 +438,26 @@ fn main() -> Result<(), String> {
                 PUBLISH_EVERY as f32 / now.duration_since(last_publish).as_secs_f32().max(1e-3);
             last_publish = now;
             snapshot.timing = Some(timing);
+            // The app fills this section from live app state; this headless
+            // demo reads the same facts off its own simulation so the
+            // dashboard's header shows a real session instead of blanks.
+            let sim = &runtime.simulation;
+            snapshot.session = Some(SessionContext {
+                map_name: sim.session().map_name().to_owned(),
+                game_mode: sim.session().game_mode().as_str().to_owned(),
+                game_speed: sim.session().game_options().game_speed.clamp(0, 6) as u8,
+                local_owner: sim
+                    .session()
+                    .current_house()
+                    .map(|owner| sim.interner().resolve(owner).to_owned()),
+                local_outcome: sim
+                    .session()
+                    .current_house()
+                    .and_then(|owner| sim.ready_outcome_for_owner(owner))
+                    .map(|outcome| outcome.kind),
+                // Mirrors the app's `BUILD_STAMP`; the crate path is private.
+                build_stamp: concat!("VERA20K ", env!("CARGO_PKG_VERSION")).to_owned(),
+            });
             snapshot.profile = runtime.simulation.frame_profile().report();
             // A client that attached since the last publish needs the elevation
             // grid once; every other publish leaves `terrain` as `None`.

@@ -34,8 +34,8 @@
 //!   native for every retail value (whole bales, IncomeMult 1.0, PurifierBonus
 //!   .25); a non-exact IncomeMult differs (native 0.9f pays 899 per 1000 ore,
 //!   VERA 900 — `unload_gate_income_mult` row).
-//! - Storage is VERA's two resource kinds, not native's four tiberium slots
-//!   (`miner_system::harvest_ore_tick`); no stock map places TIB2/TIB3.
+//! - Storage preserves native type identity and slot order, using whole
+//!   bales/u16 values rather than native float amounts/signed32 type values.
 //! - The Per_Cell DOCK_NOW refusal's Unit Scatter (`0x0073A5CE..0x0073A5E4`,
 //!   answered by a refinery in its Selling mission) is not wired. Frequency:
 //!   zero today — VERA's sale is synchronous, so no refinery is ever seen
@@ -62,7 +62,6 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
-use super::ResourceType;
 use crate::sim::intern::StringInterner;
 use crate::sim::rng::SimRng;
 
@@ -448,19 +447,15 @@ fn epilogue(
     Simulation::mission_rate_epilogue_for(scenario_rng, substrate, rules, id, MissionType::Unload)
 }
 
-/// `FindFirstUsedSlot` (`0x006C9820`) and `RemoveAmount` (`0x006C96B0`) on
-/// VERA's two-kind storage: the first kind present in slot order (ore, then
-/// gems) leaves the hold whole. Returns its credit value and bale count.
-pub(super) fn drain_first_slot(cargo: &mut Vec<super::CargoBale>) -> Option<(i32, i32)> {
-    const SLOT_ORDER: [ResourceType; 2] = [ResourceType::Ore, ResourceType::Gem];
-    let slot = SLOT_ORDER
-        .iter()
-        .copied()
-        .find(|kind| cargo.iter().any(|bale| bale.resource_type == *kind))?;
+/// StorageClass FindFirstUsedSlot6C9820 scans native type slots in ascending
+/// order; RemoveAmount6C96B0 removes that slot only. Both vehicle Unload and
+/// slave deposit use this owner. Native controls: refinery_dock.json.
+pub(crate) fn drain_first_slot(cargo: &mut Vec<super::CargoBale>) -> Option<(i32, i32)> {
+    let slot = cargo.iter().map(|bale| bale.tiberium_type).min()?;
     let mut value: i32 = 0;
     let mut bales: i32 = 0;
     cargo.retain(|bale| {
-        if bale.resource_type == slot {
+        if bale.tiberium_type == slot {
             value = value.saturating_add(i32::from(bale.value));
             bales += 1;
             false

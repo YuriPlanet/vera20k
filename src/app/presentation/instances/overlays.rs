@@ -358,6 +358,7 @@ pub(crate) fn build_display_effect_instances(
         };
         let (mut center_x, mut center_y, rx, ry, _, mut lift_px) =
             anim_world_render_coords(anim_coord);
+        let mut drawn_coord = [anim_coord.x, anim_coord.y, anim_coord.z];
         let is_building_anim = anim.is_building_anim();
         // Slot preparation uses the committed coordinate; retain that geometry.
         // Free Anims keep their existing sampled point for admission and drawing.
@@ -375,6 +376,7 @@ pub(crate) fn build_display_effect_instances(
             );
             [center_x, center_y] = sample.screen;
             lift_px = sample.lift.round() as i32;
+            drawn_coord = sample.coord;
         }
         if !projection_admitted([center_x, center_y], input.camera, projection_viewport) {
             continue;
@@ -428,7 +430,10 @@ pub(crate) fn build_display_effect_instances(
         }
         // DrawIt423055..42305D resolves the ordinary source as AC + AnimType.Start,
         // just as the building-slot caller. Special draw arms retain their
-        // existing frame selection until their own renderer is ported.
+        // existing frame selection until their own renderer is ported, and so
+        // does a HasBounce ground shadow ahead of them, which natively takes
+        // AC + Start in every arm (4233CD). Residual: no retail Tiled or RING1
+        // type sets Bouncer=, IsMeteor= or Start=.
         let start = if super::anim_draw::ordinary_anim_type(type_name, config) {
             config.map_or(0, |config| config.start)
         } else {
@@ -448,6 +453,7 @@ pub(crate) fn build_display_effect_instances(
                 (rx, ry),
                 config,
                 anim.use_cell_drawer(),
+                anim.remap().as_ref(),
             )
         };
         let key = ShpSpriteKey {
@@ -545,6 +551,11 @@ pub(crate) fn build_display_effect_instances(
                             axis: input.axis,
                             viewport: [cam_x, cam_y, sw, sh],
                             legacy_policy: parent.policy.render_z,
+                            bounce_drop_px: super::anim_draw::anim_bounce_drop_px(
+                                sim,
+                                anim,
+                                drawn_coord,
+                            ),
                         },
                     ),
                 ),
@@ -1408,6 +1419,7 @@ pub(crate) fn build_parachute_instances(
                         (entity.position.rx(), entity.position.ry()),
                         input.rules.art().anim_runtime_config(shp_name),
                         false,
+                        anim.remap().as_ref(),
                     ),
                     alpha: 1.0,
                     ..Default::default()

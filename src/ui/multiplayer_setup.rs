@@ -762,6 +762,10 @@ mod tests {
         ))
         .unwrap();
         for case in corpus["setup_layouts"].as_array().unwrap() {
+            // BC6 shares the fixture; ui::coop_score_shell owns its layout.
+            if case["dialog"] == 0xBC6 {
+                continue;
+            }
             let dialog = SetupDialog {
                 host: case["dialog"] == 0xBC,
                 flavor: SetupFlavor::Lan,
@@ -807,6 +811,9 @@ mod tests {
         ))
         .unwrap();
         for case in corpus["setup_help"].as_array().unwrap() {
+            if case["dialog"] == 0xBC6 {
+                continue;
+            }
             assert_eq!(
                 tooltip_key(
                     SetupDialog {

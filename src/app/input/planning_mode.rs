@@ -399,7 +399,7 @@ pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
     if let Some(rt) = state.match_state.sim_runtime.as_mut()
         && let Some(owner) = rt.simulation.session().current_house()
     {
-        for actor in rt.simulation.planning_connect_actors(owner, &selected) {
+        for actor in rt.simulation.planning_connect_actors(&selected) {
             if let Some(record) = rt
                 .simulation
                 .encode_plan_connect_record_at_screen(owner, actor, point)

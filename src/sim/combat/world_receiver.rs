@@ -1796,7 +1796,15 @@ fn finish_concrete_death(
         world.drop_unit_cargo_crate(dead_id, rules, overlay_registry);
     }
 
-    let inf_death = killing_warhead.as_ref().map_or(1, |(wh, _)| wh.inf_death);
+    // InfantryClass::ReceiveDamage reads the killing call's InfDeath off its
+    // warhead argument with no null test (`0x00518362..0x00518369`).
+    // commit_entities hands every production kill that call's record, whose
+    // warhead its receiver resolved (a record it cannot resolve does no
+    // damage). Only a receiver fixture without one falls back, to the
+    // constructor's InfDeath.
+    let inf_death = killing_warhead
+        .as_ref()
+        .map_or(WarheadType::DEFAULT_INF_DEATH, |(wh, _)| wh.inf_death);
     if category == EntityCategory::Infantry {
         // `InfantryClass::ReceiveDamage` on result 4 (`0x00518077..0x0051808E`):
         // a dying slave leaves its master's node (RemoveSlave).
@@ -1830,14 +1838,16 @@ fn finish_concrete_death(
             .get(dead_id)
             .is_some_and(|entity| entity.sinking.is_active())
     {
-        // Non-Infantry SHP lifetime remains on its existing path.
+        // Non-Infantry SHP lifetime remains on its existing, VERA-only path.
+        // Natively only InfantryClass::ReceiveDamage reads InfDeath; this
+        // corpse borrows the infantry table's Die1/Die2 arms.
         if let Some(entity) = world.substrate.entities.get_mut(dead_id) {
             entity.death.begin();
             if let (Some(sequence), Some(anim)) = (
-                crate::sim::animation::death_sequence_for_inf_death(inf_death),
+                crate::sim::world::InfantryDeathSequence::for_inf_death(inf_death),
                 entity.animation.as_mut(),
             ) {
-                anim.switch_to(sequence);
+                anim.switch_to(sequence.animation());
             }
         }
         // VERA-only death sequence: native's UnInit would Limbo the object

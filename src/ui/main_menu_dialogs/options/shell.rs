@@ -7,14 +7,15 @@
 //! VERA's page lays its controls out on the main page's bands and rows.
 
 use super::{
-    DEVELOPER_OPTIONS_LABEL, FPS_COUNTER_HELP, FPS_COUNTER_LABEL, FULL_SCREEN_HELP,
-    FULL_SCREEN_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
-    LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, ORIGINAL_SHAPE_HELP,
-    ORIGINAL_SHAPE_LABEL, OptionsDialogState, OptionsPage, PhysicalControlFrame,
-    RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL,
-    SIDEBAR_HELP, SIDEBAR_LABEL, SidebarSize, VERA_OPTIONS_HELP, VERA_OPTIONS_LABEL,
-    WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL,
-    ZOOM_HELP, ZOOM_LABEL, Zoom,
+    DEVELOPER_OPTIONS_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayChoice,
+    DisplayTarget, FPS_COUNTER_HELP, FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL,
+    LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue, LauncherOptionsEvent,
+    LauncherParentResult, LauncherTrackbarId, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL,
+    OptionsDialogState, OptionsPage, PhysicalControlFrame, RENDER_INTERPOLATION_HELP,
+    RENDER_INTERPOLATION_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
+    SidebarSize, VERA_OPTIONS_HELP, VERA_OPTIONS_LABEL, WOL_TEST_SERVICE_HELP,
+    WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL,
+    Zoom,
 };
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, child_window, dlu_rect};
@@ -176,6 +177,13 @@ impl LauncherOptionsLayout {
         let button = |id| panel.button_rect(id).expect("0xD5 page button");
         // Either page's list takes the resolution combo's place.
         let combo = px(RectPx::new(351, 86, 180, COMBO_FACE_H));
+        // VERA's page holds two lists in the Display Options band's right
+        // column, each under its own caption. The band spans the Display
+        // Options heading's end to the UI Options heading (45..151 px), and a
+        // caption is 16 px tall, so the four rows stack with no spare:
+        // caption 50..66, face 66..90, caption 94..110, face 110..134.
+        let sidebar_combo = px(RectPx::new(351, 66, 180, COMBO_FACE_H));
+        let display_combo = px(RectPx::new(351, 110, 180, COMBO_FACE_H));
         let (combos, trackbars, checkboxes, buttons) = match page {
             OptionsPage::Main => (
                 vec![(LauncherComboId::Zoom, combo)],
@@ -214,7 +222,10 @@ impl LauncherOptionsLayout {
             // VERA's page keeps the main page's bands and rows: one column
             // of boxes at the UI Options boxes' place, 15 DLUs apart.
             OptionsPage::Vera => (
-                vec![(LauncherComboId::Sidebar, combo)],
+                vec![
+                    (LauncherComboId::Sidebar, sidebar_combo),
+                    (LauncherComboId::Display, display_combo),
+                ],
                 Vec::new(),
                 vec![
                     // Display Options: the window and how battles draw.
@@ -397,7 +408,8 @@ impl OptionsDialogState {
             // The main page's band headings at the same places.
             OptionsPage::Vera => &[
                 (labels.display_options.as_str(), 20, 18, 140, 10, Left),
-                (SIDEBAR_LABEL, 234, 38, 120, 10, Left),
+                (SIDEBAR_LABEL, 234, 31, 120, 10, Left),
+                (DISPLAY_LABEL, 234, 58, 120, 10, Left),
                 (&labels.ui_options, 20, 93, 298, 10, Left),
                 (DEVELOPER_OPTIONS_LABEL, 20, 168, 298, 10, Left),
                 (&labels.blank, 2, 355, 303, 12, Left),
@@ -500,6 +512,40 @@ impl OptionsDialogState {
         self.values.sidebar.in_effect(width, height)
     }
 
+    /// The Display list's rows, top to bottom: Auto, then every screen the
+    /// window layer reported. Auto is first so a profile whose saved screen is
+    /// gone still shows a picked row.
+    pub(crate) fn display_choices(&self) -> Vec<DisplayTarget> {
+        std::iter::once(DisplayTarget::Auto)
+            .chain(
+                self.displays
+                    .iter()
+                    .map(|choice| DisplayTarget::Fixed(choice.id.clone())),
+            )
+            .collect()
+    }
+
+    /// The Display face's text: the picked screen's summary, or just the id
+    /// when the window layer no longer lists it.
+    pub(crate) fn shell_display_label(&self) -> String {
+        match &self.display {
+            DisplayTarget::Auto => DISPLAY_AUTO_LABEL.to_owned(),
+            DisplayTarget::Fixed(id) => self
+                .displays
+                .iter()
+                .find(|choice| &choice.id == id)
+                .map_or_else(|| id.clone(), DisplayChoice::label),
+        }
+    }
+
+    /// The Display popup's rows, top to bottom: [`DISPLAY_AUTO_LABEL`], then
+    /// each screen's [`DisplayChoice::label`].
+    pub(crate) fn shell_display_rows(&self) -> Vec<String> {
+        std::iter::once(DISPLAY_AUTO_LABEL.to_owned())
+            .chain(self.displays.iter().map(DisplayChoice::label))
+            .collect()
+    }
+
     pub(crate) fn shell_popup(&self, layout: &LauncherOptionsLayout) -> Option<LauncherComboPopup> {
         let combo = self.open_combo?;
         // The list box hangs under the painted face; its rows use this
@@ -521,6 +567,11 @@ impl OptionsDialogState {
                 let shown = self.shell_selected_sidebar(layout);
                 let selected = choices.iter().position(|size| *size == shown);
                 (choices.len(), selected)
+            }
+            LauncherComboId::Display => {
+                let rows = self.display_choices();
+                let selected = rows.iter().position(|target| target == &self.display);
+                (rows.len(), selected)
             }
         };
         let metrics = DropdownMetrics::scaled(layout.scale);
@@ -630,6 +681,7 @@ impl OptionsDialogState {
                 LauncherStatusHelp::Text(match combo {
                     LauncherComboId::Zoom => ZOOM_HELP,
                     LauncherComboId::Sidebar => SIDEBAR_HELP,
+                    LauncherComboId::Display => DISPLAY_HELP,
                 })
             })
     }
@@ -656,6 +708,12 @@ impl OptionsDialogState {
                 LauncherComboId::Sidebar => {
                     match row.and_then(|row| layout.sidebar_choices().get(row).copied()) {
                         Some(size) => self.select_sidebar(size),
+                        None => self.open_combo = None,
+                    }
+                }
+                LauncherComboId::Display => {
+                    match row.and_then(|row| self.display_choices().get(row).cloned()) {
+                        Some(target) => self.select_display(target),
                         None => self.open_combo = None,
                     }
                 }
@@ -747,6 +805,21 @@ mod tests {
             LauncherOptionsValues::default(),
             Zoom::Auto,
             true,
+            vec![
+                DisplayChoice {
+                    id: "\\\\.\\DISPLAY1".to_owned(),
+                    width: 1920,
+                    height: 1080,
+                    refresh_millihertz: Some(60_000),
+                },
+                DisplayChoice {
+                    id: "\\\\.\\DISPLAY2".to_owned(),
+                    width: 2560,
+                    height: 1440,
+                    refresh_millihertz: Some(144_000),
+                },
+            ],
+            DisplayTarget::Auto,
         )
     }
 
@@ -897,10 +970,20 @@ mod tests {
         let state = vera_state();
         let layout = vera_layout();
         assert!(layout.trackbars.is_empty());
-        // The Sidebar list sits where Zoom does on the main page.
+        // The Sidebar and Display lists sit in the Display Options band's right
+        // column, Sidebar above Display, each with its own caption.
         assert_eq!(
             layout.combos,
-            [(LauncherComboId::Sidebar, main_layout().combos[0].1)]
+            [
+                (
+                    LauncherComboId::Sidebar,
+                    RectPx::new(351, 66, 180, COMBO_FACE_H)
+                ),
+                (
+                    LauncherComboId::Display,
+                    RectPx::new(351, 110, 180, COMBO_FACE_H)
+                ),
+            ]
         );
         // Each of the ten boxes is on exactly one page.
         let main = main_layout();
@@ -1234,6 +1317,8 @@ mod tests {
             LauncherOptionsValues::default(),
             Zoom::Percent(300),
             true,
+            Vec::new(),
+            DisplayTarget::Auto,
         );
         state.open_combo = Some(LauncherComboId::Zoom);
         let layout = LauncherOptionsLayout::responsive(1920, 1080, OptionsPage::Main);
@@ -1285,6 +1370,87 @@ mod tests {
         state.shell_mouse_down(face.x + 10, face.y + 5, &zoomed);
         let popup = state.shell_popup(&zoomed).unwrap();
         assert_eq!((popup.rows, popup.selected), (2, 1));
+    }
+
+    #[test]
+    fn display_list_picks_the_screen_a_row_names() {
+        let mut state = vera_state();
+        let layout = vera_layout();
+        let face = layout.combo_rect(LauncherComboId::Display).unwrap();
+        // Auto is the face's text and the list's first row until a screen is
+        // picked, so a fresh profile reads the way it always behaved.
+        assert_eq!(state.shell_display_label(), DISPLAY_AUTO_LABEL);
+        state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
+        assert_eq!(state.open_combo, Some(LauncherComboId::Display));
+        let popup = state.shell_popup(&layout).unwrap();
+        assert_eq!(
+            (popup.combo, popup.rows, popup.selected),
+            (LauncherComboId::Display, 3, 0),
+            "Auto, then the two screens"
+        );
+        assert_eq!(
+            state.shell_display_rows(),
+            [
+                DISPLAY_AUTO_LABEL.to_owned(),
+                "DISPLAY1: 1920x1080: 60Hz".to_owned(),
+                "DISPLAY2: 2560x1440: 144Hz".to_owned(),
+            ]
+        );
+        // The second screen's row: the pick publishes at once, like Sidebar.
+        state.drain_output();
+        let second = popup.row_rect(2);
+        state.shell_mouse_down(second.x + 10, second.y + 5, &layout);
+        assert_eq!(state.open_combo, None);
+        assert_eq!(state.shell_display_label(), "DISPLAY2: 2560x1440: 144Hz");
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
+                LauncherOptionsEvent::DisplaySelected(DisplayTarget::Fixed(
+                    "\\\\.\\DISPLAY2".to_owned()
+                )),
+            ]
+        );
+        // Back to Auto: the window returns to the system's own choice.
+        state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
+        let popup = state.shell_popup(&layout).unwrap();
+        assert_eq!(popup.selected, 2, "the picked screen shows selected");
+        state.drain_output();
+        let auto = popup.row_rect(0);
+        state.shell_mouse_down(auto.x + 10, auto.y + 5, &layout);
+        assert_eq!(state.shell_display_label(), DISPLAY_AUTO_LABEL);
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
+                LauncherOptionsEvent::DisplaySelected(DisplayTarget::Auto),
+            ]
+        );
+    }
+
+    #[test]
+    fn display_face_names_a_saved_screen_the_desktop_no_longer_has() {
+        // The profile keeps a name this desktop does not: the face still names
+        // it, so the player can see what is saved, and its row is not selected.
+        let mut state = OptionsDialogState::new(
+            LauncherOptionsLabels::resolve(&|_| None),
+            LauncherOptionsValues::default(),
+            Zoom::Auto,
+            true,
+            state().displays().to_vec(),
+            DisplayTarget::Fixed("\\\\.\\DISPLAY9".to_owned()),
+        );
+        state.show_page(OptionsPage::Vera);
+        assert_eq!(state.shell_display_label(), "\\\\.\\DISPLAY9");
+        let layout = vera_layout();
+        let face = layout.combo_rect(LauncherComboId::Display).unwrap();
+        state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
+        let popup = state.shell_popup(&layout).unwrap();
+        assert_eq!(
+            (popup.rows, popup.selected),
+            (3, 0),
+            "an absent screen still falls back to Auto's row"
+        );
     }
 
     /// Each VERA box on its page: its caption, and a press that toggles it and

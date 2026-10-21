@@ -232,10 +232,12 @@ impl Simulation {
         // recursion's (the retries at 0x4B397F, 0x4B4480 and the 0x4B4541
         // tail, the second stage's re-entries at 0x4B41B3 and 0x4B420B),
         // unless it is the Foot's first request in a frame the batch answered.
+        // A request for the Foot's own cell never waits.
         if Self::defer_path_search(
             &mut self.path_batch,
             &self.resolved_terrain,
             &self.overlay_grid,
+            &self.substrate.entities,
             id,
             super::path_batch::WaitingRequest::NoQueue,
         ) {
@@ -500,11 +502,13 @@ impl Simulation {
         let destination = super::path_batch::code2_ladder_destination(actor)
             .ok_or("Drive/Ship code-2 ladder without a track locomotor")?;
         // A batched re-path waits for the next frame's batch as if the timer
-        // still ran (`path_batch`, a proposed deviation).
+        // still ran (`path_batch`, a proposed deviation), unless it heads for
+        // the Foot's own cell.
         if Self::defer_path_search(
             &mut self.path_batch,
             &self.resolved_terrain,
             &self.overlay_grid,
+            &self.substrate.entities,
             id,
             super::path_batch::WaitingRequest::Code2Ladder { urgency },
         ) {

@@ -97,6 +97,7 @@ impl PreparedSavedLocalView {
             Some(rules),
             saved.selection_order(),
             saved.selection_order_pending(),
+            &[],
         );
         if order != saved.selection_order() || pending != saved.selection_order_pending() {
             return Err(SavedLocalViewError::SelectionTimelineMismatch);
@@ -626,6 +627,7 @@ impl MatchInputState {
             Some(rules),
             &self.selection_order,
             self.selection_order_pending,
+            &[],
         );
         assert_eq!(self.control_groups.len(), CONTROL_GROUP_SLOTS);
         // Native membership lives on each serialized Techno, not in a list

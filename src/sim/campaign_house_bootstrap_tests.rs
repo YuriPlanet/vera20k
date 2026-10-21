@@ -432,6 +432,81 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
 }
 
 #[test]
+fn fresh_campaign_constructs_registered_supers_without_supported_dispatch_bodies() {
+    // House4F6202..4F6290 and Super6CAF90 use the registered type pointer,
+    // not its Type+B4 dispatch. campaign_start.py --houses executes the same
+    // constructors with twelve freshly registered, unread (Type=-1) types.
+    let root = IniFile::from_str(
+        "[Colors]\nLightGold=25,255,255\nGold=43,239,255\n\
+         [Countries]\n0=Americans\n[Americans]\nColor=Gold\n\
+         [General]\nTeamDelays=1,1,1\n\
+         [SuperWeaponTypes]\n0=KnownDispatch\n1=UnknownDispatch\n2=UnreadType\n\
+         [KnownDispatch]\nType=PsychicReveal\n\
+         [UnknownDispatch]\nType=FutureExtension\n",
+    );
+    let mut process = NativeRulesProcessOwner::from_cold_start_sources(
+        root,
+        None,
+        IniFile::empty(),
+        std::sync::Arc::default(),
+        Default::default(),
+    )
+    .unwrap();
+    let map = MapFile::from_bytes(
+        b"[Map]\nSize=0,0,4,4\n[IsoMapPack5]\n1=CAAEABUAAAAAEQAA\n\
+          [Basic]\nPlayer=KnownHouse\n\
+          [Houses]\n0=KnownHouse\n1=OtherHouse\n\
+          [KnownHouse]\nCountry=Americans\n\
+          [OtherHouse]\nCountry=Americans\n",
+    )
+    .unwrap();
+    let (rules, _, _, receipt) = process
+        .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &map.ini)
+        .unwrap()
+        .into_parts();
+    assert_eq!(
+        rules.super_weapon_order,
+        ["KnownDispatch", "UnknownDispatch", "UnreadType"]
+    );
+    assert!(rules.super_weapon("KnownDispatch").is_some());
+    assert!(rules.super_weapon("UnknownDispatch").is_none());
+    assert!(rules.super_weapon("UnreadType").is_none());
+    let roster = parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
+    let (sim, projection) = ScenarioBootstrapRng::new(31)
+        .into_fresh_staged_simulation(
+            &ScenarioDescriptor {
+                seed: 31,
+                ..Default::default()
+            },
+            FreshScenarioPrefix::Campaign {
+                native_rules_receipt: receipt,
+                rules: &rules,
+                map_data: &map,
+                house_roster: &roster,
+                difficulty: 1,
+                mission_counter: 1,
+                game_options: None,
+            },
+        )
+        .expect("registered Super instances do not require a supported launch body");
+    assert!(projection.is_none());
+    assert_eq!(sim.houses.order().len(), 2);
+    for &owner in sim.houses.order() {
+        let house_id = sim.houses[&owner].native_unique_id().unwrap();
+        let supers = &sim.super_weapons[&owner];
+        assert_eq!(supers.len(), 3);
+        for (index, name) in rules.super_weapon_order.iter().enumerate() {
+            let instance = &supers[&sim.interner.get(name).unwrap()];
+            assert_eq!(
+                instance.native_unique_id(),
+                Some(house_id + index as i32 + 1)
+            );
+            assert!(!instance.is_active() && !instance.is_ready() && !instance.is_suspended());
+        }
+    }
+}
+
+#[test]
 fn fresh_campaign_rejects_an_absent_stock_roster_instead_of_fabricating_offline_houses() {
     let ini =
         IniFile::from_str("[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n");

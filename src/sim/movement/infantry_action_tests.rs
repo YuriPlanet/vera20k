@@ -780,6 +780,7 @@ fn retail_full_slaves_remap_walk_before_fear_and_keep_the_action_clock_on_refusa
             owner.then_some(123),
             vec![
                 CargoBale {
+                    tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(0),
                     resource_type: ResourceType::Ore,
                     value: 25,
                 };
@@ -808,5 +809,93 @@ fn retail_full_slaves_remap_walk_before_fear_and_keep_the_action_clock_on_refusa
             assert_eq!(sim.entities().get(id).unwrap().native_stage(), &old_stage);
         }
         assert_eq!(sim.rng_state(), rng);
+    }
+}
+
+/// `DoType_Sequencer`'s Shovel arm (`0x00520B61..0x00520B84`) asks
+/// `Get_Mission` (vt+0x184, `0x005B3040`: the current Mission, or the queued
+/// one while current is -1) whether it is Harvest; any other answer takes the
+/// forced Ready at `0x00520E42`. Only the current -1 row with Harvest queued
+/// tells this apart from reading the current Mission alone, and no path was
+/// found that brings a digging slave there. Do_Action refuses the Shovel
+/// already playing before its force test (`0x0051D90B`), so Doing and the
+/// stage stay put and the draw wraps.
+#[test]
+fn retail_slave_shovel_completion_follows_the_effective_mission() {
+    use crate::sim::mission::state::MissionTestFixture;
+    use crate::sim::mission::{MissionDispatchTimer, MissionId};
+    use crate::sim::world::FrameEffects;
+    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    rules.bind_animation_sequences(
+        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
+    );
+    let shovel = rules
+        .animation_sequence("SLAV")
+        .unwrap()
+        .infantry_action(38)
+        .unwrap()
+        .frames_per_facing;
+    let harvest = MissionId::from_raw(10);
+    let guard = MissionId::from_raw(5);
+    for (current, queued, expected) in [
+        (harvest, MissionId::NONE, 38),
+        (MissionId::NONE, harvest, 38),
+        (guard, harvest, 0),
+        (MissionId::NONE, MissionId::NONE, 0),
+    ] {
+        let mut sim = Simulation::with_seed(6);
+        let id = sim
+            .construct_object_limbo_at_height(
+                "SLAV",
+                "YuriCountry",
+                10,
+                10,
+                0,
+                0,
+                &rules,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        actor.mission.apply_test_fixture(MissionTestFixture {
+            current,
+            suspended: MissionId::NONE,
+            queued,
+            movement_bypass_latch: 0,
+            handler_state: 0,
+            mission_start_frame: 0,
+            ai_counter: 0,
+            dispatch_timer: MissionDispatchTimer::at_frame(0),
+        });
+        actor.mission_leaf.set_infantry_doing_verified(38).unwrap();
+        actor.install_native_stage_fixture(crate::sim::stage::StageClass::from_native_fixture(
+            shovel,
+            0,
+            crate::sim::timer::CdTimer::from_raw(17, 91),
+            92,
+            1,
+        ));
+        assert!(!sim.infantry_sequencer(id, &rules, FrameEffects::default()));
+        assert_eq!(
+            doing(&sim, id),
+            expected,
+            "current {current:?}, queued {queued:?}"
+        );
+        if expected == 38 {
+            assert_eq!(
+                sim.substrate
+                    .entities
+                    .get(id)
+                    .unwrap()
+                    .native_stage()
+                    .value(),
+                shovel,
+                "refused re-request keeps the stage: current {current:?}, queued {queued:?}"
+            );
+        }
     }
 }

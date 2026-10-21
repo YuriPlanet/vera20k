@@ -711,42 +711,6 @@ pub(crate) fn tick_dying_animation(
     anim.finished
 }
 
-/// Map a warhead's `InfDeath=` to the death sequence, if it selects one at all.
-///
-/// gamemd-derived: the `InfantryClass` death handler's jump table at
-/// `0x00518D58`, dispatched on `InfDeath - 1` over the range 0..9. The mapping
-/// is EXCLUSIVE: `1` plays `Die1` and `2` plays `Die2` with no animation, while
-/// `3..=10` spawn an animation and no sequence, and `0` or `> 10` do nothing at
-/// all. `Die3`, `Die4` and `Die5` are unreachable — no arm reaches DoType
-/// `0x0D`/`0x0E`/`0x0F`. Selection draws no RNG: `Do_Action` is called with
-/// `randomStart = 0`, which is the parameter that gates the frame-start draw.
-///
-/// RESIDUAL (GSI-08.13) — three arms ahead of the table are not modelled, each
-/// needing a field VERA does not carry: a kill by a building whose type sets
-/// `+0x16BF` forces `5`; a type with a non-empty `DeathAnims` list (`+0xE7C`)
-/// spawns from that list and returns, taking NO sequence; and `NotHuman=`
-/// (`+0xEAD`) forces `Die1`. `+0x16BF` is `LaserFence=` (BuildingTypeClass::
-/// ReadINI, `0x00460AA9`), which retail `rulesmd.ini` sets nowhere, so that
-/// arm is dormant. Trigger: the `DeathAnims=` and `NotHuman=` types. Player
-/// effect: such a type plays a death it does not own. The paradropping
-/// infantryman's arm ahead of them is `world::infantry_death`'s
-/// `PARADROP_INF_DEATH`.
-pub fn death_sequence_for_inf_death(inf_death: u8) -> Option<SequenceKind> {
-    match inf_death {
-        1 => Some(SequenceKind::Die1),
-        2 => Some(SequenceKind::Die2),
-        _ => None,
-    }
-}
-
-/// Whether this `InfDeath=` spawns a death ANIMATION rather than a sequence.
-///
-/// gamemd-derived: same jump table, arms 3..=10. Exclusive with
-/// [`death_sequence_for_inf_death`] by construction.
-pub fn inf_death_spawns_anim(inf_death: u8) -> bool {
-    (3..=10).contains(&inf_death)
-}
-
 #[cfg(test)]
 #[path = "animation_tests.rs"]
 mod tests;

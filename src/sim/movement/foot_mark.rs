@@ -320,7 +320,7 @@ impl Simulation {
             return false;
         }
         self.techno_mark_after_object(id, rules, frame_effects);
-        self.foot_place_down(id, rules, registry, receive);
+        self.foot_place_down(id, rules, registry, receive, frame_effects);
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::CellMarked);
         true
@@ -339,6 +339,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         receive: &mut impl FnMut(&mut Simulation, u64),
+        frame_effects: FrameEffects<'_>,
     ) {
         let Some((cell, layer)) = self.foot_mark_cell(id) else {
             return;
@@ -356,7 +357,7 @@ impl Simulation {
         self.discover_cell_put_object(
             id,
             cell,
-            crate::sim::world::UninitContext::new(rules, registry),
+            crate::sim::world::UninitContext::new(rules, registry).with_effects(frame_effects),
         );
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationListLinked);

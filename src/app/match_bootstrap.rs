@@ -89,6 +89,9 @@ pub struct PreparedNetworkStartup {
     host: bool,
     max_ahead_frames: i32,
     wol_start: crate::app::match_runtime::session::WolStartTerms,
+    /// A co-op continuation's carry-over record (`0x004C6210` after
+    /// Start_Scenario); a first start restores none.
+    carry_over: Option<CampaignCarryOver>,
 }
 
 impl PreparedNetworkStartup {
@@ -111,7 +114,17 @@ impl PreparedNetworkStartup {
             host,
             max_ahead_frames,
             wol_start,
+            carry_over: None,
         }
+    }
+
+    pub(crate) fn with_carry_over(mut self, record: CampaignCarryOver) -> Self {
+        self.carry_over = Some(record);
+        self
+    }
+
+    pub(crate) fn carry_over(&self) -> Option<&CampaignCarryOver> {
+        self.carry_over.as_ref()
     }
 
     pub(crate) fn max_ahead_frames(&self) -> i32 {
@@ -320,6 +333,27 @@ pub fn prepare_campaign_startup(
     clock: &mut impl MatchSeedClock,
 ) -> Option<PreparedCampaignStartup> {
     let campaign_index = campaigns.find_index(name)?;
+    prepare_campaign_startup_at_index(
+        campaigns,
+        campaign_index,
+        difficulty,
+        scenario,
+        launch_options,
+        clock,
+    )
+}
+
+/// Retain an already-resolved catalog identity, including entries whose native
+/// truncated IDs collide. Both named shell starts and external Scenario lookup
+/// use this one constructor and consume the seed only after admission succeeds.
+pub(crate) fn prepare_campaign_startup_at_index(
+    campaigns: &crate::rules::campaigns::CampaignRegistry,
+    campaign_index: usize,
+    difficulty: i32,
+    scenario: Option<&str>,
+    launch_options: Option<CampaignLaunchOptions>,
+    clock: &mut impl MatchSeedClock,
+) -> Option<PreparedCampaignStartup> {
     let campaign = campaigns.get(campaign_index)?.clone();
     let (scenario, scenario_file) = prepare_campaign_scenario(
         scenario.unwrap_or_else(|| campaign.scenario()),

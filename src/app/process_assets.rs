@@ -49,6 +49,9 @@ pub(crate) struct ProcessAssets {
     /// loads, reseeds, and save transitions must not clear it.
     pub(crate) tile_variant_selector_cache:
         crate::map::tile_variant_selector::TileVariantSelectorCache,
+    /// The network games' Rules/AI/Art INI hashes, computed once from the
+    /// process sources; `None` without them.
+    native_ini_hashes: Option<crate::rules::native_ini_hash::NativeIniHashes>,
 }
 
 /// Immutable process sources; output players and match queues have separate
@@ -87,6 +90,7 @@ impl ProcessAssets {
             shared_cell_dummy: Default::default(),
             csf: None,
             tile_variant_selector_cache: Default::default(),
+            native_ini_hashes: None,
         }
     }
 
@@ -153,17 +157,22 @@ impl ProcessAssets {
                 None
             };
             let definitions = crate::rules::audio_sources::AudioDefinitions::select(assets);
-            log::info!(
-                "Process audio catalog selected: {}",
-                serde_json::json!({
-                    "soundmd": definitions.sound_source(),
-                    "evamd": definitions.eva_source(),
-                    "index_enabled": self.load_audio_index,
-                    "index": index.as_ref().map(|loaded| &loaded.sources),
-                    "sound_count": definitions.sounds().len(),
-                    "eva_count": definitions.eva().len(),
-                })
-            );
+            let source_receipt = serde_json::json!({
+                "soundmd": definitions.sound_source(),
+                "evamd": definitions.eva_source(),
+                "index_enabled": self.load_audio_index,
+                "index": index.as_ref().map(|loaded| &loaded.sources),
+                "sound_count": definitions.sounds().len(),
+                "eva_count": definitions.eva().len(),
+            });
+            #[cfg(feature = "ares")]
+            let source_receipt = {
+                let mut receipt = source_receipt;
+                receipt["additional_indexes"] =
+                    serde_json::json!(index.as_ref().map(|loaded| &loaded.additional_sources));
+                receipt
+            };
+            log::info!("Process audio catalog selected: {source_receipt}");
             self.audio_catalog = Some(ProcessAudioCatalog { definitions, index });
         }
         if self.native_rules.is_some() {
@@ -252,6 +261,59 @@ impl ProcessAssets {
         &self,
     ) -> Option<&crate::rules::process_owner::NativeRulesProcessOwner> {
         self.native_rules.as_ref()
+    }
+
+    pub(crate) fn native_ini_hashes(
+        &self,
+    ) -> Option<crate::rules::native_ini_hash::NativeIniHashes> {
+        self.native_ini_hashes
+    }
+
+    /// Hash the process sources once (`crate::rules::native_ini_hash`):
+    /// the selected rules root and ART, AIMD, each mode's INI by id
+    /// `1..=count` and CoopCampMD.
+    pub(crate) fn install_native_ini_hashes(
+        &mut self,
+        assets: &AssetManager,
+        modes: &[crate::skirmish_modes::SkirmishGameMode],
+    ) {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::retail_sources::{select_ini, select_mode_ini};
+        let Some(rules) = self.native_rules.as_ref() else {
+            return;
+        };
+        let ai = match select_ini(assets, assets.ini_roots().ai()) {
+            Ok(selected) => selected.ini,
+            Err(error) => {
+                log::warn!("No INI hashes without the AI root: {error}");
+                return;
+            }
+        };
+        // 0x00679D90 walks the ids 1..=count (0x005D5ED0) and finds each
+        // mode by id (0x005D5F30); 0x005D67B0 gives an empty INI for a
+        // missing file. Retail ids are 1..9 without a gap.
+        let mode_inis: Vec<IniFile> = (1..=modes.len() as i32)
+            .filter_map(|id| crate::skirmish_modes::mode_by_id(modes, id))
+            .map(|mode| {
+                select_mode_ini(assets, Some(&mode.override_file))
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(IniFile::empty)
+            })
+            .collect();
+        let cooperative = select_ini(
+            assets,
+            crate::app::frontend::skirmish_session::cooperative::COOPERATIVE_CAMPAIGN_INI,
+        )
+        .ok()
+        .map(|selected| selected.ini);
+        self.native_ini_hashes = Some(crate::rules::native_ini_hash::NativeIniHashes::compute(
+            rules.selected_rules_root(),
+            &mode_inis,
+            cooperative.as_ref(),
+            &ai,
+            rules.fixed_art(),
+        ));
     }
 
     pub(crate) fn read_multiplayer_country(
@@ -423,6 +485,35 @@ mod tests {
                 .section_or_empty("TEST")
                 .read_bool("Voxel", false),
             true
+        );
+    }
+
+    /// The production install over the retail sources against the native
+    /// run of `0x00679D90`/`0x00679ED0`/`0x00679EC0`
+    /// (tools/storage_oracle/ini_crc).
+    #[test]
+    fn retail_ini_hashes_match_the_native_composite() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut process = ProcessAssets::new_with_ini_config(
+            MediaArchiveMode::STOCK_DIGITAL,
+            false,
+            Default::default(),
+        );
+        process.initialize_sources_if_needed(&assets).unwrap();
+        let modes = crate::skirmish_modes::skirmish_modes_from_assets(&assets).unwrap();
+        process.install_native_ini_hashes(&assets, &modes);
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/ini_crc.json",
+        ))
+        .unwrap();
+        let composite = &corpus["composite"];
+        let value = |key: &str| composite[key]["unsigned"].as_u64().unwrap() as u32;
+        let hashes = process.native_ini_hashes().expect("retail INI hashes");
+        assert_eq!(
+            (hashes.rules, hashes.ai, hashes.art),
+            (value("rules"), value("ai"), value("art"))
         );
     }
 

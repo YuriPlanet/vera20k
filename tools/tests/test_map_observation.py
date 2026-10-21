@@ -4093,6 +4093,40 @@ class MapObservationTests(unittest.TestCase):
                          ['payload']['LaunchSuperWeapon']['sw_type_id'], 'IronCurtainSpecial')
         self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
 
+    def test_tracked_production_profiles_bind_named_types_after_interner_reordering(self):
+        # Synthetic child witnesses exercise the production profile/binding
+        # validators; they do not establish successful in-game production.
+        registry = [
+            {'type_id': 'GAPOWR', 'interned_id': 907, 'category': 'Structure'},
+            {'type_id': 'GAPILE', 'interned_id': 1203, 'category': 'Structure'},
+            {'type_id': 'E1', 'interned_id': 55, 'category': 'Infantry'},
+        ]
+        for name in ('barracks-output', 'building-opening', 'barracks-interframe-rally'):
+            with self.subTest(profile=name):
+                path = observation.ROOT / f'tools/map_observation.{name}.example.json'
+                profile = json.loads(path.read_text())
+                observation._profile_extensions(profile)
+                commands = [row for row in profile['commands']
+                            if next(iter(row['payload'])) in ('QueueProduction', 'PlaceReadyBuilding')]
+                expected = ['GAPOWR', 'GAPOWR', 'GAPILE', 'GAPILE', 'E1']
+                if name != 'building-opening':
+                    expected.append('E1')
+                self.assertEqual([next(iter(row['payload'].values()))['type_id']
+                                  for row in commands], expected)
+                self.assertEqual(profile['schema_version'], observation.PROFILE_V3)
+                for ordinal, request in enumerate(commands):
+                    variant, arguments = next(iter(request['payload'].items()))
+                    binding = next(row for row in registry if row['type_id'] == arguments['type_id'])
+                    receipt = deepcopy(request)
+                    receipt['payload'][variant]['type_id'] = binding['interned_id']
+                    receipt['bindings'] = {f'/{variant}/type_id': deepcopy(binding)}
+                    label = f'{name}.commands[{ordinal}]'
+                    self.assertEqual(observation._command_bindings(
+                        receipt, request, registry, label), 1)
+                    receipt['payload'][variant]['type_id'] += 1
+                    with self.assertRaises(ValidationError):
+                        observation._command_bindings(receipt, request, registry, label)
+
     def test_symbolic_receipts_reject_wrong_binding_or_unbound_argument_changes(self):
         self.symbolic_profile()
         mutations = [
@@ -5488,6 +5522,43 @@ class MapObservationTests(unittest.TestCase):
         report = observation.compare_runs(before, after)
         self.assertEqual(report['status'], 'MISMATCH', report['errors'])
         self.assertEqual([d['field'] for d in report['differences']], ['frame.bytes'])
+
+    def test_comparison_reports_tooltip_outputs_without_invalidating_clock(self):
+        self.profile.update(schema_version=observation.PROFILE_V3, observe_tooltips=True)
+        self.profile_path.write_text(json.dumps(self.profile))
+        shown = self.tooltip_observation()
+        shown['active'] = {'id': 999, 'text': 'Power',
+                           'cursor_px': [400, 200], 'shown_at_ms': 22}
+        # A middle draw must be compared even when the final tooltip/frame agrees.
+        self.tooltip_frames[2] = shown
+        before = self.valid_capture('tooltip-before')
+        unchanged = self.valid_capture('tooltip-unchanged')
+        report = observation.compare_runs(before, unchanged)
+        self.assertEqual(report['status'], 'MATCH', report['errors'])
+        self.assertEqual(report['differences'], [])
+        changes = [('active', shown['active'], None,
+                    lambda t: t.update(active=None)),
+                   ('active.text', 'Power', 'Low Power',
+                    lambda t: t['active'].update(text='Low Power')),
+                   ('active.shown_at_ms', 22, 44,
+                    lambda t: t['active'].update(shown_at_ms=44)),
+                   ('camera_zoom', 1.0, 2.0,
+                    lambda t: t.update(camera_zoom=2.0))]
+        for index, (field, old, new, change) in enumerate(changes):
+            with self.subTest(field=field):
+                changed = deepcopy(shown)
+                change(changed)
+                self.tooltip_frames[2] = changed
+                after = self.valid_capture(f'tooltip-after-{index}')
+                report = observation.compare_runs(before, after)
+                self.assertEqual(report['status'], 'MISMATCH', report['errors'])
+                self.assertEqual(report['differences'], [{
+                    'field': f'presentation_clock.draws[1].tooltip.{field}',
+                    'before': old, 'after': new}])
+                # The full validated transcripts remain available in the report.
+                for name, tooltip in (('before', shown), ('after', changed)):
+                    self.assertEqual(report[name]['capture']['presentation_clock']
+                                     ['draws'][1]['tooltip'], tooltip)
 
     def test_comparison_requires_same_input_bytes(self):
         before = self.valid_capture('input-before')

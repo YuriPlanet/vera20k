@@ -253,7 +253,7 @@ impl Simulation {
         install_authored_bridge(ge, origin);
 
         if let Some(kind) = miner_kind_for_object(obj) {
-            let mcfg = MinerConfig::from_rules(rules);
+            let mcfg = MinerConfig::default();
             let storage = obj.storage.max(0) as u16;
             ge.miner = Some(Miner::new(kind, &mcfg, storage));
         }

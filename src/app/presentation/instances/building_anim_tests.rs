@@ -356,13 +356,45 @@ fn slot_translucency_preserves_unresolved_inherited_materials() {
 }
 
 #[test]
+fn bouncing_slot_anims_take_the_ordinary_material_after_their_ground_shadow() {
+    use crate::render::{tactical_draw_plan::RenderZPolicy, terrain_draw::TerrainPiece};
+    // DrawIt has no Bouncer/IsMeteor body arm: their bodies take 4237AE.
+    // The constructor's HasBounce byte adds the 4233D2 ground shadow first.
+    for (name, keys) in [("BOUNCER", "Bouncer=yes\n"), ("METEOR", "IsMeteor=yes\n")] {
+        let (mut sim, rules, building, anim, atlas) = material_fixture(name, keys);
+        assert!(sim.anim(anim).unwrap().bounce().is_some(), "{name}");
+        force_slot_translucency(&mut sim, anim);
+        let palette = PaletteLight::color_scheme([1000; 3], 1000);
+        let inherited = DrawState {
+            remap_row: 7,
+            ..DrawState::default()
+        };
+        let order = NativeDisplayOrder::from_display(sim.display_layers());
+        let mut planned =
+            emit_with_material(&sim, &rules, building, &atlas, &order, palette, inherited);
+        assert_eq!(planned.len(), 1, "{name}");
+        assert_eq!(planned[0].pieces.len(), 2, "{name}");
+        let ground = planned[0].pieces.remove(0);
+        assert_eq!(
+            ground.target,
+            ObjectTexture::SpriteAtlasEdit(3, TerrainPiece::Shadow),
+            "{name}"
+        );
+        assert_eq!(ground.render_z, RenderZPolicy::ReadOnly, "{name}");
+        assert_eq!(ground.instance.palette_light.colour_word(), 0, "{name}");
+        assert_slot_replay(
+            planned,
+            anim,
+            1.0,
+            DrawState::from_native_selector(7, 4),
+            palette,
+        );
+    }
+}
+
+#[test]
 fn special_slot_anims_keep_their_existing_translucent_material() {
-    for (name, keys) in [
-        ("RING1", ""),
-        ("TILED", "Tiled=yes\n"),
-        ("BOUNCER", "Bouncer=yes\n"),
-        ("METEOR", "IsMeteor=yes\n"),
-    ] {
+    for (name, keys) in [("RING1", ""), ("TILED", "Tiled=yes\n")] {
         let (mut sim, rules, building, anim, atlas) = material_fixture(name, keys);
         force_slot_translucency(&mut sim, anim);
         let palette = PaletteLight::color_scheme([1000; 3], 1000);

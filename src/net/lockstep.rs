@@ -119,15 +119,8 @@ pub struct WolStartTiming {
 /// Original gamemd.exe controls: tools/storage_oracle/wol_shell.py, timing.
 pub fn wol_start_timing(game_speed: i32, pings: [i32; 8], channel_owner: bool) -> WolStartTiming {
     // Jump table 0x79561C; `ja` at 0x794F8B is unsigned.
-    let (max_ahead, owner_frame_rate, frame_send_rate) = match game_speed as u32 {
-        0 => (40, 60, 10),
-        1 => (40, 45, 10),
-        2 => (30, 30, 5),
-        3 => (20, 20, 5),
-        4 => (20, 15, 5),
-        5 => (20, 12, 5),
-        _ => (10, 10, 5),
-    };
+    let (max_ahead, owner_frame_rate) = speed_frame_budget(game_speed);
+    let frame_send_rate = if matches!(game_speed, 0 | 1) { 10 } else { 5 };
     let ping = pings.into_iter().fold(0, i32::max);
     let mut timing = WolStartTiming {
         max_ahead,
@@ -165,6 +158,34 @@ pub fn wol_start_timing(game_speed: i32, pings: [i32; 8], channel_owner: bool) -
         timing.precalc_max_ahead = round_down(base);
     }
     timing
+}
+
+/// The game-speed rows both network timing blocks share: MaxAhead
+/// `[0xA8B550]` and PreCalcFrameRate. Anything outside 0..=5, negatives
+/// included, takes the slowest row (both jumps are unsigned `ja`).
+fn speed_frame_budget(game_speed: i32) -> (i32, i32) {
+    match game_speed as u32 {
+        0 => (40, 60),
+        1 => (40, 45),
+        2 => (30, 30),
+        3 => (20, 20),
+        4 => (20, 15),
+        5 => (20, 12),
+        _ => (10, 10),
+    }
+}
+
+/// The timing block of Cooperative `+0xAC` (`0x005C49A2..0x005C4ABC`),
+/// which every peer runs before the next co-op mission: MaxAhead from the
+/// game speed, and LatencyFudge 1, or 2 when the highest of `pings`
+/// (`0xB7790C`, over the live nodes, signed maximum from 0) exceeds 1000.
+/// Returns `(max_ahead, latency_fudge)`; the PreCalc values, FrameSendRate
+/// and the IPX retry timing are transport and not returned.
+pub fn cooperative_continuation_timing(game_speed: i32, pings: &[i32]) -> (i32, i32) {
+    let (max_ahead, _) = speed_frame_budget(game_speed);
+    let ping = pings.iter().copied().fold(0, i32::max);
+    let latency_fudge = if ping > 1000 { 2 } else { 1 };
+    (max_ahead, latency_fudge)
 }
 
 /// The two verified network send-frame policies.
@@ -926,6 +947,27 @@ mod tests {
                 case["role"]
             );
         }
+    }
+
+    #[test]
+    fn cooperative_continuation_timing_follows_the_speed_table_and_ping() {
+        let speeds: Vec<i32> = [0, 1, 2, 3, 4, 5, 6, -1]
+            .into_iter()
+            .map(|speed| super::cooperative_continuation_timing(speed, &[]).0)
+            .collect();
+        assert_eq!(speeds, [40, 40, 30, 20, 20, 20, 10, 10]);
+        assert_eq!(
+            super::cooperative_continuation_timing(2, &[0, 1000]),
+            (30, 1)
+        );
+        assert_eq!(
+            super::cooperative_continuation_timing(2, &[999, -5]),
+            (30, 1)
+        );
+        assert_eq!(
+            super::cooperative_continuation_timing(2, &[200, 1001]),
+            (30, 2)
+        );
     }
 
     #[test]

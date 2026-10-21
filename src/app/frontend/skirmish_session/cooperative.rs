@@ -514,6 +514,147 @@ impl CooperativeProgressRecord {
             .ok()
             .and_then(|index| self.chosen_map(index))
     }
+
+    /// `0x0049B930`, `+0xA0`'s accounting after a won mission. Row 0 (the
+    /// first human House) counts for the first name when its narrowed UI
+    /// name equals it (case-sensitive `strcmp`), else the rows swap. The
+    /// mission's elapsed ticks are added to the time and `CurrentMap`
+    /// advances. An invalid record changes nothing.
+    pub fn record_win(&mut self, rows: [&CooperativeMissionRow; 2], elapsed: i32) -> bool {
+        if !self.valid {
+            return false;
+        }
+        let rows = if rows[0].name == self.partner_names[0] {
+            rows
+        } else {
+            [rows[1], rows[0]]
+        };
+        for (tally, row) in self.tallies.iter_mut().zip(rows) {
+            for (value, add) in tally.iter_mut().zip(row.tally()) {
+                *value = value.wrapping_add(add);
+            }
+        }
+        self.time = self.time.wrapping_add(elapsed);
+        self.current_map = self.current_map.wrapping_add(1);
+        true
+    }
+
+    /// `0x0049D070` with -1: the chosen map at `CurrentMap`, `None` past the
+    /// last stage or on an invalid record.
+    pub fn next_scenario_token(&self) -> Option<&str> {
+        self.valid.then(|| self.current_chosen_map()).flatten()
+    }
+
+    /// `+0xA8`'s `can_continue`: `CurrentMap` (`0x0049BCC0`) below the stage
+    /// count (`0x0049BCA0`).
+    pub fn can_continue(&self) -> bool {
+        self.current_map < self.chosen_maps.len() as i32
+    }
+
+    /// `0x0049C5A0`, the coopsave.ini writer, as the section and keys it
+    /// would write. `house` holds the local node's and then the partner's
+    /// country and colour (`0x00696F10`/`0x00696F20`).
+    pub fn coop_save(
+        &self,
+        registry: &CooperativeRegistry,
+        roster: &[CooperativeCountryRosterEntry],
+        house: [(i32, i32); 2],
+    ) -> CoopSave {
+        let campaign = usize::try_from(self.campaign_type)
+            .ok()
+            .and_then(|index| registry.campaign(index));
+        let (true, false, false, Some(campaign)) = (
+            self.valid,
+            self.partner_names[0].is_empty(),
+            self.partner_names[1].is_empty(),
+            campaign,
+        ) else {
+            return CoopSave::Failed;
+        };
+        // 0x0049C611..0x0049C624: the last stage won writes nothing.
+        if self.current_map == campaign.stages.len() as i32 {
+            return CoopSave::Unchanged;
+        }
+        let section = format!(
+            "{}{}",
+            encode_name(&self.partner_names[0]),
+            encode_name(&self.partner_names[1])
+        );
+        let mut values = vec![
+            ("CurrentMap".to_owned(), self.current_map.to_string()),
+            ("CampaignType".to_owned(), self.campaign_type.to_string()),
+        ];
+        for stage in 0..campaign.stages.len() {
+            values.push((
+                format!("Map{}", stage + 1),
+                self.chosen_maps.get(stage).cloned().unwrap_or_default(),
+            ));
+        }
+        for (index, (country, color)) in house.into_iter().enumerate() {
+            values.push((
+                format!("House{}", index + 1),
+                house_type_text(country, roster),
+            ));
+            values.push((format!("Color{}", index + 1), color.to_string()));
+        }
+        values.push(("Time".to_owned(), self.time.to_string()));
+        let [first, second] = self.tallies;
+        for (key, column) in [("Kills", 0), ("Built", 1), ("Lost", 2), ("Score", 3)] {
+            values.push((format!("{key}1"), first[column].to_string()));
+            values.push((format!("{key}2"), second[column].to_string()));
+        }
+        CoopSave::Write { section, values }
+    }
+}
+
+/// One human House's row for `0x0049B930`: its narrowed UI name and the
+/// figures the record adds.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CooperativeMissionRow {
+    pub name: Vec<u8>,
+    pub kills: i32,
+    pub built: i32,
+    pub lost: i32,
+    pub score: i32,
+}
+
+impl CooperativeMissionRow {
+    /// The record's column order: kills, built, lost, score.
+    fn tally(&self) -> [i32; 4] {
+        [self.kills, self.built, self.lost, self.score]
+    }
+}
+
+/// What `0x0049C5A0` does with the file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CoopSave {
+    /// It returns false and writes nothing (`TXT_COOP_SAVE_FAILED`).
+    Failed,
+    /// The campaign's last stage: true without writing.
+    Unchanged,
+    /// Clear the section, put these keys in order, save the file. The file
+    /// write's own result is ignored natively.
+    Write {
+        section: String,
+        values: Vec<(String, String)>,
+    },
+}
+
+/// The coopsave.ini file name (`0x0081F0F8`), opened beside the profile.
+pub const COOP_SAVE_INI: &str = "coopsave.ini";
+
+/// `INIClass::Put_HouseType` (`0x00475610`): a HouseType's ID, the
+/// `<Player @ A>`..`<Player @ H>` pseudo-Houses `0x117B..0x1182`,
+/// `<random>` for -2 and -3, else `<none>`.
+pub(crate) fn house_type_text(index: i32, roster: &[CooperativeCountryRosterEntry]) -> String {
+    match index {
+        0x117B..=0x1182 => format!("<Player @ {}>", (b'A' + (index - 0x117B) as u8) as char),
+        -3 | -2 => "<random>".to_owned(),
+        _ => usize::try_from(index)
+            .ok()
+            .and_then(|index| roster.get(index))
+            .map_or_else(|| "<none>".to_owned(), |entry| entry.id.clone()),
+    }
 }
 
 /// The two independently ordered writes of Cooperative mode+68/5C30C0.
@@ -1165,6 +1306,10 @@ impl CooperativeProgressState {
 
     pub fn active(&self) -> Option<&CooperativeProgressRecord> {
         self.active.as_ref()
+    }
+
+    pub(crate) fn active_mut(&mut self) -> Option<&mut CooperativeProgressRecord> {
+        self.active.as_mut()
     }
 
     #[cfg(test)]
@@ -2103,5 +2248,119 @@ mod tests {
         assert!(state.refresh_pending);
         assert!(state.publish(&registry, true).unwrap().0);
         assert!(!state.publish(&registry, true).unwrap().0);
+    }
+
+    fn won_record() -> CooperativeProgressRecord {
+        let mut record = CooperativeProgressRecord::default();
+        record
+            .initialize_for_campaign(&registry(), 0, &mut SimRng::new(4))
+            .unwrap();
+        record.bind_partners("Host", "Guest");
+        record
+    }
+
+    fn mission_row(
+        name: &str,
+        kills: i32,
+        built: i32,
+        lost: i32,
+        score: i32,
+    ) -> CooperativeMissionRow {
+        CooperativeMissionRow {
+            name: name.as_bytes().to_vec(),
+            kills,
+            built,
+            lost,
+            score,
+        }
+    }
+
+    #[test]
+    fn a_won_mission_adds_rows_by_the_first_name_and_advances_the_stage() {
+        let mut record = won_record();
+        let guest = mission_row("Guest", 1, 2, 3, 4);
+        let host = mission_row("Host", 10, 20, 30, 40);
+        // Row 0 is not the first name: the rows swap (0x0049B930).
+        assert!(record.record_win([&guest, &host], 600));
+        assert_eq!(record.tallies, [[10, 20, 30, 40], [1, 2, 3, 4]]);
+        assert_eq!((record.current_map, record.time), (1, 600));
+        assert!(record.can_continue());
+        assert_eq!(record.next_scenario_token(), record.chosen_map(1));
+        // A case difference is not the same name.
+        let other = mission_row("host", 1, 1, 1, 1);
+        assert!(record.record_win([&other, &guest], 60));
+        assert_eq!(record.tallies, [[11, 22, 33, 44], [2, 3, 4, 5]]);
+        assert_eq!(record.current_map, 2);
+        assert!(!record.can_continue());
+        assert_eq!(record.next_scenario_token(), None);
+
+        let mut invalid = CooperativeProgressRecord::default();
+        assert!(!invalid.record_win([&host, &guest], 60));
+        assert_eq!(invalid.current_map, -1);
+    }
+
+    #[test]
+    fn the_coop_save_writes_keys_in_native_order_and_skips_the_last_stage() {
+        let registry = registry();
+        let mut record = won_record();
+        let host = mission_row("Host", 10, 20, 30, 40);
+        let guest = mission_row("Guest", 1, 2, 3, 4);
+        record.record_win([&host, &guest], 600);
+        let CoopSave::Write { section, values } =
+            record.coop_save(&registry, &roster(), [(0, 3), (-2, 5)])
+        else {
+            panic!("a mid-campaign win writes");
+        };
+        assert_eq!(section, "HostGuest");
+        let maps = (record.chosen_map(0).unwrap(), record.chosen_map(1).unwrap());
+        let keys: Vec<(&str, &str)> = values
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                ("CurrentMap", "1"),
+                ("CampaignType", "0"),
+                ("Map1", maps.0),
+                ("Map2", maps.1),
+                ("House1", "Americans"),
+                ("Color1", "3"),
+                ("House2", "<random>"),
+                ("Color2", "5"),
+                ("Time", "600"),
+                ("Kills1", "10"),
+                ("Kills2", "1"),
+                ("Built1", "20"),
+                ("Built2", "2"),
+                ("Lost1", "30"),
+                ("Lost2", "3"),
+                ("Score1", "40"),
+                ("Score2", "4"),
+            ]
+        );
+        record.record_win([&host, &guest], 60);
+        assert_eq!(
+            record.coop_save(&registry, &roster(), [(0, 3), (0, 5)]),
+            CoopSave::Unchanged
+        );
+        record.bind_partners("Host", "");
+        assert_eq!(
+            record.coop_save(&registry, &roster(), [(0, 3), (0, 5)]),
+            CoopSave::Failed,
+            "a departed partner's empty name fails the save"
+        );
+    }
+
+    #[test]
+    fn house_type_text_follows_put_house_type() {
+        let roster = roster();
+        assert_eq!(house_type_text(1, &roster), "British");
+        assert_eq!(house_type_text(-2, &roster), "<random>");
+        assert_eq!(house_type_text(-3, &roster), "<random>");
+        assert_eq!(house_type_text(-1, &roster), "<none>");
+        assert_eq!(house_type_text(9, &roster), "<none>");
+        assert_eq!(house_type_text(0x117B, &roster), "<Player @ A>");
+        assert_eq!(house_type_text(0x1182, &roster), "<Player @ H>");
     }
 }

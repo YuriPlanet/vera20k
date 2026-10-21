@@ -37,10 +37,10 @@ ADD_GROWTH, ADD_SPREAD, CLEAR_BITMAPS = 0x7235A0, 0x722AF0, 0x722AB0
 DIRTY_RECTS, DIRTY_SCREEN = (0x47FDE0, 0x47FB90, 0x47FF80), 0x6D2790
 # A region of its own for the overlay/Tiberium tables and their queues.
 FIELD = 0x21000000
-OVERLAY_ITEMS, OVERLAYS, TIBS, QUEUES = FIELD, FIELD + 0x1000, FIELD + 0x20000, FIELD + 0x30000
+OVERLAY_ITEMS, OVERLAYS, TIBS, QUEUES = FIELD, FIELD + 0x1000, FIELD + 0x22000, FIELD + 0x30000
 # Overlay ordinals: Riparius TIB01..TIB12 + TIB13..TIB20, Cruentus GEM01..GEM12.
-IMAGES = {0: (102, 12, 8), 1: (27, 12, 0)}
-OVERLAY_COUNT = 128
+IMAGES = {0: (102, 12, 8), 1: (27, 12, 0), 2: (127, 12, 8), 3: (147, 12, 8)}
+OVERLAY_COUNT = 167
 
 
 def place_tiberium(u, read32, case):
@@ -397,6 +397,10 @@ def ore_tick_cases():
     return [
         dict(on, name='tick_takes_one', ore=[[15, 15, 0, 0, 5]], stage=stage),
         dict(on, name='tick_gem', ore=[[15, 15, 1, 0, 5]], stage=stage),
+        dict(on, name='tick_vinifera_preserves_riparius', ore=[[15, 15, 2, 0, 5]],
+             stage=stage, storage=[5, 0, 0, 0]),
+        dict(on, name='tick_aboreus_preserves_riparius', ore=[[15, 15, 3, 0, 5]],
+             stage=stage, storage=[5, 0, 0, 0]),
         dict(on, name='tick_last_level', ore=[[15, 15, 0, 0, 1]], stage=stage),
         dict(on, name='tick_empty_level', ore=[[15, 15, 0, 0, 0]] + ring([4] * 8, center=(15, 15)),
              stage=stage),
@@ -485,10 +489,10 @@ def generate():
 
 if __name__ == '__main__':
     finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=lambda: provenance(
-        scope='92 original executions at the ore field: 16 CellClass::Reduce_Tiberium calls (with the '
+        scope='94 original executions at the ore field: 16 CellClass::Reduce_Tiberium calls (with the '
               'TiberiumClass growth/spread queue inserts and their Scenario draws), 30 '
               'FootClass::Scan_For_Tiberium scans (with Is_Cell_Harvestable), 8 '
-              'Search_For_Tiberium_And_Move calls, 11 UnitClass::Harvest_Ore_Tick calls and 27 '
+              'Search_For_Tiberium_And_Move calls, 13 UnitClass::Harvest_Ore_Tick calls and 27 '
               'UnitClass::Mission_Harvest dispatches in states 0 and 1.',
         entry_points={'reduce_tiberium': REDUCE, 'scan_for_tiberium': SCAN,
                       'search_for_tiberium_and_move': SEARCH, 'harvest_ore_tick': ORE_TICK,
@@ -503,7 +507,9 @@ if __name__ == '__main__':
                      'read it. Ground speed table rows LandType 0 and 5 (Tiberium) passable for every '
                      'SpeedType, as the Rust scene.',
                      'Overlay ordinals: Riparius TIB01..TIB12 at 102.. (+8 extra), Cruentus GEM01..GEM12 '
-                     'at 27..; each row cell is (x, y, tiberium, variant, OverlayData) with LandType 5. '
+                     'at 27.., Vinifera TIB2_01..20 at127..146, Aboreus TIB3_01..20 at147..166; '
+                     'Image3/4 use12 primary plus8 extra overlays. Each row cell is '
+                     '(x, y, tiberium, variant, OverlayData) with LandType5. '
                      'TiberiumClass Values 25/50/25/25, SpreadPercentage 0.1 unless the row says, spread '
                      'and growth queues empty with 64 slots, Scenario flag 0x80 (spreads) unless the row '
                      'says.',

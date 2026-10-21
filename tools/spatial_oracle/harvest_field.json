@@ -15650,6 +15650,194 @@
           15,
           15
         ],
+        "name": "tick_vinifera_preserves_riparius",
+        "ore": [
+          [
+            15,
+            15,
+            2,
+            0,
+            5
+          ]
+        ],
+        "stage": [
+          9,
+          0,
+          150,
+          0,
+          2
+        ],
+        "storage": [
+          5,
+          0,
+          0,
+          0
+        ]
+      },
+      "ok": 1,
+      "reach_args": [],
+      "state": {
+        "archive": null,
+        "balance": 0,
+        "cells": {
+          "15,15": [
+            127,
+            4,
+            5
+          ]
+        },
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "flag_3d0": 0,
+        "harvesting": 0,
+        "house_no_ore": 0,
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "random_indices": [
+          0,
+          103
+        ],
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "spread": [
+          [],
+          []
+        ],
+        "stage": [
+          0,
+          200,
+          2,
+          2
+        ],
+        "storage": [
+          5.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [],
+      "input": {
+        "miner_cell": [
+          15,
+          15
+        ],
+        "name": "tick_aboreus_preserves_riparius",
+        "ore": [
+          [
+            15,
+            15,
+            3,
+            0,
+            5
+          ]
+        ],
+        "stage": [
+          9,
+          0,
+          150,
+          0,
+          2
+        ],
+        "storage": [
+          5,
+          0,
+          0,
+          0
+        ]
+      },
+      "ok": 1,
+      "reach_args": [],
+      "state": {
+        "archive": null,
+        "balance": 0,
+        "cells": {
+          "15,15": [
+            147,
+            4,
+            5
+          ]
+        },
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 49152,
+          "duration": 0,
+          "start": 49152,
+          "timer_start": -1
+        },
+        "flag_3d0": 0,
+        "harvesting": 0,
+        "house_no_ore": 0,
+        "miner_contact": null,
+        "miner_mission": 7,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 0,
+        "miner_tether": 0,
+        "other_contact": null,
+        "random_indices": [
+          0,
+          103
+        ],
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": null,
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 0,
+        "spread": [
+          [],
+          []
+        ],
+        "stage": [
+          0,
+          200,
+          2,
+          2
+        ],
+        "storage": [
+          5.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "unloading": 0
+      }
+    },
+    {
+      "events": [],
+      "input": {
+        "miner_cell": [
+          15,
+          15
+        ],
         "name": "tick_last_level",
         "ore": [
           [

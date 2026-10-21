@@ -241,11 +241,11 @@ impl MultiplayerShellRuntime {
     }
 
     fn update_local_preference_bytes(&self, existing: &[u8]) -> Vec<u8> {
-        let name = usize::try_from(self.local_preferences.side)
-            .ok()
-            .and_then(|index| self.cooperative_country_roster.get(index))
-            .map_or("<random>", |country| country.id.as_str());
-        self.local_preferences.update_ini_bytes(existing, name)
+        let name = cooperative::house_type_text(
+            self.local_preferences.side,
+            &self.cooperative_country_roster,
+        );
+        self.local_preferences.update_ini_bytes(existing, &name)
     }
 
     /// Add_Message's typing-reveal gate for a session mode
@@ -1181,6 +1181,66 @@ impl MultiplayerShellRuntime {
     /// Failure is intentionally nonfatal, matching the native caller.
     pub(crate) fn persist_snapshot(&mut self) {
         self.persist_preferences(|runtime, existing| runtime.update_persistence_bytes(existing));
+    }
+
+    /// Cooperative `+0xA0` after a won mission (`0x005C3783..0x005C381F`):
+    /// the active record adds the mission (`0x0049B930`), then
+    /// `0x0049C5A0` writes coopsave.ini beside the profile. `None` without
+    /// an active record; else whether the save reported success (a failed
+    /// file write still reports it, as natively).
+    pub(crate) fn record_cooperative_win(
+        &mut self,
+        rows: [&cooperative::CooperativeMissionRow; 2],
+        elapsed: i32,
+        house: [(i32, i32); 2],
+    ) -> Option<bool> {
+        let record = self.cooperative_progress.active_mut()?;
+        record.record_win(rows, elapsed);
+        match record.coop_save(
+            &self.cooperative_registry,
+            &self.cooperative_country_roster,
+            house,
+        ) {
+            cooperative::CoopSave::Failed => Some(false),
+            cooperative::CoopSave::Unchanged => Some(true),
+            cooperative::CoopSave::Write { section, values } => {
+                self.write_coop_save(&section, &values);
+                Some(true)
+            }
+        }
+    }
+
+    /// CCINIClass reads coopsave.ini (a read failure leaves it empty),
+    /// clears the section, puts the keys and saves the whole file.
+    fn write_coop_save(&self, section: &str, values: &[(String, String)]) {
+        let Some(path) = self
+            .ini_path
+            .as_deref()
+            .and_then(Path::parent)
+            .map(|dir| dir.join(cooperative::COOP_SAVE_INI))
+        else {
+            return;
+        };
+        let existing = std::fs::read(&path).unwrap_or_default();
+        let values: Vec<(&str, &str)> = values
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect();
+        let updated = crate::util::ini_writer::replace_ini_section(&existing, section, &values);
+        if let Err(err) = std::fs::write(&path, updated) {
+            log::warn!("Could not write {}: {err}", path.display());
+        }
+    }
+
+    /// Cooperative `+0xA8` (`0x005C42D0`): `None` without an active record
+    /// (the dialog does not run), else `CurrentMap < count` (`0x005C4432`).
+    pub(crate) fn cooperative_can_continue(&self) -> Option<bool> {
+        Some(self.cooperative_progress.active()?.can_continue())
+    }
+
+    /// `0x0049D070` on the active record: the next stage's map token.
+    pub(crate) fn cooperative_next_scenario_token(&self) -> Option<&str> {
+        self.cooperative_progress.active()?.next_scenario_token()
     }
 
     fn persist_preferences(&mut self, update: impl Fn(&Self, &[u8]) -> Vec<u8>) {

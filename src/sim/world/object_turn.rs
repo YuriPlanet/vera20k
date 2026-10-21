@@ -894,7 +894,7 @@ impl Simulation {
             // Foot4DA63B..670 precedes the high-flight sight block and
             // Process. Cruise crossing itself has no PerCell promotion.
             sim.promote_balloon_playfield_membership_before_process(stable_id, rules);
-            sim.refresh_high_flying_sight_before_process(stable_id, rules);
+            sim.refresh_high_flying_sight_before_process(stable_id, rules, object_ctx.effects);
         }
 
         // Foot4DA80C captures +538 before locomotor Process. The sound tail

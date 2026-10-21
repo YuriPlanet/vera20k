@@ -23,7 +23,7 @@ fn label(state: &AppState, key: &str) -> String {
         .unwrap_or(key)
         .to_owned()
 }
-fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
+pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
     let value = match item {
         SkirmishComboItem::Country(SkirmishCountryChoice::Random) => -2,
         SkirmishComboItem::Country(SkirmishCountryChoice::Country(country)) => {

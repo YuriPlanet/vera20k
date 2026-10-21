@@ -426,8 +426,6 @@ pub enum FreshScenarioPrefixError {
         "campaign Super constructors have {allocated} native types but {projected} registry identities"
     )]
     SuperWeaponRegistryMismatch { allocated: usize, projected: usize },
-    #[error("campaign Super constructor type {name} has no supported Rules body")]
-    UnsupportedSuperWeaponConstructor { name: String },
 }
 
 /// Draw-free stock-offline state retained after the prefix cursor receipt is
@@ -2727,15 +2725,12 @@ impl ScenarioBootstrapRng {
                         projected: rules.super_weapon_order.len(),
                     });
                 }
-                for name in &rules.super_weapon_order {
-                    if rules.super_weapon(name).is_none() {
-                        return Err(
-                            FreshScenarioPrefixError::UnsupportedSuperWeaponConstructor {
-                                name: name.clone(),
-                            },
-                        );
-                    }
-                }
+                // House4F6202..4F6290 constructs every registered Super via
+                // 6CAF90, even when Type+B4 is -1 or has no implemented
+                // dispatch body. The instance owner already uses this order;
+                // launch support is not a prerequisite for House admission.
+                // Evidence: input_oracle/campaign_start.py --houses (native
+                // SuperType registration without its later body reader).
                 let mut simulation = self.into_simulation(descriptor);
                 let mut start_header = crate::map::preview::ScenarioStartHeader::default();
                 start_header.read_ini(&map_data.ini);

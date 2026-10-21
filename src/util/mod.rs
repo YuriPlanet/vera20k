@@ -36,6 +36,7 @@ pub mod pixel_conversion;
 pub mod read_helpers;
 pub mod retail_pointer_sort;
 pub mod retail_trig;
+pub(crate) mod sha1;
 pub mod sha256;
 pub mod single_instance;
 pub mod version;

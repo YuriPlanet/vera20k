@@ -736,6 +736,7 @@ pub(crate) fn spread_tiberium(
 /// Result of one `Reduce_Tiberium` call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReduceTiberiumOutcome {
+    pub tiberium_type: Option<TiberiumTypeId>,
     pub removed_amount: u16,
     pub resource_type: Option<ResourceType>,
     pub fully_removed: bool,
@@ -745,6 +746,7 @@ impl ReduceTiberiumOutcome {
     fn none() -> Self {
         Self {
             removed_amount: 0,
+            tiberium_type: None,
             resource_type: None,
             fully_removed: false,
         }
@@ -820,6 +822,7 @@ pub fn reduce_tiberium(
         }
         return ReduceTiberiumOutcome {
             removed_amount: amount as u16,
+            tiberium_type: Some(view.tiberium_type),
             resource_type: Some(view.resource_type),
             fully_removed: false,
         };
@@ -871,6 +874,7 @@ pub fn reduce_tiberium(
 
     ReduceTiberiumOutcome {
         removed_amount: u16::from(current),
+        tiberium_type: Some(view.tiberium_type),
         resource_type: Some(view.resource_type),
         fully_removed: true,
     }

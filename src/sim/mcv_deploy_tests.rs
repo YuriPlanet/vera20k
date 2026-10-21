@@ -422,6 +422,44 @@ fn conversion_receipt_rebuilds_navigation_in_the_conversion_frame() {
     }
     panic!("missing conversion frame");
 }
+/// A Slave Miner deployed at or below ConditionYellow passes its health ratio
+/// to YAREFN (`UnitClass::Deploy`, `0x00739946`), whose opening takes the
+/// IdleAnim slot's damaged name (`Grand_Opening`, `0x004461BB..0x004461F6`).
+/// ReadINI's copy at `0x00464028` made that `YAREFN_A`.
+#[test]
+fn retail_slave_miner_deployed_damaged_opens_its_idle_anim() {
+    let Some(mut rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
+    else {
+        return;
+    };
+    // YGREFN_A.SHP's raw frame count (render::sprite_atlas's retail test).
+    rules.bind_anim_frame_count_for_test("YAREFN_A", 4);
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let id = sim
+        .spawn_object("SMIN", "Americans", 20, 22, 0, &rules)
+        .unwrap();
+    let strength = rules.object("SMIN").unwrap().strength;
+    let miner = sim.substrate.entities.get_mut(id).unwrap();
+    miner.health.set_for_test(strength * 2 / 5);
+    tick(&mut sim, &rules, Some(Command::DeployMcv { entity_id: id }));
+    for _ in 0..200 {
+        tick(&mut sim, &rules, None);
+        let Some(refinery) = sim.substrate.entities.values().find(|e| {
+            sim.interner.resolve(e.type_ref()) == "YAREFN" && e.building_art.actually_placed()
+        }) else {
+            continue;
+        };
+        let anim = refinery.building_art.anim_slots()[18].expect("YAREFN's IdleAnim slot");
+        assert_eq!(
+            sim.interner.resolve(sim.anim(anim).unwrap().type_id()),
+            "YAREFN_A"
+        );
+        assert!(refinery.building_art.damage_state_active());
+        return;
+    }
+    panic!("the deployed refinery never opened");
+}
 #[test]
 fn retail_mcv_and_target_rules_deploy_with_one_command() {
     let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {

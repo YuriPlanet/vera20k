@@ -554,7 +554,7 @@ fn spyplane_missions_match_native() {
         let id = mission_plane(&mut sim, &rules, row);
         if flag(row, "latched") {
             // A snapshot held from before, as the row's `+0x250` stands for.
-            sim.refresh_object_sight(id, &rules, 4);
+            sim.refresh_object_sight(id, &rules, 4, crate::sim::world::FrameEffects::default());
         }
         let opposite = pick.map(|pick| {
             let opposite = edge(pick);

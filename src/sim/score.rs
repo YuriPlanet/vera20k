@@ -59,7 +59,55 @@ impl TerminalScore {
     }
 }
 
+/// One human House's row for the co-op result dialogs: `0x0046DA70` (BC6)
+/// and `0x0049B7E0` (the progress record) fill the same fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CooperativeScoreRow {
+    pub owner: InternedId,
+    /// `+0x2C`: the House is not defeated (`+0x1F5`).
+    pub survived: bool,
+    pub kills: u32,
+    pub losses: u32,
+    /// Losses plus the four on-map counters' totals (`+0x5550`, `+0x5564`,
+    /// `+0x5578`, `+0x558C`), not the produced count.
+    pub built: u32,
+    /// `+0x54E8` when positive, else 0; no survivor bonus and no draw.
+    pub score: i32,
+}
+
 impl Simulation {
+    /// `0x0046DA70`/`0x0049B7E0`: one row per House that is not
+    /// `MultiplayPassive` and is human (`+0x1EC`, `0x0050B730` in GameMode
+    /// != 0), in `Houses[]` order.
+    pub fn cooperative_score_rows(&self) -> Vec<CooperativeScoreRow> {
+        self.houses
+            .in_order()
+            .filter(|house| !house.multiplay_passive() && house.is_human())
+            .map(|house| {
+                let stats = house.stats();
+                CooperativeScoreRow {
+                    owner: house.name(),
+                    survived: !house.is_defeated(),
+                    kills: stats.kills(),
+                    losses: stats.losses(),
+                    built: stats
+                        .losses()
+                        .wrapping_add(house.tracking().active_total() as u32),
+                    score: house.economy().score().max(0),
+                }
+            })
+            .collect()
+    }
+
+    /// Cooperative `+0xA0`'s won test (`0x005C371E..0x005C3761`): some human
+    /// House (`0x0050B730`) is not defeated. The terminal flag itself is
+    /// only logged.
+    pub fn cooperative_humans_won(&self) -> bool {
+        self.houses
+            .in_order()
+            .any(|house| house.is_human() && !house.is_defeated())
+    }
+
     /// Read the already-finalized raw terminal score rows without mutation.
     pub fn terminal_score_snapshot(&self) -> Option<&TerminalScoreSnapshot> {
         self.terminal_score_snapshot.snapshot()
@@ -79,6 +127,13 @@ impl Simulation {
         houses: &Houses,
     ) -> bool {
         if terminal_score_snapshot.snapshot().is_some() {
+            return false;
+        }
+        // GameExit's co-op arm (mode vt+8, `0x00685851..0x0068586A`) draws
+        // the empty backdrop instead of the score dialog, so Cooperative
+        // makes none of its draws.
+        if session.multiplayer_mode_class() == Some(crate::skirmish_modes::MpModeClass::Cooperative)
+        {
             return false;
         }
 
@@ -587,5 +642,125 @@ mod tests {
         assert_ne!(base, hash_with_score_row(|row, _| row.built += 1));
         assert_ne!(base, hash_with_score_row(|row, _| row.raw_score += 1));
         assert_ne!(base, hash_with_score_row(|row, _| row.score += 1));
+    }
+
+    #[test]
+    fn cooperative_terminal_frame_makes_no_score_draw() {
+        let mut sim = Simulation::with_seed(0x5C4E_F000);
+        sim.session.install_multiplayer_house_identity(
+            crate::skirmish_modes::MpModeClass::Cooperative,
+            None,
+        );
+        insert_house(
+            &mut sim,
+            HouseFixture {
+                name: "Alpha",
+                defeated: false,
+                passive: false,
+                score: 100,
+                units_killed: 0,
+                buildings_killed: 0,
+                units_lost: 0,
+                buildings_lost: 0,
+                built: 0,
+            },
+        );
+        let before = sim.clone_scenario_rng().state();
+        assert!(!Simulation::finalize_terminal_score_snapshot(
+            &sim.session,
+            &mut sim.scenario_rng,
+            &mut sim.terminal_score_snapshot,
+            &sim.houses
+        ));
+        assert!(sim.terminal_score_snapshot().is_none());
+        assert_eq!(sim.clone_scenario_rng().state(), before);
+    }
+
+    #[test]
+    fn cooperative_rows_take_human_houses_with_on_map_built_counts() {
+        use crate::map::entities::EntityCategory;
+        let mut sim = Simulation::with_seed(7);
+        let enemy = insert_house(
+            &mut sim,
+            HouseFixture {
+                name: "Enemy",
+                defeated: false,
+                passive: false,
+                score: 900,
+                units_killed: 9,
+                buildings_killed: 0,
+                units_lost: 0,
+                buildings_lost: 0,
+                built: 0,
+            },
+        );
+        let host = insert_house(
+            &mut sim,
+            HouseFixture {
+                name: "Host",
+                defeated: true,
+                passive: false,
+                score: -5,
+                units_killed: 2,
+                buildings_killed: 1,
+                units_lost: 3,
+                buildings_lost: 1,
+                built: 40,
+            },
+        );
+        let guest = insert_house(
+            &mut sim,
+            HouseFixture {
+                name: "Guest",
+                defeated: false,
+                passive: false,
+                score: 70,
+                units_killed: 0,
+                buildings_killed: 0,
+                units_lost: 0,
+                buildings_lost: 0,
+                built: 0,
+            },
+        );
+        let tank = sim.interner.intern("MTNK");
+        let yard = sim.interner.intern("GACNST");
+        for owner in [host, guest] {
+            let house = sim.houses.get_mut(&owner).unwrap();
+            house.set_is_human_for_test(true);
+        }
+        let tracking = sim.houses.get_mut(&host).unwrap().tracking_mut_for_test();
+        tracking.set_active_for_test(EntityCategory::Unit, tank, 4);
+        tracking.set_active_for_test(EntityCategory::Structure, yard, 2);
+        let _ = enemy;
+
+        let rows = sim.cooperative_score_rows();
+        assert_eq!(
+            rows,
+            vec![
+                CooperativeScoreRow {
+                    owner: host,
+                    survived: false,
+                    kills: 3,
+                    losses: 4,
+                    // Losses 4 plus six on the map; the produced 40 is unused.
+                    built: 10,
+                    score: 0,
+                },
+                CooperativeScoreRow {
+                    owner: guest,
+                    survived: true,
+                    kills: 0,
+                    losses: 0,
+                    built: 0,
+                    score: 70,
+                },
+            ]
+        );
+        assert!(sim.cooperative_humans_won());
+        sim.houses
+            .get_mut(&guest)
+            .unwrap()
+            .set_is_defeated_for_test(true);
+        assert!(!sim.cooperative_humans_won(), "the enemy is not human");
     }
 }

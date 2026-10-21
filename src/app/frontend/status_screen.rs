@@ -23,8 +23,9 @@ use crate::render::status_font::StrokeFace;
 use crate::ui::pause_menu::{InGameMenuState, ModalOutcome};
 use crate::ui::shell::geom::RectPx;
 
-/// Bottom-right identity line. Not a retail build string.
-const BUILD_STAMP: &str = concat!("VERA20K ", env!("CARGO_PKG_VERSION"));
+/// Identity line: the bottom-right status screen and the dashboard's header
+/// share this one stamp. Not a retail build string.
+pub(crate) const BUILD_STAMP: &str = concat!("VERA20K ", env!("CARGO_PKG_VERSION"));
 
 #[derive(Clone, Copy)]
 enum Action {
@@ -78,7 +79,8 @@ impl Buttons {
             GameScreen::MainMenu if state.frontend.main_menu_shell_error.is_some() => Some(Self::QUIT),
             GameScreen::MissionResult { .. }
                 if !App::score_shell_active(state)
-                    && !App::campaign_score_shell_active(state) =>
+                    && !App::campaign_score_shell_active(state)
+                    && !crate::app::input::coop_score::active(state) =>
             {
                 Some(Self::BACK_TO_MENU)
             }
