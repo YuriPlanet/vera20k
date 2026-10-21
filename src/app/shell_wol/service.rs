@@ -142,6 +142,10 @@ pub(crate) enum WolServiceRequest {
     SetLangFilter(i32),
     /// `0x0077E110`: API+0x68 with AllowFind and AllowPage.
     SetFindPage { find: i32, page: i32 },
+    /// API+0xB0: a squad's record; 0 asks for the user's own (the lobby
+    /// runner's entry `0x00787B33..0x00787B53`, a joiner's at
+    /// `0x007A62B7..0x007A62EE`). The answer is [`WolServiceEvent::Squad`].
+    SquadInfo { id: i32 },
     /// API+0xDC: the buddy list (`0x116`'s init, the lobby runner's entry
     /// `0x00787BC8`); the answer is [`WolServiceEvent::Buddies`].
     ListBuddies,
@@ -226,6 +230,20 @@ pub(crate) enum WolServiceEvent {
     MapStatus {
         from: String,
         status: u8,
+    },
+    /// The squad sink `+0x80` (`0x007A4EC0`): the id it reports and the
+    /// record, or the failure.
+    Squad {
+        id: i32,
+        squad: Result<crate::ui::wol_lobby::WolSquad, u32>,
+    },
+    /// The private sink's `P<scenario>` from a guest (`0x007A8BF3`).
+    #[expect(
+        dead_code,
+        reason = "a WOL backend delivers it; the test service's guest always has the map"
+    )]
+    PreviewRequested {
+        from: String,
     },
     /// The create result and the channel's users.
     Created(Result<Vec<WolMember>, u32>),
@@ -509,6 +527,9 @@ impl WolVisit {
                     self.selected_server = 0;
                     self.ladder.clear();
                     self.locales.clear();
+                    // 0x0078061B..0x0078065F.
+                    self.squad_id = 0;
+                    self.squad_own_pending = false;
                     self.connected = false;
                 }
                 self.requests.push(WolServiceRequest::ListCredentials);
@@ -843,6 +864,11 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             }
             return;
         }
+        WolServiceEvent::Squad { id, squad } => {
+            super::lobby::squad(state, id, squad);
+            answer_unavailable(state);
+            return;
+        }
         event @ (WolServiceEvent::Channels { .. }
         | WolServiceEvent::Joined(_)
         | WolServiceEvent::UserJoined(_)
@@ -851,6 +877,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         | WolServiceEvent::PlayerChoices { .. }
         | WolServiceEvent::PlayerReady { .. }
         | WolServiceEvent::MapStatus { .. }
+        | WolServiceEvent::PreviewRequested { .. }
         | WolServiceEvent::Created(_)) => {
             super::lobby::service_event(state, event);
             answer_unavailable(state);

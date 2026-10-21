@@ -66,6 +66,16 @@
 //! freshly-moved latch below, whose only bit1 callers are Area Guard and
 //! Patrol. The same override clears the latch when a scan comes back empty.
 //!
+//! ## A healer on Guard
+//!
+//! When the scanner's `GetWeaponDamageValue(-1)` (`0x006F3970`) is negative
+//! *and* its mission is exactly Guard, retail replaces either radius with a
+//! hard 0x200 leptons (`0x006F9024..0x006F903E`), so the cutoff, not the
+//! healing weapon's InRange, decides, and the two-cell walk bound covers only
+//! rings 0 and 1. Retail's only healer is an IFV carrying an Engineer
+//! (`RepairBullet`, `Damage=-50`, `Range=1.8`): on Guard it repairs only what
+//! stands in or next to its own cell.
+//!
 //! ## What is deliberately NOT modelled
 //!
 //! Foot's stopped-cannot-fire latch688 is private GameEntity state. Drive,
@@ -73,13 +83,6 @@
 //! `(mask & !2) | 1` and the world scan adapter clears it only after an empty
 //! Foot result. The actual scan mask selects the range below. Hover's native
 //! Process/arrival continuation5164D0 still needs its separate owner.
-//!
-//! **The unarmed-Guard override.** When the scanning object has no usable
-//! weapon at all *and* its mission is exactly Guard, retail forces the radius
-//! to a flat 2 cells instead of computing one. Gated passive acquisition
-//! requires an armed type, but direct Greatest_Threat callers bypass that
-//! gate. The unarmed radius branch remains required outside the ordinary
-//! armed MTNK/E1 controls; missing candidate weapons still reject a target.
 //!
 //! Retail has a third radius formula, reached only when the scanning object is
 //! on **Patrol**: the same doubled-and-capped value as Area Guard but with a
@@ -104,6 +107,9 @@ use crate::sim::mission::MissionType;
 
 /// Retail doubles the Area Guard radius before clamping it.
 const AREA_GUARD_RANGE_MULTIPLIER: i32 = 2;
+
+/// A healer's radius on Guard, in leptons (`MOV EDI,0x200 @ 0x006F9039`).
+const HEALER_GUARD_RADIUS: i32 = 0x200;
 
 /// Ceiling on the doubled Area Guard radius, in cells. Retail clamps the
 /// lepton value to 0x1000; at 256 leptons per cell that is 16 cells.
@@ -279,7 +285,18 @@ pub(crate) fn scan_mission_for(entity: &GameEntity) -> ScanMission {
 /// `GetWeaponRange(0/1)` results from [`super::combat_weapon::weapon_range`].
 /// The native scalar owns only mode selection, doubling and clamps; it does
 /// not duplicate GetWeapon, veterancy or the cargo minimum reader.
-pub(crate) fn scan_range(obj: &ObjectType, mask: u32, weapon_ranges: [i32; 2]) -> ScanRange {
+/// `healer_on_guard` is the scanner's `GetWeaponDamageValue(-1) < 0` with
+/// mission Guard (`+0xAC == 5`): it replaces the mask's radius with
+/// [`HEALER_GUARD_RADIUS`] (`0x006F9024..0x006F903E`).
+pub(crate) fn scan_range(
+    obj: &ObjectType,
+    mask: u32,
+    weapon_ranges: [i32; 2],
+    healer_on_guard: bool,
+) -> ScanRange {
+    if healer_on_guard && mask & 3 != 0 {
+        return ScanRange::Hard(HEALER_GUARD_RADIUS);
+    }
     match mask & 3 {
         1 | 3 => range_from_leptons(threat_range_leptons(obj, 0, weapon_ranges)),
         // Mask 0 never reaches the radius block at all: `TEST AL,0x3 ; JZ
@@ -391,7 +408,8 @@ GuardRange=9\n\n\
             scan_range(
                 obj(&rules, "NOGUARD"),
                 ScanMission::Guard.literal_mask(),
-                type_weapon_ranges(&rules, obj(&rules, "NOGUARD"), 0)
+                type_weapon_ranges(&rules, obj(&rules, "NOGUARD"), 0),
+                false
             ),
             ScanRange::CanFireAt
         );
@@ -411,11 +429,13 @@ GuardRange=9\n\n\
                 obj(&rules, type_id),
                 ScanMission::Guard.literal_mask(),
                 type_weapon_ranges(&rules, obj(&rules, type_id), 0),
+                false,
             );
             let area = scan_range(
                 obj(&rules, type_id),
                 ScanMission::AreaGuard.literal_mask(),
                 type_weapon_ranges(&rules, obj(&rules, type_id), 0),
+                false,
             );
             assert_ne!(
                 guard, area,
@@ -432,7 +452,8 @@ GuardRange=9\n\n\
             scan_range(
                 obj(&rules, "WITHGUARD"),
                 ScanMission::Guard.literal_mask(),
-                type_weapon_ranges(&rules, obj(&rules, "WITHGUARD"), 0)
+                type_weapon_ranges(&rules, obj(&rules, "WITHGUARD"), 0),
+                false
             ),
             ScanRange::Hard(9 * 256)
         );
@@ -448,6 +469,7 @@ GuardRange=9\n\n\
             obj(&rules, "WITHGUARD"),
             ScanMission::AreaGuard.literal_mask(),
             type_weapon_ranges(&rules, obj(&rules, "WITHGUARD"), 0),
+            false,
         );
         let ScanRange::Hard(leptons) = clamped else {
             panic!("Area Guard always produces a hard cutoff");
@@ -612,7 +634,7 @@ GuardRange=9\n\n\
                 (2, ScanMission::AreaGuard),
             ] {
                 assert_eq!(
-                    scan_range(obj, mission.literal_mask(), ranges),
+                    scan_range(obj, mission.literal_mask(), ranges, false),
                     expected(native[mode].as_i64().unwrap()),
                     "{name}: {mission:?}"
                 );

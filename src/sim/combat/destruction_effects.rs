@@ -455,7 +455,7 @@ impl Simulation {
         mut commit_smudge: impl FnMut(&mut Simulation, SmudgeSpawnRequest),
     ) {
         // 1. `0x004415F9..0x00441617`.
-        self.clear_building_damage_fire_slots(building_id, Some(rules));
+        self.clear_building_damage_fire_slots(building_id, rules);
         let Some(entity) = self.substrate.entities.get(building_id) else {
             return;
         };

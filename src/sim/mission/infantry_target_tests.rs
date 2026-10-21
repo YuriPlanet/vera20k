@@ -265,7 +265,7 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                     sim.assign_target_represented(
                         1,
                         requested,
-                        Some(rules),
+                        rules,
                         None,
                         crate::sim::world::FrameEffects::default(),
                     )

@@ -8,7 +8,6 @@ use crate::map::{
     cell_index::NativeCellIdentity as Cell, entities::EntityCategory,
     resolved_terrain::ResolvedTerrainGrid,
 };
-use crate::rules::object_type::Ability;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::{
     locomotor_type::{LocomotorKind, SpeedType},
@@ -16,7 +15,6 @@ use crate::rules::{
     object_type::ObjectType,
 };
 use crate::sim::combat::combat_weapon;
-use crate::sim::combat::veterancy::has_weapon_ability;
 use crate::sim::movement::bump_crush::{self, CrushCapability};
 use crate::sim::movement::infantry_entry::PreludeCells;
 use crate::sim::{components::NavTargetRef, game_entity::GameEntity, intern::InternedId};
@@ -737,8 +735,7 @@ impl<'a> EntryMover<'a> {
     fn new(live: &EntryReadContext<'a>, id: u64, e: &'a GameEntity, obj: &'a ObjectType) -> Self {
         let weapon0 = combat_weapon::weapon_for_index(obj, e.veterancy.rank(), 0)
             .and_then(|(name, _)| live.rules.weapon(name));
-        let crusher =
-            obj.crusher || has_weapon_ability(e.veterancy.rank_kind(), obj, Ability::Crusher);
+        let crusher = crate::sim::combat::veterancy::is_crusher(e.veterancy.rank_kind(), obj);
         Self {
             id,
             e,

@@ -16,8 +16,7 @@
 //! [`crate::sim::movement::ready_producer`] — native makes a fresh locomotor
 //! call at each of its own gate sites rather than caching one per frame. The
 //! signed object height (`Get_Height`) is read from the object's position on
-//! the moving path. A rules-free provider cannot make the factory and contact
-//! lookups, so it answers a Unit that reaches them not ready.
+//! the moving path.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -171,29 +170,11 @@ pub(crate) trait ReadyInputProvider: ready_private::Sealed {
     fn ready_to_commence(&self, sim: &Simulation, receiver: u64, mission: &MissionCom) -> bool;
 }
 
-/// Production view over currently represented exact inputs, without rules.
-///
-/// Unit factory/contact lookups need parsed rules data, so this rules-free
-/// provider reports them unavailable. Use [`LiveReadyInputProvider`] wherever
-/// a `RuleSet` is in scope. Early native false branches still short-circuit
-/// normally.
-#[derive(Debug, Default)]
-pub(crate) struct EntityReadyInputProvider;
-
-/// Production view with the Unit world lookups live (rules in scope).
-///
-/// Retained as the rules-aware exact readiness provider while the current host
-/// evaluates the same inputs directly.
+/// The production readiness view: the live world, whose Unit contact and
+/// factory lookups read the rules.
 #[derive(Debug)]
 pub(crate) struct LiveReadyInputProvider<'r> {
     pub(crate) rules: &'r RuleSet,
-}
-
-/// Rules-free Unit-readiness world: the height reads the object, the
-/// factory and contact lookups are unavailable.
-struct RulesFreeUnitWorld<'a> {
-    sim: &'a Simulation,
-    entity: &'a crate::sim::game_entity::GameEntity,
 }
 
 /// `Get_Height` (vt+0x1C8, `ObjectClass::GetHeight @ 0x005F5F40`): the
@@ -275,25 +256,7 @@ impl UnitReadyWorld for LiveUnitWorld<'_> {
     }
 }
 
-impl ready_private::Sealed for EntityReadyInputProvider {}
 impl ready_private::Sealed for LiveReadyInputProvider<'_> {}
-
-impl UnitReadyWorld for RulesFreeUnitWorld<'_> {
-    fn contact_slot_zero(&self) -> Result<Option<UnitReadyContact>, ReadyUnavailable> {
-        Err(ReadyUnavailable::WorldLookup)
-    }
-
-    fn building_under_in_stored_order(
-        &self,
-        _unit_position: ReadyLeptonPoint,
-    ) -> Result<Option<UnitReadyBuilding>, ReadyUnavailable> {
-        Err(ReadyUnavailable::WorldLookup)
-    }
-
-    fn signed_height(&self) -> i32 {
-        unit_signed_height(self.sim, self.entity)
-    }
-}
 
 /// Fallback moving-gate input for entities whose locomotor has no producer.
 ///
@@ -324,7 +287,7 @@ fn evaluate_ready(
     sim: &Simulation,
     receiver: u64,
     mission: &MissionCom,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
 ) -> ReadyResult {
     {
         let entity = sim
@@ -339,9 +302,7 @@ fn evaluate_ready(
         // the second call with the first call's state.
         let locomotor = crate::sim::movement::ready_producer::ready_state_for(
             entity,
-            rules.map(|rules| {
-                crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses)
-            }),
+            crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
             sim.session.binary_frame(),
         )
         .or(Some(DEGRADED_NOT_MOVING));
@@ -359,26 +320,15 @@ fn evaluate_ready(
                     .miner
                     .as_ref()
                     .is_some_and(|miner| miner.unload_active());
-                match rules {
-                    Some(rules) => unit_ready_to_commence(UnitReadyView {
-                        mission,
-                        leaf,
-                        unload_active,
-                        locomotor,
-                        attack_target_present,
-                        position,
-                        world: &LiveUnitWorld { sim, rules, entity },
-                    }),
-                    None => unit_ready_to_commence(UnitReadyView {
-                        mission,
-                        leaf,
-                        unload_active,
-                        locomotor,
-                        attack_target_present,
-                        position,
-                        world: &RulesFreeUnitWorld { sim, entity },
-                    }),
-                }
+                unit_ready_to_commence(UnitReadyView {
+                    mission,
+                    leaf,
+                    unload_active,
+                    locomotor,
+                    attack_target_present,
+                    position,
+                    world: &LiveUnitWorld { sim, rules, entity },
+                })
             }
             EntityCategory::Infantry => {
                 let leaf = entity
@@ -411,15 +361,9 @@ fn evaluate_ready(
     }
 }
 
-impl ReadyInputProvider for EntityReadyInputProvider {
-    fn ready_to_commence(&self, sim: &Simulation, receiver: u64, mission: &MissionCom) -> bool {
-        ready_to_commence_answer(sim, receiver, mission, None)
-    }
-}
-
 impl ReadyInputProvider for LiveReadyInputProvider<'_> {
     fn ready_to_commence(&self, sim: &Simulation, receiver: u64, mission: &MissionCom) -> bool {
-        ready_to_commence_answer(sim, receiver, mission, Some(self.rules))
+        ready_to_commence_answer(sim, receiver, mission, self.rules)
     }
 }
 
@@ -427,14 +371,13 @@ impl ReadyInputProvider for LiveReadyInputProvider<'_> {
 /// call and the per-tick promotion alike. Absent locomotor producers read as
 /// "not moving now", so every later exact gate still evaluates.
 ///
-/// A lookup the evaluation cannot make answers not ready: rules-free callers
-/// do so on a Unit's factory and contact lookups, so the next per-tick
-/// promotion decides.
+/// A lookup the evaluation cannot make answers not ready, so the next
+/// per-tick promotion decides.
 fn ready_to_commence_answer(
     sim: &Simulation,
     receiver: u64,
     mission: &MissionCom,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
 ) -> bool {
     evaluate_ready(sim, receiver, mission, rules).unwrap_or(false)
 }
@@ -538,7 +481,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(receiver) else {
             return false;
         };
-        ready_to_commence_answer(self, receiver, &entity.mission, Some(rules))
+        ready_to_commence_answer(self, receiver, &entity.mission, rules)
     }
 
     /// `MissionClass::Queue_Mission @ 0x005B35E0` (vt+0x1E8): the guarded
@@ -617,7 +560,7 @@ impl Simulation {
         &mut self,
         receiver: u64,
         requested: Option<TargetKind>,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), MissionAuthorityError> {
@@ -640,7 +583,7 @@ impl Simulation {
         &mut self,
         receiver: u64,
         requested: Option<NavTargetRef>,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), MissionAuthorityError> {
@@ -659,7 +602,7 @@ impl Simulation {
         &mut self,
         receiver: u64,
         requested: Option<NavTargetRef>,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), MissionAuthorityError> {
@@ -704,7 +647,7 @@ impl Simulation {
     pub(crate) fn mission_restore_represented(
         &mut self,
         receiver: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<bool, MissionAuthorityError> {
@@ -735,7 +678,7 @@ impl Simulation {
         {
             return false;
         }
-        let mut effects = RepresentedConcreteMissionEffects::new(Some(rules), None, frame_effects);
+        let mut effects = RepresentedConcreteMissionEffects::new(rules, None, frame_effects);
         //7013CB dispatches the class target setter AFTER the mission writes.
         // A dying source or a refused Building target still takes the override;
         // target admission belongs to that live setter, not this caller.
@@ -768,7 +711,7 @@ impl Simulation {
         if !self.substrate.entities.contains(mover) {
             return false;
         }
-        let mut effects = RepresentedConcreteMissionEffects::new(Some(rules), None, frame_effects);
+        let mut effects = RepresentedConcreteMissionEffects::new(rules, None, frame_effects);
         // The locomotor caller owns its later head/Stop suffix. A refused
         // class destination must retain navigation through this transaction.
         self.mission_override_exact_with_effects(
@@ -788,8 +731,15 @@ impl Simulation {
         &mut self,
         receiver: u64,
         now: u32,
+        rules: &RuleSet,
     ) -> Result<(), MissionAuthorityError> {
-        self.mission_queue_exact(receiver, MISSION_GUARD, 0, now, &EntityReadyInputProvider)?;
+        self.mission_queue_exact(
+            receiver,
+            MISSION_GUARD,
+            0,
+            now,
+            &LiveReadyInputProvider { rules },
+        )?;
         let entity = self
             .substrate
             .entities
@@ -1164,14 +1114,13 @@ mod tests {
     }
 
     /// `0x005B3614` writes the queue before `0x005B362D` asks
-    /// Ready_To_Commence, so a Unit whose readiness lookups are unavailable
-    /// (no rules: its factory and contact lookups) keeps the queued mission
-    /// for the per-tick promotion rather than losing it.
+    /// Ready_To_Commence, so a Unit that is not ready keeps the queued
+    /// mission for the per-tick promotion rather than losing it.
     #[test]
-    fn mission_authority_queue_writes_before_an_unavailable_readiness_answer() {
+    fn mission_authority_queue_writes_before_a_not_ready_answer() {
         let mut sim = sim_with(entity(EntityCategory::Unit, GUARD));
 
-        sim.mission_queue_exact(1, MOVE, 1, 10, &EntityReadyInputProvider)
+        sim.mission_queue_exact(1, MOVE, 1, 10, &TestReadyProvider::ready(false))
             .unwrap();
 
         let after = sim.substrate.entities.get(1).unwrap();
@@ -1986,7 +1935,12 @@ mod tests {
     fn mission_b8_owner_sequence_refinery_queues_then_sets_latch() {
         let mut sim = sim_with(entity(EntityCategory::Unit, ATTACK));
 
-        sim.mission_refinery_completion_exact(1, 10).unwrap();
+        sim.mission_refinery_completion_exact(
+            1,
+            10,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+        )
+        .unwrap();
 
         let mission = &sim.substrate.entities.get(1).unwrap().mission;
         assert_eq!(mission.current(), ATTACK);

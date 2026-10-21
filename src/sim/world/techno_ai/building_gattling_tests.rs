@@ -633,7 +633,7 @@ fn gattling_cadence_matches_the_original() {
                     sim.assign_target_represented(
                         building,
                         Some(TargetKind::Entity(target)),
-                        Some(&rules),
+                        &rules,
                         None,
                         crate::sim::world::FrameEffects::default(),
                     )
@@ -643,7 +643,7 @@ fn gattling_cadence_matches_the_original() {
                     sim.assign_target_represented(
                         building,
                         None,
-                        Some(&rules),
+                        &rules,
                         None,
                         crate::sim::world::FrameEffects::default(),
                     )

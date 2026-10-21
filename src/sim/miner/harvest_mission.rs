@@ -26,7 +26,6 @@ use super::miner_system::{
 pub(crate) fn mission_harvest(
     sim: &mut Simulation,
     rules: &RuleSet,
-    config: Option<&super::MinerConfig>,
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     frame_effects: FrameEffects<'_>,
@@ -54,12 +53,12 @@ pub(crate) fn mission_harvest(
     if !entity.is_harvester() {
         return Some(450);
     }
-    let config = config?;
+    let config = super::MinerConfig::from_rules(rules);
     let mut snap = build_miner_snapshot(sim, id)?;
     harvest_mission_step(
         sim,
         rules,
-        config,
+        &config,
         overlay_registry,
         &mut snap,
         frame_effects,

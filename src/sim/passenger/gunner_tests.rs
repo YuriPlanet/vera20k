@@ -226,7 +226,7 @@ fn retail_infantry_transport_boarding_waits_for_transport_cell() {
     sim.per_cell_process(
         passenger,
         crate::sim::movement::PerCellReason::Arrival,
-        Some(rules),
+        rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -1203,7 +1203,7 @@ fn retail_a_transport_sent_elsewhere_breaks_its_passengers_contact() {
     let _ = sim.assign_destination_represented(
         htk,
         Some(crate::sim::components::NavTargetRef::object(other)),
-        Some(rules),
+        rules,
         None,
         crate::sim::world::FrameEffects::default(),
     );
@@ -1235,7 +1235,7 @@ fn retail_the_setters_break_spares_every_other_contact() {
                 to,
                 crate::sim::radio::RadioMessage::Hello,
                 crate::sim::radio::RadioPayload::default(),
-                Some(rules),
+                rules,
                 crate::sim::world::FrameEffects::default(),
             ),
             crate::sim::radio::RadioResponse::Roger
@@ -1245,7 +1245,7 @@ fn retail_the_setters_break_spares_every_other_contact() {
         let _ = sim.assign_destination_represented(
             unit,
             Some(crate::sim::components::NavTargetRef::object(target)),
-            Some(rules),
+            rules,
             None,
             crate::sim::world::FrameEffects::default(),
         );
@@ -1305,7 +1305,7 @@ fn retail_a_refused_move_here_breaks_the_passengers_contact() {
             ifv,
             crate::sim::radio::RadioMessage::Hello,
             crate::sim::radio::RadioPayload::default(),
-            Some(rules),
+            rules,
             crate::sim::world::FrameEffects::default(),
         ),
         crate::sim::radio::RadioResponse::Roger
@@ -1314,7 +1314,7 @@ fn retail_a_refused_move_here_breaks_the_passengers_contact() {
     sim.foot_set_location_marked(
         gi,
         at,
-        Some(rules),
+        rules,
         None,
         crate::sim::world::FrameEffects::default(),
     );

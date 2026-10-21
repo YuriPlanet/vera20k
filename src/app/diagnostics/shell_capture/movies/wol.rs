@@ -235,6 +235,34 @@ pub enum WolTarget {
     /// The same, then another user joins and is kicked: its row and the
     /// `TXT_USER_KICKED` line in C9.
     GuestUserKicked,
+    /// The same, then the host changes to a map this guest cannot verify:
+    /// one `P`, re-sent on each options text after 900 buckets; the host's
+    /// `Z3` shows "Preview unavailable" in place of the thumbnail.
+    GuestNoPreview,
+    /// The same change, then the host's offer: the guest acks, takes
+    /// `Preview.bin`, and the next options text asks for nothing.
+    GuestPreviewReceived,
+    /// Test service: Join on Boris's tournament game: C9 holds two rows;
+    /// after Accept, host options without a preview take it back.
+    GuestTournamentRows,
+    /// Test service: Create with the clan box (the user's squad): C2's
+    /// lockout holds Short Game on, the team column is hidden.
+    ClanLockout,
+    /// The same, then Start with the stand-in guest in no squad:
+    /// `TXT_CLAN_NOSTART`.
+    ClanNoStart,
+    /// The same, then Choose Map: no FreeForAll, official maps only.
+    ClanChooseMap,
+    /// A clan game's match: `[0xB779C4]` = 2, Start Game Now's clan lists
+    /// and FixedAlliance reach the sim, an Ally request is refused, and the
+    /// peer's EXIT kills its House (DestroyConnection `0x005DA8F7`).
+    ClanLeaver,
+    /// A clan game's B5 Abort opens the Surrender box (state 2).
+    ClanSurrender,
+    /// Its OK queues the player's DESTRUCT and EXIT.
+    ClanSurrenderOk,
+    /// A stalled peer's `0xEA` row answers `TXT_CANT_KICK`.
+    ClanCantKick,
 }
 
 impl WolTarget {
@@ -336,6 +364,31 @@ impl WolTarget {
         )
     }
 
+    /// Test service: Create with the clan box.
+    fn clan(self) -> bool {
+        matches!(
+            self,
+            Self::ClanLockout | Self::ClanNoStart | Self::ClanChooseMap
+        )
+    }
+
+    /// A controlled clan game with the guest in another squad, played.
+    fn clan_match(self) -> bool {
+        matches!(
+            self,
+            Self::ClanLeaver | Self::ClanSurrender | Self::ClanSurrenderOk | Self::ClanCantKick
+        )
+    }
+
+    /// The stand-in host whose game the C9 targets join.
+    fn guest_host(self) -> &'static str {
+        if self == Self::GuestTournamentRows {
+            "Boris"
+        } else {
+            "Tanya"
+        }
+    }
+
     /// Test service: C9 in Tanya's game with the host's options.
     fn guest_service(self) -> bool {
         matches!(
@@ -344,6 +397,9 @@ impl WolTarget {
                 | Self::GuestHostLeft
                 | Self::GuestKicked
                 | Self::GuestUserKicked
+                | Self::GuestNoPreview
+                | Self::GuestPreviewReceived
+                | Self::GuestTournamentRows
         )
     }
 
@@ -361,6 +417,9 @@ impl WolTarget {
                     | Self::GuestKick
                     | Self::ScenariosMismatch
                     | Self::MismatchOk
+                    | Self::ClanLockout
+                    | Self::ClanNoStart
+                    | Self::ClanChooseMap
                     | Self::PageDialog
                     | Self::PageFindStatus
                     | Self::PageUserGone
@@ -403,6 +462,10 @@ impl WolTarget {
                 | Self::IngamePageCancel
                 | Self::AbortRelogin
                 | Self::VerifyDialog
+                | Self::ClanLeaver
+                | Self::ClanSurrender
+                | Self::ClanSurrenderOk
+                | Self::ClanCantKick
         )
     }
 
@@ -430,6 +493,10 @@ impl WolTarget {
                 | Self::IngamePage
                 | Self::IngamePageCancel
                 | Self::AbortRelogin
+                | Self::ClanLeaver
+                | Self::ClanSurrender
+                | Self::ClanSurrenderOk
+                | Self::ClanCantKick
         )
     }
 }
@@ -532,6 +599,16 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-c9-host-left", WolTarget::GuestHostLeft),
     ("wol-c9-kicked", WolTarget::GuestKicked),
     ("wol-c9-user-kicked", WolTarget::GuestUserKicked),
+    ("wol-c9-nat-no-preview", WolTarget::GuestNoPreview),
+    ("wol-c9-preview-received", WolTarget::GuestPreviewReceived),
+    ("wol-c9-tournament-rows", WolTarget::GuestTournamentRows),
+    ("wol-c2-clan-lockout", WolTarget::ClanLockout),
+    ("wol-c2-clan-nostart", WolTarget::ClanNoStart),
+    ("wol-choose-map-clan-filter", WolTarget::ClanChooseMap),
+    ("wol-clan-leaver-dies", WolTarget::ClanLeaver),
+    ("wol-clan-surrender", WolTarget::ClanSurrender),
+    ("wol-clan-surrender-ok", WolTarget::ClanSurrenderOk),
+    ("wol-clan-cant-kick", WolTarget::ClanCantKick),
 ];
 
 /// The controlled guest of the C2 targets, the host of the C9 targets.
@@ -633,6 +710,12 @@ enum WolPhase {
     /// `0x116` Back or Join on a chat lobby: waiting for the next page.
     BuddyReturn,
     Settle(u32),
+    /// A clan game's peer EXIT was delivered at `tick`.
+    ClanLeaving {
+        tick: u64,
+    },
+    /// A clan game's peer stalled: waiting for `0xEA`.
+    ClanStalled,
 }
 
 pub(super) struct WolCapture {
@@ -1298,10 +1381,17 @@ impl WolCapture {
                 self.phase = WolPhase::Setup;
             }
             WolPhase::Creating => {
-                service_event(
-                    state,
-                    WolServiceEvent::Created(Ok(vec![member(NICKNAME, MEMBER_OPERATOR, "")])),
-                );
+                // A clan game's echo lists the guest of the other squad too,
+                // so the channel users carry both squads.
+                let members = if self.target.clan_match() {
+                    vec![
+                        squad_member(NICKNAME, MEMBER_OPERATOR, CLAN_SQUAD, "VERA"),
+                        squad_member(PEER, 0, RIVAL_SQUAD, "RIVL"),
+                    ]
+                } else {
+                    vec![member(NICKNAME, MEMBER_OPERATOR, "")]
+                };
+                service_event(state, WolServiceEvent::Created(Ok(members)));
                 ensure!(
                     state.frontend.shell_exit.is_some(),
                     "the create did not slide 0x113 out"
@@ -1412,6 +1502,9 @@ impl WolCapture {
                     "a line received during the match was shown"
                 );
                 self.event(frame, "WOL match installed");
+                if self.target.clan_match() {
+                    return self.clan_match(state, frame);
+                }
                 if matches!(
                     self.target,
                     WolTarget::IngamePage | WolTarget::IngamePageCancel
@@ -1465,6 +1558,71 @@ impl WolCapture {
                 });
                 self.phase = WolPhase::AbortInput;
             }
+            WolPhase::ClanLeaving { tick } => {
+                let sim = &state
+                    .match_state
+                    .sim_runtime
+                    .as_ref()
+                    .context("the clan peer's EXIT lost the runtime")?
+                    .simulation;
+                let peer = clan_peer_house(state)?;
+                // Flag_To_Die's zero allow-win timer (0x004FC980) blows the
+                // House up on its next update; the defeat follows once its
+                // objects are gone.
+                let house = &sim.houses()[&peer];
+                let waited = sim.session().tick().saturating_sub(tick);
+                if !house.left_game() || (!house.is_defeated() && waited < 300) {
+                    return Ok(());
+                }
+                let left = App::csf_label(state, "TXT_LEFT_GAME", "TXT_LEFT_GAME");
+                let posted = state
+                    .match_state
+                    .match_presentation
+                    .message_list
+                    .messages()
+                    .iter()
+                    .any(|row| row.text.contains(left.trim_start_matches("%s").trim()));
+                let killed = house.is_defeated();
+                ensure!(
+                    killed && posted,
+                    "a tournament game's leaver was not killed ({killed}) or its line \
+                     ({posted}) is missing: won {} lost {} tournament {} rows {:?}",
+                    house.has_won(),
+                    house.has_lost(),
+                    sim.session().wol_tournament_game(),
+                    state
+                        .match_state
+                        .match_presentation
+                        .message_list
+                        .messages()
+                        .iter()
+                        .map(|row| row.text.clone())
+                        .collect::<Vec<_>>()
+                );
+                self.event(frame, "the clan leaver's House is killed");
+                self.phase = WolPhase::Settle(2);
+            }
+            WolPhase::ClanStalled => {
+                if !state.match_state.network_wait.dialog_open() {
+                    return Ok(());
+                }
+                crate::app::match_runtime::network_match::propose_kick(state, 1);
+                let refused = App::csf_label(state, "TXT_CANT_KICK", "TXT_CANT_KICK");
+                let last = state
+                    .match_state
+                    .network_wait
+                    .page()
+                    .and_then(|page| page.lines.last())
+                    .map(|line| String::from_utf16_lossy(&line.text));
+                ensure!(
+                    last.as_deref() == Some(refused.as_str())
+                        && state.match_state.network_wait.dialog_open(),
+                    "0xEA's kick in a tournament game did not answer TXT_CANT_KICK: {last:?}"
+                );
+                self.event(frame, json!({"0xEA kick row 1": last}));
+                MoviesCapture::restore_neutral_pointer(state);
+                self.phase = WolPhase::Settle(2);
+            }
             WolPhase::AbortInput => {
                 if self
                     .abort_input
@@ -1472,7 +1630,9 @@ impl WolCapture {
                     .context("WOL abort input")?
                     .after_present(state, &mut self.route, frame)?
                 {
-                    self.phase = if matches!(
+                    self.phase = if self.target == WolTarget::ClanSurrender {
+                        WolPhase::Settle(2)
+                    } else if matches!(
                         self.target,
                         WolTarget::InternetMenu | WolTarget::GameControls
                     ) {
@@ -1588,6 +1748,9 @@ impl WolCapture {
                         | WolTarget::GuestKick
                         | WolTarget::ScenariosMismatch
                         | WolTarget::MismatchOk
+                        | WolTarget::ClanLockout
+                        | WolTarget::ClanNoStart
+                        | WolTarget::ClanChooseMap
                 ) {
                     let layout = crate::app::shell_wol::lobby::layout(state);
                     lobby_button(state, &layout, lobby_ui::CREATE)?;
@@ -1595,8 +1758,23 @@ impl WolCapture {
                         state.renderer.gpu.config.width as i32,
                         state.renderer.gpu.config.height as i32,
                     );
-                    let ok = crate::ui::shell::modal::wol_create_game_layout(width, height).ok;
-                    welcome_click(state, ok);
+                    let create = crate::ui::shell::modal::wol_create_game_layout(width, height);
+                    if self.target.clan() {
+                        // 0x78DF35: the clan box is enabled by the squad id.
+                        ensure!(
+                            crate::app::shell_wol::lobby::squad_id(state) == 7,
+                            "the stand-in squad did not reach [0xB77DE4]"
+                        );
+                        welcome_click(
+                            state,
+                            crate::ui::skirmish_shell::checkbox_icon_rect(
+                                create.clan,
+                                crate::ui::shell::geom::ShellScale::RETAIL,
+                            ),
+                        );
+                        self.event(frame, "0xC3 clan box (squad 7)");
+                    }
+                    welcome_click(state, create.ok);
                     self.event(frame, "0xC3 OK (test service)");
                     self.phase = WolPhase::ServiceSetup;
                     return Ok(());
@@ -1648,10 +1826,17 @@ impl WolCapture {
                         self.hover_settle(state);
                         return Ok(());
                     }
-                    game_row_click(state, 0)?;
+                    let host = self.target.guest_host();
+                    let row = Self::lobby(state)?
+                        .ui
+                        .game_rows
+                        .iter()
+                        .position(|row| row.name == format!("{host}'s_game"))
+                        .context("the stand-in host's game")?;
+                    game_row_click(state, row)?;
                     let layout = crate::app::shell_wol::lobby::layout(state);
                     lobby_button(state, &layout, lobby_ui::JOIN)?;
-                    self.event(frame, "Join on Tanya's_game (test service)");
+                    self.event(frame, format!("Join on {host}'s_game (test service)"));
                     self.phase = WolPhase::ServiceSetup;
                     return Ok(());
                 }
@@ -1688,6 +1873,9 @@ impl WolCapture {
                         | WolTarget::GuestKick
                         | WolTarget::ScenariosMismatch
                         | WolTarget::MismatchOk
+                        | WolTarget::ClanLockout
+                        | WolTarget::ClanNoStart
+                        | WolTarget::ClanChooseMap
                 ) {
                     return self.service_host(state, frame);
                 }
@@ -2014,7 +2202,11 @@ impl WolCapture {
                     | WolTarget::IngameConnectionLost
                     | WolTarget::IngamePage
                     | WolTarget::IngamePageCancel
-                    | WolTarget::AbortRelogin => {
+                    | WolTarget::AbortRelogin
+                    | WolTarget::ClanLeaver
+                    | WolTarget::ClanSurrender
+                    | WolTarget::ClanSurrenderOk
+                    | WolTarget::ClanCantKick => {
                         self.start(state, frame)?;
                         return Ok(());
                     }
@@ -2027,6 +2219,96 @@ impl WolCapture {
         MoviesCapture::restore_neutral_pointer(state);
         crate::app::input::multiplayer_setup::cursor_moved(state);
         self.settle();
+        Ok(())
+    }
+
+    /// The clan game's match: the WOL start terms in the sim, the refused
+    /// Ally, then the target's own step.
+    fn clan_match(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let peer = clan_peer_house(state)?;
+        let (terms, pending) = {
+            let sim = &state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .context("the clan match runtime")?
+                .simulation;
+            let session = sim.session();
+            ensure!(
+                session.wol_tournament_game() && session.fixed_alliance(),
+                "a clan game's start terms did not reach the sim"
+            );
+            let names: Vec<String> = sim
+                .houses()
+                .values()
+                .filter(|house| house.is_human())
+                .filter_map(|house| house.native_scenario_name().map(str::to_owned))
+                .collect();
+            ensure!(
+                names.iter().any(|name| name == NICKNAME) && names.iter().any(|name| name == PEER),
+                "WOL human Houses must carry their nodes' names: {names:?}"
+            );
+            (names, sim.pending_command_snapshot().len())
+        };
+        // 0x731850: FixedAlliance refuses the Ally request.
+        crate::app::input::diplomacy::ally(state, peer);
+        let after = state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .context("the clan match runtime")?
+            .simulation
+            .pending_command_snapshot()
+            .len();
+        ensure!(
+            after == pending,
+            "FixedAlliance did not refuse the Ally request"
+        );
+        self.event(
+            frame,
+            json!({"clan match": {"tournament": 2, "house names": terms,
+                "fixed alliance": true, "ally refused": true}}),
+        );
+        match self.target {
+            WolTarget::ClanSurrender | WolTarget::ClanSurrenderOk => {
+                self.abort_input = Some(abort_return::AbortReturnInput::begin_surrender(
+                    state,
+                    &mut self.route,
+                    frame,
+                    self.target == WolTarget::ClanSurrenderOk,
+                )?);
+                self.phase = WolPhase::AbortInput;
+            }
+            WolTarget::ClanLeaver => {
+                crate::app::match_runtime::network_match::service_event(
+                    state,
+                    crate::app::match_runtime::network_match::NetworkMatchEvent::PeerExit {
+                        source_index: 1,
+                    },
+                )?;
+                let tick = state
+                    .match_state
+                    .sim_runtime
+                    .as_ref()
+                    .context("the clan match runtime")?
+                    .simulation
+                    .session()
+                    .tick();
+                self.event(frame, "controlled clan peer EXIT");
+                self.phase = WolPhase::ClanLeaving { tick };
+            }
+            WolTarget::ClanCantKick => {
+                crate::app::match_runtime::network_match::service_event(
+                    state,
+                    crate::app::match_runtime::network_match::NetworkMatchEvent::PeerStalled {
+                        source_index: 1,
+                    },
+                )?;
+                self.event(frame, "controlled clan peer stall");
+                self.phase = WolPhase::ClanStalled;
+            }
+            _ => unreachable!("clan match targets"),
+        }
         Ok(())
     }
 
@@ -2173,16 +2455,23 @@ impl WolCapture {
         };
         setup::service_event(state, ready())?;
         let layout = crate::app::input::multiplayer_setup::layout(state);
-        setup_click(
-            state,
-            crate::ui::skirmish_shell::checkbox_icon_rect(layout.checkboxes[0], layout.page.scale),
-        );
-        ensure!(
-            !state.match_state.session.network_player_ready(1),
-            "a C2 option edit kept the guest's acceptance"
-        );
-        setup_requests(state);
-        setup::service_event(state, ready())?;
+        // A clan room's Short Game is locked (0x78F85E), so the edit is
+        // made only elsewhere.
+        if !self.target.clan_match() {
+            setup_click(
+                state,
+                crate::ui::skirmish_shell::checkbox_icon_rect(
+                    layout.checkboxes[0],
+                    layout.page.scale,
+                ),
+            );
+            ensure!(
+                !state.match_state.session.network_player_ready(1),
+                "a C2 option edit kept the guest's acceptance"
+            );
+            setup_requests(state);
+            setup::service_event(state, ready())?;
+        }
         setup_button(state, setup_ui::START)?;
         let requests = setup_requests(state);
         ensure!(
@@ -2338,15 +2627,17 @@ impl WolCapture {
             );
             requests.drain(..sent.len());
         }
-        // 0x00787BC8 restarts the buddy mirror before TXT_REQ_CHANLIST: the
-        // buddy list, then the game list with automatic pings.
-        let [apply @ .., buddies, game_list, list] = requests.as_slice() else {
+        // 0x00787B33 asks for the user's squad, then 0x00787BC8 restarts
+        // the buddy mirror before TXT_REQ_CHANLIST: the buddy list, then the
+        // game list with automatic pings.
+        let [apply @ .., squad, buddies, game_list, list] = requests.as_slice() else {
             bail!("the runner sent too little: {requests:?}");
         };
         let passes = if self.rejoined { 2 } else { 1 };
         ensure!(
             apply.len() == 2 * passes
                 && apply.chunks(2).all(|pair| pair == Self::applied(state))
+                && *squad == WolServiceRequest::SquadInfo { id: 0 }
                 && *buddies == WolServiceRequest::ListBuddies
                 && *game_list
                     == WolServiceRequest::ListChannels {
@@ -2906,6 +3197,20 @@ impl WolCapture {
                         | WolTarget::PersonaPicks
                 ) || target.guest_joined() =>
             {
+                if target.clan_match() {
+                    // The own squad request's answer (0x7A4EC0) enables the
+                    // clan box.
+                    service_event(
+                        state,
+                        WolServiceEvent::Squad {
+                            id: CLAN_SQUAD,
+                            squad: Ok(crate::ui::wol_lobby::WolSquad {
+                                name: "VERA Testers".into(),
+                                tag: "VERA".into(),
+                            }),
+                        },
+                    );
+                }
                 lobby_button(state, &layout, lobby_ui::CREATE)?;
                 ensure!(
                     Self::lobby(state)?
@@ -2918,7 +3223,18 @@ impl WolCapture {
                 );
                 self.event(frame, "0xC3 opened");
                 if self.target != WolTarget::CreatePopup {
-                    let ok = crate::ui::shell::modal::wol_create_game_layout(width, height).ok;
+                    let create = crate::ui::shell::modal::wol_create_game_layout(width, height);
+                    if self.target.clan_match() {
+                        welcome_click(
+                            state,
+                            crate::ui::skirmish_shell::checkbox_icon_rect(
+                                create.clan,
+                                crate::ui::shell::geom::ShellScale::RETAIL,
+                            ),
+                        );
+                        self.event(frame, "0xC3 clan box");
+                    }
+                    let ok = create.ok;
                     welcome_click(state, ok);
                     self.event(frame, "0xC3 OK");
                     self.phase = WolPhase::Leaving;
@@ -3583,6 +3899,10 @@ impl WolCapture {
             }
             WolTarget::IngamePage => Some(crate::ui::pause_menu::InGameMenuState::Page),
             WolTarget::GameControls => Some(crate::ui::pause_menu::InGameMenuState::Options),
+            WolTarget::ClanSurrender => Some(crate::ui::pause_menu::InGameMenuState::Surrender),
+            WolTarget::ClanLeaver | WolTarget::ClanCantKick => {
+                Some(crate::ui::pause_menu::InGameMenuState::Closed)
+            }
             _ => None,
         } {
             // The connection-lost row types itself out on the wall clock.
@@ -3647,9 +3967,37 @@ impl WolCapture {
     }
 }
 
+/// The controlled guest's House.
+fn clan_peer_house(state: &AppState) -> Result<crate::sim::intern::InternedId> {
+    let sim = &state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .context("the clan match runtime")?
+        .simulation;
+    state
+        .match_state
+        .session
+        .network_source_owner(1)
+        .and_then(|owner| sim.interner().get(&owner))
+        .context("the clan peer's House")
+}
+
+/// The user's and the controlled guest's squads in a clan game.
+const CLAN_SQUAD: i32 = 7;
+const RIVAL_SQUAD: i32 = 9;
+
+fn squad_member(name: &str, flags: u32, squad: i32, tag: &str) -> WolMember {
+    WolMember {
+        squad,
+        ..member(name, flags, tag)
+    }
+}
+
 fn member(name: &str, flags: u32, tag: &str) -> WolMember {
     WolMember {
         flags,
+        squad: 0,
         name: name.into(),
         clan_name: if tag.is_empty() {
             String::new()
@@ -3857,6 +4205,28 @@ fn login_click(state: &mut AppState, rect: RectPx) {
 
 fn setup_view(state: &AppState) -> Result<crate::ui::multiplayer_setup::SetupView> {
     setup::view(state).context("C2/C9 view")
+}
+
+/// The joined game's host options again, naming a version of its map this
+/// guest cannot verify (another digest).
+fn unverified_host_options(state: &AppState) -> Result<NetworkSetupEvent> {
+    let launch = state
+        .match_state
+        .session
+        .network_setup()
+        .context("C9 setup")?
+        .clone();
+    let file = launch.selected_map_file.clone().context("host map")?;
+    let mut map_metadata = crate::app::shell_network_setup::local_map_metadata(state, &file)?;
+    map_metadata.digest = "another version".into();
+    Ok(NetworkSetupEvent::HostSetup {
+        launch,
+        map_metadata,
+        vacancies: [crate::app::match_runtime::session::NetworkVacancy::Open; 8],
+        observer_row: None,
+        cooperative_difficulty: 0,
+        seed: state.match_state.session.network_start_seed(),
+    })
 }
 
 fn setup_requests(state: &mut AppState) -> Vec<NetworkSetupRequest> {
@@ -4580,6 +4950,9 @@ impl WolCapture {
                     self.event(frame, json!({"guest plays again": {"row": 1}}));
                 }
             }
+            WolTarget::ClanLockout | WolTarget::ClanNoStart | WolTarget::ClanChooseMap => {
+                return self.clan_room(state, frame);
+            }
             WolTarget::ScenariosMismatch | WolTarget::MismatchOk => {
                 setup_button(state, crate::ui::multiplayer_setup::START)?;
                 self.event(frame, "C2 Start with the stand-in guest");
@@ -4606,6 +4979,278 @@ impl WolCapture {
         Ok(())
     }
 
+    /// C9 in Boris's tournament room: two rows (`0x005EC408`, `0x005E6440`).
+    /// After Accept, host options this guest cannot preview take the
+    /// acceptance back (`0x007A8145..0x007A8196`).
+    fn guest_tournament(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let session = &state.match_state.session;
+        ensure!(
+            session.network_room().tournament
+                && session.network_setup_capacity() == Some(2)
+                && session.network_row_limit() == Some(2),
+            "the tournament room's rows: {:?} capacity {:?} limit {:?}",
+            session.network_room(),
+            session.network_setup_capacity(),
+            session.network_row_limit()
+        );
+        self.event(frame, json!({"tournament room": {"rows": 2}}));
+        setup::apply_action(state, crate::ui::multiplayer_setup::SetupAction::Accept);
+        let local = |state: &AppState| {
+            let session = &state.match_state.session;
+            session
+                .network_setup()
+                .is_some_and(|launch| session.network_player_ready(launch.local_player_index))
+        };
+        ensure!(
+            local(state) && setup_requests(state) == [NetworkSetupRequest::Ready(true)],
+            "Accept did not send A1"
+        );
+        let options = unverified_host_options(state)?;
+        setup::service_event(state, options)?;
+        let requests = setup_requests(state);
+        let view = setup_view(state)?;
+        ensure!(
+            !local(state)
+                && !view.enabled(crate::ui::multiplayer_setup::ACCEPT)
+                && requests.contains(&NetworkSetupRequest::Ready(false))
+                && requests.contains(&NetworkSetupRequest::RequestPreview),
+            "the tournament room did not take the acceptance back: {requests:?}"
+        );
+        self.event(
+            frame,
+            "host options without a preview: A0, Accept disabled, P",
+        );
+        Ok(())
+    }
+
+    /// C2 in a clan room: the lockout, the hidden team column, an even row
+    /// count; then the start gate or the chooser's filters.
+    fn clan_room(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::ui::multiplayer_setup::{CHECKBOXES, SetupColumn};
+        let session = &state.match_state.session;
+        let launch = session.network_setup().context("C2")?;
+        let options = launch.options.clone();
+        let room = session.network_room();
+        let capacity = session.network_setup_capacity();
+        let view = setup_view(state)?;
+        let team_hidden = view
+            .combos
+            .iter()
+            .filter(|combo| {
+                SetupColumn::decode(combo.id).is_some_and(|(column, _)| column == SetupColumn::Team)
+            })
+            .all(|combo| !combo.visible);
+        ensure!(
+            room.clan
+                && options.short_game
+                && options.bases
+                && CHECKBOXES[0] == 0x54E
+                && view.checks[0]
+                && !view.enabled(0x54E)
+                && team_hidden
+                && !view.team_header
+                && capacity.is_some_and(|capacity| capacity % 2 == 0),
+            "C2's clan room: {room:?} short game {} enabled {} teams hidden {team_hidden} capacity {capacity:?}",
+            options.short_game,
+            view.enabled(0x54E)
+        );
+        self.event(
+            frame,
+            json!({"clan room": {"short game": "on, disabled", "team column": "hidden", "capacity": capacity}}),
+        );
+        match self.target {
+            WolTarget::ClanNoStart => {
+                setup_requests(state);
+                setup_button(state, crate::ui::multiplayer_setup::START)?;
+                let text = App::csf_label(state, "TXT_CLAN_NOSTART", "TXT_CLAN_NOSTART");
+                let requests = setup_requests(state);
+                // The line wraps; its first row starts the text.
+                let lines: Vec<String> = state
+                    .frontend
+                    .multiplayer_setup
+                    .as_ref()
+                    .context("C2")?
+                    .chat
+                    .lines
+                    .iter()
+                    .map(|line| String::from_utf16_lossy(&line.text))
+                    .collect();
+                ensure!(
+                    lines
+                        .iter()
+                        .any(|line| line.len() > 10 && text.starts_with(line.trim_end()))
+                        && !requests.iter().any(|request| matches!(
+                            request,
+                            NetworkSetupRequest::StartGame { .. }
+                        )),
+                    "Start in the clan room with a guest in no squad: {requests:?} {lines:?}"
+                );
+                self.event(frame, "Start: TXT_CLAN_NOSTART");
+            }
+            WolTarget::ClanChooseMap => {
+                crate::app::shell_network_setup::open_choose_map(state);
+                let modal = state
+                    .frontend
+                    .skirmish_shell_state
+                    .choose_map_modal
+                    .as_ref()
+                    .context("the chooser")?;
+                let modes = &state.frontend.skirmish_modes;
+                let listed: Vec<_> = modal
+                    .mode_rows()
+                    .iter()
+                    .filter_map(|id| crate::skirmish_modes::mode_by_id(modes, *id))
+                    .map(|mode| mode.class)
+                    .collect();
+                let records = state.frontend.scenario_catalog.records();
+                ensure!(
+                    !listed.contains(&crate::skirmish_modes::MpModeClass::FreeForAll)
+                        && listed.contains(&crate::skirmish_modes::MpModeClass::Battle)
+                        && modal
+                            .filtered_record_indices
+                            .iter()
+                            .all(|index| records[*index].official),
+                    "the clan room's chooser: {listed:?}"
+                );
+                self.event(frame, json!({"chooser modes": format!("{listed:?}")}));
+            }
+            _ => {}
+        }
+        MoviesCapture::restore_neutral_pointer(state);
+        crate::app::input::multiplayer_setup::cursor_moved(state);
+        self.settle();
+        Ok(())
+    }
+
+    /// The host's map changes to a version this guest cannot verify (its
+    /// digest differs), so the guest has no preview and asks for one.
+    fn guest_preview(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let preview = |state: &AppState| {
+            let protocol = state
+                .frontend
+                .network_setup_protocol
+                .as_ref()
+                .expect("C9 protocol");
+            (
+                protocol.local_preview(),
+                protocol.received_preview().is_some(),
+                protocol.wol_no_preview(),
+            )
+        };
+        ensure!(
+            preview(state) == (true, false, (false, false)),
+            "the host's first map did not preview locally: {:?}",
+            preview(state)
+        );
+        let file = state
+            .match_state
+            .session
+            .network_setup()
+            .and_then(|launch| launch.selected_map_file.clone())
+            .context("host map")?;
+        let publish = |state: &mut AppState| {
+            let options = unverified_host_options(state)?;
+            setup::service_event(state, options)?;
+            let requests = setup_requests(state);
+            Ok::<_, anyhow::Error>(
+                requests
+                    .iter()
+                    .filter(|request| **request == NetworkSetupRequest::RequestPreview)
+                    .count(),
+            )
+        };
+        setup_requests(state);
+        ensure!(
+            publish(state)? == 1 && preview(state) == (false, false, (false, false)),
+            "the unverified map did not send one P: {:?}",
+            preview(state)
+        );
+        ensure!(publish(state)? == 0, "an unchanged options text sent P");
+        self.event(frame, json!({"P": file, "digest": "another version"}));
+        if self.target == WolTarget::GuestNoPreview {
+            // 0x7A8059..0x7A80D7: 900 buckets on, each options text asks
+            // again without restamping.
+            let stamp = state
+                .frontend
+                .wol_lobby_globals
+                .preview_stamp
+                .context("the sink's stamp")?;
+            state.frontend.wol_lobby_globals.preview_stamp = Some(stamp.wrapping_sub(901));
+            ensure!(
+                publish(state)? == 1 && publish(state)? == 1,
+                "the 900-bucket rule did not ask again on each options text"
+            );
+            self.event(frame, "P again on each options text after 900 buckets");
+            setup::service_event(state, NetworkSetupEvent::PreviewUnavailable)?;
+            let view = setup_view(state)?;
+            ensure!(
+                view.no_preview && view.preview_hidden,
+                "Z3 did not show 0x71F over a hidden 0x468"
+            );
+            self.event(frame, "Z3: 0x71F Preview unavailable, 0x468 hidden");
+            return Ok(());
+        }
+        setup::service_event(state, NetworkSetupEvent::PreviewOffered)?;
+        ensure!(
+            setup_requests(state)
+                == [
+                    NetworkSetupRequest::AcknowledgePreview,
+                    NetworkSetupRequest::RequestPreviewFile
+                ],
+            "the WOL offer did not ack and request the file"
+        );
+        let (width, height) = (96u32, 96u32);
+        let mut rgba = Vec::new();
+        for y in 0..height {
+            for x in 0..width {
+                rgba.extend_from_slice(&[
+                    (40 + x) as u8,
+                    (60 + y) as u8,
+                    ((x + y) / 2) as u8,
+                    0xFF,
+                ]);
+            }
+        }
+        let preview_bin =
+            crate::map::preview::preview_bin_bytes(&crate::map::preview::create_paletted_preview(
+                &crate::map::preview::DecodedPreview {
+                    width,
+                    height,
+                    rgba,
+                },
+                crate::map::preview::PALETTED_PREVIEW_COLORS,
+            ));
+        let root = super::lan::LanCapture::isolated_root(state)?;
+        std::fs::write(root.join("Preview.bin"), preview_bin)?;
+        setup::service_event(
+            state,
+            NetworkSetupEvent::PreviewFileReceived {
+                transferred_file: Some("Preview.bin".into()),
+            },
+        )?;
+        std::fs::remove_file(root.join("Preview.bin"))?;
+        ensure!(
+            preview(state) == (false, true, (false, false)) && publish(state)? == 0,
+            "the received preview: {:?}",
+            preview(state)
+        );
+        self.event(frame, "offer acked, Preview.bin taken, no further P");
+        // Another guest's Z3 hides even this preview; the next public text,
+        // here the host's A1, restores it (0x7A8227..0x7A824E).
+        setup::service_event(state, NetworkSetupEvent::PreviewUnavailable)?;
+        ensure!(
+            preview(state).2 == (true, true),
+            "Z3 did not hide the received preview"
+        );
+        setup::player_ready(state, "Tanya", 1)?;
+        ensure!(
+            preview(state).2 == (false, false),
+            "the host's A1 did not restore 0x468"
+        );
+        self.event(frame, "Z3 hid the preview; the host's A1 restored it");
+        Ok(())
+    }
+
     fn guest_options(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let launch = state
             .match_state
@@ -4626,7 +5271,7 @@ impl WolCapture {
                 && rows
                     == [
                         (NICKNAME.to_owned(), Some(1)),
-                        ("Tanya".to_owned(), Some(0))
+                        (self.target.guest_host().to_owned(), Some(0))
                     ]
                 && host_icon,
             "C9 did not take the host's options: {rows:?} {map:?} host icon {host_icon}"
@@ -4705,6 +5350,10 @@ impl WolCapture {
                 );
                 self.event(frame, "Boris joined, then was kicked");
             }
+            WolTarget::GuestNoPreview | WolTarget::GuestPreviewReceived => {
+                self.guest_preview(state, frame)?;
+            }
+            WolTarget::GuestTournamentRows => self.guest_tournament(state, frame)?,
             _ => {}
         }
         MoviesCapture::restore_neutral_pointer(state);

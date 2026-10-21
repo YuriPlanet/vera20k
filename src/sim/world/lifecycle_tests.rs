@@ -1923,7 +1923,13 @@ fn gsi_04_12_object_raw_occupation_airborne_and_non_fly_aircraft_are_excluded() 
     install_fly_aircraft(&mut sim, 1, SimFixed::from_num(1));
     let _ = sim.try_reveal_entity(1, common_raw_request(3, 4, 0, 128, 128));
     // SetHeight's Mark pair re-lists it at height 1, in the air.
-    sim.set_object_height(1, 1, None, None, crate::sim::world::FrameEffects::default());
+    sim.set_object_height(
+        1,
+        1,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
 
     insert_entity(&mut sim, 2, EntityCategory::Aircraft);
     sim.substrate.entities.get_mut(2).unwrap().locomotor =
@@ -2013,7 +2019,7 @@ fn gsi_04_12_object_raw_occupation_production_fly_tick_unmarks_takeoff_and_marks
     }
     sim.tick_air_movement_with_cell_lists_one(
         1,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -2054,7 +2060,7 @@ fn gsi_04_12_object_raw_occupation_production_fly_tick_unmarks_takeoff_and_marks
         .set_exact_z_leptons_for_test(Some(1));
     sim.tick_air_movement_with_cell_lists_one(
         1,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -2100,7 +2106,7 @@ fn gsi_05_05_fly_takeoff_commits_absolute_z_after_remove_process() {
     }
     sim.tick_air_movement_with_cell_lists_one(
         1,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -2130,7 +2136,13 @@ fn gsi_05_05_fly_landing_on_bridge_uses_absolute_z_for_deck_put() {
         .set_on_bridge(true);
     let _ = sim.try_reveal_entity(1, common_raw_request(3, 4, 0, 128, 128));
     // SetHeight's Mark pair re-lists it one lepton above the deck, in the air.
-    sim.set_object_height(1, 1, None, None, crate::sim::world::FrameEffects::default());
+    sim.set_object_height(
+        1,
+        1,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
     assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(3, 4), 0);
     assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(3, 4), 0);
 
@@ -2148,7 +2160,7 @@ fn gsi_05_05_fly_landing_on_bridge_uses_absolute_z_for_deck_put() {
     }
     sim.tick_air_movement_with_cell_lists_one(
         1,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -2248,7 +2260,7 @@ fn gsi_05_05_mapless_fly_uses_dummy_ground_then_bridge_height() {
 
     sim.tick_air_movement_with_cell_lists_one(
         1,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -2286,7 +2298,7 @@ fn gsi_04_07_damage_air_spatial_entry_crossing_and_exit_keep_vector_order() {
         sim.set_object_height(
             id,
             416,
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             crate::sim::world::FrameEffects::default(),
         );
@@ -2306,7 +2318,7 @@ fn gsi_04_07_damage_air_spatial_entry_crossing_and_exit_keep_vector_order() {
 
     sim.tick_air_movement_with_cell_lists_one(
         20,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -2334,7 +2346,7 @@ fn gsi_04_07_damage_air_spatial_entry_crossing_and_exit_keep_vector_order() {
         .set_current_speed_for_test(SimFixed::from_num(1));
     sim.tick_air_movement_with_cell_lists_one(
         20,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -2699,7 +2711,7 @@ fn particle_logic_membership_uses_the_object_local_guard_and_rebuilds_it() {
     let mut sim = Simulation::new();
     insert_particle_system(&mut sim, 7);
 
-    assert!(sim.reveal_particle_system(7, None));
+    assert!(sim.reveal_particle_system(7, crate::rules::ruleset::RuleSet::empty_for_test()));
     assert!(
         sim.substrate
             .particle_systems
@@ -2709,7 +2721,7 @@ fn particle_logic_membership_uses_the_object_local_guard_and_rebuilds_it() {
     );
     assert_eq!(sim.live_object_order_snapshot(), vec![7]);
 
-    assert!(sim.reveal_particle_system(7, None));
+    assert!(sim.reveal_particle_system(7, crate::rules::ruleset::RuleSet::empty_for_test()));
     assert_eq!(sim.live_object_order_snapshot(), vec![7]);
 
     sim.substrate
@@ -3721,6 +3733,7 @@ fn selling_target_disables_occupier_capture_nav_retention() {
 
 #[test]
 fn target_expiry_rearms_passive_scan_and_restores_suspended_mission() {
+    let rules = receiver_authority_rules();
     let mut sim = Simulation::with_seed(0x1234);
     insert_entity(&mut sim, 1, EntityCategory::Unit);
     insert_entity(&mut sim, 2, EntityCategory::Unit);
@@ -3752,7 +3765,7 @@ fn target_expiry_rearms_passive_scan_and_restores_suspended_mission() {
 
     let mut expected_rng = sim.scenario_rng.clone();
     let delay = expected_rng.next_range_u32_inclusive(4, 8);
-    sim.uninit(2);
+    sim.uninit_with_rules(2, &rules);
 
     let listener = sim.substrate.entities.get(1).unwrap();
     assert_eq!(listener.passive_scan.timer().start_frame(), 105);
@@ -3916,7 +3929,7 @@ fn detach_sensor_guard_applies_to_techno_but_not_constructed_terrain() {
                 false,
                 owner,
                 PointerExpiryControl::DetachAll,
-                Some(&rules),
+                &rules,
                 None,
                 super::FrameEffects::default(),
             );
@@ -4001,7 +4014,7 @@ fn detach_sensor_guard_applies_to_techno_but_not_constructed_terrain() {
                 false,
                 owner,
                 PointerExpiryControl::DetachAll,
-                Some(&rules),
+                &rules,
                 None,
                 super::FrameEffects::default(),
             );
@@ -4184,7 +4197,7 @@ fn techno_spark_pointer_expiry_is_exact_and_independent_of_control() {
             false,
             None,
             control,
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             super::FrameEffects::default(),
         );
@@ -4282,7 +4295,7 @@ fn completed_empty_smoke_limbo_clears_every_matching_techno_before_late_drain() 
     }
     for id in [4, 5] {
         insert_particle_system(&mut sim, id);
-        assert!(sim.reveal_particle_system(id, None));
+        assert!(sim.reveal_particle_system(id, crate::rules::ruleset::RuleSet::empty_for_test()));
     }
     sim.substrate
         .particle_systems
@@ -5824,6 +5837,25 @@ fn homing_mode_one_fuse_snaps_to_cell_location_below_bridge_aim_point() {
     );
 }
 
+/// The Wave owner's type (`insert_entity`'s TEST), whose fire coordinate
+/// keeps a Wave tracking; the warhead a detonating fixture projectile names;
+/// the particle system type `insert_particle_system` places; and the ART of
+/// `insert_anim`'s TESTANIM.
+fn gsi_05_02_rules() -> crate::rules::ruleset::RuleSet {
+    use crate::rules::ini_parser::IniFile;
+    let mut rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=TEST\n[TEST]\nStrength=100\n\
+         [Warheads]\n0=GSIWH\n[GSIWH]\nCellSpread=0\n\
+         [ParticleSystems]\n0=GSISYS\n[GSISYS]\nBehavesLike=Smoke\n",
+    ))
+    .expect("GSI fixture rules");
+    let mut art =
+        crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str("[TESTANIM]\nEnd=10\n"));
+    art.bind_anim_frame_count_for_test("TESTANIM", 10);
+    rules.replace_art_registry_for_test(art);
+    rules
+}
+
 fn gsi_05_02_mixed_fixture() -> (Simulation, [u64; 6]) {
     let mut sim = Simulation::new();
 
@@ -5838,7 +5870,7 @@ fn gsi_05_02_mixed_fixture() -> (Simulation, [u64; 6]) {
     sim.register_live_object(entity_id);
 
     let anim_id = sim.substrate.allocate_stable_id();
-    insert_anim(&mut sim, anim_id, true);
+    insert_anim(&mut sim, anim_id, false);
     sim.register_live_object(anim_id);
 
     let particle_id = sim.substrate.allocate_stable_id();
@@ -5855,7 +5887,9 @@ fn gsi_05_02_mixed_fixture() -> (Simulation, [u64; 6]) {
             terrain.set_max_health_for_test(10);
             terrain
         });
-    assert!(sim.register_terrain_object(terrain_id, None));
+    assert!(
+        sim.register_terrain_object(terrain_id, crate::rules::ruleset::RuleSet::empty_for_test())
+    );
 
     let projectile_id = sim.substrate.allocate_stable_id();
     sim.admit_projectile(projectile_id, gsi_05_02_projectile(entity_id, None));
@@ -5872,10 +5906,16 @@ fn gsi_05_02_mixed_fixture() -> (Simulation, [u64; 6]) {
         ),
     );
 
+    // Each visit before the last keeps its object, since an object leaving
+    // the vector during its own visit makes the walk skip its successor (see
+    // the terminal-current test below). So the Wave precedes its owner, whose
+    // visit drops the cell target (TEST has no weapon) that keeps the Wave
+    // tracking, and the particle system, which has nothing to spawn and
+    // retires at once, comes last.
     let mixed = [
         terrain_id,
-        entity_id,
         wave_id,
+        entity_id,
         anim_id,
         projectile_id,
         particle_id,
@@ -5887,6 +5927,14 @@ fn gsi_05_02_mixed_fixture() -> (Simulation, [u64; 6]) {
 #[test]
 fn gsi_05_02_mixed_six_family_order_roundtrips_and_dispatches_every_slot() {
     let (sim, mixed) = gsi_05_02_mixed_fixture();
+    let [
+        terrain_id,
+        wave_id,
+        entity_id,
+        anim_id,
+        projectile_id,
+        particle_id,
+    ] = mixed;
     let bytes = GameSnapshot::save(&sim, 0, 0, "logic-membership", 0);
     let mut restored = GameSnapshot::load(&bytes)
         .expect("mixed Logic snapshot")
@@ -5900,7 +5948,7 @@ fn gsi_05_02_mixed_six_family_order_roundtrips_and_dispatches_every_slot() {
         restored
             .terrain_objects
             .objects()
-            .get(&mixed[0])
+            .get(&terrain_id)
             .unwrap()
             .in_logic_vector()
     );
@@ -5908,24 +5956,24 @@ fn gsi_05_02_mixed_six_family_order_roundtrips_and_dispatches_every_slot() {
         restored
             .substrate
             .entities
-            .get(mixed[1])
+            .get(entity_id)
             .unwrap()
             .in_logic_vector
             .is_member()
     );
-    assert!(restored.waves.get(mixed[2]).unwrap().in_logic_vector());
+    assert!(restored.waves.get(wave_id).unwrap().in_logic_vector());
     assert!(
         restored
             .substrate
             .anims
-            .get(mixed[3])
+            .get(anim_id)
             .unwrap()
             .in_logic_vector()
     );
     assert!(
         restored
             .projectiles
-            .get(mixed[4])
+            .get(projectile_id)
             .unwrap()
             .in_logic_vector()
     );
@@ -5933,14 +5981,15 @@ fn gsi_05_02_mixed_six_family_order_roundtrips_and_dispatches_every_slot() {
         restored
             .substrate
             .particle_systems
-            .get(mixed[5])
+            .get(particle_id)
             .unwrap()
             .in_logic_vector()
     );
 
+    let rules = gsi_05_02_rules();
     let mut visited = Vec::new();
     restored.for_each_live_object(|sim, id| {
-        if sim.object_ai_visit_one(id, None, ObjectAiCtx::default()) {
+        if sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default()) {
             visited.push(id);
         }
     });
@@ -5958,8 +6007,8 @@ fn substrate_registration_and_removal_dispatch_is_order_identical() {
     let (mut sim, mixed) = gsi_05_02_mixed_fixture();
     let [
         terrain_id,
-        entity_id,
         wave_id,
+        entity_id,
         anim_id,
         projectile_id,
         particle_id,
@@ -6083,9 +6132,12 @@ fn gsi_05_02_tail_appends_run_same_pass_and_terminal_current_skips_successor() {
     );
     assert_eq!(sim.waves.get(wave_id).unwrap().lifetime(), 99);
 
+    let rules = gsi_05_02_rules();
     let mut removal = Simulation::new();
     let terminal_id = removal.substrate.allocate_stable_id();
-    removal.admit_projectile(terminal_id, gsi_05_02_projectile(0, Some(0)));
+    let mut terminal = gsi_05_02_projectile(0, Some(0));
+    terminal.payload = ProjectilePayload::new(1, removal.interner.intern("GSIWH"), None, false);
+    removal.admit_projectile(terminal_id, terminal);
     let successor_id = removal.substrate.allocate_stable_id();
     removal.admit_wave(
         successor_id,
@@ -6098,7 +6150,7 @@ fn gsi_05_02_tail_appends_run_same_pass_and_terminal_current_skips_successor() {
     let mut removal_visited = Vec::new();
     removal.for_each_live_object(|sim, id| {
         removal_visited.push(id);
-        let _ = sim.object_ai_visit_one(id, None, ObjectAiCtx::default());
+        let _ = sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
     });
     assert_eq!(removal_visited, vec![terminal_id]);
     assert_eq!(removal.live_object_order_snapshot(), vec![successor_id]);
@@ -6170,7 +6222,9 @@ fn gsi_05_02_lethal_terrain_unregisters_and_inactive_slot_cannot_roundtrip() {
     sim.terrain_objects
         .cell_index_mut_for_test()
         .insert((5, 6), terrain_id);
-    assert!(sim.register_terrain_object(terrain_id, None));
+    assert!(
+        sim.register_terrain_object(terrain_id, crate::rules::ruleset::RuleSet::empty_for_test())
+    );
 
     sim.commit_noncombat_aoe_receivers(
         &rules,
@@ -6240,7 +6294,9 @@ fn gsi_05_03_terminal_non_entities_remain_resolvable_until_common_drain() {
     sim.terrain_objects
         .cell_index_mut_for_test()
         .insert((5, 6), terrain_id);
-    assert!(sim.register_terrain_object(terrain_id, None));
+    assert!(
+        sim.register_terrain_object(terrain_id, crate::rules::ruleset::RuleSet::empty_for_test())
+    );
     sim.commit_noncombat_aoe_receivers(
         &rules,
         None,
@@ -6863,7 +6919,7 @@ fn gsi_05_04_high_flying_source_and_target_become_explicit_null() {
     sim.set_object_height(
         target_id,
         208,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default(),
     );
@@ -7089,6 +7145,7 @@ fn gsi_01_05_damage_rules() -> crate::rules::ruleset::RuleSet {
 
 #[test]
 fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
+    let rules = receiver_authority_rules();
     let mut sim = Simulation::new();
     let owner_id = sim.substrate.allocate_stable_id();
     let target_id = sim.substrate.allocate_stable_id();
@@ -7121,7 +7178,7 @@ fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
     sim.admit_wave(wave_id, wave);
     sim.active_wave_links.insert(owner_id, wave_id);
 
-    let represented = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), None);
+    let represented = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules);
     assert_eq!(
         represented.target_position,
         Some(ProjectileCoord::new(4 * 256 + 128, 128, 0)),
@@ -7134,7 +7191,7 @@ fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
     assert!(sim.waves.get(wave_id).unwrap().active_geometry());
     assert!(!sim.waves.get(wave_id).unwrap().decaying());
 
-    sim.uninit(target_id);
+    sim.uninit_with_rules(target_id, &rules);
 
     let wave = sim.waves.get(wave_id).expect("Wave remains represented");
     assert_eq!(wave.owner_id(), Some(owner_id));
@@ -7144,7 +7201,7 @@ fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
         "UnInit synchronously expires +0xAC"
     );
     assert_eq!(sim.active_wave_links.get(&owner_id), Some(&wave_id));
-    let expired = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), None);
+    let expired = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules);
     assert_eq!(expired.target_position, None);
     let _ = sim
         .waves
@@ -7200,9 +7257,12 @@ fn wave_pointer_expiry_owner_allows_dying_damage_then_uninit_nulls_later_calls()
         wave_z: 0,
     };
     assert!(
-        sim.wave_update_context(sim.waves.get(wave_id).unwrap(), None)
-            .owner_position
-            .is_some(),
+        sim.wave_update_context(
+            sim.waves.get(wave_id).unwrap(),
+            crate::rules::ruleset::RuleSet::empty_for_test()
+        )
+        .owner_position
+        .is_some(),
         "the dying-but-represented owner still supplies live Wave coordinates",
     );
     assert_eq!(sim.active_wave_links.get(&owner_id), Some(&wave_id));
@@ -8619,6 +8679,7 @@ fn attack_fixture(current: MissionType, suspended: MissionId) -> MissionTestFixt
 /// Restore replaced the target, and the walk is descending.
 #[test]
 fn detach_sweep_restores_before_clearing_target_in_descending_id_order() {
+    let rules = receiver_authority_rules();
     let mut sim = Simulation::new();
     insert_entity(&mut sim, 1, EntityCategory::Infantry);
     insert_entity(&mut sim, 2, EntityCategory::Infantry);
@@ -8644,7 +8705,7 @@ fn detach_sweep_restores_before_clearing_target_in_descending_id_order() {
     }
     sim.lifecycle_test_events.clear();
 
-    sim.stop_all_targeting_on_detach(3, None, None, crate::sim::world::FrameEffects::default());
+    sim.stop_all_targeting_on_detach(3, &rules, None, crate::sim::world::FrameEffects::default());
 
     // The detaching object is untouched and still present: this is not removal.
     assert!(sim.substrate.entities.contains(3));
@@ -8713,7 +8774,12 @@ fn detach_sweep_clears_target_when_no_mission_was_suspended() {
         .apply_test_fixture(attack_fixture(MissionType::Attack, MissionId::NONE));
     sim.lifecycle_test_events.clear();
 
-    sim.stop_all_targeting_on_detach(2, None, None, crate::sim::world::FrameEffects::default());
+    sim.stop_all_targeting_on_detach(
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
 
     let attacker = sim.substrate.entities.get(1).unwrap();
     assert!(attacker.attack_target.target().is_none());
@@ -8753,7 +8819,12 @@ fn detach_sweep_never_matches_a_cell_target() {
         MissionId::from_known(MissionType::Move),
     ));
 
-    sim.stop_all_targeting_on_detach(2, None, None, crate::sim::world::FrameEffects::default());
+    sim.stop_all_targeting_on_detach(
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
 
     let attacker = sim.substrate.entities.get(1).unwrap();
     assert_eq!(
@@ -8769,6 +8840,7 @@ fn detach_sweep_never_matches_a_cell_target() {
 
 #[test]
 fn bridge_cell_success_restores_before_conditional_target_clear() {
+    let rules = receiver_authority_rules();
     let mut sim = Simulation::new();
     insert_entity(&mut sim, 1, EntityCategory::Infantry);
     insert_entity(&mut sim, 2, EntityCategory::Unit);
@@ -8789,7 +8861,7 @@ fn bridge_cell_success_restores_before_conditional_target_clear() {
     sim.stop_all_targeting_cell(
         9,
         11,
-        None,
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     );
@@ -8924,6 +8996,10 @@ fn house_buildings(sim: &Simulation, house: crate::sim::intern::InternedId) -> V
 
 #[test]
 fn naval_build_const_capture_moves_old_entry_to_new_owner_tail() {
+    let rules = crate::rules::ruleset::RuleSet::from_ini(
+        &crate::rules::ini_parser::IniFile::from_str("[BuildingTypes]\n0=GACNST\n"),
+    )
+    .expect("GACNST rules");
     let mut sim = Simulation::new();
     let old_owner = sim.interner.intern("Americans");
     let new_owner = sim.interner.intern("Russians");
@@ -8936,7 +9012,11 @@ fn naval_build_const_capture_moves_old_entry_to_new_owner_tail() {
     insert_naval_build_const_fixture(&mut sim, 12, old_owner, 4, 2);
     for (stable_id, rx, ry) in [(50, 8, 8), (40, 2, 2), (12, 4, 2)] {
         assert!(matches!(
-            sim.try_reveal_entity(stable_id, request(rx, ry, PlacementEvidence::MarkSucceeded)),
+            sim.try_reveal_entity_with_context(
+                stable_id,
+                request(rx, ry, PlacementEvidence::MarkSucceeded),
+                super::UninitContext::with_rules(&rules),
+            ),
             RevealOutcome::Revealed { .. }
         ));
     }
@@ -9075,7 +9155,7 @@ fn production_air_wrapper_keeps_fly_exact_producer_and_reads_live_dummy() {
         .set_fly_target_height(731 - ground - 416);
     sim.tick_air_movement_with_cell_lists_one(
         1,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -9114,7 +9194,12 @@ fn production_air_wrapper_retains_native_jumpjet_result_below_the_ground() {
     let mut direct = fixture();
     assert!(
         direct
-            .tick_jumpjet_cruise_one(1, None, None, crate::sim::world::FrameEffects::default())
+            .tick_jumpjet_cruise_one(
+                1,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+                None,
+                crate::sim::world::FrameEffects::default()
+            )
             .unwrap()
             .is_some()
     );
@@ -9134,7 +9219,7 @@ fn production_air_wrapper_retains_native_jumpjet_result_below_the_ground() {
     wrapped
         .tick_air_movement_with_cell_lists_one(
             1,
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -9204,11 +9289,11 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
             1,
             coordinate,
             None,
-            Some(&rules)
+            &rules
         ));
         sim.tick_air_movement_with_cell_lists_one(
             1,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -9253,7 +9338,7 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
                 instance
                     .tick_air_movement_with_cell_lists_one(
                         1,
-                        Some(&rules),
+                        &rules,
                         None,
                         crate::sim::world::FrameEffects::default(),
                     )
@@ -9313,7 +9398,7 @@ fn display_lifecycle_is_independent_of_logic_and_survives_production_save() {
         &sim.interner,
         &sim.terrain_objects,
         &mut sim.substrate,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
     );
     assert_ne!(sim.state_hash(), before_sort);
     assert_eq!(
@@ -9331,7 +9416,7 @@ fn display_lifecycle_is_independent_of_logic_and_survives_production_save() {
         &restored.interner,
         &restored.terrain_objects,
         &mut restored.substrate,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
     );
     assert_eq!(
         restored.substrate.display.members(DisplayLayer::GROUND),
@@ -9481,14 +9566,14 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
                         &mut sim.substrate,
                         &sim.resolved_terrain,
                         id,
-                        Some(&rules),
+                        &rules,
                         None,
                     ),
                     "particle" => {
-                        sim.reveal_particle_system(id, Some(&rules));
+                        sim.reveal_particle_system(id, &rules);
                     }
                     "terrain" => {
-                        sim.register_terrain_object(id, Some(&rules));
+                        sim.register_terrain_object(id, &rules);
                     }
                     "bullet" => {
                         sim.register_projectile(
@@ -9511,7 +9596,7 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
                     &sim.interner,
                     &sim.terrain_objects,
                     &mut sim.substrate,
-                    Some(&rules),
+                    &rules,
                 ),
                 "coordinates" => {
                     let xyz: [i32; 3] =
@@ -9559,13 +9644,13 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
             &sim.interner,
             &sim.terrain_objects,
             &mut sim.substrate,
-            Some(&rules),
+            &rules,
         );
         Simulation::sort_display_ground(
             &restored.interner,
             &restored.terrain_objects,
             &mut restored.substrate,
-            Some(&rules),
+            &rules,
         );
         assert_eq!(restored.state_hash(), sim.state_hash(), "{name}: next sort");
         for id in 1..=actors.len() as u64 {
@@ -9597,7 +9682,7 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
         .submit(id, Some(DisplayLayer::TOP), &|_| 0);
     sim.tick_air_movement_with_cell_lists_one(
         id,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -9606,7 +9691,9 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
 
     // A real changed query re-submits even if cached membership is absent.
     sim.substrate.display.remove(id);
-    let before = sim.entity_display_layer(id, None).unwrap();
+    let before = sim
+        .entity_display_layer(id, crate::rules::ruleset::RuleSet::empty_for_test())
+        .unwrap();
     // GetHeight reads the coordinate Z Jumpjet flight writes.
     sim.substrate
         .entities
@@ -9621,11 +9708,13 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
         &sim.resolved_terrain,
         id,
         before,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
     );
     assert_eq!(sim.substrate.display.layer_of(id), Some(DisplayLayer::TOP));
     // The native tail's alive gate prevents another submission after death.
-    let before = sim.entity_display_layer(id, None).unwrap();
+    let before = sim
+        .entity_display_layer(id, crate::rules::ruleset::RuleSet::empty_for_test())
+        .unwrap();
     let entity = sim.substrate.entities.get_mut(id).unwrap();
     entity.lifecycle.set_object_alive_for_test(false);
     entity.position.set_exact_z_leptons_for_test(Some(0));
@@ -9636,7 +9725,7 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
         &sim.resolved_terrain,
         id,
         before,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
     );
     assert_eq!(sim.substrate.display.layer_of(id), Some(DisplayLayer::TOP));
 }
@@ -9660,7 +9749,7 @@ fn display_registration_expires_with_a_resubmitted_uninit_owner() {
         &mut sim.substrate,
         &sim.resolved_terrain,
         id,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
     );
     assert_eq!(
@@ -9674,7 +9763,7 @@ fn display_registration_expires_with_a_resubmitted_uninit_owner() {
         &sim.interner,
         &sim.terrain_objects,
         &mut sim.substrate,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
     );
 }
 
@@ -9810,7 +9899,7 @@ fn a_missile_is_tracked_in_the_cell_its_flight_step_reached() {
         Some(bucket(&sim, (12, 12)))
     );
 
-    sim.advance_live_object_turn(1, Some(&rules), super::techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, super::techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     let missile = sim.substrate.entities.get(1).unwrap();

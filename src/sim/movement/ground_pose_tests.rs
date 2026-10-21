@@ -922,7 +922,7 @@ fn forced_track_terminal_samples_full_head_xy_before_relink() {
             y: 4 * 256,
             z: -347
         },
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default(),
     ));
@@ -1287,7 +1287,12 @@ fn two_marked_units() -> Simulation {
         entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
         entity.position.set_exact_z_leptons_for_test(Some(0));
         sim.substrate.entities.insert(entity);
-        assert!(sim.foot_mark_put(id, None, None, crate::sim::world::FrameEffects::default()));
+        assert!(sim.foot_mark_put(
+            id,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            None,
+            crate::sim::world::FrameEffects::default()
+        ));
     }
     sim
 }
@@ -1307,7 +1312,7 @@ fn set_height_on_a_marked_object_re_marks_it_at_the_head_of_its_cell() {
     sim.set_object_height(
         1,
         30,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default(),
     );
@@ -1335,11 +1340,16 @@ fn set_height_on_an_unmarked_object_writes_z_without_marking_it() {
         Some(30)
     );
 
-    assert!(sim.foot_mark_remove(1, None, None, crate::sim::world::FrameEffects::default()));
+    assert!(sim.foot_mark_remove(
+        1,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        None,
+        crate::sim::world::FrameEffects::default()
+    ));
     sim.set_object_height(
         1,
         60,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default(),
     );
@@ -1411,7 +1421,7 @@ fn foot_set_location_always_writes_but_moves_riders_only_on_a_change() {
         y: 128,
         z: 0,
     };
-    foot_set_location(&mut entities, 1, staged, Some(&rules), &interner);
+    foot_set_location(&mut entities, 1, staged, &rules, &interner);
     let transport = &entities.get(1).unwrap().position;
     assert_eq!(
         (transport.rx(), transport.sub_x()),
@@ -1424,7 +1434,7 @@ fn foot_set_location_always_writes_but_moves_riders_only_on_a_change() {
     );
 
     let moved = DriveCoord { x: 600, ..staged };
-    foot_set_location(&mut entities, 1, moved, Some(&rules), &interner);
+    foot_set_location(&mut entities, 1, moved, &rules, &interner);
     let [transport, rider] =
         [1, 2].map(|id| position_world_coord(&entities.get(id).unwrap().position));
     assert_eq!(transport, moved);
@@ -1433,7 +1443,7 @@ fn foot_set_location_always_writes_but_moves_riders_only_on_a_change() {
     // The native change test includes Z (4DB834). A caller that only
     // changes height still reaches the same rider tail as an XY move.
     let lowered = DriveCoord { z: -5, ..moved };
-    foot_set_location(&mut entities, 1, lowered, Some(&rules), &interner);
+    foot_set_location(&mut entities, 1, lowered, &rules, &interner);
     let [transport, rider] =
         [1, 2].map(|id| position_world_coord(&entities.get(id).unwrap().position));
     assert_eq!(transport, lowered);

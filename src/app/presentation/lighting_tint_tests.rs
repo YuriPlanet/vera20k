@@ -232,7 +232,7 @@ fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm(
         None,
         None,
     );
-    sim.classify_map_triggers(None);
+    sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     sim.publish_scenario_started();
     // Declared raging-storm fixture; its lifecycle has separate tests.
     let owner = sim.intern("Americans");
@@ -250,7 +250,11 @@ fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm(
     sim.publish_global_lighting(PaletteUpdate::from_scenario(&sim.session().lighting()));
     lights.apply_events(&terrain, sim.lighting_sources().pending());
     sim.lighting_sources_mut_for_test().discard_pending();
-    sim.advance_triggers(None, None, FrameEffects::default());
+    sim.advance_triggers(
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        None,
+        FrameEffects::default(),
+    );
     assert_eq!(sim.lighting_sources().pending().len(), 3);
     lights.apply_events(&terrain, sim.lighting_sources().pending());
     sim.lighting_sources_mut_for_test().discard_pending();

@@ -830,6 +830,21 @@ fn right_drag_threshold_crossed(
         || delta_y.abs() > drag_metric_y.saturating_mul(2) as f32
 }
 
+/// Reconstruct physical mouse pixels from the zoomed frame's coordinates for
+/// the right-drag threshold. Resolution zoom is VERA's: gamemd draws one
+/// screen pixel per game pixel, so measuring the threshold in physical pixels
+/// keeps the hand travel the same at every zoom. Pan distances stay in frame
+/// pixels, so the map scrolls at gamemd's speed for the same view. Rounding the
+/// inverse zoom avoids f32 division noise changing the strict threshold at,
+/// e.g., 150%. Unscaled inputs retain their existing subpixel behavior.
+fn window_mouse_pixels(source_distance: f32, resolution_scale: f32) -> f32 {
+    if resolution_scale == 1.0 {
+        source_distance
+    } else {
+        (source_distance * resolution_scale).round()
+    }
+}
+
 /// The stock rate multiplies the displacement by 1/4: a 100 px drag moves
 /// the camera 25 px per admitted game frame.
 const RIGHT_DRAG_RATE_BIAS: u32 = 1;
@@ -1023,13 +1038,14 @@ impl TacticalMouseState {
         cursor: (f32, f32),
         drag_metrics: (i32, i32),
         band_box: bool,
+        resolution_scale: f32,
     ) -> RightDragPoll {
         if !self.right_drag_owns_frame() {
             return RightDragPoll::Idle;
         }
         self.right_threshold_crossed |= right_drag_threshold_crossed(
-            cursor.0 - self.right_anchor.0,
-            cursor.1 - self.right_anchor.1,
+            window_mouse_pixels(cursor.0 - self.right_anchor.0, resolution_scale),
+            window_mouse_pixels(cursor.1 - self.right_anchor.1, resolution_scale),
             drag_metrics.0,
             drag_metrics.1,
         );
@@ -1125,6 +1141,7 @@ fn right_drag_axis_distance(displacement: i32, scroll_rate: u32) -> i32 {
 /// Poll the right-drag owner and return a request in world pixels. Committing
 /// and clamping the request belongs to the later Tactical__AI/pre-follow seam.
 fn poll_right_drag_pan(state: &mut AppState) -> (f32, f32) {
+    let resolution_scale = state.tactical_zoom().map_or(1.0, |zoom| zoom.scale());
     let cursor = (
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
@@ -1133,6 +1150,7 @@ fn poll_right_drag_pan(state: &mut AppState) -> (f32, f32) {
         cursor,
         system_drag_metrics_px(),
         state.match_state.input.selection_state.is_band_box_active(),
+        resolution_scale,
     ) {
         RightDragPoll::Idle => return (0.0, 0.0),
         RightDragPoll::CancelBandBox => {
@@ -2091,6 +2109,31 @@ pub(crate) fn edge_scroll_cursor_state(state: &AppState) -> Option<(ScrollDir, b
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// VERA's resolution zoom: the right-drag threshold (twice the system drag
+    /// metric) is measured in physical pixels at every zoom.
+    #[test]
+    fn right_drag_threshold_is_physical_pixels_at_every_resolution_zoom() {
+        for scale in [1.0, 1.5, 2.0, 3.0] {
+            // Deliberately include an anchor whose inverse is inexact at 150%.
+            let anchor = (211.0 / scale, 200.0 / scale);
+            let mut mouse = TacticalMouseState {
+                right_held: true,
+                ..Default::default()
+            };
+            mouse.begin_right_drag(anchor);
+            assert_eq!(
+                mouse.poll_right_drag((219.0 / scale, 200.0 / scale), (4, 4), false, scale),
+                RightDragPoll::Idle,
+                "exactly eight physical pixels at {scale}x"
+            );
+            assert_eq!(
+                mouse.poll_right_drag((220.0 / scale, 200.0 / scale), (4, 4), false, scale),
+                RightDragPoll::Pan,
+                "nine physical pixels at {scale}x"
+            );
+        }
+    }
 
     #[test]
     fn tactical_tooltip_gate_reads_focus_rate_independently_of_pending_scroll() {

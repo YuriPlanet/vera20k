@@ -85,7 +85,7 @@ fn authored_waypoint_explosions_detonate_the_selected_weapon_at_the_waypoint() {
                 &action,
                 context,
                 &mut Vec::new(),
-                Some(&rules),
+                &rules,
                 None,
                 FrameEffects::default(),
             )

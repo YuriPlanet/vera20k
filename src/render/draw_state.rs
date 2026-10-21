@@ -27,6 +27,9 @@ pub struct ObserverDrawContext {
     pub detects_disguise: bool,
     /// The selected body type's encoding; screen-pick callers leave it unset.
     pub drawn_voxel: Option<bool>,
+    /// The object is a building whose type's ART sets `DoubleThick=`
+    /// (`BuildingTypeClass +0x16B1`).
+    pub double_thick_building: bool,
 }
 
 impl Default for ObserverDrawContext {
@@ -43,6 +46,7 @@ impl Default for ObserverDrawContext {
             disguise_cell_present: false,
             detects_disguise: false,
             drawn_voxel: None,
+            double_thick_building: false,
         }
     }
 }
@@ -123,6 +127,8 @@ pub struct DrawStateInput {
     pub disguise: Option<DisguiseDrawInput>,
     pub warp_out: bool,
     pub warp_in: bool,
+    /// A building whose type sets `DoubleThick=`; selects its warp translucency.
+    pub double_thick_building: bool,
 }
 
 /// CPU draw admission plus the GPU-ready material state.
@@ -214,9 +220,16 @@ impl DrawState {
             };
         };
 
+        // The SHP, voxel and voxel-render paths (`0x00705E5B..0x00705EAE`,
+        // `0x0070668F..0x00706700`, `0x00707004..0x0070705F`) OR 6 (75%) for a
+        // building whose type sets DoubleThick, else 4 (50%).
         let warp_selector = if input.warp_out || input.warp_in {
             state.fx_flags |= FX_WARP;
-            TRANSLUCENCY_50
+            if input.double_thick_building {
+                TRANSLUCENCY_75
+            } else {
+                TRANSLUCENCY_50
+            }
         } else {
             0
         };
@@ -319,6 +332,7 @@ impl DrawState {
                 disguise: Self::disguise_input(entity, current_frame, observer),
                 warp_out,
                 warp_in,
+                double_thick_building: observer.double_thick_building,
             },
             current_frame,
             remap_row,

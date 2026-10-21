@@ -155,6 +155,12 @@ pub struct SkirmishGameMode {
     pub random_maps_allowed: bool,
     pub allies_allowed: bool,
     pub must_ally: bool,
+    /// `+0x3D` `WonlineTournamentAllowed`: listed in WOL tournament and clan
+    /// rooms (`0x005D6203`).
+    pub wonline_tournament_allowed: bool,
+    /// `+0x3E` `WonlineClanTournamentAllowed`: listed in WOL clan rooms
+    /// (`0x005D6230`).
+    pub wonline_clan_tournament_allowed: bool,
 }
 
 impl SkirmishGameMode {
@@ -195,13 +201,22 @@ impl SkirmishGameMode {
             random_maps_allowed,
             allies_allowed: true,
             must_ally: false,
+            // The constructor's +0x3D/+0x3E (0x005D5BEA..0x005D5BF6).
+            wonline_tournament_allowed: true,
+            wonline_clan_tournament_allowed: true,
         })
     }
 }
 
 fn apply_common_override(mode: &mut SkirmishGameMode, ini: &IniFile) {
-    // ReadBool over each current value (`0x005D5CE5`, `0x005D5D00`).
+    // ReadBool over each current value (`0x005D5C7D..0x005D5D11`).
     let section = ini.section_or_empty("MultiplayerDialogSettings");
+    mode.wonline_tournament_allowed =
+        section.read_bool("WonlineTournamentAllowed", mode.wonline_tournament_allowed);
+    mode.wonline_clan_tournament_allowed = section.read_bool(
+        "WonlineClanTournamentAllowed",
+        mode.wonline_clan_tournament_allowed,
+    );
     mode.allies_allowed = section.read_bool("AlliesAllowed", mode.allies_allowed);
     mode.must_ally = section.read_bool("MustAlly", mode.must_ally);
     if !mode.allies_allowed {
@@ -308,7 +323,8 @@ pub fn stock_skirmish_modes() -> Vec<SkirmishGameMode> {
     parse_mpmodes_ini_with_overrides(&roster, |name| {
         let settings = match name.to_ascii_lowercase().as_str() {
             "mpteammd.ini" => "AlliesAllowed=yes\nMustAlly=yes\n",
-            "mpfreeforallmd.ini" | "mpcoopmd.ini" => "AlliesAllowed=no\n",
+            "mpfreeforallmd.ini" => "AlliesAllowed=no\nWonlineClanTournamentAllowed=no\n",
+            "mpcoopmd.ini" => "AlliesAllowed=no\nWonlineTournamentAllowed=no\n",
             _ => "AlliesAllowed=yes\n",
         };
         Some(IniFile::from_str(&format!(
@@ -475,5 +491,10 @@ mod tests {
             stock_skirmish_modes(),
             "every consumed roster and override field"
         );
+        // The WOL room filter's retail inputs (FillModeList 5D6203..37).
+        let by_class = |class| modes.iter().find(|mode| mode.class == class).unwrap();
+        assert!(!by_class(MpModeClass::FreeForAll).wonline_clan_tournament_allowed);
+        assert!(by_class(MpModeClass::FreeForAll).wonline_tournament_allowed);
+        assert!(!by_class(MpModeClass::Cooperative).wonline_tournament_allowed);
     }
 }

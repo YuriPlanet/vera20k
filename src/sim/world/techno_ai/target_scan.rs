@@ -286,12 +286,9 @@ pub(crate) fn scan(
 pub(super) fn passive_acquire_step(
     sim: &mut Simulation,
     id: u64,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     ctx: ObjectAiCtx<'_>,
 ) {
-    let Some(rules) = rules else {
-        return;
-    };
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
@@ -764,7 +761,7 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
         crate::sim::spawn_manager::clear_all_spawn_targets(
             self.sim,
             self.id,
-            Some(self.rules),
+            self.rules,
             None,
             self.ctx.effects,
         );
@@ -774,7 +771,7 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
         let _ = self.sim.assign_target_represented(
             self.id,
             target,
-            Some(self.rules),
+            self.rules,
             self.ctx.overlay_registry,
             self.ctx.effects,
         );
@@ -1017,7 +1014,7 @@ mod tests {
                 overlay_registry: Some(&registry),
                 ..ObjectAiCtx::default()
             };
-            passive_acquire_step(&mut sim, scanner, Some(rules), ctx);
+            passive_acquire_step(&mut sim, scanner, rules, ctx);
             let actor = sim.substrate.entities.get(scanner).unwrap();
             assert_eq!(
                 actor.attack_target.target(),
@@ -1060,7 +1057,7 @@ mod tests {
             let jitter = expected_scenario.next_range_u32_inclusive(0, 2);
             let main = sim.main_rng.state();
             let mapgen = sim.mapgen_rng.state();
-            passive_acquire_step(&mut sim, scanner, Some(rules), ctx);
+            passive_acquire_step(&mut sim, scanner, rules, ctx);
             let actor = sim.substrate.entities.get(scanner).unwrap();
             assert_eq!(actor.passive_scan.last_scan_frame(), 100);
             assert_eq!(actor.passive_scan.timer().start_frame(), 100);
@@ -1078,7 +1075,7 @@ mod tests {
             );
             assert_eq!(actor.passive_scan.acquired(), !blocked);
             let after_scan = sim.scenario_rng.state();
-            passive_acquire_step(&mut sim, scanner, Some(rules), ctx);
+            passive_acquire_step(&mut sim, scanner, rules, ctx);
             assert_eq!(
                 sim.scenario_rng.state(),
                 after_scan,

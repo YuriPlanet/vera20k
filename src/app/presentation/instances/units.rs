@@ -2006,13 +2006,13 @@ fn harvest_overlay_frame(
         || entity.temporal.chain_head().is_some()
         || entity.is_warped_out()
         || entity.is_warping_in()
-        || crate::sim::movement::motion_query::is_moving_now(
-            entity,
-            rules.map(|rules| {
-                crate::sim::movement::SpeedRules::new(rules, sim.interner(), sim.houses())
-            }),
-            display_binary_frame,
-        )
+        || rules.is_some_and(|rules| {
+            crate::sim::movement::motion_query::is_moving_now(
+                entity,
+                crate::sim::movement::SpeedRules::new(rules, sim.interner(), sim.houses()),
+                display_binary_frame,
+            )
+        })
     {
         return None;
     }

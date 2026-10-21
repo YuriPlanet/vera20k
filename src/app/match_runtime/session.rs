@@ -181,6 +181,12 @@ pub(crate) enum NetworkLoadingRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NetworkSession {
+    /// The WOL game channel's kind (`0x0077D940`/`0x0077D970`), fixed for
+    /// the setup it hosts.
+    room: NetworkRoom,
+    /// The WOL start's tournament value and clan lists, taken at
+    /// OnGameStart/Start Game Now for the accepted start.
+    wol_start: WolStartTerms,
     loading_requests: Vec<NetworkLoadingRequest>,
     map_metadata: Option<NetworkMapMetadata>,
     proposed_seed: Option<u32>,
@@ -387,6 +393,8 @@ impl MatchSession {
         self.host = false;
         self.offline_player_name = None;
         self.network = Some(NetworkSession {
+            room: NetworkRoom::default(),
+            wol_start: WolStartTerms::default(),
             loading_requests: Vec::new(),
             map_metadata: None,
             proposed_seed: None,
@@ -948,16 +956,12 @@ impl MatchSession {
         else {
             anyhow::bail!("network setup is not editable");
         };
-        let expected_capacity = metadata
-            .player_capacity
-            .min(
-                launch
-                    .mode
-                    .class
-                    .setup_player_limit()
-                    .map_or(8, |limit| limit as i32),
-            )
-            .min(8);
+        let expected_capacity = row_capacity(
+            network.return_context.session_mode(),
+            network.room,
+            &launch.mode,
+            metadata.player_capacity,
+        );
         anyhow::ensure!(
             *capacity == expected_capacity,
             "map metadata and derived setup capacity disagree"
@@ -1027,13 +1031,18 @@ impl MatchSession {
                     ..
                 },
             return_context,
+            room,
             ..
         }) = self.network.as_mut()
         else {
             anyhow::bail!("network setup is not editable");
         };
-        let admitted_capacity =
-            row_capacity(return_context.session_mode(), &incoming.mode, capacity);
+        let admitted_capacity = row_capacity(
+            return_context.session_mode(),
+            *room,
+            &incoming.mode,
+            capacity,
+        );
         anyhow::ensure!(
             launch.local_player_index == incoming.local_player_index
                 && launch.humans.len() == incoming.humans.len()
@@ -1082,9 +1091,29 @@ impl MatchSession {
         }
     }
 
-    /// 5EB060/5EC3A0 service row limit (LAN 8, WOL 6) of the active visit.
+    /// 5EB060/5E6440 service row limit (LAN 8, WOL 6 or a tournament
+    /// room's 2) of the active visit.
     pub(crate) fn network_row_limit(&self) -> Option<i32> {
-        self.network_mode().map(row_limit)
+        let network = self.network.as_ref()?;
+        Some(row_limit(
+            network.return_context.session_mode(),
+            network.room,
+        ))
+    }
+
+    /// The WOL game channel's kind; set when its setup opens, before the
+    /// first map selection.
+    pub(crate) fn set_network_room(&mut self, room: NetworkRoom) {
+        if let Some(network) = self.network.as_mut() {
+            network.room = room;
+        }
+    }
+
+    pub(crate) fn network_room(&self) -> NetworkRoom {
+        self.network
+            .as_ref()
+            .map(|network| network.room)
+            .unwrap_or_default()
     }
 
     pub(crate) fn network_observer_row(&self) -> Option<u8> {
@@ -1120,20 +1149,22 @@ impl MatchSession {
                         ..
                     },
                 return_context,
+                room,
                 ..
             }) = candidate.network.as_mut()
             else {
                 anyhow::bail!("network setup is not editable");
             };
             let session_mode = return_context.session_mode();
+            let room = *room;
             let changed = launch.mode != mode;
             if changed && mode.class.uses_cooperative_setup() {
                 *observer_row = None;
             } //5C1A10
-            let new_capacity = row_capacity(session_mode, &mode, capacity);
+            let new_capacity = row_capacity(session_mode, room, &mode, capacity);
             let host_extra = i32::from(
                 *observer_row == launch.local_player().raw_slot_index
-                    && (mode.class.lists_in_skirmish() || new_capacity < row_limit(session_mode)),
+                    && host_extra_row(session_mode, room, &mode, new_capacity),
             );
             let old = *previous;
             *previous = new_capacity;
@@ -1515,6 +1546,14 @@ impl MatchSession {
         Ok(())
     }
 
+    /// OnGameStart's `[0xB779C4]` and Start Game Now's clan lists for the
+    /// accepted WOL start.
+    pub(crate) fn set_wol_start(&mut self, terms: WolStartTerms) {
+        if let Some(network) = self.network.as_mut() {
+            network.wol_start = terms;
+        }
+    }
+
     pub(crate) fn network_max_ahead_frames(&self) -> Option<i32> {
         self.network.as_ref()?.max_ahead_frames
     }
@@ -1583,6 +1622,7 @@ impl MatchSession {
             network.return_context.session_mode(),
             self.host,
             max_ahead_frames,
+            std::mem::take(&mut network.wol_start),
         ));
         network.phase = NetworkPhase::Frozen {
             connected: (0..startup.launch_session().humans.len()).collect(),
@@ -1770,32 +1810,91 @@ impl MatchSession {
     }
 }
 
-/// 5EC3A0 row limit: LAN 8, WOL 6 (`005EC457`). Tournament (`0077D940`)
-/// rooms limit WOL to 2 and clan rooms (`0077D970`) round the map capacity
-/// down to even; VERA's WOL lobby admits only ordinary custom games, so
-/// those room kinds are not reachable here.
-fn row_limit(session_mode: SessionMode) -> i32 {
-    if session_mode == SessionMode::Wol {
-        6
-    } else {
-        8
+/// What a WOL start hands the match: OnGameStart's `[0xB779C4]` (the
+/// channel's tournament value, 2 in a clan room) and Start Game Now's two
+/// clan name lists `[0xB77A04]`/`[0xB76568]`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct WolStartTerms {
+    pub(crate) tournament: i32,
+    pub(crate) squad_lists: [Vec<String>; 2],
+}
+
+/// A WOL game channel's kind from its record: tournament `+0x14` and the
+/// clan bit `+0x20 & 0x100` of the current channel `[0xB76B10]`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct NetworkRoom {
+    pub(crate) tournament: bool,
+    pub(crate) clan: bool,
+}
+
+impl NetworkRoom {
+    /// `0x0077D940`: a tournament or clan room (GameMode 4 only).
+    pub(crate) const fn tournament_or_clan(self) -> bool {
+        self.tournament || self.clan
     }
 }
 
-/// 5EC3A0: map capacity (5E6520), then the mode's vtable+98 limit, then the
-/// service row limit.
+/// `0x005E6440` (and its inline copies): LAN 8; WOL 6, or 2 in a
+/// tournament room that is not a clan room.
+fn row_limit(session_mode: SessionMode, room: NetworkRoom) -> i32 {
+    match session_mode {
+        SessionMode::Wol if room.tournament && !room.clan => 2,
+        SessionMode::Wol => 6,
+        _ => 8,
+    }
+}
+
+/// `0x005EC3A0` (`0x005EC3C4..0x005EC467`): map capacity (`0x005E6520`),
+/// the mode's vtable+98 limit, then in a WOL clan room an even count, in a
+/// tournament room 2. The row limit applies unless the mode lists in
+/// Skirmish (vtable+40) outside a tournament or clan room.
 fn row_capacity(
     session_mode: SessionMode,
+    room: NetworkRoom,
     mode: &crate::skirmish_launch::SkirmishLaunchMode,
     capacity: i32,
 ) -> i32 {
-    capacity
-        .min(
-            mode.class
-                .setup_player_limit()
-                .map_or(8, |limit| limit as i32),
-        )
-        .min(row_limit(session_mode))
+    let mut capacity = capacity.min(
+        mode.class
+            .setup_player_limit()
+            .map_or(8, |limit| limit as i32),
+    );
+    if session_mode == SessionMode::Wol {
+        if room.clan {
+            capacity &= !1;
+        } else if room.tournament {
+            capacity = 2;
+        }
+    }
+    if mode.class.lists_in_skirmish()
+        && !(session_mode == SessionMode::Wol && room.tournament_or_clan())
+    {
+        capacity
+    } else {
+        capacity.min(row_limit(session_mode, room))
+    }
+}
+
+/// `0x005EC4A3..0x005EC4EF`: the host's observer row adds a row when the
+/// row limit was skipped or the capacity is under it (WOL limits under 6
+/// count one more).
+fn host_extra_row(
+    session_mode: SessionMode,
+    room: NetworkRoom,
+    mode: &crate::skirmish_launch::SkirmishLaunchMode,
+    capacity: i32,
+) -> bool {
+    let wol_room = session_mode == SessionMode::Wol && room.tournament_or_clan();
+    if mode.class.lists_in_skirmish() && !wol_room {
+        return true;
+    }
+    let limit = row_limit(session_mode, room);
+    let limit = if session_mode == SessionMode::Wol && limit < 6 {
+        limit + 1
+    } else {
+        limit
+    };
+    capacity < limit
 }
 
 fn native_network_row_defaults(
@@ -1843,7 +1942,7 @@ fn validate_network_rows(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MatchSession, SessionMode};
+    use super::{MatchSession, NetworkRoom, SessionMode};
 
     fn network_fixture() -> crate::skirmish_launch::SkirmishLaunchSession {
         let profile: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -1963,7 +2062,7 @@ mod tests {
     }
 
     #[test]
-    fn wol_caps_rows_at_six_clears_guest_acceptance_and_times_from_game_speed() {
+    fn wol_rows_follow_mode_and_room_clears_guest_acceptance_and_times_from_game_speed() {
         let wol_host = || {
             let mut session = MatchSession::default();
             session.enter_network(super::NetworkReturnContext::Wol);
@@ -1975,12 +2074,74 @@ mod tests {
         let mut session = wol_host();
         let launch = session.network_setup().unwrap().clone();
         let file = launch.selected_map_file.clone().unwrap();
+        let mut man_battle = launch.mode.clone();
+        man_battle.class = crate::skirmish_modes::MpModeClass::ManBattle;
         session
-            .select_network_map(launch.mode.clone(), file.clone(), 8)
+            .select_network_map(man_battle.clone(), file.clone(), 8)
             .unwrap();
         // 5EC3A0 `0x5EC457`: WOL rows stop at six where LAN keeps eight.
         assert_eq!(session.network_setup_capacity(), Some(6));
         assert_eq!(session.network_row_limit(), Some(6));
+        // `0x5EC41C..0x5EC430`: Battle and FreeForAll (vtable+40) skip the
+        // limit outside tournament and clan rooms.
+        session
+            .select_network_map(launch.mode.clone(), file.clone(), 8)
+            .unwrap();
+        assert_eq!(session.network_setup_capacity(), Some(8));
+        // A clan room rounds down to even and keeps the limit; a tournament
+        // room holds two rows.
+        for (room, capacity, expected, limit) in [
+            (
+                NetworkRoom {
+                    tournament: false,
+                    clan: true,
+                },
+                7,
+                6,
+                6,
+            ),
+            (
+                NetworkRoom {
+                    tournament: false,
+                    clan: true,
+                },
+                5,
+                4,
+                6,
+            ),
+            (
+                NetworkRoom {
+                    tournament: true,
+                    clan: false,
+                },
+                8,
+                2,
+                2,
+            ),
+            (
+                NetworkRoom {
+                    tournament: true,
+                    clan: true,
+                },
+                3,
+                2,
+                6,
+            ),
+        ] {
+            let mut session = wol_host();
+            session.set_network_room(room);
+            session
+                .select_network_map(launch.mode.clone(), file.clone(), capacity)
+                .unwrap();
+            assert_eq!(
+                (
+                    session.network_setup_capacity(),
+                    session.network_row_limit()
+                ),
+                (Some(expected), Some(limit)),
+                "{room:?} on a map for {capacity}"
+            );
+        }
         // 5E9850 keeps only the node named 0xA8D610: the host's own name on
         // the host, empty on a guest, which therefore clears its own too.
         session.set_network_player_ready(0, true).unwrap();

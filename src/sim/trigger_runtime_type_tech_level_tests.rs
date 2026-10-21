@@ -88,7 +88,7 @@ fn apply(sim: &mut Simulation, rules: &RuleSet, raw: &str) -> bool {
             input: TagEventInput::default(),
         },
         &mut Vec::new(),
-        Some(rules),
+        rules,
         None,
         FrameEffects::default(),
     )

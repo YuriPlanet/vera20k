@@ -531,7 +531,7 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
 fn advance(sim: &mut Simulation, rules: &RuleSet) {
     sim.advance_app_frame(
         &[],
-        Some(rules),
+        rules,
         None,
         33,
         TickLane::Ordinary,

@@ -120,7 +120,7 @@ fn non_agent_arrival_does_not_raise_the_spy_cell_event() {
     sim.per_cell_process(
         actor,
         crate::sim::movement::PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         Some(&registry),
         FrameEffects::default(),
     )
@@ -181,7 +181,7 @@ fn spy_type_event_uses_forced_identity_side_fallback_and_native_persistence_gate
                 },
                 None,
                 &mut persistence,
-                Some(&rules),
+                &rules,
                 live,
             )
         };
@@ -206,7 +206,7 @@ fn spy_type_event_uses_forced_identity_side_fallback_and_native_persistence_gate
             },
             None,
             &mut persistence,
-            Some(&rules),
+            &rules,
             live
         ));
         let typ = sim.trigger_runtime.trigger(live).unwrap().type_index;
@@ -222,7 +222,7 @@ fn spy_type_event_uses_forced_identity_side_fallback_and_native_persistence_gate
             },
             None,
             &mut persistence,
-            Some(&rules),
+            &rules,
             live
         ));
     }
@@ -259,7 +259,7 @@ fn agent_arrival_delivers_cell_spy_event_after_snapshot_and_cleans_up_one_shot()
         sim.per_cell_process(
             actor,
             crate::sim::movement::PerCellReason::TurnComplete,
-            Some(&rules),
+            &rules,
             Some(&registry),
             FrameEffects::default(),
         )
@@ -268,7 +268,7 @@ fn agent_arrival_delivers_cell_spy_event_after_snapshot_and_cleans_up_one_shot()
         sim.per_cell_process(
             actor,
             crate::sim::movement::PerCellReason::Arrival,
-            Some(&rules),
+            &rules,
             Some(&registry),
             FrameEffects::default(),
         )
@@ -308,7 +308,7 @@ fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags
         &mut sim.substrate,
         air,
         crate::sim::world::display_layers::DisplayLayer::AIR,
-        Some(&rules),
+        &rules,
     );
     sim.substrate
         .entities
@@ -338,7 +338,7 @@ fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags
         .unwrap()
         .set_map_is_clear_for_test(true);
     let rng_before = rng(&sim);
-    sim.trigger_grow_shroud(UninitContext::new(Some(&rules), Some(&registry)));
+    sim.trigger_grow_shroud(UninitContext::new(&rules, Some(&registry)));
     assert!(sim.fog.is_ground_unshrouded(houses[0], 14, 15));
     assert!(!sim.fog.is_ground_unshrouded(houses[0], 23, 15));
     assert!(!sim.fog.is_ground_unshrouded(houses[0], 23, 23));
@@ -353,12 +353,7 @@ fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags
     );
     sim.fog.set_ground_bits_for_test(houses[0], 8, 11, 8);
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(
-        houses[1],
-        Some(&rules),
-        Some(&registry),
-        FrameEffects::default(),
-    );
+    sim.raise_house_tags(houses[1], &rules, Some(&registry), FrameEffects::default());
     assert!(!sim.fog.is_ground_unshrouded(houses[0], 8, 11));
     assert!(sim.trigger_runtime.globals_set.contains(&7));
 }

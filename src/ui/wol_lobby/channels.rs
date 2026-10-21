@@ -174,12 +174,22 @@ impl WolChannel {
 pub(crate) struct WolMember {
     /// `+0x00`: [`MEMBER_OPERATOR`], [`MEMBER_VOICE`]; `0x8000` marks the local user.
     pub(crate) flags: u32,
+    /// `+0x14`: the user's squad id, 0 for none.
+    pub(crate) squad: i32,
     /// `+0x24`.
     pub(crate) name: String,
     /// `+0x2E`: the clan column's tooltip.
     pub(crate) clan_name: String,
     /// `+0x57`.
     pub(crate) clan_tag: String,
+}
+
+/// A squad record as the squad sink reads it: `+0x168` the name, `+0x191`
+/// the tag.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct WolSquad {
+    pub(crate) name: String,
+    pub(crate) tag: String,
 }
 
 pub(crate) const MEMBER_OPERATOR: u32 = 1;
@@ -489,7 +499,7 @@ pub(crate) fn pick_lobby(
 pub(crate) struct AdmissionContext {
     /// `[0xA8B244]` is Quick Match 1, 2 or 3.
     pub(crate) quick_match: bool,
-    /// `[0xB77DE4]`: the user's clan id; no clan service feeds VERA, so 0.
+    /// `[0xB77DE4]`: the user's squad id.
     pub(crate) clan_id: i32,
     /// Rules ^ AI ^ Art of `0x00476D80`; VERA has no owner of those INI
     /// CRCs, so the hash comparison is skipped while this is `None`.
@@ -619,6 +629,7 @@ mod tests {
     fn member(name: &str, flags: u32, tag: &str) -> WolMember {
         WolMember {
             flags,
+            squad: 0,
             name: name.into(),
             clan_tag: tag.into(),
             ..Default::default()

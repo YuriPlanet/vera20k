@@ -437,7 +437,7 @@ fn actual_turn_completion_reason_zero_does_not_promote_queued_mission() {
         sim.unit_per_cell_process(
             1,
             PerCellReason::Arrival,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         );

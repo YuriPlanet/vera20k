@@ -42,7 +42,7 @@ impl ParasiteState {
 impl Simulation {
     /// Shared AttachTo/ExitUnit/grapple cleanup. Delete broadcasts expiry before
     /// the held pointer and invalidation latch clear (62A7E0..62A84B).
-    pub(crate) fn reset_parasite_grapple(&mut self, owner: u64, rules: Option<&RuleSet>) {
+    pub(crate) fn reset_parasite_grapple(&mut self, owner: u64, rules: &RuleSet) {
         let anim = self
             .substrate
             .entities
@@ -285,7 +285,7 @@ impl Simulation {
                 {
                     self.start_grapple_roll(owner, victim, origin, rules);
                 } else {
-                    self.reset_parasite_grapple(owner, Some(rules));
+                    self.reset_parasite_grapple(owner, rules);
                 }
             }
             _ => self.parasite_exit_unit(owner, rules, effects),
@@ -463,7 +463,7 @@ impl Simulation {
             rules,
             effects,
         );
-        self.reset_parasite_grapple(owner, Some(rules));
+        self.reset_parasite_grapple(owner, rules);
         if let Some(source) = self.substrate.entities.get_mut(owner) {
             source.parasite.end_paralysis(self.session.binary_frame());
         }

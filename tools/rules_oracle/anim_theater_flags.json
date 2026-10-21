@@ -1,0 +1,2834 @@
+{
+  "cases": [
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 4,
+        "image": "CAMOV02_A",
+        "image_present": true,
+        "loaded_filename": "CUMOV02_A.SHP",
+        "loop_end": 2,
+        "new_theater": true,
+        "raw_shp_frame_count": 8,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 2,
+        "new_theater": true,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": true,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_A"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "DemandLoad": "true",
+            "Layer": "ground",
+            "LoopCount": "-1",
+            "LoopEnd": "2",
+            "LoopStart": "0",
+            "NewTheater": "yes",
+            "Normalized": "yes",
+            "Rate": "100",
+            "Shadow": "yes"
+          },
+          "CAMOV02_AD": {
+            "DemandLoad": "true",
+            "Image": "CAMOV02_A",
+            "Layer": "ground",
+            "LoopCount": "-1",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Normalized": "yes",
+            "Rate": "100",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "stock_art_urban_normal",
+        "name": "CAMOV02_A",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": true,
+          "filename": "CUMOV02_A.SHP",
+          "phase": "theater_postpass"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 4,
+        "image": "CAMOV02_A",
+        "image_present": true,
+        "loaded_filename": "CUMOV02_A.SHP",
+        "loop_end": 4,
+        "new_theater": true,
+        "raw_shp_frame_count": 8,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": true,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": true,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "DemandLoad": "true",
+            "Layer": "ground",
+            "LoopCount": "-1",
+            "LoopEnd": "2",
+            "LoopStart": "0",
+            "NewTheater": "yes",
+            "Normalized": "yes",
+            "Rate": "100",
+            "Shadow": "yes"
+          },
+          "CAMOV02_AD": {
+            "DemandLoad": "true",
+            "Image": "CAMOV02_A",
+            "Layer": "ground",
+            "LoopCount": "-1",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Normalized": "yes",
+            "Rate": "100",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "stock_art_urban_damaged",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": true,
+          "filename": "CUMOV02_A.SHP",
+          "phase": "theater_postpass"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 4,
+        "image": "CAMOV02_A",
+        "image_present": true,
+        "loaded_filename": "CAMOV02_A.SHP",
+        "loop_end": 4,
+        "new_theater": true,
+        "raw_shp_frame_count": 8,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 4,
+        "image": "CAMOV02_A",
+        "image_present": true,
+        "loaded_filename": "CAMOV02_A.SHP",
+        "loop_end": 4,
+        "new_theater": true,
+        "raw_shp_frame_count": 8,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": true,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "DemandLoad": "true",
+            "Layer": "ground",
+            "LoopCount": "-1",
+            "LoopEnd": "2",
+            "LoopStart": "0",
+            "NewTheater": "yes",
+            "Normalized": "yes",
+            "Rate": "100",
+            "Shadow": "yes"
+          },
+          "CAMOV02_AD": {
+            "DemandLoad": "true",
+            "Image": "CAMOV02_A",
+            "Layer": "ground",
+            "LoopCount": "-1",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Normalized": "yes",
+            "Rate": "100",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CAMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "stock_art_snow_damaged",
+        "name": "CAMOV02_AD",
+        "theater": 1
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": true,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": true,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "theater_postpass"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 0,
+        "image": "PRIVATE_MISSING",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "PRIVATE_MISSING",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "PRIVATE_MISSING",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {},
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "missing_art_constructor_defaults",
+        "name": "PRIVATE_MISSING",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427D00",
+        "00428B80",
+        "00428C30"
+      ],
+      "reader_admitted": false,
+      "resource_requests": []
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 4,
+        "image": "CAMOV02_A",
+        "image_present": true,
+        "loaded_filename": "CUMOV02_A.SHP",
+        "loop_end": 4,
+        "new_theater": true,
+        "raw_shp_frame_count": 8,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": true,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "NewTheater": "no"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "NewTheater": "yes",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "new_theater_own_yes_target_no_literal_0",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": true,
+          "filename": "CUMOV02_A.SHP",
+          "phase": "theater_postpass"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 4,
+        "image": "CAMOV02_A",
+        "image_present": true,
+        "loaded_filename": "CUMOV02_A.SHP",
+        "loop_end": 4,
+        "new_theater": true,
+        "raw_shp_frame_count": 8,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 4,
+        "image": "CAMOV02_A",
+        "image_present": true,
+        "loaded_filename": "CAMOV02_A.SHP",
+        "loop_end": 4,
+        "new_theater": true,
+        "raw_shp_frame_count": 8,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "NewTheater": "no"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "NewTheater": "yes",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CAMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          },
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "new_theater_own_yes_target_no_literal_1",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": true,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": true,
+          "filename": "CUMOV02_A.SHP",
+          "phase": "theater_postpass"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": true,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "NewTheater": "yes"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "NewTheater": "no",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "new_theater_own_no_target_yes_literal_0",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.SHP",
+          "phase": "reader"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 4,
+        "image": "CAMOV02_A",
+        "image_present": true,
+        "loaded_filename": "CAMOV02_A.SHP",
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 8,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 4,
+        "image": "CAMOV02_A",
+        "image_present": true,
+        "loaded_filename": "CAMOV02_A.SHP",
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 8,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": true,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "NewTheater": "yes"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "NewTheater": "no",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CAMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          },
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "new_theater_own_no_target_yes_literal_1",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": true,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 4,
+        "image": "CAMOV02_A",
+        "image_present": true,
+        "loaded_filename": "CUMOV02_A.SHP",
+        "loop_end": 4,
+        "new_theater": true,
+        "raw_shp_frame_count": 8,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": true,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": true,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "NewTheater": "yes"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "new_theater_own_absent_target_yes",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": true,
+          "filename": "CUMOV02_A.SHP",
+          "phase": "theater_postpass"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 4,
+        "image": "CAMOV02_A",
+        "image_present": true,
+        "loaded_filename": "CUMOV02_A.SHP",
+        "loop_end": 4,
+        "new_theater": true,
+        "raw_shp_frame_count": 8,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": true,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": true,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "NewTheater": "yes"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "NewTheater": "garbage",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "new_theater_own_invalid_target_yes",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": true,
+          "filename": "CUMOV02_A.SHP",
+          "phase": "theater_postpass"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "NewTheater": "no"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "NewTheater": "garbage",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "new_theater_own_invalid_target_no",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.SHP",
+          "phase": "reader"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 4,
+        "image": "CAMOV02_A",
+        "image_present": true,
+        "loaded_filename": "CUMOV02_A.SHP",
+        "loop_end": 4,
+        "new_theater": true,
+        "raw_shp_frame_count": 8,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": true,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "NewTheater": "yes",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "new_theater_own_yes_target_missing",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": true,
+          "filename": "CUMOV02_A.SHP",
+          "phase": "theater_postpass"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "new_theater_own_absent_target_missing",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.SHP",
+          "phase": "reader"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "NewTheater": "garbage"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "new_theater_target_invalid_own_absent",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.SHP",
+          "phase": "reader"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": true
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": true
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": true,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "Theater": "no"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Shadow": "yes",
+            "Start": "2",
+            "Theater": "yes"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "theater_own_yes_target_no_literal_0",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50",
+        "005F9070"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.URB",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.URB",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CAMOV02_AD.URB",
+          "phase": "theater_postpass"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": true
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": true
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": true,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "Theater": "no"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Shadow": "yes",
+            "Start": "2",
+            "Theater": "yes"
+          }
+        },
+        "available_images": {
+          "CAMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          },
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "theater_own_yes_target_no_literal_1",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50",
+        "005F9070"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.URB",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.URB",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CAMOV02_AD.URB",
+          "phase": "theater_postpass"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": true,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": true,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "Theater": "yes"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Shadow": "yes",
+            "Start": "2",
+            "Theater": "no"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "theater_own_no_target_yes_literal_0",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.SHP",
+          "phase": "reader"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 4,
+        "image": "CAMOV02_A",
+        "image_present": true,
+        "loaded_filename": "CAMOV02_A.SHP",
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 8,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 4,
+        "image": "CAMOV02_A",
+        "image_present": true,
+        "loaded_filename": "CAMOV02_A.SHP",
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 8,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": true,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": true,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "Theater": "yes"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Shadow": "yes",
+            "Start": "2",
+            "Theater": "no"
+          }
+        },
+        "available_images": {
+          "CAMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          },
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "theater_own_no_target_yes_literal_1",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": true,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": true
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": true
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": true,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": true,
+          "key": "Theater",
+          "returned": true,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "Theater": "yes"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "theater_own_absent_target_yes",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50",
+        "005F9070"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.URB",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.URB",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CAMOV02_AD.URB",
+          "phase": "theater_postpass"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": true
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": true
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": true,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": true,
+          "key": "Theater",
+          "returned": true,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "Theater": "yes"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Shadow": "yes",
+            "Start": "2",
+            "Theater": "garbage"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "theater_own_invalid_target_yes",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50",
+        "005F9070"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.URB",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.URB",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CAMOV02_AD.URB",
+          "phase": "theater_postpass"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "Theater": "no"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Shadow": "yes",
+            "Start": "2",
+            "Theater": "garbage"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "theater_own_invalid_target_no",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.SHP",
+          "phase": "reader"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": true
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": true
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": true,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Shadow": "yes",
+            "Start": "2",
+            "Theater": "yes"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "theater_own_yes_target_missing",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50",
+        "005F9070"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.URB",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.URB",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CAMOV02_AD.URB",
+          "phase": "theater_postpass"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "theater_own_absent_target_missing",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.SHP",
+          "phase": "reader"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "Theater": "garbage"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "theater_target_invalid_own_absent",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.SHP",
+          "phase": "reader"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 4,
+        "image": "CAMOV02_A",
+        "image_present": true,
+        "loaded_filename": "CUMOV02_A.SHP",
+        "loop_end": 4,
+        "new_theater": true,
+        "raw_shp_frame_count": 8,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_A",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": true,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_A"
+        },
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": "CAMOV02_AD"
+        },
+        {
+          "default": true,
+          "key": "NewTheater",
+          "returned": true,
+          "section": "CAMOV02_AD"
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "Image": "PRIVATE_UNREGISTERED",
+            "NewTheater": "yes"
+          },
+          "CAMOV02_AD": {
+            "Image": "CAMOV02_A",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "Shadow": "yes",
+            "Start": "2"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "image_alias_is_one_hop",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427B50",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": [
+        {
+          "available": false,
+          "filename": "CAMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": false,
+          "filename": "CGMOV02_A.SHP",
+          "phase": "reader"
+        },
+        {
+          "available": true,
+          "filename": "CUMOV02_A.SHP",
+          "phase": "theater_postpass"
+        }
+      ]
+    },
+    {
+      "after_postpass": {
+        "demand_load": false,
+        "end": 0,
+        "image": "",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "after_reader": {
+        "demand_load": false,
+        "end": 0,
+        "image": "",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 4,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "boolean_reads": [
+        {
+          "default": false,
+          "key": "Theater",
+          "returned": false,
+          "section": ""
+        },
+        {
+          "default": false,
+          "key": "NewTheater",
+          "returned": false,
+          "section": ""
+        }
+      ],
+      "constructor": {
+        "demand_load": false,
+        "end": 0,
+        "image": "CAMOV02_AD",
+        "image_present": false,
+        "loaded_filename": null,
+        "loop_end": 0,
+        "new_theater": false,
+        "raw_shp_frame_count": 0,
+        "theater": false
+      },
+      "input": {
+        "art_sections": {
+          "CAMOV02_A": {
+            "NewTheater": "yes",
+            "Theater": "yes"
+          },
+          "CAMOV02_AD": {
+            "Image": "",
+            "LoopEnd": "4",
+            "LoopStart": "2",
+            "NewTheater": "yes",
+            "Shadow": "yes",
+            "Start": "2",
+            "Theater": "yes"
+          }
+        },
+        "available_images": {
+          "CUMOV02_A.SHP": {
+            "height": 2,
+            "raw_frame_count": 8,
+            "width": 2
+          }
+        },
+        "case": "empty_image_skips_own_flags",
+        "name": "CAMOV02_AD",
+        "theater": 2
+      },
+      "reached": [
+        "00427530",
+        "00427A80",
+        "00427D00",
+        "00428B80",
+        "00428C30",
+        "00428E50"
+      ],
+      "reader_admitted": true,
+      "resource_requests": []
+    }
+  ],
+  "schema": 1
+}

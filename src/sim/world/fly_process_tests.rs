@@ -223,7 +223,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         &mut sim.substrate,
         &sim.resolved_terrain,
         AIRCRAFT,
-        Some(&rules),
+        &rules,
         None,
     );
 
@@ -504,7 +504,7 @@ fn fly_process_matches_native_frames() {
             let ((), idle_calls) = crate::sim::aircraft::record_idle_calls_for_test(|| {
                 sim.tick_air_movement_with_cell_lists_one(
                     AIRCRAFT,
-                    Some(&rules),
+                    &rules,
                     None,
                     crate::sim::world::FrameEffects::default(),
                 )
@@ -747,7 +747,7 @@ fn fly_death_stun_matches_native_rows() {
         sim.clear_lifecycle_test_events_for_test();
         sim.techno_death_stun(
             AIRCRAFT,
-            crate::sim::world::UninitContext::new(Some(&rules), None),
+            crate::sim::world::UninitContext::new(&rules, None),
         );
         let orders: Vec<_> = sim
             .lifecycle_test_events_for_test()

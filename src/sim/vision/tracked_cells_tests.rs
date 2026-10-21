@@ -19,7 +19,7 @@ fn reveal_between_frames(
     viewer: InternedId,
     firer_owner: InternedId,
 ) {
-    let config = sim.sight_reveal_config(Some(rules));
+    let config = sim.sight_reveal_config(rules);
     let heights = sim.sight_height_grid(&config);
     if frame % 25 == 0
         && let Some(coord) = sim

@@ -133,7 +133,7 @@ fn healthy_native_height_vectors_reach_production_coordinates() {
         let before_rng = sim.scenario_rng.logical_state();
         sim.tick_air_movement_with_cell_lists_one(
             1,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -220,7 +220,7 @@ fn fly_integer_target_flags_and_cargo_survive_save_and_continuation() {
                 instance
                     .tick_air_movement_with_cell_lists_one(
                         1,
-                        Some(&rules),
+                        &rules,
                         None,
                         crate::sim::world::FrameEffects::default(),
                     )
@@ -429,7 +429,7 @@ fn assert_native_move_takeoff(sim: &mut Simulation, rules: &RuleSet, row: &serde
         1,
         coordinate,
         None,
-        Some(rules)
+        rules
     ));
     let entity = sim.substrate.entities.get(1).unwrap();
     assert_eq!(
@@ -589,9 +589,9 @@ fn issue_coordinate(sim: &mut Simulation, rules: &RuleSet, xyz: [i32; 3]) -> boo
         },
         Some(crate::sim::movement::DestinationTiming::from_rules(
             sim.session.binary_frame(),
-            Some(rules),
+            rules,
         )),
-        Some(rules),
+        rules,
     )
 }
 
@@ -666,7 +666,7 @@ fn fly_cell_orders_resolve_ground_before_retaining_the_coordinate() {
         1,
         coordinate,
         None,
-        Some(&rules)
+        &rules
     ));
     let destination = sim
         .substrate
@@ -711,7 +711,7 @@ fn fly_retained_destination_drives_subcell_arrival_after_save_and_restore() {
         instance
             .tick_air_movement_with_cell_lists_one(
                 1,
-                Some(&rules),
+                &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             )
@@ -882,7 +882,7 @@ fn fly_takeoff_callback_matches_all_original_histories() {
             &mut sim.substrate,
             &sim.resolved_terrain,
             1,
-            Some(&rules),
+            &rules,
         );
         assert_native_takeoff_result(&sim, &row);
         assert_eq!(sim.scenario_rng.logical_state(), rng);
@@ -917,7 +917,7 @@ fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
             &mut sim.substrate,
             &sim.resolved_terrain,
             1,
-            Some(&rules),
+            &rules,
             None,
         );
         Simulation::submit_entity_display(
@@ -926,16 +926,12 @@ fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
             &mut sim.substrate,
             &sim.resolved_terrain,
             peer,
-            Some(&rules),
+            &rules,
             None,
         );
         let rng = sim.scenario_rng.logical_state();
-        let admitted = sim.complete_fly_phase(
-            1,
-            Some(&rules),
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
+        let admitted =
+            sim.complete_fly_phase(1, &rules, None, crate::sim::world::FrameEffects::default());
         assert_eq!(
             admitted,
             !row["phase_calls"].as_array().unwrap().is_empty(),
@@ -1003,7 +999,7 @@ fn fly_nonlandable_phase_matches_native_without_display_resubmission() {
             &mut sim.substrate,
             &sim.resolved_terrain,
             1,
-            Some(&rules),
+            &rules,
             None,
         );
         Simulation::submit_entity_display(
@@ -1012,13 +1008,13 @@ fn fly_nonlandable_phase_matches_native_without_display_resubmission() {
             &mut sim.substrate,
             &sim.resolved_terrain,
             peer,
-            Some(&rules),
+            &rules,
             None,
         );
         let rng = sim.scenario_rng.logical_state();
         assert!(!sim.complete_fly_phase(
             1,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default()
         ));
@@ -1076,12 +1072,12 @@ fn fly_nonlandable_production_tick_replaces_landing_target_and_restores() {
         &mut sim.substrate,
         &sim.resolved_terrain,
         1,
-        Some(&rules),
+        &rules,
         None,
     );
     sim.tick_air_movement_with_cell_lists_one(
         1,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -1108,7 +1104,7 @@ fn fly_nonlandable_production_tick_replaces_landing_target_and_restores() {
             instance
                 .tick_air_movement_with_cell_lists_one(
                     1,
-                    Some(&rules),
+                    &rules,
                     None,
                     crate::sim::world::FrameEffects::default(),
                 )
@@ -1149,7 +1145,7 @@ fn fly_phase_outer_health_power_and_life_gates_precede_nonlandable_override() {
         let before = sim.state_hash();
         assert!(!sim.complete_fly_phase(
             1,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default()
         ));
@@ -1281,7 +1277,7 @@ fn fly_production_process_resets_enter_mode_using_native_mission_precedence() {
         let rng = sim.scenario_rng.logical_state();
         sim.tick_air_movement_with_cell_lists_one(
             1,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -1330,7 +1326,7 @@ fn fly_production_tick_uses_primary_current_and_continues_after_restore() {
             instance
                 .tick_air_movement_with_cell_lists_one(
                     1,
-                    Some(&rules),
+                    &rules,
                     None,
                     crate::sim::world::FrameEffects::default(),
                 )
@@ -1462,7 +1458,7 @@ fn fly_paid_step_matches_native_math_and_production_type_speed() {
         let rng = sim.scenario_rng.logical_state();
         sim.tick_air_movement_with_cell_lists_one(
             1,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -1478,7 +1474,7 @@ fn fly_paid_step_matches_native_math_and_production_type_speed() {
             restored
                 .tick_air_movement_with_cell_lists_one(
                     1,
-                    Some(&rules),
+                    &rules,
                     None,
                     crate::sim::world::FrameEffects::default(),
                 )
@@ -1490,7 +1486,7 @@ fn fly_paid_step_matches_native_math_and_production_type_speed() {
                     instance
                         .tick_air_movement_with_cell_lists_one(
                             1,
-                            Some(&rules),
+                            &rules,
                             None,
                             crate::sim::world::FrameEffects::default(),
                         )

@@ -174,37 +174,44 @@ fn place_garrison_passenger_at_cell(
     sim: &mut Simulation,
     rules: &RuleSet,
     passenger_id: u64,
-    rx: u16,
-    ry: u16,
-    z: u8,
+    exit: crate::sim::components::DriveCoord,
     building_id: u64,
     mode: GarrisonEjectMode,
     context: UninitContext<'_>,
 ) -> bool {
-    let Some(pax_sub_cell) = sim
+    let Some(requested) = sim
         .substrate
         .entities
         .get(passenger_id)
-        .map(|pax| pax.sub_cell())
+        .map(|pax| pax.position.at_location_with_level(exit))
     else {
         return false;
     };
     if let Some(pax) = sim.substrate.entities.get_mut(passenger_id) {
         pax.passenger_role.clear_carrier_relation();
     }
-    let (sub_x, sub_y) = lepton::subcell_lepton_offset(pax_sub_cell);
     // SellBuilding4580xx's virtual FootUnlimbo reaches the full Techno6F6CA0
     // publication and Foot4D72F4 coefficient copy. Keep the enclosing borrowed
     // MapClass/overlay context and supply the RuleSet this receiver already has.
     // 4580AF..4580BD passes direction0; successful alive Techno6F6DAA snaps it.
-    let context = context.requiring_rules(rules).with_unlimbo_facing(Some(0));
+    let context = context.with_unlimbo_facing(Some(0));
+    // InfantryClass::Unlimbo places the man in the exit Cell (`0x0051DFF0`
+    // -> `0x00481180`, the priority arm inside the `0x00A8E7AC` bracket),
+    // which also skips Object's class query. No spot leaves him in limbo.
+    let Some((position, placement)) = sim.unlimbo_class_entry(
+        passenger_id,
+        requested,
+        PlacementEvidence::EvaluateMark,
+        rules,
+        context.registry(),
+    ) else {
+        return false;
+    };
     let reveal = sim.try_reveal_entity_with_context(
         passenger_id,
         RevealRequest {
-            position: RevealPosition::new(rx, ry, z, None, sub_x, sub_y),
-            // The selected exit/fallback is this caller's bounded admission
-            // evidence; the exact native placement oracle remains separate.
-            placement: PlacementEvidence::MarkSucceeded,
+            position,
+            placement,
             logic_eligible: true,
         },
         context,
@@ -229,7 +236,7 @@ fn place_garrison_passenger_at_cell(
     sim.assign_target_represented(
         passenger_id,
         None,
-        Some(rules),
+        rules,
         context.registry(),
         context.effects(),
     )
@@ -246,13 +253,13 @@ fn place_garrison_passenger_at_cell(
     if mode == GarrisonEjectMode::Hunt {
         // 45811B..45813E: Scatter completes first, then Remove(-1,0)
         // and QueueMission(Hunt,0). Do not replace Scatter with Hunt.
-        sim.leave_team(passenger_id, false, Some(rules), context.effects());
+        sim.leave_team(passenger_id, false, rules, context.effects());
         sim.mission_queue_exact(
             passenger_id,
             crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Hunt),
             0,
             sim.session.binary_frame(),
-            &crate::sim::mission::authority::EntityReadyInputProvider,
+            &crate::sim::mission::authority::LiveReadyInputProvider { rules },
         )
         .expect("a revealed garrison occupant can queue Hunt");
     }
@@ -266,7 +273,6 @@ fn eject_garrison_passengers_at_edges(
     building_id: u64,
     rx: u16,
     ry: u16,
-    z: u8,
     width: u16,
     height: u16,
     passenger_ids: &[u64],
@@ -302,6 +308,15 @@ fn eject_garrison_passengers_at_edges(
         return 0;
     };
 
+    // `0x0045806A..0x00458078`: the exit Cell's GetCoords, every occupant's
+    // Unlimbo coordinate, read before the bracket.
+    let exit = {
+        let cells = uninit_context
+            .terrain()
+            .or(sim.resolved_terrain.as_ref())
+            .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+        crate::sim::movement::target_cell_coord(exit_rx, exit_ry, cells.as_ref())
+    };
     // 458092..4581B2 brackets the entire LIFO loop, including Scatter and
     // its live cell callbacks; no-exit removal above does not enter it.
     sim.with_object_placement_scope(|sim| {
@@ -310,9 +325,7 @@ fn eject_garrison_passengers_at_edges(
                 sim,
                 rules,
                 pax_id,
-                exit_rx,
-                exit_ry,
-                z,
+                exit,
                 building_id,
                 mode,
                 uninit_context,
@@ -336,7 +349,6 @@ pub struct DestroyedGarrisonBuilding {
     pub building_id: u64,
     pub rx: u16,
     pub ry: u16,
-    pub z: u8,
     pub foundation_w: u16,
     pub foundation_h: u16,
     /// Snapshot of `cargo.passengers` at time of death, in admission order
@@ -362,7 +374,7 @@ pub(crate) fn eject_destruction_garrison(
     rules: &RuleSet,
     event: &DestroyedGarrisonBuilding,
 ) -> usize {
-    eject_destruction_garrison_with_context(sim, rules, event, UninitContext::default())
+    eject_destruction_garrison_with_context(sim, rules, event, UninitContext::with_rules(rules))
 }
 
 pub(crate) fn eject_destruction_garrison_with_context(
@@ -389,7 +401,6 @@ pub(crate) fn eject_destruction_garrison_with_context(
         event.building_id,
         event.rx,
         event.ry,
-        event.z,
         event.foundation_w,
         event.foundation_h,
         &passenger_ids,
@@ -413,7 +424,7 @@ pub(crate) fn sell_building_occupants(
     mode: GarrisonEjectMode,
     frame_effects: FrameEffects<'_>,
 ) -> usize {
-    let (rx, ry, z, width, height, passenger_ids) = {
+    let (rx, ry, width, height, passenger_ids) = {
         let Some(entity) = sim.substrate.entities.get(building_id) else {
             return 0;
         };
@@ -430,7 +441,6 @@ pub(crate) fn sell_building_occupants(
         (
             entity.position.rx(),
             entity.position.ry(),
-            entity.position.z(),
             fw,
             fh,
             cargo.passengers.clone(),
@@ -457,12 +467,11 @@ pub(crate) fn sell_building_occupants(
         building_id,
         rx,
         ry,
-        z,
         width,
         height,
         &passenger_ids,
         mode,
-        UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+        UninitContext::new(rules, registry).with_effects(frame_effects),
     );
 
     if let Some(building) = sim.substrate.entities.get_mut(building_id)
@@ -1114,7 +1123,6 @@ pub(crate) mod tests {
             building_id,
             rx: 10,
             ry: 10,
-            z: 0,
             foundation_w: 2,
             foundation_h: 2,
             passenger_ids: vec![pax1, pax2, pax3],
@@ -1174,6 +1182,51 @@ pub(crate) mod tests {
         );
     }
 
+    /// Every occupant's Unlimbo gets the exit Cell's GetCoords
+    /// (`0x0045806A..0x00458078`; the native corpus records (3200, 3200, 0)
+    /// for Cell (12, 12)). Inside the `0x00A8E7AC` bracket InfantryClass::
+    /// Unlimbo's PlaceInfantryInCell takes the priority arm, which keeps the
+    /// spot of that coordinate, whatever sub-cell each man held inside.
+    #[test]
+    fn garrison_occupants_unlimbo_at_the_exit_cells_coords() {
+        let rules = garrison_edge_rules();
+        let mut sim = garrison_map(&rules);
+        let building_id = 10;
+        let ids: Vec<u64> = (11..)
+            .zip([4, 3, 2])
+            .map(|(id, sub)| {
+                insert_hidden_passenger_with_subcell(
+                    &mut sim,
+                    id,
+                    building_id,
+                    "Neutral",
+                    Some(sub),
+                )
+            })
+            .collect();
+        let event = DestroyedGarrisonBuilding {
+            building_id,
+            rx: 10,
+            ry: 10,
+            foundation_w: 2,
+            foundation_h: 2,
+            passenger_ids: ids.clone(),
+        };
+        assert_eq!(eject_destruction_garrison(&mut sim, &rules, &event), 3);
+        for id in ids {
+            let position = sim.substrate.entities.get(id).unwrap().position;
+            assert_eq!(
+                crate::sim::movement::ground_pose::position_world_coord(&position),
+                crate::sim::components::DriveCoord {
+                    x: 3200,
+                    y: 3200,
+                    z: 0
+                },
+                "occupant {id}"
+            );
+        }
+    }
+
     #[test]
     fn garrison_destruction_detaches_cargo_before_building_uninit() {
         let rules = garrison_edge_rules();
@@ -1185,7 +1238,6 @@ pub(crate) mod tests {
             building_id,
             rx: 10,
             ry: 10,
-            z: 0,
             foundation_w: 2,
             foundation_h: 2,
             passenger_ids: vec![passenger_id],
@@ -1282,7 +1334,6 @@ pub(crate) mod tests {
             building_id,
             rx: 10,
             ry: 10,
-            z: 0,
             foundation_w: 2,
             foundation_h: 2,
             passenger_ids: vec![passenger_id],
@@ -1321,7 +1372,6 @@ pub(crate) mod tests {
             building_id,
             rx: 10,
             ry: 10,
-            z: 0,
             foundation_w: 2,
             foundation_h: 2,
             passenger_ids: vec![passenger_id],

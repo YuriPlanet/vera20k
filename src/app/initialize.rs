@@ -631,6 +631,7 @@ impl App {
                     abort_secondary: Default::default(),
                     sound_dialog: None,
                     abort_buttons: Default::default(),
+                    surrender_buttons: Default::default(),
                     diplomacy: Default::default(),
                     restate: Default::default(),
                     restate_text: String::new(),

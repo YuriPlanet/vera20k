@@ -23,7 +23,7 @@ use crate::sim::command::Command;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::state::MissionTestFixture;
 use crate::sim::mission::{MissionDispatchTimer, MissionId};
 use crate::sim::movement::locomotor::MovementLayer;
@@ -558,7 +558,7 @@ fn execute(
         "stop_moving" => sim
             .locomotor_stop_moving(
                 id,
-                Some(rules),
+                rules,
                 registry,
                 crate::sim::world::FrameEffects::default(),
             )
@@ -569,7 +569,7 @@ fn execute(
                 MissionId::from_raw(signed(&command["mission"])),
                 signed(&command["start"]),
                 sim.session.binary_frame(),
-                &EntityReadyInputProvider,
+                &LiveReadyInputProvider { rules },
             )
             .unwrap();
         }
@@ -706,7 +706,7 @@ fn full_transport_arrival_replays_original_warp_in_refusal_tail() {
         sim.per_cell_process(
             id,
             super::super::PerCellReason::Arrival,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -774,7 +774,7 @@ fn chrono_epoch_expiry_matches_original_timer_check() {
             destination: None,
             delay_timer: crate::sim::timer::CdTimer::from_raw(signed(&timer[0]), signed(&timer[2])),
         });
-        sim.process_teleport(id, Some(&rules), crate::sim::world::ObjectAiCtx::default());
+        sim.process_teleport(id, &rules, crate::sim::world::ObjectAiCtx::default());
         assert_eq!(
             sim.substrate.entities.get(id).unwrap().is_warping_in(),
             row["after"]["actor"]["warping_in"].as_bool().unwrap(),
@@ -912,7 +912,7 @@ fn stop_does_not_touch_a_stashed_native_cleg_request() {
             .unwrap(),
         retained
     );
-    assert!(sim.end_admitted_piggyback(id, None));
+    assert!(sim.end_admitted_piggyback(id, crate::rules::ruleset::RuleSet::empty_for_test()));
     let entity = sim.substrate.entities.get(id).unwrap();
     assert_eq!(
         entity
@@ -1038,7 +1038,12 @@ fn native_cleg_reservation_survives_snapshot_and_is_hashed() {
         assert_eq!(restored.state_hash(), hash, "exact resolver restoration");
         for world in [&mut sim, &mut restored] {
             if stashed {
-                assert!(world.end_admitted_piggyback(id, None));
+                assert!(
+                    world.end_admitted_piggyback(
+                        id,
+                        crate::rules::ruleset::RuleSet::empty_for_test()
+                    )
+                );
             }
             execute(world, id, &boundaries[2]["input"], &rules, None);
         }
@@ -1076,7 +1081,7 @@ fn two_ordinary_cleg_moves_publish_class_destinations_before_process() {
                 target_rx,
                 target_ry: 10,
             },
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default()
         ));
@@ -1131,12 +1136,7 @@ fn a_deferred_restore_keeps_a_cleg_object_navcom() {
     cleg.navigation.set_nav_com_for_test(Some(target));
     cleg.navigation
         .set_pending_destination_setter_for_test(true);
-    sim.complete_pending_order(
-        id,
-        Some(&rules),
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
+    sim.complete_pending_order(id, &rules, None, crate::sim::world::FrameEffects::default());
     let cleg = sim.substrate.entities.get(id).unwrap();
     assert_eq!(cleg.navigation.nav_com(), Some(target));
     assert!(!cleg.navigation.pending_destination_setter());
@@ -1356,7 +1356,7 @@ fn cleg_overlay_cell_requests_match_every_original_command_boundary() {
                                 target_rx: rx,
                                 target_ry: ry,
                             },
-                            Some(&rules),
+                            &rules,
                             Some(&registry),
                             crate::sim::world::FrameEffects::default(),
                         ),

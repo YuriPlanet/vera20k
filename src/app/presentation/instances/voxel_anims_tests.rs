@@ -70,7 +70,7 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
     assert!(!ids.is_empty(), "the death threw no tyre");
     for _ in 0..6 {
         for &id in &ids {
-            sim.visit_voxel_anim(id, Some(rules));
+            sim.visit_voxel_anim(id, rules);
         }
     }
 
@@ -187,7 +187,7 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
     // Expiry removes every piece from the store and the Air layer.
     for _ in 0..200 {
         for &id in &ids {
-            sim.visit_voxel_anim(id, Some(rules));
+            sim.visit_voxel_anim(id, rules);
         }
     }
     assert!(sim.voxel_anims().is_empty());
@@ -230,7 +230,7 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
     assert_eq!(ids.len(), 1);
     let id = ids[0];
     for _ in 0..6 {
-        sim.visit_voxel_anim(id, Some(rules));
+        sim.visit_voxel_anim(id, rules);
     }
     let piece = sim.voxel_anims().get(id).unwrap();
     assert_eq!(piece.owner_house(), None);

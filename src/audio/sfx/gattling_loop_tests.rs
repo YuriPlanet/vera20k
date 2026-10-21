@@ -1154,7 +1154,7 @@ fn production_gattling_stop_and_release_reach_retained_source_at_native_boundari
 }
 
 #[test]
-fn production_limbo_preserves_frame_sound_scope_without_local_rules() {
+fn production_limbo_preserves_frame_sound_scope_in_a_nested_context() {
     use crate::sim::combat::gattling::{GattlingState, gattling_sound_owner};
     use crate::sim::world::{ConcealOutcome, FrameEffects, Simulation, UninitContext};
 
@@ -1195,12 +1195,11 @@ fn production_limbo_preserves_frame_sound_scope_without_local_rules() {
         release: true,
     };
     // Rust lifecycle regression: recorded Loop2/Main inputs and real PCM
-    // controls, through a rules-free nested context. Limbo6F6C6B's Release
+    // controls, through a nested context. Limbo6F6C6B's Release
     // before6F6C76 is instruction-established; this is not an executed native
     // comparison of the complete Limbo transaction.
-    let effects = FrameEffects::for_sound(&boundary).with_rules(Some(rules));
-    let context = UninitContext::new(None, None).with_effects(effects);
-    assert!(context.rules().is_none());
+    let effects = FrameEffects::for_sound(&boundary);
+    let context = UninitContext::new(rules, None).with_effects(effects);
     let (outcome, raw) = trace_draws(|| sim.techno_limbo_with_context(id, context));
     assert_eq!(outcome, ConcealOutcome::Concealed);
     assert!(raw.is_empty());

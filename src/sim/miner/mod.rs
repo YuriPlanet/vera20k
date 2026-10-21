@@ -28,6 +28,10 @@ mod pad_nudge_tests;
 #[path = "no_ore_park_tests.rs"]
 mod no_ore_park_tests;
 
+#[cfg(test)]
+#[path = "refinery_reach_tests.rs"]
+mod refinery_reach_tests;
+
 pub(crate) use self::harvest_mission::mission_harvest;
 pub(crate) use self::miner_system::extract_bale;
 pub(crate) use self::refinery_dock::{

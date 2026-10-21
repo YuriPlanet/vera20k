@@ -1064,9 +1064,6 @@ mod tests {
                 None,
                 old.screen[0],
                 old.screen[1],
-                0.,
-                None,
-                None,
                 Some(sim.interner()),
                 None
             ),
@@ -1080,9 +1077,6 @@ mod tests {
                 None,
                 old.screen[0],
                 old.screen[1],
-                0.,
-                None,
-                None,
                 Some(sim.interner()),
                 None
             ),

@@ -477,7 +477,7 @@ fn retail_chrono_warp_carries_a_driving_chrono_miner() {
         assert!(sim.apply_command_with_overlays(
             "Americans",
             &command,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default()
         ));
@@ -558,7 +558,7 @@ fn retail_chrono_warp_forces_a_sailing_ships_track_to_its_landing() {
     assert!(sim.apply_command_with_overlays(
         "Americans",
         &command,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default()
     ));

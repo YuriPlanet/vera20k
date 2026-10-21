@@ -91,6 +91,13 @@ pub(crate) fn observer_draw_context(
                     .detects_disguise_for_house(observer, cell.0 as u16, cell.1 as u16)
             }),
         drawn_voxel: None,
+        double_thick_building: entity.category() == EntityCategory::Structure
+            && object.zip(rules).is_some_and(|(obj, rules)| {
+                rules
+                    .art()
+                    .resolve_metadata_entry(sim.interner().resolve(entity.type_ref()), &obj.image)
+                    .is_some_and(|art| art.building_double_thick)
+            }),
     }
 }
 
@@ -1033,3 +1040,7 @@ mod tests {
         assert_eq!(ground_sort_row(gi, drawn_y) - drawn_y, 216.0);
     }
 }
+
+#[cfg(test)]
+#[path = "building_warp_draw_tests.rs"]
+mod building_warp_draw_tests;

@@ -61,11 +61,10 @@ use super::track_process::TrackFamily;
 /// producer yet (the gate then keeps its conservative "not moving" answer).
 ///
 /// Called straight from the Mission readiness gate, once per gate evaluation.
-/// `rules` gives Drive/Ship the owner's type and `VeteranSpeed`; without it
-/// the speed getter falls back to the order's stamped speed.
+/// `rules` gives Drive/Ship the owner's type and `VeteranSpeed`.
 pub(crate) fn ready_state_for(
     entity: &GameEntity,
-    rules: Option<super::SpeedRules<'_>>,
+    rules: super::SpeedRules<'_>,
     binary_frame: u32,
 ) -> Option<LocomotorReadyState> {
     let locomotor = entity.locomotor.as_ref()?;
@@ -113,7 +112,7 @@ const F64_BITS_ONE: u64 = 0x3FF0_0000_0000_0000;
 /// model.
 fn drive_family(
     entity: &GameEntity,
-    rules: Option<super::SpeedRules<'_>>,
+    rules: super::SpeedRules<'_>,
     binary_frame: u32,
     family: TrackFamily,
 ) -> LocomotorReadyState {
@@ -127,15 +126,7 @@ fn drive_family(
     // Is_Moving and the head test (`0x004AFC35..0x004AFC6A`); elsewhere the
     // predicate is already decided and the getter is not run.
     let owner_speed = if !turning_active && slot_moving && head_to_nonnull {
-        match rules {
-            Some(rules) => rules.owner_current_speed(entity),
-            None => super::foot_speed::owner_current_speed(
-                entity,
-                None,
-                1.0,
-                &crate::sim::houses::Houses::default(),
-            ),
-        }
+        rules.owner_current_speed(entity)
     } else {
         0
     };

@@ -110,6 +110,25 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         if !mode_start(state, &mode)? {
             return Ok(());
         }
+        // 0x79096A..0x790B18: a clan room starts only with two squads of
+        // equal size; the observer row's node is not counted.
+        if state.match_state.session.network_room().clan {
+            let observer = state
+                .match_state
+                .session
+                .network_observer_row()
+                .and_then(|row| {
+                    launch
+                        .humans
+                        .iter()
+                        .find(|human| human.raw_slot_index == Some(row) && human.is_observer())
+                })
+                .map(|human| human.name.clone());
+            if !crate::app::shell_wol::lobby::clan_teams_even(state, observer.as_deref()) {
+                message(state, "TXT_CLAN_NOSTART", &[]);
+                return Ok(());
+            }
+        }
     } else {
         let capacity_ok = capacity >= humans + launch.ai_player_count;
         if !capacity_ok {

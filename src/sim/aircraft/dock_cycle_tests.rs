@@ -273,7 +273,7 @@ fn a_linked_airborne_aircraft_crashes_in_the_airfields_damage_transaction() {
             airfield,
             RadioMessage::Hello,
             RadioPayload::default(),
-            Some(&rules),
+            &rules,
             FrameEffects::default(),
         ),
         RadioResponse::Roger
@@ -366,7 +366,7 @@ fn a_non_helipad_kills_near_contacts_and_releases_distant_contacts() {
                 building,
                 RadioMessage::Hello,
                 RadioPayload::default(),
-                Some(&rules),
+                &rules,
                 FrameEffects::default(),
             ),
             RadioResponse::Roger

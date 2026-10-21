@@ -92,7 +92,7 @@ fn a_damaged_computer_tank_on_guard_heads_for_its_depot() {
     let _ = sim.assign_target_represented(
         tank,
         Some(TargetKind::Cell(30, 30)),
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     );
@@ -293,7 +293,7 @@ fn a_refusing_naval_yard_nearer_than_the_depot_is_the_pick() {
             yard,
             RadioMessage::CanEnter,
             RadioPayload::default(),
-            Some(&rules),
+            &rules,
             FrameEffects::default(),
         ),
         RadioResponse::Negatory

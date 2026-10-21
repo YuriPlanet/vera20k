@@ -12,6 +12,13 @@ use crate::sim::replay::{ReplayHeader, ReplayLog, ReplayRunner};
 use crate::sim::snapshot::GameSnapshot;
 use crate::sim::world::{FrameEffects, MasterFrameTestRung, Simulation, TickLane};
 
+#[path = "trigger_runtime_mind_control_callback_tests.rs"]
+mod mind_control_callbacks;
+#[path = "trigger_runtime_mind_control_tests.rs"]
+mod mind_control_campaign;
+#[path = "trigger_runtime_mind_control_native_tests.rs"]
+mod mind_control_native;
+
 #[test]
 fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
     use crate::rules::{ini_parser::IniFile, team_ai_ini::TeamAiIniRegistry};
@@ -54,7 +61,7 @@ fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
         // Re-enter the real definition reader with the authored Team inputs.
         sim.initialize_trigger_definitions(&map, &teams, None, None);
         sim.session.install_waypoints(&map.waypoints);
-        sim.classify_map_triggers(Some(&rules));
+        sim.classify_map_triggers(&rules);
         let team_type = sim.interner.get("TT").unwrap();
         let loss_count = |sim: &Simulation| {
             let stats = sim.houses[&houses[0]].stats();
@@ -77,7 +84,7 @@ fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
                 victim,
                 KillSource::Techno(Some(killer)),
                 KillCallback::Terminal,
-                UninitContext::new(Some(&rules), Some(&overlay)),
+                UninitContext::new(&rules, Some(&overlay)),
             );
             assert_eq!(loss_count(&sim), index as u32 + 1);
             assert!(
@@ -298,9 +305,9 @@ fn music_action_reaches_the_ordered_presentation_effects() {
     for action in &actions {
         assert!(sim.apply_live_trigger_action(
             action,
-            sim.trigger_action_context(source, None, TagEventInput::default(), Some(&rules)),
+            sim.trigger_action_context(source, None, TagEventInput::default(), &rules),
             &mut effects,
-            Some(&rules),
+            &rules,
             Some(&overlay),
             FrameEffects::default(),
         ));
@@ -341,9 +348,9 @@ fn retail_sov01_closeout_queues_matching_triggers_without_detaching_them() {
     for action in actions.iter().filter(|action| action.entry.kind == 12) {
         assert!(sim.apply_live_trigger_action(
             action,
-            sim.trigger_action_context(source, None, TagEventInput::default(), Some(&rules)),
+            sim.trigger_action_context(source, None, TagEventInput::default(), &rules),
             &mut Vec::new(),
-            Some(&rules),
+            &rules,
             Some(&overlay),
             FrameEffects::default(),
         ));
@@ -373,13 +380,7 @@ fn retail_sov01_closeout_queues_matching_triggers_without_detaching_them() {
             .filter(|trigger| trigger.type_index == source)
             .all(|trigger| !trigger.pending)
     );
-    sim.process_pending_delete_with(
-        Some(&rules),
-        Some(&overlay),
-        FrameEffects::default(),
-        1,
-        true,
-    );
+    sim.process_pending_delete_with(&rules, Some(&overlay), FrameEffects::default(), 1, true);
     assert!(
         sim.trigger_runtime
             .triggers
@@ -431,7 +432,7 @@ fn delete_tag_returns_safely_through_its_active_dispatcher() {
                     ..TagEventInput::default()
                 },
                 &mut Vec::new(),
-                Some(&rules),
+                &rules,
                 Some(&overlays),
                 FrameEffects::default(),
             ));
@@ -440,7 +441,7 @@ fn delete_tag_returns_safely_through_its_active_dispatcher() {
             assert!(!sim.trigger_runtime.locals_set.contains(&7));
             assert!(!sim.trigger_runtime.tag(other).unwrap().dispatch_guard);
             sim.process_pending_delete_with(
-                Some(&rules),
+                &rules,
                 Some(&overlays),
                 FrameEffects::default(),
                 1,
@@ -484,9 +485,9 @@ fn retail_sov01_boris_tag_delete_is_immediate_and_releases_attachments() {
     let linked = sim.trigger_runtime.tag(first).unwrap().triggers.clone();
     assert!(sim.apply_live_trigger_action(
         &action,
-        sim.trigger_action_context(source, None, TagEventInput::default(), Some(&rules)),
+        sim.trigger_action_context(source, None, TagEventInput::default(), &rules),
         &mut Vec::new(),
-        Some(&rules),
+        &rules,
         Some(&overlay),
         FrameEffects::default(),
     ));
@@ -500,13 +501,7 @@ fn retail_sov01_boris_tag_delete_is_immediate_and_releases_attachments() {
             .iter()
             .all(|&id| sim.trigger_runtime.trigger(id).is_some())
     );
-    sim.process_pending_delete_with(
-        Some(&rules),
-        Some(&overlay),
-        FrameEffects::default(),
-        1,
-        true,
-    );
+    sim.process_pending_delete_with(&rules, Some(&overlay), FrameEffects::default(), 1, true);
     assert!(
         linked
             .iter()
@@ -577,9 +572,9 @@ fn retail_sov01_make_enemy_reaches_the_shared_diplomacy_owner() {
         .clone();
     assert!(sim.apply_live_trigger_action(
         &action,
-        sim.trigger_action_context(source, Some(live), TagEventInput::default(), Some(&rules)),
+        sim.trigger_action_context(source, Some(live), TagEventInput::default(), &rules),
         &mut Vec::new(),
-        Some(&rules),
+        &rules,
         Some(&overlay),
         FrameEffects::default(),
     ));
@@ -609,9 +604,9 @@ fn retail_sov01_transport_hint_emits_the_named_cameo_on_the_native_clock() {
     {
         assert!(sim.apply_live_trigger_action(
             action,
-            sim.trigger_action_context(source, None, TagEventInput::default(), Some(&rules)),
+            sim.trigger_action_context(source, None, TagEventInput::default(), &rules),
             &mut effects,
-            Some(&rules),
+            &rules,
             Some(&overlay),
             FrameEffects::default(),
         ));
@@ -645,9 +640,9 @@ fn scenario_timer_retail_sov01_actions_reach_the_expiry_predicate() {
     {
         assert!(sim.apply_live_trigger_action(
             action,
-            sim.trigger_action_context(source, None, TagEventInput::default(), Some(&rules)),
+            sim.trigger_action_context(source, None, TagEventInput::default(), &rules),
             &mut Vec::new(),
-            Some(&rules),
+            &rules,
             Some(&overlay),
             FrameEffects::default(),
         ));
@@ -656,19 +651,12 @@ fn scenario_timer_retail_sov01_actions_reach_the_expiry_predicate() {
         sim.session.scenario_timer_view(),
         Some((1800, "MISSION:TmeTimer"))
     );
-    sim.classify_map_triggers(Some(&rules));
+    sim.classify_map_triggers(&rules);
     let live = live_trigger_of_type(&sim, trigger_type_index(&sim, "0BDE333C"));
     for (frame, elapsed) in [(1922, false), (1923, true)] {
         sim.session.set_binary_frame_for_test(frame);
         assert_eq!(
-            sim.has_occurred(
-                0,
-                TagEventInput::default(),
-                None,
-                &mut false,
-                Some(&rules),
-                live,
-            ),
+            sim.has_occurred(0, TagEventInput::default(), None, &mut false, &rules, live,),
             elapsed
         );
     }
@@ -739,7 +727,7 @@ fn all_change_house_dispatch_matches_original_selector_controls() {
                 input: TagEventInput::default(),
             },
             &mut Vec::new(),
-            Some(&rules),
+            &rules,
             Some(&overlays),
             FrameEffects::default(),
         );
@@ -788,19 +776,18 @@ fn all_change_house_retail_sov01_handoff_transfers_units_and_powered_buildings()
         None,
         None,
     );
-    sim.classify_map_triggers(Some(&rules));
+    sim.classify_map_triggers(&rules);
     let typ = trigger_type_index(&sim, "07F2978C");
     let live = live_trigger_of_type(&sim, typ);
     let action = sim.trigger_runtime.definitions.trigger_types[typ].actions[0].clone();
     assert_eq!((action.entry.kind, action.value), (36, Some(14)));
-    let context =
-        sim.trigger_action_context(typ, Some(live), TagEventInput::default(), Some(&rules));
+    let context = sim.trigger_action_context(typ, Some(live), TagEventInput::default(), &rules);
     assert_eq!(context.incoming_house, Some(owner));
     assert!(sim.apply_live_trigger_action(
         &action,
         context,
         &mut Vec::new(),
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default()
     ));
@@ -875,7 +862,7 @@ fn action128_retail_foots_use_reverse_shared_sweep_and_finish_the_warp() {
             incoming_house: Some(owner)
         },
         &mut Vec::new(),
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     ));
@@ -1358,7 +1345,7 @@ pub(super) fn install_event_ingress_map(
     let map = trigger_fixture_map(body);
     install_map_triggers(sim, &map);
     sim.install_authored_cell_trigger_tags(&map);
-    sim.classify_map_triggers(Some(rules));
+    sim.classify_map_triggers(rules);
     map
 }
 
@@ -1395,7 +1382,7 @@ pub(super) fn sparse_line_ingress_fixture() -> (
             y: 4 * 256,
             z: 0,
         },
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     );
@@ -1464,7 +1451,7 @@ fn unit_record_kill_dispatches_its_virtual_prefix_before_the_base_events() {
             victim,
             source,
             KillCallback::Terminal,
-            crate::sim::world::UninitContext::new(Some(&rules), Some(&overlays)),
+            crate::sim::world::UninitContext::new(&rules, Some(&overlays)),
         );
         assert_eq!(
             sim.trigger_runtime
@@ -1510,7 +1497,7 @@ fn unit_record_kill_releases_retail_sov01_landing_when_the_last_target_is_a_ship
     assert_eq!(targets.len(), 7);
     targets.sort_by_key(|entity| entity.category != EntityCategory::Structure);
     assert_eq!(sim.spawn_from_map(&targets, Some(&rules)), 7);
-    sim.classify_map_triggers(Some(&rules));
+    sim.classify_map_triggers(&rules);
     let tag_type = sim
         .trigger_runtime
         .definitions
@@ -1543,7 +1530,7 @@ fn unit_record_kill_releases_retail_sov01_landing_when_the_last_target_is_a_ship
             victim,
             KillSource::Techno(None),
             KillCallback::Terminal,
-            crate::sim::world::UninitContext::new(Some(&rules), Some(&overlay)),
+            crate::sim::world::UninitContext::new(&rules, Some(&overlay)),
         );
         assert_eq!(
             sim.trigger_runtime.trigger(landing).unwrap().enabled,
@@ -1552,9 +1539,240 @@ fn unit_record_kill_releases_retail_sov01_landing_when_the_last_target_is_a_ship
         );
         sim.uninit_with_context(
             victim,
-            crate::sim::world::UninitContext::new(Some(&rules), Some(&overlay)),
+            crate::sim::world::UninitContext::new(&rules, Some(&overlay)),
         );
     }
+}
+
+const MIND_CONTROL_TAG_RULES: &str = "\
+[InfantryTypes]
+2=TAGYURI
+[TAGYURI]
+Strength=100
+Speed=4
+SpeedType=Foot
+Locomotor={4A582744-9839-11D1-B709-00A024DDAFD1}
+Primary=TagMindControl
+ImmuneToPsionics=yes
+[TagMindControl]
+Damage=1
+ROF=200
+Range=7
+Speed=100
+Projectile=TagPsychicControl
+Warhead=TagController
+[TagPsychicControl]
+Inviso=yes
+[Warheads]
+2=TagController
+[TagController]
+MindControl=yes
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+";
+
+const MIND_CONTROL_TAG_MAP: &str = "\
+[Triggers]
+ATTACKED=Country0,SOURCE,Attacked,0,1,1,1,0
+SOURCE=Country0,<none>,Source,0,1,1,1,0
+[Tags]
+TAG=2,Attacked,ATTACKED
+[Events]
+ATTACKED=1,6,0,0
+SOURCE=1,44,0,0
+[Actions]
+ATTACKED=1,28,0,6,0,0,0,0,A
+SOURCE=1,28,0,44,0,0,0,0,A
+";
+
+fn mind_control_tag_projectile(
+    sim: &mut Simulation,
+    source: u64,
+    target: u64,
+) -> crate::sim::projectile::ProjectileDetonation {
+    let projectile_id = sim.substrate.allocate_stable_id();
+    let payload = ProjectilePayload::new(
+        1,
+        sim.interner.intern("TagController"),
+        Some(sim.interner.intern("TagPsychicControl")),
+        false,
+    );
+    let impact = ProjectileCoord::new(15 * 256 + 128, 15 * 256 + 128, 0);
+    sim.admit_projectile(
+        projectile_id,
+        ProjectileSpawn {
+            native_unique_id: 0,
+            line_trail: None,
+            flat: false,
+            source_id: source,
+            origin: ProjectileCoord::new(17 * 256 + 128, 15 * 256 + 128, 0),
+            target: ProjectileTarget::Entity(target),
+            initial_target_position: impact,
+            payload,
+            speed_leptons_per_frame: 100,
+            velocity: crate::sim::projectile::ProjectileVelocity::new(0, 0, 0),
+            trajectory: crate::sim::projectile::ProjectileTrajectory::Straight,
+            guidance: None,
+            visual: crate::sim::projectile::ProjectileVisualState::new(0, 0, 0),
+            arm_frames: 0,
+            fuse_frames: None,
+            ranged_fuse: false,
+            tracks_target: false,
+            target_expiry: TargetExpiryPolicy::Expire,
+            collision: ProjectileCollisionPolicy::NONE,
+        },
+    );
+    crate::sim::projectile::ProjectileDetonation {
+        projectile_id,
+        source_id: source,
+        target: ProjectileTarget::Entity(target),
+        impact,
+        payload,
+        reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
+    }
+}
+
+#[test]
+fn mind_control_tags_precede_capture_admission_and_use_object_alive() {
+    for (manager, alive, health, immune, expected) in [
+        (true, true, 100, false, true),
+        (true, true, 100, true, true),
+        (true, true, 0, true, true),
+        (true, false, 100, true, false),
+        (false, true, 100, false, false),
+    ] {
+        let (mut sim, rules, overlay, _) = event_ingress_fixture_with_rules(MIND_CONTROL_TAG_RULES);
+        let victim_type = if immune { "TAGYURI" } else { "TAGUNIT" };
+        assert_eq!(
+            rules.object(victim_type).unwrap().immune_to_psionics,
+            immune
+        );
+        let source = sim
+            .spawn_object_at_height(
+                if manager { "TAGYURI" } else { "TAGUNIT" },
+                "House0",
+                17,
+                15,
+                0,
+                0,
+                &rules,
+            )
+            .unwrap();
+        let victim = sim
+            .spawn_object_at_height(victim_type, "House2", 15, 15, 0, 0, &rules)
+            .unwrap();
+        install_event_ingress_map(&mut sim, &rules, MIND_CONTROL_TAG_MAP);
+        sim.attach_object_trigger_tag(victim, Some("TAG"));
+        let entity = sim.substrate.entities.get_mut(victim).unwrap();
+        entity.health.set_for_test(health);
+        entity.lifecycle.set_object_alive_for_test(alive);
+        let detonation = mind_control_tag_projectile(&mut sim, source, victim);
+        sim.mind_control_detonation(detonation, &rules, Some(&overlay), FrameEffects::default());
+        let context =
+            format!("manager={manager}, ObjectAlive={alive}, HP={health}, immune={immune}");
+        assert_eq!(
+            sim.trigger_runtime.globals_set.contains(&6),
+            expected,
+            "{context}"
+        );
+        assert_eq!(
+            sim.trigger_runtime.globals_set.contains(&44),
+            expected,
+            "{context}"
+        );
+        assert_eq!(
+            sim.substrate.entities.get(victim).unwrap().health.current(),
+            health,
+            "{context}: no damage"
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(victim)
+                .unwrap()
+                .mind_control
+                .controller(),
+            (manager && !immune).then_some(source),
+            "{context}: existing capture admission"
+        );
+    }
+}
+
+#[test]
+fn mind_control_event6_owner_change_updates_source_house_before_event44_and_capture() {
+    let (mut sim, rules, overlay, houses) =
+        event_ingress_fixture_with_rules(MIND_CONTROL_TAG_RULES);
+    let source = sim
+        .spawn_object_at_height("TAGYURI", "House0", 17, 15, 0, 0, &rules)
+        .unwrap();
+    let victim = spawn_event_ingress_unit(&mut sim, &rules, houses[2], (15, 15));
+    install_event_ingress_map(
+        &mut sim,
+        &rules,
+        "[Triggers]\nATTACKED=Country0,SOURCE,Attacked,0,1,1,1,0\nSOURCE=Country0,<none>,Source,0,1,1,1,0\n\
+         [Tags]\nTAG=2,Attacked,ATTACKED\n[Events]\nATTACKED=1,6,0,0\nSOURCE=1,44,0,1\n\
+         [Actions]\nATTACKED=2,14,0,7,0,0,0,0,A,28,0,6,0,0,0,0,A\nSOURCE=1,28,0,44,0,0,0,0,A\n",
+    );
+    sim.attach_object_trigger_tag(victim, Some("TAG"));
+    sim.attach_object_trigger_tag(source, Some("TAG"));
+    let detonation = mind_control_tag_projectile(&mut sim, source, victim);
+    sim.mind_control_detonation(detonation, &rules, Some(&overlay), FrameEffects::default());
+    assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([6, 44]));
+    let live = sim.projectiles.current_detonation(detonation);
+    assert_eq!(live.source_id, source);
+    assert_eq!(live.target, ProjectileTarget::Entity(victim));
+    assert_eq!(
+        sim.substrate.entities.get(source).unwrap().owner(),
+        houses[1]
+    );
+    let victim = sim.substrate.entities.get(victim).unwrap();
+    assert_eq!(victim.owner(), houses[1]);
+    assert_eq!(victim.health.current(), 100);
+    assert_eq!(
+        victim.mind_control.controller(),
+        None,
+        "event6 transfers both actors to the same house before the capture attempt"
+    );
+}
+
+#[test]
+fn mind_control_attack_order_fires_attacked_tags_without_hp_damage() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    let (mut sim, rules, overlay, houses) =
+        event_ingress_fixture_with_rules(MIND_CONTROL_TAG_RULES);
+    let source = sim
+        .spawn_object_at_height("TAGYURI", "House0", 17, 15, 0, 0, &rules)
+        .unwrap();
+    let victim = spawn_event_ingress_unit(&mut sim, &rules, houses[2], (15, 15));
+    install_event_ingress_map(&mut sim, &rules, MIND_CONTROL_TAG_MAP);
+    sim.attach_object_trigger_tag(victim, Some("TAG"));
+    assert!(sim.trigger_runtime.globals_set.is_empty());
+    sim.queue_command(CommandEnvelope::new(
+        houses[0],
+        sim.session.tick() + 1,
+        Command::Attack {
+            attacker_id: source,
+            target_id: victim,
+        },
+    ));
+    for _ in 0..90 {
+        let commands = sim.take_due_commands();
+        sim.advance_tick(&commands, Some(&rules), None, Some(&overlay), 33);
+        if sim
+            .substrate
+            .entities
+            .get(victim)
+            .unwrap()
+            .mind_control
+            .controller()
+            .is_some()
+        {
+            break;
+        }
+    }
+    let victim = sim.substrate.entities.get(victim).unwrap();
+    assert_eq!(victim.health.current(), 100);
+    assert_eq!(victim.mind_control.controller(), Some(source));
+    assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([6, 44]));
 }
 
 #[test]
@@ -1744,7 +1962,7 @@ fn entered_cell_retains_the_actual_duplicate_country_house_for_8997_actions() {
     sim.per_cell_process(
         actor,
         crate::sim::movement::PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         Some(&overlays),
         FrameEffects::default(),
     )
@@ -1796,7 +2014,7 @@ fn line_arrival_rereads_later_cell_attachments_after_real_tag_cleanup() {
     sim.per_cell_process(
         actor,
         crate::sim::movement::PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     )
@@ -1821,7 +2039,7 @@ fn line_arrival_rereads_later_cell_attachments_after_real_tag_cleanup() {
     sim.per_cell_process(
         actor,
         crate::sim::movement::PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     )
@@ -1855,7 +2073,11 @@ fn advance_trigger_frame(
         // retain the original(0,0) cell; no diagnostic waypoint shadow is used.
         sim.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
     }
-    sim.advance_triggers(rules, None, FrameEffects::default())
+    sim.advance_triggers(
+        rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
+        None,
+        FrameEffects::default(),
+    )
 }
 
 fn flat_trigger_playfield_terrain(
@@ -1903,7 +2125,7 @@ fn ordinary_master_frame(
 ) -> crate::sim::world::TickResult {
     sim.advance_master_frame(
         &[],
-        rules,
+        rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
         overlays,
         67,
         TickLane::Ordinary,
@@ -1991,7 +2213,7 @@ fn create_building_type10_reaches_placement_and_house_publication() {
             input: TagEventInput::default(),
         },
         &mut Vec::new(),
-        Some(&rules),
+        &rules,
         Some(&overlays),
         FrameEffects::default(),
     ));
@@ -2080,7 +2302,7 @@ fn destroyed_house_predicates_match_original_independent_signed_counters() {
             case["raw"].as_str().unwrap()
         ));
         install_map_triggers(&mut sim, &map);
-        sim.classify_map_triggers(Some(&rules));
+        sim.classify_map_triggers(&rules);
         let live = sim.trigger_runtime.trigger_order[0];
         let type_index = sim.trigger_runtime.trigger(live).unwrap().type_index;
         sim.trigger_runtime.definitions.trigger_types[type_index].events[0].retained_house =
@@ -2102,7 +2324,7 @@ fn destroyed_house_predicates_match_original_independent_signed_counters() {
                     .as_u64()
                     .map(|index| houses[index as usize]),
                 &mut persistence,
-                Some(&rules),
+                &rules,
                 live,
             )
         };
@@ -2181,9 +2403,9 @@ fn damage_at_waypoint_reaches_the_shared_building_receiver() {
     sim.trigger_runtime.definitions = definitions;
     assert!(sim.apply_live_trigger_action(
         &action,
-        sim.trigger_action_context(typ, None, TagEventInput::default(), Some(&rules)),
+        sim.trigger_action_context(typ, None, TagEventInput::default(), &rules),
         &mut Vec::new(),
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     ));
@@ -2243,14 +2465,14 @@ fn parsed_event_records_match_native_list_and_production_predicates() {
             let mut sim = Simulation::new();
             sim.session.set_binary_frame_for_test(*frame);
             install_map_triggers(&mut sim, &map);
-            sim.classify_map_triggers(None);
+            sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
             sim.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
             sim.trigger_runtime.globals_set.insert(7);
             sim.trigger_runtime.locals_set.insert(9);
             let result = sim
                 .advance_app_frame(
                     &[],
-                    None,
+                    crate::rules::ruleset::RuleSet::empty_for_test(),
                     None,
                     67,
                     TickLane::Ordinary,
@@ -2311,7 +2533,7 @@ fn parsed_variable_actions_match_native_reader_dispatch_and_restore() {
         );
         let mut original = Simulation::new();
         install_map_triggers(&mut original, &map);
-        original.classify_map_triggers(None);
+        original.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
         original.trigger_runtime.globals_set = row.initial_globals;
         original.trigger_runtime.locals_set = row.initial_locals;
         let bytes = GameSnapshot::save(&original, 0, 0, "trigger_values", 0);
@@ -2366,7 +2588,7 @@ fn parsed_map_trigger_flags_gate_production_frames_and_survive_restore() {
     install_map_triggers(&mut original, &map);
     original.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
     // Classify before saving.
-    original.classify_map_triggers(None);
+    original.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     // TriggerTypes are allocated in [Triggers] key order.
     assert!(
         original
@@ -2388,7 +2610,7 @@ fn parsed_map_trigger_flags_gate_production_frames_and_survive_restore() {
         let frame = sim
             .advance_app_frame(
                 &[],
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
                 67,
                 TickLane::Ordinary,
@@ -2467,7 +2689,7 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
     sim.resolved_terrain = Some(terrain);
     sim.rebuild_zone_grid(&path_grid);
     install_map_triggers(&mut sim, &map);
-    sim.classify_map_triggers(None);
+    sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
 
     let before_zone = sim
         .zone_grid
@@ -2514,9 +2736,15 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
 
     // FUN_006E21E0 rebuilds radar surfaces for every firing. A second writer
     // must not disappear behind the persistent per-cell dirty-list dedup gate.
-    assert!(sim.change_visible_map_area([4, 40, 54, 12], None));
+    assert!(sim.change_visible_map_area(
+        [4, 40, 54, 12],
+        crate::rules::ruleset::RuleSet::empty_for_test()
+    ));
     assert_eq!(sim.playfield_revision(), 2);
-    assert!(sim.change_visible_map_area([4, 40, 54, 12], None));
+    assert!(sim.change_visible_map_area(
+        [4, 40, 54, 12],
+        crate::rules::ruleset::RuleSet::empty_for_test()
+    ));
     assert_eq!(sim.playfield_revision(), 3);
     assert!(sim.dirty_cells.radar().is_empty());
 
@@ -2641,7 +2869,7 @@ fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
     sim.substrate.entities.insert(building);
     sim.resolved_terrain = Some(flat_trigger_playfield_terrain(100, 100));
 
-    assert!(sim.change_visible_map_area([2, 2, 76, 48], Some(&rules)));
+    assert!(sim.change_visible_map_area([2, 2, 76, 48], &rules));
     assert!(sim.substrate.entities.get(1).unwrap().in_playfield());
     assert!(sim.substrate.entities.get(2).unwrap().in_playfield());
     assert!(
@@ -2659,10 +2887,10 @@ fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
         "FUN_006E21E0 excludes BuildingClass from the false-to-true callback"
     );
 
-    assert!(sim.change_visible_map_area([30, 20, 8, 6], Some(&rules)));
+    assert!(sim.change_visible_map_area([30, 20, 8, 6], &rules));
     assert!(!sim.substrate.entities.get(1).unwrap().in_playfield());
     assert!(!sim.substrate.entities.get(2).unwrap().in_playfield());
-    assert!(sim.change_visible_map_area([2, 2, 76, 48], Some(&rules)));
+    assert!(sim.change_visible_map_area([2, 2, 76, 48], &rules));
     assert!(sim.substrate.entities.get(1).unwrap().in_playfield());
     assert!(sim.substrate.entities.get(2).unwrap().in_playfield());
 }
@@ -2677,7 +2905,7 @@ fn master_frame_polls_triggers_before_logic_houses_commit_and_delete() {
     let mut sim = Simulation::new();
     sim.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
     install_map_triggers(&mut sim, &map);
-    sim.classify_map_triggers(None);
+    sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
 
     let tick = ordinary_master_frame(&mut sim, None, None, true);
 
@@ -2713,7 +2941,7 @@ fn master_frame_save_load_continues_trigger_projectile_and_delete_state() {
     let mut original = Simulation::new();
     original.hash_state_every(std::num::NonZeroU64::MIN);
     install_map_triggers(&mut original, &map);
-    original.classify_map_triggers(None);
+    original.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     ordinary_master_frame(&mut original, None, None, true);
     assert!(original.trigger_runtime.globals_set.contains(&13));
 
@@ -2869,9 +3097,14 @@ fn dispatch_typed_trigger_reference(kind: i32, target_enabled: bool) -> Simulati
     let action = sim.trigger_runtime.definitions.trigger_types[source].actions[0].clone();
     sim.apply_live_trigger_action(
         &action,
-        sim.trigger_action_context(source, None, TagEventInput::default(), None),
+        sim.trigger_action_context(
+            source,
+            None,
+            TagEventInput::default(),
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+        ),
         &mut Vec::new(),
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         FrameEffects::default(),
     );
@@ -2935,7 +3168,7 @@ fn mission_announce_then_end_uses_the_player_house_and_shared_timer() {
     );
     let before = sim.houses[&player].outcome_timer();
     install_map_triggers(&mut sim, &map);
-    sim.classify_map_triggers(Some(&rules));
+    sim.classify_map_triggers(&rules);
     let effects = advance_trigger_frame(&mut sim, 15, Some(&rules), &HashMap::new());
     assert!(
         effects.is_empty(),
@@ -2973,7 +3206,7 @@ fn techtype_exists_and_not_exists_query_simulation_world() {
     install_map_triggers(&mut sim, &map);
     spawn_type(&mut sim, "GAPOWR");
     spawn_type(&mut sim, "GAPOWR");
-    sim.classify_map_triggers(None);
+    sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
 
     // Native55AFB0 revisits the live list length after each Tag. Removing
     // TRIG_A shifts TRIG_B into the current slot, which the increment skips
@@ -3013,7 +3246,7 @@ fn run_waypoint_action(
          [Tags]\nWAYPOINT_ACTION_TAG=0,Waypoint action,WAYPOINT_ACTION\n"
     ));
     install_map_triggers(sim, &map);
-    sim.classify_map_triggers(rules);
+    sim.classify_map_triggers(rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()));
     advance_trigger_frame(sim, 0, rules, waypoints)
 }
 
@@ -3297,7 +3530,12 @@ fn house_tag_raise_matches_original_cadence_and_order() {
             .house_tags
             .insert(house, (0..count).collect());
         sim.session.set_binary_frame_for_test(frame as u32);
-        sim.raise_house_tags(house, None, None, FrameEffects::default());
+        sim.raise_house_tags(
+            house,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            None,
+            FrameEffects::default(),
+        );
         let expected: Vec<(usize, i32)> = case["raises"]
             .as_array()
             .unwrap()

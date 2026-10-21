@@ -177,12 +177,10 @@ impl Simulation {
     pub(super) fn admit_frame_commands(
         &mut self,
         commands: &[CommandEnvelope],
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) -> Vec<CommandEnvelope> {
         let previous_pending = self.pending_commands.len();
-        if let Some(rules) = rules {
-            crate::sim::production::publish_production_changes(self, rules);
-        }
+        crate::sim::production::publish_production_changes(self, rules);
         let published = self.pending_commands.split_off(previous_pending);
         let mut admitted = commands.to_vec();
         self.admit_generated_frame_commands(&mut admitted, published, true);
@@ -261,7 +259,7 @@ impl Simulation {
     fn apply_one_due_command(
         &mut self,
         cmd: &CommandEnvelope,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> (bool, bool) {
@@ -311,14 +309,15 @@ impl Simulation {
         &self,
         command: &CommandEnvelope,
         applied: bool,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) -> Option<InternedId> {
         let Command::PlaceReadyBuilding { type_id, .. } = command.payload else {
             return None;
         };
         (applied
-            && rules
-                .and_then(|rules| self.interner.object_type(type_id, rules))
+            && self
+                .interner
+                .object_type(type_id, rules)
                 .is_some_and(|object| !object.wall))
         .then_some(command.owner)
     }
@@ -494,14 +493,12 @@ impl Simulation {
     pub(super) fn adjust_staged_megamission_destinations(
         &self,
         commands: &mut [CommandEnvelope],
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
-        let (Some(rules), Some(terrain), Some(zones)) = (
-            rules,
-            self.resolved_terrain.as_ref(),
-            self.zone_grid.as_ref(),
-        ) else {
+        let (Some(terrain), Some(zones)) =
+            (self.resolved_terrain.as_ref(), self.zone_grid.as_ref())
+        else {
             return;
         };
         let mut run_start = 0;
@@ -640,7 +637,7 @@ impl Simulation {
     pub(super) fn apply_due_frame_ingress_commands(
         &mut self,
         commands: &[CommandEnvelope],
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         execute_tick: u64,
         frame_effects: FrameEffects<'_>,
     ) -> usize {
@@ -679,7 +676,7 @@ impl Simulation {
     pub(crate) fn apply_due_commands(
         &mut self,
         commands: &[CommandEnvelope],
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         execute_tick: u64,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,

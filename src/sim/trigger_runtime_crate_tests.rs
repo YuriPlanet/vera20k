@@ -99,7 +99,7 @@ fn install(sim: &mut Simulation, rules: &RuleSet, body: &str) -> crate::map::map
 }
 
 fn poll(sim: &mut Simulation, rules: &RuleSet, registry: &OverlayTypeRegistry) {
-    let _ = sim.advance_triggers(Some(rules), Some(registry), FrameEffects::default());
+    let _ = sim.advance_triggers(rules, Some(registry), FrameEffects::default());
 }
 
 /// Steam gamemd Execute6DF69B ->68BCC0 ->56BEC0. The native
@@ -224,9 +224,9 @@ fn authored_placement_matches_eight_original_controls_and_all_rng_streams() {
         let registries_before = sim.load_objects.registry_counts();
         let result = sim.apply_live_trigger_action(
             &action,
-            sim.trigger_action_context(typ, None, TagEventInput::default(), Some(&rules)),
+            sim.trigger_action_context(typ, None, TagEventInput::default(), &rules),
             &mut Vec::new(),
-            Some(&rules),
+            &rules,
             Some(&registry),
             FrameEffects::default(),
         );
@@ -311,10 +311,15 @@ fn authored_placement_matches_eight_original_controls_and_all_rng_streams() {
             };
             compare_lifetime(&sim, "after_placement");
             assert_rng(&sim, &lifetime["rng_before_drain"], name);
-            // Exercise the existing admitted frame tail, which owns the same
-            // deferred drain as original725C70. Rules/object AI are omitted;
+            // Run the frame tail's deferred drain (original725C70) alone:
             // this compares Overlay lifetime, not whole-frame parity.
-            sim.advance_tick(&[], None, None, None, 67);
+            sim.process_pending_delete_with(
+                &rules,
+                Some(&registry),
+                FrameEffects::default(),
+                1,
+                sim.session.started(),
+            );
             compare_lifetime(&sim, "after_drain");
             assert_rng(&sim, &lifetime["rng_after_drain"], name);
         }
@@ -412,7 +417,7 @@ fn money_pickup_matches_original_reentrant_owner_alive_and_notification_controls
         let result = sim.pickup_crate_at(
             actor,
             (10, 10),
-            Some(&rules),
+            &rules,
             Some(&registry),
             FrameEffects::default(),
         );
@@ -513,7 +518,7 @@ fn crate_predicates_match_all_original_controls_and_registration_classes() {
                 },
                 None,
                 &mut persistence,
-                Some(&rules),
+                &rules,
                 live,
             )
         };
@@ -622,7 +627,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
     crate::sim::scenario_bootstrap::initialize_map_roster_houses(
         &mut sim,
         &roster,
-        Some(&rules),
+        &rules,
         Some(&stock_map.ini),
     );
     let terrain_rules = crate::rules::terrain_rules::TerrainRules::from_ini(&merged);
@@ -816,7 +821,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
     assert!(sim.pickup_crate_at(
         actor,
         (16, 15),
-        Some(&rules),
+        &rules,
         Some(&registry),
         FrameEffects::default()
     ));

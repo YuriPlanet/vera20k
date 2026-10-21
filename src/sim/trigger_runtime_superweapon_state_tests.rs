@@ -148,7 +148,7 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
         crate::sim::scenario_bootstrap::initialize_map_roster_houses(
             &mut sim,
             &roster,
-            Some(&rules),
+            &rules,
             Some(&map.ini),
         );
         sim.session.install_waypoints(&map.waypoints);
@@ -259,10 +259,10 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
                             typ,
                             Some(live),
                             TagEventInput::default(),
-                            Some(&rules),
+                            &rules,
                         ),
                         &mut Vec::new(),
-                        Some(&rules),
+                        &rules,
                         None,
                         FrameEffects::default(),
                     );
@@ -368,7 +368,7 @@ fn dispatch_matches_original_signed_override_waypoint_and_incoming_house_gates()
                 &action,
                 context,
                 &mut effects,
-                Some(&rules),
+                &rules,
                 None,
                 FrameEffects::default(),
             )

@@ -394,14 +394,7 @@ fn arm_chrono_warp(
     let mut destination = DriveCoord { x, y, z };
     if category == EntityCategory::Unit {
         sim.locomotor_mark_all_occupation_bits(id, false);
-        let _ = sim.force_track(
-            id,
-            -1,
-            destination,
-            Some(rules),
-            overlay_registry,
-            frame_effects,
-        );
+        let _ = sim.force_track(id, -1, destination, rules, overlay_registry, frame_effects);
         Simulation::object_raw_receiver_at(
             &mut sim.substrate,
             &sim.path_grid,
@@ -471,7 +464,7 @@ fn arm_chrono_warp(
         destination,
         frame,
     ));
-    crate::sim::radio::broadcast_break(sim, id, Some(rules), frame_effects);
+    crate::sim::radio::broadcast_break(sim, id, rules, frame_effects);
     // `0x006CCC67`: the Super's owner, credited if the warp sinks the object.
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.drop_credit.credit_warp(warp.owner);
@@ -479,7 +472,7 @@ fn arm_chrono_warp(
     if let Err(error) = sim.assign_destination_represented(
         id,
         Some(NavTargetRef::cell(cx as u16, cy as u16)),
-        Some(rules),
+        rules,
         overlay_registry,
         frame_effects,
     ) {

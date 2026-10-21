@@ -229,12 +229,19 @@ fn activate(state: &mut AppState, button: PauseMenuButton) {
             resume_internet_events(state);
             App::enter_in_game_menu_state(state, InGameMenuState::Closed)
         }
-        // 0x522 (`0x004F16C4..0x004F16E0`): mode4 writes state 2 and keeps it
-        // only while `0xB779C4` is set; only the WOL chat sink and MPCooperative
-        // write that byte, and VERA's WOL service never sets it, so every
-        // mode reaches state 3.
+        // 0x522 (`0x004F16C0..0x004F16EA`): GameMode 4 writes state 2 while
+        // `[0xB779C4]` is set, every other game state 3.
         PauseMenuButton::Abort => {
-            App::enter_in_game_menu_state(state, InGameMenuState::AbortConfirm)
+            if state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .is_some_and(|runtime| runtime.simulation.session().wol_tournament_game())
+            {
+                crate::app::input::surrender::open(state);
+            } else {
+                App::enter_in_game_menu_state(state, InGameMenuState::AbortConfirm)
+            }
         }
         PauseMenuButton::Load => App::open_saved_game_browser(state, SavedSeedMode::Load),
         PauseMenuButton::Save => App::open_saved_game_browser(state, SavedSeedMode::Save),

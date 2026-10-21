@@ -51,7 +51,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
     let output = saved
         .advance_app_frame(
             &[CommandEnvelope::new(owner, 1, Command::ExitMatch)],
-            Some(&rules),
+            &rules,
             Some(&registry),
             67,
             TickLane::Ordinary,
@@ -119,7 +119,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
     let next = restored
         .advance_app_frame(
             &[],
-            Some(&rules),
+            &rules,
             Some(&registry),
             67,
             TickLane::Ordinary,

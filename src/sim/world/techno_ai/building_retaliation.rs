@@ -134,7 +134,7 @@ impl Simulation {
             let _ = self.assign_target_represented(
                 id,
                 Some(TargetKind::Entity(source)),
-                Some(rules),
+                rules,
                 overlay_registry,
                 crate::sim::world::FrameEffects::default(),
             );

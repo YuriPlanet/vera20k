@@ -196,7 +196,7 @@ fn supply_step(sim: &mut Simulation, rules: &RuleSet, input: &Value) {
         sim.assign_target_represented(
             1,
             None::<TargetKind>,
-            Some(rules),
+            rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -328,7 +328,7 @@ fn native_passive_bridge_histories_preserve_timers_rng_assignment_and_cell_list_
             let main = sim.main_rng.logical_state();
             let map = sim.mapgen_rng.logical_state();
             let ids = sim.native_unique_ids.as_ref().unwrap().current_raw();
-            passive_acquire_step(&mut sim, 1, Some(&rules), ObjectAiCtx::default());
+            passive_acquire_step(&mut sim, 1, &rules, ObjectAiCtx::default());
             assert_state(&sim, &step["after"], &format!("{label}/{index} after"));
             assert_eq!(
                 sim.scenario_rng.native_state_hex(),
@@ -614,7 +614,7 @@ pub(super) fn retail_hills_collapsed_scene(
         passive_acquire_step(
             &mut runtime.simulation,
             source,
-            Some(&runtime.resources.rules),
+            &runtime.resources.rules,
             ObjectAiCtx {
                 overlay_registry: Some(&runtime.resources.overlay_registry),
                 ..Default::default()

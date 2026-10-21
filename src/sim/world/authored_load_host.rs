@@ -276,7 +276,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
 
     fn drain_deferred(&mut self) -> Result<(), Self::Error> {
         self.sim.process_pending_delete_with(
-            Some(self.rules),
+            self.rules,
             None,
             crate::sim::world::FrameEffects::default(),
             0,
@@ -357,7 +357,7 @@ mod tests {
         assert_eq!(anim.z_adjust(), -7);
         assert!(anim.terrain_attached() && anim.use_cell_drawer() && anim.start_sound_active());
         assert_eq!(
-            sim.anim_display_layer(id, Some(&rules)),
+            sim.anim_display_layer(id, &rules),
             Some(DisplayLayer::GROUND)
         );
         assert_eq!(sim.substrate.display.members(DisplayLayer::GROUND), &[id]);
@@ -399,7 +399,7 @@ mod tests {
         assert_eq!(restored.rng_state(), sim.rng_state());
         assert_eq!(restored.state_hash(), sim.state_hash());
         assert_eq!(
-            restored.anim_display_layer(id, Some(&rules)),
+            restored.anim_display_layer(id, &rules),
             Some(DisplayLayer::GROUND)
         );
 

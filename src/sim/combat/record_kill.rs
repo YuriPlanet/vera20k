@@ -242,9 +242,7 @@ impl crate::sim::world::Simulation {
         callback: KillCallback,
         context: crate::sim::world::UninitContext<'_>,
     ) {
-        let Some(rules) = context.rules() else {
-            return;
-        };
+        let rules = context.rules();
         if matches!(source, KillSource::Techno(_))
             && self
                 .substrate

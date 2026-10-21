@@ -28,7 +28,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::bridge_state::BridgeRuntimeState;
 use crate::sim::components::NavTargetRef;
 use crate::sim::miner::{CargoBale, MinerState, ResourceType};
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::FacingClass;
 use crate::sim::overlay_grid::OverlayGrid;
@@ -336,7 +336,9 @@ fn dress(mut s: Scene, input: &Value) -> Scene {
                 MissionId::from_known(mission(queued)),
                 0,
                 frame,
-                &EntityReadyInputProvider,
+                &LiveReadyInputProvider {
+                    rules: crate::rules::ruleset::RuleSet::empty_for_test(),
+                },
             )
             .unwrap();
     }
@@ -746,7 +748,7 @@ fn docking_handshake_and_radio_core_match_the_original_transmits() {
                 target,
                 msg,
                 RadioPayload::default(),
-                Some(&s.rules),
+                &s.rules,
                 crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
@@ -839,14 +841,12 @@ fn mission_harvest_states_two_and_three_match_the_original_dispatch() {
         }
         radio::take_transmit_log();
         let mut stream = s.sim.scenario_rng.clone();
-        let config = crate::sim::miner::MinerConfig::from_rules(&s.rules);
         let frame = s.sim.session.binary_frame();
         crate::sim::world::dispatch_foot_mission(
             &mut s.sim,
             s.miner,
             &s.rules,
             crate::sim::world::ObjectAiCtx {
-                miner_config: Some(&config),
                 overlay_registry: Some(crate::sim::tiberium::test_support::overlay_registry()),
                 ..Default::default()
             },

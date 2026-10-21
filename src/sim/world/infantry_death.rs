@@ -446,7 +446,7 @@ impl Simulation {
             }
             self.techno_death_stun(
                 id,
-                super::UninitContext::new(Some(rules), overlay_registry).with_effects(effects),
+                super::UninitContext::new(rules, overlay_registry).with_effects(effects),
             );
         }
         // `InfantryClass::ReceiveDamage 0x0051810E..0x0051812E`, before the

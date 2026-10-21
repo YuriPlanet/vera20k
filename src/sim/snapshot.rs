@@ -1239,7 +1239,23 @@ use crate::util::save_codec;
 // ReadSequenceData sound pairs from every reached pass.
 // 464 -> 465: an Anim keeps its Temporal erase pause (+0x11A) and no longer
 // keeps a DoubleThick copy; DrawIt reads the type's.
-const SNAPSHOT_VERSION: u32 = 465;
+// 465 -> 466: retain Techno's constructor house independently of its current
+// owner; Building ChangeOwner uses it to decide the computer capture sale.
+// 466 -> 467: bunker entry uses radio contacts, removing the separate
+// Approaching link, ArriveWait enum variant and installing_unit payload.
+// Enum ordinals and the positional building runtime payload both change.
+// 467 -> 468: retained Country ParentCountry+98 in processed Rules records.
+// 468 -> 469: retained Country VeteranInfantry/VeteranUnits/VeteranAircraft
+// type lists in processed Rules records.
+// 469 -> 470: ScenarioSession retains the WOL tournament value, the clan
+// lists and FixedAlliance.
+// 470 -> 471: retained Type.Nominal and Infantry+6D9 building-survivor flag.
+// 471 -> 472: ScenarioSession saves the independent signed Scenario.Side
+// (+34B8), used to rebind EVA after successful restoration. The process Vox
+// cache and ordinary queue nodes are not native saved state.
+// 472 -> 473: Ares HouseTracking retains its signed KeepAlive event count;
+// constructor-bound TrackingFacts retains each object's removal admission.
+const SNAPSHOT_VERSION: u32 = 473;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -2618,26 +2634,12 @@ fn restore_object_references(
                 target_id,
             )?;
         }
-        if let BunkerLink::Approaching(target_id) | BunkerLink::Installed(target_id) =
-            entity.bunker.link()
-        {
+        if let BunkerLink::Installed(target_id) = entity.bunker.link() {
             require_resolved_reference(
                 entity_ids.contains(&target_id),
                 "EntityStore",
                 entity_id,
                 "bunker_link",
-                "EntityStore",
-                target_id,
-            )?;
-        }
-        if let Some(runtime) = entity.bunker_runtime.as_ref()
-            && let Some(target_id) = runtime.installing_unit()
-        {
-            require_resolved_reference(
-                entity_ids.contains(&target_id),
-                "EntityStore",
-                entity_id,
-                "bunker_runtime.installing_unit",
                 "EntityStore",
                 target_id,
             )?;
@@ -2957,13 +2959,6 @@ impl Simulation {
             }
         }
 
-        self.validate_disk_lasers_after_restore(None)
-            .map_err(
-                |(object_id, reason)| SnapshotRestoreError::InvalidDiskLaserState {
-                    object_id,
-                    reason,
-                },
-            )?;
         let (index, identities) = RestoredObjectIndex::build(self)?;
         let seen_logic = self
             .substrate
@@ -3156,7 +3151,7 @@ impl Simulation {
         prepare_terrain_assets: Option<&mut SnapshotTerrainAssetPreparation<'_>>,
     ) -> Result<SnapshotMapRestoreOutput, SnapshotRestoreError> {
         self.validate_type_tech_levels(rules)?;
-        self.validate_disk_lasers_after_restore(Some(rules))
+        self.validate_disk_lasers_after_restore(rules)
             .map_err(
                 |(object_id, reason)| SnapshotRestoreError::InvalidDiskLaserState {
                     object_id,
@@ -4716,6 +4711,48 @@ mod tests {
             sim.restore_after_snapshot_load(),
             Err(SnapshotRestoreError::InvalidCurrentHouse { owner: missing })
         );
+    }
+
+    #[test]
+    fn scenario_side_snapshot_matches_original_signed_retention() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/eva_selection.json",
+        ))
+        .unwrap();
+        // Native Scenario Load reseeds its saved RNG to0. Isolate Side
+        // persistence from that independently established load behavior.
+        let mut sim = Simulation::with_seed(0);
+        let owner = sim.intern("DifferentHouseSide");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 2, None, true, 0, 1,
+            ));
+        sim.session.install_current_house(Some(owner));
+        let hash = sim.state_hash();
+        let rng = sim.rng_state();
+        for row in corpus["scenario_round_trips"].as_array().unwrap() {
+            sim.session
+                .install_scenario_side(row["input_side"].as_i64().unwrap() as i32);
+            assert_eq!(sim.state_hash(), hash);
+            assert_eq!(sim.rng_state(), rng);
+            let bytes = GameSnapshot::save(&sim, 0, 0, "scenario-side", 0);
+            sim.session
+                .install_scenario_side(row["overwritten_before_load"].as_i64().unwrap() as i32);
+            let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+            restored.restore_after_snapshot_load().unwrap();
+            assert_eq!(
+                restored.session.scenario_side(),
+                row["restored_side"].as_i64().unwrap() as i32
+            );
+            assert_eq!(restored.session.current_house(), Some(owner));
+            assert_eq!(restored.houses[&owner].side_index(), 2);
+            assert_eq!(
+                restored.state_hash(),
+                hash,
+                "client presentation input is not shared CRC state"
+            );
+            assert_eq!(restored.rng_state(), rng);
+        }
     }
 
     #[test]
@@ -7952,7 +7989,7 @@ mod tests {
             .objects_mut_for_test()
             .insert(tree_id, tree);
         sim.resolved_terrain = Some(terrain);
-        assert!(sim.register_terrain_object(tree_id, Some(&rules)));
+        assert!(sim.register_terrain_object(tree_id, &rules));
 
         let projectile_id = sim.substrate.allocate_stable_id();
         let mut spawn = gsi_17_03_projectile(RAD_NO_ATTACKER, ProjectileTarget::Terrain(tree_id));
@@ -8984,6 +9021,43 @@ mod tests {
     }
 
     #[test]
+    fn constructor_owner_survives_transfers_and_snapshot_restore() {
+        use crate::map::entities::EntityCategory;
+        use crate::sim::game_entity::GameEntity;
+
+        let mut sim = Simulation::new();
+        let initial = sim.interner.intern("Americans");
+        let current = sim.interner.intern("Russians");
+        let type_ref = sim.interner.intern("GAPOWR");
+        let mut entity = GameEntity::test_default_of_category(
+            1,
+            "GAPOWR",
+            "Americans",
+            5,
+            5,
+            EntityCategory::Structure,
+        );
+        entity.set_owner_for_test(initial);
+        entity.set_type_ref_for_test(type_ref);
+        sim.substrate.entities.insert(entity);
+        sim.substrate.entities.change_owner(1, current);
+        // Match the scenario RNG's post-load seed reset for this state-only
+        // snapshot test. Physical resumed capture is tested separately.
+        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        let expected_hash = sim.state_hash();
+        let bytes = GameSnapshot::save(&sim, 0, 0, "captured-owner", 0);
+        let mut loaded = GameSnapshot::load(&bytes).expect("load constructor owner");
+        let restored = loaded.sim.substrate.entities.get(1).unwrap();
+        assert_eq!(restored.owner(), current);
+        assert_eq!(restored.initial_owner(), initial);
+        assert_eq!(loaded.sim.state_hash(), expected_hash);
+        loaded.sim.substrate.entities.change_owner(1, initial);
+        let recaptured = loaded.sim.substrate.entities.get(1).unwrap();
+        assert_eq!(recaptured.owner(), initial);
+        assert_eq!(recaptured.initial_owner(), initial);
+    }
+
+    #[test]
     fn entity_construction_frame_round_trips_as_dispatch_start() {
         use crate::map::entities::EntityCategory;
         use crate::sim::combat::Health;
@@ -9362,7 +9436,10 @@ mod tests {
             sim.terrain_objects
                 .objects_mut_for_test()
                 .insert(terrain.stable_id(), terrain.clone());
-            assert!(sim.register_terrain_object(terrain.stable_id(), None));
+            assert!(sim.register_terrain_object(
+                terrain.stable_id(),
+                crate::rules::ruleset::RuleSet::empty_for_test()
+            ));
             sim.terrain_objects
                 .cell_index_mut_for_test()
                 .insert(terrain.cell(), terrain.stable_id());
@@ -9615,10 +9692,10 @@ mod tests {
     fn unlimbo_ge_places_into_logic_and_occupancy_atomically() {
         use crate::sim::game_entity::GameEntity;
         let mut sim = Simulation::new();
-        let mut ge = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
-        // `place_spawned` resolves the owner against `sim.interner`; re-intern so
-        // the id is valid there (test_default uses the thread-local test interner).
-        ge.set_owner_for_test(sim.interner.intern("Americans"));
+        let ge = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
+        // `place_spawned` resolves the owner and Unlimbo the type against
+        // `sim.interner`; test_default interns both in the test interner.
+        sim.interner = crate::sim::intern::test_interner();
         let (id, outcome) = sim.unlimbo(ge);
         assert!(matches!(outcome, RevealOutcome::Revealed { .. }));
 
@@ -10216,6 +10293,14 @@ mod tests {
         // 462 -> 463: retained armor IDs and Ares warhead extension records.
         // 463 -> 464: retained InfantryType sequence sound pairs.
         // 464 -> 465: the Anim Temporal erase pause.
-        assert_eq!(super::SNAPSHOT_VERSION, 465);
+        // 465 -> 466: retained Techno constructor house for capture-sale policy.
+        // 466 -> 467: remove duplicate bunker approach state.
+        // 467 -> 468: retained Country ParentCountry+98.
+        // 468 -> 469: retained Country starting-veterancy lists.
+        // 469 -> 470: WOL tournament value, clan lists and FixedAlliance.
+        // 470 -> 471: retained Type.Nominal and Infantry survivor marker.
+        // 471 -> 472: independent saved Scenario.Side.
+        // 472 -> 473: retained Ares KeepAlive count and per-object input.
+        assert_eq!(super::SNAPSHOT_VERSION, 473);
     }
 }

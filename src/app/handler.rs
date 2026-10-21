@@ -510,7 +510,13 @@ impl ApplicationHandler for App {
                     crate::app::input::cursor::apply_cursor_confinement(state);
                 }
             }
+            WindowEvent::ScaleFactorChanged { .. } => {
+                // A monitor DPI change starts a new physical coordinate frame.
+                // The first subsequent cursor event must establish its anchor.
+                state.match_state.input.reset_window_cursor_motion();
+            }
             WindowEvent::Focused(active) => {
+                state.match_state.input.reset_window_cursor_motion();
                 // The OS drops the cursor clip on alt-tab, so re-apply the
                 // player's confinement choice whenever the window returns.
                 if active {
@@ -577,6 +583,7 @@ impl ApplicationHandler for App {
                 Self::set_window_hidden(state, occluded);
             }
             WindowEvent::CursorEntered { .. } => {
+                state.match_state.input.reset_window_cursor_motion();
                 // The pointer is back over the drawable region: mouse.shp owns it
                 // again and the OS arrow goes. Redraw so the cursor decision and the
                 // clip both follow the edge.
@@ -584,6 +591,7 @@ impl ApplicationHandler for App {
                 state.platform.window.request_redraw();
             }
             WindowEvent::CursorLeft { .. } => {
+                state.match_state.input.reset_window_cursor_motion();
                 // winit raises this from `WM_MOUSELEAVE`, which it arms on the
                 // matching enter and which fires when the pointer crosses onto the
                 // title bar or resize border, not only off the window. There the
@@ -866,6 +874,23 @@ impl ApplicationHandler for App {
                     {
                         if event.state.is_pressed() {
                             Self::saved_game_key(state, Some(code), event.text.as_deref());
+                        }
+                        state.platform.window.request_redraw();
+                        return;
+                    }
+                    if in_game
+                        && state.match_state.match_presentation.in_game_menu
+                            == crate::ui::pause_menu::InGameMenuState::Surrender
+                    {
+                        // 0x005D36A0: IDOK and IDCANCEL both answer result 1.
+                        if event.state.is_pressed()
+                            && !event.repeat
+                            && matches!(
+                                code,
+                                KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Escape
+                            )
+                        {
+                            crate::app::input::surrender::key(state);
                         }
                         state.platform.window.request_redraw();
                         return;

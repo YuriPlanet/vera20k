@@ -41,6 +41,9 @@ enum AbortInputPhase {
     AbortPressed,
     Modal,
     ChoicePressed,
+    /// A WOL tournament's B5 Abort opened the Surrender box (state 2).
+    SurrenderBox,
+    SurrenderOkPressed,
     Queued,
 }
 pub(super) struct AbortReturnInput {
@@ -52,11 +55,26 @@ pub(super) struct AbortReturnInput {
     stop_at_menu: bool,
     /// The menu button to press: Abort, or Game Controls to stop on BBB.
     menu_press: PauseMenuButton,
+    /// Abort opens the Surrender box instead of B6: `Some(true)` presses
+    /// its OK, `Some(false)` stops once it has presented.
+    surrender: Option<bool>,
 }
 impl AbortReturnInput {
     /// Through B6 Leave to the queued EXIT.
     pub(super) fn begin(state: &mut AppState, route: &mut Vec<Value>, frame: u32) -> Result<Self> {
         Self::begin_choosing(state, route, frame, Some(AbortButton::Leave))
+    }
+
+    /// A WOL tournament game's Abort: the Surrender box, then OK or a stop.
+    pub(super) fn begin_surrender(
+        state: &mut AppState,
+        route: &mut Vec<Value>,
+        frame: u32,
+        press_ok: bool,
+    ) -> Result<Self> {
+        let mut input = Self::begin_choosing(state, route, frame, None)?;
+        input.surrender = Some(press_ok);
+        Ok(input)
     }
 
     /// Open the in-game menu and stop there.
@@ -118,6 +136,7 @@ impl AbortReturnInput {
             choice,
             stop_at_menu: false,
             menu_press: PauseMenuButton::Abort,
+            surrender: None,
         })
     }
     pub(super) fn after_present(
@@ -246,6 +265,17 @@ impl AbortReturnInput {
                     self.phase = AbortInputPhase::Queued;
                     return Ok(true);
                 }
+                if self.surrender.is_some() {
+                    ensure!(
+                        state.match_state.match_presentation.in_game_menu
+                            == InGameMenuState::Surrender,
+                        "a tournament game's B5 Abort release did not open the Surrender box"
+                    );
+                    route.push(json!({"frame": frame, "action": "Abort release",
+                        "state": 2, "dialog": 0x120}));
+                    self.phase = AbortInputPhase::SurrenderBox;
+                    return Ok(false);
+                }
                 ensure!(
                     state.match_state.match_presentation.in_game_menu
                         == InGameMenuState::AbortConfirm,
@@ -301,6 +331,75 @@ impl AbortReturnInput {
                     "point": point, "rect": [rect.x, rect.y, rect.w, rect.h]}),
                 );
                 self.phase = AbortInputPhase::ChoicePressed;
+            }
+            AbortInputPhase::SurrenderBox => {
+                ensure!(
+                    state.match_state.match_presentation.in_game_menu == InGameMenuState::Surrender
+                        && state.frontend.skirmish_shell_chrome.is_some(),
+                    "the Surrender box did not present with its loaded artwork"
+                );
+                let layout = crate::app::input::surrender::layout(state);
+                route.push(json!({"frame": frame, "action": "Surrender box presented",
+                    "dialog": 0x120, "rect": [layout.dialog.x, layout.dialog.y,
+                    layout.dialog.w, layout.dialog.h]}));
+                if self.surrender != Some(true) {
+                    MoviesCapture::restore_neutral_pointer(state);
+                    self.phase = AbortInputPhase::Queued;
+                    return Ok(true);
+                }
+                let point = set_window_pointer_to_rect_center(state, layout.ok);
+                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
+                crate::app::input::dispatch::handle_mouse_input(
+                    state,
+                    MouseButton::Left,
+                    ElementState::Pressed,
+                );
+                ensure!(
+                    state
+                        .match_state
+                        .match_presentation
+                        .surrender_buttons
+                        .is_pressed(crate::app::input::surrender::SurrenderButton::Ok),
+                    "the Surrender OK press missed its control"
+                );
+                route.push(json!({"frame": frame, "action": "Surrender OK press",
+                    "point": point}));
+                self.phase = AbortInputPhase::SurrenderOkPressed;
+            }
+            AbortInputPhase::SurrenderOkPressed => {
+                crate::app::input::dispatch::handle_mouse_input(
+                    state,
+                    MouseButton::Left,
+                    ElementState::Released,
+                );
+                let sim = &state
+                    .match_state
+                    .sim_runtime
+                    .as_ref()
+                    .context("Surrender lost its installed runtime")?
+                    .simulation;
+                let exits = sim
+                    .pending_command_snapshot()
+                    .into_iter()
+                    .filter(|command| {
+                        matches!(command.payload, crate::sim::command::Command::ExitMatch)
+                            && Some(command.owner) == sim.session().current_house()
+                    })
+                    .count();
+                let destructs = queued_destructs(state)?;
+                ensure!(
+                    state.match_state.match_presentation.in_game_menu == InGameMenuState::Closed
+                        && !state.match_state.match_presentation.modal_latch
+                        && exits == 1
+                        && destructs == 1,
+                    "Surrender OK must queue the player's DESTRUCT and EXIT: {exits} EXIT, \
+                     {destructs} DESTRUCT"
+                );
+                route.push(json!({"frame": frame, "action": "Surrender OK release",
+                    "destruct_queued": true, "exit_queued": true}));
+                MoviesCapture::restore_neutral_pointer(state);
+                self.phase = AbortInputPhase::Queued;
+                return Ok(true);
             }
             AbortInputPhase::ChoicePressed if self.choice == Some(AbortButton::Secondary) => {
                 ensure!(

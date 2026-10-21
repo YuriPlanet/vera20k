@@ -45,7 +45,7 @@ fn next_object(
                 rules,
                 Some(sim.interner()),
             )
-            && sim.object_is_selectable(id, rules)
+            && rules.is_some_and(|rules| sim.object_is_selectable(id, rules))
     };
     match direction {
         ObjectDirection::Next => after_anchor(ids, anchor, eligible),
@@ -194,7 +194,7 @@ fn combatant_selection(
                     Some(rules),
                     Some(sim.interner()),
                 )
-                && sim.object_is_selectable(*id, Some(rules))
+                && sim.object_is_selectable(*id, rules)
         })
     };
     let screen: Vec<_> = if across_map {
@@ -759,7 +759,7 @@ mod tests {
             sim.reveal(20);
             sim.advance_app_frame(
                 &[],
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
                 67,
                 TickLane::Ordinary,
@@ -802,7 +802,7 @@ mod tests {
             let frame = sim
                 .advance_app_frame(
                     &[],
-                    None,
+                    crate::rules::ruleset::RuleSet::empty_for_test(),
                     None,
                     67,
                     TickLane::Ordinary,
@@ -863,7 +863,7 @@ mod tests {
             let next = sim
                 .advance_app_frame(
                     &[],
-                    None,
+                    crate::rules::ruleset::RuleSet::empty_for_test(),
                     None,
                     67,
                     TickLane::Ordinary,

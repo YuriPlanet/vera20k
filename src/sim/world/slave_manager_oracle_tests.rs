@@ -46,7 +46,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::miner::{CargoBale, ResourceType};
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::rng::SimRng;
 use crate::sim::slave_manager::{DeployCellSearch, ManagerState, SlaveLink, SlaveNode, SlaveState};
@@ -386,7 +386,7 @@ fn place_slave(
             MissionId::from_known(mission(queued)),
             0,
             frame,
-            &EntityReadyInputProvider,
+            &LiveReadyInputProvider { rules },
         )
         .unwrap();
     }
@@ -808,7 +808,9 @@ fn slave_mission_harvest_matches_the_original_dig() {
                     MissionId::from_known(MissionType::Guard),
                     0,
                     frame,
-                    &EntityReadyInputProvider,
+                    &LiveReadyInputProvider {
+                        rules: crate::rules::ruleset::RuleSet::empty_for_test(),
+                    },
                 )
                 .unwrap();
         }

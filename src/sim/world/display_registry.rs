@@ -111,7 +111,20 @@ struct GroundSortView<'a> {
     particles: &'a crate::sim::particles::ParticleSystemStore,
     terrain: &'a std::collections::BTreeMap<u64, crate::sim::terrain_object::TerrainObjectState>,
     interner: &'a crate::sim::intern::StringInterner,
-    rules: Option<&'a RuleSet>,
+    rules: &'a RuleSet,
+}
+
+/// The sort view of an Air, Surface or Top insertion, which reads none.
+struct OverheadInsertion;
+
+impl GroundSortKeys for OverheadInsertion {
+    fn read(&self, _id: u64) -> (i32, KeptSortKey) {
+        unreachable!("only a Ground insertion reads sort keys")
+    }
+
+    fn owner_term(&self, _owner: u64) -> i32 {
+        unreachable!("only a Ground insertion reads sort keys")
+    }
 }
 
 /// Each read says what it may keep: the key of an entity, an unattached anim
@@ -125,10 +138,7 @@ impl GroundSortKeys for GroundSortView<'_> {
             // Only BuildingClass GetYSort reads type terms. Every sort pass
             // and Ground insert evaluates this; the handle hop never allocates.
             let object = (entity.category() == EntityCategory::Structure)
-                .then(|| {
-                    self.rules
-                        .and_then(|rules| self.interner.object_type(entity.type_ref(), rules))
-                })
+                .then(|| self.interner.object_type(entity.type_ref(), self.rules))
                 .flatten();
             let key = entity_sort_key(entity, object);
             return (key, KeptSortKey::Key(key));
@@ -178,7 +188,7 @@ impl Simulation {
         substrate: &mut ObjectSubstrate,
         id: u64,
         layer: DisplayLayer,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) {
         if layer == DisplayLayer::GROUND {
             substrate.forget_changed_ground_keys(rules);
@@ -194,13 +204,30 @@ impl Simulation {
         substrate.display.submit(id, Some(layer), &view);
     }
 
+    /// [`Self::submit_object_display`] for an object that never enters
+    /// Ground: an Air, Surface or Top insertion appends (5519B0) without
+    /// reading a sort key, so it takes no sort view.
+    pub(crate) fn submit_overhead_display(
+        substrate: &mut ObjectSubstrate,
+        id: u64,
+        layer: DisplayLayer,
+    ) {
+        assert!(
+            layer != DisplayLayer::GROUND,
+            "a Ground insertion reads sort keys"
+        );
+        substrate
+            .display
+            .submit(id, Some(layer), &OverheadInsertion);
+    }
+
     pub(super) fn submit_entity_display(
         interner: &StringInterner,
         terrain_objects: &TerrainObjectStore,
         substrate: &mut ObjectSubstrate,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         terrain: Option<&ResolvedTerrainGrid>,
     ) {
         let Some(entity) = substrate.entities.get(id) else {
@@ -209,21 +236,17 @@ impl Simulation {
         let layer = entity_layer(
             entity,
             terrain.or(resolved_terrain.as_ref()),
-            rules.map(|rules| (rules, interner)),
+            Some((rules, interner)),
         );
         Self::submit_object_display(interner, terrain_objects, substrate, id, layer, rules);
     }
 
-    pub(crate) fn entity_display_layer(
-        &self,
-        id: u64,
-        rules: Option<&RuleSet>,
-    ) -> Option<DisplayLayer> {
+    pub(crate) fn entity_display_layer(&self, id: u64, rules: &RuleSet) -> Option<DisplayLayer> {
         self.substrate.entities.get(id).map(|entity| {
             entity_layer(
                 entity,
                 self.resolved_terrain.as_ref(),
-                rules.map(|rules| (rules, &self.interner)),
+                Some((rules, &self.interner)),
             )
         })
     }
@@ -238,7 +261,7 @@ impl Simulation {
             &mut self.substrate,
             &self.resolved_terrain,
             id,
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
         );
     }
@@ -254,17 +277,13 @@ impl Simulation {
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
         before: DisplayLayer,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) {
         let Some(entity) = substrate.entities.get(id) else {
             return;
         };
         if entity.lifecycle.object_alive()
-            && entity_layer(
-                entity,
-                resolved_terrain.as_ref(),
-                rules.map(|rules| (rules, interner)),
-            ) != before
+            && entity_layer(entity, resolved_terrain.as_ref(), Some((rules, interner))) != before
         {
             Self::submit_entity_display(
                 interner,
@@ -282,7 +301,7 @@ impl Simulation {
         world_interner: &StringInterner,
         terrain_objects: &TerrainObjectStore,
         substrate: &mut ObjectSubstrate,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) {
         substrate.forget_changed_ground_keys(rules);
         let view = GroundSortView {
@@ -301,9 +320,9 @@ impl crate::sim::world::ObjectSubstrate {
     /// Forget the kept Ground keys whose inputs the entity and anim stores
     /// handed out mutably since the last Ground scan, and all of them when
     /// the rules differ from those they were read under.
-    fn forget_changed_ground_keys(&mut self, rules: Option<&RuleSet>) {
+    fn forget_changed_ground_keys(&mut self, rules: &RuleSet) {
         let context = ReadContext {
-            rules: rules.map(RuleSet::serial),
+            rules: RuleSet::serial(rules),
         };
         let entities = self
             .entities
@@ -375,7 +394,7 @@ mod tests {
                 &mut sim.substrate,
                 id,
                 DisplayLayer::GROUND,
-                Some(&rules),
+                &rules,
             );
         }
         assert_eq!(
@@ -537,7 +556,7 @@ mod tests {
                 &mut sim.substrate,
                 id,
                 DisplayLayer::GROUND,
-                Some(&rules),
+                &rules,
             );
             units.push(id);
         }
@@ -574,7 +593,7 @@ mod tests {
                 particles: &sim.substrate.particle_systems,
                 terrain: sim.terrain_objects.objects(),
                 interner: &sim.interner,
-                rules,
+                rules: rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
             }
             .read(id)
             .0
@@ -622,7 +641,7 @@ mod tests {
                     let anim = anims[next(8) as usize];
                     let mut expected = copy(&sim.substrate.display);
                     sim.substrate.display.remove(anim);
-                    sim.submit_anim_display(anim, Some(&rules));
+                    sim.submit_anim_display(anim, &rules);
                     expected.remove(anim);
                     expected.submit(anim, Some(DisplayLayer::GROUND), &|id| {
                         live(&sim, Some(&rules), id)
@@ -641,7 +660,7 @@ mod tests {
                         &sim.interner,
                         &sim.terrain_objects,
                         &mut sim.substrate,
-                        scan_rules,
+                        scan_rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
                     );
                     expected.sort_ground_pass(&|id| live(&sim, scan_rules, id));
                     assert_eq!(

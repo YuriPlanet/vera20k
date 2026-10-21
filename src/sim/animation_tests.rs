@@ -197,8 +197,8 @@ impl Gsi1306Speed {
         }
     }
 
-    fn rules(&self) -> Option<SpeedRules<'_>> {
-        Some(SpeedRules::new(&self.rules, &self.interner, &self.houses))
+    fn rules(&self) -> SpeedRules<'_> {
+        SpeedRules::new(&self.rules, &self.interner, &self.houses)
     }
 }
 
@@ -1214,7 +1214,7 @@ fn infantry_death_finishes_at_its_sequence_count_and_not_one_frame_early() {
     assert!(retired.lifecycle.in_limbo());
     assert!(sim.substrate.pending_delete.contains_object(&id));
     sim.process_pending_delete_with(
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
         1,

@@ -124,6 +124,22 @@ fn native_on_bridge_controls_the_cliff_gate_and_shp_surface() {
     assert_eq!(foot, -61);
 }
 
+/// Aircraft draw their voxels through Foot's vt+0x2EC (0x4DAFC0) like the
+/// Foot classes: beside the same cliff as the tank above, whose default
+/// ZFudgeCliff=10 gives 19, a JET with ZFudgeCliff=99 takes its own fudge.
+/// Its SHP route keeps the height-only term (DrawSHP's aircraft arm).
+#[test]
+fn an_aircraft_voxel_takes_the_foot_cliff_fudge() {
+    let mut runtime = runtime();
+    let jet = entity(&mut runtime, "JET", EntityCategory::Aircraft);
+    set_live_level(&mut runtime, (3, 3), 4);
+    assert_eq!(
+        unit_z_adjust_in_runtime(Some(&runtime), &jet, true, None),
+        197
+    );
+    assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &jet), -2.0);
+}
+
 #[test]
 fn fixed_slot_alias_and_missing_cells_leave_the_shared_simulation_dummy_unchanged() {
     let mut runtime = runtime();

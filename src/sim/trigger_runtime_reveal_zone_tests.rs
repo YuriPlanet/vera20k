@@ -206,9 +206,9 @@ fn native_reveal_zone_dispatch_uses_literal_waypoint_raw_zone_and_radius_two() {
         let (returned, draws) = crate::sim::rng::trace_draws(|| {
             sim.apply_live_trigger_action(
                 &action,
-                sim.trigger_action_context(typ, None, TagEventInput::default(), Some(&rules)),
+                sim.trigger_action_context(typ, None, TagEventInput::default(), &rules),
                 &mut effects,
-                Some(&rules),
+                &rules,
                 None,
                 FrameEffects::default(),
             )

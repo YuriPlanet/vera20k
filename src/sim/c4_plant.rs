@@ -272,7 +272,7 @@ impl Simulation {
             );
         if !refused {
             if target.pending_c4_detonation.pending().is_some() {
-                self.assign_null_destination(id, Some(rules), registry, effects);
+                self.assign_null_destination(id, rules, registry, effects);
                 Self::rearm_c4_planter(
                     &self.interner,
                     &self.session,

@@ -153,7 +153,7 @@ impl MindScene {
             .sim
             .advance_app_frame(
                 &commands,
-                Some(&self.rules),
+                &self.rules,
                 None,
                 33,
                 TickLane::Ordinary,

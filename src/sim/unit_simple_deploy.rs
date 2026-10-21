@@ -8,7 +8,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::{AnimClassSpawnDescriptor, NavTargetRef};
 use crate::sim::game_entity::GameEntity;
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::{FrameEffects, Simulation};
 
@@ -55,7 +55,7 @@ impl Simulation {
             MissionId::from_known(MissionType::Guard),
             0,
             self.session.binary_frame(),
-            &EntityReadyInputProvider,
+            &LiveReadyInputProvider { rules },
         )
         .map_err(|error| error.to_string())?;
         self.substrate
@@ -144,7 +144,7 @@ impl Simulation {
                         self.assign_destination_represented(
                             id,
                             Some(NavTargetRef::cell(rx as u16, ry as u16)),
-                            Some(rules),
+                            rules,
                             None,
                             effects,
                         )

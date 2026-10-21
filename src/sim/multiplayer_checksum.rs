@@ -716,7 +716,7 @@ mod tests {
         let advance = |sim: &mut Simulation| {
             sim.advance_app_frame(
                 &[],
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
                 67,
                 TickLane::Ordinary,
@@ -809,17 +809,14 @@ mod tests {
             ParticleSystem::test_fixture(system_id, ParticleSystemTypeId(0), IVec3::new(64, 32, 0));
         system.set_particles_for_test(vec![child]);
         sim.substrate.particle_systems.insert(system);
-        assert!(sim.reveal_particle_system(system_id, None));
+        assert!(
+            sim.reveal_particle_system(system_id, crate::rules::ruleset::RuleSet::empty_for_test())
+        );
         sim.substrate
             .particle_systems
             .retain_detached_particle(detached);
         for id in [child_id, detached_id] {
-            Simulation::reveal_particle(
-                &sim.interner,
-                &sim.terrain_objects,
-                &mut sim.substrate,
-                id,
-            );
+            Simulation::reveal_particle(&mut sim.substrate, id);
         }
         let bytes = GameSnapshot::save(&sim, 0, 0, "particles", 0);
         let rng = sim.scenario_rng.clone();
@@ -862,12 +859,12 @@ mod tests {
         sim.substrate
             .particle_systems
             .retain_detached_particle(particle);
-        Simulation::reveal_particle(&sim.interner, &sim.terrain_objects, &mut sim.substrate, id);
+        Simulation::reveal_particle(&mut sim.substrate, id);
 
         let output = sim
             .advance_app_frame(
                 &[],
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
                 67,
                 TickLane::Ordinary,
@@ -879,7 +876,11 @@ mod tests {
             .multiplayer_checksum
             .expect("a LAN frame stores its checksum");
         assert!(sync.checksum.is_ok(), "{:?}", sync.checksum);
-        assert!(sim.display_layers().ordered_ids().any(|&member| member == id));
+        assert!(
+            sim.display_layers()
+                .ordered_ids()
+                .any(|&member| member == id)
+        );
     }
 
     #[test]

@@ -1,0 +1,2425 @@
+{
+  "cases": [
+    {
+      "after": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "before": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "boundary": {
+        "before_capture_entry": true,
+        "manager": "manager",
+        "pc": 4660544,
+        "return_pc": 4625109,
+        "target": "target",
+        "target_was_human": false
+      },
+      "calls": [
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "event": 6,
+          "force": 0,
+          "kind": "tag",
+          "object": "target",
+          "pc": 7230368,
+          "source": "firer",
+          "tag": "tag"
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": 7198896,
+          "value": 7
+        },
+        {
+          "al": 1,
+          "kind": "tag_return",
+          "pc": 4625058,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "event": 44,
+          "force": 0,
+          "kind": "tag",
+          "object": "target",
+          "pc": 7230368,
+          "source": "firer",
+          "tag": "tag"
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": 7198896,
+          "value": 8
+        },
+        {
+          "al": 1,
+          "kind": "tag_return",
+          "pc": 4625085,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        }
+      ],
+      "input": {
+        "game_mode": 1,
+        "name": "live_tag",
+        "probe": {
+          "alive": true,
+          "attached": true,
+          "execute_rejection": false,
+          "firer": true,
+          "human_target": false,
+          "manager": true,
+          "same_owner": false,
+          "target": true
+        },
+        "repeat": 2,
+        "seed": 31,
+        "triggers": [
+          {
+            "actions": [
+              [
+                28,
+                7
+              ]
+            ],
+            "events": [
+              [
+                6,
+                0
+              ]
+            ]
+          },
+          {
+            "actions": [
+              [
+                28,
+                8
+              ]
+            ],
+            "events": [
+              [
+                44,
+                0
+              ]
+            ]
+          }
+        ]
+      },
+      "live_pointer_reloads": [
+        {
+          "pc": 4625058,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625085,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625091,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625098,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        }
+      ],
+      "original_code_and_vtables_unchanged": true,
+      "reached_addresses": [
+        4624560,
+        4624907,
+        4625014,
+        4625053,
+        4625058,
+        4625080,
+        4625085,
+        4625091,
+        4625098,
+        4625104,
+        5289712,
+        7198896,
+        7230368,
+        7465280,
+        7496896,
+        7497152
+      ],
+      "rng": {
+        "full_scenario_state_equal": true,
+        "scenario_draws": 0
+      },
+      "tag_state": {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            8
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7,
+          8
+        ],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "after": {
+        "bullet_raw_target": "target",
+        "firer": null,
+        "firer_owner": null,
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "before": {
+        "bullet_raw_target": "target",
+        "firer": null,
+        "firer_owner": null,
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "boundary": {
+        "before_capture_entry": false,
+        "pc": 4627108
+      },
+      "calls": [],
+      "input": {
+        "game_mode": 1,
+        "name": "no_firer",
+        "probe": {
+          "alive": true,
+          "attached": true,
+          "execute_rejection": false,
+          "firer": false,
+          "human_target": false,
+          "manager": true,
+          "same_owner": false,
+          "target": true
+        },
+        "repeat": 2,
+        "seed": 31,
+        "triggers": [
+          {
+            "actions": [
+              [
+                28,
+                7
+              ]
+            ],
+            "events": [
+              [
+                6,
+                0
+              ]
+            ]
+          },
+          {
+            "actions": [
+              [
+                28,
+                8
+              ]
+            ],
+            "events": [
+              [
+                44,
+                0
+              ]
+            ]
+          }
+        ]
+      },
+      "live_pointer_reloads": [],
+      "original_code_and_vtables_unchanged": true,
+      "reached_addresses": [
+        4624560,
+        4624907
+      ],
+      "rng": {
+        "full_scenario_state_equal": true,
+        "scenario_draws": 0
+      },
+      "tag_state": {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "after": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": null,
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "before": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": null,
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "boundary": {
+        "before_capture_entry": false,
+        "pc": 4627108
+      },
+      "calls": [],
+      "input": {
+        "game_mode": 1,
+        "name": "no_manager",
+        "probe": {
+          "alive": true,
+          "attached": true,
+          "execute_rejection": false,
+          "firer": true,
+          "human_target": false,
+          "manager": false,
+          "same_owner": false,
+          "target": true
+        },
+        "repeat": 2,
+        "seed": 31,
+        "triggers": [
+          {
+            "actions": [
+              [
+                28,
+                7
+              ]
+            ],
+            "events": [
+              [
+                6,
+                0
+              ]
+            ]
+          },
+          {
+            "actions": [
+              [
+                28,
+                8
+              ]
+            ],
+            "events": [
+              [
+                44,
+                0
+              ]
+            ]
+          }
+        ]
+      },
+      "live_pointer_reloads": [],
+      "original_code_and_vtables_unchanged": true,
+      "reached_addresses": [
+        4624560,
+        4624907
+      ],
+      "rng": {
+        "full_scenario_state_equal": true,
+        "scenario_draws": 0
+      },
+      "tag_state": {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "after": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": null
+      },
+      "before": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": null
+      },
+      "boundary": {
+        "before_capture_entry": true,
+        "manager": "manager",
+        "pc": 4660544,
+        "return_pc": 4625109,
+        "target": "target",
+        "target_was_human": false
+      },
+      "calls": [],
+      "input": {
+        "game_mode": 1,
+        "name": "no_tag",
+        "probe": {
+          "alive": true,
+          "attached": false,
+          "execute_rejection": false,
+          "firer": true,
+          "human_target": false,
+          "manager": true,
+          "same_owner": false,
+          "target": true
+        },
+        "repeat": 2,
+        "seed": 31,
+        "triggers": [
+          {
+            "actions": [
+              [
+                28,
+                7
+              ]
+            ],
+            "events": [
+              [
+                6,
+                0
+              ]
+            ]
+          },
+          {
+            "actions": [
+              [
+                28,
+                8
+              ]
+            ],
+            "events": [
+              [
+                44,
+                0
+              ]
+            ]
+          }
+        ]
+      },
+      "live_pointer_reloads": [
+        {
+          "pc": 4625085,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": null
+          }
+        },
+        {
+          "pc": 4625091,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": null
+          }
+        },
+        {
+          "pc": 4625098,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": null
+          }
+        }
+      ],
+      "original_code_and_vtables_unchanged": true,
+      "reached_addresses": [
+        4624560,
+        4624907,
+        4625014,
+        4625085,
+        4625091,
+        4625098,
+        4625104,
+        5289712
+      ],
+      "rng": {
+        "full_scenario_state_equal": true,
+        "scenario_draws": 0
+      },
+      "tag_state": {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          null
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "after": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": false,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "before": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": false,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "boundary": {
+        "before_capture_entry": true,
+        "manager": "manager",
+        "pc": 4660544,
+        "return_pc": 4625109,
+        "target": "target",
+        "target_was_human": false
+      },
+      "calls": [],
+      "input": {
+        "game_mode": 1,
+        "name": "dead_target",
+        "probe": {
+          "alive": false,
+          "attached": true,
+          "execute_rejection": false,
+          "firer": true,
+          "human_target": false,
+          "manager": true,
+          "same_owner": false,
+          "target": true
+        },
+        "repeat": 2,
+        "seed": 31,
+        "triggers": [
+          {
+            "actions": [
+              [
+                28,
+                7
+              ]
+            ],
+            "events": [
+              [
+                6,
+                0
+              ]
+            ]
+          },
+          {
+            "actions": [
+              [
+                28,
+                8
+              ]
+            ],
+            "events": [
+              [
+                44,
+                0
+              ]
+            ]
+          }
+        ]
+      },
+      "live_pointer_reloads": [
+        {
+          "pc": 4625085,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": false,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625091,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": false,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625098,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": false,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        }
+      ],
+      "original_code_and_vtables_unchanged": true,
+      "reached_addresses": [
+        4624560,
+        4624907,
+        4625014,
+        4625085,
+        4625091,
+        4625098,
+        4625104,
+        5289712
+      ],
+      "rng": {
+        "full_scenario_state_equal": true,
+        "scenario_draws": 0
+      },
+      "tag_state": {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "after": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "before": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "boundary": {
+        "before_capture_entry": true,
+        "manager": "manager",
+        "pc": 4660544,
+        "return_pc": 4625109,
+        "target": "target",
+        "target_was_human": true
+      },
+      "calls": [
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "event": 6,
+          "force": 0,
+          "kind": "tag",
+          "object": "target",
+          "pc": 7230368,
+          "source": "firer",
+          "tag": "tag"
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": 7198896,
+          "value": 7
+        },
+        {
+          "al": 1,
+          "kind": "tag_return",
+          "pc": 4625058,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "event": 44,
+          "force": 0,
+          "kind": "tag",
+          "object": "target",
+          "pc": 7230368,
+          "source": "firer",
+          "tag": "tag"
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": 7198896,
+          "value": 8
+        },
+        {
+          "al": 1,
+          "kind": "tag_return",
+          "pc": 4625085,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        }
+      ],
+      "input": {
+        "game_mode": 1,
+        "name": "human_target",
+        "probe": {
+          "alive": true,
+          "attached": true,
+          "execute_rejection": false,
+          "firer": true,
+          "human_target": true,
+          "manager": true,
+          "same_owner": false,
+          "target": true
+        },
+        "repeat": 2,
+        "seed": 31,
+        "triggers": [
+          {
+            "actions": [
+              [
+                28,
+                7
+              ]
+            ],
+            "events": [
+              [
+                6,
+                0
+              ]
+            ]
+          },
+          {
+            "actions": [
+              [
+                28,
+                8
+              ]
+            ],
+            "events": [
+              [
+                44,
+                0
+              ]
+            ]
+          }
+        ]
+      },
+      "live_pointer_reloads": [
+        {
+          "pc": 4625058,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625085,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625091,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625098,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        }
+      ],
+      "original_code_and_vtables_unchanged": true,
+      "reached_addresses": [
+        4624560,
+        4624907,
+        4625014,
+        4625053,
+        4625058,
+        4625080,
+        4625085,
+        4625091,
+        4625098,
+        4625104,
+        5289712,
+        7198896,
+        7230368,
+        7465280,
+        7496896,
+        7497152
+      ],
+      "rng": {
+        "full_scenario_state_equal": true,
+        "scenario_draws": 0
+      },
+      "tag_state": {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            8
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7,
+          8
+        ],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "after": {
+        "bullet_raw_target": null,
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "before": {
+        "bullet_raw_target": null,
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "boundary": {
+        "before_capture_entry": false,
+        "pc": 4627108
+      },
+      "calls": [
+        {
+          "kind": "capture",
+          "manager": "manager",
+          "pc": 4660544,
+          "target": null,
+          "target_was_human": false
+        },
+        {
+          "al": 0,
+          "kind": "capture_return",
+          "pc": 4625109,
+          "state": {
+            "bullet_raw_target": null,
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        }
+      ],
+      "input": {
+        "game_mode": 1,
+        "name": "null_target_rejected",
+        "probe": {
+          "alive": true,
+          "attached": true,
+          "execute_rejection": true,
+          "firer": true,
+          "human_target": false,
+          "manager": true,
+          "same_owner": false,
+          "target": false
+        },
+        "repeat": 2,
+        "seed": 31,
+        "triggers": [
+          {
+            "actions": [
+              [
+                28,
+                7
+              ]
+            ],
+            "events": [
+              [
+                6,
+                0
+              ]
+            ]
+          },
+          {
+            "actions": [
+              [
+                28,
+                8
+              ]
+            ],
+            "events": [
+              [
+                44,
+                0
+              ]
+            ]
+          }
+        ]
+      },
+      "live_pointer_reloads": [
+        {
+          "pc": 4625085,
+          "state": {
+            "bullet_raw_target": null,
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625091,
+          "state": {
+            "bullet_raw_target": null,
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625098,
+          "state": {
+            "bullet_raw_target": null,
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        }
+      ],
+      "original_code_and_vtables_unchanged": true,
+      "reached_addresses": [
+        4624560,
+        4624907,
+        4625014,
+        4625085,
+        4625091,
+        4625098,
+        4625104,
+        4625109,
+        4660544
+      ],
+      "rng": {
+        "full_scenario_state_equal": true,
+        "scenario_draws": 0
+      },
+      "tag_state": {
+        "actions": [],
+        "changed": 0,
+        "globals": [],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "after": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "firer_house",
+        "target_tag": "tag"
+      },
+      "before": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "firer_house",
+        "target_tag": "tag"
+      },
+      "boundary": {
+        "before_capture_entry": false,
+        "pc": 4627108
+      },
+      "calls": [
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "event": 6,
+          "force": 0,
+          "kind": "tag",
+          "object": "target",
+          "pc": 7230368,
+          "source": "firer",
+          "tag": "tag"
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": 7198896,
+          "value": 7
+        },
+        {
+          "al": 1,
+          "kind": "tag_return",
+          "pc": 4625058,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "firer_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "event": 44,
+          "force": 0,
+          "kind": "tag",
+          "object": "target",
+          "pc": 7230368,
+          "source": "firer",
+          "tag": "tag"
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": 7198896,
+          "value": 8
+        },
+        {
+          "al": 1,
+          "kind": "tag_return",
+          "pc": 4625085,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "firer_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "kind": "capture",
+          "manager": "manager",
+          "pc": 4660544,
+          "target": "target",
+          "target_was_human": true
+        },
+        {
+          "al": 0,
+          "kind": "capture_return",
+          "pc": 4625109,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "firer_house",
+            "target_tag": "tag"
+          }
+        }
+      ],
+      "input": {
+        "game_mode": 1,
+        "name": "same_owner_rejected",
+        "probe": {
+          "alive": true,
+          "attached": true,
+          "execute_rejection": true,
+          "firer": true,
+          "human_target": false,
+          "manager": true,
+          "same_owner": true,
+          "target": true
+        },
+        "repeat": 2,
+        "seed": 31,
+        "triggers": [
+          {
+            "actions": [
+              [
+                28,
+                7
+              ]
+            ],
+            "events": [
+              [
+                6,
+                0
+              ]
+            ]
+          },
+          {
+            "actions": [
+              [
+                28,
+                8
+              ]
+            ],
+            "events": [
+              [
+                44,
+                0
+              ]
+            ]
+          }
+        ]
+      },
+      "live_pointer_reloads": [
+        {
+          "pc": 4625058,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "firer_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625085,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "firer_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625091,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "firer_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625098,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "firer_house",
+            "target_tag": "tag"
+          }
+        }
+      ],
+      "original_code_and_vtables_unchanged": true,
+      "reached_addresses": [
+        4624560,
+        4624907,
+        4625014,
+        4625053,
+        4625058,
+        4625080,
+        4625085,
+        4625091,
+        4625098,
+        4625104,
+        4625109,
+        4660368,
+        4660544,
+        5289712,
+        7198896,
+        7230368,
+        7465280,
+        7496896,
+        7497152
+      ],
+      "rng": {
+        "full_scenario_state_equal": true,
+        "scenario_draws": 0
+      },
+      "tag_state": {
+        "actions": [
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            8
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7,
+          8
+        ],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "after": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "before": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "boundary": {
+        "before_capture_entry": true,
+        "manager": "manager",
+        "pc": 4660544,
+        "return_pc": 4625109,
+        "target": "target",
+        "target_was_human": false
+      },
+      "calls": [
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "event": 6,
+          "force": 0,
+          "kind": "tag",
+          "object": "target",
+          "pc": 7230368,
+          "source": "firer",
+          "tag": "tag"
+        },
+        {
+          "action": 54,
+          "kind": "action",
+          "pc": 7198896,
+          "value": 0
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": 7198896,
+          "value": 7
+        },
+        {
+          "al": 1,
+          "kind": "tag_return",
+          "pc": 4625058,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "event": 44,
+          "force": 0,
+          "kind": "tag",
+          "object": "target",
+          "pc": 7230368,
+          "source": "firer",
+          "tag": "tag"
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": 7198896,
+          "value": 8
+        },
+        {
+          "al": 1,
+          "kind": "tag_return",
+          "pc": 4625085,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        }
+      ],
+      "input": {
+        "game_mode": 1,
+        "name": "event6_disables_self",
+        "probe": {
+          "alive": true,
+          "attached": true,
+          "execute_rejection": false,
+          "firer": true,
+          "human_target": false,
+          "manager": true,
+          "same_owner": false,
+          "target": true
+        },
+        "repeat": 2,
+        "seed": 31,
+        "triggers": [
+          {
+            "actions": [
+              [
+                54,
+                0,
+                0
+              ],
+              [
+                28,
+                7
+              ]
+            ],
+            "events": [
+              [
+                6,
+                0
+              ]
+            ]
+          },
+          {
+            "actions": [
+              [
+                28,
+                8
+              ]
+            ],
+            "events": [
+              [
+                44,
+                0
+              ]
+            ]
+          }
+        ]
+      },
+      "live_pointer_reloads": [
+        {
+          "pc": 4625058,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625085,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625091,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625098,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        }
+      ],
+      "original_code_and_vtables_unchanged": true,
+      "reached_addresses": [
+        4624560,
+        4624907,
+        4625014,
+        4625053,
+        4625058,
+        4625080,
+        4625085,
+        4625091,
+        4625098,
+        4625104,
+        5289712,
+        7198896,
+        7230368,
+        7465280,
+        7496896,
+        7497152
+      ],
+      "rng": {
+        "full_scenario_state_equal": true,
+        "scenario_draws": 0
+      },
+      "tag_state": {
+        "actions": [
+          [
+            54,
+            0
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            8
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7,
+          8
+        ],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 0,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "after": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "before": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "boundary": {
+        "before_capture_entry": true,
+        "manager": "manager",
+        "pc": 4660544,
+        "return_pc": 4625109,
+        "target": "target",
+        "target_was_human": false
+      },
+      "calls": [
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "event": 6,
+          "force": 0,
+          "kind": "tag",
+          "object": "target",
+          "pc": 7230368,
+          "source": "firer",
+          "tag": "tag"
+        },
+        {
+          "action": 12,
+          "kind": "action",
+          "pc": 7198896,
+          "value": 0
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": 7198896,
+          "value": 7
+        },
+        {
+          "al": 1,
+          "kind": "tag_return",
+          "pc": 4625058,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "event": 44,
+          "force": 0,
+          "kind": "tag",
+          "object": "target",
+          "pc": 7230368,
+          "source": "firer",
+          "tag": "tag"
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": 7198896,
+          "value": 8
+        },
+        {
+          "al": 1,
+          "kind": "tag_return",
+          "pc": 4625085,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        }
+      ],
+      "input": {
+        "game_mode": 1,
+        "name": "event6_removes_self",
+        "probe": {
+          "alive": true,
+          "attached": true,
+          "execute_rejection": false,
+          "firer": true,
+          "human_target": false,
+          "manager": true,
+          "same_owner": false,
+          "target": true
+        },
+        "repeat": 2,
+        "seed": 31,
+        "triggers": [
+          {
+            "actions": [
+              [
+                12,
+                0,
+                0
+              ],
+              [
+                28,
+                7
+              ]
+            ],
+            "events": [
+              [
+                6,
+                0
+              ]
+            ]
+          },
+          {
+            "actions": [
+              [
+                28,
+                8
+              ]
+            ],
+            "events": [
+              [
+                44,
+                0
+              ]
+            ]
+          }
+        ]
+      },
+      "live_pointer_reloads": [
+        {
+          "pc": 4625058,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625085,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625091,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625098,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        }
+      ],
+      "original_code_and_vtables_unchanged": true,
+      "reached_addresses": [
+        4624560,
+        4624907,
+        4625014,
+        4625053,
+        4625058,
+        4625080,
+        4625085,
+        4625091,
+        4625098,
+        4625104,
+        5289712,
+        7198896,
+        7230368,
+        7465280,
+        7496896,
+        7497152
+      ],
+      "rng": {
+        "full_scenario_state_equal": true,
+        "scenario_draws": 0
+      },
+      "tag_state": {
+        "actions": [
+          [
+            12,
+            0
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            8
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7,
+          8
+        ],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 1,
+        "pending_tags": [],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 1,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "after": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "before": {
+        "bullet_raw_target": "target",
+        "firer": "firer",
+        "firer_owner": "firer_house",
+        "manager": "manager",
+        "target": "target",
+        "target_alive": true,
+        "target_owner": "other_house",
+        "target_tag": "tag"
+      },
+      "boundary": {
+        "before_capture_entry": true,
+        "manager": "manager",
+        "pc": 4660544,
+        "return_pc": 4625109,
+        "target": "target",
+        "target_was_human": false
+      },
+      "calls": [
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "event": 6,
+          "force": 0,
+          "kind": "tag",
+          "object": "target",
+          "pc": 7230368,
+          "source": "firer",
+          "tag": "tag"
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": 7198896,
+          "value": 7
+        },
+        {
+          "al": 1,
+          "kind": "tag_return",
+          "pc": 4625058,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "event": 44,
+          "force": 0,
+          "kind": "tag",
+          "object": "target",
+          "pc": 7230368,
+          "source": "firer",
+          "tag": "tag"
+        },
+        {
+          "al": 0,
+          "kind": "tag_return",
+          "pc": 4625085,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        }
+      ],
+      "input": {
+        "game_mode": 1,
+        "name": "event44_other_house_index",
+        "probe": {
+          "alive": true,
+          "attached": true,
+          "execute_rejection": false,
+          "firer": true,
+          "human_target": false,
+          "manager": true,
+          "same_owner": false,
+          "target": true
+        },
+        "repeat": 2,
+        "seed": 31,
+        "triggers": [
+          {
+            "actions": [
+              [
+                28,
+                7
+              ]
+            ],
+            "events": [
+              [
+                6,
+                0
+              ]
+            ]
+          },
+          {
+            "actions": [
+              [
+                28,
+                8
+              ]
+            ],
+            "events": [
+              [
+                44,
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      "live_pointer_reloads": [
+        {
+          "pc": 4625058,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625085,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625091,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        },
+        {
+          "pc": 4625098,
+          "state": {
+            "bullet_raw_target": "target",
+            "firer": "firer",
+            "firer_owner": "firer_house",
+            "manager": "manager",
+            "target": "target",
+            "target_alive": true,
+            "target_owner": "other_house",
+            "target_tag": "tag"
+          }
+        }
+      ],
+      "original_code_and_vtables_unchanged": true,
+      "reached_addresses": [
+        4624560,
+        4624907,
+        4625014,
+        4625053,
+        4625058,
+        4625080,
+        4625085,
+        4625091,
+        4625098,
+        4625104,
+        5289712,
+        7198896,
+        7230368,
+        7465280,
+        7496896,
+        7497152
+      ],
+      "rng": {
+        "full_scenario_state_equal": true,
+        "scenario_draws": 0
+      },
+      "tag_state": {
+        "actions": [
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 1,
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "object_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 1,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 1
+              },
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 123,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "schema_version": 1
+}

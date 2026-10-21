@@ -21,7 +21,7 @@
 
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
-use crate::sim::mission::authority::{EntityReadyInputProvider, LiveReadyInputProvider};
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::{FrameEffects, ObjectAiCtx, Simulation};
 
@@ -174,7 +174,7 @@ impl Simulation {
         mission: MissionType,
         target: Option<TargetKind>,
         destination: Option<TargetKind>,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) -> MissionType {
         let foot = self.substrate.entities.get(id).is_some_and(|entity| {
             entity.category() != crate::map::entities::EntityCategory::Structure
@@ -186,7 +186,7 @@ impl Simulation {
             self.substrate.foot_clear_all_tarcom(id);
             return mission;
         }
-        if !rules.is_some_and(|rules| self.techno_can_attack_move(id, rules)) {
+        if !self.techno_can_attack_move(id, rules) {
             return if target.is_some() {
                 MissionType::Attack
             } else {
@@ -222,7 +222,7 @@ impl Simulation {
     pub(crate) fn foot_continue_mega_mission(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
@@ -270,7 +270,7 @@ impl Simulation {
     pub(crate) fn foot_refresh_mega_mission(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
@@ -339,7 +339,7 @@ impl Simulation {
             }
             return;
         }
-        self.foot_queue_mission_now(id, MissionType::Attack, Some(rules));
+        self.foot_queue_mission_now(id, MissionType::Attack, rules);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.mega_mission.have_attack_move_target = true;
         }
@@ -382,15 +382,10 @@ impl Simulation {
 
     /// `Queue_Mission(mission, 1)` (vt+0x1E8): queued, and committed at once
     /// when the object is ready ([`Self::mission_queue_exact`]).
-    fn foot_queue_mission_now(&mut self, id: u64, mission: MissionType, rules: Option<&RuleSet>) {
+    fn foot_queue_mission_now(&mut self, id: u64, mission: MissionType, rules: &RuleSet) {
         let mission = MissionId::from_known(mission);
         let now = self.session.binary_frame();
-        let _ = match rules {
-            Some(rules) => {
-                self.mission_queue_exact(id, mission, 1, now, &LiveReadyInputProvider { rules })
-            }
-            None => self.mission_queue_exact(id, mission, 1, now, &EntityReadyInputProvider),
-        };
+        let _ = self.mission_queue_exact(id, mission, 1, now, &LiveReadyInputProvider { rules });
     }
 
     /// `TechnoClass::InAuxiliarySearchRange @ 0x006F78D0` (vt+0x3B4), whose

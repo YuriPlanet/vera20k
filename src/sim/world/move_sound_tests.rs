@@ -174,11 +174,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
     let (_, draws) = crate::sim::rng::trace_draws(|| {
         crate::sim::animation::tick_foot_body_frame_counter(
             sim.substrate.entities.get_mut(id).unwrap(),
-            Some(crate::sim::movement::SpeedRules::new(
-                rules,
-                &sim.interner,
-                &sim.houses,
-            )),
+            crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
             crate::sim::animation::FootBodyCadence {
                 walk_rate: object.walk_rate,
                 idle_rate: object.idle_rate,
@@ -197,7 +193,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
             &sim.houses,
             id,
             body_before,
-            Some(rules),
+            rules,
         );
     });
     assert_eq!(
@@ -384,7 +380,7 @@ fn ordinary_uninit_then_physical_destruction_detaches_without_a_foot_hard_stop()
         let mut expected = native_effects(original_limbo, true);
         expected.extend(native_effects(original_destructor, true));
         sim.process_pending_delete_with(
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
             1,

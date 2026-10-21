@@ -212,7 +212,7 @@ fn retail_gas_snapshot_retains_global_owner_motion_and_child_cleanup() {
             world.session.set_binary_frame_for_test(frame);
             super::system_ai::tick_particle_systems(world, &rules);
             world.process_pending_delete_with(
-                Some(&rules),
+                &rules,
                 None,
                 FrameEffects::default(),
                 1,

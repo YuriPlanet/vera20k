@@ -64,6 +64,9 @@ pub(crate) struct WolLobbyGlobals {
     pub(crate) page_last_control: u16,
     /// `[0xB76478..0xB76480]`: the in-match page's reply prefill window.
     pub(crate) page_reply_window: crate::ui::wol_page::PageReplyWindow,
+    /// `[0xB78608]`: the options sink's preview-request stamp in 16 ms
+    /// buckets, first set by its one-time init (`0x007A7EA0..0x007A7ED3`).
+    pub(crate) preview_stamp: Option<u32>,
 }
 
 /// The decoded result of a joined channel: its record and its users.
@@ -258,12 +261,185 @@ fn nickname(state: &AppState) -> String {
     state.frontend.wol_account.nickname.clone()
 }
 
-fn admission_context() -> AdmissionContext {
+fn admission_context(state: &AppState) -> AdmissionContext {
     AdmissionContext {
         // Custom Match is mode 4, never 1/2/3.
         quick_match: false,
-        clan_id: 0,
+        clan_id: squad_id(state),
         local_hash: None,
+    }
+}
+
+/// The current channel's kind for the room tests `0x0077D940`/`0x0077D970`:
+/// tournament `+0x14` and the clan bit of `+0x20` (`[0xB76B24]`,
+/// `[0xB76B30]`), copied from the server's record on create and join.
+pub(crate) fn room(state: &AppState) -> crate::app::match_runtime::session::NetworkRoom {
+    let current = state
+        .frontend
+        .wol
+        .as_ref()
+        .and_then(|visit| visit.lobby.as_deref())
+        .and_then(|lobby| lobby.current.as_ref());
+    crate::app::match_runtime::session::NetworkRoom {
+        tournament: current.is_some_and(|channel| channel.tournament != 0),
+        clan: current.is_some_and(|channel| channel.game_flags & GAME_CLAN != 0),
+    }
+}
+
+/// What the matched OnGameStart and Start Game Now hand the match.
+/// `[0xB779C4]` is the current channel's tournament value, 2 in a clan room
+/// (`0x007A7D0E..0x007A7D49`). In a clan room Start Game Now splits the
+/// channel users, in list order, into two name lists by squad
+/// (`0x00795250..0x0079546E`): the first squad seen, or a user while it is
+/// 0, joins the first list; the next squad the second; a third is left out.
+/// RESIDUAL: native builds the lists when the lobby runner calls Start Game
+/// Now (`0x007800EC`), after OnGameStart; VERA takes them at the matched
+/// OnGameStart, so a user parting in between stays listed. The WDT builder
+/// for `[0xA8B244]` 3 (`0x0079546E..0x00795574`) is dormant for custom games.
+pub(crate) fn start_terms(state: &AppState) -> crate::app::match_runtime::session::WolStartTerms {
+    lobby(state)
+        .and_then(|lobby| Some(start_terms_for(lobby.current.as_ref()?, &lobby.members)))
+        .unwrap_or_default()
+}
+
+fn start_terms_for(
+    current: &WolChannel,
+    members: &[WolMember],
+) -> crate::app::match_runtime::session::WolStartTerms {
+    let clan = current.game_flags & GAME_CLAN != 0;
+    let mut squad_lists: [Vec<String>; 2] = Default::default();
+    if clan {
+        let mut squads = [0; 2];
+        for member in members {
+            let list = if squads[0] == 0 || member.squad == squads[0] {
+                0
+            } else if squads[1] == 0 || member.squad == squads[1] {
+                1
+            } else {
+                continue;
+            };
+            squads[list] = member.squad;
+            squad_lists[list].push(member.name.clone());
+        }
+    }
+    crate::app::match_runtime::session::WolStartTerms {
+        tournament: if clan { 2 } else { current.tournament },
+        squad_lists,
+    }
+}
+
+/// C2's clan start test (`0x0079096A..0x00790B18`) over the channel users.
+pub(crate) fn clan_teams_even(state: &AppState, observer: Option<&str>) -> bool {
+    lobby(state).is_some_and(|lobby| clan_split_even(&lobby.members, observer))
+}
+
+/// Every user but the observer row's node is in a squad, there are exactly
+/// two squads, and they have as many users each. The observer's name
+/// compares under `_stricmp` (`0x007C8D20` at `0x00790A22`).
+/// RESIDUAL: native narrows the observer row's name to 9 characters first
+/// (`0x007C91D0` at `0x007909E6`); WOL nicknames are no longer.
+fn clan_split_even(members: &[WolMember], observer: Option<&str>) -> bool {
+    let mut squads: [(i32, usize); 2] = [(0, 0); 2];
+    for member in members {
+        if observer
+            .is_some_and(|name| crate::util::native_string::crt_strcmpi(&member.name, name).is_eq())
+        {
+            continue;
+        }
+        if member.squad == 0 {
+            return false;
+        }
+        match squads
+            .iter_mut()
+            .find(|(id, _)| *id == member.squad || *id == 0)
+        {
+            Some(entry) => *entry = (member.squad, entry.1 + 1),
+            None => return false,
+        }
+    }
+    squads[0].1 == squads[1].1
+}
+
+/// `[0xB77DE4]`: the user's squad id.
+pub(crate) fn squad_id(state: &AppState) -> i32 {
+    state
+        .frontend
+        .wol
+        .as_ref()
+        .map_or(0, |visit| visit.squad_id)
+}
+
+/// API+0xB0 for squad `id`, counted in `[0xB77DDC]`; 0 asks for the user's
+/// own, which `[0xB77DE0]` marks.
+fn request_squad(state: &mut AppState, id: i32) {
+    let Some(visit) = state.frontend.wol.as_mut() else {
+        return;
+    };
+    visit.squad_requests += 1;
+    if id == 0 {
+        visit.squad_own_pending = true;
+    }
+    request(state, WolServiceRequest::SquadInfo { id });
+}
+
+/// The squad sink `+0x80` (`0x007A4EC0`). The user's own request takes the
+/// id even when it failed (`0x007A4EE8..0x007A4F2D`); a failure then ends
+/// here (`0x007A4EFC`/`0x007A4F38`). Each channel user of that squad takes
+/// its tag and name and is sorted again; a success that leaves no request
+/// outstanding refills the player list (`0x007A51F3..0x007A5200`).
+/// RESIDUAL: the clan-ladder request for the tag (API2+0x14) is the
+/// backend's.
+pub(super) fn squad(
+    state: &mut AppState,
+    id: i32,
+    squad: Result<crate::ui::wol_lobby::WolSquad, u32>,
+) {
+    let Some(visit) = state.frontend.wol.as_mut() else {
+        return;
+    };
+    visit.squad_requests = visit.squad_requests.saturating_sub(1);
+    let last = visit.squad_requests == 0;
+    if visit.squad_own_pending {
+        visit.squad_own_pending = false;
+        visit.squad_id = id;
+    }
+    let sort = state.frontend.wol_lobby_globals.player_sort;
+    let Ok(squad) = squad else {
+        return;
+    };
+    if let Some(lobby) = lobby_mut(state) {
+        let (mut matched, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut lobby.members)
+            .into_iter()
+            .partition(|member| member.squad == id);
+        lobby.members = rest;
+        for member in &mut matched {
+            member.clan_tag = squad.tag.clone();
+            member.clan_name = squad.name.clone();
+        }
+        for member in matched {
+            insert_member(&mut lobby.members, member, sort);
+        }
+    }
+    if last {
+        refill_players(state);
+    }
+}
+
+/// The user-list sink's squad requests (`0x007A7193..0x007A71C6`): each
+/// listed user in a squad whose tag is not known yet, the user included.
+fn request_listed_squads(state: &mut AppState) {
+    let squads: Vec<i32> = lobby(state)
+        .map(|lobby| {
+            lobby
+                .members
+                .iter()
+                .filter(|member| member.squad != 0 && member.clan_tag.is_empty())
+                .map(|member| member.squad)
+                .collect()
+        })
+        .unwrap_or_default();
+    for squad in squads {
+        request_squad(state, squad);
     }
 }
 
@@ -414,6 +590,8 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
     show_wait(state, "GUI:LoginComplete");
     // 0x00787BC8: the buddy mirror restarts (API+0xDC, 0x0079CE70 outside
     // Quick Match, 0x0079D2F0) before the chat-lobby list.
+    // 0x00787B33..0x00787B53: the user's own squad.
+    request_squad(state, 0);
     super::buddies::restart(state);
     show_wait(state, "TXT_REQ_CHANLIST");
     request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
@@ -520,7 +698,7 @@ pub(super) fn buddy_join(state: &mut AppState, channel: WolChannel) {
         lobby.shown = false;
     }
     let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
-    if admit(&channel, observer, admission_context()).is_err() {
+    if admit(&channel, observer, admission_context(state)).is_err() {
         join_failed_locally(state, true);
         return;
     }
@@ -616,7 +794,7 @@ fn admit_row(state: &mut AppState, row: usize, observer: bool, show: bool) -> bo
     else {
         return false;
     };
-    match admit(channel, observer, admission_context()) {
+    match admit(channel, observer, admission_context(state)) {
         Ok(()) => true,
         Err(key) => {
             if let (true, Some(key)) = (show, key) {
@@ -1264,6 +1442,7 @@ pub(super) fn begin_create(state: &mut AppState) {
         globals.limit_resolution = false;
     }
     let limit = globals.limit_resolution;
+    let squad = squad_id(state);
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
@@ -1271,7 +1450,7 @@ pub(super) fn begin_create(state: &mut AppState) {
     lobby.ui.game_list.selected = None;
     lobby.covered = true;
     // +0x13 starts as [0xAC10C8] == 1.
-    lobby.ui.popup = Some(WolLobbyPopup::create(width, limit, 0, observer));
+    lobby.ui.popup = Some(WolLobbyPopup::create(width, limit, squad, observer));
     state
         .frontend
         .shell_controller
@@ -1531,6 +1710,7 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
         insert_member(&mut runner.members, member, sort);
     }
     runner.current = Some(joined.channel.clone());
+    request_listed_squads(state);
     if joined.channel.kind == GAME_CHANNEL {
         // The guest dialog C9 over a hidden 0x113; the observer preference
         // [0xAC10C8] makes the local node an observer.
@@ -1703,7 +1883,9 @@ fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>) {
             lobby.current = Some(channel);
             lobby.members = members;
             lobby.step = Step::Ready;
-            if lobby.runner == Runner::Buddy {
+            let buddy = lobby.runner == Runner::Buddy;
+            request_listed_squads(state);
+            if buddy {
                 // 0x116 has ended: C2 opens over the empty backdrop.
                 commit_create(state, observe);
             } else {
@@ -1770,7 +1952,14 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             let lobby = lobby_mut(state).expect("checked");
             if lobby.current.is_some() {
                 let name = member.name.clone();
+                // 0x7A62B7..0x7A62EE: a joiner in a squad whose tag is not
+                // known yet.
+                let squad =
+                    (member.squad != 0 && member.clan_tag.is_empty()).then_some(member.squad);
                 insert_member(&mut lobby.members, member, sort);
+                if let Some(squad) = squad {
+                    request_squad(state, squad);
+                }
                 refill_players(state);
                 if in_setup_channel(state)
                     && let Err(error) = setup::user_joined(state, name)
@@ -1818,6 +2007,20 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                 && let Err(error) = setup::player_ready(state, &from, value)
             {
                 log::warn!("WOL readiness from {from}: {error:#}");
+            }
+        }
+        WolServiceEvent::PreviewRequested { from } => {
+            // 0x7A82F8..0x7A833C: only from a user of this channel.
+            let member = lobby_mut(state)
+                .expect("checked")
+                .members
+                .iter()
+                .any(|member| member.name.eq_ignore_ascii_case(&from));
+            if member
+                && in_setup_channel(state)
+                && let Err(error) = setup::preview_request(state)
+            {
+                log::warn!("WOL preview request from {from}: {error:#}");
             }
         }
         WolServiceEvent::MapStatus { from, status } => {
@@ -2855,6 +3058,64 @@ mod tests {
         );
         assert_eq!(join_error_reply(0x8000_4005, true), JoinErrorReply::Chat);
         assert_eq!(join_error_reply(0x8004_006D, false), JoinErrorReply::Chat);
+    }
+
+    #[test]
+    fn start_game_now_splits_users_by_their_first_two_squads() {
+        let member = |name: &str, squad| WolMember {
+            name: name.to_string(),
+            squad,
+            ..WolMember::default()
+        };
+        let members = [
+            member("a", 0),
+            member("b", 7),
+            member("c", 9),
+            member("d", 7),
+            member("e", 11),
+            member("f", 9),
+        ];
+        let mut channel = created_channel("Tester", true, false, 1024, 0);
+        let terms = start_terms_for(&channel, &members);
+        assert_eq!(terms.tournament, 2);
+        assert_eq!(
+            terms.squad_lists,
+            [
+                vec!["a".to_string(), "b".into(), "d".into()],
+                vec!["c".to_string(), "f".into()]
+            ]
+        );
+        // Outside a clan room the lists stay empty and the value is raw.
+        channel.game_flags = 0;
+        channel.tournament = 3;
+        let terms = start_terms_for(&channel, &members);
+        assert_eq!(terms.tournament, 3);
+        assert!(terms.squad_lists.iter().all(Vec::is_empty));
+    }
+
+    #[test]
+    fn clan_start_needs_two_equal_squads_without_the_observer() {
+        let member = |name: &str, squad| WolMember {
+            name: name.to_string(),
+            squad,
+            ..WolMember::default()
+        };
+        let two = [member("a", 7), member("b", 9)];
+        assert!(clan_split_even(&two, None));
+        // An observer outside any squad is skipped by name, without case.
+        let watched = [member("a", 7), member("Obs", 0), member("b", 9)];
+        assert!(clan_split_even(&watched, Some("obs")));
+        assert!(!clan_split_even(&watched, None));
+        // One squad, a third squad, or uneven sides refuse the start.
+        assert!(!clan_split_even(&[member("a", 7), member("b", 7)], None));
+        assert!(!clan_split_even(
+            &[member("a", 7), member("b", 9), member("c", 11)],
+            None
+        ));
+        assert!(!clan_split_even(
+            &[member("a", 7), member("b", 7), member("c", 9)],
+            None
+        ));
     }
 
     #[test]

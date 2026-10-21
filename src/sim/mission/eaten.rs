@@ -45,7 +45,7 @@ pub(crate) fn mission_eaten(
         let _ = sim.assign_destination_represented(
             id,
             Some(NavTargetRef::object(building)),
-            Some(rules),
+            rules,
             registry,
             effects,
         );

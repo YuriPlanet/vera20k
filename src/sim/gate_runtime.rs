@@ -202,7 +202,7 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
             if phase == DoorPhase::ClosedStable {
                 //44E70C: canonical Building44D6A0(0,1), then state5.
                 //Guard stays queued until the host's Ready check.
-                sim.building_enter_idle_mode(id, false, Some(rules));
+                sim.building_enter_idle_mode(id, false, rules);
                 if let Some(entity) = sim.substrate.entities.get_mut(id) {
                     entity.mission.set_handler_state(5);
                 }
@@ -536,7 +536,7 @@ mod tests {
         // The cadence's starting hold clock is the fixture's retained input.
         let setup = json!({"input": row["input"], "initial": {"hold": [100,180,180]}});
         let (mut sim, rules) = native_fixture(&setup);
-        sim.building_enter_idle_mode(GATE, false, Some(&rules));
+        sim.building_enter_idle_mode(GATE, false, &rules);
         sim.substrate
             .mission_assign_exact(GATE, MissionId::from_known(MissionType::Guard), 100)
             .unwrap();
@@ -708,7 +708,7 @@ mod tests {
                 &sim.substrate.raw_cell_occupation,
                 &sim.substrate.occupancy,
                 &sim.substrate.entities,
-                Some(&rules),
+                &rules,
                 &sim.interner,
                 &mut sim.scenario_rng,
                 crate::sim::components::DriveCoord {

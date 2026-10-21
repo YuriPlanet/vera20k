@@ -141,7 +141,7 @@ fn restore_departure(
         // Defensive legacy repair of an already-broken cargo/limbo invariant.
         let _ = sim.techno_limbo_with_context(
             passenger_id,
-            UninitContext::new(Some(rules), registry).with_effects(effects),
+            UninitContext::new(rules, registry).with_effects(effects),
         );
     }
     match route {
@@ -188,7 +188,7 @@ fn restore_departure(
     let _ = sim.add_cargo_passenger_chain(
         transport_id,
         &[(passenger_id, passenger_size)],
-        UninitContext::new(Some(rules), registry).with_effects(effects),
+        UninitContext::new(rules, registry).with_effects(effects),
     );
     if route == DepartureRoute::Absorber {
         // Mission_Unload's failed Unlimbo path first re-adds the passenger,

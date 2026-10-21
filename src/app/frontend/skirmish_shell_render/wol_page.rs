@@ -131,6 +131,45 @@ fn paint_box(
     paint
 }
 
+/// The WOL tournament Surrender box: `0x005C60D0`'s ShellMessageBox `0x120`
+/// with `TXT_SURRENDER` over OK `0x5AE` and Cancel (control 2).
+fn paint_surrender_box(state: &AppState) -> WolLobbyPaint {
+    use crate::app::input::surrender::SurrenderButton;
+    let layout = crate::app::input::surrender::layout(state);
+    let buttons = &state.match_state.match_presentation.surrender_buttons;
+    let ok = buttons.is_pressed(SurrenderButton::Ok);
+    let cancel = buttons.is_pressed(SurrenderButton::Cancel);
+    let centre = ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
+    let label_rect = crate::app::frontend::shell_pass::owner_draw_button_label_rect;
+    paint_box(
+        state,
+        layout.dialog,
+        &[
+            ModalButton {
+                rect: layout.ok,
+                pressed: ok,
+                enabled: true,
+            },
+            ModalButton {
+                rect: layout.cancel,
+                pressed: cancel,
+                enabled: true,
+            },
+        ],
+        &[
+            caption(state, "TXT_SURRENDER", layout.body, ShellAlign::NONE, true),
+            caption(state, "TXT_OK", label_rect(layout.ok, ok), centre, true),
+            caption(
+                state,
+                "TXT_CANCEL",
+                label_rect(layout.cancel, cancel),
+                centre,
+                true,
+            ),
+        ],
+    )
+}
+
 /// `0xCF`: no title; the name, text, transcript, status and two buttons.
 pub(crate) fn paint_wol_page_dialog(
     state: &AppState,
@@ -413,9 +452,9 @@ pub(crate) fn paint_wol_verify(
     paint
 }
 
-/// The in-match `0xCF` (state 7) as GPU buffers for the screen-fixed UI
-/// pass: the battlefield keeps drawing under it, and the dialog goes down
-/// after the tooltips and before the cursor.
+/// The in-match `0xCF` (state 7) or the Surrender box (state 2) as GPU
+/// buffers for the screen-fixed UI pass: the battlefield keeps drawing under
+/// it, and the dialog goes down after the tooltips and before the cursor.
 /// RESIDUAL: in a match `0x00622B50` skips `OwnerDraw__LoadNotInGameResources`;
 /// the buttons, edits and list here keep the shell's control art.
 pub(crate) struct InMatchPageDraw {
@@ -427,17 +466,15 @@ pub(crate) struct InMatchPageDraw {
 }
 
 pub(crate) fn in_match_page_draw(state: &AppState) -> Option<InMatchPageDraw> {
-    if state.match_state.match_presentation.in_game_menu
-        != crate::ui::pause_menu::InGameMenuState::Page
-    {
-        return None;
-    }
-    let page = crate::app::shell_wol::page::page_dialog(state)?;
-    let paint = paint_wol_page_dialog(
-        state,
-        page,
-        &crate::app::shell_wol::page::page_layout(state),
-    );
+    let paint = match state.match_state.match_presentation.in_game_menu {
+        crate::ui::pause_menu::InGameMenuState::Page => paint_wol_page_dialog(
+            state,
+            crate::app::shell_wol::page::page_dialog(state)?,
+            &crate::app::shell_wol::page::page_layout(state),
+        ),
+        crate::ui::pause_menu::InGameMenuState::Surrender => paint_surrender_box(state),
+        _ => return None,
+    };
     let batch = &state.renderer.batch_renderer;
     let gpu = &state.renderer.gpu;
     // The UI camera follows the world camera's scroll (see the message

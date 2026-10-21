@@ -596,7 +596,7 @@ fn retail_countries_have_their_economy_types() {
     ];
     for country in countries {
         let side = rules.country_side_index_raw(country).unwrap();
-        let bit = house_country_bit(&rules, country);
+        let bit = rules.country_owner_mask(country);
         for super_weapons in [false, true] {
             for list in [&rules.build_refinery_types, &rules.build_weapons_types] {
                 assert!(

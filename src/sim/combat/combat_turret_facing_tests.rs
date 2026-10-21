@@ -173,15 +173,9 @@ fn save_load_round_trip_on_kill_tick() {
         .set_for_test(Some(TargetKind::Entity(2)));
     let toward_target = {
         let e = sim.substrate.entities.get(1).unwrap();
-        facing_update(
-            e,
-            &sim,
-            Some(&rules),
-            &sim.interner,
-            sim.session.binary_frame(),
-        )
-        .turret_destination
-        .expect("turreted")
+        facing_update(e, &sim, &rules, &sim.interner, sim.session.binary_frame())
+            .turret_destination
+            .expect("turreted")
     };
     sim.substrate.entities.get_mut(1).unwrap().barrel_facing =
         Some(FacingClass::new(toward_target, 100));
@@ -526,7 +520,7 @@ fn turret_cadence_matches_the_original() {
             let update = facing_update(
                 sim.substrate.entities.get(1).unwrap(),
                 &sim,
-                Some(&rules),
+                &rules,
                 &sim.interner,
                 frame,
             );

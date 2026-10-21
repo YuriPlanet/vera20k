@@ -506,7 +506,7 @@ fn fixture_input(fixture: &mut Fixture, rules: &RuleSet, native: &Value) {
                     *product,
                     message,
                     RadioPayload::default(),
-                    Some(rules),
+                    rules,
                     crate::sim::world::FrameEffects::default()
                 )
                 .code(),
@@ -530,7 +530,7 @@ fn fixture_input(fixture: &mut Fixture, rules: &RuleSet, native: &Value) {
                 sim,
                 *product,
                 RadioMessage::RequestClearance,
-                Some(rules),
+                rules,
                 crate::sim::world::FrameEffects::default()
             )
             .code(),
@@ -1156,7 +1156,7 @@ fn original_harvester_and_weeder_primary_controls_use_shared_mission_authority()
             .per_cell_process(
                 fixture.product,
                 PerCellReason::Arrival,
-                Some(&rules),
+                &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             )

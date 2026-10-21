@@ -181,7 +181,7 @@ impl Encounter {
             .sim
             .advance_app_frame(
                 &commands,
-                Some(&self.rules),
+                &self.rules,
                 None,
                 33,
                 TickLane::Ordinary,
@@ -787,7 +787,7 @@ fn stock_squid_internal_snapshot_preserves_live_roll_progress_and_reference() {
         loaded
             .advance_app_frame(
                 &commands,
-                Some(&scene.rules),
+                &scene.rules,
                 None,
                 33,
                 TickLane::Ordinary,

@@ -161,13 +161,7 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
         crate::sim::production::ready_building_entity_for_owner(sim, rules, owner, wall_type)
             .is_none()
     );
-    sim.process_pending_delete_with(
-        Some(rules),
-        Some(registry),
-        FrameEffects::default(),
-        1,
-        true,
-    );
+    sim.process_pending_delete_with(rules, Some(registry), FrameEffects::default(), 1, true);
     for id in buildings {
         assert!(sim.entities().get(id).is_none());
     }

@@ -407,7 +407,7 @@ pub(crate) fn infantry_destination_coordinate(
     raw: &crate::sim::occupancy::RawCellOccupationGrid,
     occupancy: &crate::sim::occupancy::OccupancyGrid,
     entities: &crate::sim::entity_store::EntityStore,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
     rng: &mut crate::sim::rng::SimRng,
 ) -> Option<DriveCoord> {
@@ -445,7 +445,7 @@ pub(crate) fn infantry_destination_coordinate(
 struct WorldOrderHost<'a> {
     sim: &'a mut Simulation,
     id: u64,
-    rules: Option<&'a crate::rules::ruleset::RuleSet>,
+    rules: &'a crate::rules::ruleset::RuleSet,
 }
 
 impl WorldOrderHost<'_> {
@@ -645,7 +645,7 @@ impl Simulation {
     fn run_jumpjet_order<R>(
         &mut self,
         id: u64,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         order: impl FnOnce(&mut JumpjetRuntime, &mut WorldOrderHost<'_>) -> R,
     ) -> Option<R> {
         self.map_size_diamond()?;
@@ -662,7 +662,7 @@ impl Simulation {
         &mut self,
         id: u64,
         request: DriveCoord,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
     ) -> Option<MoveToOutcome> {
         let outcome =
             self.run_jumpjet_order(id, rules, |runtime, host| runtime.move_to(request, host))?;
@@ -680,12 +680,8 @@ impl Simulation {
     /// current mission (`GetCurrentMission`) is Unload queues Guard with
     /// `commence_now`, raises the queued-mission bypass `+0xB8` and commences
     /// it once ready.
-    fn jumpjet_lift_ends_unload(
-        &mut self,
-        id: u64,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
-    ) {
-        use crate::sim::mission::authority::{EntityReadyInputProvider, LiveReadyInputProvider};
+    fn jumpjet_lift_ends_unload(&mut self, id: u64, rules: &crate::rules::ruleset::RuleSet) {
+        use crate::sim::mission::authority::LiveReadyInputProvider;
         let unloading = self.substrate.entities.get(id).is_some_and(|entity| {
             entity.mission.effective().known() == Some(crate::sim::mission::MissionType::Unload)
         });
@@ -693,28 +689,22 @@ impl Simulation {
             return;
         }
         let now = self.session.binary_frame();
-        let _ = match rules {
-            Some(rules) => self.mission_jumpjet_move_to_completion_exact(
-                id,
-                now,
-                &LiveReadyInputProvider { rules },
-            ),
-            None => {
-                self.mission_jumpjet_move_to_completion_exact(id, now, &EntityReadyInputProvider)
-            }
-        };
+        let _ = self.mission_jumpjet_move_to_completion_exact(
+            id,
+            now,
+            &LiveReadyInputProvider { rules },
+        );
     }
 
     /// [`JumpjetRuntime::stop_moving`] on a Jumpjet owner, with what follows it
     /// on the owner: a lift ends an Unload, and a failed search kills a live
     /// owner with the C4 warhead before its destination is cleared. Answers
-    /// false only when the world has no map to search, or a live owner's
-    /// failed search has no rules for the damage; an owner without a Jumpjet
-    /// locomotor answers true untouched.
+    /// false only when the world has no map to search; an owner without a
+    /// Jumpjet locomotor answers true untouched.
     pub(crate) fn jumpjet_stop_moving(
         &mut self,
         id: u64,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
@@ -744,7 +734,8 @@ impl Simulation {
                 true
             }
             Some(StopOutcome::SearchFailed) => {
-                self.jumpjet_failed_stop(id, rules, registry, frame_effects)
+                self.jumpjet_failed_stop(id, rules, registry, frame_effects);
+                true
             }
         }
     }
@@ -756,19 +747,16 @@ impl Simulation {
     fn jumpjet_failed_stop(
         &mut self,
         id: u64,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
-    ) -> bool {
+    ) {
         let Some(health) = self.substrate.entities.get(id).map(|e| e.health.current()) else {
-            return true;
+            return;
         };
         if health <= 0 {
-            return true;
+            return;
         }
-        let Some(rules) = rules else {
-            return false;
-        };
         self.receive_own_health_c4(id, rules, registry, frame_effects);
         // Read the retained live owner only AFTER synchronous damage/lifecycle.
         if let Some(state) = self
@@ -780,7 +768,6 @@ impl Simulation {
         {
             state.clear_failed_stop_destination();
         }
-        true
     }
 
     /// Foot's setter (`0x004D94B0`) after the Infantry setter's prelude, for a
@@ -814,14 +801,13 @@ impl Simulation {
         };
         let entity = self.substrate.entities.get_mut(id).expect("selected mover");
         super::navcom::publish_nav_com(entity, requested);
-        if self.jumpjet_move_to(id, input, Some(rules)).is_none() {
+        if self.jumpjet_move_to(id, input, rules).is_none() {
             return false;
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             // Infantry51B1D2 returns through Foot4D96C2 after the locomotor's
             // Move_To; the Move_To inside Stop cannot own this.
-            super::DestinationTiming::from_rules(self.session.binary_frame(), Some(rules))
-                .accept(entity);
+            super::DestinationTiming::from_rules(self.session.binary_frame(), rules).accept(entity);
         }
         true
     }
@@ -931,7 +917,7 @@ mod tests {
                 self.raw,
                 self.occupancy,
                 self.entities,
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 self.interner,
                 self.rng,
             )

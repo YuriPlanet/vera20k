@@ -1034,7 +1034,7 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
     let mut output = live
         .advance_app_frame(
             std::slice::from_ref(&rally),
-            Some(&rules),
+            &rules,
             None,
             67,
             crate::sim::world::TickLane::Ordinary,
@@ -1093,7 +1093,7 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
     let mut replay_output = replay
         .advance_app_frame(
             &due,
-            Some(&rules),
+            &rules,
             None,
             67,
             crate::sim::world::TickLane::Ordinary,
@@ -1337,7 +1337,7 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
             sim.assign_target_represented(
                 observer,
                 Some(crate::sim::combat::TargetKind::Entity(object)),
-                Some(&rules),
+                &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             )

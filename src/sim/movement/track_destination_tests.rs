@@ -83,17 +83,12 @@ fn shared_null_destination_matches_original_gate_and_timer_boundaries() {
         if aircraft {
             sim.assign_null_destination(
                 1,
-                Some(&rules),
+                &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             );
         } else {
-            sim.foot_null_destination(
-                1,
-                Some(&rules),
-                None,
-                crate::sim::world::FrameEffects::default(),
-            );
+            sim.foot_null_destination(1, &rules, None, crate::sim::world::FrameEffects::default());
         }
         let e = sim.substrate.entities.get(1).unwrap();
         let (destination, head) = if input["family"] == "drive" {
@@ -543,7 +538,7 @@ fn repeated_move_orders_sample_live_native_speed() {
             let speed = super::super::track_speed::advance(
                 sim.substrate.entities.get_mut(1).unwrap(),
                 rules.object("MOVER"),
-                Some(&rules),
+                &rules,
                 &sim.houses,
                 sim.resolved_terrain.as_ref(),
                 None,
@@ -701,7 +696,7 @@ fn unit_setters_clear_navqueue_like_the_original() {
         if input["null"] == true {
             assert!(sim.set_unit_null_destination(
                 1,
-                Some(&rules),
+                &rules,
                 None,
                 crate::sim::world::FrameEffects::default()
             ));

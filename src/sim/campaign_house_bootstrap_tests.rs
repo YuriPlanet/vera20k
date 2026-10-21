@@ -326,7 +326,7 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
                 .into();
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
-        initialize_map_roster_houses(&mut sim, &roster, Some(&rules), Some(&ini));
+        initialize_map_roster_houses(&mut sim, &roster, &rules, Some(&ini));
         assert_houses(&sim, &roster, &rules, &row["houses"], 0);
         initialize_campaign_current_house(&mut sim.session, &mut sim.houses, &ini);
         assert_houses(&sim, &roster, &rules, &row["final_houses"], 0);

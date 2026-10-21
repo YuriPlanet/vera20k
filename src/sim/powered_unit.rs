@@ -59,8 +59,6 @@
 //!   and no scenario initialization under way (`0x00A8E7AC`,
 //!   `0x0050E088..0x0050E0C4`); the walks push the line without them.
 //!   Inaudible: retail `evamd.ini` has no entries for either line.
-//! - A rules-less lifecycle (fixture paths) cannot read `PowersUnit=`:
-//!   Removed_From_Game still uncounts the building but walks nothing.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -158,7 +156,7 @@ impl Simulation {
         if operational {
             self.house_gained_powered_center(owner, powers_unit, rules, effects);
         } else {
-            self.house_lost_powered_center(owner, Some(powers_unit), Some(rules), effects);
+            self.house_lost_powered_center(owner, Some(powers_unit), rules, effects);
         }
     }
 
@@ -168,7 +166,7 @@ impl Simulation {
     pub(super) fn powered_center_removed(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
         let Some(building) = self.substrate.entities.get(id) else {
@@ -180,8 +178,8 @@ impl Simulation {
             return;
         }
         let owner = building.owner();
-        let unit_type = rules
-            .and_then(|rules| self.object_type(building.type_ref(), rules))
+        let unit_type = self
+            .object_type(building.type_ref(), rules)
             .and_then(|object| object.powers_unit.as_deref());
         self.substrate
             .entities
@@ -223,7 +221,7 @@ impl Simulation {
         &mut self,
         owner: InternedId,
         unit_type: Option<&str>,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
         let Some(house) = self.houses.get_mut(&owner) else {
@@ -232,7 +230,7 @@ impl Simulation {
         if house.lose_powered_center() != 0 {
             return;
         }
-        let (Some(unit_type), Some(rules)) = (unit_type, rules) else {
+        let Some(unit_type) = unit_type else {
             return;
         };
         if self.for_each_powered_unit(owner, unit_type, |sim, id| {

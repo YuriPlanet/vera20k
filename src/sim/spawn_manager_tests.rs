@@ -679,6 +679,109 @@ fn v3_launches_its_rocket_into_the_kamikaze_window() {
     );
 }
 
+/// The launch is the child's Unlimbo (`0x006B7505`) with no `0x00A8E7AC`
+/// raised, so Object's class query (`0x005F4F1B`) asks the missile's
+/// AircraftClass::Can_Enter_Cell (`0x004196B0`) at its launch Cell. In game
+/// mode 0 the current house's aircraft is refused a Cell its house has not
+/// mapped; the mission-only latch that would admit it (`+0x3D4`) is set only
+/// by a placed Unlimbo, so a first launch is asked. The original ignores the
+/// answer: a refused missile stays in limbo where it was, and later passes
+/// leave it there.
+#[test]
+fn a_launch_asks_the_missiles_aircraft_entry_query() {
+    use crate::sim::movement::ground_pose::position_world_coord;
+    let rules = make_spawner_rules();
+    // The Russians have mapped the Cells `mapped` names. Returns whether the
+    // missile is in limbo, whether it kept its old Location, and its Cell.
+    let launch = |mapped: &dyn Fn((u16, u16)) -> bool| {
+        let mut sim = flat_sim();
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+        );
+        let v3 = sim
+            .spawn_object("V3", "Russians", 10, 10, 0, &rules)
+            .expect("spawn V3");
+        let target = sim
+            .spawn_object("TARGET", "Yuri", 20, 20, 0, &rules)
+            .expect("spawn TARGET");
+        let child_id = sim
+            .substrate
+            .entities
+            .get(v3)
+            .and_then(|e| e.spawn_manager.as_ref())
+            .and_then(|m| m.slots[0].spawn)
+            .expect("child");
+        // The fog takes its size after the spawns. The Russians' plane is
+        // replaced by one that has mapped exactly the named Cells.
+        sim.fog.set_width_for_test(40);
+        sim.fog.set_height_for_test(32);
+        let owner = sim.interner.get("Russians").unwrap();
+        let mut view = crate::sim::vision::OwnerVisibility::new(40, 32);
+        for (x, y) in (0..32u16).flat_map(|y| (0..40u16).map(move |x| (x, y))) {
+            if mapped((x, y)) {
+                view.mark_visible(x, y);
+            }
+        }
+        sim.fog.by_owner_mut_for_test().insert(owner, view);
+        let child = sim.substrate.entities.get_mut(child_id).unwrap();
+        child.discovery.set_owned_by_current_house_for_test(true);
+        assert!(!child.is_mission_only());
+        let before = position_world_coord(&child.position);
+        if let Some(manager) = sim
+            .substrate
+            .entities
+            .get_mut(v3)
+            .and_then(|e| e.spawn_manager.as_mut())
+        {
+            manager.set_target(Some(TargetKind::Entity(target)));
+        }
+        // Idle -> Launching, the slot's launch, then two passes with the
+        // missile where the launch left it.
+        for _ in 0..4 {
+            if let Some(manager) = sim
+                .substrate
+                .entities
+                .get_mut(v3)
+                .and_then(|e| e.spawn_manager.as_mut())
+            {
+                manager.update_timer = CdTimer::default();
+            }
+            spawn_manager_ai(
+                &mut sim,
+                &rules,
+                v3,
+                None,
+                crate::sim::world::FrameEffects::default(),
+            );
+        }
+        let child = sim.substrate.entities.get(child_id).expect("child alive");
+        (
+            child.lifecycle.in_limbo(),
+            position_world_coord(&child.position) == before,
+            (child.position.rx(), child.position.ry()),
+        )
+    };
+    // Mapped everywhere, the missile leaves at its launch Cell.
+    let (in_limbo, kept, launch_cell) = launch(&|_| true);
+    assert_eq!(
+        (in_limbo, kept),
+        (false, false),
+        "admitted: out at its launch point"
+    );
+    // The query reads that Cell: mapped alone, it admits the missile there...
+    assert_eq!(
+        launch(&|cell| cell == launch_cell),
+        (false, false, launch_cell)
+    );
+    // ...and unmapped alone, it refuses it.
+    let (in_limbo, kept, _) = launch(&|cell| cell != launch_cell);
+    assert_eq!(
+        (in_limbo, kept),
+        (true, true),
+        "refused: in limbo where it was"
+    );
+}
+
 /// A V3 missile whose target `TechnoClass::AI` dropped (it has no weapon to
 /// fire at it) reaches Mission_Attack's state 10 (`0x00418BEC`): its own
 /// edge's cell becomes the destination, then the original idle mode
@@ -2248,7 +2351,7 @@ fn a_null_target_drops_the_managers_queued_retarget() {
     sim.assign_target_represented(
         dred,
         None,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )

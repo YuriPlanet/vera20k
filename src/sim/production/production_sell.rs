@@ -1,6 +1,8 @@
 //! Building sale: the Selling mission's visits and the refund. The garrison's
 //! ejection is `sim::passenger::garrison_eject`'s. The computer's low-credit
-//! sale is `BuildingClass::UpdateRepairAndPower`'s (`production_repair`).
+//! sale is `BuildingClass::UpdateRepairAndPower`'s (`production_repair`); its
+//! captured-building sale is `BuildingClass::ChangeOwner`'s tail
+//! ([`sell_after_owner_change`], 0x004492D7..0x00449368).
 //!
 //! A sale starts at `BuildingClass::Sell_Back @ 0x00447110` ([`sell_back`];
 //! a Slave Miner refinery's relocation queues the mission itself,
@@ -24,6 +26,9 @@
 //! visits' timing in `route` rows, stage 1 in `crew` rows, the refund in
 //! `refund` rows, the computer's low-credit sale in `ai_sale` rows), replayed
 //! by `sim::building_construction`'s and `building_sale_oracle_tests`'s tests.
+//! The capture tail's gates and immediate upgrade refunds are covered by
+//! `tools/spatial_oracle/captured_building_sale.json` and
+//! `captured_building_sale_tests`.
 //!
 //! RESIDUALS:
 //! - `RegisterDestruction(null)` at the sale (`vt+0xE0`, `0x0044A1F9`, after
@@ -71,6 +76,10 @@ mod pack_voice_tests;
 #[cfg(test)]
 #[path = "building_upgrade_sale_tests.rs"]
 mod building_upgrade_sale_tests;
+
+#[cfg(test)]
+#[path = "captured_building_sale_tests.rs"]
+mod captured_building_sale_tests;
 
 /// `TechnoTypeClass::GetRefund @ 0x00711F60` (type vtable `+0xB8`) for a live
 /// house (`RET 8`), in its x87 order under the chop control word:
@@ -151,8 +160,82 @@ pub enum SellOrder {
     /// follows the event that sets the building's ArchiveTarget.
     Undeploy,
     /// Control 1: the computer's low-credit sale
-    /// (`BuildingClass::UpdateRepairAndPower 0x0045080D`).
+    /// (`BuildingClass::UpdateRepairAndPower 0x0045080D`) or captured-building
+    /// sale (`BuildingClass::ChangeOwner 0x00449368`).
     Computer,
+}
+
+/// Building ChangeOwner's capture-sale tail (4492D7..449368), after its
+/// factory callbacks. Outside campaign, a computer owner sells a building
+/// constructed for another non-passive House. Recapture by its constructor
+/// House and capture of neutral tech structures leave the building in place.
+pub(crate) fn sell_after_owner_change(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) {
+    if !sim.session.game_mode_nonzero() {
+        return;
+    }
+    let Some(building) = sim
+        .substrate
+        .entities
+        .get(id)
+        .filter(|entity| entity.category() == EntityCategory::Structure)
+    else {
+        return;
+    };
+    let owner = building.owner();
+    let initial_owner = building.initial_owner();
+    if owner == initial_owner
+        || sim
+            .houses
+            .get(&owner)
+            .is_none_or(|house| house.is_controlled_by_human(true))
+        || sim
+            .houses
+            .get(&initial_owner)
+            .is_none_or(|house| house.multiplay_passive())
+    {
+        return;
+    }
+
+    loop {
+        let Some(building) = sim.substrate.entities.get(id) else {
+            return;
+        };
+        let upgrades = building.building_upgrades();
+        //44930C/44935E test the signed byte: only positive levels loop.
+        if upgrades.count() <= 0 {
+            break;
+        }
+        let upgrade = usize::try_from(i32::from(upgrades.count()) - 1)
+            .ok()
+            .and_then(|slot| upgrades.types().get(slot))
+            .copied()
+            .flatten()
+            .and_then(|kind| sim.object_type(kind, rules));
+        let (Some(upgrade), Some(house), Some(factors)) = (
+            upgrade,
+            sim.houses.get(&owner),
+            Simulation::house_cost_factors(&sim.houses, owner),
+        ) else {
+            // Native dereferences a malformed top slot. Keep it intact,
+            // without refunding it or starting the host's sale.
+            return;
+        };
+        // 449310..44935D: type GetRefund(owner,1), GiveMoney, then
+        // RemoveLastUpgrade451690 and the owner's power/radar dirty bytes.
+        // Unlike Selling stage0, this constructs no temporary upgrade object.
+        let refund = type_refund(rules, upgrade, house, &factors, true, true);
+        crate::sim::credit_income::add_credits(&mut sim.houses, owner, refund);
+        let _ = sim.power_down_building_upgrade(id, rules);
+        Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, true);
+    }
+    // Literal1 keeps Sell_Back's existing Selling/C4 and Buildup gates.
+    let _ = sell_back(sim, rules, id, SellOrder::Computer, registry, frame_effects);
 }
 
 /// `BuildingClass::Sell_Back @ 0x00447110` (vt+0x1A0). A building whose
@@ -198,7 +281,7 @@ pub(crate) fn sell_back(
     };
     if !buildup {
         if firestorm_wall {
-            let context = UninitContext::new(Some(rules), registry).with_effects(frame_effects);
+            let context = UninitContext::new(rules, registry).with_effects(frame_effects);
             let _ = sim.techno_limbo_with_context(id, context);
             sim.uninit_with_context(id, context);
         }
@@ -296,13 +379,11 @@ pub(super) fn undeploys(rules: &RuleSet, object: &crate::rules::object_type::Obj
 /// `UndeploysInto=` building with no ArchiveTarget completes its pack-up at
 /// stage `0x17` only while its effective mission is Selling (4511C7..4511DD).
 pub(crate) fn archive_less_sale(
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     type_id: &str,
     entity: &crate::sim::game_entity::GameEntity,
 ) -> bool {
-    entity.building_down()
-        && rules.is_some_and(|rules| undeploy_target(rules, type_id).is_some())
-        && !sale_archive(entity)
+    entity.building_down() && undeploy_target(rules, type_id).is_some() && !sale_archive(entity)
 }
 
 /// The building's ArchiveTarget (`+0x218`); the player's undeploy order
@@ -346,13 +427,11 @@ fn qualifying_undeploy(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
 /// temporary instance of the last type, then PowerDown and leave stage 0.
 pub fn sell_stage_zero(
     sim: &mut Simulation,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     id: u64,
     frame_effects: FrameEffects<'_>,
 ) {
-    if let Some(rules) = rules
-        && qualifying_undeploy(sim, rules, id)
-    {
+    if qualifying_undeploy(sim, rules, id) {
         // MissionSelling44A9DF: QueueVoice only latches. Techno6F9EBB was
         // already reached in this visit, so playback waits for its next head.
         // Select before native44AA3D HandleReturnedSlaves.
@@ -405,7 +484,7 @@ pub fn sell_stage_zero(
         .and_then(|building| building.bunker.occupant())
         .is_some()
     {
-        crate::sim::docking::bunker_link::release_sell_destroy(sim, id, frame_effects);
+        crate::sim::docking::bunker_link::release_sell_destroy(sim, id, rules, frame_effects);
     }
     if let Some((owner, upgrade_type)) = sim.substrate.entities.get(id).and_then(|building| {
         let upgrades = building.building_upgrades();
@@ -422,7 +501,7 @@ pub fn sell_stage_zero(
         // scalar-deletes it, then calls PowerDown451690. Reuse the shared
         // constructor/destructor transaction: ID/RNG remain spent, tracking
         // is undone synchronously, and no UnInit/loss bookkeeping runs.
-        let (Some(rules), Some(upgrade_type)) = (rules, upgrade_type) else {
+        let Some(upgrade_type) = upgrade_type else {
             // Native dereferences malformed sparse/out-of-range top slots.
             // Safe residual: keep the stack and sale stage without a refund.
             return;
@@ -445,7 +524,7 @@ pub fn sell_stage_zero(
         if let Some(refund) = refund {
             crate::sim::credit_income::add_credits(&mut sim.houses, owner, refund);
         }
-        sim.discard_constructed_limbo(temporary, Some(rules), frame_effects);
+        sim.discard_constructed_limbo(temporary, rules, frame_effects);
         if refund.is_none() {
             return;
         }
@@ -488,7 +567,7 @@ pub fn sell_stage_zero(
 /// an object entered the map.
 pub(crate) fn sell_stage_one(
     sim: &mut Simulation,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     id: u64,
     frame_effects: FrameEffects<'_>,
@@ -502,11 +581,11 @@ pub(crate) fn sell_stage_one(
     {
         return false;
     }
-    let spawned = rules.is_some_and(|rules| {
+    let spawned = {
         let spawned = sale_survivors(sim, rules, registry, id, frame_effects);
         sale_sounds(sim, rules, id);
         spawned
-    });
+    };
     let now = sim.session.binary_frame() as i32;
     if let Some(building) = sim.substrate.entities.get_mut(id) {
         let mut status = building.mission.handler_state();
@@ -610,15 +689,11 @@ fn sale_sounds(sim: &mut Simulation, rules: &RuleSet, id: u64) {
 /// map.
 pub(crate) fn sell_complete(
     sim: &mut Simulation,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     id: u64,
     frame_effects: FrameEffects<'_>,
 ) -> bool {
-    let Some(rules) = rules else {
-        sim.uninit_with_context(id, UninitContext::default().with_effects(frame_effects));
-        return false;
-    };
     let Some((owner, undeploys)) = sim.substrate.entities.get(id).and_then(|entity| {
         let object = sim.object_type(entity.type_ref(), rules)?;
         Some((entity.owner(), undeploys(rules, object)))
@@ -627,7 +702,7 @@ pub(crate) fn sell_complete(
     };
     //449CB1 requests the House strip recheck before target/audio/conversion.
     sim.houses.request_house_tech_tree_recheck(owner);
-    let _ = sim.assign_target_represented(id, None, Some(rules), registry, frame_effects);
+    let _ = sim.assign_target_represented(id, None, rules, registry, frame_effects);
     if !undeploys {
         sim.sound_events
             .emit(SimSoundEvent::StructureSold { owner });
@@ -642,7 +717,7 @@ pub(crate) fn sell_complete(
         // Add_Credits (`0x0044A222`).
         crate::sim::credit_income::add_credits(&mut sim.houses, owner, refund);
     }
-    let context = UninitContext::new(Some(rules), registry).with_effects(frame_effects);
+    let context = UninitContext::new(rules, registry).with_effects(frame_effects);
     //44A22C explicitly enters BuildingLimbo before44A28C UnInit. Its
     // Detach/HouseAbandon and post-Limbo queue callback must observe this
     // phase, before UnInit's earlier PointerExpired/Alive cleanup.
@@ -689,12 +764,7 @@ pub fn sell_building_now_for_test(sim: &mut Simulation, rules: &RuleSet, id: u64
         else {
             return false;
         };
-        sell_stage_zero(
-            sim,
-            Some(rules),
-            id,
-            crate::sim::world::FrameEffects::default(),
-        );
+        sell_stage_zero(sim, rules, id, crate::sim::world::FrameEffects::default());
         if before == 0 {
             break;
         }
@@ -709,7 +779,7 @@ pub fn sell_building_now_for_test(sim: &mut Simulation, rules: &RuleSet, id: u64
     }
     sell_stage_one(
         sim,
-        Some(rules),
+        rules,
         None,
         id,
         crate::sim::world::FrameEffects::default(),
@@ -724,7 +794,7 @@ pub fn sell_building_now_for_test(sim: &mut Simulation, rules: &RuleSet, id: u64
     }
     sell_complete(
         sim,
-        Some(rules),
+        rules,
         None,
         id,
         crate::sim::world::FrameEffects::default(),

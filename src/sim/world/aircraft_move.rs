@@ -68,7 +68,7 @@ impl Simulation {
             return Some(target);
         }
         let mut claims = None;
-        if self.foot_land_zone_clear(id, target, Some(rules)) {
+        if self.foot_land_zone_clear(id, target, rules) {
             let coord = nav_target_coordinate(
                 target,
                 None,
@@ -111,7 +111,7 @@ impl Simulation {
                         t.native_cell_coord(t.native_cell_identity(candidate))
                     });
                     let cell = NavTargetRef::cell(cell.0 as u16, cell.1 as u16);
-                    if self.foot_land_zone_clear(id, cell, Some(rules))
+                    if self.foot_land_zone_clear(id, cell, rules)
                         && self.aircraft_cell_free_for_landing(
                             id,
                             candidate,
@@ -212,16 +212,8 @@ impl move_mission::MoveHost for WorldMove<'_> {
             Some((self.rules, &self.sim.interner)),
         )
         .expect("live aircraft NavCom coordinate");
-        Simulation::aircraft_locomotor_move_to(
-            &mut self.sim.interner,
-            &self.sim.session,
-            &mut self.sim.substrate,
-            &mut self.sim.sound_events,
-            &self.sim.resolved_terrain,
-            self.id,
-            coord,
-            self.rules,
-        );
+        self.sim
+            .aircraft_locomotor_move_to(self.id, coord, self.rules);
     }
 
     fn is_moving(&mut self) -> bool {

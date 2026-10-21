@@ -423,6 +423,7 @@ pub(crate) mod tests {
         let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
         entity.locomotor = Some(make_fly_loco());
         sim.substrate.entities.insert(entity);
+        sim.interner = crate::sim::intern::test_interner();
 
         let ok = crate::sim::world::Simulation::move_air_coordinate(
             &mut sim.interner,
@@ -433,7 +434,7 @@ pub(crate) mod tests {
             1,
             crate::sim::movement::target_cell_coord(20, 15, None),
             None,
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
         );
         assert!(ok);
 
@@ -482,7 +483,7 @@ pub(crate) mod tests {
         sim.assign_destination_represented(
             id,
             Some(crate::sim::components::NavTargetRef::cell(20, 15)),
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -527,6 +528,7 @@ pub(crate) mod tests {
         let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
         entity.locomotor = Some(make_fly_loco());
         sim.substrate.entities.insert(entity);
+        sim.interner = crate::sim::intern::test_interner();
 
         let ok = crate::sim::world::Simulation::move_air_coordinate(
             &mut sim.interner,
@@ -537,7 +539,7 @@ pub(crate) mod tests {
             1,
             crate::sim::movement::target_cell_coord(10, 10, None),
             None,
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
         );
         assert!(ok);
         // Native MoveTo accepts a nonnull destination even at the owner cell.

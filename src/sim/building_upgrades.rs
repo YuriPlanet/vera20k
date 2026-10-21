@@ -342,7 +342,7 @@ impl Simulation {
         self.houses.request_house_tech_tree_recheck(owner);
         // Ordinary power-up path has no satellite flag. The satellite-upgrade
         // mechanism remains separate; generic pointer disposal always runs.
-        self.uninit_with_context(temporary_id, context.requiring_rules(rules));
+        self.uninit_with_context(temporary_id, context);
         true
     }
 

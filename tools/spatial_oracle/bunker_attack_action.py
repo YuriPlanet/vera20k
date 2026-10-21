@@ -991,11 +991,217 @@ def attack_voice_metadata():
             'Reuse BulletReader, Sound.make_ini and mtnk_attack.sound_inputs for selected physical SoundList/Defaults/type/source-order cache and original name binding. AudioIndex sample-name resolution uses their existing local-index transport. No second VM/cache/parser/RNG/voice binder implementation is introduced.'])
 
 
+NO_MANUAL_FIRE_HOOKS={0x700536:0x1004A460,0x7008D4:0x1004A430}
+
+
+def no_manual_fire_readers(ares, gamemd):
+    """Reuse the enrolled Ares VM for constructor and exact field block."""
+    from tools.rules_oracle.ares_prerequisites import Probe
+    Probe.input_bytes=ares,gamemd
+    p=Probe();ext,typ=p.alloc(0x1000),p.alloc(0x2000)
+    p.write(typ,0x7F6218);p.u.mem_write(typ+0x24,b'CONTROL\0')
+    p.u.mem_write(ext+0x4C4,b'\xCC'*4)
+    code=bytes(p.u.mem_read(0x10001000,0x92000))
+    returned=p.call(0x1003C710,typ,ecx=ext)
+    constructor=dict(entry='1003C710',initial_bytes='CCCCCCCC',
+        after_bytes=bytes(p.u.mem_read(ext+0x4C4,4)).hex().upper(),
+        no_manual_fire=p.u.mem_read(ext+0x4C6,1)[0],returned_self=returned==ext)
+    section=p.text('CONTROL');sp=0x2000F000;rows=[]
+    for prior,value in [(0,None),(1,None),(1,''),(0,'yes'),(1,'no'),
+            (0,'true'),(1,'false'),(0,'1'),(1,'0'),(1,'junk'),
+            (0,'yeSplease'),(0,'y'),(0,'t'),(1,'n'),(1,'f'),
+            (0,'on'),(1,'off'),(0,' yes '),(1,' no '),(0,'YES'),
+            (1,'FALSE'),(0,' true\t'),(1,'00'),(0,'11')]:
+        p.events.clear();p.reads={('CONTROL','NoManualFire'):value or ''}
+        p.u.mem_write(ext+0x4C6,bytes([prior]));p.write(sp+0x10,0)
+        p.u.reg_write(UC_X86_REG_ESP,sp);p.u.reg_write(UC_X86_REG_EBX,ext)
+        p.u.reg_write(UC_X86_REG_ESI,section)
+        run_checked(p.u,0x1003F002,0x1003F018,
+            required_addresses=(0x1000EBF0,0x1000FC50,0x10007860,0x528A10))
+        shim,actor=p.alloc(0x40),p.alloc(0x1000)
+        p.write(shim+0x0C,actor);p.write(actor,UNIT_VT);p.write(actor+0x6C4,typ)
+        p.write(typ+0x2FC,ext)
+        rows.append(dict(prior=prior,value=value,after=p.u.mem_read(ext+0x4C6,1)[0],
+            reader_events=list(p.events),object_hook_return=p.call(0x1004A460,shim),
+            cell_hook_return=p.call(0x1004A430,shim)))
+    assert bytes(p.u.mem_read(0x10001000,0x92000))==code
+    return dict(constructor=constructor,controls=rows)
+
+
+def no_manual_fire_physical(ares):
+    """Actual physical INI loading and ReadString, on the existing Rules VM."""
+    from tools.rules_oracle.weapon_speed_order import retail_history
+    from tools.native_oracle import map_pe32_image
+    layers=[('RULESMD.INI','[CONTROL]\nNoManualFire=yes\n'),
+        ('LANGRULE.INI','[CONTROL]\nName=present\n'),
+        ('MODE.INI','[CONTROL]\nName=present\nNoManualFire=\n'),
+        ('MAP.MAP','[CONTROL]\nNoManualFire=junk\n'),
+        ('RESET.INI','[CONTROL]\nNoManualFire=no\n'),
+        ('WRONG.INI','[OTHER]\nNoManualFire=yes\n'),
+        ('KEYCASE.INI','[CONTROL]\nNOMANUALFIRE=yes\n'),
+        ('TRIM.INI','[CONTROL]\nNoManualFire= \tyeSplease \t\n'),
+        ('SECOND.INI','[CONTROL]\nNoManualFire= \tno \t\n')]
+    class Inputs:
+        def lookup(self,name):return dict(layers)[name.upper()].encode('ascii')
+    m=retail_history(Inputs())
+    try:
+        loaded=[(name,body,*m.load_physical_ini(name)) for name,body in layers]
+        ext,typ=m.alloc(0x1000),m.alloc(0x2000)
+        m.u.mem_write(typ,dwords(0x7F6218));m.u.mem_write(typ+0x24,b'CONTROL\0')
+        # Move fixture storage only; both original images keep preferred bases.
+        m.u.mem_unmap(native_oracle.STACK_BASE,native_oracle.STACK_SIZE)
+        map_pe32_image(m.u,ares,image_base=0x10000000,image_size=0xE0000,header_size=0x400)
+        m.u.mem_map(0x33000000,0x20000);sp=0x33010000
+        code=bytes(m.u.mem_read(0x10001000,0x92000))
+        m.u.mem_write(sp,dwords(RET_MAGIC,typ));m.u.reg_write(UC_X86_REG_ESP,sp)
+        m.u.reg_write(UC_X86_REG_ECX,ext);run_checked(m.u,0x1003C710,RET_MAGIC)
+        default=m.u.mem_read(ext+0x4C6,1)[0];diagnostics=[];reads=[]
+        def diagnostic(u,pc,*_):
+            if pc==0x528A10:
+                esp=u.reg_read(UC_X86_REG_ESP)
+                reads.append(dict(section=m.string(m.read32(esp+4)),
+                    key=m.string(m.read32(esp+8)),default=m.string(m.read32(esp+12)),
+                    capacity=m.read32(esp+20)))
+                return
+            if pc!=0x10061960:return
+            esp=u.reg_read(UC_X86_REG_ESP)
+            diagnostics.append(dict(section=m.string(m.read32(esp+4)),
+                key=m.string(m.read32(esp+8)),token=m.string(m.read32(esp+12))))
+            m.ret(0,16)
+        handle=m.u.hook_add(UC_HOOK_CODE,diagnostic)
+        rows=[]
+        for name,body,ini,receipt in loaded:
+            before=m.u.mem_read(ext+0x4C6,1)[0];mark=len(diagnostics);read_mark=len(reads)
+            m.u.mem_write(sp,dwords(RET_MAGIC,ini));m.u.reg_write(UC_X86_REG_ESP,sp)
+            m.u.reg_write(UC_X86_REG_ECX,ext)
+            stop=run_checked(m.u,0x1003DFB0,(0x1003DFD9,RET_MAGIC),
+                required_addresses=(0x100091C0,))
+            admitted=stop==0x1003DFD9
+            if admitted:
+                m.u.mem_write(sp,bytes(0x200));m.u.mem_write(sp+0x10,dwords(ini))
+                m.u.reg_write(UC_X86_REG_ESP,sp);m.u.reg_write(UC_X86_REG_EBX,ext)
+                m.u.reg_write(UC_X86_REG_ESI,typ+0x24)
+                run_checked(m.u,0x1003F002,0x1003F018,
+                    required_addresses=(0x1000EBF0,0x1000FC50,0x10007860,0x528A10))
+            rows.append(dict(file=name,physical_ini=body,load=receipt,before=before,
+                section_admitted=admitted,after=m.u.mem_read(ext+0x4C6,1)[0],
+                diagnostics=diagnostics[mark:],reads=reads[read_mark:]))
+        m.u.hook_del(handle);m.check_code()
+        assert bytes(m.u.mem_read(0x10001000,0x92000))==code
+        return dict(constructor_default=default,rows=rows)
+    finally:m.close()
+
+
+def no_manual_fire_action(ares,flag,case):
+    """Compose original exports with this owner's unchanged action/click VM."""
+    from tools.native_oracle import map_pe32_image
+    global run_checked,STACK_BASE,SP
+    original_runner,original_stack,original_sp=run_checked,STACK_BASE,SP
+    STACK_BASE=0x31000000;SP=STACK_BASE+STACK_SIZE-0x1000
+    extra=0x32000000;events=[];queries=[];returns=[];mapped=False;code=None
+    def wrapped(u,begin,end,**kwargs):
+        nonlocal mapped,code
+        if not mapped:
+            map_pe32_image(u,ares,image_base=0x10000000,image_size=0xE0000,header_size=0x400)
+            u.mem_map(extra,0x10000);u.mem_write(TYPE+0x2FC,dwords(extra))
+            u.mem_write(extra+0x4C6,bytes([flag]));mapped=True
+            code=bytes(u.mem_read(0x10001000,0x92000))
+        ends=(end,) if isinstance(end,int) else tuple(end)
+        wanted=set(kwargs.pop('required_addresses',()));seen=set()
+        def observe(_u,pc,*_):
+            if pc in wanted:seen.add(pc)
+            if pc in (0x73FD50,0x7404B0):
+                esp=u.reg_read(UC_X86_REG_ESP)
+                queries.append(dict(entry=f'{pc:08X}',
+                    phase='hover' if begin==0x692610 else 'clicked_requery' if begin==0x738890 else f'{begin:08X}',
+                    second_argument=struct.unpack('<I',u.mem_read(esp+8,4))[0]))
+            if pc in (0x4DDDFE,0x7404FB):
+                returns.append(dict(caller=f'{pc:08X}',
+                    callee='TechnoCell' if pc==0x4DDDFE else 'FootCell',
+                    action=u.reg_read(UC_X86_REG_EAX)))
+        observer=u.hook_add(UC_HOOK_CODE,observe)
+        try:
+            active=set(NO_MANUAL_FIRE_HOOKS);pc=begin
+            for _part in range(6):
+                stop=original_runner(u,pc,ends+tuple(active),**kwargs)
+                if stop in ends:
+                    assert wanted<=seen,(case,sorted(wanted-seen))
+                    assert bytes(u.mem_read(0x10001000,0x92000))==code
+                    return stop
+                assert stop in active
+                context=u.context_save();actor=u.reg_read(UC_X86_REG_ESI)
+                shim,stack,returned=extra+0x1000,extra+0x2000,extra+0x3000
+                u.mem_write(shim+0x0C,dwords(actor));u.mem_write(stack,dwords(returned,shim))
+                u.reg_write(UC_X86_REG_ESP,stack)
+                original_runner(u,NO_MANUAL_FIRE_HOOKS[stop],returned)
+                result=u.reg_read(UC_X86_REG_EAX)
+                events.append(dict(site=f'{stop:08X}',export=f'{NO_MANUAL_FIRE_HOOKS[stop]:08X}',
+                    returned=f'{result:08X}'))
+                u.context_restore(context);pc=result or stop
+                active.remove(stop) # zero executes the original displaced bytes once
+            raise RuntimeError(('Too many Ares hook continuations',case))
+        finally:u.hook_del(observer)
+    run_checked=wrapped
+    try:result=run(case,allied_continuation if case['route']=='object' else None)
+    finally:run_checked,STACK_BASE,SP=original_runner,original_stack,original_sp
+    return dict(input=case,no_manual_fire_native_reader_value=flag,action=result['action'],
+        cursor_row=result['cursor']['output']['cursor_row'],hook_events=events,
+        query_inputs=queries,cell_return_values=returns,
+        left_up=result.get('left_up'),clicked_action=result.get('clicked_action'),
+        native_action_trace=[row for row in result['trace'] if row.get('kind')!='seam'])
+
+
+def generate_no_manual_fire():
+    import os
+    from itertools import product
+    from tools.rules_oracle.ares_prerequisites import ARES_SHA256,identified_bytes
+    ares=identified_bytes(Path(os.environ['VERA20K_ARES_DLL']),ARES_SHA256)
+    gamemd=native_oracle.image_bytes();readers=no_manual_fire_readers(ares,gamemd)
+    yes=next(row['after'] for row in readers['controls'] if row['value']=='yes')
+    no=next(row['after'] for row in readers['controls'] if row['value']=='no')
+    rows=[]
+    for route,ctrl,shift,alt,flag in product(('object','cell'),(False,True),
+            (False,True),(False,True),(no,yes)):
+        case=dict(name='no_manual_fire',route=route,installed=False,in_range=True,
+            relation='enemy' if route=='object' else 'none',ctrl=ctrl,shift=shift,
+            alt=alt,cursor_contract=True,mouse_over=True)
+        if route=='object':
+            case.update(allied_objects=True,actor_house_index=0,target_house_index=1,
+                actor_alliance_mask=0,target_alliance_mask=0,target_selected=False,
+                attack_friendlies=False,attack_cursor_on_friendlies=False,
+                target_passengers=0,ivan_bomb=False,sonic=False,infested=False)
+        rows.append(no_manual_fire_action(ares,flag,case))
+    return dict(schema_version=1,binaries={name:dict(bytes=len(raw),
+        sha256=hashlib.sha256(raw).hexdigest()) for name,raw in
+        [('Ares.dll',ares)]},readers=readers,
+        physical_readers=no_manual_fire_physical(ares),rows=rows)
+
+
+def no_manual_fire_metadata():
+    return provenance(scope='Ares NoManualFire constructor, retained parser/physical INI controls and normal Unit action/Display/click admission; bounded shared VM priors.',
+        entry_points=dict(type_ext_ctor=0x1003C710,type_reader=0x1003F002,
+            bool_wrapper=0x1000EBF0,bool_reader=0x1000FC50,bool_parser=0x10076CC0,
+            read_string=0x528A10,type_loader_hook=0x10040DF0,
+            object_hook=0x1004A460,object_site=0x700536,object_skip=0x70056C,
+            cell_hook=0x1004A430,cell_site=0x7008D4,cell_skip=0x700AB7),
+        assumptions=[
+            'Original full TypeExt1003C710 initializes NoManualFire+4C6=false. Original field block1003F002..1003F018 uses current Type.ID section, current passed INI, literal NoManualFire, ReadString capacity2048 and empty default; no ART switch or field-specific postpass. Missing/empty/invalid retain the prior field. Bool parser uses first ASCII character 1/T/Y or 0/F/N, case insensitive.',
+            'Ares prerequisites.Probe owns lexical controls and original native vtables. Its ReadString input seam supplies raw already-read text without trimming; raw-space controls deliberately distinguish this boundary from physical ReadString. Native parser, constructor and hook exports are not replaced.',
+            'Existing retail_history owns physical INI bytes/load and exact section admission. Nine declared file inputs execute real528A10 trim and exact-case lookup plus the same Ares block. This is a declared file sequence, not a complete session Process/Rules reset/language digest/mode/map startup execution. Unrelated extension-reader keys are skipped.',
+            'Historical run() remains the only action/Display/click VM. 32 hover rows supply mouse_over=true, matching69300B, and cover Object/Cell and all Ctrl/Shift/Alt combinations with false/true values transferred by value from executed yes/no reader controls. Original DetermineAction passes1 to the Cell query but hard-codes0 for Object; Object ClickedAction re-query also passes0. Actual Unit query arguments and Cell callee returns are observed separately. Synthetic Syringe frames invoke actual exports at original hook sites, restore complete CPU context, and follow the returned continuation; no original instruction is patched.',
+            'Ordinary enemy Object left click re-queries the action in UnitClickedObject. False reaches mission1/target argument producer6FFBE0; true preserves native nonattack fallback and stops4D78BA before navigation coordinates. Complete event delivery/navigation/firing is outside the boundary. Cell rows compare action/cursor and hook reachability; supplied movement state does not certify every movement fallback.',
+            'NoManualFire has two observed action-query consumers. It does not establish a global firing ban. Script-issued/already-queued Attack and automatic targeting bypassing these UI queries remain outside executable controls; no simulation CanFire/AttackAI check is introduced. In the bounded object click continuation, existing observer asserts zero Main/RandomRanged, action-timer-start and detach calls; later command/voice/action-line effects are excluded.'],
+        substitutions=[
+            'Retain historical singleton selection, keyboard, map/Cell, shroud, playfield, terrain, range/FireError, palette and cursor-sink services. Actor/type/House/weapon state is supplied; no full native scenario, complete constructors/range arithmetic or Windows pixels.',
+            'Reuse ares_prerequisites.Probe and physical Rules retail_history; no PCX/private path/assets, second VM, alternate parser, action or country implementation. Move fixture stack storage away from Ares preferred base only. Whole original gamemd text and Ares text10001000..10093000 remain unchanged.'])
+
+
 if __name__=='__main__':
     allied='--allied-objects' in sys.argv
     attack='--attack-order-voice' in sys.argv
     move='--move-order-voice' in sys.argv
-    assert sum((allied,attack,move))<=1
+    manual='--no-manual-fire' in sys.argv
+    assert sum((allied,attack,move,manual))<=1
     sources={'harness':Path(__file__),'native_oracle':Path(native_oracle.__file__)}
     if allied or attack or move:
         sources.update(rng_owner=Path(__file__).parents[1]/'rmg_oracle/gen_rng_vectors.py',
@@ -1005,8 +1211,11 @@ if __name__=='__main__':
         sources.update(sound_owner=Path(__file__).parents[1]/'rules_oracle/bridge_child_sound.py',
             sound_composition=Path(__file__).parent/'anytown_damage/mtnk_attack.py',
             reader_blocks=Path(__file__).parents[1]/'procedural_drawing_oracle/shroud.py')
-    finish_vectors(generate_move_order_voice if move else generate_attack_order_voice if attack else generate_allied_objects if allied else generate,
-        Path(__file__).with_name('move_order_voice.json' if move else 'attack_order_voice.json' if attack else 'allied_object_action.json') if allied or attack or move else Path(__file__).with_suffix('.json'),
-        provenance=move_voice_metadata if move else attack_voice_metadata if attack else allied_metadata if allied else metadata,
-        argv=[arg for arg in sys.argv[1:] if arg not in ('--allied-objects','--attack-order-voice','--move-order-voice')],
+    if manual:
+        sources.update(ares_vm_owner=Path(__file__).parents[1]/'rules_oracle/ares_prerequisites.py',
+            physical_rules_owner=Path(__file__).parents[1]/'rules_oracle/weapon_speed_order.py')
+    finish_vectors(generate_no_manual_fire if manual else generate_move_order_voice if move else generate_attack_order_voice if attack else generate_allied_objects if allied else generate,
+        Path(__file__).with_name('no_manual_fire.json' if manual else 'move_order_voice.json' if move else 'attack_order_voice.json' if attack else 'allied_object_action.json') if allied or attack or move or manual else Path(__file__).with_suffix('.json'),
+        provenance=no_manual_fire_metadata if manual else move_voice_metadata if move else attack_voice_metadata if attack else allied_metadata if allied else metadata,
+        argv=[arg for arg in sys.argv[1:] if arg not in ('--allied-objects','--attack-order-voice','--move-order-voice','--no-manual-fire')],
         source_paths=sources)

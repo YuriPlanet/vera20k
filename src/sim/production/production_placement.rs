@@ -375,7 +375,7 @@ pub(crate) fn place_production_with_overlays(
         held.entity_id(),
         crate::sim::radio::RadioMessage::Hello,
         crate::sim::radio::RadioPayload::default(),
-        Some(rules),
+        rules,
         effects,
     );
     let new_sid = if obj.wall {
@@ -497,7 +497,7 @@ pub(crate) fn place_production_with_overlays(
         yard,
         crate::sim::radio::RadioMessage::DockArrived,
         crate::sim::radio::RadioPayload::default(),
-        Some(rules),
+        rules,
         effects,
     );
     held.abandon_after_placement(sim, rules, effects);
@@ -511,7 +511,7 @@ pub(crate) fn place_production_with_overlays(
         sim,
         yard,
         crate::sim::radio::RadioMessage::Break,
-        Some(rules),
+        rules,
         effects,
     );
     // Original4FB4B7 records the successful build after FirstContact BREAK,
@@ -547,7 +547,7 @@ fn failed_building_unlimbo(
         sim,
         yard,
         crate::sim::radio::RadioMessage::Break,
-        Some(rules),
+        rules,
         effects,
     );
 }

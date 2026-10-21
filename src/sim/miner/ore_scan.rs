@@ -236,6 +236,30 @@ pub(crate) struct HarvestReach {
     pub(crate) source_on_bridge: bool,
 }
 
+impl HarvestReach {
+    /// Can_Reach_Zone from this source to `destination` with no destination
+    /// bridge and no fringe shortcut. None without zone topology.
+    pub(crate) fn reaches(
+        &self,
+        sim: &Simulation,
+        cells: &NativeCellQuery,
+        destination: (i16, i16),
+    ) -> Option<bool> {
+        let bounds = sim.playfield_bounds()?;
+        sim.zone_grid.as_ref()?.can_reach_native(
+            cells,
+            ZoneQueryCell::Copied((self.source.0 as i16, self.source.1 as i16)),
+            ZoneQueryCell::Copied(destination),
+            self.movement_zone.unwrap_or(MovementZone::Invalid),
+            self.source_on_bridge,
+            false,
+            false,
+            bounds,
+            (bounds.base, sim.playfield_size_height()?),
+        )
+    }
+}
+
 pub(crate) fn harvest_reach(sim: &Simulation, rules: &RuleSet, id: u64) -> Option<HarvestReach> {
     let entity = sim.substrate.entities.get(id)?;
     // `CDQ; AND EDX,0xFF; ADD; SAR 8` (`0x004DCF3E..0x004DCF5D`).
@@ -323,18 +347,7 @@ fn is_cell_harvestable(
     }
     let reach = harvest_reach(sim, rules, id)?;
     let cells = NativeCellQuery::canonical(sim.resolved_terrain.as_ref()?);
-    let bounds = sim.playfield_bounds()?;
-    if !sim.zone_grid.as_ref()?.can_reach_native(
-        &cells,
-        ZoneQueryCell::Copied((reach.source.0 as i16, reach.source.1 as i16)),
-        ZoneQueryCell::Copied((candidate.0 as i16, candidate.1 as i16)),
-        reach.movement_zone.unwrap_or(MovementZone::Invalid),
-        reach.source_on_bridge,
-        false,
-        false,
-        bounds,
-        (bounds.base, sim.playfield_size_height()?),
-    )? {
+    if !reach.reaches(sim, &cells, (candidate.0 as i16, candidate.1 as i16))? {
         return None;
     }
     // Original4DCF9B resolves the packed candidate again before reading

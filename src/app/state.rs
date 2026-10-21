@@ -114,9 +114,11 @@ impl AppState {
     /// screen reads it in.
     pub(crate) fn set_cursor_from_window(&mut self, x: f32, y: f32) {
         let zoom = self.tactical_zoom();
-        let input = &mut self.match_state.input;
-        (input.cursor_x, input.cursor_y) = zoom.map_or((x, y), |zoom| zoom.window_to_source(x, y));
-        input.cursor_zoom = zoom;
+        self.match_state.input.set_cursor_from_window(
+            (x, y),
+            zoom,
+            self.platform.pointer_held.get() && self.platform.window_active,
+        );
     }
 
     /// Move the stored cursor into the space the current screen reads it in,
@@ -124,12 +126,7 @@ impl AppState {
     /// otherwise leave it in the old space until the pointer moves.
     pub(crate) fn sync_cursor_space(&mut self) {
         let zoom = self.tactical_zoom();
-        let input = &mut self.match_state.input;
-        if input.cursor_zoom != zoom {
-            (input.cursor_x, input.cursor_y) =
-                cursor_in_space((input.cursor_x, input.cursor_y), input.cursor_zoom, zoom);
-            input.cursor_zoom = zoom;
-        }
+        self.match_state.input.sync_cursor_space(zoom);
     }
 
     /// The pointer in the pixels the current screen paints and hit-tests in:
@@ -275,22 +272,6 @@ pub(crate) fn process_main_draws(
         Some(runtime) => runtime.simulation.presentation_main_draws(),
         None => frontend.draws(),
     }
-}
-
-/// A stored cursor point re-expressed for a new space (`None` is window
-/// pixels). Leaving a zoom or changing it maps the point through the window.
-/// Entering one from window pixels keeps it: the tactical install
-/// (`loading::transitions`) has already placed it in source pixels.
-fn cursor_in_space(
-    point: (f32, f32),
-    from: Option<crate::render::upscale_pass::ZoomGeometry>,
-    to: Option<crate::render::upscale_pass::ZoomGeometry>,
-) -> (f32, f32) {
-    let Some(from) = from else {
-        return point;
-    };
-    let (x, y) = from.source_to_window(point.0, point.1);
-    to.map_or((x, y), |to| to.window_to_source(x, y))
 }
 
 #[cfg(test)]

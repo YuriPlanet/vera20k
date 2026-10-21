@@ -8,7 +8,7 @@ use crate::util::native_x87::NativeF32Bits;
 
 /// `HouseClass::GetSpeedBonus @ 0x0050C050` as the getter calls it: for the
 /// Foot's owner (`Foot+0x21C`) and its type. 1.0 without a type or a House
-/// (rules-less fixtures), like a constructor-default HouseType.
+/// (fixtures), like a constructor-default HouseType.
 pub fn owner_speed_bonus(
     houses: &crate::sim::houses::Houses,
     entity: &GameEntity,
@@ -28,8 +28,8 @@ pub fn owner_speed_bonus(
 ///
 /// No minimum: none of the getter's truncations (`0x004DB1DB`, `0x004DB200`,
 /// `0x004DB213`) clamp, so a `Speed=0` type moves at 0. Every retail mover
-/// that authors `Speed=` reads at least 1. A rules-less fixture without a
-/// type moves as `Speed=4`.
+/// that authors `Speed=` reads at least 1. A fixture whose type the rules
+/// lack moves as `Speed=4`.
 pub(super) fn adjusted_speed(
     entity: &GameEntity,
     object: Option<&ObjectType>,

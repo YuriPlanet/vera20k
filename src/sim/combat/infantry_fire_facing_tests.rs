@@ -548,7 +548,7 @@ fn production_attack_during_paid_walk_step_case(boosted: bool) {
         assert!(sim.apply_command_with_overlays(
             "Americans",
             &command,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         ));

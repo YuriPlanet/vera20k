@@ -58,7 +58,7 @@ fn step_with_overlays(
     let commands = sim.take_due_commands();
     sim.advance_app_frame(
         &commands,
-        Some(rules),
+        rules,
         overlays,
         33,
         super::super::TickLane::Ordinary,

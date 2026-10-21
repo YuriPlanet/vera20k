@@ -44,7 +44,7 @@ fn a_battle_fortress_crushing_a_tank_plays_its_death_explosion() {
     sim.per_cell_process(
         fortress,
         PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     )

@@ -147,7 +147,7 @@ fn fixture(radar: bool) -> (Simulation, RuleSet, InternedId) {
         .tracking_facts = crate::sim::house_tracking::TrackingFacts::of(
         EntityCategory::Structure,
         rules.object("FACTORY"),
-        Some(&rules),
+        &rules,
     );
     Simulation::update_house_tracking(
         &mut sim.substrate,

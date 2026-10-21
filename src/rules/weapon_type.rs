@@ -68,6 +68,10 @@ pub struct WeaponType {
     /// firer to a human victim (FireAt `0x006FF66C`). Retail turns it off on
     /// the sniper, Virus, disguise and Mirage weapons.
     pub reveal_on_fire: bool,
+    /// `TerrainFire=` (`+0x138`, default no): the weapon may fire at a
+    /// Terrain object unforced (`TechnoClass` vt+0x398, `0x0070EF00`).
+    /// Retail authors it only on the unused `TankMakeupKit`.
+    pub terrain_fire: bool,
     /// Infantry WhatAction51EA80: Attack becomes action64 (C4 cursor).
     pub sabotage_cursor: bool,
     /// Infantry WhatAction51EAD2: eligible buildings show action71 (air strike).
@@ -225,8 +229,10 @@ impl WeaponType {
             // Constructor 1 (`0x00771DBB`); ReadINI passes it as the default
             // (`0x00772182..0x00772196`).
             reveal_on_fire: section.read_bool("RevealOnFire", true),
-            // Constructor771DC8/771DCE zero +139/+13A; ReadINI7721BD..7721E4
-            // passes the retained bytes to the native boolean reader5295F0.
+            // Constructor771DC2/771DC8/771DCE zero +138/+139/+13A;
+            // ReadINI7721A3..7721E4 passes the retained bytes to the native
+            // boolean reader5295F0.
+            terrain_fire: section.read_bool("TerrainFire", false),
             sabotage_cursor: section.read_bool("SabotageCursor", false),
             mig_attack_cursor: section.read_bool("MigAttackCursor", false),
 

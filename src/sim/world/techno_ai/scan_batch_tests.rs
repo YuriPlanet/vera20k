@@ -75,12 +75,7 @@ fn run_mission(sim: &mut Simulation, rules: &RuleSet, scanner: u64) -> Option<Ta
 }
 
 fn scan(sim: &mut Simulation, rules: &RuleSet, scanner: u64) -> Option<TargetKind> {
-    super::super::target_scan::passive_acquire_step(
-        sim,
-        scanner,
-        Some(rules),
-        ObjectAiCtx::default(),
-    );
+    super::super::target_scan::passive_acquire_step(sim, scanner, rules, ObjectAiCtx::default());
     sim.substrate
         .entities
         .get(scanner)
@@ -109,7 +104,7 @@ fn a_batched_answer_is_the_scan_itself() {
     let live = scan(&mut serial, rules, scanner);
     assert!(live.is_some(), "the guard picks a rifleman");
     let (mut batched, _, _) = scene(rules);
-    batched.answer_batched_scans(Some(rules), None);
+    batched.answer_batched_scans(rules, None);
     assert_eq!(scan(&mut batched, rules, scanner), live);
     assert_eq!(batched.batched_scans_used(), 1);
     assert_eq!(batched.state_hash(), serial.state_hash());
@@ -130,14 +125,14 @@ fn an_area_guards_handler_takes_the_answer_for_its_post() {
     assert!(live.is_some(), "the area guard picks a rifleman");
     let (mut batched, _, _) = scene(rules);
     area_guard(&mut batched, scanner, (12, 12));
-    batched.answer_batched_scans(Some(rules), None);
+    batched.answer_batched_scans(rules, None);
     assert_eq!(run_mission(&mut batched, rules, scanner), live);
     assert_eq!(batched.batched_scans_used(), 1);
     assert_eq!(batched.state_hash(), serial.state_hash());
 
     let (mut moved, _, _) = scene(rules);
     area_guard(&mut moved, scanner, (12, 12));
-    moved.answer_batched_scans(Some(rules), None);
+    moved.answer_batched_scans(rules, None);
     moved
         .substrate
         .entities
@@ -161,7 +156,7 @@ fn an_area_guard_sent_back_to_its_post_scans_live() {
     let live = run_mission(&mut serial, rules, scanner);
     let (mut batched, _, _) = scene(rules);
     area_guard(&mut batched, scanner, (1, 1));
-    batched.answer_batched_scans(Some(rules), None);
+    batched.answer_batched_scans(rules, None);
     assert_eq!(run_mission(&mut batched, rules, scanner), live);
     assert!(
         batched
@@ -193,7 +188,7 @@ fn an_invalidated_answer_is_scanned_live() {
     let (first, other) = live_pick(rules);
     for case in ["limbo", "released", "captured", "turned"] {
         let (mut batched, scanner, _) = scene(rules);
-        batched.answer_batched_scans(Some(rules), None);
+        batched.answer_batched_scans(rules, None);
         match case {
             "limbo" => {
                 let entity = batched.substrate.entities.get_mut(first).unwrap();
@@ -254,7 +249,7 @@ fn an_answer_that_stamps_the_dummy_is_dropped() {
     let live = scan(&mut serial, rules, scanner);
     assert_eq!(dummy(&serial).coord, (14, 12), "the scan stamps the Dummy");
     let (mut batched, _) = holed();
-    batched.answer_batched_scans(Some(rules), None);
+    batched.answer_batched_scans(rules, None);
     assert_eq!(
         dummy(&batched).coord,
         (1, 1),
@@ -274,7 +269,7 @@ fn a_save_keeps_the_setting_and_drops_the_answers() {
     };
     let rules = &fixture.rules;
     let (mut sim, _, _) = scene(rules);
-    sim.answer_batched_scans(Some(rules), None);
+    sim.answer_batched_scans(rules, None);
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "scan_batch", 0);
     let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .expect("the save loads")
@@ -411,7 +406,7 @@ fn an_answer_that_met_an_idle_disguise_is_dropped_once_a_blink_starts() {
             .clear();
         if batched {
             sim.batch_target_scans();
-            sim.answer_batched_scans(Some(rules), None);
+            sim.answer_batched_scans(rules, None);
         }
         if blink {
             // The Mirage's shot during the pass.

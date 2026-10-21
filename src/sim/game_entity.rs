@@ -177,6 +177,11 @@ pub struct GameEntity {
     /// `TechnoClass::ChangeOwner @ 0x007014A0` moves it; here only the store's
     /// owner-change path does ([`Self::set_owner_from_store`]).
     owner: InternedId,
+    /// The Techno constructor's House argument, retained at +0x14C
+    /// (`0x006F322B..0x006F3241`). ChangeOwner never replaces it; Building's
+    /// capture-sale tail compares it with the current owner (4492EF).
+    /// Houses remain registered for the scenario's lifetime.
+    initial_owner: InternedId,
     /// The object's health (`ObjectClass+0x6C`), a [`Health`] that
     /// `combat::object_health` owns.
     pub health: Health,
@@ -710,6 +715,11 @@ pub struct GameEntity {
     /// [`NoSurvivor`]: crate::sim::crew_survival::NoSurvivor
     #[serde(default)]
     pub(crate) no_survivor: crate::sim::crew_survival::NoSurvivor,
+    /// Infantry+6D9, initialized clear at517A98. Building crew producers
+    /// mark it before death Unlimbo443127 or after sale Unlimbo44A747;
+    /// placement, ownership transfer and removal never clear it.
+    #[serde(default)]
+    nominal_survivor: bool,
     /// Both ends of the tank-bunker reciprocal link, a [`BunkerLinks`] that
     /// `docking::bunker_link` owns.
     ///
@@ -842,6 +852,19 @@ fn default_build_rejects_saved_delivery_base_override_and_keeps_base_space() {
 }
 
 impl GameEntity {
+    /// Infantry+6D9: building survivor identity, not Type.Nominal.
+    /// Added_To_Game502C3C skips its active counter; UI-name51F2C0 uses
+    /// TXT_TECHNICIAN. The flag persists across placement and capture.
+    pub const fn is_nominal_survivor(&self) -> bool {
+        self.nominal_survivor
+    }
+
+    /// The two building crew producers' stores443127 and44A747.
+    pub(crate) fn mark_nominal_survivor(&mut self) {
+        debug_assert_eq!(self.category, EntityCategory::Infantry);
+        self.nominal_survivor = true;
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn set_unit_delivery_base_normal(&mut self, base_normal: bool) {
         self.unit_delivery_no_base = self.category() == EntityCategory::Structure && !base_normal;
@@ -1245,6 +1268,11 @@ impl GameEntity {
         self.owner
     }
 
+    /// Constructor House identity, preserved across ownership transfers and load.
+    pub(crate) fn initial_owner(&self) -> InternedId {
+        self.initial_owner
+    }
+
     /// Immutable indexed type identity, established by construction/decoding.
     pub fn type_ref(&self) -> InternedId {
         self.type_ref
@@ -1297,6 +1325,11 @@ impl GameEntity {
         self.stable_id = stable_id;
     }
 
+    /// Supply the building crew producer's retained marker in a UI fixture.
+    pub fn mark_nominal_survivor_for_test(&mut self) {
+        self.mark_nominal_survivor();
+    }
+
     pub(crate) fn set_native_unique_id_for_test(&mut self, native_unique_id: i32) {
         self.native_unique_id = native_unique_id;
     }
@@ -1305,11 +1338,13 @@ impl GameEntity {
         self.techno_ctor_random_word = word;
     }
 
-    /// Before insertion only: a stored entity changes owner through
+    /// Before insertion only: supply the constructor and current House
+    /// together. A stored entity changes only its current owner through
     /// [`EntityStore::change_owner`](crate::sim::entity_store::EntityStore::change_owner),
     /// which keeps the store's owner column.
     pub fn set_owner_for_test(&mut self, owner: InternedId) {
         self.owner = owner;
+        self.initial_owner = owner;
     }
 
     pub fn set_type_ref_for_test(&mut self, type_ref: InternedId) {
@@ -1512,6 +1547,7 @@ impl GameEntity {
             body_frame_counter: Default::default(),
             unit_firing_counter: Default::default(),
             owner,
+            initial_owner: owner,
             health,
             estimated_health: crate::sim::estimated_health::EstimatedHealth::from_raw(
                 health.current(),
@@ -1629,6 +1665,7 @@ impl GameEntity {
             pending_c4_detonation: Default::default(),
             has_been_captured: Default::default(),
             no_survivor: Default::default(),
+            nominal_survivor: false,
             bunker: Default::default(),
             building_gate: None,
             door: crate::sim::door::DoorClass::at_frame(construction_frame),

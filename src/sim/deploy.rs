@@ -52,28 +52,22 @@ impl CrushImmunity {
 }
 
 /// Event9 DEPLOY4C76BC..4C7812. MCV conversion, simple deployment, the
-/// deploy-fire arm and a tank bunker's occupant share this event; each
-/// concrete Mission_Unload branch owns its effects.
+/// deploy-fire arm, Unit transports and a tank bunker's occupant share this
+/// event; each concrete Mission_Unload branch owns its effects. A transport's
+/// empty hold does not suppress this event: it still stops and queues Unload.
+/// Native controls: tools/spatial_oracle/transport_unload.py --deploy-event.
 ///
 /// The object must be alive (`+0x90`), out of limbo (`+0x81`), untethered
 /// (`+0x418`) and not under EMP (`+0x504`, which nothing writes yet). Then it
 /// sends OVER_OUT to its radio contact 0 (vt+0x274(3), `0x004C77E4`).
 ///
-/// RESIDUAL: natively a bunkered unit's contact 0 is its bunker (the HELLO
-/// from Set_Destination, `0x00742CDB`), so this OVER_OUT reaches the bunker,
-/// whose Receive_Radio idles its body (Begin_Mode(IDLE), `0x0043CD01`) before
-/// Unload empties it. VERA's bunker entry adapter makes no radio contact
-/// (`bunker_link::begin_entry`), so here contact 0 is empty and the bunker
-/// keeps its body mode. Trigger: every deploy out of a bunker. Effect: none
-/// a player sees; the bunker's body is idle between visits. Risk: low.
-///
 /// RESIDUAL: native refuses only an aircraft (`0x004C777E`) and the
 /// Construction/Selling missions below; VERA admits only the Unit kinds whose
-/// Unload arms it ports: an MCV, a simple deployer, a deploy-fire unit and a
-/// unit in a tank bunker. Trigger: a DEPLOY event for another object, which
-/// no VERA sender issues: the deploy key and the self-click send a loaded
-/// transport's unload order instead, and CanDeploySlashUnload refuses every
-/// other Unit.
+/// Unload arms it ports: an MCV, a simple deployer, a deploy-fire unit, a Unit
+/// transport and a unit in a tank bunker. Other Units fail the deploy key's
+/// CanDeploySlashUnload query; their externally supplied DEPLOY events remain
+/// outside these represented Unload arms. Self-click still uses its separate
+/// clicked-Mission owner and requires cargo for a transport.
 pub(crate) fn issue_order(
     sim: &mut Simulation,
     id: u64,
@@ -88,7 +82,8 @@ pub(crate) fn issue_order(
                 || crate::sim::unit_simple_deploy::is_simple_deployer(sim, e, rules)
                 || unit_fires_on_deploy(sim, e, rules)
                 || (e.category() == EntityCategory::Unit
-                    && e.bunker.link().installed_in().is_some()))
+                    && (e.bunker.link().installed_in().is_some()
+                        || crate::sim::transport_unload::is_vehicle_transport_type(sim, e, rules))))
     }) {
         return false;
     }
@@ -146,18 +141,18 @@ pub(crate) fn issue_order(
         sim,
         id,
         crate::sim::radio::RadioMessage::Break,
-        Some(rules),
+        rules,
         effects,
     );
     // Queue's same-mission guard keeps the handler and timer on a repeated D.
-    sim.assign_null_destination(id, Some(rules), None, effects);
-    let _ = sim.assign_target_represented(id, None, Some(rules), None, effects);
+    sim.assign_null_destination(id, rules, None, effects);
+    let _ = sim.assign_target_represented(id, None, rules, None, effects);
     sim.mission_queue_exact(
         id,
         MissionId::from_known(MissionType::Unload),
         0,
         sim.session.binary_frame(),
-        &crate::sim::mission::authority::EntityReadyInputProvider,
+        &crate::sim::mission::authority::LiveReadyInputProvider { rules },
     )
     .is_ok()
 }
@@ -222,7 +217,7 @@ impl Simulation {
             self.assign_target_represented(
                 id,
                 Some(TargetKind::Cell(rx, ry)),
-                Some(rules),
+                rules,
                 overlay_registry,
                 effects,
             )
@@ -445,7 +440,7 @@ impl Simulation {
     pub(crate) fn infantry_pending_deploy_stop_callback(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
@@ -460,7 +455,6 @@ impl Simulation {
         {
             return Ok(());
         }
-        let rules = rules.ok_or("pending deployment Stop callback requires rules")?;
         self.substrate
             .entities
             .get_mut(id)
@@ -576,7 +570,7 @@ impl Simulation {
                     self.assign_target_represented(
                         id,
                         Some(TargetKind::Cell(at.0 as u16, at.1 as u16)),
-                        Some(rules),
+                        rules,
                         None,
                         effects,
                     )
@@ -594,7 +588,7 @@ impl Simulation {
                 self.session.binary_frame(),
             )
             .map_err(|cause| format!("Infantry Unload Guard: {cause}"))?;
-        self.assign_destination_represented(id, None, Some(rules), None, effects)
+        self.assign_destination_represented(id, None, rules, None, effects)
             .map_err(|cause| format!("Infantry Unload destination: {cause}"))?;
         Ok(if delay > -1 { delay } else { 450 })
     }

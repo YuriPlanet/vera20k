@@ -452,12 +452,17 @@ impl App {
         state.frontend.skirmish_shell_state.choose_map_modal =
             Some(crate::ui::skirmish_shell::ChooseMapModalState::open(
                 if state.frontend.shell_route.network_setup() {
-                    crate::ui::skirmish_shell::ChooseMapContext::Network {
-                        observer: state
-                            .match_state
-                            .session
-                            .network_setup()
-                            .is_some_and(|launch| launch.local_player().is_observer()),
+                    {
+                        let room = state.match_state.session.network_room();
+                        crate::ui::skirmish_shell::ChooseMapContext::Network {
+                            observer: state
+                                .match_state
+                                .session
+                                .network_setup()
+                                .is_some_and(|launch| launch.local_player().is_observer()),
+                            tournament_room: room.tournament_or_clan(),
+                            clan_room: room.clan,
+                        }
                     }
                 } else {
                     crate::ui::skirmish_shell::ChooseMapContext::Skirmish

@@ -233,7 +233,7 @@ fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
     };
     sim.sound_events.clear_for_test();
     let before = sim.state_hash();
-    sim.apply_command_with_overlays(OWNER, &command, Some(&rules), None, FrameEffects::default());
+    sim.apply_command_with_overlays(OWNER, &command, &rules, None, FrameEffects::default());
     assert_eq!(
         sim.state_hash(),
         before,
@@ -245,7 +245,7 @@ fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
     );
     spawn(&mut sim, &rules, "GASCEA", OWNER, 8);
     sim.sound_events.clear_for_test();
-    sim.apply_command_with_overlays(OWNER, &command, Some(&rules), None, FrameEffects::default());
+    sim.apply_command_with_overlays(OWNER, &command, &rules, None, FrameEffects::default());
     assert!(!sim.super_weapons[&owner][&id].is_ready);
     assert!(
         sim.sound_events

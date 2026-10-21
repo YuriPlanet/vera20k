@@ -665,7 +665,7 @@ impl crate::sim::world::Simulation {
                 physical,
                 true,
             );
-            self.assign_null_destination(id, Some(rules), registry, effects);
+            self.assign_null_destination(id, rules, registry, effects);
             return Ok(false);
         }
         if infantry
@@ -775,7 +775,7 @@ impl crate::sim::world::Simulation {
                 super::bump_crush::GroundGate::Live {
                     occupancy: &self.substrate.occupancy,
                     entities: &self.substrate.entities,
-                    rules: Some(rules),
+                    rules,
                     interner: &self.interner,
                 },
                 &mut self.scenario_rng,
@@ -844,7 +844,7 @@ impl crate::sim::world::Simulation {
                 physical,
                 true,
             );
-            self.assign_null_destination(id, Some(rules), registry, effects);
+            self.assign_null_destination(id, rules, registry, effects);
             return Ok(false);
         };
         // 0x00719270..0x00719276: the tail PUTs at Marked; Move_To arms it
@@ -1120,12 +1120,10 @@ impl crate::sim::world::Simulation {
     /// superweapon_oracle's chrono_process controls pin callback order with
     /// their explicitly recorded scan/acquisition/idle seams.
     ///
-    /// Rules-free component callers cover timer/flag retirement only: they do
-    /// not supply the retail inputs required by passive acquisition or idle.
     pub(crate) fn teleport_timer_check(
         &mut self,
         id: u64,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         ctx: crate::sim::world::ObjectAiCtx<'_>,
     ) -> bool {
         let frame = self.session.binary_frame() as i32;
@@ -1169,12 +1167,11 @@ impl crate::sim::world::Simulation {
                 runtime.warp = None;
             }
         }
-        if let Some(rules) = rules
-            && self
-                .substrate
-                .entities
-                .get(id)
-                .is_some_and(|entity| entity.attack_target.target().is_none())
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.attack_target.target().is_none())
         {
             self.shorten_passive_scan_timer(id);
             if !crate::sim::world::passive_target_acquire(self, id, rules, ctx) {
@@ -1204,7 +1201,7 @@ impl crate::sim::world::Simulation {
     pub(crate) fn process_teleport(
         &mut self,
         id: u64,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         ctx: crate::sim::world::ObjectAiCtx<'_>,
     ) -> Option<SpecialMovementOutcome> {
         let phase = self
@@ -1432,7 +1429,11 @@ mod tests {
             &rules,
             false
         ));
-        sim.process_teleport(1, None, crate::sim::world::ObjectAiCtx::default());
+        sim.process_teleport(
+            1,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            crate::sim::world::ObjectAiCtx::default(),
+        );
         let owner = sim.substrate.entities.get_mut(1).unwrap();
         assert!(owner.is_warping_in());
         teleport_stop_moving(owner);
@@ -1497,7 +1498,11 @@ mod tests {
         ));
 
         // Single frame: position snaps, then cleanup runs because the configured delay is zero.
-        sim.process_teleport(1, None, crate::sim::world::ObjectAiCtx::default());
+        sim.process_teleport(
+            1,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            crate::sim::world::ObjectAiCtx::default(),
+        );
 
         let entity = sim.substrate.entities.get(1).expect("should exist");
         assert_eq!(entity.position.rx(), 20);
@@ -1537,7 +1542,11 @@ mod tests {
         );
 
         // Frame 1: Relocate snaps position and transitions to ChronoDelay (NOT cleanup).
-        sim.process_teleport(1, None, crate::sim::world::ObjectAiCtx::default());
+        sim.process_teleport(
+            1,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            crate::sim::world::ObjectAiCtx::default(),
+        );
         let ts = sim
             .substrate
             .entities

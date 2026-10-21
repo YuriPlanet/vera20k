@@ -355,10 +355,7 @@ impl<'r> DefenseChoice<'r> {
                 ))
             })
             .collect();
-        let country_bit = crate::sim::ai_buildable::house_country_bit(
-            rules,
-            sim.interner.resolve(house.house_type_id()),
-        );
+        let country_bit = rules.country_owner_mask(sim.interner.resolve(house.house_type_id()));
         let enemy = house
             .enemy_house()
             .and_then(|enemy| sim.houses.get(&enemy))

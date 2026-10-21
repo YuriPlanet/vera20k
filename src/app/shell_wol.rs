@@ -214,6 +214,12 @@ pub(crate) struct WolVisit {
     /// A chat lobby was joined earlier in this visit: the picker passes
     /// over crowded lobbies (`0x00788180`).
     lobby_joined_before: bool,
+    /// `[0xB77DE4]`: the user's squad id, written by the squad sink while
+    /// its own request is out (`[0xB77DE0]`). `[0xB77DDC]` counts the
+    /// requests out. The tag `[0xB77A94]` has no reader.
+    squad_id: i32,
+    squad_own_pending: bool,
+    squad_requests: u32,
     /// The page dialog `0xCF` over `0x113`, C2 or C9.
     page_dialog: Option<Box<crate::ui::wol_page::WolPageDialog>>,
     /// The modeless page-received dialog `0x11E`.
@@ -251,6 +257,9 @@ impl WolVisit {
             locales: Default::default(),
             lobby: None,
             lobby_joined_before: false,
+            squad_id: 0,
+            squad_own_pending: false,
+            squad_requests: 0,
             page_dialog: None,
             page_received: None,
         }

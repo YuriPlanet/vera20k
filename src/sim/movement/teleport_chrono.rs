@@ -69,8 +69,9 @@
 //!   moves a frame and the warp's END up to one; the Drive goes nowhere.
 //! - A landed Aircraft that sinks keeps `+0x3CD` with nothing to end it:
 //!   VERA ports only the Unit's sinking (Unit AI `0x007364A1`); the Aircraft
-//!   AI's handling is not established. Trigger: an airfield's Harriers
-//!   chronoshifted onto water.
+//!   AI's handling is not established. Triggers: an airfield's Harriers
+//!   chronoshifted onto water, or a Magnetron dropping a lifted Aircraft over
+//!   water it is refused (`jumpjet_flight::state5_crash`'s sink).
 
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::NativeCellQuery;
@@ -153,12 +154,12 @@ impl Simulation {
                     cell.0 as u16,
                     cell.1 as u16,
                 )),
-                Some(rules),
+                rules,
                 registry,
                 effects,
             )
             .map_err(|error| error.to_string())?;
-            self.foot_force_immediate_destination(id, Some(coord), Some(rules), registry, effects)?;
+            self.foot_force_immediate_destination(id, Some(coord), rules, registry, effects)?;
         }
         let terrain = self
             .resolved_terrain
@@ -172,7 +173,7 @@ impl Simulation {
         }
         if category == EntityCategory::Unit {
             self.locomotor_mark_all_occupation_bits(id, false);
-            self.force_track(id, -1, coord, Some(rules), registry, effects);
+            self.force_track(id, -1, coord, rules, registry, effects);
             Self::object_raw_receiver_at(
                 &mut self.substrate,
                 &self.path_grid,
@@ -191,12 +192,12 @@ impl Simulation {
                     cell.0 as u16,
                     cell.1 as u16,
                 )),
-                Some(rules),
+                rules,
                 registry,
                 effects,
             )
             .map_err(|error| error.to_string())?;
-            self.assign_destination_represented(id, None, Some(rules), registry, effects)
+            self.assign_destination_represented(id, None, rules, registry, effects)
                 .map_err(|error| error.to_string())?;
         }
         let frame = self.session.binary_frame();
@@ -219,7 +220,7 @@ impl Simulation {
                 cell.0 as u16,
                 cell.1 as u16,
             )),
-            Some(rules),
+            rules,
             registry,
             effects,
         )
@@ -275,7 +276,7 @@ impl Simulation {
         // Chronosphere arms. Reinforcement's pending3 transfers on one visit;
         // the next visit runs state3. WarpingIn alone instead runs TimerCheck.
         if warp.state() == 0 && warp.warping_in() && warp.pending_state() == 0 {
-            self.teleport_timer_check(id, Some(rules), ctx);
+            self.teleport_timer_check(id, rules, ctx);
             return Ok(false);
         }
         if warp.state() == 0 && warp.pending_state() != 0 {
@@ -293,11 +294,11 @@ impl Simulation {
                 }
             }
             1 | 6 => {
-                self.teleport_timer_check(id, Some(rules), ctx);
+                self.teleport_timer_check(id, rules, ctx);
             }
             2 => {
                 self.teleport_warp_out(id, rules);
-                self.foot_mark_remove(id, Some(rules), registry, ctx.effects);
+                self.foot_mark_remove(id, rules, registry, ctx.effects);
                 Self::teleport_warp_sound(
                     &mut self.interner,
                     &self.substrate,
@@ -380,7 +381,7 @@ impl Simulation {
                 bridge_state_changed |= self.per_cell_process(
                     id,
                     super::PerCellReason::Arrival,
-                    Some(rules),
+                    rules,
                     registry,
                     ctx.effects,
                 )?;
@@ -390,7 +391,7 @@ impl Simulation {
                     entity.drop_credit.forget();
                     entity.set_archive_target(None);
                 }
-                self.assign_null_destination(id, Some(rules), registry, ctx.effects);
+                self.assign_null_destination(id, rules, registry, ctx.effects);
                 let delay = self
                     .substrate
                     .entities
@@ -411,7 +412,7 @@ impl Simulation {
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     entity.set_archive_target(None);
                 }
-                self.assign_null_destination(id, Some(rules), registry, ctx.effects);
+                self.assign_null_destination(id, rules, registry, ctx.effects);
                 if let Some(runtime) = self
                     .substrate
                     .entities
@@ -445,9 +446,9 @@ impl Simulation {
             .and_then(|locomotor| locomotor.teleport_runtime())
             .and_then(|runtime| runtime.resolved_destination())
             .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
-        self.foot_set_location_marked(id, marked, Some(rules), registry, effects);
-        self.set_object_height(id, 0, Some(rules), registry, effects);
-        self.foot_mark_put(id, Some(rules), registry, effects);
+        self.foot_set_location_marked(id, marked, rules, registry, effects);
+        self.set_object_height(id, 0, rules, registry, effects);
+        self.foot_mark_put(id, rules, registry, effects);
         marked
     }
 
@@ -844,7 +845,7 @@ impl Simulation {
             self.record_manipulated_kill(
                 id,
                 id,
-                crate::sim::world::UninitContext::new(Some(rules), registry).with_effects(effects),
+                crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
             );
             return;
         }

@@ -518,7 +518,10 @@ fn replay(row: &Value) {
                     .unwrap();
                 let admitted = gate["return_eax"].as_u64().unwrap() & 0xFF != 0;
                 assert_eq!(
-                    scene.sim.try_end_piggyback(scene.miner, None),
+                    scene.sim.try_end_piggyback(
+                        scene.miner,
+                        crate::rules::ruleset::RuleSet::empty_for_test()
+                    ),
                     admitted,
                     "{label}: native END gate"
                 );

@@ -7,15 +7,16 @@
 //! It answers the visit's and the WOL setup's requests once no shell
 //! transition runs: like a real service, a reply arrives after the page that
 //! asked has slid out. Any login is accepted. The lobbies, games and users
-//! are fixed stand-ins. Two of them say one line each when a chat lobby is
-//! joined, and a locate finds them. A created game is joined by one
-//! stand-in guest who picks, has the map and accepts; the joined game's
-//! host answers the guest's first choices with its options. A start with
-//! that guest gets OnGameStart and the connection verify, then the scenario
-//! negotiation fails ("Scenarios don't match"): nobody can play a match
-//! here. The buddy list starts with four stand-ins whose locates answer a
-//! chat lobby, a game, offline and find-disabled; Add and Remove change it
-//! for the process.
+//! are fixed stand-ins; Boris's game is a tournament room, and the user is
+//! in a stand-in squad, so clan games can be created. Two of the users say
+//! one line each when a chat lobby is joined, and a locate finds them. A
+//! created game is joined by one stand-in guest, in no squad, who picks,
+//! has the map and accepts; the joined game's host answers the guest's
+//! first choices with its options. A start with that guest gets OnGameStart
+//! and the connection verify, then the scenario negotiation fails
+//! ("Scenarios don't match"): nobody can play a match here. The buddy list
+//! starts with four stand-ins whose locates answer a chat lobby, a game,
+//! offline and find-disabled; Add and Remove change it for the process.
 
 use super::lobby::WolJoined;
 use super::service::WolLadderRecord;
@@ -123,6 +124,11 @@ fn answer_setup(state: &mut AppState, request: NetworkSetupRequest) {
         guest_answer(state, &request);
     }
 }
+
+/// The stand-in user's squad, and the sink's failure for an unknown id (the
+/// code WOLAPI returns is unknown).
+const SQUAD: i32 = 7;
+const NO_SQUAD: u32 = 0x8000_4005;
 
 /// The stand-in guest who joins a game this user created.
 const GUEST: &str = "Natasha";
@@ -360,7 +366,10 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
             } else {
                 vec![member(host_of(&channel.name), MEMBER_OPERATOR)]
             };
-            members.push(member(&local, 0));
+            members.push(WolMember {
+                squad: SQUAD,
+                ..member(&local, 0)
+            });
             channel.users = members.len() as i32;
             service_event(
                 state,
@@ -376,6 +385,18 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
             ..
         } => WolServiceEvent::Located(locate(&String::from_utf16_lossy(&name))),
         WolServiceRequest::Locate(name) => WolServiceEvent::Located(locate(&name)),
+        // The user is in the stand-in squad; the stand-in users are in none.
+        WolServiceRequest::SquadInfo { id: 0 | SQUAD } => WolServiceEvent::Squad {
+            id: SQUAD,
+            squad: Ok(crate::ui::wol_lobby::WolSquad {
+                name: "VERA Testers".into(),
+                tag: "VERA".into(),
+            }),
+        },
+        WolServiceRequest::SquadInfo { id } => WolServiceEvent::Squad {
+            id,
+            squad: Err(NO_SQUAD),
+        },
         WolServiceRequest::ListBuddies => {
             WolServiceEvent::Buddies(Ok(state.frontend.wol_test_buddies.clone()))
         }
@@ -420,7 +441,10 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         WolServiceRequest::CreateChannel { .. } => {
             state.frontend.wol_test_guest = WolTestGuest::Expected;
             let local = nickname(state);
-            WolServiceEvent::Created(Ok(vec![member(&local, MEMBER_OPERATOR)]))
+            WolServiceEvent::Created(Ok(vec![WolMember {
+                squad: SQUAD,
+                ..member(&local, MEMBER_OPERATOR)
+            }]))
         }
         // The locale it holds for each name: the stand-ins' own, and for
         // anyone else what the table last received (0 at first, so a new
@@ -556,6 +580,7 @@ fn nickname(state: &AppState) -> String {
 fn member(name: &str, flags: u32) -> WolMember {
     WolMember {
         flags,
+        squad: 0,
         name: name.into(),
         clan_name: String::new(),
         clan_tag: String::new(),
@@ -611,7 +636,11 @@ fn games() -> Vec<WolChannel> {
     };
     vec![
         game("Tanya", 1, 7, 40),
-        game("Boris", 2, 7, 180),
+        // A tournament room (+0x14): two rows.
+        WolChannel {
+            tournament: 1,
+            ..game("Boris", 2, 7, 180)
+        },
         game("Natasha", 6, 7, 350),
     ]
 }

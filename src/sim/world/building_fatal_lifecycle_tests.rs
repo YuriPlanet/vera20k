@@ -366,7 +366,7 @@ impl Fixture {
             sim.assign_target_represented(
                 unit,
                 Some(TargetKind::Entity(building)),
-                Some(&rules),
+                &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             )
@@ -1436,7 +1436,7 @@ impl Fixture {
         );
 
         restored.process_pending_delete_with(
-            Some(&self.rules),
+            &self.rules,
             Some(&self.registry),
             crate::sim::world::FrameEffects::default(),
             1,
@@ -1620,7 +1620,7 @@ fn assert_ready_fatal_routes(corpus: &Value) {
             fixture
                 .sim
                 .advance_live_object_pass(
-                    Some(&fixture.rules),
+                    &fixture.rules,
                     Some(&fixture.registry),
                     crate::sim::world::FrameEffects::default(),
                 )
@@ -1644,7 +1644,7 @@ fn assert_ready_fatal_routes(corpus: &Value) {
                 .session
                 .set_binary_frame_for_test(fixture.sim.session.binary_frame().wrapping_add(1));
             fixture.sim.process_pending_delete_with(
-                Some(&fixture.rules),
+                &fixture.rules,
                 Some(&fixture.registry),
                 crate::sim::world::FrameEffects::default(),
                 1,
@@ -1667,7 +1667,7 @@ fn assert_ready_fatal_routes(corpus: &Value) {
             .session
             .set_binary_frame_for_test(int(&route["after_frame_increment"]["frame"]) as u32);
         fixture.sim.process_pending_delete_with(
-            Some(&fixture.rules),
+            &fixture.rules,
             Some(&fixture.registry),
             crate::sim::world::FrameEffects::default(),
             1,
@@ -1769,7 +1769,7 @@ fn original_direct_ap_receivers_join_debris_crew_uninit_power_and_deferred_destr
         .session
         .set_binary_frame_for_test(int(&route["after_frame_increment"]["frame"]) as u32);
     fixture.sim.process_pending_delete_with(
-        Some(&fixture.rules),
+        &fixture.rules,
         Some(&fixture.registry),
         crate::sim::world::FrameEffects::default(),
         1,

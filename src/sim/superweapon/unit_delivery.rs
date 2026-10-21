@@ -381,7 +381,7 @@ fn place(
         }
     }
     if !placed {
-        sim.discard_constructed_limbo(id, Some(rules), effects);
+        sim.discard_constructed_limbo(id, rules, effects);
         return;
     }
     if let Some(entity) = sim.substrate.entities.get_mut(id) {

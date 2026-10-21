@@ -1471,7 +1471,7 @@ impl Simulation {
             y: world.y,
             z: world.z,
         });
-        let config = self.sight_reveal_config(Some(rules));
+        let config = self.sight_reveal_config(rules);
         let viewers = self.reveal_viewers.direct(
             &self.fog,
             self.house_alliances.as_map(),
@@ -1646,7 +1646,7 @@ impl Simulation {
         let attaches = descriptor
             .owner
             .is_some_and(|owner| self.anim_owner_coords(owner).is_some());
-        self.reveal_anim(stable_id, Some(rules), !attaches || start_reaches_display);
+        self.reveal_anim(stable_id, rules, !attaches || start_reaches_display);
         //42264D..4226BF reveals DropZone before the constructor-time Start.
         if rules
             .general
@@ -2134,11 +2134,11 @@ impl Simulation {
                     .z
         });
         if lift {
-            self.foot_mark_remove(infantry, Some(rules), overlay_registry, frame_effects);
+            self.foot_mark_remove(infantry, rules, overlay_registry, frame_effects);
             if let Some(entity) = self.substrate.entities.get_mut(infantry) {
                 entity.on_bridge.store(true);
             }
-            self.foot_mark_put(infantry, Some(rules), overlay_registry, frame_effects);
+            self.foot_mark_put(infantry, rules, overlay_registry, frame_effects);
         }
         let human = self
             .houses
@@ -2154,10 +2154,10 @@ impl Simulation {
     }
 
     pub(crate) fn destroy_anim(&mut self, id: AnimId, rules: &RuleSet) {
-        self.destroy_anim_with_context(id, Some(rules));
+        self.destroy_anim_with_context(id, rules);
     }
 
-    pub(crate) fn destroy_anim_with_context(&mut self, id: AnimId, rules: Option<&RuleSet>) {
+    pub(crate) fn destroy_anim_with_context(&mut self, id: AnimId, rules: &RuleSet) {
         if self.substrate.pending_delete.contains_object(&id) {
             return;
         }
@@ -2176,26 +2176,22 @@ impl Simulation {
             .anim(id)
             .and_then(|anim| anim.owner_entity.map(|_| anim.building_slot.is_some()))
         {
-            match rules {
+            if building_slot {
                 // A Building slot Anim's expiry below can construct its
                 // successor, which reads and changes Display.
-                Some(rules) if building_slot => {
-                    self.detach_anim_from_owner(id, rules);
-                }
-                _ => {
-                    // SetOwner(NULL)'s resolved coordinates and pointer
-                    // callback, without its temporary Display resubmission:
-                    // until this operation's conceal below, nothing reads or
-                    // changes Display (the expiry reaches Bullets and
-                    // damage-fire slots only), so it is unobservable. An
-                    // imminent physical owner retirement may have no Rules.
-                    self.substrate.release_anim_owner_reference(id);
-                    self.substrate
-                        .anims
-                        .get_mut(id)
-                        .expect("the retiring animation still exists")
-                        .world_coord = world;
-                }
+                self.detach_anim_from_owner(id, rules);
+            } else {
+                // SetOwner(NULL)'s resolved coordinates and pointer
+                // callback, without its temporary Display resubmission:
+                // until this operation's conceal below, nothing reads or
+                // changes Display (the expiry reaches Bullets and
+                // damage-fire slots only), so it is unobservable.
+                self.substrate.release_anim_owner_reference(id);
+                self.substrate
+                    .anims
+                    .get_mut(id)
+                    .expect("the retiring animation still exists")
+                    .world_coord = world;
             }
         }
         if let Some(anim) = self.substrate.anims.get_mut(id) {
@@ -2283,7 +2279,7 @@ impl Simulation {
             anim.owner_entity = None;
             anim.world_coord = absolute;
             if marked {
-                self.submit_anim_display(id, Some(rules));
+                self.submit_anim_display(id, rules);
             }
         }
         if let Some(owner_id) = new_owner {
@@ -2298,14 +2294,14 @@ impl Simulation {
                 z: anim.world_coord.z.wrapping_sub(owner_coord.z),
             };
             anim.owner_entity = Some(owner_id);
-            self.submit_anim_display(id, Some(rules));
+            self.submit_anim_display(id, rules);
         }
         true
     }
 
     /// Anim GetLayer424CB0: attached -> Ground; missing type -> Air; otherwise
     /// the current type's layer.
-    pub(crate) fn submit_anim_display(&mut self, id: AnimId, rules: Option<&RuleSet>) {
+    pub(crate) fn submit_anim_display(&mut self, id: AnimId, rules: &RuleSet) {
         if let Some(layer) = self.anim_display_layer(id, rules) {
             Self::submit_object_display(
                 &self.interner,
@@ -2323,7 +2319,7 @@ impl Simulation {
     pub(crate) fn anim_display_layer(
         &self,
         id: AnimId,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) -> Option<crate::sim::world::display_layers::DisplayLayer> {
         use crate::rules::art_data::AnimLayer;
         use crate::sim::world::display_layers::DisplayLayer;
@@ -2331,11 +2327,9 @@ impl Simulation {
         if anim.owner_entity.is_some() {
             return Some(DisplayLayer::GROUND);
         }
-        let config = rules.and_then(|rules| {
-            rules
-                .art()
-                .anim_runtime_config(self.interner.resolve(anim.type_id))
-        });
+        let config = rules
+            .art()
+            .anim_runtime_config(self.interner.resolve(anim.type_id));
         match config.map(|config| config.layer) {
             None => Some(DisplayLayer::AIR),
             Some(AnimLayer::Ground) => Some(DisplayLayer::GROUND),
@@ -2411,7 +2405,7 @@ impl Simulation {
         &mut self,
         id: AnimId,
         expired_id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) -> bool {
         let mut changed = false;
         if self.anim(id).and_then(|anim| anim.owner_entity) == Some(expired_id) {
@@ -2569,7 +2563,7 @@ impl Simulation {
             return;
         }
         if !active {
-            self.clear_building_damage_fire_slots(building_id, Some(rules));
+            self.clear_building_damage_fire_slots(building_id, rules);
         } else if !rules.general.damage_fire_types.is_empty() {
             let type_count = rules.general.damage_fire_types.len();
             let mut type_index = self
@@ -2679,11 +2673,7 @@ impl Simulation {
     /// Recovery43FCA4 and destructor43BDE0 call Anim Destroy, not scalar delete.
     /// The destructor follows owner expiry, so its Anims no longer need Rules
     /// for SetOwner's intermediate display resubmission.
-    pub(crate) fn clear_building_damage_fire_slots(
-        &mut self,
-        building_id: u64,
-        rules: Option<&RuleSet>,
-    ) {
+    pub(crate) fn clear_building_damage_fire_slots(&mut self, building_id: u64, rules: &RuleSet) {
         if !self.substrate.entities.contains(building_id) {
             return;
         }
@@ -3078,7 +3068,7 @@ impl Simulation {
                     crate::sim::crates::construct_runtime_overlay(
                         self,
                         &rules.crate_rules,
-                        Some(rules),
+                        rules,
                         registry,
                         cell,
                         selected,
@@ -3972,7 +3962,7 @@ mod tests {
                 .mark_anim_display(id, input["marked"].as_bool().unwrap());
             for observation in row["observations"].as_array().unwrap() {
                 match observation["op"].as_str().unwrap() {
-                    "submit" => sim.submit_anim_display(id, Some(&rules)),
+                    "submit" => sim.submit_anim_display(id, &rules),
                     "attach" => {
                         assert!(sim.set_anim_owner_object(id, Some(owner_id), &rules));
                     }
@@ -3992,7 +3982,11 @@ mod tests {
                         owner.position.set_exact_z_leptons_for_test(Some(700));
                     }
                     "expire" => {
-                        assert!(sim.anim_pointer_expired(id, owner_id, None));
+                        assert!(sim.anim_pointer_expired(
+                            id,
+                            owner_id,
+                            crate::rules::ruleset::RuleSet::empty_for_test()
+                        ));
                     }
                     other => panic!("unexpected {other}"),
                 }
@@ -4030,7 +4024,7 @@ mod tests {
                 let queried = u8::try_from(queried)
                     .ok()
                     .and_then(DisplayLayer::from_index);
-                assert_eq!(sim.anim_display_layer(id, Some(&rules)), queried);
+                assert_eq!(sim.anim_display_layer(id, &rules), queried);
                 for layer in 0..5 {
                     let expected_ids = if expected["layers"][layer] == 0 {
                         vec![]
@@ -4383,7 +4377,7 @@ mod tests {
         let absolute = sim.anim_absolute_coord(id).unwrap();
         assert_ne!(sim.anim(id).unwrap().world_coord, absolute);
 
-        sim.destroy_anim_with_context(id, None);
+        sim.destroy_anim_with_context(id, crate::rules::ruleset::RuleSet::empty_for_test());
 
         let anim = sim.anim(id).unwrap();
         assert_eq!(anim.world_coord, absolute);
@@ -5924,7 +5918,7 @@ mod tests {
         assert_eq!(sim.substrate.pending_delete.object_ids(), vec![id]);
         assert!(!sim.anim(id).unwrap().in_logic_vector);
         assert_eq!(sim.display_layers().layer_of(id), None);
-        assert!(!sim.reveal_anim(id, Some(&rules), true));
+        assert!(!sim.reveal_anim(id, &rules, true));
         sim.process_pending_delete();
         assert!(sim.anim(id).is_none());
     }
@@ -5977,7 +5971,11 @@ mod tests {
         sim.set_anim_owner_object(anim_id, Some(building_id), &rules);
         assert_eq!(sim.anim(anim_id).unwrap().owner_entity, Some(building_id));
 
-        assert!(sim.anim_pointer_expired(anim_id, building_id, None));
+        assert!(sim.anim_pointer_expired(
+            anim_id,
+            building_id,
+            crate::rules::ruleset::RuleSet::empty_for_test()
+        ));
         assert_eq!(
             sim.substrate
                 .entities
@@ -6021,7 +6019,7 @@ mod tests {
         sim.substrate.set_anim_attached_bullet(anim, Some(owner));
         // Pointer fields are independently compared at425164 and4251AD;
         // clearing the owner must not skip attached-Bullet UnInit.
-        assert!(sim.anim_pointer_expired(anim, owner, Some(&rules)));
+        assert!(sim.anim_pointer_expired(anim, owner, &rules));
         let object = sim.anim(anim).unwrap();
         assert_eq!(object.owner_entity, None);
         assert_eq!(object.attached_bullet(), None);
@@ -6521,16 +6519,12 @@ mod tests {
             None,
             None,
         );
-        sim.classify_map_triggers(Some(&rules));
+        sim.classify_map_triggers(&rules);
         (sim, rules, player)
     }
 
     fn waypoint_cue_spring_flare(sim: &mut Simulation, rules: &RuleSet) -> AnimId {
-        sim.advance_triggers(
-            Some(rules),
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
+        sim.advance_triggers(rules, None, crate::sim::world::FrameEffects::default());
         let anim = sim
             .substrate
             .anims

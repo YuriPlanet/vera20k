@@ -126,7 +126,7 @@ fn house_pass_carries_stored_building_order_before_recalculation() {
         sim.discover_techno(
             id,
             owner,
-            crate::sim::world::UninitContext::new(Some(&rules), None),
+            crate::sim::world::UninitContext::new(&rules, None),
         );
     }
     sim.change_owner_with_rules(earlier, other, &rules, None, Default::default());
@@ -141,7 +141,7 @@ fn house_pass_carries_stored_building_order_before_recalculation() {
     let result = sim
         .advance_app_frame(
             &[],
-            Some(&rules),
+            &rules,
             None,
             22,
             crate::sim::world::TickLane::Ordinary,

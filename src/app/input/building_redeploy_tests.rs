@@ -8,7 +8,7 @@ fn step(sim: &mut Simulation, rules: &RuleSet) {
     let commands = sim.take_due_commands();
     sim.advance_app_frame(
         &commands,
-        Some(rules),
+        rules,
         None,
         33,
         crate::sim::world::TickLane::Ordinary,
@@ -501,4 +501,106 @@ fn a_yard_click_past_the_playfield_edge_packs_up_toward_the_clamped_cell() {
     assert_eq!(cursor(edge), MoveAction::NoMove);
     let ordered = click(&sim, &rules, &[yard], None, edge, OrderModifier::Normal);
     assert!(packs_up(&ordered), "{edge:?}: {ordered:?}");
+}
+
+/// Building What_Action_OnObject's factory rungs under Alt
+/// (`0x0044744E..0x0044750B`): a war factory answers NoMove over a unit its
+/// zone cannot reach (IsInSameZoneAsCoords `0x00707F60`, across a channel or
+/// on water), so the cursor is barred and the click sets no rally. Over a
+/// unit on its own ground it rallies. A shipyard's Normal MovementZone
+/// cannot stand on its own Water centre: a ship shares that blocked zone, so
+/// only the zone type `+0x4C` (Water, not ground) refuses it, and a land
+/// unit is in another zone. A service depot, which the player may order but
+/// is no factory, keeps Move over all three units.
+#[test]
+fn an_alt_click_rallies_a_war_factory_only_onto_an_object_it_can_reach() {
+    use crate::app::types::CursorFeedbackKind;
+    use HoverTargetKind::EnemyUnit;
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x447210);
+    crate::sim::arena_fixture::flood(
+        &mut sim,
+        &rules,
+        32,
+        (0..32).flat_map(|y| (13..=18).map(move |x| (x, y))),
+    );
+    sim.resolve_type_handles(&rules);
+    let owner = sim.interner().get("Americans").unwrap();
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
+    let factory = sim
+        .spawn_object("GAWEAP", "Americans", 3, 4, 0, &rules)
+        .unwrap();
+    let depot = sim
+        .spawn_object("GADEPT", "Americans", 3, 20, 0, &rules)
+        .unwrap();
+    let shipyard = sim
+        .spawn_object("GAYARD", "Americans", 14, 1, 0, &rules)
+        .unwrap();
+    let near = sim
+        .spawn_object("MTNK", "Russians", 10, 12, 64, &rules)
+        .unwrap();
+    let across = sim
+        .spawn_object("MTNK", "Russians", 24, 8, 64, &rules)
+        .unwrap();
+    let ship = sim
+        .spawn_object("HYD", "Russians", 15, 24, 64, &rules)
+        .unwrap();
+    assert!(sim.rebuild_dynamic_navigation(&rules));
+    let cursor = |building, target| {
+        super::super::cursor::capability_cursor_for_hover(
+            &sim,
+            &[building],
+            Some(building),
+            &HoverTargetKindWithId {
+                kind: EnemyUnit,
+                stable_id: target,
+            },
+            Some(&rules),
+            None,
+            OrderModifier::ForceMove,
+            true,
+            false,
+        )
+    };
+    let alt = |building, target| {
+        let entity = sim.entities().get(target).unwrap();
+        click(
+            &sim,
+            &rules,
+            &[building],
+            Some((EnemyUnit, target)),
+            (entity.position.rx(), entity.position.ry()),
+            OrderModifier::ForceMove,
+        )
+    };
+    for (building, target, reaches) in [
+        (factory, near, true),
+        (factory, across, false),
+        (factory, ship, false),
+        (shipyard, ship, false),
+        (shipyard, near, false),
+    ] {
+        assert_eq!(
+            cursor(building, target),
+            if reaches {
+                CursorFeedbackKind::Move
+            } else {
+                CursorFeedbackKind::Invalid
+            },
+            "{building} over {target}",
+        );
+        let rallied = if reaches { vec![building] } else { Vec::new() };
+        assert_eq!(
+            rallies(&alt(building, target)),
+            rallied,
+            "{building} over {target}"
+        );
+    }
+    for target in [near, across, ship] {
+        assert_eq!(cursor(depot, target), CursorFeedbackKind::Move);
+    }
 }
