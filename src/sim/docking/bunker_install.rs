@@ -66,7 +66,8 @@ pub struct BunkerRuntime {
 }
 
 impl BunkerRuntime {
-    /// The install machine's state.
+    /// The install machine's state; production reads only the transitions.
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn state(&self) -> BunkerState {
         self.state
     }
