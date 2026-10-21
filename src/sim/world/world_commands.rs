@@ -23,7 +23,7 @@ use crate::sim::command::{
     MegaMissionRecord, MegaMissionTarget, ScatterRecord, SellWallAtCellRecord,
 };
 use crate::sim::house_diplomacy::HouseAlliances;
-use crate::sim::intern::StringInterner;
+use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::mission::MissionType;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::overlay_grid::{
@@ -436,6 +436,22 @@ impl Simulation {
         self.encode_header_event(command_owner, crate::sim::command::EXIT_OPCODE)
     }
 
+    pub fn encode_options_record(&self, command_owner: InternedId) -> Option<CommandRecord> {
+        self.encode_header_event(command_owner, crate::sim::command::OPTIONS_OPCODE)
+    }
+
+    pub fn encode_latency_fudge_record(
+        &self,
+        command_owner: InternedId,
+        value: i32,
+    ) -> Option<CommandRecord> {
+        self.encode_int_event(
+            command_owner,
+            crate::sim::command::LATENCY_FUDGE_OPCODE,
+            value,
+        )
+    }
+
     /// EVENT_DESTRUCT's header-only record: `EventClass(index, 8)`
     /// (`0x004C66C0`) writes only the type, House and frame.
     pub fn encode_destruct_record(
@@ -452,7 +468,7 @@ impl Simulation {
         command_owner: crate::sim::intern::InternedId,
         house_index: i32,
     ) -> Option<CommandRecord> {
-        self.encode_house_index_event(
+        self.encode_int_event(
             command_owner,
             crate::sim::command::REMOVE_PLAYER_OPCODE,
             house_index,
@@ -466,19 +482,19 @@ impl Simulation {
         command_owner: crate::sim::intern::InternedId,
         house_index: i32,
     ) -> Option<CommandRecord> {
-        self.encode_house_index_event(command_owner, crate::sim::command::ALLY_OPCODE, house_index)
+        self.encode_int_event(command_owner, crate::sim::command::ALLY_OPCODE, house_index)
     }
 
-    /// `EventClass(house, type, index)` (`0x004C6720`): a header event
-    /// whose dword payload is a House index.
-    fn encode_house_index_event(
+    /// `EventClass(house, type, value)` (`0x004C6720`): a header event
+    /// whose payload is one unmodified signed dword.
+    fn encode_int_event(
         &self,
         command_owner: crate::sim::intern::InternedId,
         opcode: u8,
-        house_index: i32,
+        value: i32,
     ) -> Option<CommandRecord> {
         let mut record = self.encode_header_event(command_owner, opcode)?;
-        record.payload_mut()[..4].copy_from_slice(&house_index.to_le_bytes());
+        record.payload_mut()[..4].copy_from_slice(&value.to_le_bytes());
         Some(record)
     }
 
@@ -513,6 +529,24 @@ impl Simulation {
         record: &CommandRecord,
         execute_tick: u64,
     ) -> Option<CommandEnvelope> {
+        if matches!(
+            record.opcode(),
+            crate::sim::command::OPTIONS_OPCODE | crate::sim::command::LATENCY_FUDGE_OPCODE
+        ) {
+            let house_index = usize::try_from(record.house_id()).ok()?;
+            let owner = *self.houses.order().get(house_index)?;
+            let command = if record.opcode() == crate::sim::command::OPTIONS_OPCODE {
+                Command::OpenOptions
+            } else {
+                Command::SetLatencyFudge {
+                    value: i32::from_le_bytes(record.payload()[..4].try_into().ok()?),
+                }
+            };
+            return self
+                .houses
+                .contains_key(&owner)
+                .then(|| CommandEnvelope::new(owner, execute_tick, command));
+        }
         // PlanMgr637E00/638120 owns the payload and validates live actors.
         // Keep its native byte record intact through the scheduled envelope.
         if matches!(record.opcode(), 0x2A..=0x2C)
@@ -1050,6 +1084,34 @@ impl Simulation {
             self.planning_detach_actor(actor);
         }
         match cmd {
+            Command::OpenOptions => {
+                // Execute_DoList64C8D8..64C911 dispatches OPTIONS only for
+                // the current House. Event4C7929 suppresses playback, then
+                // writes GameState1 at4C7939. Source: original instructions.
+                if self.interner.get(command_owner) != self.session.current_house() {
+                    return false;
+                }
+                #[cfg(any(test, feature = "test-support"))]
+                if self.replaying_recorded_commands {
+                    return false;
+                }
+                self.lifecycle_outputs
+                    .emit(super::LifecycleOutput::OptionsRequested);
+                true
+            }
+            Command::SetLatencyFudge { value } => {
+                // Event LATENCYFUDGE4C7F4F stores the unmodified dword; its
+                // network-session owner receives the write after MainTick.
+                let Some(owner) = self.interner.get(command_owner) else {
+                    return false;
+                };
+                self.lifecycle_outputs
+                    .emit(super::LifecycleOutput::LatencyFudgeChanged {
+                        owner,
+                        value: *value,
+                    });
+                true
+            }
             Command::MegaMission {
                 entity_id,
                 mission,

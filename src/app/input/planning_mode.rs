@@ -229,7 +229,7 @@ fn set_active(state: &mut AppState, active: bool) {
         &mut state.match_state.match_audio.sound_events,
     );
     if let (Some(rt), Some(command)) = (rt, command) {
-        rt.simulation.queue_command(command);
+        rt.simulation.issue_local_command(command);
     }
 }
 
@@ -284,7 +284,7 @@ fn queue_orders_in_sim(
             // refused as DEPLOY9; a mobile self-click is Unload16.
             // ClickedAction_Cell builds the MoveFlash (`0x004D7EB5`) before
             // its Move reaches Player_Send_Command.
-            sim.queue_command(order);
+            sim.issue_local_command(order);
             added = true;
             continue;
         }
@@ -294,7 +294,7 @@ fn queue_orders_in_sim(
         if let Some(envelope) =
             SynchronizedCommand::opaque(record).decode_for_simulation(sim, order.execute_tick)
         {
-            sim.queue_command(envelope);
+            sim.issue_local_command(envelope);
             added = true;
         }
     }
@@ -406,7 +406,7 @@ pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
                 && let Some(command) = SynchronizedCommand::opaque(record)
                     .decode_for_simulation(&rt.simulation, rt.simulation.session().tick())
             {
-                rt.simulation.queue_command(command);
+                rt.simulation.issue_local_command(command);
             }
         }
     }
@@ -428,7 +428,7 @@ pub(crate) fn delete_at_cursor(state: &mut AppState) {
         && let Some(command) = SynchronizedCommand::opaque(record)
             .decode_for_simulation(&rt.simulation, rt.simulation.session().tick())
     {
-        rt.simulation.queue_command(command);
+        rt.simulation.issue_local_command(command);
     }
 }
 
@@ -621,7 +621,7 @@ mod tests {
                 .is_ok_and(|added| added),
                 "lost {payload:?}"
             );
-            let queued = sim.take_due_commands();
+            let queued = sim.take_frame_commands_for_test();
             assert_eq!(queued.len(), 1);
             let Command::PlanningRecord { record } = &queued[0].payload else {
                 panic!("ordinary order escaped planning");
@@ -650,7 +650,7 @@ mod tests {
         ] {
             let envelope = CommandEnvelope::new(local, 0, payload);
             assert!(queue_orders_in_sim(&mut sim, local, &[42], vec![envelope.clone()]).unwrap());
-            assert_eq!(sim.take_due_commands(), vec![envelope]);
+            assert_eq!(sim.take_frame_commands_for_test(), vec![envelope]);
         }
         for payload in [
             Command::DeployMcv { entity_id: 42 },
@@ -666,7 +666,7 @@ mod tests {
                 )
                 .unwrap()
             );
-            let queued = sim.take_due_commands();
+            let queued = sim.take_frame_commands_for_test();
             assert_eq!(queued.len(), 1);
             let Command::PlanningRecord { record } = &queued[0].payload else {
                 panic!("mobile self-click escaped Planning Mode");

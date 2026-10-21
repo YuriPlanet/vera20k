@@ -195,12 +195,16 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkMatchEvent) -> a
                 .sim_runtime
                 .as_mut()
                 .ok_or_else(|| anyhow::anyhow!("no running match"))?;
-            crate::app::input::commands::schedule_command_in_sim(
-                &mut runtime.simulation,
-                &owner,
+            let sim = &mut runtime.simulation;
+            let owner = sim
+                .interner()
+                .get(&owner)
+                .ok_or_else(|| anyhow::anyhow!("received event has no registered owner"))?;
+            sim.queue_command(crate::sim::command::CommandEnvelope::new(
+                owner,
+                sim.session().tick(),
                 crate::sim::command::Command::ExitMatch,
-            )
-            .ok_or_else(|| anyhow::anyhow!("EXIT for {owner} was not queued"))?;
+            ));
         }
         NetworkMatchEvent::PeerStalled { source_index } => {
             let session = &state.match_state.session;
@@ -260,12 +264,16 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkMatchEvent) -> a
                 .sim_runtime
                 .as_mut()
                 .ok_or_else(|| anyhow::anyhow!("no running match"))?;
-            crate::app::input::commands::schedule_command_in_sim(
-                &mut runtime.simulation,
-                &owner,
+            let sim = &mut runtime.simulation;
+            let owner = sim
+                .interner()
+                .get(&owner)
+                .ok_or_else(|| anyhow::anyhow!("received event has no registered owner"))?;
+            sim.queue_command(crate::sim::command::CommandEnvelope::new(
+                owner,
+                sim.session().tick(),
                 crate::sim::command::Command::Ally { house_index },
-            )
-            .ok_or_else(|| anyhow::anyhow!("ALLY for {owner} was not queued"))?;
+            ));
         }
         NetworkMatchEvent::Chat { source_index, text } => {
             crate::app::input::chat::receive(state, source_index, &text);

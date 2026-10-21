@@ -22,7 +22,106 @@ use crate::sim::pathfinding::zone_map::ZoneGrid;
 use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS;
 
 impl Simulation {
-    /// Queue one already-prepared command for future execution.
+    /// Queue_Options647040 checks the current House's result/death flags and
+    /// appends OPTIONS. Full admission returns false without opening a menu.
+    pub fn queue_options_request(&mut self) -> bool {
+        let Some(owner) = self.session.current_house() else {
+            return false;
+        };
+        let Some(house) = self.houses.get(&owner) else {
+            return false;
+        };
+        if house.has_won() || house.has_lost() || house.is_to_die() {
+            return false;
+        }
+        let Some(record) = self.encode_options_record(owner) else {
+            return false;
+        };
+        let Some(command) = self.decode_native_command_record(&record, self.session.tick()) else {
+            return false;
+        };
+        self.issue_local_command(command)
+    }
+
+    /// Submit a freshly produced local command. Native events share the
+    /// process-wide OutList cap; local selection/Options use their ingress.
+    /// The result describes queue admission, not whether input was handled.
+    pub fn issue_local_command(&mut self, command: CommandEnvelope) -> bool {
+        if command.payload.uses_frame_ingress() {
+            self.queue_command(command);
+            return true;
+        }
+        // A recorded frame is the authoritative accepted batch. Run local
+        // producers for their other effects, but never recreate a record
+        // that live OutList saturation may have dropped.
+        #[cfg(any(test, feature = "test-support"))]
+        if self.replaying_recorded_commands {
+            return false;
+        }
+        if let Command::SetRally {
+            rx,
+            ry,
+            producer_ids,
+        } = &command.payload
+        {
+            let mut accepted = true;
+            for &producer in producer_ids {
+                accepted &= self.local_commands.try_push(CommandEnvelope::new(
+                    command.owner,
+                    command.execute_tick,
+                    Command::SetRally {
+                        rx: *rx,
+                        ry: *ry,
+                        producer_ids: vec![producer],
+                    },
+                ));
+            }
+            return accepted;
+        }
+        self.local_commands.try_push(command)
+    }
+
+    pub fn issue_local_commands(&mut self, commands: impl IntoIterator<Item = CommandEnvelope>) {
+        for command in commands {
+            let _ = self.issue_local_command(command);
+        }
+    }
+
+    fn queued_commands(&self) -> impl Iterator<Item = &CommandEnvelope> {
+        self.pending_commands
+            .iter()
+            .chain(self.local_commands.iter())
+    }
+
+    /// Offline transfer at the post-Logic queue boundary. The existing
+    /// semantic multiplayer path still lacks native send selection/retiming;
+    /// network transport must replace that policy, not drain in input code.
+    pub(crate) fn transfer_local_commands(&mut self, commands: &mut Vec<CommandEnvelope>) {
+        let count = self.local_commands.len();
+        #[cfg(any(test, feature = "test-support"))]
+        let playback = self.replaying_recorded_commands;
+        #[cfg(not(any(test, feature = "test-support")))]
+        let playback = false;
+        let execute_tick = self.session.tick().saturating_add(1);
+        for command in self.local_commands.take_prefix(count) {
+            if command.execute_tick <= execute_tick {
+                // A snapshot can contain pending local input. Playback's
+                // admitted batch already represents the due part, but its
+                // future records still belong on the admitted scheduler.
+                if !playback {
+                    commands.push(command);
+                }
+            } else {
+                // Transfer frees OutList occupancy even when the preserved
+                // frame remains in the future on the admitted DoList.
+                self.pending_commands.push(command);
+            }
+        }
+    }
+
+    /// Queue one already-admitted synchronized/deferred command, or a local
+    /// frame-ingress action, for future execution. Fresh local events must use
+    /// [`Self::issue_local_command`] so they retain their OutList occupancy.
     ///
     /// This is an append-only ingress: it preserves the command owner, execution
     /// tick, and insertion position exactly. It does not sort, retime, normalize,
@@ -45,15 +144,14 @@ impl Simulation {
     /// draining or exposing writable queue state. Ordinary rendering does not
     /// call this diagnostic boundary.
     pub fn pending_command_snapshot(&self) -> Vec<CommandEnvelope> {
-        self.pending_commands.clone()
+        self.queued_commands().cloned().collect()
     }
 
     /// Whether provisional local selection still has authoritative queued
     /// work. Derive this from the existing queue; selected-bit equality cannot
     /// distinguish an unconsumed snapshot from later lifecycle deselection.
     pub fn has_pending_selection_commands(&self) -> bool {
-        self.pending_commands
-            .iter()
+        self.queued_commands()
             .any(|command| matches!(command.payload, Command::Select { .. }))
     }
 
@@ -63,8 +161,7 @@ impl Simulation {
         owner: InternedId,
         source: InternedId,
     ) -> Option<u64> {
-        self.pending_commands
-            .iter()
+        self.queued_commands()
             .filter_map(|command| match &command.payload {
                 Command::BeginPaidSuperWeapon { selection, .. }
                     if command.owner == owner && selection.source == source =>
@@ -87,8 +184,7 @@ impl Simulation {
             .paid_super_weapon_selection(owner)
             .map(|ticket| (ticket, false));
         for command in self
-            .pending_commands
-            .iter()
+            .queued_commands()
             .filter(|command| command.owner == owner)
         {
             match command.payload {
@@ -117,7 +213,7 @@ impl Simulation {
             .ok()
             .filter(|speed| *speed <= crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED);
         let execute_tick = self.session.tick().saturating_add(1);
-        let house_order = self.due_command_house_order(&self.pending_commands, execute_tick);
+        let house_order = self.due_command_house_order(self.queued_commands(), execute_tick);
         // Match execution phases: all local Options ingress first, then all
         // eligible EventClass tails. Interleaving them by House can predict
         // a different speed from the one the frame actually commits.
@@ -129,7 +225,7 @@ impl Simulation {
                 if at_tail && !house.event_dispatch_eligible() {
                     continue;
                 }
-                for command in self.pending_commands.iter().filter(|command| {
+                for command in self.queued_commands().filter(|command| {
                     command.execute_tick <= execute_tick && command.owner == owner
                 }) {
                     let speed = match (at_tail, &command.payload) {
@@ -173,52 +269,34 @@ impl Simulation {
         due
     }
 
-    /// Admit the current frame's Strip publication after the batch already
-    /// accepted by the app. Native MainTick55D8AB -> Strip6A8B30 precedes
-    /// Logic55DC9E/Factory55B680; LocalEvent6474EF preserves OutList insertion.
-    /// Thus an already queued Building443860 SetRally precedes mobile PLACE.
-    ///
-    /// Playback may already contain that PLACE. Consume one exact fresh copy
-    /// for each recorded envelope, without deduplicating player commands or
-    /// draining unrelated/future work left in the scheduler.
+    /// Component fixtures can explicitly visit the real transfer boundary
+    /// without running unrelated world AI. Live frames transfer after Logic.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn take_frame_commands_for_test(&mut self) -> Vec<CommandEnvelope> {
+        let mut commands = self.take_due_commands();
+        self.transfer_local_commands(&mut commands);
+        commands
+    }
+
+    /// Strip's prefix follows prior input and precedes Logic. It appends to
+    /// the same local stage, retaining occupancy until the tail transfer.
     pub(super) fn admit_frame_commands(
         &mut self,
         commands: &[CommandEnvelope],
         rules: &RuleSet,
     ) -> Vec<CommandEnvelope> {
-        let previous_pending = self.pending_commands.len();
         crate::sim::production::publish_production_changes(self, rules);
-        let published = self.pending_commands.split_off(previous_pending);
-        let mut admitted = commands.to_vec();
-        self.admit_generated_frame_commands(&mut admitted, published, true);
-        admitted
+        commands.to_vec()
     }
 
-    /// Local events produced during the frame join the existing batch in
-    /// OutList insertion order before the canonical House-ordered dispatcher.
-    /// Recorded diagnostic batches already contain these events; consume one
-    /// exact regenerated copy per recorded entry only on that route. Ordinary
-    /// player cancellation and a strip cancellation may be identical and both
-    /// must execute. Future events stay with the one persisted queue owner.
-    pub(super) fn admit_generated_frame_commands(
-        &mut self,
-        admitted: &mut Vec<CommandEnvelope>,
-        mut generated: Vec<CommandEnvelope>,
-        commands_include_generated: bool,
-    ) {
+    /// House-generated local events follow earlier input/Strip events. Future
+    /// deferred work retains the existing admitted scheduler. Replay's local
+    /// issue policy suppresses regenerated records, including dropped ones.
+    pub(super) fn issue_generated_frame_commands(&mut self, generated: Vec<CommandEnvelope>) {
         let execute_tick = self.session.tick().saturating_add(1);
-        if commands_include_generated {
-            for command in admitted.iter() {
-                if command.execute_tick <= execute_tick
-                    && let Some(index) = generated.iter().position(|fresh| fresh == command)
-                {
-                    generated.remove(index);
-                }
-            }
-        }
         for command in generated {
             if command.execute_tick <= execute_tick {
-                admitted.push(command);
+                let _ = self.issue_local_command(command);
             } else {
                 self.pending_commands.push(command);
             }
@@ -609,14 +687,14 @@ impl Simulation {
     /// Canonical receiver order for every due command in one master frame.
     /// Registered HouseClass order wins; standalone-fixture owners are appended
     /// in their first issue order, matching the established tail dispatcher.
-    fn due_command_house_order(
+    fn due_command_house_order<'a>(
         &self,
-        commands: &[CommandEnvelope],
+        commands: impl IntoIterator<Item = &'a CommandEnvelope>,
         execute_tick: u64,
     ) -> Vec<InternedId> {
         let mut house_order = self.houses.order().to_vec();
         for command in commands
-            .iter()
+            .into_iter()
             .filter(|command| command.execute_tick <= execute_tick)
         {
             if !house_order.contains(&command.owner) {
@@ -624,13 +702,6 @@ impl Simulation {
             }
         }
         house_order
-    }
-
-    fn command_uses_frame_ingress(command: &Command) -> bool {
-        matches!(
-            command,
-            Command::SetGameSpeed { .. } | Command::Select { .. }
-        )
     }
 
     /// Apply session/local-input transitions before triggers and live Logic.
@@ -649,11 +720,11 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> usize {
         let mut executed_commands = 0usize;
-        for owner in self.due_command_house_order(commands, execute_tick) {
+        for owner in self.due_command_house_order(commands.iter(), execute_tick) {
             for command in commands.iter().filter(|command| {
                 command.execute_tick <= execute_tick
                     && command.owner == owner
-                    && Self::command_uses_frame_ingress(&command.payload)
+                    && command.payload.uses_frame_ingress()
             }) {
                 match &command.payload {
                     Command::SetGameSpeed { speed } => {
@@ -697,7 +768,7 @@ impl Simulation {
         // only its eligible Houses, never a missing sender. Preserve this
         // diagnostic extension without weakening live EventClass admission.
         let diagnostic_scene = self.houses.is_empty();
-        for owner in self.due_command_house_order(commands, execute_tick) {
+        for owner in self.due_command_house_order(commands.iter(), execute_tick) {
             // Native 0x0064C4FB..0x0064C50D reads the flags on reaching each
             // House, after prior Houses' events, not when taking the snapshot.
             if !diagnostic_scene
@@ -711,7 +782,7 @@ impl Simulation {
             for command in commands.iter().filter(|command| {
                 command.execute_tick <= execute_tick
                     && command.owner == owner
-                    && !Self::command_uses_frame_ingress(&command.payload)
+                    && !command.payload.uses_frame_ingress()
                     && !Self::command_uses_megamission(&command.payload)
             }) {
                 let (_, spawned) =

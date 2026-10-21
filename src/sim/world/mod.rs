@@ -1484,6 +1484,9 @@ pub struct Simulation {
     /// Admitted through `queue_command(s)` and drained each tick when
     /// `cmd.execute_tick <= current_tick + 1`.
     pending_commands: Vec<CommandEnvelope>,
+    /// Locally issued events retain their shared OutList occupancy until
+    /// the post-Logic transfer. Already-admitted/deferred work stays above.
+    local_commands: crate::sim::command_queue::LocalCommandStage<CommandEnvelope>,
     /// PlanMgr is the sole owner of shared nodes and per-actor plan tokens.
     planning: planning::PlanningState,
     /// Diagnostic playback supplies a batch already containing generated
@@ -4218,6 +4221,7 @@ impl Simulation {
             frame_sync_checksum: None,
             state_hash_interval: every_frame(),
             pending_commands: Vec::new(),
+            local_commands: Default::default(),
             planning: planning::PlanningState::default(),
             #[cfg(any(test, feature = "test-support"))]
             replaying_recorded_commands: false,
@@ -7218,15 +7222,7 @@ impl Simulation {
         // death reaches the gate on the next frame. Each house's strategy tick
         // (`house_strategy.rs`) and building choice follow its own gate.
         let generated = self.house_rung(rules, overlay_registry, self.session.tick() > 0, effects);
-        #[cfg(any(test, feature = "test-support"))]
-        let commands_include_generated = self.replaying_recorded_commands;
-        #[cfg(not(any(test, feature = "test-support")))]
-        let commands_include_generated = false;
-        self.admit_generated_frame_commands(commands, generated, commands_include_generated);
-        #[cfg(any(test, feature = "test-support"))]
-        {
-            self.replaying_recorded_commands = false;
-        }
+        self.issue_generated_frame_commands(generated);
         #[cfg(any(test, feature = "test-support"))]
         if self.session.tick() > 0 {
             self.trace_house_ai_activation_order(HouseAiActivationOrderTestEvent::DefeatProcessed);
@@ -7242,6 +7238,11 @@ impl Simulation {
             });
         }
 
+        // Queue_AI follows Logic, including Strip and House-generated events.
+        // Keep local occupancy until this transfer; the earlier app drain is
+        // only for already-admitted commands and local frame ingress.
+        self.transfer_local_commands(commands);
+
         // EventClass dispatch is a Main_Tick tail rung: the complete live
         // Logic walk observes frame N's pre-command state, so an accepted
         // command first changes that object's AI behavior on frame N+1.
@@ -7249,6 +7250,10 @@ impl Simulation {
             self.apply_due_commands(commands, rules, execute_tick, overlay_registry, effects);
         *executed_commands += executed;
         *spawned_entities |= spawned;
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            self.replaying_recorded_commands = false;
+        }
 
         // Main_Tick returns immediately on a terminal result. The wrapping
         // frame commit, pacing tail, and pending-delete drain are all skipped

@@ -1334,7 +1334,7 @@ fn finish_order(
                 .as_mut()
                 .map(|rt| &mut rt.simulation)
             {
-                sim.queue_commands(queued);
+                sim.issue_local_commands(queued);
             }
         }
         true

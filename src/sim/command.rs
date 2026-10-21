@@ -68,6 +68,8 @@ pub const SCATTER_OPCODE: u8 = 0x07;
 /// GameSpeed setting `0x00A8EB60`, then posts `TXT_PLAYER_CHANGED_SPEED` when
 /// the sender is not the local player. Offline Options uses `SetGameSpeed`.
 pub const GAME_SPEED_OPCODE: u8 = 0x0d;
+pub const OPTIONS_OPCODE: u8 = 0x0c;
+pub const LATENCY_FUDGE_OPCODE: u8 = 0x24;
 
 /// Payload of the native GAMESPEED event (opcode `0x0D`, type 13 at
 /// `0x004C794B`): the setting dword at Event+7; the sender rides the header.
@@ -961,9 +963,72 @@ pub enum Command {
     /// target gone by then resolves to null and clears the archive.
     /// Appended to preserve existing serialized variant indices.
     ArchiveObject { entity_id: u64, target_id: u64 },
+    /// OPTIONS0C: only the current sender opens GameState1 at due dispatch;
+    /// remote and replay copies are consumed without opening a menu.
+    OpenOptions,
+    /// LATENCYFUDGE24 writes its signed payload unchanged. The network session
+    /// remains the owner; dispatch publishes the write at the frame boundary.
+    SetLatencyFudge { value: i32 },
 }
 
 impl Command {
+    pub(crate) fn uses_frame_ingress(&self) -> bool {
+        matches!(self, Self::Select { .. } | Self::SetGameSpeed { .. })
+    }
+
+    /// Classify local issue, not already-admitted replay/network input. The
+    /// paid source/destination commands each fire SPECIAL_PLACE and consume
+    /// a slot; only cancellation is local ticket bookkeeping.
+    pub(crate) fn consumes_native_outlist_slot(&self) -> bool {
+        match self {
+            Self::Select { .. }
+            | Self::SetGameSpeed { .. }
+            | Self::MoveFlash { .. }
+            | Self::CancelPaidSuperWeapon { .. }
+            | Self::CycleProducerFocus { .. } => false,
+            Self::PlanningRecord { .. }
+            | Self::Move { .. }
+            | Self::MoveToObject { .. }
+            | Self::Stop { .. }
+            | Self::Attack { .. }
+            | Self::AttackMove { .. }
+            | Self::Guard { .. }
+            | Self::DeployMcv { .. }
+            | Self::UndeployBuilding { .. }
+            | Self::SetRally { .. }
+            | Self::QueueProduction { .. }
+            | Self::SuspendProduction { .. }
+            | Self::PlaceReadyBuilding { .. }
+            | Self::CancelProductionByType { .. }
+            | Self::SellBuilding { .. }
+            | Self::ToggleRepair { .. }
+            | Self::EjectBunker { .. }
+            | Self::UnloadPassengers { .. }
+            | Self::CaptureBuilding { .. }
+            | Self::PlantC4 { .. }
+            | Self::LaunchSuperWeapon { .. }
+            | Self::ToggleInfantryDeploy { .. }
+            | Self::ForceAttackCell { .. }
+            | Self::SellWallAtCell { .. }
+            | Self::ExitMatch
+            | Self::PlaceProducedMobile { .. }
+            | Self::Scatter { .. }
+            | Self::TogglePrimaryFactory { .. }
+            | Self::Cheer
+            | Self::MegaMission { .. }
+            | Self::Destruct
+            | Self::RemovePlayer { .. }
+            | Self::Ally { .. }
+            | Self::CompletePaidSuperWeapon { .. }
+            | Self::BeginPaidSuperWeapon { .. }
+            | Self::LiveGameSpeed { .. }
+            | Self::SetBuildingOnLine { .. }
+            | Self::ArchiveObject { .. }
+            | Self::OpenOptions
+            | Self::SetLatencyFudge { .. } => true,
+        }
+    }
+
     /// The MEGAMISSION `FootClass::ClickedAction` sends with no Target and
     /// `destination` as its Destination: Enter or Eaten on a clicked object
     /// (`0x004D74E0`; a depot, refinery, bunker, transport or Grinder) and
@@ -1009,6 +1074,12 @@ pub struct CommandEnvelope {
     pub owner: InternedId,
     pub execute_tick: u64,
     pub payload: Command,
+}
+
+impl crate::sim::command_queue::LocalCommandEvent for CommandEnvelope {
+    fn consumes_native_outlist_slot(&self) -> bool {
+        self.payload.consumes_native_outlist_slot()
+    }
 }
 
 impl CommandEnvelope {

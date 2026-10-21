@@ -654,6 +654,15 @@ pub enum ConcealOutcome {
 /// but the stream preserves the verified native relative ordering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LifecycleOutput {
+    /// Event OPTIONS4C7929..4C7939 requests GameState1. The app opens the
+    /// modal after MainTick returns, through its existing menu owner.
+    OptionsRequested,
+    /// Event LATENCYFUDGE4C7F35..4C7F4F writes the existing network-session
+    /// setting. Transport owns its persistent value, not Simulation.
+    LatencyFudgeChanged {
+        owner: InternedId,
+        value: i32,
+    },
     /// Building4456D0 attempts AddCameo before House4F92E2 recalculates.
     /// The retained client strip owns duplicate/capacity admission. Emit in
     /// House building/type order at the simulation phase that made the query.

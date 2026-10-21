@@ -1060,6 +1060,8 @@ pub(crate) fn schedule_command_in_sim(
         && !matches!(
             &payload,
             Command::SetGameSpeed { .. }
+                | Command::LiveGameSpeed { .. }
+                | Command::SetLatencyFudge { .. }
                 | Command::ExitMatch
                 | Command::Destruct
                 | Command::RemovePlayer { .. }
@@ -1090,6 +1092,10 @@ pub(crate) fn schedule_command_in_sim(
         _ => sim.intern(owner),
     };
     let envelope = match payload {
+        Command::SetLatencyFudge { value } => {
+            let record = sim.encode_latency_fudge_record(owner_id, value)?;
+            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+        }
         Command::Scatter { entity_id } => {
             let record = sim.encode_scatter_record(owner_id, entity_id)?;
             SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
@@ -1121,7 +1127,9 @@ pub(crate) fn schedule_command_in_sim(
         payload => CommandEnvelope::new(owner_id, execute_tick, payload),
     };
     let envelope = roundtrip_ordinary_local_megamission(sim, envelope)?;
-    sim.queue_command(envelope);
+    // PlayerSend6FFDE6 ignores a full OutList's false return. The click is
+    // still handled and its voice/action-line effects are not rolled back.
+    let _ = sim.issue_local_command(envelope);
     Some(execute_tick)
 }
 
@@ -1419,6 +1427,58 @@ mod tests {
         (sim, local, peer)
     }
 
+    #[test]
+    fn local_outlist_overflow_keeps_click_success_and_local_options() {
+        let (mut sim, _, _) = two_human_sim();
+        // TryAppend6521C0 admits 128 events globally, before any payload
+        // receiver runs. A stale Stop still occupies its slot. PlayerSend
+        // 6FFDE6..6FFDEE ignores a full OutList's refusal and returns true.
+        for _ in 0..127 {
+            assert_eq!(
+                schedule_command_in_sim(&mut sim, "Local", Command::Stop { entity_id: 42 }),
+                Some(41)
+            );
+        }
+        assert_eq!(
+            schedule_command_in_sim(&mut sim, "Local", Command::LiveGameSpeed { speed: 4 }),
+            Some(41)
+        );
+        assert_eq!(
+            schedule_command_in_sim(&mut sim, "Peer", Command::LiveGameSpeed { speed: 6 }),
+            Some(41),
+            "overflow does not turn ordinary input feedback into a refusal"
+        );
+        assert_eq!(
+            schedule_command_in_sim(&mut sim, "Local", Command::SetGameSpeed { speed: 2 }),
+            Some(41),
+            "offline Options is outside EventClass OutList admission"
+        );
+        let due = sim.take_due_commands();
+        assert_eq!(due.len(), 1, "only local Options uses pre-Logic ingress");
+        // This second attempt is still before transfer; taking the ingress
+        // batch cannot free the event queue's occupied slots.
+        assert_eq!(
+            schedule_command_in_sim(&mut sim, "Peer", Command::LiveGameSpeed { speed: 6 }),
+            Some(41)
+        );
+        sim.advance_tick(&due, None, None, None, 33);
+        assert_eq!(
+            sim.session().game_options().game_speed,
+            4,
+            "local Options runs first, then slot 128; the peer's 129th event was dropped"
+        );
+        assert_eq!(
+            schedule_command_in_sim(&mut sim, "Peer", Command::LiveGameSpeed { speed: 6 }),
+            Some(42)
+        );
+        run_due(&mut sim);
+        assert_eq!(
+            sim.session().game_options().game_speed,
+            6,
+            "transfer reopens the queue"
+        );
+    }
+
     fn run_due(sim: &mut Simulation) -> bool {
         let due = sim.take_due_commands();
         sim.advance_tick(&due, None, None, None, 33).frame_committed
@@ -1511,7 +1571,7 @@ mod tests {
         assert_eq!(record.opcode(), crate::sim::command::ALLY_OPCODE);
         assert_eq!(&record.payload()[..4], &1i32.to_le_bytes());
         schedule_command_in_sim(&mut sim, "Local", Command::Ally { house_index: 1 }).unwrap();
-        let due = sim.take_due_commands();
+        let due = sim.take_frame_commands_for_test();
         assert!(matches!(
             due.as_slice(),
             [envelope] if envelope.owner == local
@@ -1546,7 +1606,10 @@ mod tests {
         );
 
         let due = sim.take_due_commands();
-        assert_eq!(due.len(), 1);
+        assert!(
+            due.is_empty(),
+            "the local EXIT remains staged until the tail"
+        );
         let result = sim.advance_tick(&due, None, None, None, 33);
         assert_eq!(result.executed_commands, 1);
         assert!(
@@ -1601,18 +1664,17 @@ mod tests {
             schedule_command_in_sim(&mut sim, "Local", Command::Destruct),
             Some(41)
         );
-        assert_eq!(
-            schedule_command_in_sim(&mut sim, "Ai", Command::Destruct),
-            Some(41)
-        );
+        // The payload itself has no Human guard. Exercise that receiver at
+        // the tail below, after the House rung's pending-death processing.
         let pending = sim.pending_command_snapshot();
-        assert_eq!(pending.len(), 2);
+        assert_eq!(pending.len(), 1);
         assert!(pending.iter().all(|c| c.payload == Command::Destruct));
         assert!(!sim.houses()[&local].is_to_die());
 
         let due = sim.take_due_commands();
         let result = sim.advance_tick(&due, None, None, None, 33);
-        assert_eq!(result.executed_commands, 2);
+        assert_eq!(result.executed_commands, 1);
+        assert!(sim.apply_command("Ai", &Command::Destruct, None));
         assert!(sim.houses()[&local].is_to_die());
         assert!(sim.houses()[&ai].is_to_die());
         assert!(!sim.quit_requested());
@@ -1990,7 +2052,7 @@ mod tests {
             sim.pending_command_snapshot()[0].payload,
             Command::SellWallAtCell { x: 0, y: 1 }
         );
-        assert_eq!(sim.take_due_commands().len(), 1);
+        assert_eq!(sim.take_frame_commands_for_test().len(), 1);
 
         sim.session_mut_for_test().set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),

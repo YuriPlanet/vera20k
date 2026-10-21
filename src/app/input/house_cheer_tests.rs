@@ -1,7 +1,7 @@
 //! Original AllToCheer536C00 ->730F30 admission histories. The bounded
 //! OutList comparison connects the production input clock to the existing
-//! SynchronizedCommandQueue explicitly; ordinary app scheduling is tested
-//! separately and retains its current unsaturated-ingress bound. Ring storage
+//! SynchronizedCommandQueue explicitly; ordinary app scheduling uses the same
+//! local capacity owner and is tested separately. Ring storage
 //! indices and timeGetTime imports are native observations, not Rust layout
 //! or wall-clock claims. No House receiver or device audio runs in this leaf.
 
@@ -254,7 +254,7 @@ fn ordinary_cheer_uses_binary_frame_admission_then_the_shared_due_scheduler() {
         before_rng,
         "local event issue draws no simulation RNG"
     );
-    assert_eq!(sim.take_due_commands().len(), 2);
+    assert_eq!(sim.take_frame_commands_for_test().len(), 2);
     assert!(sim.pending_command_snapshot().is_empty());
 }
 

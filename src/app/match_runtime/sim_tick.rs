@@ -1329,6 +1329,15 @@ fn advance_one_simulation_frame(
                 update_building_placement_preview(state);
             }
             match output {
+                LifecycleOutput::OptionsRequested => {
+                    crate::app::App::enter_in_game_menu_state(
+                        state,
+                        crate::ui::pause_menu::InGameMenuState::Menu,
+                    );
+                }
+                LifecycleOutput::LatencyFudgeChanged { value, .. } => {
+                    state.match_state.session.set_latency_fudge(value);
+                }
                 LifecycleOutput::PlanningNodeDeleted {
                     owner,
                     node_id,

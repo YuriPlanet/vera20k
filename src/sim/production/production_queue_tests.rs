@@ -968,52 +968,55 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
     assert_eq!(sim.pending_command_snapshot().len(), 1);
 }
 
+fn ready_infantry_prefix_world(
+    rules: &RuleSet,
+) -> (Simulation, InternedId, crate::sim::command::CommandEnvelope) {
+    let mut sim = Simulation::with_seed(0xFAC7_0003);
+    sim.hash_state_every(std::num::NonZeroU64::MIN);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    spawn_structure(&mut sim, &rules, 1, "Americans", "GAPILE", 14, 14);
+    let owner = sim.interner.get("Americans").unwrap();
+    assert!(enqueue_by_type(
+        &mut sim,
+        &rules,
+        "Americans",
+        "E1",
+        crate::sim::world::FrameEffects::default(),
+        false,
+    ));
+    assert!(enqueue_by_type(
+        &mut sim,
+        &rules,
+        "Americans",
+        "E1",
+        crate::sim::world::FrameEffects::default(),
+        false,
+    ));
+    assert!(
+        sim.production
+            .factories_mut()
+            .test_arm_ready(owner, ProductionCategory::Infantry)
+    );
+    // This unrelated future event belongs to the scheduler throughout both
+    // frames; admitting the prefix must not drain or retime it.
+    let future = crate::sim::command::CommandEnvelope::new(
+        owner,
+        9,
+        crate::sim::command::Command::Stop { entity_id: 999 },
+    );
+    sim.queue_command(future.clone());
+    (sim, owner, future)
+}
+
 /// The live app records the Strip-augmented batch; playback regenerates the
 /// same completion and must consume its recorded PLACE exactly once. The
 /// completion itself is a supplied ready prior here, covered by the paid chain.
 #[test]
 fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
     let rules = factory_constructor_rules();
-    let make = || {
-        let mut sim = Simulation::with_seed(0xFAC7_0003);
-        sim.hash_state_every(std::num::NonZeroU64::MIN);
-        sim.intern_rule_type_ids(&rules);
-        sim.resolve_type_handles(&rules);
-        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-        spawn_structure(&mut sim, &rules, 1, "Americans", "GAPILE", 14, 14);
-        let owner = sim.interner.get("Americans").unwrap();
-        assert!(enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            "E1",
-            crate::sim::world::FrameEffects::default(),
-            false,
-        ));
-        assert!(enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            "E1",
-            crate::sim::world::FrameEffects::default(),
-            false,
-        ));
-        assert!(
-            sim.production
-                .factories_mut()
-                .test_arm_ready(owner, ProductionCategory::Infantry)
-        );
-        // This unrelated future event belongs to the scheduler throughout both
-        // frames; admitting the prefix must not drain or retime it.
-        let future = crate::sim::command::CommandEnvelope::new(
-            owner,
-            9,
-            crate::sim::command::Command::Stop { entity_id: 999 },
-        );
-        sim.queue_command(future.clone());
-        (sim, owner, future)
-    };
-    let (mut live, owner, future) = make();
+    let (mut live, owner, future) = ready_infantry_prefix_world(&rules);
     let held = live
         .production
         .factories()
@@ -1089,7 +1092,7 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
         std::slice::from_ref(&future)
     );
 
-    let (mut replay, _, _) = make();
+    let (mut replay, _, _) = ready_infantry_prefix_world(&rules);
     let due = replay.take_due_replay_commands(admitted.clone());
     let mut replay_output = replay
         .advance_app_frame(
@@ -1115,6 +1118,137 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
             .entity_id,
         Some(successor)
     );
+}
+
+#[test]
+fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::world::{FrameEffects, TickLane};
+
+    let rules = factory_constructor_rules();
+    let (mut live, owner, future) = ready_infantry_prefix_world(&rules);
+    let held = live
+        .production
+        .factories()
+        .view(owner, ProductionCategory::Infantry)
+        .unwrap()
+        .object
+        .unwrap()
+        .entity_id
+        .unwrap();
+    for _ in 0..128 {
+        assert!(live.issue_local_command(CommandEnvelope::new(
+            owner,
+            0,
+            Command::Stop { entity_id: 999 },
+        )));
+    }
+    // The app's pre-Logic drain must not free any of the local slots.
+    let due = live.take_due_commands();
+    assert!(due.is_empty());
+    assert!(!live.issue_local_command(CommandEnvelope::new(
+        owner,
+        0,
+        Command::LiveGameSpeed { speed: 6 },
+    )));
+
+    // Pending local occupancy is part of the save, not a transient counter.
+    let saved = crate::util::save_codec::serialize(&live).unwrap();
+    let mut loaded: Simulation = crate::util::save_codec::deserialize(&saved).unwrap();
+    assert_eq!(
+        loaded.pending_command_snapshot(),
+        live.pending_command_snapshot()
+    );
+    assert!(!loaded.issue_local_command(CommandEnvelope::new(
+        owner,
+        0,
+        Command::LiveGameSpeed { speed: 6 },
+    )));
+
+    let mut output = live
+        .advance_app_frame(
+            &due,
+            &rules,
+            None,
+            67,
+            TickLane::Ordinary,
+            FrameEffects::default(),
+        )
+        .unwrap();
+    let admitted = output.take_admitted_commands();
+    assert_eq!(admitted.len(), 128);
+    assert!(
+        admitted
+            .iter()
+            .all(|command| matches!(command.payload, Command::Stop { .. }))
+    );
+    assert!(
+        live.substrate
+            .entities
+            .get(held)
+            .unwrap()
+            .lifecycle
+            .in_limbo()
+    );
+    assert_eq!(live.pending_command_snapshot(), [future.clone()]);
+
+    // Playback has no saturated local queue. The recorded admitted batch
+    // nevertheless excludes PLACE, so regenerating Strip cannot invent it.
+    let recorded = serde_json::to_vec(&admitted).unwrap();
+    let admitted: Vec<CommandEnvelope> = serde_json::from_slice(&recorded).unwrap();
+    let (mut replay, _, _) = ready_infantry_prefix_world(&rules);
+    let due = replay.take_due_replay_commands(admitted.clone());
+    let mut replay_output = replay
+        .advance_app_frame(
+            &due,
+            &rules,
+            None,
+            67,
+            TickLane::Ordinary,
+            FrameEffects::default(),
+        )
+        .unwrap();
+    assert_eq!(replay_output.take_admitted_commands(), admitted);
+    assert_eq!(replay_output.tick.state_hash, output.tick.state_hash);
+    assert!(
+        replay
+            .substrate
+            .entities
+            .get(held)
+            .unwrap()
+            .lifecycle
+            .in_limbo()
+    );
+
+    // Strip consumed its completion link even though append failed. It must
+    // not retry that PLACE after the next transfer reopens the local queue.
+    for (sim, playback) in [(&mut live, false), (&mut replay, true)] {
+        let due = if playback {
+            sim.take_due_replay_commands([])
+        } else {
+            sim.take_due_commands()
+        };
+        let mut next = sim
+            .advance_app_frame(
+                &due,
+                &rules,
+                None,
+                67,
+                TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        assert!(next.take_admitted_commands().is_empty());
+        assert!(
+            sim.substrate
+                .entities
+                .get(held)
+                .unwrap()
+                .lifecycle
+                .in_limbo()
+        );
+        assert_eq!(sim.pending_command_snapshot(), [future.clone()]);
+    }
 }
 
 #[test]

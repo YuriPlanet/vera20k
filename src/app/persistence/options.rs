@@ -98,11 +98,28 @@ fn apply_in_game_options(state: &mut AppState) {
         )
         .ok();
         let scheduled = match (owner, speed) {
-            (Some(owner), Some(speed)) => crate::app::input::commands::try_schedule_command(
-                state,
-                &owner,
-                crate::sim::command::Command::SetGameSpeed { speed },
-            ),
+            (Some(owner), Some(speed)) => {
+                // ApplyFromInGameDialog4E1E28..4E1E59 queues GAMESPEED in
+                // active modes1..4; campaign/skirmish store it locally.
+                let network = state
+                    .match_state
+                    .sim_runtime
+                    .as_ref()
+                    .is_some_and(|runtime| {
+                        runtime
+                            .simulation
+                            .session()
+                            .game_mode()
+                            .command_queue_route()
+                            == crate::sim::world::CommandQueueRoute::Multiplayer
+                    });
+                let command = if network {
+                    crate::sim::command::Command::LiveGameSpeed { speed }
+                } else {
+                    crate::sim::command::Command::SetGameSpeed { speed }
+                };
+                crate::app::input::commands::try_schedule_command(state, &owner, command)
+            }
             _ => None,
         };
         if scheduled.is_none() {
@@ -114,8 +131,10 @@ fn apply_in_game_options(state: &mut AppState) {
                     .in_game_options
                     .game_speed
             );
-            crate::app::loading::transitions::sync_in_game_options_speed_from_sim(state);
         }
+        // Native network Options retains the old speed when its OutList
+        // insertion fails. Reflect only the accepted pending/current value.
+        crate::app::loading::transitions::sync_in_game_options_speed_from_sim(state);
     }
 
     let options = &state.match_state.match_presentation.in_game_options;

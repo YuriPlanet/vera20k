@@ -42,6 +42,7 @@ pub mod campaign_carry_over; // the record 0x008A38E0 one campaign mission hands
 pub mod capture_manager;
 pub mod cloak_disguise;
 pub mod command;
+pub mod command_queue;
 pub mod components;
 #[cfg(any(test, feature = "test-support"))]
 pub mod health_ratio_fixture;

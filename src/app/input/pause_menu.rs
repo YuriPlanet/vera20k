@@ -315,20 +315,23 @@ fn resume_internet_events(state: &mut AppState) {
         state.match_state.session.pause_event_limiters_mut(),
         now_bucket,
     );
-    if let Some(fudge) = resume.latency_fudge {
-        state.match_state.session.set_latency_fudge(fudge);
-    }
-    if let Some(speed) = resume.game_speed
-        && let Some(owner) = crate::app::input::commands::preferred_local_owner(state)
-    {
-        // EVENT_GAMESPEED with `6 - position`, the existing speed command.
-        // Residual: it rides the shared command schedule rather than native
-        // ingress timing, and the remote-sender message (format 0x00820DF0)
-        // belongs to the transport.
+    let Some(owner) = crate::app::input::commands::preferred_local_owner(state) else {
+        return;
+    };
+    // Resume4F1595..4F167A emits latency first, then speed. The limiters above
+    // have already advanced even when OutList refuses either event.
+    if let Some(value) = resume.latency_fudge {
         crate::app::input::commands::schedule_command(
             state,
             &owner,
-            crate::sim::command::Command::SetGameSpeed { speed: speed as u8 },
+            crate::sim::command::Command::SetLatencyFudge { value },
+        );
+    }
+    if let Some(speed) = resume.game_speed {
+        crate::app::input::commands::schedule_command(
+            state,
+            &owner,
+            crate::sim::command::Command::LiveGameSpeed { speed: speed as u8 },
         );
     }
 }

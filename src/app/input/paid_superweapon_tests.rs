@@ -48,7 +48,7 @@ fn fixture(paid: bool) -> (RuleSet, Simulation, InternedId, InternedId, Interned
 }
 
 fn drain(sim: &mut Simulation, rules: &RuleSet) {
-    for command in sim.take_due_commands() {
+    for command in sim.take_frame_commands_for_test() {
         assert!(sim.apply_command("Americans", &command.payload, Some(rules),));
     }
 }

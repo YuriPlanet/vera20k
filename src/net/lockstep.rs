@@ -10,9 +10,9 @@
 //! generic execute callback, but this module does not claim that callback alone
 //! reproduces the native EXIT path.
 //!
-//! Production does not run this queue yet. Matches schedule commands through
-//! `Simulation::queue_command` (`sim/world/command_schedule.rs`) and share only
-//! [`SynchronizedCommand::decode_for_simulation`] with it. The queue, the
+//! Production does not run this byte queue yet. Matches share its local-stage
+//! owner through `Simulation::issue_local_command`, and its bounded decoder
+//! through [`SynchronizedCommand::decode_for_simulation`]. The byte DoList, the
 //! scheduler, the send policy and the dispatch house are kept for the native
 //! multiplayer transport.
 
@@ -29,11 +29,12 @@ use crate::sim::command::MEGAMISSION_STAGE_CAPACITY;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::command::stage_megamission;
 use crate::sim::command::{CommandRecord, CommandRecordError};
+pub use crate::sim::command_queue::OUT_LIST_CAPACITY;
+use crate::sim::command_queue::{LocalCommandEvent, LocalCommandStage};
 use crate::sim::intern::InternedId;
 
 pub const FRAMEINFO_EVENT_OPCODE: u8 = 0x1c;
 pub const CHECKSUM_HISTORY_LEN: usize = 0x100;
-pub const OUT_LIST_CAPACITY: usize = 0x80;
 pub const DO_LIST_CAPACITY: usize = 0x4000;
 pub const NETWORK_LOCAL_MIRROR_LIMIT: usize = 0x2000;
 
@@ -47,11 +48,9 @@ const QUEUE_ONLY_EVENT_OPCODE_22: u8 = 0x22;
 
 #[cfg(any(test, feature = "test-support"))]
 #[inline]
-const fn queue_consumes_without_execute(opcode: u8) -> bool {
-    matches!(
-        opcode,
-        QUEUE_ONLY_EVENT_OPCODE_0C | QUEUE_ONLY_EVENT_OPCODE_22
-    )
+const fn queue_consumes_without_execute(opcode: u8, current_player: bool) -> bool {
+    opcode == QUEUE_ONLY_EVENT_OPCODE_22
+        || (opcode == QUEUE_ONLY_EVENT_OPCODE_0C && !current_player)
 }
 
 /// Initial LAN host5DD48D / guest5DD2CD MaxAhead calculation. Native
@@ -424,6 +423,12 @@ pub struct SynchronizedCommand {
     record: CommandRecord,
 }
 
+impl LocalCommandEvent for SynchronizedCommand {
+    fn consumes_native_outlist_slot(&self) -> bool {
+        true
+    }
+}
+
 impl SynchronizedCommand {
     pub fn opaque(record: CommandRecord) -> Self {
         Self { record }
@@ -510,6 +515,8 @@ pub struct CommandDispatchHouse {
     pub owner: InternedId,
     pub house_id: i8,
     pub dispatch_eligible: bool,
+    /// Execute_DoList64C8D8 compares OPTIONS' sender with PlayerPtr.
+    pub current_player: bool,
 }
 
 impl CommandDispatchHouse {
@@ -518,7 +525,13 @@ impl CommandDispatchHouse {
             owner,
             house_id,
             dispatch_eligible,
+            current_player: false,
         }
+    }
+
+    pub const fn with_current_player(mut self, current_player: bool) -> Self {
+        self.current_player = current_player;
+        self
     }
 }
 
@@ -528,7 +541,7 @@ impl CommandDispatchHouse {
 /// enforce the retail OutList and DoList capacities.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SynchronizedCommandQueue {
-    local: VecDeque<SynchronizedCommand>,
+    local: LocalCommandStage<SynchronizedCommand>,
     do_list: VecDeque<SynchronizedCommand>,
     retime_window_start: i32,
     retime_window_end: i32,
@@ -607,11 +620,7 @@ impl SynchronizedCommandQueue {
     /// Append one locally issued command in issue order. Retail silently drops
     /// the 129th record while the 128-slot OutList is full.
     pub fn issue(&mut self, command: SynchronizedCommand) -> bool {
-        if self.local.len() >= OUT_LIST_CAPACITY {
-            return false;
-        }
-        self.local.push_back(command);
-        true
+        self.local.try_push(command)
     }
 
     /// Admit one received/replay command in arrival order. A record received
@@ -637,7 +646,7 @@ impl SynchronizedCommandQueue {
     #[cfg(any(test, feature = "test-support"))]
     pub fn transfer_single_player(&mut self) -> usize {
         let drained = self.local.len();
-        while let Some(mut command) = self.local.pop_front() {
+        for mut command in self.local.take_prefix(drained) {
             command.record.clear_processed();
             if self.do_list.len() < DO_LIST_CAPACITY {
                 self.do_list.push_back(command);
@@ -687,11 +696,7 @@ impl SynchronizedCommandQueue {
             .encode(),
         );
 
-        for _ in 0..transfer_count {
-            let mut command = self
-                .local
-                .pop_front()
-                .expect("transfer count was bounded by the local queue");
+        for mut command in self.local.take_prefix(transfer_count) {
             command.stamp_for_network(local_house_id, execute_frame);
             transfer.push(command.record.clone());
             self.do_list.push_back(command);
@@ -846,7 +851,7 @@ impl SynchronizedCommandQueue {
                         }
                         summary.timing_consumed += 1;
                     }
-                    opcode if queue_consumes_without_execute(opcode) => {}
+                    opcode if queue_consumes_without_execute(opcode, house.current_player) => {}
                     _ if command.stages_as_megamission() => {
                         if stage_megamission(&mut staged_megamissions, command) {
                             staged_late.push(is_late);
@@ -1659,7 +1664,31 @@ mod tests {
     }
 
     #[test]
-    fn opcode_0c_is_marked_without_event_execute() {
+    fn options_reaches_only_the_current_players_executor() {
+        // Execute_DoList64C8D8..64C911 dispatches local OPTIONS, while
+        // remote OPTIONS is marked without entering EventClass::Execute.
+        let local = InternedId::from_index(1);
+        let peer = InternedId::from_index(2);
+        let mut queue = SynchronizedCommandQueue::new();
+        queue.admit(opaque(0x0c, 0, 10, &[]));
+        queue.admit(opaque(0x0c, 1, 10, &[]));
+        let mut observed = Vec::new();
+        let summary = queue.dispatch_due_offline(
+            10,
+            &[
+                eligible(local, 0).with_current_player(true),
+                eligible(peer, 1),
+            ],
+            |_, _| {},
+            |owner, event, _| observed.push((owner, event.record().opcode())),
+        );
+        assert_eq!(observed, [(local, 0x0c)]);
+        assert_eq!(summary.executed, 1);
+        assert_eq!(summary.retired, 2);
+    }
+
+    #[test]
+    fn remote_opcode_0c_is_marked_without_event_execute() {
         assert_queue_only_opcode_is_marked_without_execute(0x0c);
     }
 
