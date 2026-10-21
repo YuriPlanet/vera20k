@@ -303,7 +303,7 @@ impl NativeRulesProcessingFailure {
 ///
 /// This is deliberately not a `RulesClass::Process` call for the selected
 /// RULESMD root. `Load_Game_Rules @ 0x0052CD70` first runs only
-/// `ReadAudioVisual(root)`, may then run one full Process for optional
+/// Colors, ColorAdd and `ReadAudioVisual(root)`, may then run one full Process for optional
 /// `LANGRULE.INI`, and `Init_Game @ 0x0052BA60` follows with the root Anim and
 /// Building master/body sweeps. Both body loops reload their live family count.
 ///
@@ -340,7 +340,10 @@ fn process_native_rules_cold_start_inner(
     fixed_eva: &EvaRegistry,
 ) -> Result<(NativeTypeConstructionTrace, [usize; 5]), RulesError> {
     let mut processor = RulesPassProcessor::with_registry_state(registry_state);
-    // Cold52D111 reads ColorAdd66D480 before AudioVisual52D132.
+    // Load_Game_Rules52D0FF calls Colors66D3A0 on the selected root before
+    // ColorAdd52D111 and AudioVisual52D132, even without LANGRULE.INI.
+    // Executed prefix: tools/rules_oracle/cold_colors.{py,json,meta.json}.
+    processor.allocate_colors(selected_rules_root);
     processor.rules_color_add.apply_pass(selected_rules_root);
     processor.allocate_audio_visual_references(selected_rules_root);
     let after_audio_visual = processor.native_type_construction_events.len();

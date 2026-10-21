@@ -4,6 +4,53 @@ use super::*;
 use crate::util::save_codec;
 
 #[test]
+fn cold_root_colors_exist_without_langrule_or_rules_process() {
+    let native = crate::test_fixture::json("tools/rules_oracle/cold_colors.json");
+    let trace = process_native_rules_cold_start(
+        NativeRulesRegistryState::default(),
+        &IniFile::from_str(native["input"].as_str().unwrap()),
+        &IniFile::empty(),
+        None,
+        &EvaRegistry::default(),
+    )
+    .unwrap();
+    let colors = &trace.registry_state().colors;
+    let rows = native["color_scheme_rows"].as_array().unwrap();
+    // The retained reader stores one name/HSV source per key; consumers select
+    // one of the two native schemes. Compare its identity with actual native
+    // cold-start output, rather than a full Process which would hide the gap.
+    assert_eq!(colors.len() * 2, rows.len());
+    for (color, pair) in colors.iter().zip(rows.chunks_exact(2)) {
+        assert_eq!(color.0, pair[0]["name"].as_str().unwrap());
+        assert_eq!(color.0, pair[1]["name"].as_str().unwrap());
+    }
+}
+
+#[test]
+fn langrule_country_resolves_color_from_the_earlier_cold_root() {
+    let native = crate::test_fixture::json("tools/rules_oracle/cold_colors.json");
+    let name = native["color_scheme_rows"][1]["name"].as_str().unwrap();
+    let langrule = IniFile::from_str(&format!(
+        "[Countries]\n0=CONTROL\n[CONTROL]\nColor={name}\n"
+    ));
+    let trace = process_native_rules_cold_start(
+        NativeRulesRegistryState::default(),
+        &IniFile::from_str(native["input"].as_str().unwrap()),
+        &IniFile::empty(),
+        Some(&langrule),
+        &EvaRegistry::default(),
+    )
+    .unwrap();
+    let country = &trace.registry_state().families[&RulesTypeFamily::Country][0];
+    assert_eq!(native["color_scheme_rows"][1]["kind"], 53);
+    assert_eq!(
+        country.country_color_scheme,
+        native["color_scheme_rows"][1]["index"].as_i64().unwrap() as i32,
+        "HouseType511850 selects the named kind53 scheme, not constructor zero"
+    );
+}
+
+#[test]
 fn nominal_type_reader_matches_executed_physical_history() {
     use crate::rules::ruleset::RuleSet;
     let corpus = crate::test_fixture::json("tools/spatial_oracle/nominal_building_survivor.json");
