@@ -1,0 +1,1373 @@
+{
+  "cold": {
+    "critical": [],
+    "entry_state": 2,
+    "interrupts": [],
+    "lookup_filename": "ALLY_A",
+    "pause_depth": 0,
+    "pending": null,
+    "queues": {
+      "0": [],
+      "1": [],
+      "2": [],
+      "3": []
+    },
+    "scenario_side": 0,
+    "selected_voice": 0,
+    "sequence": 0,
+    "suspend_depth": 0
+  },
+  "history": [
+    {
+      "after": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "ALLY_A",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 0,
+        "sequence": 0,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "ALLY_A",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 0,
+        "sequence": 0,
+        "suspend_depth": 0
+      },
+      "label": "bind_allied",
+      "operation": {
+        "kind": "bind",
+        "side": 0
+      },
+      "rng_entries": [],
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "critical": [],
+        "entry_state": 1,
+        "interrupts": [],
+        "lookup_filename": "ALLY_A",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [
+            {
+              "event": "EVA_Test",
+              "priority": 1,
+              "sequence": 0,
+              "type": 1
+            }
+          ],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 0,
+        "sequence": 1,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "ALLY_A",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 0,
+        "sequence": 0,
+        "suspend_depth": 0
+      },
+      "label": "queue_under_allied",
+      "operation": {
+        "event": "EVA_Test",
+        "kind": "queue"
+      },
+      "rng_entries": [],
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "critical": [],
+        "entry_state": 1,
+        "interrupts": [],
+        "lookup_filename": "SOV_B",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [
+            {
+              "event": "EVA_Test",
+              "priority": 1,
+              "sequence": 0,
+              "type": 1
+            }
+          ],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 1,
+        "sequence": 1,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entry_state": 1,
+        "interrupts": [],
+        "lookup_filename": "ALLY_A",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [
+            {
+              "event": "EVA_Test",
+              "priority": 1,
+              "sequence": 0,
+              "type": 1
+            }
+          ],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 0,
+        "sequence": 1,
+        "suspend_depth": 0
+      },
+      "label": "rebind_soviet_after_queue",
+      "operation": {
+        "kind": "bind",
+        "side": 1
+      },
+      "rng_entries": [],
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "SOV_B",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 1,
+        "sequence": 1,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entry_state": 1,
+        "interrupts": [],
+        "lookup_filename": "SOV_B",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [
+            {
+              "event": "EVA_Test",
+              "priority": 1,
+              "sequence": 0,
+              "type": 1
+            }
+          ],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 1,
+        "sequence": 1,
+        "suspend_depth": 0
+      },
+      "dequeue_filename": "SOV_B.WAV",
+      "label": "dequeue_uses_later_cache",
+      "operation": {
+        "kind": "dequeue_admitted"
+      },
+      "rng_entries": [],
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "SOV_B",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 1,
+        "sequence": 1,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "SOV_B",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 1,
+        "sequence": 1,
+        "suspend_depth": 0
+      },
+      "label": "reset_preserves_soviet",
+      "operation": {
+        "kind": "reset"
+      },
+      "rng_entries": [],
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "critical": [],
+        "entry_state": 1,
+        "interrupts": [],
+        "lookup_filename": "SOV_B",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [
+            {
+              "event": "EVA_Test",
+              "priority": 1,
+              "sequence": 1,
+              "type": 1
+            }
+          ],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 1,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "SOV_B",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 1,
+        "sequence": 1,
+        "suspend_depth": 0
+      },
+      "label": "queue_soviet_then_change_only_scenario_field",
+      "operation": {
+        "event": "EVA_Test",
+        "kind": "queue"
+      },
+      "rng_entries": [],
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "critical": [],
+        "entry_state": 1,
+        "interrupts": [],
+        "lookup_filename": "SOV_B",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [
+            {
+              "event": "EVA_Test",
+              "priority": 1,
+              "sequence": 1,
+              "type": 1
+            }
+          ],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 2,
+        "selected_voice": 1,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entry_state": 1,
+        "interrupts": [],
+        "lookup_filename": "SOV_B",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [
+            {
+              "event": "EVA_Test",
+              "priority": 1,
+              "sequence": 1,
+              "type": 1
+            }
+          ],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 1,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "label": "change_only_scenario_side_to_yuri",
+      "operation": {
+        "kind": "scenario_side_input",
+        "side": 2
+      },
+      "rng_entries": [],
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "SOV_B",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 2,
+        "selected_voice": 1,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entry_state": 1,
+        "interrupts": [],
+        "lookup_filename": "SOV_B",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [
+            {
+              "event": "EVA_Test",
+              "priority": 1,
+              "sequence": 1,
+              "type": 1
+            }
+          ],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 2,
+        "selected_voice": 1,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "dequeue_filename": "SOV_B.WAV",
+      "label": "dequeue_without_bind_still_soviet",
+      "operation": {
+        "kind": "dequeue_admitted"
+      },
+      "rng_entries": [],
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "ALLY_A",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 2,
+        "selected_voice": 0,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "SOV_B",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 2,
+        "selected_voice": 1,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "label": "original_minus_one_binds_allied",
+      "operation": {
+        "kind": "bind",
+        "side": -1
+      },
+      "rng_entries": [],
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "YURI_C",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 2,
+        "selected_voice": 2,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "ALLY_A",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 2,
+        "selected_voice": 0,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "label": "bind_yuri",
+      "operation": {
+        "kind": "bind",
+        "side": 2
+      },
+      "rng_entries": [],
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "YURI_C",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 2,
+        "selected_voice": 2,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "YURI_C",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 2,
+        "selected_voice": 2,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "label": "reset_preserves_yuri",
+      "operation": {
+        "kind": "reset"
+      },
+      "rng_entries": [],
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "YURI_C",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 2,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "YURI_C",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 2,
+        "selected_voice": 2,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "label": "scenario_defaults_side_store_preserves_voice_cache",
+      "operation": {
+        "kind": "scenario_default_store"
+      },
+      "rng_entries": [],
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "ALLY_A",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 0,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "YURI_C",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 2,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "label": "bind_from_actual_restored_scenario_side_-1",
+      "operation": {
+        "kind": "bind_restored",
+        "round_trip_index": 0
+      },
+      "rng_entries": [],
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "ALLY_A",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 0,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "ALLY_A",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 0,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "label": "bind_from_actual_restored_scenario_side_0",
+      "operation": {
+        "kind": "bind_restored",
+        "round_trip_index": 1
+      },
+      "rng_entries": [],
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "SOV_B",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 1,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "ALLY_A",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 0,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "label": "bind_from_actual_restored_scenario_side_1",
+      "operation": {
+        "kind": "bind_restored",
+        "round_trip_index": 2
+      },
+      "rng_entries": [],
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "YURI_C",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 2,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entry_state": 2,
+        "interrupts": [],
+        "lookup_filename": "SOV_B",
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "scenario_side": 0,
+        "selected_voice": 1,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "label": "bind_from_actual_restored_scenario_side_2",
+      "operation": {
+        "kind": "bind_restored",
+        "round_trip_index": 3
+      },
+      "rng_entries": [],
+      "rng_unchanged": true
+    }
+  ],
+  "pending_eviction_controls": [
+    {
+      "after": {
+        "critical": [],
+        "entries": {
+          "EVA_Interrupt": {
+            "priority": 1,
+            "state": 2,
+            "type": 3
+          },
+          "EVA_Pending": {
+            "priority": 1,
+            "state": 1,
+            "type": 0
+          }
+        },
+        "interrupts": [],
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "selected_voice": 1,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [],
+        "entries": {
+          "EVA_Interrupt": {
+            "priority": 1,
+            "state": 1,
+            "type": 3
+          },
+          "EVA_Pending": {
+            "priority": 1,
+            "state": 1,
+            "type": 0
+          }
+        },
+        "interrupts": [
+          {
+            "event": "EVA_Interrupt",
+            "priority": 1,
+            "sequence": 1,
+            "type": 3
+          }
+        ],
+        "pause_depth": 0,
+        "pending": {
+          "event": "EVA_Pending",
+          "priority": 1,
+          "sequence": 0,
+          "type": 0
+        },
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "selected_voice": 1,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "dequeue_filename": "INTS.WAV",
+      "label": "interrupt_dequeue",
+      "operation": "dequeue_admitted",
+      "queue_inputs": [
+        {
+          "event": "EVA_Pending",
+          "priority_override": -1,
+          "type_override": -1
+        },
+        {
+          "event": "EVA_Interrupt",
+          "priority_override": -1,
+          "type_override": -1
+        }
+      ],
+      "rng_entries": [],
+      "rng_unchanged": true,
+      "selected_event": "EVA_Interrupt",
+      "synthetic_ini": {
+        "DialogList": {
+          "0": "EVA_Pending",
+          "1": "EVA_Interrupt"
+        },
+        "EVA_Interrupt": {
+          "Allied": "INTA",
+          "Priority": "NORMAL",
+          "Russian": "INTS",
+          "Type": "QUEUED_INTERRUPT",
+          "Yuri": "INTY"
+        },
+        "EVA_Pending": {
+          "Allied": "PENDA",
+          "Priority": "NORMAL",
+          "Russian": "PENDS",
+          "Yuri": "PENDY"
+        }
+      }
+    },
+    {
+      "after": {
+        "critical": [],
+        "entries": {
+          "EVA_Critical": {
+            "priority": 3,
+            "state": 2,
+            "type": 0
+          },
+          "EVA_Pending": {
+            "priority": 1,
+            "state": 1,
+            "type": 0
+          }
+        },
+        "interrupts": [],
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "selected_voice": 1,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [
+          {
+            "event": "EVA_Critical",
+            "priority": 3,
+            "sequence": 1,
+            "type": 0
+          }
+        ],
+        "entries": {
+          "EVA_Critical": {
+            "priority": 3,
+            "state": 1,
+            "type": 0
+          },
+          "EVA_Pending": {
+            "priority": 1,
+            "state": 1,
+            "type": 0
+          }
+        },
+        "interrupts": [],
+        "pause_depth": 0,
+        "pending": {
+          "event": "EVA_Pending",
+          "priority": 1,
+          "sequence": 0,
+          "type": 0
+        },
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "selected_voice": 1,
+        "sequence": 2,
+        "suspend_depth": 0
+      },
+      "dequeue_filename": "CRITS.WAV",
+      "label": "critical_dequeue",
+      "operation": "dequeue_admitted",
+      "queue_inputs": [
+        {
+          "event": "EVA_Pending",
+          "priority_override": -1,
+          "type_override": -1
+        },
+        {
+          "event": "EVA_Critical",
+          "priority_override": -1,
+          "type_override": -1
+        }
+      ],
+      "rng_entries": [],
+      "rng_unchanged": true,
+      "selected_event": "EVA_Critical",
+      "synthetic_ini": {
+        "DialogList": {
+          "0": "EVA_Pending",
+          "1": "EVA_Critical"
+        },
+        "EVA_Critical": {
+          "Allied": "CRITA",
+          "Priority": "CRITICAL",
+          "Russian": "CRITS",
+          "Yuri": "CRITY"
+        },
+        "EVA_Pending": {
+          "Allied": "PENDA",
+          "Priority": "NORMAL",
+          "Russian": "PENDS",
+          "Yuri": "PENDY"
+        }
+      }
+    },
+    {
+      "after": {
+        "critical": [],
+        "entries": {
+          "EVA_Critical": {
+            "priority": 3,
+            "state": 2,
+            "type": 0
+          },
+          "EVA_Interrupt": {
+            "priority": 1,
+            "state": 2,
+            "type": 3
+          },
+          "EVA_Pending": {
+            "priority": 1,
+            "state": 2,
+            "type": 0
+          },
+          "EVA_Queued": {
+            "priority": 0,
+            "state": 2,
+            "type": 1
+          }
+        },
+        "interrupts": [],
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "selected_voice": 1,
+        "sequence": 4,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [
+          {
+            "event": "EVA_Critical",
+            "priority": 3,
+            "sequence": 2,
+            "type": 0
+          }
+        ],
+        "entries": {
+          "EVA_Critical": {
+            "priority": 3,
+            "state": 1,
+            "type": 0
+          },
+          "EVA_Interrupt": {
+            "priority": 1,
+            "state": 1,
+            "type": 3
+          },
+          "EVA_Pending": {
+            "priority": 1,
+            "state": 1,
+            "type": 0
+          },
+          "EVA_Queued": {
+            "priority": 0,
+            "state": 1,
+            "type": 1
+          }
+        },
+        "interrupts": [
+          {
+            "event": "EVA_Interrupt",
+            "priority": 1,
+            "sequence": 1,
+            "type": 3
+          }
+        ],
+        "pause_depth": 0,
+        "pending": {
+          "event": "EVA_Pending",
+          "priority": 1,
+          "sequence": 0,
+          "type": 0
+        },
+        "queues": {
+          "0": [
+            {
+              "event": "EVA_Queued",
+              "priority": 0,
+              "sequence": 3,
+              "type": 1
+            }
+          ],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "selected_voice": 1,
+        "sequence": 4,
+        "suspend_depth": 0
+      },
+      "label": "clear_all_queues",
+      "operation": "clear_all_queues",
+      "queue_inputs": [
+        {
+          "event": "EVA_Pending",
+          "priority_override": -1,
+          "type_override": -1
+        },
+        {
+          "event": "EVA_Interrupt",
+          "priority_override": -1,
+          "type_override": -1
+        },
+        {
+          "event": "EVA_Critical",
+          "priority_override": -1,
+          "type_override": -1
+        },
+        {
+          "event": "EVA_Queued",
+          "priority_override": -1,
+          "type_override": -1
+        }
+      ],
+      "rng_entries": [],
+      "rng_unchanged": true,
+      "synthetic_ini": {
+        "DialogList": {
+          "0": "EVA_Pending",
+          "1": "EVA_Interrupt",
+          "2": "EVA_Critical",
+          "3": "EVA_Queued"
+        },
+        "EVA_Critical": {
+          "Allied": "CRITA",
+          "Priority": "CRITICAL",
+          "Russian": "CRITS",
+          "Yuri": "CRITY"
+        },
+        "EVA_Interrupt": {
+          "Allied": "INTA",
+          "Priority": "NORMAL",
+          "Russian": "INTS",
+          "Type": "QUEUED_INTERRUPT",
+          "Yuri": "INTY"
+        },
+        "EVA_Pending": {
+          "Allied": "PENDA",
+          "Priority": "NORMAL",
+          "Russian": "PENDS",
+          "Yuri": "PENDY"
+        },
+        "EVA_Queued": {
+          "Allied": "QUEA",
+          "Priority": "LOW",
+          "Russian": "QUES",
+          "Type": "QUEUE",
+          "Yuri": "QUEY"
+        }
+      }
+    },
+    {
+      "after": {
+        "critical": [],
+        "entries": {
+          "EVA_Critical": {
+            "priority": 3,
+            "state": 2,
+            "type": 0
+          },
+          "EVA_Interrupt": {
+            "priority": 1,
+            "state": 2,
+            "type": 3
+          },
+          "EVA_Pending": {
+            "priority": 1,
+            "state": 2,
+            "type": 0
+          },
+          "EVA_Queued": {
+            "priority": 0,
+            "state": 2,
+            "type": 1
+          }
+        },
+        "interrupts": [],
+        "pause_depth": 0,
+        "pending": null,
+        "queues": {
+          "0": [],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "selected_voice": 1,
+        "sequence": 4,
+        "suspend_depth": 0
+      },
+      "before": {
+        "critical": [
+          {
+            "event": "EVA_Critical",
+            "priority": 3,
+            "sequence": 2,
+            "type": 0
+          }
+        ],
+        "entries": {
+          "EVA_Critical": {
+            "priority": 3,
+            "state": 1,
+            "type": 0
+          },
+          "EVA_Interrupt": {
+            "priority": 1,
+            "state": 1,
+            "type": 3
+          },
+          "EVA_Pending": {
+            "priority": 1,
+            "state": 1,
+            "type": 0
+          },
+          "EVA_Queued": {
+            "priority": 0,
+            "state": 1,
+            "type": 1
+          }
+        },
+        "interrupts": [
+          {
+            "event": "EVA_Interrupt",
+            "priority": 1,
+            "sequence": 1,
+            "type": 3
+          }
+        ],
+        "pause_depth": 0,
+        "pending": {
+          "event": "EVA_Pending",
+          "priority": 1,
+          "sequence": 0,
+          "type": 0
+        },
+        "queues": {
+          "0": [
+            {
+              "event": "EVA_Queued",
+              "priority": 0,
+              "sequence": 3,
+              "type": 1
+            }
+          ],
+          "1": [],
+          "2": [],
+          "3": []
+        },
+        "selected_voice": 1,
+        "sequence": 4,
+        "suspend_depth": 0
+      },
+      "label": "reset_all",
+      "operation": "reset",
+      "queue_inputs": [
+        {
+          "event": "EVA_Pending",
+          "priority_override": -1,
+          "type_override": -1
+        },
+        {
+          "event": "EVA_Interrupt",
+          "priority_override": -1,
+          "type_override": -1
+        },
+        {
+          "event": "EVA_Critical",
+          "priority_override": -1,
+          "type_override": -1
+        },
+        {
+          "event": "EVA_Queued",
+          "priority_override": -1,
+          "type_override": -1
+        }
+      ],
+      "rng_entries": [],
+      "rng_unchanged": true,
+      "synthetic_ini": {
+        "DialogList": {
+          "0": "EVA_Pending",
+          "1": "EVA_Interrupt",
+          "2": "EVA_Critical",
+          "3": "EVA_Queued"
+        },
+        "EVA_Critical": {
+          "Allied": "CRITA",
+          "Priority": "CRITICAL",
+          "Russian": "CRITS",
+          "Yuri": "CRITY"
+        },
+        "EVA_Interrupt": {
+          "Allied": "INTA",
+          "Priority": "NORMAL",
+          "Russian": "INTS",
+          "Type": "QUEUED_INTERRUPT",
+          "Yuri": "INTY"
+        },
+        "EVA_Pending": {
+          "Allied": "PENDA",
+          "Priority": "NORMAL",
+          "Russian": "PENDS",
+          "Yuri": "PENDY"
+        },
+        "EVA_Queued": {
+          "Allied": "QUEA",
+          "Priority": "LOW",
+          "Russian": "QUES",
+          "Type": "QUEUE",
+          "Yuri": "QUEY"
+        }
+      }
+    }
+  ],
+  "scenario_round_trips": [
+    {
+      "input_side": -1,
+      "overwritten_before_load": 99,
+      "restored_side": -1,
+      "rng_entries": [],
+      "saved_side": -1
+    },
+    {
+      "input_side": 0,
+      "overwritten_before_load": 99,
+      "restored_side": 0,
+      "rng_entries": [],
+      "saved_side": 0
+    },
+    {
+      "input_side": 1,
+      "overwritten_before_load": 99,
+      "restored_side": 1,
+      "rng_entries": [],
+      "saved_side": 1
+    },
+    {
+      "input_side": 2,
+      "overwritten_before_load": 99,
+      "restored_side": 2,
+      "rng_entries": [],
+      "saved_side": 2
+    }
+  ],
+  "schema_version": 1,
+  "synthetic_ini": {
+    "DialogList": {
+      "0": "EVA_Test"
+    },
+    "EVA_Test": {
+      "Allied": "ALLY_A",
+      "Priority": "NORMAL",
+      "Russian": "SOV_B",
+      "Type": "QUEUE",
+      "Yuri": "YURI_C"
+    }
+  }
+}

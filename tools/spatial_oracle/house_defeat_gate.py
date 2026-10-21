@@ -17,6 +17,9 @@ Additive --outcomes selects the full offline result bodies and shared timer
 heads, writing house_outcomes.json with --write. It reuses this Fixture and the
 existing ReadDouble owner. VERA20K_OUTCOME_RULES selects physical RULESMD.INI
 (default ini/rulesmd.ini); file/archive IO and full scenario timing are excluded.
+
+Additive --ares-survival executes KeepAlive input/tracking, both survival arms
+and bounded persistence controls. See ares_house_survival.md.
 """
 import argparse
 import hashlib
@@ -353,11 +356,441 @@ def outcome_metadata():
                       "banner_center": 0x6D4E95})
 
 
+ARES_HOOKS = {0x4F8EBD: 0x10024990, 0x4FF71B: 0x10024580,
+              0x4FF563: 0x100245D0}
+ARES_EXTRA = SCRATCH + 0x18000
+ARES_ACTOR, ARES_TYPE, ARES_TYPE_EXT = (SCRATCH + x for x in (0x20000, 0x22000, 0x24000))
+ARES_SECOND_HOUSE, ARES_SECOND_EXT = SCRATCH + 0x40000, SCRATCH + 0x58000
+ARES_FRAME, ARES_BRIDGE_SP = SCRATCH + 0x68000, SCRATCH + 0x6A000
+
+
+class AresFixture(Fixture):
+    """The existing gate VM, with real exports at three saved-register seams."""
+
+    def __init__(self, ares):
+        from tools import native_oracle
+        super().__init__()
+        # Retain the historical stack's top128KiB and SP; only its unused
+        # lower portion overlaps the DLL's preferred image.
+        self.u.mem_unmap(STACK_BASE, 0xE0000)
+        native_oracle.map_pe32_image(self.u, ares, image_base=0x10000000,
+                                    image_size=0xE0000, header_size=0x400)
+        self.u.mem_map(SCRATCH + REGION, 0x70000)
+        self.code = [(native_oracle.IMAGE_BASE + rva,
+                      bytes(self.u.mem_read(native_oracle.IMAGE_BASE + rva, size)))
+                     for rva, _raw, size, _virtual, flags in native_oracle._sections(
+                         native_oracle.image_bytes()) if flags & 0x20000000]
+        self.code.append((0x10001000, bytes(self.u.mem_read(0x10001000, 0x92000))))
+        self.events, self.hooks = [], []
+        self.base_visits, self.class_visits, self.object_visits = [], [], []
+
+    def signed(self, address):
+        return struct.unpack('<i', self.u.mem_read(address, 4))[0]
+
+    def put(self, address, value):
+        self.u.mem_write(address, dwords(value & 0xFFFFFFFF))
+
+    def observe(self, u, pc, size, data):
+        if pc in (0x65C780, 0x65C7E0, 0x70D150, 0x7258D0, 0x5F5280):
+            raise AssertionError(('Unexpected RNG/timer/detach entry', hex(pc)))
+        if pc == 0x749020:
+            # Existing house_tracking.Fixture's owned-type-set boundary.
+            # CounterClass increment/decrement themselves execute here.
+            sp = u.reg_read(UC_X86_REG_ESP)
+            u.reg_write(UC_X86_REG_EIP, self.word(sp))
+            u.reg_write(UC_X86_REG_ESP, sp + 8)
+            u.reg_write(UC_X86_REG_EAX, 0)
+            return
+        if pc == 0x100249D5:
+            self.base_visits.append((u.reg_read(UC_X86_REG_ECX) - BASE_UNITS) // 4)
+        class_entries = {0x10024A06: 'unit', 0x10024A54: 'infantry', 0x10024A92: 'aircraft'}
+        object_entries = {0x10024A20: 'unit', 0x10024A66: 'infantry', 0x10024AA4: 'aircraft'}
+        if pc in class_entries:
+            self.class_visits.append(class_entries[pc])
+        if pc in object_entries:
+            address = self.word(u.reg_read(UC_X86_REG_ECX))
+            self.object_visits.append([object_entries[pc], self.object_names[address]])
+        super().observe(u, pc, size, data)
+
+    def checked_code(self):
+        assert all(bytes(self.u.mem_read(at, len(raw))) == raw for at, raw in self.code)
+
+    def run_hooks(self, begin, end, **kwargs):
+        from unicorn.x86_const import UC_X86_REG_EDI
+        ends = (end,) if isinstance(end, int) else tuple(end)
+        active, pc = set(ARES_HOOKS), begin
+        for _part in range(12):
+            stopped = run_checked(self.u, pc, ends + tuple(active), **kwargs)
+            if stopped in ends:
+                self.checked_code()
+                return stopped
+            context = self.u.context_save()
+            self.u.mem_write(ARES_FRAME, bytes(0x40))
+            self.put(ARES_FRAME + 8, self.u.reg_read(UC_X86_REG_EDI))
+            self.put(ARES_FRAME + 0xC, self.u.reg_read(UC_X86_REG_ESI))
+            self.put(ARES_FRAME + 0x24, self.u.reg_read(UC_X86_REG_EAX))
+            self.u.mem_write(ARES_BRIDGE_SP, dwords(RET_MAGIC + 0x100, ARES_FRAME))
+            self.u.reg_write(UC_X86_REG_ESP, ARES_BRIDGE_SP)
+            run_checked(self.u, ARES_HOOKS[stopped], RET_MAGIC + 0x100,
+                        count=100_000, required_addresses=(ARES_HOOKS[stopped],))
+            continuation = self.u.reg_read(UC_X86_REG_EAX)
+            saved_eax = self.word(ARES_FRAME + 0x24)
+            self.hooks.append(dict(site=f'{stopped:08X}', returned=f'{continuation:08X}'))
+            self.u.context_restore(context)
+            if stopped in (0x4FF71B, 0x4FF563):
+                self.u.reg_write(UC_X86_REG_EAX, saved_eax)
+            assert continuation != 0
+            pc = continuation
+            active.remove(stopped)
+            if pc in ends:
+                self.checked_code()
+                return pc
+        raise AssertionError('Too many survival hook continuations')
+
+    def invoke(self, entry, this=0, args=(), end=RET_MAGIC):
+        self.u.mem_write(SP, dwords(RET_MAGIC, *args))
+        self.u.reg_write(UC_X86_REG_ESP, SP)
+        self.u.reg_write(UC_X86_REG_ECX, this)
+        self.run_hooks(entry, end, count=100_000)
+
+    def init_house(self, house, extension, items):
+        from unicorn.x86_const import UC_X86_REG_EDI
+        self.u.mem_write(house, bytes(0x16088))
+        self.u.mem_write(extension, bytes(0x1000))
+        self.put(house + 0x16084, extension)
+        self.u.reg_write(UC_X86_REG_ESI, extension)
+        self.u.reg_write(UC_X86_REG_EDI, house)
+        # Actual HouseExt constructor's zero-store prefix, not a supplied result.
+        run_checked(self.u, 0x10021027, 0x10021059)
+        for slot, offset in enumerate((0x5500, 0x5514, 0x5528, 0x553C)):
+            self.put(house + offset + 4, items + slot * 0x100)
+            self.put(house + offset + 8, 16)
+            self.u.mem_write(items + slot * 0x100, bytes(0x100))
+
+    def counts(self, house=HOUSE):
+        extension = self.word(house + 0x16084)
+        return dict(keep_alive=self.signed(extension + 0x18),
+                    building_keep_alive=self.signed(extension + 0x1C),
+                    buildings=self.signed(house + 0x2F0), vehicles=self.signed(house + 0x2E8),
+                    building_type=self.signed(self.word(house + 0x5504) + 12),
+                    unit_type=self.signed(self.word(house + 0x5518) + 12))
+
+    def prepare_actor(self, case, pair):
+        self.u.mem_write(ARES_ACTOR, bytes(0x2000))
+        self.u.mem_write(ARES_TYPE, bytes(0x2000))
+        self.u.mem_write(ARES_TYPE_EXT, bytes(0x1000))
+        building = case['class'] == 'building'
+        self.put(ARES_ACTOR, 0x7E3EBC if building else 0x7F5C70)
+        self.put(ARES_ACTOR + (0x520 if building else 0x6C4), ARES_TYPE)
+        self.put(ARES_ACTOR + 0x21C, HOUSE)
+        # Original UnitType ArrayIndex virtual reads the shared +DF8 field;
+        # no type-category virtual is used by the tracked class arms.
+        self.put(ARES_TYPE, 0x7F6218)
+        self.put(ARES_TYPE + 0xDF8, 3)
+        self.put(ARES_TYPE + 0x2FC, ARES_TYPE_EXT)
+        self.u.mem_write(ARES_TYPE + 0x232, bytes([case.get('insignificant', False)]))
+        self.u.mem_write(ARES_TYPE + 0xC9F, bytes([case.get('dont_score', False)]))
+        self.u.mem_write(ARES_TYPE_EXT + 0x646, bytes([pair['value'], pair['is_set']]))
+        if case.get('unit_like'):
+            self.put(ARES_TYPE + 0x408, ARES_TYPE + 0x1000)
+            self.put(ARES_TYPE + 0xEF0, 0)  # original foundation tables:1x1
+
+    def tracking(self, case, pair):
+        self.hooks = []
+        self.init_house(HOUSE, ARES_EXTRA, COUNTER_ITEMS)
+        self.prepare_actor(case, pair)
+        self.put(ARES_EXTRA + 0x18, case.get('start', 0))
+        if case['class'] == 'building':
+            self.put(ARES_EXTRA + 0x1C, case.get('start', 0))
+        steps = []
+        for operation in case['operations']:
+            mark = len(self.hooks)
+            self.invoke(0x4FF700 if operation == 'gain' else 0x4FF550, HOUSE, (ARES_ACTOR,))
+            steps.append(dict(operation=operation, after=self.counts(), hooks=self.hooks[mark:]))
+        return dict(input=case, steps=steps)
+
+    def capture(self, pair):
+        self.hooks = []
+        self.init_house(HOUSE, ARES_EXTRA, COUNTER_ITEMS)
+        self.init_house(ARES_SECOND_HOUSE, ARES_SECOND_EXT, SCRATCH + 0x60000)
+        self.prepare_actor(dict(**{'class': 'unit'}, insignificant=True), pair)
+        self.invoke(0x4FF700, HOUSE, (ARES_ACTOR,))
+        before = dict(old=self.counts(), new=self.counts(ARES_SECOND_HOUSE))
+        self.u.mem_write(SP, dwords(ARES_ACTOR))  # preceding7015D7 PUSH ESI
+        self.u.reg_write(UC_X86_REG_ESP, SP)
+        self.u.reg_write(UC_X86_REG_ESI, ARES_ACTOR)
+        self.u.reg_write(UC_X86_REG_EBP, ARES_SECOND_HOUSE)
+        mark = len(self.hooks)
+        self.run_hooks(0x7015D8, 0x7015EB, count=100_000)
+        return dict(input=dict(**{'class': 'unit'}, insignificant=True, keep_alive=True),
+                    before=before, after=dict(old=self.counts(), new=self.counts(ARES_SECOND_HOUSE)),
+                    owner_pointer_still_old=self.word(ARES_ACTOR + 0x21C) == HOUSE,
+                    hooks=self.hooks[mark:])
+
+    def survival(self, case):
+        # Reuse every historical gate setup statement; the dedicated mode
+        # supplies its additional vector/extension/array priors at run entry.
+        global run_checked
+        original_runner = run_checked
+        self.hooks, self.base_visits, self.class_visits, self.object_visits = [], [], [], []
+        def wrapped(u, begin, end, **kwargs):
+            global run_checked
+            self.put(HOUSE + 0x16084, ARES_EXTRA)
+            self.put(ARES_EXTRA + 0x18, case.get('keep_alive_count', 0))
+            indices = case.get('base_indices', [3, 4, 5, 6])
+            self.put(RULES + 0xB30, len(indices))
+            self.put(HOUSE + 0x551C, case.get('capacity', 16))
+            unique_indices = list(dict.fromkeys(indices))
+            for slot, index in enumerate(indices):
+                typ = SCRATCH + 0x28000 + unique_indices.index(index) * 0x1000
+                self.put(BASE_UNITS + slot * 4, typ)
+                self.put(typ + 0xDF8, index)
+            for index, count in case.get('counts', {}).items():
+                self.put(COUNTER_ITEMS + int(index) * 4, count)
+            self.object_names = {}
+            for cls, address, count_address in [('unit', 0x8B410C, 0x8B4118),
+                                                ('infantry', 0xA83DEC, 0xA83DF8),
+                                                ('aircraft', 0xA8E394, 0xA8E3A0)]:
+                nodes = case.get('objects', {}).get(cls, [])
+                array = SCRATCH + 0x35000 + len(self.object_names) * 0x100
+                self.put(address, array); self.put(count_address, len(nodes))
+                for index, node in enumerate(nodes):
+                    at = SCRATCH + 0x30000 + len(self.object_names) * 0x1000
+                    self.u.mem_write(at, bytes(0x1000))
+                    self.object_names[at] = node['name']
+                    self.put(array + index * 4, at)
+                    assert node['category'] == cls
+                    self.put(at + 0x21C, HOUSE if node['owner'] == 'ours' else ARES_SECOND_HOUSE)
+                    self.u.mem_write(at + 0x81, bytes([node['limbo']]))
+                    self.put(at + 0x69C, ARES_TYPE_EXT if node['parasite'] else 0)
+            run_checked = original_runner
+            try:
+                return self.run_hooks(begin, end, **kwargs)
+            finally:
+                run_checked = wrapped
+        run_checked = wrapped
+        try:
+            row = Fixture.execute(self, case)
+        finally:
+            run_checked = original_runner
+        row.update(base_slots_visited=self.base_visits, classes_visited=self.class_visits,
+                   objects_visited=self.object_visits, hooks=self.hooks)
+        return row
+
+    def stream(self, name, pair, count):
+        from unicorn.x86_const import UC_X86_REG_EBX, UC_X86_REG_EDI
+        stream, reference, buffer = SCRATCH + 0x65000, SCRATCH + 0x65100, SCRATCH + 0x66000
+        self.u.mem_write(stream, dwords(buffer, buffer, buffer + 0x100, 0))
+        self.put(reference, stream)
+        self.u.mem_write(ARES_TYPE_EXT + 0x646, bytes([pair['value'], pair['is_set']]))
+        self.put(ARES_EXTRA + 0x18, count)
+        self.invoke(0x1000F0C0, ARES_TYPE_EXT + 0x646, (reference,))
+        self.u.reg_write(UC_X86_REG_EBX, ARES_EXTRA)
+        self.u.reg_write(UC_X86_REG_EDI, reference)
+        self.run_hooks(0x1001F4D7, 0x1001F4E4, count=100_000)
+        size = self.word(stream + 4) - buffer
+        stored = bytes(self.u.mem_read(buffer, size)).hex()
+        self.u.mem_write(ARES_TYPE_EXT + 0x646, b'\xCC\xCC')
+        self.put(ARES_EXTRA + 0x18, 0x55667788)
+        self.put(stream + 0xC, 0)
+        self.invoke(0x1000D7E0, ARES_TYPE_EXT + 0x646, (reference,))
+        self.u.reg_write(UC_X86_REG_EBX, reference)
+        self.u.reg_write(UC_X86_REG_EDI, ARES_EXTRA)
+        self.run_hooks(0x1001F366, 0x1001F373, count=100_000)
+        return dict(name=name, input=dict(nullable=pair, keep_alive_count=count),
+                    stored_bytes=stored, restored=dict(nullable=dict(
+                        value=self.u.mem_read(ARES_TYPE_EXT + 0x646, 1)[0],
+                        is_set=self.u.mem_read(ARES_TYPE_EXT + 0x647, 1)[0]),
+                        keep_alive_count=self.signed(ARES_EXTRA + 0x18)),
+                    consumed_bytes=self.word(stream + 0xC))
+
+
+def ares_reader_history(ares):
+    """Use the existing physical Rules VM and unchanged Ares nullable reader."""
+    from tools.rules_oracle.weapon_speed_order import retail_history
+    from tools import native_oracle
+    from unicorn.x86_const import UC_X86_REG_EBX
+    layers = [
+        ('UNSET.INI', '[CONTROL]\nName=present\n'),
+        ('YES.INI', '[CONTROL]\nKeepAlive=yes\n'),
+        ('MISSING.INI', '[CONTROL]\nName=present\n'),
+        ('EMPTY.INI', '[CONTROL]\nKeepAlive=\n'),
+        ('INVALID.INI', '[CONTROL]\nKeepAlive=on\n'),
+        ('BRACKET_NONE.INI', '[CONTROL]\nKeepAlive=<none>\n'),
+        ('NONE.INI', '[CONTROL]\nKeepAlive=none\n'),
+        ('NO.INI', '[CONTROL]\nKeepAlive=no\n'),
+        ('PREFIX.INI', '[CONTROL]\nKeepAlive=yeSplease\n'),
+        ('TRIM.INI', '[CONTROL]\nKeepAlive= \tno \t\n'),
+        ('KEYCASE.INI', '[CONTROL]\nKEEPALIVE=yes\n'),
+        ('OTHER.INI', '[OTHER]\nKeepAlive=yes\n')]
+    class Inputs:
+        def lookup(self, name):
+            return dict(layers)[name.upper()].encode('ascii')
+    m = retail_history(Inputs())
+    try:
+        loaded = [(name, body, *m.load_physical_ini(name)) for name, body in layers]
+        ext, typ = m.alloc(0x1000), m.alloc(0x2000)
+        m.u.mem_write(typ, dwords(0x7F6218))
+        m.u.mem_write(typ + 0x24, b'CONTROL\0')
+        m.u.mem_unmap(native_oracle.STACK_BASE, native_oracle.STACK_SIZE)
+        native_oracle.map_pe32_image(m.u, ares, image_base=0x10000000,
+                                    image_size=0xE0000, header_size=0x400)
+        m.u.mem_map(0x33000000, 0x20000)
+        sp = 0x33010000
+        code = bytes(m.u.mem_read(0x10001000, 0x92000))
+        m.u.mem_write(sp, dwords(RET_MAGIC, typ)); m.u.reg_write(UC_X86_REG_ESP, sp)
+        m.u.reg_write(UC_X86_REG_ECX, ext)
+        run_checked(m.u, 0x1003C710, RET_MAGIC)
+        def pair():
+            value, present = bytes(m.u.mem_read(ext + 0x646, 2))
+            return dict(value=value, is_set=present)
+        default, diagnostics, reads = pair(), [], []
+        def observe(u, pc, *_):
+            esp = u.reg_read(UC_X86_REG_ESP)
+            if pc == 0x528A10:
+                reads.append(dict(section=m.string(m.read32(esp + 4)),
+                    key=m.string(m.read32(esp + 8)), default=m.string(m.read32(esp + 12)),
+                    capacity=m.read32(esp + 20)))
+            elif pc == 0x10061960:
+                diagnostics.append(m.string(m.read32(esp + 12)))
+                m.ret(0, 16)
+            elif pc in (0x65C780, 0x65C7E0, 0x70D150, 0x7258D0, 0x5F5280):
+                raise AssertionError(('Unexpected reader RNG/timer/detach', hex(pc)))
+        handle = m.u.hook_add(UC_HOOK_CODE, observe)
+        rows = []
+        for name, body, ini, _receipt in loaded:
+            before, mark, read_mark = pair(), len(diagnostics), len(reads)
+            m.u.mem_write(sp, dwords(RET_MAGIC, ini)); m.u.reg_write(UC_X86_REG_ESP, sp)
+            m.u.reg_write(UC_X86_REG_ECX, ext)
+            stop = run_checked(m.u, 0x1003DFB0, (0x1003DFD9, RET_MAGIC),
+                               required_addresses=(0x100091C0,))
+            if stop == 0x1003DFD9:
+                m.u.mem_write(sp, bytes(0x200)); m.u.mem_write(sp + 0x10, dwords(ini))
+                m.u.reg_write(UC_X86_REG_ESP, sp); m.u.reg_write(UC_X86_REG_EBX, ext)
+                m.u.reg_write(UC_X86_REG_ESI, typ + 0x24)
+                run_checked(m.u, 0x1003F47C, 0x1003F492,
+                    required_addresses=(0x1000E9B0, 0x1000FC50, 0x10007860, 0x528A10))
+            rows.append(dict(file=name, physical_ini=body, before=before, after=pair(),
+                             section_admitted=stop == 0x1003DFD9,
+                             diagnostics=diagnostics[mark:], reads=reads[read_mark:]))
+        m.u.hook_del(handle); m.check_code()
+        assert bytes(m.u.mem_read(0x10001000, 0x92000)) == code
+        return dict(name='physical_retention', constructor_default=default, steps=rows)
+    finally:
+        m.close()
+
+
+def ares_tracking_inputs():
+    cases = [
+        dict(name='default_building', **{'class': 'building'}, keep_alive=None),
+        dict(name='default_unit', **{'class': 'unit'}, keep_alive=None),
+        dict(name='default_unit_like_building', **{'class': 'building'}, keep_alive=None, unit_like=True),
+        dict(name='excluded_default', **{'class': 'building'}, keep_alive=None, dont_score=True),
+        dict(name='excluded_override_yes', **{'class': 'unit'}, keep_alive=True, insignificant=True),
+        dict(name='building_override_no', **{'class': 'building'}, keep_alive=False),
+        dict(name='building_wrap', **{'class': 'building'}, keep_alive=None, start=2147483647),
+        dict(name='unit_underflow', **{'class': 'unit'}, keep_alive=True,
+             insignificant=True, start=-2147483648, operations=['loss', 'gain'])]
+    return [dict(case, operations=case.get('operations', ['gain', 'loss'])) for case in cases]
+
+
+def ares_survival_inputs():
+    cases = [
+        dict(name='short_fourth', counts={'6': 1}),
+        dict(name='short_empty', base_indices=[]),
+        dict(name='short_all_zero'),
+        dict(name='short_duplicates', base_indices=[3, 3, 4, 6], counts={'3': 1}),
+        dict(name='short_negative', counts={'6': -1}),
+        dict(name='short_cancelling', counts={'3': 1, '4': -1}),
+        dict(name='short_capacity', base_indices=[15, 16], capacity=16, counts={'16': 7}),
+        dict(name='short_negative_keep_alive', base_indices=[], keep_alive_count=-1),
+        dict(name='short_ignores_original_buildings', base_indices=[], buildings=1),
+        dict(name='passive_skips_hook', passive=True, counts={'6': 1}),
+        dict(name='normal_unit', short_game=False, active_units=1,
+             objects={'unit': [dict(name='ours')]}),
+        dict(name='normal_zero_total', short_game=False,
+             objects={'unit': [dict(name='ours')]}),
+        dict(name='normal_other_owner', short_game=False, active_units=1,
+             objects={'unit': [dict(name='other', ours=False)]}),
+        dict(name='normal_limbo', short_game=False, active_units=1,
+             objects={'unit': [dict(name='limbo', limbo=True)]}),
+        dict(name='normal_limbo_parasite', short_game=False, active_units=1,
+             objects={'unit': [dict(name='parasite', limbo=True, parasite=True)]}),
+        dict(name='normal_class_order', short_game=False, active_units=-1,
+             active_infantry=1, active_aircraft=1, objects={
+                 'unit': [dict(name='other', ours=False)],
+                 'infantry': [dict(name='limbo', limbo=True)],
+                 'aircraft': [dict(name='air')]}),
+        dict(name='normal_keep_alive_first', short_game=False, keep_alive_count=1,
+             active_units=1, objects={'unit': [dict(name='ignored')]}),
+        dict(name='normal_totals_without_objects', short_game=False,
+             active_units=1, active_infantry=-1, active_aircraft=1),
+        dict(name='normal_ignores_refinery', short_game=False, active_yarefn=1)]
+    for case in cases:
+        for key, value in dict(short_game=True, base_indices=[3, 4, 5, 6], capacity=16,
+                               counts={}, keep_alive_count=0, active_units=0,
+                               active_infantry=0, active_aircraft=0).items():
+            case.setdefault(key, value)
+        objects = case.get('objects', {})
+        case['objects'] = {category: [dict(name=node['name'], category=category,
+            owner='ours' if node.get('ours', True) else 'other',
+            limbo=node.get('limbo', False), parasite=node.get('parasite', False))
+            for node in objects.get(category, [])] for category in ('unit', 'infantry', 'aircraft')}
+    return cases
+
+
+def generate_ares_survival():
+    from tools.rules_oracle.ares_prerequisites import ARES_SHA256, identified_bytes
+    ares = identified_bytes(Path(os.environ['VERA20K_ARES_DLL']), ARES_SHA256)
+    readers = ares_reader_history(ares)
+    pairs = {None: readers['constructor_default'],
+             True: next(r['after'] for r in readers['steps'] if r['file'] == 'YES.INI'),
+             False: next(r['after'] for r in readers['steps'] if r['file'] == 'NO.INI')}
+    fixture = AresFixture(ares)
+    tracking = [fixture.tracking(case, pairs[case['keep_alive']]) for case in ares_tracking_inputs()]
+    capture = fixture.capture(pairs[True])
+    streams = [fixture.stream('unset', pairs[None], tracking[0]['steps'][1]['after']['keep_alive']),
+               fixture.stream('true_wrapped', pairs[True], tracking[6]['steps'][0]['after']['keep_alive']),
+               fixture.stream('false', pairs[False], tracking[0]['steps'][0]['after']['keep_alive'])]
+    survival = [fixture.survival(case) for case in ares_survival_inputs()]
+    fixture.checked_code()
+    return dict(schema_version=1, reader_histories=[readers], tracking_histories=tracking,
+                capture=capture, survival_cases=survival, stream_cases=streams)
+
+
+def ares_survival_metadata():
+    return provenance(
+        scope='Ares KeepAlive retained physical reader, tracking hooks/continuations, fullvector short-game and normal Foot eligibility, bounded native stream slices.',
+        assumptions=[
+            'Ares3.0 exports10024990/10024580/100245D0 enter from installed4F8EBD/4FF71B/4FF563 hooks. Shared register frames carry original saved EDI/ESI/EAX; original CPU context and returned saved EAX are restored before each actual continuation. Neither executable text is patched.',
+            'Existing physical Rules retail_history owns synthetic INI file/load/section/ReadString. Full1003C710 establishes nullable KeepAlive+646/+647 unset. Exact field1003F47C..1003F492 runs through original nullable/2048-byte/first-character bool helpers. File sequence is explicit and excludes full Rules Process/type reset, unrelated extension keys and real archive discovery.',
+            'Existing gate Fixture supplies House/Rules/type-index/counter priors. All BaseUnit entries are valid nonnull synthetic UnitType pointers; signed index>=capacity skips, corrupt negative indices/pointers are excluded. Native count and scan results are observed, including fourth entry, duplicates, negative/cancelling counts and capacity boundary.',
+            'Native HouseExt constructor zero-store prefix executes; Add/Remove_Tracking and real Unit/Building object virtuals, shared Type+DF8 ArrayIndex getter and original CounterClass increments/decrements execute. Supplied per-object type facts and retained nullable pairs come from executed reader controls. Captured transfer executes7015D8..7015EB with old owner pointer retained and the new House explicit in EBP; wider ChangeOwner/deletion bodies are excluded.',
+            'Normal scans require nonzero per-class active totals, then original class/vector order and current owner, InLimbo/ParasiteImUsing fields; no health/map-membership equivalence is assumed. The supplied parasite pointer represents allocated ParasiteClass, not eater or attached status.',
+            'Native nullable stream helpers and HouseExt+18 save/load field slices execute on a preallocated native byte-vector stream with original copy leaves. They demonstrate retained bytes, not complete SAV files, swizzling or all extension fields. Zero Main/RandomRanged, action-timer-start and detach entries are asserted within these bounded bodies.'],
+        substitutions=[
+            'Existing Fixture records Blowup_All4FC6D0/MPlayer_Defeated4FC0B0 and returns without executing. Existing house_tracking owned-type-set749020 boundary returns zero at entry; this set is not a survival input. No complete class constructor/lifecycle scheduler, death RNG, full teardown or original scenario comparison.',
+            'Retain the existing single gate VM; map Ares over unused lower stack space, retain its historical SP and expand scratch only. Reuse existing physical Rules VM/PE mapper; no new INI/parser/counter/RNG implementation. DebugINIParseFailed is a recorded diagnostic sink.'],
+        entry_points=dict(gate=GATE_BEGIN, survival_export=0x10024990,
+                          add_tracking=0x4FF700, remove_tracking=0x4FF550,
+                          tracking_helper=0x10021F70, type_constructor=0x1003C710,
+                          keep_alive_reader=0x1003F47C, nullable_reader=0x1000E9B0,
+                          capture_tracking=0x7015D8, nullable_save=0x1000F0C0,
+                          nullable_load=0x1000D7E0, house_count_save=0x1001F4D7,
+                          house_count_load=0x1001F366))
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--outcomes", action="store_true")
+    parser.add_argument("--ares-survival", action="store_true")
     selected, remaining = parser.parse_known_args()
-    if selected.outcomes:
+    if selected.ares_survival:
+        if selected.outcomes:
+            parser.error('--ares-survival and --outcomes are separate corpora')
+        finish_vectors(generate_ares_survival, Path(__file__).with_name('ares_house_survival.json'),
+                       provenance=ares_survival_metadata, argv=remaining)
+    elif selected.outcomes:
         finish_vectors(generate_outcomes, Path(__file__).with_name("house_outcomes.json"),
                        provenance=outcome_metadata, argv=remaining)
     else:

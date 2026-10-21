@@ -142,7 +142,6 @@ fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() 
             origin_y: 0.0,
             zoom: 1.0,
         },
-        eva_side: crate::rules::sound_ini::EvaSide::Yuri,
     };
     let mut sim = simulation("YAREFN", EntityCategory::Structure, "Local", false);
     let mut events = SoundEventQueue::new();

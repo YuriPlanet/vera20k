@@ -179,6 +179,167 @@ fn new_ids(sim: &Simulation, before: &[u64]) -> Vec<u64> {
         .collect()
 }
 
+#[test]
+fn nominal_type_does_not_mark_ordinary_infantry_and_marker_changes_hash() {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+        return;
+    };
+    assert!(
+        rules.object("CTECH").unwrap().nominal(),
+        "physical retail Nominal input"
+    );
+    let mut sim = sim_with_houses(31);
+    let house = sim.interner.intern("Americans");
+    let id = spawn(&mut sim, &rules, "CTECH", "Americans", 10, 10);
+    assert!(
+        !sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .is_nominal_survivor()
+    );
+    let counts = {
+        let tracking = sim.houses[&house].tracking();
+        (tracking.active_for_test(), tracking.infantry())
+    };
+    let before = sim.state_hash();
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .mark_nominal_survivor();
+    assert_ne!(
+        sim.state_hash(),
+        before,
+        "retained marker affects future admission/name"
+    );
+    let tracking = sim.houses[&house].tracking();
+    assert_eq!(
+        (tracking.active_for_test(), tracking.infantry()),
+        counts,
+        "marking does not retroactively change either counter family"
+    );
+}
+
+/// Real producer timing and active-count goldens, not a replay of Rust's
+/// crew selection/placement algorithm. Failed placement has separate controls.
+#[test]
+fn nominal_building_crew_matches_executed_first_admission() {
+    let corpus = crate::test_fixture::json("tools/spatial_oracle/nominal_building_survivor.json");
+    for row in corpus["producer_rows"].as_array().unwrap() {
+        let input = &row["input"];
+        if input["unlimbo_admitted"] != true {
+            continue;
+        }
+        let text = RULES.replace("AlliedCrew=E1", "AlliedCrew=CTECH").replace(
+            "[CTECH]\n",
+            &format!("[CTECH]\nNominal={}\n", input["type_nominal"]),
+        );
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(&text),
+            &IniFile::from_str(ART),
+        )
+        .unwrap();
+        if input["buildup"] == true {
+            rules.set_buildup_control_for_test("GAPOWR", [0, 4, 1]);
+        }
+        let mut sim = sim_with_houses(31);
+        let house = sim.interner.intern("Americans");
+        let building = spawn(&mut sim, &rules, "GAPOWR", "Americans", 10, 10);
+        let before = sim.substrate.entities.keys_sorted();
+        let admitted = match input["route"].as_str().unwrap() {
+            "death" => sim.spawn_building_survivor(
+                &rules,
+                None,
+                "CTECH",
+                building,
+                (10, 10),
+                None,
+                Default::default(),
+            ),
+            "sale" => {
+                sim.spawn_sale_crew(&rules, None, building, 1, &[(10, 10)], Default::default())
+            }
+            route => panic!("unknown native producer {route}"),
+        };
+        assert!(admitted, "{input}");
+        let ids = new_ids(&sim, &before);
+        assert_eq!(ids.len(), 1, "{input}");
+        let survivor = sim.substrate.entities.get(ids[0]).unwrap();
+        assert_eq!(
+            survivor.is_nominal_survivor(),
+            row["after"]["nominal"].as_u64().unwrap() != 0,
+            "{input}"
+        );
+        let tracking = sim.houses[&house].tracking();
+        assert_eq!(
+            i64::from(tracking.active_count(EntityCategory::Infantry, survivor.type_ref())),
+            row["after"]["houses"]["old"]["slot"].as_i64().unwrap(),
+            "{input}"
+        );
+        assert_eq!(
+            tracking.infantry(),
+            1,
+            "constructor tracking remains independent"
+        );
+    }
+}
+
+#[test]
+fn nominal_survivor_capture_and_snapshot_retain_counter_drift() {
+    use crate::sim::snapshot::GameSnapshot;
+    let text = RULES.replace("[CTECH]\n", "[CTECH]\nNominal=yes\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(&text),
+        &IniFile::from_str(ART),
+    )
+    .unwrap();
+    rules.set_buildup_control_for_test("GAPOWR", [0, 4, 1]);
+    let mut sim = sim_with_houses(31);
+    let first = sim.interner.intern("Americans");
+    let second = sim.interner.intern("Russians");
+    let building = spawn(&mut sim, &rules, "GAPOWR", "Americans", 10, 10);
+    let before = sim.substrate.entities.keys_sorted();
+    assert!(sim.spawn_building_survivor(
+        &rules,
+        None,
+        "CTECH",
+        building,
+        (10, 10),
+        None,
+        Default::default()
+    ));
+    let id = new_ids(&sim, &before)[0];
+    sim.change_owner(id, second);
+    assert_eq!(sim.houses[&first].tracking().active_for_test().1, -1);
+    assert_eq!(sim.houses[&second].tracking().active_for_test().1, 0);
+    assert_eq!(sim.houses[&first].tracking().infantry(), 0);
+    assert_eq!(sim.houses[&second].tracking().infantry(), 1);
+
+    // The existing decoder resets Scenario RNG; compare the same prior.
+    sim.scenario_rng = SimRng::new(0);
+    let expected = sim.state_hash();
+    let bytes = GameSnapshot::save(&sim, 0, 0, "nominal-survivor", 0);
+    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+    restored.restore_after_snapshot_load().unwrap();
+    assert_eq!(restored.state_hash(), expected);
+    for candidate in [&mut sim, &mut restored] {
+        assert!(
+            candidate
+                .substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .is_nominal_survivor()
+        );
+        candidate.uninit_with_rules(id, &rules);
+        assert_eq!(candidate.houses[&second].tracking().active_for_test().1, -1);
+        candidate.flush_pending_delete();
+        assert_eq!(candidate.houses[&second].tracking().infantry(), 0);
+    }
+    assert_eq!(sim.state_hash(), restored.state_hash());
+}
+
 /// The saved original control executes the building caller's481180 before
 /// priority Infantry51DFF0. Migration must retain the first row draw and avoid
 /// a second one, while using the shared class placement owner.

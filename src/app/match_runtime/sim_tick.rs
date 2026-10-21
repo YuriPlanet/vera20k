@@ -137,7 +137,7 @@ pub(crate) fn drive_local_player_outcome_voice_wait(state: &mut AppState, wall_m
         state.process_assets.audio_catalog(),
     ) {
         (Some(sfx), Some(assets), Some(catalog)) => {
-            sfx.pump_and_check_voices(catalog.sounds(), assets, catalog.index())
+            sfx.pump_and_check_voices(catalog.eva(), assets, catalog.index())
         }
         _ => false,
     };
@@ -985,7 +985,6 @@ fn advance_one_simulation_frame(
         // Cache local owner name before mutable sim borrow (avoids borrow conflict).
         let local_owner_name = crate::app::input::commands::preferred_local_owner_name(state);
         let sound_listener = crate::app::presentation::building_anim::sound_listener(state);
-        let eva_side = crate::app::presentation::building_anim::local_eva_side(state);
         let mut drained_fire_events: Vec<SimFireEvent> = Vec::new();
         let mut drained_lifecycle_outputs: Vec<LifecycleOutput> = Vec::new();
         let mut drained_combat_lights = Vec::new();
@@ -1033,7 +1032,6 @@ fn advance_one_simulation_frame(
                             assets,
                             catalog,
                             listener: sound_listener,
-                            eva_side,
                         },
                     )),
                     _ => None,
