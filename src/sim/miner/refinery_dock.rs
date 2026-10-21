@@ -395,14 +395,29 @@ pub(crate) fn clear_unload_anim_for_destination(sim: &mut Simulation, rules: &Ru
     }
 }
 
-/// The building `0x0047C520` finds in the cell west of the miner
-/// (`AdjacentCell[W]`, `0x0089F6A0`): the refinery for a miner on its pad.
+/// Map5657A0 then building lookup47C520 in the cell west of the Unit.
+/// The lookup also runs for non-harvesters in the destination setter's Unload
+/// arm741BC7..741C4A, before testing Harvester. Its Dummy stamp can change a
+/// retained Cell destination that Foot subsequently reads through virtual+4C.
 fn unload_building(sim: &Simulation, id: u64) -> Option<u64> {
     let entity = sim.substrate.entities.get(id)?;
-    let x = (entity.position.rx() as i16).wrapping_sub(1) as u16;
+    let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+    let x = crate::util::lepton::lepton_to_cell_packed(location.x).wrapping_sub(1) as u16;
+    let y = crate::util::lepton::lepton_to_cell_packed(location.y) as u16;
+    let (x, y) = if let Some(terrain) = sim.resolved_terrain.as_ref() {
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let cell = cells.lookup((x as i16, y as i16));
+        if cell == crate::map::cell_index::NativeCellIdentity::Dummy {
+            return None;
+        }
+        let (x, y) = cells.coord(cell);
+        (x as u16, y as u16)
+    } else {
+        (x, y)
+    };
     sim.substrate
         .occupancy
-        .first_building_on_layer(x, entity.position.ry(), MovementLayer::Ground)
+        .first_building_on_layer(x, y, MovementLayer::Ground)
 }
 
 /// `0x0073E539` / `0x0073E1F0`: a NavCom and a queued mission other than
