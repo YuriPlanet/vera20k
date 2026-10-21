@@ -830,6 +830,29 @@ fn right_drag_threshold_crossed(
         || delta_y.abs() > drag_metric_y.saturating_mul(2) as f32
 }
 
+/// Reconstruct physical mouse pixels from the zoomed frame's coordinates.
+/// The native camera reads integer window positions. Rounding the inverse
+/// zoom avoids f32 division noise changing a strict drag threshold at, e.g.,
+/// 150%. Unscaled inputs retain their existing subpixel behavior.
+fn window_mouse_pixels(source_distance: f32, resolution_scale: f32) -> f32 {
+    if resolution_scale == 1.0 {
+        source_distance
+    } else {
+        (source_distance * resolution_scale).round()
+    }
+}
+
+/// Manual scroll requests are physical window pixels; the camera stores world
+/// pixels. Both the battlefield zoom and the final frame zoom affect the image.
+fn window_scroll_to_world(
+    distance: (f32, f32),
+    world_zoom: f32,
+    resolution_scale: f32,
+) -> (f32, f32) {
+    let scale = world_zoom * resolution_scale;
+    (distance.0 / scale, distance.1 / scale)
+}
+
 /// The stock rate multiplies the displacement by 1/4: a 100 px drag moves
 /// the camera 25 px per admitted game frame.
 const RIGHT_DRAG_RATE_BIAS: u32 = 1;
@@ -1023,13 +1046,14 @@ impl TacticalMouseState {
         cursor: (f32, f32),
         drag_metrics: (i32, i32),
         band_box: bool,
+        resolution_scale: f32,
     ) -> RightDragPoll {
         if !self.right_drag_owns_frame() {
             return RightDragPoll::Idle;
         }
         self.right_threshold_crossed |= right_drag_threshold_crossed(
-            cursor.0 - self.right_anchor.0,
-            cursor.1 - self.right_anchor.1,
+            window_mouse_pixels(cursor.0 - self.right_anchor.0, resolution_scale),
+            window_mouse_pixels(cursor.1 - self.right_anchor.1, resolution_scale),
             drag_metrics.0,
             drag_metrics.1,
         );
@@ -1046,7 +1070,7 @@ impl TacticalMouseState {
     }
 }
 
-/// One right-drag pan step, in world pixels, for `ScrollMethod = 0` (the stock
+/// One right-drag pan step, in physical window pixels, for `ScrollMethod = 0` (the stock
 /// value — the two cursor-warping methods have no in-game UI and ship disabled).
 ///
 /// The displacement is measured from the **anchor**, not from the previous
@@ -1060,10 +1084,12 @@ fn right_drag_pan_step(
     view_w: f32,
     view_h: f32,
     scroll_rate: u32,
+    resolution_scale: f32,
 ) -> (f32, f32) {
-    // The native handler works on integer mouse coordinates.
-    let mut dx = (cursor.0 - anchor.0).trunc() as i32;
-    let mut dy = (cursor.1 - anchor.1).trunc() as i32;
+    // The caller's coordinates are source pixels; the native handler's
+    // distances and boost bands are physical window pixels.
+    let mut dx = window_mouse_pixels(cursor.0 - anchor.0, resolution_scale).trunc() as i32;
+    let mut dy = window_mouse_pixels(cursor.1 - anchor.1, resolution_scale).trunc() as i32;
 
     // An anchor pinned against a border still scrolls outward when the cursor
     // cannot travel any further. The native test is asymmetric — the X arm
@@ -1085,14 +1111,18 @@ fn right_drag_pan_step(
 
     // Anchor within ten pixels of a border, dragging further that way: force at
     // least five pixels of displacement, then multiply by four.
-    if anchor.0 < RIGHT_DRAG_EDGE_BAND_PX && dx < 0 {
+    if window_mouse_pixels(anchor.0, resolution_scale) < RIGHT_DRAG_EDGE_BAND_PX && dx < 0 {
         dx = dx.min(-RIGHT_DRAG_EDGE_MIN_PX) * RIGHT_DRAG_EDGE_BOOST;
-    } else if anchor.0 > view_w - RIGHT_DRAG_EDGE_BAND_PX && dx > 0 {
+    } else if window_mouse_pixels(view_w - anchor.0, resolution_scale) < RIGHT_DRAG_EDGE_BAND_PX
+        && dx > 0
+    {
         dx = dx.max(RIGHT_DRAG_EDGE_MIN_PX) * RIGHT_DRAG_EDGE_BOOST;
     }
-    if anchor.1 < RIGHT_DRAG_EDGE_BAND_PX && dy < 0 {
+    if window_mouse_pixels(anchor.1, resolution_scale) < RIGHT_DRAG_EDGE_BAND_PX && dy < 0 {
         dy = dy.min(-RIGHT_DRAG_EDGE_MIN_PX) * RIGHT_DRAG_EDGE_BOOST;
-    } else if anchor.1 > view_h - RIGHT_DRAG_EDGE_BAND_PX && dy > 0 {
+    } else if window_mouse_pixels(view_h - anchor.1, resolution_scale) < RIGHT_DRAG_EDGE_BAND_PX
+        && dy > 0
+    {
         dy = dy.max(RIGHT_DRAG_EDGE_MIN_PX) * RIGHT_DRAG_EDGE_BOOST;
     }
 
@@ -1125,6 +1155,7 @@ fn right_drag_axis_distance(displacement: i32, scroll_rate: u32) -> i32 {
 /// Poll the right-drag owner and return a request in world pixels. Committing
 /// and clamping the request belongs to the later Tactical__AI/pre-follow seam.
 fn poll_right_drag_pan(state: &mut AppState) -> (f32, f32) {
+    let resolution_scale = state.tactical_zoom().map_or(1.0, |zoom| zoom.scale());
     let cursor = (
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
@@ -1133,6 +1164,7 @@ fn poll_right_drag_pan(state: &mut AppState) -> (f32, f32) {
         cursor,
         system_drag_metrics_px(),
         state.match_state.input.selection_state.is_band_box_active(),
+        resolution_scale,
     ) {
         RightDragPoll::Idle => return (0.0, 0.0),
         RightDragPoll::CancelBandBox => {
@@ -1151,16 +1183,16 @@ fn poll_right_drag_pan(state: &mut AppState) -> (f32, f32) {
             .match_presentation
             .in_game_options
             .scroll_rate,
+        resolution_scale,
     );
-    // The pan distance is in window pixels. Stock YR has no world zoom, so the
-    // divide is VERA-internal and exact at zoom 1.0.
-    (
-        dx / state.match_state.input.zoom_level,
-        dy / state.match_state.input.zoom_level,
+    window_scroll_to_world(
+        (dx, dy),
+        state.match_state.input.zoom_level,
+        resolution_scale,
     )
 }
 
-/// Arrow-key scroll distance for this frame, in world pixels.
+/// Arrow-key scroll distance for this frame, in physical window pixels.
 ///
 /// Shift is tested before Ctrl in the original, so Shift wins when both are
 /// held. The Ctrl distance is derived from the map's longer side; with no map
@@ -1202,7 +1234,7 @@ pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
         .keys_held
         .contains(&winit::keyboard::KeyCode::ArrowLeft)
     {
-        movement.0 -= key_distance / state.match_state.input.zoom_level;
+        movement.0 -= key_distance;
     }
     if state
         .match_state
@@ -1210,7 +1242,7 @@ pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
         .keys_held
         .contains(&winit::keyboard::KeyCode::ArrowRight)
     {
-        movement.0 += key_distance / state.match_state.input.zoom_level;
+        movement.0 += key_distance;
     }
     if state
         .match_state
@@ -1218,7 +1250,7 @@ pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
         .keys_held
         .contains(&winit::keyboard::KeyCode::ArrowUp)
     {
-        movement.1 -= key_distance / state.match_state.input.zoom_level;
+        movement.1 -= key_distance;
     }
     if state
         .match_state
@@ -1226,9 +1258,14 @@ pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
         .keys_held
         .contains(&winit::keyboard::KeyCode::ArrowDown)
     {
-        movement.1 += key_distance / state.match_state.input.zoom_level;
+        movement.1 += key_distance;
     }
 
+    let movement = window_scroll_to_world(
+        movement,
+        state.match_state.input.zoom_level,
+        state.tactical_zoom().map_or(1.0, |zoom| zoom.scale()),
+    );
     state
         .match_state
         .input
@@ -1293,12 +1330,10 @@ pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
             movement_allowed,
             now,
         );
-        // The speed table is in window pixels. Stock YR has no world zoom, so
-        // the divide is VERA-internal: it keeps the on-screen scroll rate
-        // constant across VERA's zoom range and is exact at zoom 1.0.
-        return (
-            dx / state.match_state.input.zoom_level,
-            dy / state.match_state.input.zoom_level,
+        return window_scroll_to_world(
+            (dx, dy),
+            state.match_state.input.zoom_level,
+            state.tactical_zoom().map_or(1.0, |zoom| zoom.scale()),
         );
     }
     right_drag
