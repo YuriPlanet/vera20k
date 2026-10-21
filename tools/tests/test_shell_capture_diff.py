@@ -113,7 +113,8 @@ def opening_bundle(directory, phase="opening-unlocked"):
     receipt["runtime"].update(tick=3, binary_frame=3)
     view = {"view_center_world_pixels": [0, 0], "focus_rate_bits": 1,
             "focus_progress_bits": struct.unpack("<I", struct.pack("<f", .5))[0]}
-    locked = phase not in ("opening-unlocked", "opening-restore-unlocked")
+    locked = phase not in ("opening-unlocked", "opening-restore-unlocked",
+                           "opening-timer-running", "opening-timer-expired")
     current = {"tick": 3, "binary_frame": 3, "input_locked": locked,
                "cursor_depth": -1 if locked else 0, "camera": view,
                "fog_viewer": receipt["runtime"]["current_house"]["name"],
@@ -370,6 +371,17 @@ class CampaignReceiptTests(unittest.TestCase):
                     self.assertEqual(report["campaign"]["phase"], phase)
                     self.assertEqual(report["parity_certification"], "NONE")
 
+    def test_process_source_filenames_allow_their_physical_case(self):
+        with tempfile.TemporaryDirectory() as temp:
+            receipt = campaign_bundle(Path(temp))
+            sources = receipt["process_source_ini_hashes"]["sources"]
+            for source in sources:
+                source["name"] = source["name"].lower()
+            diff.validate_campaign_capture(receipt)
+            sources.reverse()
+            with self.assertRaises(diff.InputError):
+                diff.validate_campaign_capture(receipt)
+
     def test_first_loading_readback_requires_prepared_map_bytes(self):
         with tempfile.TemporaryDirectory() as temp:
             receipt = campaign_bundle(Path(temp), phase="loading-first-frame")
@@ -426,6 +438,36 @@ class CampaignReceiptTests(unittest.TestCase):
             for mutate in mutations:
                 invalid = copy.deepcopy(receipt)
                 mutate(invalid)
+                with self.assertRaises(diff.InputError):
+                    diff.validate_campaign_capture(invalid)
+
+    def test_countdown_capture_requires_running_then_hidden_timer(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for phase in ("opening-timer-running", "opening-timer-expired"):
+                receipt = opening_bundle(Path(temp), phase)
+                opening = receipt["opening"]
+                opening["saw_countdown"] = True
+                opening["timer_action_replay"] = {
+                    "mode": "retail-timer-actions-after-opening-unlock",
+                    "trigger": "0952F87C", "action_count": 3, "tick": 0, "binary_frame": 0,
+                }
+                running = {"remaining": 1800, "caption": "MISSION:TmeTimer"}
+                opening["observations"][0]["scenario_timer"] = running
+                opening["current"]["scenario_timer"] = (
+                    running if phase == "opening-timer-running" else None)
+                opening["last_running_countdown"] = {
+                    "tick": 2, "binary_frame": 2,
+                    "timer": {"remaining": 0, "caption": "MISSION:TmeTimer"},
+                }
+                diff.validate_campaign_capture(receipt)
+                invalid = copy.deepcopy(receipt)
+                invalid["opening"]["current"]["scenario_timer"] = (
+                    None if phase == "opening-timer-running" else
+                    {"remaining": 0, "caption": "MISSION:TmeTimer"})
+                with self.assertRaises(diff.InputError):
+                    diff.validate_campaign_capture(invalid)
+                invalid = copy.deepcopy(receipt)
+                invalid["opening"]["observations"][0]["scenario_timer"] = None
                 with self.assertRaises(diff.InputError):
                     diff.validate_campaign_capture(invalid)
 

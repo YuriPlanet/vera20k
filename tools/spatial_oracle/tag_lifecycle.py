@@ -474,6 +474,14 @@ def execute(case):
         u.mem_write(base,bytes([value]))
     u.mem_write(SCENARIO+0x60C, dwords(case.get('difficulty',1)))
     u.mem_write(SCENARIO+0x11E8, dwords(-1))
+    scenario_timer = case.get('scenario_timer',False)
+    if scenario_timer:
+        # Original Mouse constructor5BDA4A installs this primary vtable.
+        # Action27's real Tab6D0F00 redraw then reaches4F42F0 through +38;
+        # both redraw bodies execute, without a supplied callback result.
+        instruction=bytes(u.mem_read(0x5BDA4A,6))
+        assert instruction[:2]==b'\xC7\x06'
+        u.mem_write(0x87F7E8,instruction[2:])
     initialize_registries(u,
         {name: SCRATCH+0x50000+index*0x400 for index, name in enumerate(REGISTRIES)},
         include_object_vtables=case.get('mixed_deferred_queue', False))
@@ -516,6 +524,9 @@ def execute(case):
         for pointer in (0x886B88,0xABE890):
             f.call(0x65C6D0,pointer,[case.get('seed',31)])
     if observe_object_cleanup and house_funds is None:
+        for pointer in (0x886B88,0xABE890):
+            f.call(0x65C6D0,pointer,[case.get('seed',31)])
+    if scenario_timer and not observe_object_cleanup and house_funds is None:
         for pointer in (0x886B88,0xABE890):
             f.call(0x65C6D0,pointer,[case.get('seed',31)])
     if case.get('active_cleanup',False):
@@ -617,6 +628,11 @@ def execute(case):
     ranges = [(0x6E4DE0,0x6E5AA0),(0x725FA0,0x726B00),(0x71E940,0x71FA40),
               (0x7258D0,0x725D90),(0x5F3900,0x5F3B40),(0x55AFB0,0x55B205),
               (0x6DD8B0,0x6E45D0),(0x689670,0x689A90)]
+    if scenario_timer:
+        ranges.extend(((0x426630,0x42664C),(0x6D0F00,0x6D0F0F),
+                       (0x4F42F0,0x4F431E),(0x578AC0,0x578AC7)))
+        timer_rng_before={pointer:bytes(u.mem_read(pointer,0x3F4))
+                          for pointer in (SCENARIO+0x218,0x886B88,0xABE890)}
     if spy is not None:
         ranges.extend(((0x522640,0x5226BB),(0x5226C0,0x522705),
                        (0x4F9A50,0x4F9AB0),(0x524D60,0x524D67),
@@ -688,6 +704,10 @@ def execute(case):
             state.update(dispatches=list(dispatches),
                          logic_tags=[tags.index(u32(u,u32(u,base+4)+n*4)) for n in range(i32(u,base+16))],
                          scenario_flags=[u.mem_read(SCENARIO+n,1)[0] for n in (0x34AA,0x34A9,0x34AB,0x34BE)])
+        if scenario_timer:
+            remaining=f.call(0x426630,SCENARIO+0x11E8,[])
+            state['scenario_timer']=dict(running=i32(u,SCENARIO+0x11E8)!=-1,
+                                        remaining=struct.unpack('<i',dwords(remaining))[0])
         if case.get('active_cleanup',False):
             state.update(logic_cursor=i32(u,0xA83CDC),map_cursor=i32(u,0xA83DBC),
                          allow_win_count=i32(u,HOUSE+0x27C),
@@ -773,9 +793,11 @@ def execute(case):
         elif kind=='global' or kind=='local':
             returned = f.call(0x689670 if kind=='global' else 0x689910,SCENARIO,args)&255
         elif kind=='action':
-            action_kind,typ = args
+            action_kind,typ = args[:2]
             u.mem_write(CONTROL+0x2C,dwords(action_kind))
             u.mem_write(CONTROL+0x50,dwords(TRIGGER_TYPES[typ]))
+            if len(args)>2:
+                u.mem_write(CONTROL+0x90,dwords(args[2]))
             returned = f.call(0x6DD8B0,CONTROL,[HOUSE,0,0,0])&255
         elif kind=='mark_tag':
             f.call(0x6E5230,tags[args[0]],[])
@@ -829,6 +851,11 @@ def execute(case):
         assert not draws
         result.update(rng_before={hex(p):hashlib.sha256(v).hexdigest() for p,v in rng_before.items()},
                       rng_after_history={hex(p):hashlib.sha256(v).hexdigest() for p,v in rng_after.items()})
+    if scenario_timer:
+        timer_rng_after={pointer:bytes(u.mem_read(pointer,0x3F4)) for pointer in timer_rng_before}
+        assert timer_rng_after==timer_rng_before and not draws
+        result.update(rng_before={hex(p):hashlib.sha256(v).hexdigest() for p,v in timer_rng_before.items()},
+                      rng_after_history={hex(p):hashlib.sha256(v).hexdigest() for p,v in timer_rng_after.items()})
     # This terminal continuation probe is deliberately outside saved history.
     result['next_random']=f.call(0x65C780,SCENARIO+0x218,[])
     return result
@@ -929,6 +956,30 @@ def mixed_deferred_inputs():
                                        ['object',2],['object',0]]))]
 
 
+def scenario_timer_inputs():
+    """Complete Logic countdown polling with real Tag/action callbacks.
+
+    The caller-supplied Action kind/value fields match execute's existing
+    definition transport. Original Action27 starts the timer before any poll;
+    nothing resets or substitutes its state between the explicit frames.
+    """
+    rows=[]
+    for name,tags,events,actions in (
+            ('before_exact_after',1,[[14,0]],[[28,7]]),
+            ('two_tags',2,[[14,0]],[[28,7]]),
+            ('restart_on_expiry',2,[[14,0]],[[27,4]]),
+            ('explicit14',1,[[47,100]],[[28,7]])):
+        operations=[['action',27,0,2]]
+        operations.extend(['shared',index] for index in range(tags))
+        operations.append(['register_logic',*range(tags)])
+        for frame in (29,30,31):
+            operations.extend((['frame',frame],['poll']))
+        rows.append(dict(name='scenario_timer_'+name,scenario_timer=True,
+                         repeat=2,polling=True,frame=0,game_mode=0,
+                         triggers=[dict(events=events,actions=actions)],operations=operations))
+    return rows
+
+
 def generate():
     rows=[execute(case) for case in inputs()]
     named={r['input']['name']:r for r in rows}
@@ -970,6 +1021,7 @@ def generate():
     rows.extend(stock_registration(difficulty) for difficulty in (0,1,2))
     rows.append(reference_controls())
     rows.extend(execute(case) for case in mixed_deferred_inputs())
+    rows.extend(execute(case) for case in scenario_timer_inputs())
     return rows
 
 
@@ -981,6 +1033,8 @@ def metadata():
                       'object_attach':0x5F5B50,'deferred_drain':0x725C70,
                       'object_can_delete':0x5F6690,'object_deleting_destructor':0x5F6DC0,
                       'logic_tag_poll_prefix':0x55AFB0,
+                      'scenario_timer_expiry':0x55B17D,'timer_remaining':0x426630,
+                      'timer_action_redraw':0x6D0F00,'redraw':0x4F42F0,
                       'tag_destructor':0x6E4F60,'trigger_deleting_destructor':0x726950,
                       'fixed_map_teamtypes':0x6F19B0,'map_triggertypes':0x7275D0,
                       'map_tagtypes':0x6E5ED0,'action_record_reader':0x6DD5B0,
@@ -990,6 +1044,8 @@ def metadata():
         assumptions=['Original49: resolved definitions, one registered House and initialized Scenario RNG.',
                      'Registries have spare capacity and native initialized vtables; map cells exist. Lifecycle cases construct real base Objects; no Teams are registered.',
                      'Small-world polling cases supply the Logic registration list and run55AFB0..55B205; the scenario countdown is stopped, excluding its expiry/UI callback. Distinct TagTypes may share TriggerTypes.',
+                     'Four scenario_timer controls additionally execute Action27 before polling frames29/30/31, starting duration30 at frame0. They retain real Tag/Trigger constructors, predicates, callbacks, mutable Logic traversal, explicit14 after unsuccessful13/51 and post-loop expiry55B17D..55B1D8. Two repeat2 Tags may share one Type; a callback Action27/4 restarts the clock at frame30 and the tail preserves the new duration60. No timer state is supplied between polls. These cases do not establish whole-SOV01 timing, repeat0 traversal behavior or rendered pixels.',
+                     'scenario_timer controls supply only the original Mouse primary vptr from constructor instruction5BDA4A so Action27 Tab6D0F00 can call original4F42F0 through slot+38. The allocated screen fields and absent Tactical pointer remain fixture priors; the real redraw flag/level and epoch stores execute. Full Mouse/Scenario construction and display drawing are excluded. Their history scenario_timer fields observe original426630 remaining and the native start!=-1 display gate; all three RNG buffers stay unchanged through the histories.',
                      'Original49 have false A8E9A0/A8ED5C. Eleven additive GameMode0 controls vary both flags and supplied cursors/AllowWin count, executing destructor cursor/House timer gates and mutable polling at difficulty0/1/2.',
                      'Three stock SOV cases use original Scenario/Country constructors, cached ordered physical INI entries, original fixed-AIMD/map TeamType/TriggerType/TagType readers, minimal authored House/Country bindings and sparse cell storage. Complete Rules/House/terrain/concrete Techno construction is excluded.',
                      'Stock classification runs684D47..684EC1 before the later AllowWin loop. The first55AFB0 poll stops before the first6DD8B0 gameplay action; its incomplete guard/stack state is observed, then its stack is abandoned for separate complete resolved53/predicate calls at explicit supplied frames.',
@@ -1001,7 +1057,7 @@ def metadata():
         substitutions=['Operator-new7C8E17 supplies bounded poisoned arena storage;7C8B3D records freeing it. Fresh Tag and Object storage is supplied directly to original constructors.',
                        'Windows IsBadReadPtr succeeds only after Unicorn validates the probed memory. Original CRT typeid and gameplay callees/instructions are unchanged.',
                        'Stock native map query executes on supplied sparse Cells; minimal House storage carries real original Country bindings. No gameplay callable receives a substituted success return.'],
-        scope='49 unchanged original lifecycle histories,11 additive active-flag/difficulty cleanup/poll histories,3 bounded stock SOV construction/registration/first-action-boundary histories,44 original TAction reference-reader controls,12 physical TeamType Tag reference controls and2 mixed deferred-queue histories. Establishes native registry source/first-reference order, retained TeamType Tag references and buffer/type-ID boundaries, CellTag refcounts, classification, disabled Event13 reset, explicit-frame resolved53 fanout and event predicates, mutable list/cleanup gates, shared Object/Tag/Trigger readiness/duplicate-removal/destructor-tail order. Mixed controls supply the ordered queue prior and an explicit Object readiness transition; original base Object/Tag/Trigger destruction executes. Excludes concrete object factory/placement and authored Object Tag attachments, complete map/Rules/House prefix, Script/TaskForce body reads, Team lifecycle, gameplay actions after the first stock poll boundary, scenario countdown expiry and later Logic AI.',
+        scope='49 unchanged original lifecycle histories,11 additive active-flag/difficulty cleanup/poll histories,3 bounded stock SOV construction/registration/first-action-boundary histories,44 original TAction reference-reader controls,12 physical TeamType Tag reference controls,2 mixed deferred-queue histories and4 Scenario countdown completion histories. Establishes native registry source/first-reference order, retained TeamType Tag references and buffer/type-ID boundaries, CellTag refcounts, classification, disabled Event13 reset, explicit-frame resolved53 fanout and event predicates, mutable list/cleanup gates, shared Object/Tag/Trigger readiness/duplicate-removal/destructor-tail order. Countdown controls establish real Action27 initialization, post-loop expiry, explicit14 fallback and callback restart retention. Mixed controls supply the ordered queue prior and an explicit Object readiness transition; original base Object/Tag/Trigger destruction executes. Excludes concrete object factory/placement and authored Object Tag attachments, complete map/Rules/House prefix, Script/TaskForce body reads, Team lifecycle, gameplay actions after the first stock poll boundary and later Logic AI.',
     )
     value['reproduction']={
         'write':'python -m tools.spatial_oracle.tag_lifecycle --write',
@@ -1013,7 +1069,8 @@ def metadata():
             'RA2_DIR':'retail installation for existing stock CSF/MIX owner'},
         'checkout_prerequisite':'ini/rulesmd.ini is the retained retail RULESMD winner',
         'coverage':{'legacy_histories':49,'active_histories':11,'stock_histories':3,
-                    'reference_rows':44,'mixed_deferred_histories':2,'stock_difficulties':[0,1,2]},
+                    'reference_rows':44,'mixed_deferred_histories':2,'scenario_timer_histories':4,
+                    'stock_difficulties':[0,1,2]},
         'legacy_payload_sha256':'59eb67f4543f243db25eeadf7d7a77412e77708d93d6dd1e743893aa6c1d0899'}
     return value
 

@@ -3863,6 +3863,13 @@ fn history_state(
     let mut state = json!({ "returned": returned, "tags": tags, "actions": runtime.action_trace,
         "rng_draws": draws, "pending_count": sim.substrate.pending_delete.len(), "pending_tags": pending_tags,
         "globals": runtime.globals_set, "locals": runtime.locals_set, "changed": i32::from(runtime.dirty[0]) });
+    if input["scenario_timer"].as_bool().unwrap_or(false) {
+        let timer = sim.session.scenario_timer_view();
+        state["scenario_timer"] = json!({
+            "running": timer.is_some(),
+            "remaining": timer.map_or(0, |(remaining, _)| remaining),
+        });
+    }
     if input["lifecycle"].as_bool().unwrap_or(false) {
         let tags = runtime.tag_order.len();
         let triggers = runtime.trigger_order.len();
@@ -3997,7 +4004,7 @@ fn live_instances_match_all_native_supplied_histories_and_serialization() {
     assert_eq!(destruction.len(), 3);
     assert_eq!(
         replay_native_histories(rows().into_iter().chain(destruction.iter().cloned())),
-        65
+        69
     );
 }
 
@@ -4202,7 +4209,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                             reference: Some(DefinitionReference::Trigger(
                                 integer(&args[2]) as usize
                             )),
-                            value: Some(0),
+                            value: Some(args.get(3).map_or(0, integer)),
                             sound: None,
                         };
                         returned = Some(i32::from(sim.apply_live_trigger_action(

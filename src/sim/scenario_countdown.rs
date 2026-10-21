@@ -76,6 +76,15 @@ impl ScenarioSession {
                 .expired(self.binary_frame as i32)
     }
 
+    /// LogicClass::PerTickUpdate55B17D..55B1D8, after the mutable Tag poll.
+    /// Re-read the timer here: an expiry action can start a new countdown.
+    /// Tactical6D4949 observes the stopped timer and removes its display line.
+    pub(crate) fn finish_scenario_timer_poll(&mut self) {
+        if self.scenario_timer_elapsed() {
+            self.change_scenario_timer(ScenarioTimerAction::Stop);
+        }
+    }
+
     /// Tactical6D4941 draws this line whenever the timer runs, including0.
     pub fn scenario_timer_view(&self) -> Option<(i32, &str)> {
         let state = &self.scenario_countdown;

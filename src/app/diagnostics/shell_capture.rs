@@ -594,6 +594,12 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_SOV1_OPENING_UNLOCKED => {
                 Ok(Self::CampaignOpening(movies::OpeningTarget::Unlocked))
             }
+            "campaign-sov1-opening-timer-running" => {
+                Ok(Self::CampaignOpening(movies::OpeningTarget::TimerRunning))
+            }
+            "campaign-sov1-opening-timer-expired" => {
+                Ok(Self::CampaignOpening(movies::OpeningTarget::TimerExpired))
+            }
             CHECKPOINT_CAMPAIGN_SOV1_OPENING_RESTORE_UNLOCKED => Ok(Self::CampaignOpening(
                 movies::OpeningTarget::RestoreUnlocked,
             )),
@@ -721,6 +727,12 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignOpening(movies::OpeningTarget::AlliedTick(_)) => {
                 "campaign-all1-opening-tick"
+            }
+            Self::CampaignOpening(movies::OpeningTarget::TimerRunning) => {
+                "campaign-sov1-opening-timer-running"
+            }
+            Self::CampaignOpening(movies::OpeningTarget::TimerExpired) => {
+                "campaign-sov1-opening-timer-expired"
             }
             Self::CampaignBackReturn => CHECKPOINT_CAMPAIGN_BACK_RETURN,
             Self::LoadSavedGame0xB7Steady => CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY,
@@ -2486,6 +2498,16 @@ mod tests {
             (
                 CHECKPOINT_CAMPAIGN_SOV1_OPENING_UNLOCKED,
                 movies::OpeningTarget::Unlocked,
+                Soviet,
+            ),
+            (
+                "campaign-sov1-opening-timer-running",
+                movies::OpeningTarget::TimerRunning,
+                Soviet,
+            ),
+            (
+                "campaign-sov1-opening-timer-expired",
+                movies::OpeningTarget::TimerExpired,
                 Soviet,
             ),
             (

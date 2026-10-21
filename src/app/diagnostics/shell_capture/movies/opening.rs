@@ -1,5 +1,6 @@
 //! The existing campaign capture route continues through the actual app
-//! runtime. It supplies no trigger state, teams, camera targets or RNG draws.
+//! runtime. Timer captures explicitly replay a later mission's parsed timer
+//! actions after opening unlock; they do not claim those objectives were played.
 
 use super::*;
 use crate::app::input::{camera, hotkeys, keyboard};
@@ -22,6 +23,9 @@ pub enum OpeningTarget {
     LoadUnlockedWhileLocked,
     /// A fixed committed production tick, for opening aircraft raster diagnosis.
     AlliedTick(u64),
+    /// SOV01 timer actions replayed after opening unlock, then ordinary expiry.
+    TimerRunning,
+    TimerExpired,
 }
 
 impl OpeningTarget {
@@ -35,6 +39,8 @@ impl OpeningTarget {
             Self::RestoreUnlocked => "opening-restore-unlocked",
             Self::LoadUnlockedWhileLocked => "opening-load-unlocked-while-locked",
             Self::AlliedTick(_) => "opening-allied-tick",
+            Self::TimerRunning => "opening-timer-running",
+            Self::TimerExpired => "opening-timer-expired",
         }
     }
 
@@ -48,6 +54,7 @@ impl OpeningTarget {
     fn step_limit(self) -> usize {
         match self {
             Self::LoadUnlockedWhileLocked => 6_000,
+            Self::TimerRunning | Self::TimerExpired => 8_000,
             _ => 2_500,
         }
     }
@@ -65,6 +72,9 @@ pub(super) struct OpeningCapture {
     previous_projection: Option<Value>,
     saw_lock: bool,
     saw_unlock: bool,
+    saw_countdown: bool,
+    last_running_countdown: Option<Value>,
+    timer_action_replay: Option<Value>,
     lock_probe: Option<Value>,
     unlock_probe: Option<Value>,
     locked_mouse_probe: Option<Value>,
@@ -91,6 +101,9 @@ impl OpeningCapture {
             previous_projection: None,
             saw_lock: false,
             saw_unlock: false,
+            saw_countdown: false,
+            last_running_countdown: None,
+            timer_action_replay: None,
             lock_probe: None,
             unlock_probe: None,
             locked_mouse_probe: None,
@@ -107,6 +120,7 @@ impl OpeningCapture {
     pub(super) fn timeout(&self) -> Duration {
         Duration::from_secs(match self.target {
             OpeningTarget::LoadUnlockedWhileLocked => 600,
+            OpeningTarget::TimerRunning | OpeningTarget::TimerExpired => 600,
             _ => 180,
         })
     }
@@ -137,6 +151,10 @@ impl OpeningCapture {
                     self.load_while_locked.is_some() && self.steps_after_load >= STEPS_AFTER_LOAD
                 }
                 OpeningTarget::AlliedTick(tick) => sim.session().tick() == tick,
+                OpeningTarget::TimerRunning => sim.session().scenario_timer_view().is_some(),
+                OpeningTarget::TimerExpired => {
+                    self.saw_countdown && sim.session().scenario_timer_view().is_none()
+                }
             })
     }
 
@@ -164,6 +182,16 @@ impl OpeningCapture {
         // exact state that was drawn, including the first unlocked frame.
         if self.ready(state)? {
             return Ok(());
+        }
+        if matches!(
+            self.target,
+            OpeningTarget::TimerRunning | OpeningTarget::TimerExpired
+        ) && self.saw_unlock
+            && !locked
+            && self.timer_action_replay.is_none()
+        {
+            self.replay_timer_actions(state)?;
+            self.observe(state)?;
         }
         if self.target == OpeningTarget::RestoreUnlocked
             && self.restored.is_none()
@@ -238,6 +266,35 @@ impl OpeningCapture {
         Ok(())
     }
 
+    #[cfg(feature = "dev-overlays")]
+    fn replay_timer_actions(&mut self, state: &mut AppState) -> Result<()> {
+        let runtime = state
+            .match_state
+            .sim_runtime
+            .as_mut()
+            .context("timer replay has no runtime")?;
+        let sim = &mut runtime.simulation;
+        let count = sim
+            .dev_replay_scenario_timer_actions(&runtime.resources.rules, "0952F87C")
+            .context("SOV01 has no parsed timer actions")?;
+        ensure!(
+            count == 3 && sim.session().scenario_timer_view() == Some((1800, "MISSION:TmeTimer")),
+            "SOV01 timer replay differs from its retail actions"
+        );
+        self.timer_action_replay = Some(json!({
+            "mode": "retail-timer-actions-after-opening-unlock", "trigger": "0952F87C",
+            "action_count": count, "tick": sim.session().tick(),
+            "binary_frame": sim.session().binary_frame(),
+            "scope": "later time-machine/power/Jurassic objectives were not played; only timer actions27/23/103 were replayed",
+        }));
+        Ok(())
+    }
+
+    #[cfg(not(feature = "dev-overlays"))]
+    fn replay_timer_actions(&mut self, _state: &mut AppState) -> Result<()> {
+        anyhow::bail!("timer action replay requires dev-overlays")
+    }
+
     /// Save before ALL01's first authored lock and again after its unlock,
     /// replay the opening from the first save, then load the unlocked save the
     /// way the Esc menu's Load does (`apply_saved_game_outcome`: open B5, load,
@@ -309,6 +366,13 @@ impl OpeningCapture {
             .context("lock observation missing")?;
         self.saw_unlock |= self.saw_lock && !locked;
         self.saw_lock |= locked;
+        self.saw_countdown |= !facts["scenario_timer"].is_null();
+        if !facts["scenario_timer"].is_null() {
+            self.last_running_countdown = Some(json!({
+                "tick": facts["tick"], "binary_frame": facts["binary_frame"],
+                "timer": facts["scenario_timer"],
+            }));
+        }
         // Simulation time is attached to changes; it does not make every
         // moving pixel or every countdown visit into a new observation row.
         let mut projection = facts.clone();
@@ -320,6 +384,9 @@ impl OpeningCapture {
             .as_object_mut()
             .expect("observation object")
             .remove("binary_frame");
+        if let Some(timer) = projection["scenario_timer"].as_object_mut() {
+            timer.remove("remaining");
+        }
         projection["camera"]
             .as_object_mut()
             .expect("camera object")
@@ -368,6 +435,9 @@ impl OpeningCapture {
             "target": self.target.phase(), "initial_runtime": self.initial_runtime,
             "exact_steps": self.steps, "observations": self.observations,
             "saw_lock": self.saw_lock, "saw_unlock": self.saw_unlock,
+            "saw_countdown": self.saw_countdown,
+            "last_running_countdown": self.last_running_countdown,
+            "timer_action_replay": self.timer_action_replay,
             "locked_arrow_probe": self.lock_probe, "unlocked_arrow_probe": self.unlock_probe,
             "locked_mouse_probe": self.locked_mouse_probe,
             "unlocked_mouse_probe": self.unlocked_mouse_probe,
@@ -505,6 +575,8 @@ fn opening_observation(state: &AppState) -> Result<Value> {
     Ok(json!({
         "tick": sim.session().tick(), "binary_frame": sim.session().binary_frame(),
         "input_locked": sim.session().input_locked(),
+        "scenario_timer": sim.session().scenario_timer_view().map(|(remaining, caption)|
+            json!({"remaining": remaining, "caption": caption})),
         "cursor_depth": state.match_state.input.cursor_visibility.level(),
         "camera": camera::saved_tactical_view(state),
         "camera_origin": [state.match_state.input.camera_x, state.match_state.input.camera_y],

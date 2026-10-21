@@ -2381,6 +2381,43 @@ impl Simulation {
         result
     }
 
+    /// Diagnostic admission for a later campaign countdown without playing
+    /// its preceding objectives. Replay only the parsed timer actions through
+    /// their existing dispatcher; do not enable the source trigger or supply
+    /// elapsed time. Shipping builds omit this entry point.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    pub fn dev_replay_scenario_timer_actions(
+        &mut self,
+        rules: &crate::rules::ruleset::RuleSet,
+        trigger_id: &str,
+    ) -> Option<usize> {
+        let source = self.trigger_runtime.definitions.trigger_type(trigger_id)?;
+        let actions: Vec<_> = self.trigger_runtime.definitions.trigger_types[source]
+            .actions
+            .iter()
+            .filter(|action| matches!(action.entry.kind, 23..=27 | 103))
+            .cloned()
+            .collect();
+        if actions.is_empty() {
+            return None;
+        }
+        let mut effects = Vec::new();
+        for action in &actions {
+            if !self.apply_live_trigger_action(
+                action,
+                self.trigger_action_context(source, None, TagEventInput::default(), rules),
+                &mut effects,
+                rules,
+                None,
+                FrameEffects::default(),
+            ) {
+                return None;
+            }
+        }
+        debug_assert!(effects.is_empty());
+        Some(actions.len())
+    }
+
     fn dispatch_live_tag_event(
         &mut self,
         index: usize,
@@ -2654,7 +2691,7 @@ impl Simulation {
                 );
             }
             if !fired {
-                self.dispatch_live_tag_event(
+                fired = self.dispatch_live_tag_event(
                     tag,
                     TagEventInput {
                         kind: 51,
@@ -2669,10 +2706,27 @@ impl Simulation {
                     frame_effects,
                 );
             }
-            // Scenario countdown14 expiry still belongs to its timer owner;
-            // the campaign opening has no started countdown.
+            // Logic55B11E..55B159 checks the current timer only after both
+            // ordinary timer events fail. Earlier actions may have restarted it.
+            if !fired && self.session.scenario_timer_elapsed() {
+                self.dispatch_live_tag_event(
+                    tag,
+                    TagEventInput {
+                        kind: 14,
+                        actor: None,
+                        source: None,
+                        cell: (0, 0),
+                        force: false,
+                    },
+                    &mut effects,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                );
+            }
             self.trigger_runtime.logic_cursor = self.trigger_runtime.logic_cursor.wrapping_add(1);
         }
+        self.session.finish_scenario_timer_poll();
         self.trigger_runtime.dirty = [false; 4];
         effects
     }

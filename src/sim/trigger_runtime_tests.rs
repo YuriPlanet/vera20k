@@ -625,28 +625,81 @@ fn retail_sov01_transport_hint_emits_the_named_cameo_on_the_native_clock() {
 }
 
 #[test]
+fn scenario_timer_expiry_polls_all_tags_before_stopping() {
+    let rules = crate::rules::ruleset::RuleSet::empty_for_test();
+    let map = trigger_fixture_map(
+        "[Triggers]\nFIRST=Neutral,<none>,First,0,1,1,1,0\nSECOND=Neutral,<none>,Second,0,1,1,1,0\n\
+         [Events]\nFIRST=1,14,0,0\nSECOND=1,14,0,0\n\
+         [Actions]\nFIRST=1,28,0,7,0,0,0,0,A\nSECOND=1,28,0,8,0,0,0,0,A\n\
+         [Tags]\nFIRST_TAG=2,First,FIRST\nSECOND_TAG=2,Second,SECOND\n",
+    );
+    let mut sim = Simulation::new();
+    install_map_triggers(&mut sim, &map);
+    sim.classify_map_triggers(rules);
+    sim.session
+        .change_scenario_timer(crate::sim::scenario_session::ScenarioTimerAction::Set(1));
+    sim.session.set_scenario_timer_caption("MISSION:TmeTimer");
+    let rng = sim.rng_state();
+    sim.session.set_binary_frame_for_test(14);
+    sim.advance_triggers(rules, None, FrameEffects::default());
+    assert!(!sim.global_variables()[7] && !sim.global_variables()[8]);
+    assert_eq!(
+        sim.session.scenario_timer_view(),
+        Some((1, "MISSION:TmeTimer"))
+    );
+
+    sim.session.set_binary_frame_for_test(15);
+    sim.advance_triggers(rules, None, FrameEffects::default());
+    assert!(
+        sim.global_variables()[7] && sim.global_variables()[8],
+        "all expiry tags see the running timer before the Logic tail stops it"
+    );
+    assert_eq!(
+        sim.session.scenario_timer_view(),
+        None,
+        "Tactical must hide the completed countdown"
+    );
+    assert!(!sim.session.scenario_timer_elapsed());
+    let actions = sim.trigger_runtime.action_trace.clone();
+    sim.session.set_binary_frame_for_test(16);
+    sim.advance_triggers(rules, None, FrameEffects::default());
+    assert_eq!(
+        sim.trigger_runtime.action_trace, actions,
+        "repeatable expiry tags do not fire again after completion"
+    );
+    assert_eq!(sim.rng_state(), rng);
+}
+
+#[test]
+fn scenario_timer_restarted_by_expiry_action_survives_logic_tail() {
+    let rules = crate::rules::ruleset::RuleSet::empty_for_test();
+    let map = trigger_fixture_map(
+        "[Triggers]\nRESTART=Neutral,<none>,Restart,0,1,1,1,0\n\
+         [Events]\nRESTART=1,14,0,0\n\
+         [Actions]\nRESTART=1,27,0,5,0,0,0,0,A\n\
+         [Tags]\nRESTART_TAG=2,Restart,RESTART\n",
+    );
+    let mut sim = Simulation::new();
+    install_map_triggers(&mut sim, &map);
+    sim.classify_map_triggers(rules);
+    sim.session
+        .change_scenario_timer(crate::sim::scenario_session::ScenarioTimerAction::Set(1));
+    sim.session.set_binary_frame_for_test(15);
+    sim.advance_triggers(rules, None, FrameEffects::default());
+    assert_eq!(sim.session.scenario_timer_view(), Some((75, "")));
+    assert!(!sim.session.scenario_timer_elapsed());
+}
+
+#[test]
 fn scenario_timer_retail_sov01_actions_reach_the_expiry_predicate() {
-    let Some((mut sim, rules, overlay, _map)) = retail_sov01_script_context() else {
+    let Some((mut sim, rules, _overlay, _map)) = retail_sov01_script_context() else {
         return;
     };
-    let source = trigger_type_index(&sim, "0952F87C");
-    let actions = sim.trigger_runtime.definitions.trigger_types[source]
-        .actions
-        .clone();
     sim.session.set_binary_frame_for_test(123);
-    for action in actions
-        .iter()
-        .filter(|action| matches!(action.entry.kind, 23..=27 | 103))
-    {
-        assert!(sim.apply_live_trigger_action(
-            action,
-            sim.trigger_action_context(source, None, TagEventInput::default(), &rules),
-            &mut Vec::new(),
-            &rules,
-            Some(&overlay),
-            FrameEffects::default(),
-        ));
-    }
+    assert_eq!(
+        sim.dev_replay_scenario_timer_actions(&rules, "0952F87C"),
+        Some(3)
+    );
     assert_eq!(
         sim.session.scenario_timer_view(),
         Some((1800, "MISSION:TmeTimer"))

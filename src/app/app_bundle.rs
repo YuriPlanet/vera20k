@@ -402,7 +402,7 @@ mod tests {
             "/Applications/VERA20k.app/Contents/MacOS/VERA20k"
         )));
         assert!(!in_app_bundle(Path::new(
-            "/Users/me/vera20k/target/release/vera20k"
+            "/Users/<you>/vera20k/target/release/vera20k"
         )));
         assert!(!in_app_bundle(Path::new("/Contents/MacOS/vera20k")));
     }
