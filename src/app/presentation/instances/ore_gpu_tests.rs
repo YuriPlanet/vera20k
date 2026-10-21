@@ -1128,11 +1128,12 @@ fn retail_flat_ore_rows_match_original_color_and_depth() {
     for control in packet["controls"].as_array().unwrap() {
         let xy: [u16; 2] = std::array::from_fn(|i| control["coords"][i].as_i64().unwrap() as u16);
         assert_eq!(
-            registry.flat_tiberium_display_overlay_id(
+            registry.tiberium_display_overlay_id(
                 &scene.runtime.resources.rules.tiberium_types,
                 tib01,
                 xy[0],
-                xy[1]
+                xy[1],
+                0
             ),
             Some(control["display_overlay_id"].as_u64().unwrap() as u8),
             "original signed selector {control}"
@@ -1192,5 +1193,102 @@ fn retail_flat_ore_rows_match_original_color_and_depth() {
             frame: input["state"].as_u64().unwrap() as u8,
         };
         probe.compare(&scene, &[entry], row);
+    }
+}
+
+/// Supplied slope/density priors exercise the production retail atlas,
+/// display selector, CPU clipping, raw depth bank and GPU submission. Native
+/// trailing memory is explicitly zero, matching VERA's safe file boundary;
+/// this is not proof of a stock native heap or live map slope production.
+#[test]
+#[ignore = "requires physical retail art and GPU; original slope rasters with controlled zero tail"]
+fn retail_sloped_ore_rows_match_original_with_zero_tail_boundary() {
+    let root = PathBuf::from(std::env::var_os("RA2_DIR").expect("physical retail root"));
+    let mut scene = crate::headless_scenario::load(&root, "GoldSt.mmx", 0x12345678).unwrap();
+    let packet = crate::test_fixture::json("tools/spatial_oracle/ore_slopes.json");
+    let mut probe = Probe::new(&scene, &packet, Some((123, 33)), None);
+    for at in [(123, 33), (124, 33)] {
+        assert_eq!(
+            scene
+                .sim()
+                .resolved_terrain()
+                .unwrap()
+                .cell(at.0, at.1)
+                .unwrap()
+                .slope_type,
+            0,
+            "physical flat prior before supplied native slope at {at:?}"
+        );
+    }
+    for row in packet["rows"].as_array().unwrap() {
+        let input = &row["input"];
+        let at = (
+            input["coords"][0].as_u64().unwrap() as u16,
+            input["coords"][1].as_u64().unwrap() as u16,
+        );
+        let runtime = &mut scene.runtime;
+        let registry = &runtime.resources.overlay_registry;
+        let id = registry
+            .id_for_name(input["type"].as_str().unwrap())
+            .unwrap();
+        let display = row["display_overlay_id"].as_u64().unwrap() as u8;
+        let key = crate::render::overlay_atlas::OverlaySpriteKey {
+            name: registry.name(display).unwrap().to_owned(),
+            frame: input["state"].as_u64().unwrap() as u8,
+        };
+        for batch in &probe.batches {
+            assert!(
+                batch.atlas.get(&key).is_some(),
+                "missing native slope image {key:?}"
+            );
+        }
+        assert_eq!(
+            registry.tiberium_display_overlay_id(
+                &runtime.resources.rules.tiberium_types,
+                id,
+                at.0,
+                at.1,
+                input["slope"].as_u64().unwrap() as u8
+            ),
+            Some(display)
+        );
+        let mut grid = runtime
+            .simulation
+            .overlay_grid_mut_for_test()
+            .take()
+            .unwrap();
+        grid.place_overlay(at.0, at.1, id, input["state"].as_u64().unwrap() as u8);
+        let terrain = runtime
+            .simulation
+            .resolved_terrain_mut_for_test()
+            .as_mut()
+            .unwrap();
+        let cell = terrain.cell_mut_for_test(at.0, at.1).unwrap();
+        assert_eq!(i64::from(cell.level), input["level"].as_i64().unwrap());
+        // Restore the physical flat prior for each admission. Otherwise the
+        // previous row's supplied slope correctly clears ore in Recalc.
+        // Apply this row's native raster prior only after that projection.
+        cell.slope_type = 0;
+        grid.recalculate_runtime_cell(terrain, registry, at);
+        terrain.cell_mut_for_test(at.0, at.1).unwrap().slope_type =
+            input["slope"].as_u64().unwrap() as u8;
+        let supplied = grid.cell(at.0, at.1);
+        assert_eq!(
+            (supplied.overlay_id, supplied.overlay_data),
+            (Some(id), input["state"].as_u64().unwrap() as u8),
+            "declared native cell prior {}",
+            row["name"]
+        );
+        *runtime.simulation.overlay_grid_mut_for_test() = Some(grid);
+        probe.compare(
+            &scene,
+            &[OverlayEntry {
+                rx: at.0,
+                ry: at.1,
+                overlay_id: id,
+                frame: input["state"].as_u64().unwrap() as u8,
+            }],
+            row,
+        );
     }
 }

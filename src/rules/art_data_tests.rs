@@ -489,7 +489,7 @@ fn test_resolve_declared_palette_id() {
 }
 
 #[test]
-fn test_anim_candidates_use_anim_section_flags() {
+fn test_anim_candidates_use_explicit_own_flags_without_an_image_section() {
     let ini: IniFile = IniFile::from_str("[CAOILD_A]\nImage=CAOILDX\nNewTheater=yes\n");
     let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
     let image_id: String = reg.resolve_effective_image_id("CAOILD_A", "CAOILD_A");
@@ -509,16 +509,66 @@ fn test_anim_candidates_use_anim_section_flags() {
     );
 }
 
-/// `[GAPOWR_AD] Image=GAPOWR_A` authors no `NewTheater=`. The per-theater
-/// reload (`0x00428CD6`) then skips the theater letter, fails on
-/// `GAPOWR_A.SHP`, and `FUN_005F9710` forces the second letter to `G`
-/// unconditionally, which is the file retail ships.
+/// When neither section supplies NewTheater, the initial name is unchanged
+/// and FUN_005F9710 still forces the second letter to G on a miss. This omits
+/// the Image section deliberately; it is not the complete retail ART input.
 #[test]
 fn anim_candidates_force_the_generic_letter_without_new_theater() {
     let reg = ArtRegistry::from_ini(&IniFile::from_str("[GAPOWR_AD]\nImage=GAPOWR_A\n"));
     let image_id = reg.resolve_effective_image_id("GAPOWR_AD", "GAPOWR_AD");
     let candidates = anim_shp_candidates(Some(&reg), "GAPOWR_AD", &image_id, "tem", "TEMPERATE");
     assert_eq!(&candidates[..2], ["GAPOWR_A.SHP", "GGPOWR_A.SHP"]);
+}
+
+#[test]
+fn animation_flags_inherit_image_then_apply_own_read_bool() {
+    for (own, expected_when_false, expected_when_true) in [
+        (None, false, true),
+        (Some("yes"), true, true),
+        (Some("no"), false, false),
+        (Some(""), false, true),
+        (Some("on"), false, true),
+    ] {
+        for inherited in [false, true] {
+            let own_keys = own.map_or_else(String::new, |value| {
+                format!("Theater={value}\nNewTheater={value}\n")
+            });
+            let ini = IniFile::from_str(&format!(
+                "[DAMAGED]\nImage=CAIMAGE\n{own_keys}\n[CAIMAGE]\nTheater={inherited}\nNewTheater={inherited}\n"
+            ));
+            let art = ArtRegistry::from_ini(&ini);
+            let expected = if inherited {
+                expected_when_true
+            } else {
+                expected_when_false
+            };
+            assert_eq!(
+                art.anim_theater_flags["DAMAGED"],
+                (expected, expected),
+                "own={own:?}, inherited={inherited}"
+            );
+            // Generic object metadata retains its own-section interpretation.
+            assert_eq!(art.get("DAMAGED").unwrap().new_theater, own == Some("yes"));
+        }
+    }
+}
+
+#[test]
+fn animation_flags_use_one_image_hop_and_exact_section_identity() {
+    let ini = IniFile::from_str(
+        "[DAMAGED]\nImage=CAIMAGE\n\
+         [CAIMAGE]\nImage=CAOTHER\nNewTheater=yes\n\
+         [CAOTHER]\nTheater=yes\nNewTheater=no\n\
+         [caimage]\nTheater=yes\nNewTheater=no\n",
+    );
+    let art = ArtRegistry::from_ini(&ini);
+    assert_eq!(art.anim_theater_flags["DAMAGED"], (false, true));
+    let image = art.resolve_anim_image_id("DAMAGED");
+    assert_eq!(image, "CAIMAGE");
+    assert_eq!(
+        &anim_shp_candidates(Some(&art), "DAMAGED", &image, "URB", "URBAN")[..2],
+        ["CUIMAGE.SHP", "CGIMAGE.SHP"]
+    );
 }
 
 /// `FUN_005F96B0` substitutes only `[GNCY][AT]` names, so a `NewTheater=yes`
@@ -749,6 +799,162 @@ impl Drop for AnimDimTestRoot {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
+}
+
+#[test]
+fn animation_image_flag_binding_preserves_own_runtime_metadata() {
+    use crate::rules::{native_processing::RulesLayerStack, ruleset::RuleSet};
+
+    let root = AnimDimTestRoot::new();
+    for (name, frames) in [
+        ("CUIMAGE.SHP", 8_i16),
+        ("CAIMAGE.SHP", 2),
+        ("CGIMAGE.SHP", 6),
+    ] {
+        // Loader-only inputs: bounds are read from the signed SHP header.
+        let mut header = vec![0_u8; 8];
+        header[2..4].copy_from_slice(&1_u16.to_le_bytes());
+        header[4..6].copy_from_slice(&1_u16.to_le_bytes());
+        header[6..8].copy_from_slice(&frames.to_le_bytes());
+        std::fs::write(root.path().join(name), header).unwrap();
+    }
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let ini = IniFile::from_str(
+        "[DAMAGED]\nImage=CAIMAGE\nStart=2\nLoopStart=2\nLoopEnd=4\nShadow=yes\n\
+         [OVERRIDE]\nImage=CAIMAGE\nNewTheater=no\nShadow=no\n\
+         [CAIMAGE]\nNewTheater=yes\nStart=0\nLoopStart=0\nLoopEnd=2\nShadow=no\n",
+    );
+    let processed = RulesLayerStack::new(IniFile::from_str(
+        "[General]\nMetallicDebris=DAMAGED,OVERRIDE\n",
+    ))
+    .process_with_fixed_art(&ini)
+    .unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let mut art = ArtRegistry::from_ini(&ini);
+    art.apply_anim_type_read_states(rules.anim_type_art_read_states());
+    art.bind_scheduler_anim_assets(&rules.general.metallic_debris, &assets, "URB", "URBAN")
+        .unwrap();
+    let damaged = art.anim_runtime_config("DAMAGED").unwrap();
+    assert_eq!(damaged.raw_shp_frame_count, Some(8));
+    assert_eq!(
+        (
+            damaged.start,
+            damaged.loop_start,
+            damaged.loop_end,
+            damaged.end
+        ),
+        (2, 2, 4, 4)
+    );
+    assert!(damaged.shadow);
+    let explicit = art.anim_runtime_config("OVERRIDE").unwrap();
+    assert_eq!(explicit.raw_shp_frame_count, Some(2));
+    assert_eq!(explicit.end, 2);
+    assert!(!explicit.shadow);
+}
+
+#[test]
+fn animation_theater_flags_match_original_fresh_read_and_postpass() {
+    let corpus = crate::test_fixture::json("tools/rules_oracle/anim_theater_flags.json");
+    assert_eq!(corpus["schema"], 1);
+    let cases = corpus["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 26);
+    let mut bound_cases = 0;
+    let mut missing_cases = 0;
+    for case in cases {
+        let input = &case["input"];
+        let label = input["case"].as_str().unwrap();
+        let name = input["name"].as_str().unwrap();
+        // The native fixture supplies cached entries, including Image="".
+        // A physical file load deliberately omits empty values, so construct
+        // the same cache boundary as the original Image25 reader test below.
+        let mut ini = IniFile::empty();
+        for (section_name, values) in input["art_sections"].as_object().unwrap() {
+            let mut section = IniSection::new(section_name.clone());
+            for (key, value) in values.as_object().unwrap() {
+                section.set(key, value.as_str().unwrap());
+            }
+            ini.replace_first_section(section);
+        }
+        let mut art = ArtRegistry::from_ini(&ini);
+        let admitted = case["reader_admitted"].as_bool().unwrap();
+        art.apply_anim_type_read_states(&[(name.to_string(), admitted)]);
+        let expected = &case["after_postpass"];
+        let flags = (
+            expected["theater"].as_bool().unwrap(),
+            expected["new_theater"].as_bool().unwrap(),
+        );
+        assert_eq!(art.anim_theater_flags[name], flags, "{label}");
+        assert_eq!(
+            art.anim_runtime_config(name).unwrap().image,
+            expected["image"].as_str().unwrap(),
+            "{label}"
+        );
+        // These rows also record Theater=yes filename behavior. Only flag
+        // resolution is compared for that cohort: the candidate helper's
+        // existing plain-SHP leniency is outside this change.
+        if flags.0 || !admitted {
+            continue;
+        }
+        let root = AnimDimTestRoot::new();
+        for (filename, header) in input["available_images"].as_object().unwrap() {
+            let mut bytes = Vec::with_capacity(8);
+            for word in [
+                0,
+                header["width"].as_u64().unwrap() as u16,
+                header["height"].as_u64().unwrap() as u16,
+                header["raw_frame_count"].as_u64().unwrap() as u16,
+            ] {
+                bytes.extend_from_slice(&word.to_le_bytes());
+            }
+            std::fs::write(root.path().join(filename), bytes).unwrap();
+        }
+        let assets =
+            crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+        let (extension, theater) = match input["theater"].as_u64().unwrap() {
+            1 => ("SNO", "SNOW"),
+            2 => ("URB", "URBAN"),
+            other => panic!("unexpected corpus theater {other}"),
+        };
+        let image = art.resolve_anim_image_id(name);
+        let candidates = anim_shp_candidates(Some(&art), name, &image, extension, theater);
+        let selected = candidates
+            .iter()
+            .find(|filename| assets.get_ref(filename).is_some());
+        assert_eq!(
+            selected.map(String::as_str),
+            expected["loaded_filename"].as_str(),
+            "{label}"
+        );
+        let result =
+            art.bind_scheduler_anim_assets(&[name.to_string()], &assets, extension, theater);
+        if expected["image_present"].as_bool().unwrap() {
+            result.unwrap_or_else(|error| panic!("{label}: {error}"));
+            let config = art.anim_runtime_config(name).unwrap();
+            assert_eq!(
+                config.raw_shp_frame_count,
+                Some(expected["raw_shp_frame_count"].as_i64().unwrap() as i32),
+                "{label}"
+            );
+            assert_eq!(
+                config.end,
+                expected["end"].as_i64().unwrap() as i32,
+                "{label}"
+            );
+            assert_eq!(
+                config.loop_end,
+                expected["loop_end"].as_i64().unwrap() as i32,
+                "{label}"
+            );
+            bound_cases += 1;
+        } else {
+            assert!(
+                matches!(result, Err(AnimAssetBindError::MissingShp(_))),
+                "{label}: {result:?}"
+            );
+            missing_cases += 1;
+        }
+    }
+    assert!(bound_cases > 0 && missing_cases > 0);
 }
 
 #[test]
