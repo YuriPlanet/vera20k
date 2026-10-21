@@ -12,7 +12,7 @@
     "Actual dispatcher1001C530, GUI1001C770, common1001C5D0, parent1001BDC0, Color Find1001BB30 and copy/sentinel instructions execute unchanged.",
     "ReadString lexical transport and diagnostics are declared sinks. Actual CSF lookup734E60 sees an empty catalog; no localized text/font output is certified.",
     "Constructor scalar prefix1001B767..1001B911 and ID initializer1001C0F0 execute for ten built-in IDs and one unknown ID. PCX/SHP initializer resource requests are named sinks, not asset decode or file loading evidence.",
-    "Color fixture has paired kind0/kind1 entries like the production registry. Unknown color retains, none becomes signed-1.",
+    "Color fixture has paired kind1/kind53 entries like the production registry. Unknown color retains, none becomes signed-1.",
     "CountryFixture rejects monitored RNG/detach and verifies original code bytes. Native sprintf7C8EF4 executes four filename controls with one declared width argument. No full save/load, palette Convert or loading capture comparison is certified."
   ],
   "substitutions": [
@@ -30,5 +30,5 @@
     "filename_format": "0x007C8EF4"
   },
   "replay_command": "python -m tools.rules_oracle.ares_country_loading",
-  "payload_sha256": "feb03db2cb4f46d47032e7ed88a4ebdccc5d8d3a48dcd6acc91875e8a54ace3d"
+  "payload_sha256": "93b6b95f3ee11e25fab7756314ff46e27305f9d956d3fd2b4b983008e1716869"
 }

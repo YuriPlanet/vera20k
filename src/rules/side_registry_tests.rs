@@ -154,6 +154,7 @@ fn setup_processor(controls: &Value, row: &Value) -> RulesPassProcessor {
             &ordered_ini(&controls["ordered_palette_sections"]),
             &art,
             &crate::rules::sound_ini::EvaRegistry::default(),
+            false,
         )
         .unwrap();
     processor
@@ -161,6 +162,7 @@ fn setup_processor(controls: &Value, row: &Value) -> RulesPassProcessor {
             &ordered_ini(&row["ordered_setup_sections"]),
             &art,
             &crate::rules::sound_ini::EvaRegistry::default(),
+            false,
         )
         .unwrap();
     assert_registry(&processor.families, &row["before"], "direct reader setup");

@@ -243,6 +243,7 @@ fn ares_country_constructor_and_extension_stream_keep_retained_state() {
             phase: 2,
             parent_initialized: row["input_flag"].as_u64().unwrap() != 0,
             buildings: labels(&row["pointer_tokens"]),
+            ..Default::default()
         };
         let restored: AresCountryState =
             save_codec::deserialize(&save_codec::serialize(&state).unwrap()).unwrap();

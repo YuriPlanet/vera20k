@@ -66,17 +66,12 @@ fn ares_country_loading_retained_primary_parent_and_color_match_native_histories
     for history in corpus()["controls"].as_array().unwrap() {
         let label = history["name"].as_str().unwrap();
         let mut reader = RulesPassProcessor::default();
-        reader.colors = [
-            "SCHEME_A",
-            "SCHEME_B",
-            "AlliedLoad",
-            "SovietLoad",
-            "YuriLoad",
-            "Purple",
-        ]
-        .into_iter()
-        .map(|id| (id.to_string(), "0,0,0".to_string()))
-        .collect();
+        reader.colors = history["color_registry"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|id| (id.as_str().unwrap().to_string(), "0,0,0".to_string()))
+            .collect();
         let child = reader.find_or_construct(RulesTypeFamily::Country, "CHILD_A");
         let parent = reader.find_or_construct(RulesTypeFamily::Country, "PARENT_A");
         let prior = &history["declared_initial"];
@@ -138,7 +133,7 @@ fn ares_country_loading_production_passes_and_save_keep_gui_without_sim_hash_cha
         .loading();
     assert_eq!(child.files().0, "parent.shp"); // First primary GUI precedes inheritance.
     assert_eq!(child.labels()[0], "Name:Parent");
-    assert_eq!(child.color_index(), 3); // Map's common color read still applies.
+    assert_eq!(child.color_index(), 2); // Map's common color read still applies.
     let before_hash = {
         let mut h = std::collections::hash_map::DefaultHasher::new();
         state.families[&RulesTypeFamily::Country][1]

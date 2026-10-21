@@ -4,13 +4,22 @@
 /// Shared literal rows used by stock loading and Ares1001C0F0's ID defaults.
 /// These are executable literals, not Country ordinal/Side inference in Ares.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct CountryLoadingDefaults {
-    pub id: &'static str,
-    pub token: &'static str,
-    pub palette: &'static str,
-    pub name: &'static str,
-    pub special: &'static str,
-    pub brief: &'static str,
+pub struct CountryLoadingDefaults {
+    id: &'static str,
+    token: &'static str,
+    palette: &'static str,
+    name: &'static str,
+    special: &'static str,
+    brief: &'static str,
+}
+
+impl CountryLoadingDefaults {
+    pub fn art(&self) -> (&'static str, &'static str) {
+        (self.token, self.palette)
+    }
+    pub fn labels(&self) -> [&'static str; 3] {
+        [self.name, self.special, self.brief]
+    }
 }
 
 const fn row(
@@ -115,7 +124,7 @@ const STOCK: [CountryLoadingDefaults; 10] = [
     ),
 ];
 
-pub(crate) fn stock_country_loading(index: usize) -> Option<&'static CountryLoadingDefaults> {
+pub fn stock_country_loading(index: usize) -> Option<&'static CountryLoadingDefaults> {
     STOCK.get(index)
 }
 
@@ -124,7 +133,7 @@ pub(crate) fn stock_country_loading(index: usize) -> Option<&'static CountryLoad
 /// labels only; load100764D0 resolves them against the fixed process catalog.
 #[cfg(feature = "ares")]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct AresCountryLoading {
+pub struct AresCountryLoading {
     file: String,
     palette: String,
     name: String,
@@ -158,13 +167,13 @@ impl AresCountryLoading {
         }
     }
 
-    pub(crate) fn files(&self) -> (&str, &str) {
+    pub fn files(&self) -> (&str, &str) {
         (&self.file, &self.palette)
     }
-    pub(crate) fn labels(&self) -> [&str; 3] {
+    pub fn labels(&self) -> [&str; 3] {
         [&self.name, &self.special, &self.brief]
     }
-    pub(crate) fn color_index(&self) -> i32 {
+    pub fn color_index(&self) -> i32 {
         self.color
     }
 
@@ -172,7 +181,7 @@ impl AresCountryLoading {
     /// argument (640 only on that exact branch, otherwise800). Authored fixed
     /// filenames stay fixed. Reject other printf directives rather than
     /// interpreting arbitrary stack arguments from malformed configuration.
-    pub(crate) fn background_file(&self, narrow: bool) -> Option<String> {
+    pub fn background_file(&self, narrow: bool) -> Option<String> {
         let mut result = String::with_capacity(self.file.len() + 3);
         let mut chars = self.file.chars();
         let mut used_width = false;
@@ -236,10 +245,10 @@ impl AresCountryLoading {
             0 => find("AlliedLoad"),
             1 => find("SovietLoad"),
             2 => find("YuriLoad").or_else(|| find("Purple")),
-            _ => None,
+            _ => return,
         };
-        if let Some(index) = index {
-            self.color = index;
-        }
+        //1001C56C/1001C594 stores Find's -1 too. Only an unrelated Side
+        // skips the write; a missing named default must not retain old color.
+        self.color = index.unwrap_or(-1);
     }
 }

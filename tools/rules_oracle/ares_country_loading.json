@@ -1,6 +1,14 @@
 {
   "controls": [
     {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
       "country_side": 3,
       "declared_initial": {
         "brief": "CHILD_brief",
@@ -36,7 +44,7 @@
               "name": 8673340,
               "special": 8673340
             },
-            "color": 3,
+            "color": 2,
             "file": "ls%sfixture.shp",
             "name": "Name:Fixture",
             "palette": "fixture.pal",
@@ -274,7 +282,7 @@
               "name": 8673340,
               "special": 8673340
             },
-            "color": 1,
+            "color": 0,
             "file": "ls%sfixture.shp",
             "name": "Name:Fixture",
             "palette": "fixture.pal",
@@ -421,7 +429,7 @@
               "name": 8673340,
               "special": 8673340
             },
-            "color": 1,
+            "color": 0,
             "file": "ls%sfixture.shp",
             "name": "Name:Fixture",
             "palette": "fixture.pal",
@@ -652,7 +660,7 @@
               "name": 8673340,
               "special": 8673340
             },
-            "color": 1,
+            "color": 0,
             "file": "ls%sfixture.shp",
             "name": "Name:Fixture",
             "palette": "fixture.pal",
@@ -885,6 +893,14 @@
       ]
     },
     {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
       "country_side": 3,
       "declared_initial": {
         "brief": "CHILD_brief",
@@ -1153,6 +1169,14 @@
       ]
     },
     {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
       "country_side": 3,
       "declared_initial": {
         "brief": "CHILD_brief",
@@ -1328,6 +1352,14 @@
       ]
     },
     {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
       "country_side": 3,
       "declared_initial": {
         "brief": "CHILD_brief",
@@ -1595,6 +1627,14 @@
       ]
     },
     {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
       "country_side": 3,
       "declared_initial": {
         "brief": "CHILD_brief",
@@ -1630,7 +1670,7 @@
               "name": 0,
               "special": 0
             },
-            "color": 1,
+            "color": 0,
             "file": "PARENT_file",
             "name": "PARENT_name",
             "palette": "PARENT_palette",
@@ -1866,7 +1906,7 @@
               "name": 8673340,
               "special": 0
             },
-            "color": 1,
+            "color": 0,
             "file": "child_second.shp",
             "name": "Name:Second",
             "palette": "PARENT_palette",
@@ -2095,6 +2135,14 @@
       ]
     },
     {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
       "country_side": 3,
       "declared_initial": {
         "brief": "CHILD_brief",
@@ -2130,7 +2178,7 @@
               "name": 0,
               "special": 0
             },
-            "color": 1,
+            "color": 0,
             "file": "PARENT_file",
             "name": "PARENT_name",
             "palette": "PARENT_palette",
@@ -2271,6 +2319,14 @@
       ]
     },
     {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
       "country_side": 3,
       "declared_initial": {
         "brief": "CHILD_brief",
@@ -2326,6 +2382,14 @@
       ]
     },
     {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
       "country_side": 3,
       "declared_initial": {
         "brief": "CHILD_brief",
@@ -2381,6 +2445,14 @@
       ]
     },
     {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
       "country_side": 2,
       "declared_initial": {
         "brief": "CHILD_brief",
@@ -2416,7 +2488,7 @@
               "name": 0,
               "special": 0
             },
-            "color": 9,
+            "color": 8,
             "file": "CHILD_file",
             "name": "CHILD_name",
             "palette": "CHILD_palette",
@@ -2554,6 +2626,14 @@
       ]
     },
     {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
       "country_side": 3,
       "declared_initial": {
         "brief": "CHILD_brief",
@@ -2590,6 +2670,360 @@
               "special": 0
             },
             "color": 1,
+            "file": "CHILD_file",
+            "name": "CHILD_name",
+            "palette": "CHILD_palette",
+            "parent_initialized": 0,
+            "phase": 2,
+            "special": "CHILD_special"
+          },
+          "input": {
+            "primary": false,
+            "values": {}
+          },
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AI.PowerPlants",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Parachute.Anim",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Aircraft",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Num",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Color",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "RandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AIRandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ListIndex",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "VeteranBuildings",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Degrades",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "CanBeDriven",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.WithConst",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "GivesBounty",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "color_registry": [],
+      "country_side": 0,
+      "declared_initial": {
+        "brief": "CHILD_brief",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 1,
+        "file": "CHILD_file",
+        "name": "CHILD_name",
+        "palette": "CHILD_palette",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "CHILD_special"
+      },
+      "declared_parent": {
+        "brief": "PARENT_brief",
+        "color": 3,
+        "file": "PARENT_file",
+        "name": "PARENT_name",
+        "palette": "PARENT_palette",
+        "special": "PARENT_special"
+      },
+      "name": "phase0_missing_allied_default_writes_minus_one",
+      "parent_country": "CHILD_A",
+      "rows": [
+        {
+          "after": {
+            "brief": "CHILD_brief",
+            "cached_csf": {
+              "brief": 0,
+              "name": 0,
+              "special": 0
+            },
+            "color": 4294967295,
+            "file": "CHILD_file",
+            "name": "CHILD_name",
+            "palette": "CHILD_palette",
+            "parent_initialized": 0,
+            "phase": 2,
+            "special": "CHILD_special"
+          },
+          "input": {
+            "primary": false,
+            "values": {}
+          },
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AI.PowerPlants",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Parachute.Anim",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Aircraft",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Num",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Color",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "RandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AIRandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ListIndex",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "VeteranBuildings",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Degrades",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "CanBeDriven",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.WithConst",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "GivesBounty",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "Purple"
+      ],
+      "country_side": 2,
+      "declared_initial": {
+        "brief": "CHILD_brief",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 1,
+        "file": "CHILD_file",
+        "name": "CHILD_name",
+        "palette": "CHILD_palette",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "CHILD_special"
+      },
+      "declared_parent": {
+        "brief": "PARENT_brief",
+        "color": 3,
+        "file": "PARENT_file",
+        "name": "PARENT_name",
+        "palette": "PARENT_palette",
+        "special": "PARENT_special"
+      },
+      "name": "phase0_missing_yuri_uses_current_purple",
+      "parent_country": "CHILD_A",
+      "rows": [
+        {
+          "after": {
+            "brief": "CHILD_brief",
+            "cached_csf": {
+              "brief": 0,
+              "name": 0,
+              "special": 0
+            },
+            "color": 8,
             "file": "CHILD_file",
             "name": "CHILD_name",
             "palette": "CHILD_palette",

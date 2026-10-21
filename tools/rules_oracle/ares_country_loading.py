@@ -11,8 +11,9 @@ from tools.rules_oracle.ares_country_veterancy import CountryFixture
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_ESP, UC_X86_REG_ESI, UC_X86_REG_EAX, UC_X86_REG_ECX
 FIELDS={'file':0x2C,'palette':0x4C,'name':0x8C,'special':0xB0,'brief':0xD4}
+COLOR_NAMES=['SCHEME_A','SCHEME_B','AlliedLoad','SovietLoad','YuriLoad','Purple']
 
-def fixture(images):
+def fixture(images,color_names=None):
  p=CountryFixture(images);u=p.u
  c,e,pc,pe,ini,other=(p.alloc(n) for n in [0x200,0x200,0x200,0x200,0x40,0x40])
  p.put(e,c,2);p.put(pe,pc,2);p.put(c+0xC4,e);p.put(pc+0xC4,pe)
@@ -23,8 +24,8 @@ def fixture(images):
  for label,ext in [('CHILD',e),('PARENT',pe)]:
   for field,off in FIELDS.items():u.mem_write(ext+off,(label+'_'+field).encode()+b'\0')
  colors=[]
- for name in ['SCHEME_A','SCHEME_B','AlliedLoad','SovietLoad','YuriLoad','Purple']:
-  for kind in [0,1]:
+ for name in COLOR_NAMES if color_names is None else color_names:
+  for kind in [1,53]:
    col=p.alloc(0x320);p.put(col+0x304,p.text(name));p.put(col+0x310,kind);colors.append(col)
  ca=p.alloc(0x80);p.put(ca,*colors);p.put(0xB054D4,ca);p.put(0xB054E0,len(colors))
  values={};events=[]
@@ -48,8 +49,8 @@ def fixture(images):
  def snapshot():return dict(phase=p.read(e+4),parent_initialized=u.mem_read(e+0x1B9,1)[0],**{k:p.string(e+off) for k,off in FIELDS.items()},color=p.read(e+0x11C),cached_csf={k:p.read(e+off+0x20) for k,off in FIELDS.items() if k in ['name','special','brief']})
  return p,c,e,pc,pe,ini,other,values,events,snapshot
 
-def history(images,name,steps,parent=False,phase=2,side=3):
- p,c,e,pc,pe,ini,other,values,events,snapshot=fixture(images)
+def history(images,name,steps,parent=False,phase=2,side=3,color_names=None):
+ p,c,e,pc,pe,ini,other,values,events,snapshot=fixture(images,color_names)
  p.put(e+4,phase);p.put(c+0xBC,side)
  if parent:p.u.mem_write(c+0x98,b'PARENT_A\0')
  initial=snapshot();rows=[]
@@ -57,7 +58,7 @@ def history(images,name,steps,parent=False,phase=2,side=3):
   values.clear();values.update(step.get('values',{}));start=len(events)
   p.call(0x1001C530,(ini if step['primary'] else other,),e)
   rows.append(dict(input=step,after=snapshot(),reads=events[start:]))
- return dict(name=name,declared_initial=initial,declared_parent=dict(**{k:'PARENT_'+k for k in FIELDS},color=3),parent_country='PARENT_A' if parent else 'CHILD_A',country_side=side,rows=rows)
+ return dict(name=name,color_registry=COLOR_NAMES if color_names is None else color_names,declared_initial=initial,declared_parent=dict(**{k:'PARENT_'+k for k in FIELDS},color=3),parent_country='PARENT_A' if parent else 'CHILD_A',country_side=side,rows=rows)
 def generate(ares):
  images=(ares,native.image_bytes())
  controls=[
@@ -76,6 +77,8 @@ def generate(ares):
   history(images,'phase3_skips_all',[dict(primary=True,values={'File.LoadScreen':'ignored.shp','LoadScreenText.Color':'SCHEME_B'})],phase=3),
   history(images,'phase0_side2_default_color_then_common',[dict(primary=False,values={})],phase=0,side=2),
   history(images,'phase0_side3_keeps_prior_color',[dict(primary=False,values={})],phase=0,side=3),
+ history(images,'phase0_missing_allied_default_writes_minus_one',[dict(primary=False,values={})],phase=0,side=0,color_names=[]),
+ history(images,'phase0_missing_yuri_uses_current_purple',[dict(primary=False,values={})],phase=0,side=2,color_names=[name for name in COLOR_NAMES if name!='YuriLoad']),
  ]
  initializers=[]
  for name in ['Americans','Alliance','French','Germans','British','Africans','Arabs','Confederation','Russians','YuriCountry','COUNTRY_A']:
@@ -101,7 +104,7 @@ def metadata():
             "Actual dispatcher1001C530, GUI1001C770, common1001C5D0, parent1001BDC0, Color Find1001BB30 and copy/sentinel instructions execute unchanged.",
             "ReadString lexical transport and diagnostics are declared sinks. Actual CSF lookup734E60 sees an empty catalog; no localized text/font output is certified.",
             "Constructor scalar prefix1001B767..1001B911 and ID initializer1001C0F0 execute for ten built-in IDs and one unknown ID. PCX/SHP initializer resource requests are named sinks, not asset decode or file loading evidence.",
-            "Color fixture has paired kind0/kind1 entries like the production registry. Unknown color retains, none becomes signed-1.",
+            "Color fixture has paired kind1/kind53 entries like the production registry. Unknown color retains, none becomes signed-1.",
             "CountryFixture rejects monitored RNG/detach and verifies original code bytes. Native sprintf7C8EF4 executes four filename controls with one declared width argument. No full save/load, palette Convert or loading capture comparison is certified.",
         ], substitutions=[
             "Reuse ares_country_veterancy.CountryFixture and ares_prerequisites.Probe; no new VM, mapper, parser or heap owner.",

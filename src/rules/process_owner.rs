@@ -289,7 +289,7 @@ impl NativeRulesProcessOwner {
     /// Ares loading hooks read the actual retained Country before Full_Init
     /// destroys the registry. Consumers clone this view once per loading attempt.
     #[cfg(feature = "ares")]
-    pub(crate) fn country_loading(
+    pub fn country_loading(
         &self,
         index: crate::rules::ruleset::CountryIdx,
     ) -> Option<(&crate::rules::country_loading::AresCountryLoading, i32)> {

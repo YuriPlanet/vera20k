@@ -164,7 +164,10 @@ impl LoadingArtVariant {
         };
         let row = crate::rules::country_loading::stock_country_loading(index)
             .expect("stock loading variant has a literal row");
-        LoadingArtManifest::new(row.token, row.palette)
+        {
+            let (token, palette) = row.art();
+            LoadingArtManifest::new(token, palette)
+        }
     }
 }
 

@@ -4121,13 +4121,13 @@ impl RulesPassProcessor {
     }
 
     /// CountryExt1001BB30 finds the current kind1 runtime scheme. Each
-    /// retained [Colors] entry contributes kind0 then kind1, in native order.
+    /// retained [Colors] entry contributes kind1 then kind53, in native order.
     #[cfg(feature = "ares")]
     fn loading_color_index(&self, name: &str) -> Option<i32> {
         self.colors
             .iter()
             .position(|(id, _)| id.eq_ignore_ascii_case(name))
-            .map(|index| (index as i32).wrapping_mul(2).wrapping_add(1))
+            .map(|index| (index as i32).wrapping_mul(2))
     }
 
     /// HouseType ReadINI51208C..512162 stores BC, then updates Side vectors

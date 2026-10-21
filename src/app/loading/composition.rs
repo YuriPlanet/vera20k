@@ -200,10 +200,13 @@ pub(crate) const LOADING_TEXT_KEY: &str = "GUI:LoadingEx";
 /// Resolve the verified country-dependent key row without inventing fallback text.
 pub(crate) fn loading_country_text_keys(country: LaunchCountry) -> Option<LoadingCountryTextKeys> {
     crate::rules::country_loading::stock_country_loading(usize::from(country.raw_index())).map(
-        |row| LoadingCountryTextKeys {
-            country_name: row.name.into(),
-            special_unit: row.special.into(),
-            load_brief: row.brief.into(),
+        |row| {
+            let [name, special, brief] = row.labels();
+            LoadingCountryTextKeys {
+                country_name: name.into(),
+                special_unit: special.into(),
+                load_brief: brief.into(),
+            }
         },
     )
 }
@@ -1433,12 +1436,21 @@ mod tests {
         );
         assert_eq!(composition.text.country_name.as_deref(), Some("Iraq"));
         let ini = crate::rules::ini_parser::IniFile::from_str(
-            "[CUSTOM]\nFile.LoadScreen=ls800fixture.shp\nLoadScreenText.Name=Name:Fixture\nLoadScreenText.SpecialName=Unit:Fixture\nLoadScreenText.Brief=Brief:Fixture\n",
+            "[Countries]\n0=A\n1=B\n2=C\n3=D\n4=E\n5=F\n6=CUSTOM\n[CUSTOM]\nFile.LoadScreen=ls800fixture.shp\nLoadScreenText.Name=Name:Fixture\nLoadScreenText.SpecialName=Unit:Fixture\nLoadScreenText.Brief=Brief:Fixture\n",
         );
-        let mut retained =
-            crate::rules::country_loading::AresCountryLoading::for_country_id("CUSTOM");
-        retained.read_primary(ini.section("CUSTOM").unwrap());
-        composition.bind_country_loading(&retained, Some(&csf));
+        let mut owner =
+            crate::rules::process_owner::NativeRulesProcessOwner::from_cold_start_sources(
+                ini,
+                None,
+                crate::rules::ini_parser::IniFile::empty(),
+                std::sync::Arc::new(crate::rules::sound_ini::SoundRegistry::default()),
+                std::sync::Arc::new(crate::rules::sound_ini::EvaRegistry::default()),
+            )
+            .unwrap();
+        owner.read_multiplayer_country(&crate::rules::ini_parser::IniFile::empty(), 6);
+        owner.refresh_multiplayer_country_bodies();
+        let (retained, _) = owner.country_loading(LaunchCountry::Iraq.index()).unwrap();
+        composition.bind_country_loading(retained, Some(&csf));
         assert_eq!(
             composition.text.country_name.as_deref(),
             Some("Custom country")

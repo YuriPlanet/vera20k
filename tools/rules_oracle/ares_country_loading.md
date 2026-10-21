@@ -13,7 +13,9 @@ The sidecar records the scope, substitutions and payload identity. The original
 instructions stay unchanged, and monitored RNG/detach entries reject execution.
 
 `1001C530` admits phases 0/1/2. Phase 0 resolves the current Side's default load
-color, without resetting GUI fields. Its primary-Rules pointer check at
+color, without resetting GUI fields. Side0/1 store -1 if their named scheme is
+missing; Side2 tries YuriLoad then Purple and stores the resulting index/-1.
+Other Side values leave the prior color unchanged. Its primary-Rules pointer check at
 `1001C5A6` admits `1001C770` only for the actual selected root. That GUI reader
 reads `File.LoadScreen`, `File.LoadScreenPAL`, `LoadScreenText.Name`,
 `.SpecialName` and `.Brief` with ReadString2048 and 31-byte destination payloads.
@@ -25,7 +27,8 @@ extension phase or parent flag. Thus first-primary child GUI may be overwritten
 by the parent's current values; a later primary read can override them. Color
 read `1001C686` follows that copy on every admitted pass. Find `1001BB30`
 requires a current kind1 scheme, unknown retains, and none yields signed -1.
-The fixture includes paired kind0/kind1 schemes, as does production.
+The fixture includes paired kind1/kind53 schemes, as does production. Kind1 is
+the even slot; base Country Color uses kind53/odd slots, a distinct reader.
 
 Constructor prefix `1001B767..1001B911` and initializer `1001C0F0` establish the
 ten literal Country-ID defaults and unknown-ID observer/GUI:Unknown defaults.
