@@ -18,6 +18,7 @@ fn rows(section: &str) -> Vec<Value> {
     data[section].as_array().unwrap().clone()
 }
 
+#[cfg(not(feature = "ares"))]
 fn comparable_can_build_rows() -> impl Iterator<Item = Value> {
     rows("can_build").into_iter().filter(|row| {
         // These gamemd controls intentionally differ from Ares100082B0's
@@ -298,6 +299,7 @@ fn query(row: &Value, rules: &RuleSet) -> ObjectType {
     rules.object_in_category(class, "Q").unwrap().clone()
 }
 
+#[cfg(not(feature = "ares"))]
 fn upgrade_prerequisite_world() -> (Simulation, RuleSet, InternedId) {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[Countries]\n0=C1\n[VehicleTypes]\n0=Q\n\
@@ -363,6 +365,7 @@ fn upgrade_prerequisite_uses_house_order_and_all_three_type_slots() {
 }
 
 #[test]
+#[cfg(not(feature = "ares"))]
 fn upgrade_prerequisite_skips_limbo_offline_and_both_selling_missions() {
     use crate::sim::mission::MissionDispatchTimer;
     use crate::sim::mission::state::MissionTestFixture;
@@ -399,6 +402,7 @@ fn upgrade_prerequisite_skips_limbo_offline_and_both_selling_missions() {
 }
 
 #[test]
+#[cfg(not(feature = "ares"))]
 fn can_build_matches_the_original() {
     for row in comparable_can_build_rows() {
         let rules = rules_for(&row);
@@ -442,10 +446,10 @@ fn captured_secret_lab_grants_before_normal_tech_admission_and_retracts_on_loss(
         &IniFile::from_str(
             "[Countries]\n0=C0\n[C0]\nSide=GDI\n\
              [InfantryTypes]\n0=Q\n\
-             [BuildingTypes]\n0=LAB\n1=MISSING\n\
-             [Q]\nTechLevel=-1\nStrength=100\nCost=100\nPrerequisite=MISSING\n\
+             [BuildingTypes]\n0=LAB\n1=MISSING\n2=FACTORY\n\
+             [Q]\nTechLevel=-1\nStrength=100\nCost=100\nOwner=C0\nPrerequisite=MISSING\n\
              [LAB]\nStrength=100\nCapturable=yes\nNeedsEngineer=yes\nSecretLab=yes\nSecretInfantry=Q\n\
-             [MISSING]\nStrength=100\n",
+             [MISSING]\nStrength=100\n[FACTORY]\nStrength=100\nFactory=InfantryType\nOwner=C0\n",
         ),
     )
     .unwrap();
@@ -459,6 +463,10 @@ fn captured_secret_lab_grants_before_normal_tech_admission_and_retracts_on_loss(
         sim.houses
             .register(HouseState::new(id, 0, Some(country), human, 1000, 10));
     }
+    #[cfg(feature = "ares")]
+    crate::sim::production::tests::spawn_structure(
+        &mut sim, &rules, 10000, "Self", "FACTORY", 20, 20,
+    );
     let lab = sim.spawn_object("LAB", "Other", 12, 5, 0, &rules).unwrap();
     let product = rules.object("Q").unwrap();
     assert_eq!(
@@ -479,6 +487,7 @@ fn captured_secret_lab_grants_before_normal_tech_admission_and_retracts_on_loss(
 }
 
 #[test]
+#[cfg(not(feature = "ares"))]
 fn can_build_after_runtime_tech_level_change_matches_original_current_value_controls() {
     for row in comparable_can_build_rows() {
         let native_tech_level = row["type"]["tech"].as_i64().unwrap_or(1) as i32;
@@ -538,6 +547,16 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
         .register(HouseState::new(yuri, 2, None, true, 0, 10));
     on_map(&mut sim, yuri, EntityCategory::Structure, "YABRCK", 1);
     on_map(&mut sim, yuri, EntityCategory::Structure, "YACNST", 1);
+    #[cfg(feature = "ares")]
+    crate::sim::production::tests::spawn_structure(
+        &mut sim,
+        rules,
+        10000,
+        "YuriCountry",
+        "YACNST",
+        20,
+        20,
+    );
     let yaweap = rules.object("YAWEAP").unwrap();
     assert_eq!(
         can_build(&sim, rules, yuri, yaweap, false, true),
@@ -562,6 +581,7 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
 }
 
 #[test]
+#[cfg(not(feature = "ares"))]
 fn secret_lab_can_build_matches_original_human_ai_limit_and_priority_controls() {
     let native: Value =
         serde_json::from_str(crate::test_fixture::text("tools/can_build_secret_lab.json")).unwrap();

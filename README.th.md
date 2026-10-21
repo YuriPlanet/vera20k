@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="ภาพหน้าปก VERA20K" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.ru.md" lang="ru">Русский</a> · <strong>ไทย</strong> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ru.md" lang="ru">Русский</a> · <strong>ไทย</strong> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="การทดสอบไลบรารีบน macOS ครั้งล่าสุด (สั่งรันด้วยตนเอง)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="การทดสอบไลบรารีบน macOS" height="23" align="middle"></a>
@@ -89,8 +89,15 @@ cargo run --release --bin vera20k
 
 ## การปรับแต่ง
 
-ฟีเจอร์เสริม (เช่น ฟีเจอร์จาก Ares) ควรตั้งค่าได้ผ่านไฟล์ INI
-และมีตัวเลือกเปิดหรือปิดในไคลเอนต์ตามความเหมาะสม
+โดยค่าเริ่มต้น VERA20K จะเล่นได้เหมือนเกมต้นฉบับ ฟีเจอร์ใหม่ทุกอย่าง รวมถึงส่วนขยายจากม็อดอย่าง Ares
+ต้องปิดไว้จนกว่าจะเปิดด้วยวิธีใดวิธีหนึ่งต่อไปนี้:
+
+- **ตัวเลือกตอนบิลด์** เช่น `--features ares` สำหรับ[ส่วนขยาย Ares](docs/ares.md)ที่รองรับ
+- **ตัวเลือกในล็อบบี้ของเกม** ซึ่งเลือกได้ในแต่ละแมตช์
+- **คีย์ INI** ที่ม็อดหรือแผนที่กำหนด
+
+หากต้องการเริ่มการต่อสู้ภายในเครื่องหรือแคมเปญของ YR แบบผู้เล่นคนเดียวผ่านไคลเอนต์ CnCNet
+โปรดดู[การตั้งค่าไคลเอนต์แบบออฟไลน์](integrations/cncnet/README.md)
 
 ## ร่วมพัฒนา
 

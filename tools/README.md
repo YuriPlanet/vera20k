@@ -161,7 +161,9 @@ worktree, so the runner starts one only when it can matter:
   blocked or partial; a dry run does not. `--trim-cache` always runs one.
 - **Skipped** while the newest applied pass found nothing removable, finished
   within that interval and nothing deciding removability has changed since:
-  cache directories, registered roots and profiles, and protected executables.
+  cache directories, registered roots and profiles, protected executables and
+  which cache profiles are idle. While the reserve is short, only a pass that
+  found it short counts.
 
 Between passes the cache can exceed its budgets; the free-space reserve is still
 measured on every invocation. Defaults are **40 GiB total compiler
@@ -172,7 +174,8 @@ above it is free, so the next build does not need another pass at once. Set
 `VERA20K_FREE_HEADROOM_GIB`, or pass `--cache-gib`, `--incremental-gib`, and
 `--min-free-gib` before `--`; they set the policy the next pass applies. Sizes
 accept finite nonnegative decimal GiB.
-Cache budgets are soft when protected files prevent reclaiming enough space.
+Cache budgets are soft: protected files and the working sets of profiles used
+within the hour (below) can keep the cache above them.
 The minimum free-space target also controls build admission: after cleanup, the
 runner measures the target volume again and blocks Cargo below that target.
 Labelled builds also check the saved-artifact volume. Measurement failure blocks
@@ -193,7 +196,8 @@ python -m tools.cargo_run --trim-cache
 ```
 
 The owner records every new target (including failed, unlabelled, check and custom
-target invocations) in `owned-builds/cache-roots.json`. Historical labelled roots
+target invocations) in `owned-builds/cache-roots.json`, with the last run of the
+cache and of each host profile directory it built. Historical labelled roots
 are adopted only when their live checkout/common Git directory and namespace
 prove ownership. A registered cache whose checkout no longer exists is abandoned
 once it has been idle ten minutes (`ABANDONED_SECONDS`), it sits in this repository's
@@ -211,11 +215,20 @@ naming it; a checkout whose `cargo_run` holds its lock keeps all of them, since
 its recorded tests may still run. Objects only older executables name become
 eligible after those executables, never ahead of them. Cross-target profiles require
 an executable path reported by Cargo or retained in a preserved build manifest.
-Older sessions are considered first; newest sessions are eligible if pressure
-remains, except that a crate's newest session built in the last 12 hours
-(`ACTIVE_SESSION_SECONDS`) yields only to a short free-space reserve, never to the
-cache or incremental budget. Working sessions and sessions containing links or unknown files stay
-protected. Shared compiler objects are eligible only when every inode alias
+A session counts as complete when it holds only files rustc writes there: its
+dependency graph, query cache, work-product index and metadata, and each codegen
+unit's object and, under ThinLTO (the `fast` profile), pre-LTO bitcode and import
+keys. While any target is unmet a pass first takes the disposable files: orphaned
+objects, older executables and every finalized session but a crate's newest,
+which rustc never reads again, oldest first. A crate's newest finalized session
+is its profile's working set. Working sets leave whole, one cache profile
+directory (`debug`, `fast`, `release`) at a time and least recently used first,
+so the most recent work keeps all of its own. Recency is the last run the
+registry records for that profile, or its cache's last run where none is
+recorded; a run registers when it starts and when Cargo ends. A short reserve evicts profiles in
+that order until the headroom is free; the budgets evict only profiles unused for
+an hour (`ACTIVE_PROFILE_SECONDS`). Working sessions and sessions containing links
+or unknown files stay protected. Shared compiler objects are eligible only when every inode alias
 is accounted for in registered caches and required debug-reference paths survive.
 Unknown external hardlinks remain protected; the cleaner never unlinks a required
 debug path. Cache and reclaimed-space accounting counts each inode once, and
@@ -240,7 +253,9 @@ Malformed inputs, links, unknown formats and inspector failures still block dele
 
 Inspection results and preserved SHA checks are reused only while executable
 identity (including inode and ctime), expected checksum and inspector revision match.
-Dependency presence and identity are always checked anew. Unknown inode identities
+Dependency presence and identity are always checked anew. A pass also stops when the
+registry, a latest record or a label manifest is rewritten under it, but not for a
+ctime change alone: macOS changes theirs some time after each rewrite. Unknown inode identities
 are never reused. Unchanged inspector failures are cached for at most five minutes;
 changing the binary, inspector or readelf identity retries immediately. These caches
 never authorize deletion without fresh inventory and dependency checks. Automatic
@@ -308,7 +323,8 @@ ownership records or debug inputs remain blocked; do not manufacture metadata.
 
 Each attempt writes `owned-builds/retention/<timestamp>-<id>.json`: selected and
 removed files, allocated/logical bytes removed, observed free-space change, errors
-and unmet targets. A pass removes receipts older than seven days. Dry runs never remove files; their projected space is an estimate.
+and unmet targets, each cache profile's last use and the profiles whose working
+sets it evicted, in eviction order. A pass removes receipts older than seven days. Dry runs never remove files; their projected space is an estimate.
 APFS clones/snapshots and unrelated volume activity can make observed reclamation
 differ from file allocation; applying a plan rechecks real free space and tries
 additional eligible cold entries when necessary. Plans are never reused for deletion.

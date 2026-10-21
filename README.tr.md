@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K kapak görseli" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <strong>Türkçe</strong> · <a href="README.md" lang="en">English</a>
+  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <strong>Türkçe</strong> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Son macOS kütüphane testi çalıştırması (elle başlatılır)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="macOS kütüphane testleri" height="23" align="middle"></a>
@@ -93,8 +93,15 @@ ile oyun testleri kullanarak kontrol ediyor. Ajanlar [AGENTS.md](AGENTS.md) dosy
 
 ## Özelleştirme
 
-İsteğe bağlı özellikler (ör. Ares özellikleri) INI dosyaları üzerinden yapılandırılabilmeli
-ve uygun olduğunda istemciden açılıp kapatılabilmelidir.
+VERA20K varsayılan olarak orijinal oyun gibi oynanır. Ares gibi modlardan gelen eklentiler dahil
+her yeni özellik, şu yollardan biriyle açılana kadar kapalı kalmalıdır:
+
+- **Bir derleme seçeneği**: örneğin desteklenen [Ares eklentileri](docs/ares.md) için `--features ares`.
+- **Bir oyun içi lobi seçeneği**: her maç için seçilir.
+- **Bir INI anahtarı**: bir mod ya da harita tarafından ayarlanır.
+
+Tek oyunculu YR çatışmalarını veya senaryolarını bir CnCNet istemcisinden başlatmak için
+[çevrimdışı istemci kurulumuna](integrations/cncnet/README.md) bakın.
 
 ## Katkıda bulunma
 

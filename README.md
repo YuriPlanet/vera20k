@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K hero image" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <strong>English</strong>
+  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <strong>English</strong>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Latest macOS library test run (run manually)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="macOS library tests" height="23" align="middle"></a>
@@ -93,40 +93,20 @@ and playtesting. Agents follow [AGENTS.md](AGENTS.md).
 
 ## Customization
 
-Ares compatibility is an optional build capability. Default builds use the retail
-readers and dispatch; an INI or client setting cannot enable omitted extensions.
-Build the supported extensions explicitly:
+VERA20K plays like the original game by default. Every new feature, including extensions from
+mods such as Ares, must stay off until it is turned on with one of:
 
-```sh
-python -m tools.cargo_run -- build -p vera20k --profile fast --bin vera20k --features ares
-```
+- **A build option**, such as `--features ares` for the supported [Ares extensions](docs/ares.md).
+- **An in-game lobby option**, chosen for each match.
+- **An INI key**, set by a mod or a map.
 
-Omit `--features ares` for a build without the extensions. Ares builds identify
-themselves in the window title and startup log. Supported INI keys configure
-existing GenericWarhead, UnitDelivery, superweapon building gates and money behavior;
-Include/inheritance expansion is also active only in Ares gameplay builds. The explicit
-read-only `asset ini-expand` probe remains available independently. Saves retain the
-build capability and cannot load in the other mode, even with identical retail INIs.
-This is partial Rust-native compatibility, not Ares DLL loading or general mod support.
-The enabled build also supports [generic production prerequisites](docs/ares-prerequisites.md),
-including alternate owned types and installed-upgrade qualification.
-It also supports [Ares House survival](docs/ares-house-survival.md), including
-`KeepAlive` and the complete `BaseUnit` list for short games.
-Additional [EVA voice tags and Side selection](docs/ares-eva.md) use the fixed
-EVAMD catalog and the existing announcement queue.
-
-To launch single-player YR skirmishes or campaigns through a dedicated CnCNet
-client, see the [offline client setup](integrations/cncnet/README.md). This needs
-a VERA build with the `-SPAWN` startup adapter.
+To launch single-player YR skirmishes or campaigns from a CnCNet client, see the
+[offline client setup](integrations/cncnet/README.md).
 
 ## Contributing
 
 Help is welcome. You can write code, refactor the engine, test the game, share ideas, or play
 it next to the original and tell us what feels wrong. Open a PR and we'll take it from there.
-If you add a native comparison under `tools/`, record what `gamemd.exe` computes, never a hash
-of the executable or of a repository source: every build is treated as the same game, the oracle
-runner refuses executable hashes, and a source hash would fail the check after unrelated edits
-(see [Evidence identity](tools/native_oracle.md#evidence-identity)).
 Discussion is on [Discord](https://discord.gg/kmjRUn5m5F) and in the QQ group (1097193563).
 
 ## Support

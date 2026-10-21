@@ -848,6 +848,12 @@ pub struct ObjectType {
     /// Add/Remove_Tracking owner; an explicit false is a distinct retained input.
     #[cfg(feature = "ares")]
     keep_alive: Option<bool>,
+    /// Immutable projection of the retained TechnoTypeExt+308/+314/+320/+321
+    /// reader. Country identities bind during Process, never from merged INI.
+    #[cfg(feature = "ares")]
+    factory_owners: crate::rules::native_processing::AresFactoryOwners,
+    #[cfg(feature = "ares")]
+    explicit_factory: crate::rules::native_processing::AresExplicitFactory,
     /// TechnoType+D33, read by Foot Approach_Target4D5690. Constructor
     /// 71152A sets true; ReadINI7144AF uses native ReadBool with the current
     /// value as its default. Attack still searches when this flag is false.
@@ -2144,6 +2150,100 @@ impl ObjectType {
         }
     }
 
+    /// BuiltAt BuildingTypes ordinals, bound at each reached TechnoType read.
+    /// An empty list leaves the source factory unspecified; duplicates are kept.
+    pub fn built_at(&self) -> &[i32] {
+        #[cfg(feature = "ares")]
+        {
+            self.factory_owners.built_at()
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            &[]
+        }
+    }
+
+    /// BuildingExt+126: source factory only admits an explicit BuiltAt match.
+    pub fn factory_explicit_only(&self) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            self.explicit_factory.explicit_only()
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            false
+        }
+    }
+
+    /// Allowed original factory Countries in native list order, duplicates kept.
+    pub fn factory_owners(&self) -> &[crate::rules::ruleset::CountryIdx] {
+        #[cfg(feature = "ares")]
+        {
+            self.factory_owners.allowed()
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            &[]
+        }
+    }
+
+    /// Countries excluded for the same candidate that satisfies FactoryOwners.
+    pub fn forbidden_factory_owners(&self) -> &[crate::rules::ruleset::CountryIdx] {
+        #[cfg(feature = "ares")]
+        {
+            self.factory_owners.forbidden()
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            &[]
+        }
+    }
+
+    /// TypeExt+320: HaveAllPlans followed by Permanent writes the same field.
+    pub fn factory_owners_permanent(&self) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            self.factory_owners.permanent()
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            false
+        }
+    }
+
+    /// Independent TypeExt+321: a live building supplies all factory categories.
+    pub fn factory_has_all_plans(&self) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            self.factory_owners.has_all_plans()
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            false
+        }
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn project_factory_owners(
+        &mut self,
+        state: &crate::rules::native_processing::AresFactoryOwners,
+    ) {
+        self.factory_owners.clone_from(state);
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn factory_owners_hash_state(&self) -> impl std::hash::Hash + '_ {
+        (&self.factory_owners, &self.explicit_factory)
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn project_explicit_factory(
+        &mut self,
+        state: &crate::rules::native_processing::AresExplicitFactory,
+    ) {
+        self.explicit_factory.clone_from(state);
+    }
+
     pub fn armor_id(&self) -> crate::rules::armor::ArmorId {
         self.armor_id
     }
@@ -2960,6 +3060,10 @@ impl ObjectType {
             no_manual_fire: section.read_ares_bool("NoManualFire", false),
             #[cfg(feature = "ares")]
             keep_alive: section.read_ares_nullable_bool("KeepAlive", None),
+            #[cfg(feature = "ares")]
+            factory_owners: Default::default(),
+            #[cfg(feature = "ares")]
+            explicit_factory: Default::default(),
             // ReadINI7144AF then7144C9. The shared bool reader folds only
             // post-allocation passes retained by native_processing, preserving
             // an earlier false when a later key is missing or malformed.

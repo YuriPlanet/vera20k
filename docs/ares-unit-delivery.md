@@ -1,7 +1,7 @@
 # Optional Ares UnitDelivery
 
 Requires an explicit `--features ares` build. Default builds do not read or execute
-these extensions; see [build capability](../README.md#customization).
+these extensions; see [build capability](ares.md).
 
 ```ini
 [SuperWeaponTypes]
