@@ -1,11 +1,8 @@
 //! Synthetic inputs/results executed by the installed native DLL component oracle.
 use super::*;
 
-fn vectors() -> serde_json::Value {
-    serde_json::from_str(include_str!(
-        "../../tools/rules_oracle/ares_audio_bags.json"
-    ))
-    .unwrap()
+fn vectors() -> &'static serde_json::Value {
+    crate::test_fixture::json("tools/rules_oracle/ares_audio_bags.json")
 }
 
 fn unhex(text: &str) -> Vec<u8> {

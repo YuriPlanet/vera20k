@@ -199,9 +199,22 @@ impl WolCapture {
         let requesting = csf(state, "WOL:RequestingMatch");
         self.expect_rows(state, frame, from, &[requesting])?;
         let requests = self.requests(state, frame)?;
-        let [WolServiceRequest::RequestMatch { matchbot, request }] = requests.as_slice() else {
+        // The user-list sink's ladder batch (0x007A77CB), then the request.
+        let listed: Vec<String> = [PEER, MATCHBOT, NICKNAME]
+            .map(str::to_ascii_lowercase)
+            .into();
+        let [
+            WolServiceRequest::LadderRecords(ladder),
+            WolServiceRequest::HighScores(scores),
+            WolServiceRequest::RequestMatch { matchbot, request },
+        ] = requests.as_slice()
+        else {
             bail!("the lobby join did not request a match: {requests:?}");
         };
+        ensure!(
+            *ladder == listed && *scores == listed,
+            "the lobby join batched {ladder:?} and {scores:?}"
+        );
         let text = request.text(MatchTransport::default());
         let keys: Vec<&str> = text
             .split(", ")

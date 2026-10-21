@@ -1020,6 +1020,11 @@ impl MultiplayerShellRuntime {
         }
     }
 
+    /// `0x0049E4F0`: the CoopCampMD `[Campaigns]` count, 0 without the file.
+    pub(crate) fn cooperative_campaign_count(&self) -> u32 {
+        self.cooperative_registry.campaigns.len() as u32
+    }
+
     /// A campaign's `CampaignName` string-table key, for `+0x4C`'s rows.
     pub(crate) fn cooperative_campaign_name(&self, campaign: usize) -> Option<&str> {
         self.cooperative_registry

@@ -65,10 +65,7 @@ fn audio_bags_catalog_uses_native_order_and_correct_backing_pcm() {
     }
     #[cfg(feature = "ares")]
     {
-        let vectors: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tools/rules_oracle/ares_audio_bags.json"
-        ))
-        .unwrap();
+        let vectors = crate::test_fixture::json("tools/rules_oracle/ares_audio_bags.json");
         let stems = vectors["order"]["stems"].as_array().unwrap();
         assert_eq!(manager.audio_pairs.len(), stems.len());
         for (pair, stem) in manager.audio_pairs.iter().zip(stems) {

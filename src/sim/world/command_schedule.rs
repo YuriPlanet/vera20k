@@ -697,15 +697,17 @@ impl Simulation {
                 executed_commands += 1;
             }
 
-            let mut staged = commands
-                .iter()
-                .filter(|command| {
-                    command.execute_tick <= execute_tick
-                        && command.owner == owner
-                        && Self::command_uses_megamission(&command.payload)
-                })
-                .cloned()
-                .collect::<Vec<_>>();
+            let mut staged = Vec::new();
+            for command in commands.iter().filter(|command| {
+                command.execute_tick <= execute_tick
+                    && command.owner == owner
+                    && Self::command_uses_megamission(&command.payload)
+            }) {
+                // Execute_DoList marks excess records processed without
+                // executing them. The drained input batch already owns their
+                // consumption; only accepted members reach group adjustment.
+                crate::sim::command::stage_megamission(&mut staged, command);
+            }
             self.adjust_staged_megamission_destinations(&mut staged, rules, overlay_registry);
             for command in &staged {
                 let (_, spawned) =

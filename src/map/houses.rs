@@ -467,6 +467,40 @@ mod tests {
         ));
     }
 
+    /// Ares47527C/475297 preserves late allies in a long authored list.
+    /// Equal Country never creates an edge; the ordinary roster/graph owns
+    /// both the long-list result and the deliberately one-way control.
+    #[test]
+    fn long_house_allies_keep_late_members_only_with_ares() {
+        let names: Vec<_> = (0..19).map(|i| format!("Guard{i:02} House")).collect();
+        let mut source = String::from("[Houses]\n");
+        for (index, name) in names.iter().enumerate() {
+            source.push_str(&format!("{index}={name}\n"));
+        }
+        let list = names[..18].join(",");
+        assert!(list.len() > 127 && list.len() < 511);
+        for (index, name) in names.iter().enumerate() {
+            source.push_str(&format!("[{name}]\nCountry=Russians\n"));
+            if index == 0 {
+                source.push_str(&format!("Allies={list}\n"));
+            } else if index == 17 {
+                source.push_str(&format!("Allies={}\n", names[0]));
+            }
+        }
+        let roster = parse_house_roster(&IniFile::from_str(&source), &[], None);
+        assert_eq!(roster.houses.len(), 19);
+        let alliances = roster.alliance_map();
+        assert_eq!(
+            is_allied_with(&alliances, &names[0], &names[17]),
+            crate::rules::ARES_ENABLED,
+        );
+        assert!(is_allied_with(&alliances, &names[17], &names[0]));
+        assert!(is_allied_with(&alliances, &names[0], &names[1]));
+        assert!(!is_allied_with(&alliances, &names[1], &names[0]));
+        assert!(!is_allied_with(&alliances, &names[0], &names[18]));
+        assert!(!is_allied_with(&alliances, &names[18], &names[0]));
+    }
+
     #[test]
     fn ui_name_reads_at_most_31_bytes_and_empty_is_absent() {
         // 500C5D..500C77: ReadString into a 0x20-byte buffer.

@@ -6945,6 +6945,83 @@ fn spawn_tanks(sim: &mut Simulation, rules: &RuleSet, cells: &[(u16, u16)]) -> V
         .collect()
 }
 
+#[test]
+fn admitted_megamissions_drop_overflow_per_house_and_reopen_next_frame() {
+    // These are already-admitted DoList commands, not 257 local clicks:
+    // local OutList admission has its own, smaller capacity. Execute_DoList
+    // 0x64C739..0x64C743 drops the 257th MegaMission for each House, while
+    // 0x64CAA8 still marks that record processed. No retail tuning sets this cap.
+    let Some((mut sim, rules, grid)) = stacking_world(24) else {
+        return;
+    };
+    let american = spawn_tanks(&mut sim, &rules, &[(6, 6)])[0];
+    let russian = sim
+        .spawn_object("MTNK", "Russians", 8, 6, 64, &rules)
+        .unwrap();
+    let owners = [
+        sim.interner.get("Americans").unwrap(),
+        sim.interner.get("Russians").unwrap(),
+    ];
+    let guard = |owner, entity_id, tick, cell| {
+        CommandEnvelope::new(
+            owner,
+            tick,
+            Command::Guard {
+                entity_id,
+                target: Some(TargetKind::Cell(cell, cell)),
+            },
+        )
+    };
+    // Interleave Houses to exercise registration-order grouping and a fresh
+    // staging allowance for each House, independent of input storage order.
+    for _ in 0..256 {
+        sim.queue_command(guard(owners[1], russian, 1, 14));
+        sim.queue_command(guard(owners[0], american, 1, 12));
+    }
+    sim.queue_command(guard(owners[0], american, 1, 13));
+    sim.queue_command(guard(owners[1], russian, 1, 15));
+    sim.queue_command(CommandEnvelope::new(
+        owners[0],
+        1,
+        Command::LiveGameSpeed { speed: 4 },
+    ));
+    sim.queue_command(guard(owners[0], american, 2, 16));
+    let due = sim.take_due_commands();
+    let result = sim.advance_tick(&due, Some(&rules), Some(&grid), None, 67);
+
+    assert_eq!(
+        result.executed_commands, 513,
+        "512 accepted MegaMissions and one ordinary event"
+    );
+    assert_eq!(
+        sim.entities().get(american).unwrap().archive_target(),
+        Some(TargetKind::Cell(12, 12))
+    );
+    assert_eq!(
+        sim.entities().get(russian).unwrap().archive_target(),
+        Some(TargetKind::Cell(14, 14))
+    );
+    assert_eq!(
+        sim.session.game_options().game_speed,
+        4,
+        "overflow does not stop ordinary events"
+    );
+    assert_eq!(
+        sim.pending_command_snapshot().len(),
+        1,
+        "overflow is consumed, not deferred"
+    );
+
+    let due = sim.take_due_commands();
+    let result = sim.advance_tick(&due, Some(&rules), Some(&grid), None, 67);
+    assert_eq!(result.executed_commands, 1);
+    assert_eq!(
+        sim.entities().get(american).unwrap().archive_target(),
+        Some(TargetKind::Cell(16, 16))
+    );
+    assert!(sim.pending_command_snapshot().is_empty());
+}
+
 /// The longest stretch of consecutive ticks on which `id` did not change cell
 /// while it still held a movement order. A mover whose selection is refused by
 /// a predicate that nothing downstream can resolve produces a bit-identical

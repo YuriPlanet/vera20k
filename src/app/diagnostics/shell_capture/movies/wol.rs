@@ -63,6 +63,12 @@ pub enum WolTarget {
     /// Hovered games: a retail map's description, then the random map's
     /// `TXT_RANDOM_MAP_DESCRIPTION`, after the ping (`0x00780D90`).
     LobbyGameTooltip,
+    /// Ladder and high-score records: the rank text, the rank digits, the
+    /// co-op image and the badges in the player rows (`0x00783C80`).
+    LobbyPlayerColumns,
+    /// The rank sort header, then a ladder record that moves its user
+    /// (`0x00782320` from the ladder sink).
+    LobbyRankSort,
     /// A lost connection in `0x113`: the `TXT_YOURE_DISCON` box.
     LobbyDisconnected,
     /// OK on that box: the runner ends, a fresh `0x10E` settled.
@@ -595,6 +601,8 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-0x113-find", WolTarget::LobbyFind),
     ("wol-0x113-user-tooltip", WolTarget::LobbyUserTooltip),
     ("wol-0x113-game-tooltip", WolTarget::LobbyGameTooltip),
+    ("wol-0x113-player-columns", WolTarget::LobbyPlayerColumns),
+    ("wol-0x113-rank-sort", WolTarget::LobbyRankSort),
     ("wol-0x113-disconnected", WolTarget::LobbyDisconnected),
     (
         "wol-0x113-disconnect-return",
@@ -2844,9 +2852,16 @@ impl WolCapture {
         );
         join_lobby(state);
         let requests = self.requests(state, frame)?;
+        // The user-list sink's batch of every unranked user (0x007A77CB),
+        // then the lists.
+        let listed: Vec<String> = ["Hotel", NICKNAME, "Echo", "Foxtrot"]
+            .map(str::to_ascii_lowercase)
+            .into();
         ensure!(
             requests
                 == [
+                    WolServiceRequest::LadderRecords(listed.clone()),
+                    WolServiceRequest::HighScores(listed),
                     WolServiceRequest::ListChannels { kind: 0, flags: 0 },
                     WolServiceRequest::ListChannels {
                         kind: GAME_CHANNEL,
@@ -3210,6 +3225,105 @@ impl WolCapture {
                 let help = crate::app::shell_wol::lobby::status_help(state);
                 ensure!(help == expected, "the user tooltip read {help:?}");
                 self.event(frame, json!({"hovered user help": help}));
+                self.settle();
+                return Ok(());
+            }
+            WolTarget::LobbyPlayerColumns => {
+                use crate::app::shell_wol::{WolHighScoreRecord, WolLadderRecord};
+                let ladder = |name: &str, rank| WolLadderRecord {
+                    name: name.into(),
+                    rank,
+                    ..Default::default()
+                };
+                let score = |name: &str, points, rank, coop| WolHighScoreRecord {
+                    name: name.into(),
+                    points,
+                    rank,
+                    coop,
+                };
+                service_event(
+                    state,
+                    WolServiceEvent::HighScores(Ok(vec![
+                        score("Hotel", 90, 123, 0x7),
+                        score("ECHO", 1520, 7, 0xF),
+                    ])),
+                );
+                // The high-score sink refreshes nothing; the ladder sink
+                // refills the rows.
+                service_event(
+                    state,
+                    WolServiceEvent::Ladder(vec![ladder("Hotel", 3), ladder("Echo", 42)]),
+                );
+                let rows: Vec<_> = Self::lobby(state)?
+                    .ui
+                    .player_rows
+                    .iter()
+                    .map(|row| (row.name.clone(), row.rank.clone(), row.score_icons.clone()))
+                    .collect();
+                let expected = vec![
+                    (
+                        "Hotel".to_string(),
+                        Some("3".to_string()),
+                        vec![
+                            ("number1.pcx", 0x12),
+                            ("number2.pcx", 0x1A),
+                            ("number3.pcx", 0x22),
+                            ("lieutena.pcx", 0x3D),
+                        ],
+                    ),
+                    (
+                        "Echo".into(),
+                        Some("42".into()),
+                        vec![
+                            ("number7.pcx", 0x22),
+                            ("cooperat.pcx", 0x2C),
+                            ("stargen.pcx", 0x3D),
+                        ],
+                    ),
+                    ("Foxtrot".into(), None, Vec::new()),
+                    (NICKNAME.into(), None, Vec::new()),
+                ];
+                ensure!(rows == expected, "the player columns read {rows:?}");
+                self.event(frame, "ladder and high-score columns");
+                self.settle();
+                return Ok(());
+            }
+            WolTarget::LobbyRankSort => {
+                let rect = layout
+                    .control_rect(lobby_ui::PLAYER_SORT_RANK)
+                    .context("rank sort")?;
+                welcome_click(state, rect);
+                ensure!(
+                    state.frontend.wol_lobby_globals.player_sort == 2,
+                    "the rank sort was not chosen"
+                );
+                service_event(
+                    state,
+                    WolServiceEvent::Ladder(vec![crate::app::shell_wol::WolLadderRecord {
+                        name: "foxtrot".into(),
+                        rank: 1,
+                        ..Default::default()
+                    }]),
+                );
+                service_event(
+                    state,
+                    WolServiceEvent::Ladder(vec![crate::app::shell_wol::WolLadderRecord {
+                        name: "Echo".into(),
+                        rank: 42,
+                        ..Default::default()
+                    }]),
+                );
+                let names: Vec<String> = Self::lobby(state)?
+                    .ui
+                    .player_rows
+                    .iter()
+                    .map(|row| row.name.clone())
+                    .collect();
+                ensure!(
+                    names == ["Hotel", "Foxtrot", "Echo", NICKNAME],
+                    "the rank sort read {names:?}"
+                );
+                self.event(frame, json!({"rank sort": names}));
                 self.settle();
                 return Ok(());
             }

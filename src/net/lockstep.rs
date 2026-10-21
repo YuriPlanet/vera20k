@@ -24,6 +24,10 @@ use std::num::NonZeroU32;
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+use crate::sim::command::MEGAMISSION_STAGE_CAPACITY;
+#[cfg(any(test, feature = "test-support"))]
+use crate::sim::command::stage_megamission;
 use crate::sim::command::{CommandRecord, CommandRecordError};
 use crate::sim::intern::InternedId;
 
@@ -32,7 +36,6 @@ pub const CHECKSUM_HISTORY_LEN: usize = 0x100;
 pub const OUT_LIST_CAPACITY: usize = 0x80;
 pub const DO_LIST_CAPACITY: usize = 0x4000;
 pub const NETWORK_LOCAL_MIRROR_LIMIT: usize = 0x2000;
-pub const MEGAMISSION_STAGE_CAPACITY: usize = 0x100;
 
 const FRAMEINFO_CHECKSUM_PAYLOAD_OFFSET: usize = 0;
 const FRAMEINFO_TIMING_WORD_PAYLOAD_OFFSET: usize = 4;
@@ -845,8 +848,7 @@ impl SynchronizedCommandQueue {
                     }
                     opcode if queue_consumes_without_execute(opcode) => {}
                     _ if command.stages_as_megamission() => {
-                        if staged_megamissions.len() < MEGAMISSION_STAGE_CAPACITY {
-                            staged_megamissions.push(command.clone());
+                        if stage_megamission(&mut staged_megamissions, command) {
                             staged_late.push(is_late);
                         } else {
                             summary.megamission_dropped += 1;

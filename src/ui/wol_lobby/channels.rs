@@ -586,10 +586,17 @@ pub(crate) fn password_accepted(units: &[u16]) -> bool {
 
 /// The membership insert of the player list's sort mode (`0x007A5E40`'s
 /// dispatch): operators stay in a leading block. Alpha (mode 0 ascending,
-/// 1 descending) compares `_strcmpi` names; rank (2/3) without ladder
-/// records orders names ascending; clan (4 ascending, 5 descending) orders
-/// by tag, empty tags last, then names ascending within a tag.
-pub(crate) fn insert_member(members: &mut Vec<WolMember>, member: WolMember, sort: PlayerSort) {
+/// 1 descending) compares `_strcmpi` names; rank (`0x00782320`: 2
+/// ascending, 3 descending) orders by `rank`, the user's ladder rank or -1,
+/// unranked users last, then names ascending within a rank; clan (4
+/// ascending, 5 descending) orders by tag, empty tags last, then names
+/// ascending within a tag.
+pub(crate) fn insert_member(
+    members: &mut Vec<WolMember>,
+    member: WolMember,
+    sort: PlayerSort,
+    rank: &dyn Fn(&str) -> i32,
+) {
     let operators = members.iter().take_while(|m| m.operator()).count();
     let (start, end) = if member.operator() {
         (0, operators)
@@ -628,7 +635,28 @@ pub(crate) fn insert_member(members: &mut Vec<WolMember>, member: WolMember, sor
                 })
                 .unwrap_or(end)
         }
-        // 0 and the rank modes without ladder records (0x00782320).
+        2 | 3 => {
+            // 0x00782320 phase 1: past ranked users that sort before this
+            // rank (every ranked user when this one is unranked). A rank of
+            // 0 stops the walk.
+            let key = rank(&member.name);
+            let rank_at = (start..end)
+                .find(|i| {
+                    let existing = rank(&members[*i].name);
+                    existing <= 0
+                        || (key != -1
+                            && if sort == 2 {
+                                existing >= key
+                            } else {
+                                existing <= key
+                            })
+                })
+                .unwrap_or(end);
+            // Phase 2: past same-rank names that sort before this one.
+            (rank_at..end)
+                .find(|i| rank(&members[*i].name) != key || name_before(&members[*i]))
+                .unwrap_or(end)
+        }
         _ => (start..end)
             .find(|i| name_before(&members[*i]))
             .unwrap_or(end),
@@ -637,9 +665,13 @@ pub(crate) fn insert_member(members: &mut Vec<WolMember>, member: WolMember, sor
 }
 
 /// A sort button re-inserts every member in the current order.
-pub(crate) fn resort_members(members: &mut Vec<WolMember>, sort: PlayerSort) {
+pub(crate) fn resort_members(
+    members: &mut Vec<WolMember>,
+    sort: PlayerSort,
+    rank: &dyn Fn(&str) -> i32,
+) {
     for member in std::mem::take(members) {
-        insert_member(members, member, sort);
+        insert_member(members, member, sort, rank);
     }
 }
 
@@ -907,31 +939,66 @@ mod tests {
         ];
         let mut members = Vec::new();
         for m in incoming.iter().cloned() {
-            insert_member(&mut members, m, 0);
+            insert_member(&mut members, m, 0, &|_| -1);
         }
         assert_eq!(
             names(&members),
             ["abe", "Zed", "alice", "bob", "Carl", "dora"]
         );
-        resort_members(&mut members, 1);
+        resort_members(&mut members, 1, &|_| -1);
         assert_eq!(
             names(&members),
             ["Zed", "abe", "dora", "Carl", "bob", "alice"]
         );
-        resort_members(&mut members, 3);
+        resort_members(&mut members, 3, &|_| -1);
         assert_eq!(
             names(&members),
             ["abe", "Zed", "alice", "bob", "Carl", "dora"]
         );
-        resort_members(&mut members, 4);
+        resort_members(&mut members, 4, &|_| -1);
         assert_eq!(
             names(&members),
             ["abe", "Zed", "Carl", "bob", "dora", "alice"]
         );
-        resort_members(&mut members, 5);
+        resort_members(&mut members, 5, &|_| -1);
         assert_eq!(
             names(&members),
             ["abe", "Zed", "bob", "dora", "Carl", "alice"]
+        );
+    }
+
+    #[test]
+    fn rank_inserts_order_ranked_users_and_put_the_unranked_last() {
+        let names = |members: &[WolMember]| -> Vec<String> {
+            members.iter().map(|m| m.name.clone()).collect()
+        };
+        let rank = |name: &str| match name {
+            "Zed" => 3,
+            "abe" => 9,
+            "alice" => 2,
+            "bob" | "erin" => 5,
+            _ => -1,
+        };
+        let mut members = Vec::new();
+        for m in [
+            member("dora", 0, ""),
+            member("erin", 0, ""),
+            member("abe", 1, ""),
+            member("bob", 0, ""),
+            member("Carl", 0, ""),
+            member("Zed", 1, ""),
+            member("alice", 0, ""),
+        ] {
+            insert_member(&mut members, m, 2, &rank);
+        }
+        assert_eq!(
+            names(&members),
+            ["Zed", "abe", "alice", "bob", "erin", "Carl", "dora"]
+        );
+        resort_members(&mut members, 3, &rank);
+        assert_eq!(
+            names(&members),
+            ["abe", "Zed", "bob", "erin", "alice", "Carl", "dora"]
         );
     }
 }

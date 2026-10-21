@@ -157,9 +157,12 @@ pub(crate) enum WolServiceRequest {
     /// API+0x60 for one buddy of the locate queue `0xB76980`; the find sink
     /// answers with [`WolServiceEvent::Located`].
     Locate(String),
-    /// `0x0079D110`: the ladder API `[0xAC1170]` vt+0x14/+0x38 for up to
-    /// ten names; the answer is [`WolServiceEvent::Ladder`].
+    /// The ladder API `[0xAC1170]` vt+0x14 for the names (SKU
+    /// `[0xB77A90]`); the answer is [`WolServiceEvent::Ladder`].
     LadderRecords(Vec<String>),
+    /// The ladder API vt+0x38 for the names; the answer is
+    /// [`WolServiceEvent::HighScores`].
+    HighScores(Vec<String>),
     /// `0x007A0690`: API+0x30, the private ANSI text
     /// [`super::quick_match::MatchRequest::text`] to the Quick Match lobby's
     /// matchbot. The service fills the transport fields
@@ -185,6 +188,20 @@ pub(crate) struct WolLadderRecord {
     pub(crate) rank: i32,
     /// `+0x20`.
     pub(crate) disconnects: i32,
+}
+
+/// One high-score record (`0x44` bytes) of `CNetUtilEventSink+0x24`
+/// (`0x007A3B30`); the player list compares its fields unsigned.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct WolHighScoreRecord {
+    /// `+0x1C`.
+    pub(crate) name: String,
+    /// `+0x0C`: the badge's points.
+    pub(crate) points: u32,
+    /// `+0x10`: the rank the digits show.
+    pub(crate) rank: u32,
+    /// `+0x14`: one bit per finished co-op campaign.
+    pub(crate) coop: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -286,6 +303,9 @@ pub(crate) enum WolServiceEvent {
     /// The ladder sink `CNetUtilEventSink+0x10` (`0x007A3100`): records
     /// for the table `[0xB77E0C]`.
     Ladder(Vec<WolLadderRecord>),
+    /// The high-score sink `CNetUtilEventSink+0x24` (`0x007A3B30`): records
+    /// for the table `0xB76640`, or a failed result (only logged).
+    HighScores(Result<Vec<WolHighScoreRecord>, u32>),
     /// The buddy-list sink `CChatEventSink+0x94` (`0x007AC220`): the
     /// users of the list, or a negative result.
     Buddies(Result<Vec<String>, u32>),
@@ -522,14 +542,13 @@ impl WolVisit {
             (Awaiting::Api, WolServiceEvent::Api(WolApiStatus::Available)) => {
                 // 0x00786390 creates the object once per visit ([0xB77E75]);
                 // only then does it reset the WOL globals (0x00780110),
-                // including [0xB77AD0], the selected record and the ladder
-                // and locale tables, and set [0xB77DC0] (0x00786485) until a
+                // including [0xB77AD0], the selected record and the locale
+                // table, and set [0xB77DC0] (0x00786485) until a
                 // connect clears it.
                 if !self.api {
                     self.api = true;
                     self.last_error = None;
                     self.selected_server = 0;
-                    self.ladder.clear();
                     self.locales.clear();
                     // 0x0078061B..0x0078065F.
                     self.squad_id = 0;
@@ -853,6 +872,10 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         }
         WolServiceEvent::Ladder(records) => {
             super::buddies::ladder_received(state, records);
+            return;
+        }
+        WolServiceEvent::HighScores(result) => {
+            super::lobby::high_scores_received(state, result);
             return;
         }
         WolServiceEvent::Buddies(result) => {

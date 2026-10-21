@@ -41,6 +41,26 @@ pub const ALLY_OPCODE: u8 = 0x03;
 pub const CHEER_OPCODE: u8 = 0x2d;
 /// Native `EventClass` opcode for a MegaMission order envelope.
 pub const MEGAMISSION_OPCODE: u8 = 0x04;
+/// Per-House capacity of Execute_DoList's secondary MegaMission ring.
+pub const MEGAMISSION_STAGE_CAPACITY: usize = 0x100;
+
+/// Stage one already-admitted MegaMission for the current House.
+///
+/// Native `Execute_DoList 0x0064C380`, `0x0064C739..0x0064C7B1`, copies
+/// only the first 256 opcode-4 events into its secondary ring. Overflow is
+/// consumed by the caller without execution (`0x0064CAA8`); it is not deferred
+/// to another frame. Each House drains its stage before the next House starts
+/// (`0x0064CBF4..0x0064CC3D`). This admission owner serves both the production
+/// semantic dispatcher and the synchronized byte queue. Local OutList admission
+/// is a separate boundary. Source: original gamemd.exe instructions.
+pub(crate) fn stage_megamission<T: Clone>(stage: &mut Vec<T>, command: &T) -> bool {
+    if stage.len() >= MEGAMISSION_STAGE_CAPACITY {
+        return false;
+    }
+    stage.push(command.clone());
+    true
+}
+
 /// Native selected-object Scatter event.
 pub const SCATTER_OPCODE: u8 = 0x07;
 /// Native `EventClass` opcode 0x0D, the GAMESPEED event. `EventClass::Execute`

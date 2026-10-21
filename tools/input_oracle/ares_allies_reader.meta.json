@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original475260 Allies reader with separately executed enrolled Ares buffer handlers and explicit hook-frame transport.",
+  "assumptions": [
+    "Synthetic exact-name House registry and cached lexical INI entries use the existing CampaignReader owner. No game assets or mod maps are inputs.",
+    "The two identified Ares handlers execute in existing Probe VM. Observed pending-stack pointer/capacity and saved-ECX outputs are explicitly transported at original47527C/475297 in a separate CampaignReader VM. This is not Syringe loader, patch/trampoline or complete Ares startup execution.",
+    "Original ReadString, comma-only strtok, FromName and32bit bitmask body execute unchanged. Stock27 controls are executed and compared to the prior native corpus; Ares27 counterparts and19-name/2047-byte boundaries are newly observed.",
+    "Original executable and mapped Ares executable sections remain unchanged; no RNG stream may change, and observed RNG/detach entries are rejected."
+  ],
+  "substitutions": [
+    "Inherited BulletReader cached INI/allocation/CRT TLS transport and fixture runtime empty buffer; declared House names/storage and registry order supplied.",
+    "Ares hook register-frame/stack storage supplied only as ABI transport; observed handler outputs are copied into the native reader VM, with original continuation instructions executing there. No parser, lookup, mask result or gameplay return is supplied."
+  ],
+  "entry_points": {
+    "read_houses_list": "0x00475260",
+    "read_string": "0x00528A10",
+    "house_from_name": "0x0050C170",
+    "read_buffer_handler": "0x1005BED0",
+    "strtok_buffer_handler": "0x1005BEF0"
+  },
+  "replay_command": "python -m tools.input_oracle.campaign_start --ares-allies",
+  "payload_sha256": "3654844a50658f6b86b8a257447959ffc01ae26c7efaa2f4d81dd7c98f0222cc"
+}

@@ -186,11 +186,13 @@ fn kick_locate(state: &mut AppState) {
     }
 }
 
-/// `0x0079D110`: up to ten names of the ladder queue to the ladder API.
+/// `0x0079D110`: up to ten names of the ladder queue to the ladder API,
+/// as ladder and high-score requests.
 pub(super) fn request_ladder(state: &mut AppState) {
     let names = mirror(state).ladder_batch();
     if !names.is_empty() {
-        service::request(state, WolServiceRequest::LadderRecords(names));
+        service::request(state, WolServiceRequest::LadderRecords(names.clone()));
+        service::request(state, WolServiceRequest::HighScores(names));
     }
 }
 
@@ -291,18 +293,46 @@ pub(super) fn located(state: &mut AppState, result: &Result<WolChannel, u32>) ->
     true
 }
 
-/// The ladder sink `0x007A3100`: the records join the table, the next
-/// batch is asked and an open `0x116` shows the statistics.
-/// RESIDUAL: in a match the sink only sets a pending flag; VERA stores.
+/// The ladder table's limit: the sink empties a table holding more
+/// (`0x007A31D3`).
+const LADDER_TABLE_LIMIT: usize = 2000;
+
+/// The ladder sink `0x007A3100`. In a match it only flags the sidebar, and
+/// no records (or a failure) do nothing. Otherwise a table above 2000 records is emptied, and each record
+/// with points (`+0x10`) other than -1 joins it and, under a rank sort,
+/// sorts its user again (`0x007A3966..0x007A39C4`). Then the player list
+/// is refilled (`0x00783C80`), the next batch asked and an open `0x116`
+/// shows the statistics.
+/// RESIDUAL: the sidebar's ladder-update flag (`0x007A3121`) has no reader
+/// in VERA; the `0x57F` ladder list it fills instead of the player list is
+/// not ported.
 pub(super) fn ladder_received(state: &mut AppState, records: Vec<WolLadderRecord>) {
-    let Some(visit) = state.frontend.wol.as_mut() else {
+    if state
+        .frontend
+        .wol
+        .as_ref()
+        .is_none_or(|visit| visit.in_game)
+        || records.is_empty()
+    {
         return;
-    };
-    for record in records {
-        visit
-            .ladder
-            .insert(record.name.to_ascii_lowercase(), record);
     }
+    let ladder = &mut state.frontend.wol_lobby_globals.ladder;
+    if ladder.len() > LADDER_TABLE_LIMIT {
+        ladder.clear();
+    }
+    for record in records {
+        if record.points == -1 {
+            continue;
+        }
+        let name = record.name.clone();
+        state
+            .frontend
+            .wol_lobby_globals
+            .ladder
+            .insert(name.to_ascii_lowercase(), record);
+        super::lobby::rank_changed(state, &name);
+    }
+    super::lobby::refill_players(state);
     request_ladder(state);
     super::buddy::stats_changed(state);
 }
