@@ -318,7 +318,6 @@ def generate():
         case.setdefault('rust_comparison', 'sale_callbacks')
     art = sections((engineer.JOINED_ROOT / 'ARTMD.INI').read_bytes())
     return dict(schema_version=1, source='unicorn/gamemd.exe',
-        native_image_sha256=hashlib.sha256(native.image_bytes()).hexdigest(),
         art_input={name: art[name] for name in ('GAPOWR', 'GAPOWR_A', 'GAPOWR_AD')},
         native_anim_inputs=[{key:row[key] for key in ('name','raw_shp_frame_count')}
             for row in inputs.anim_rows if row['name'] in ('GAPOWR_A', 'GAPOWR_AD')],
@@ -348,7 +347,6 @@ def metadata():
         substitutions=[
             'Existing allocator/free arena transport, TLS/interlocked, OS-audio/clock and COM platform interfaces are inherited. No RecordKill/Tag/Trigger/TAction/ChangeOwner/refund/AddCredits result is substituted.',
             'Construction presentation leaves451F60(ret8),452170(ret4),456FB0(ret4),705D70(ret0) retain existing declared boundaries. Per-row reached_presentation/reached_platform identify observed entries. Platform arena release retains bytes for bounded observation; no deferred queue drain runs after the sale boundary.'])
-    result['native_image_sha256'] = hashlib.sha256(native.image_bytes()).hexdigest()
     result['checked_vtable_ranges'] = [dict(start=f'0x{a:08X}', bytes=n)
         for a,n in ((0x7E3EBC,0x500),(0x7EA8A0,0x200))]
     return result

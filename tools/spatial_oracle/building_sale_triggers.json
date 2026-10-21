@@ -1489,7 +1489,6 @@
       "raw_shp_frame_count": 32
     }
   ],
-  "native_image_sha256": "d4ad8c6f6642844cb40b2a45ceb71c6f7a0adff83da921162fdb7cfcf5628c0c",
   "schema_version": 1,
   "source": "unicorn/gamemd.exe"
 }

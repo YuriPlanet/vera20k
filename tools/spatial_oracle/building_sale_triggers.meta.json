@@ -42,7 +42,6 @@
     "destruction_effects": "0x004415F0",
     "country_cost_reader": "0x00511BC1"
   },
-  "native_image_sha256": "d4ad8c6f6642844cb40b2a45ceb71c6f7a0adff83da921162fdb7cfcf5628c0c",
   "checked_vtable_ranges": [
     {
       "start": "0x007E3EBC",
@@ -54,5 +53,5 @@
     }
   ],
   "replay_command": "python -m tools.spatial_oracle.building_sale_triggers",
-  "payload_sha256": "2886ddaf9bd5a28276c78df2cc6b8a86d1cb768b548094c0954f0898f2873d40"
+  "payload_sha256": "3da55eeda952202bebe859ca3318e27378c00d1fed728fab0256f9173623d716"
 }
