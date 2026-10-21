@@ -88,24 +88,47 @@ fn body_draw_skips_live_identity(overlay_id: u8) -> bool {
 /// with `-15 * level - 2`; ordinary non-walls use DrawFlat (+0x2B3), adding
 /// -15 only for upright non-rock art. Tiberium's flat branch uses gradient 0.
 ///
-/// Sloped resources use a separate native slope Z-shape, and the TS vein
-/// family also has special shape offsets; preserve their passthrough until
-/// those consumers have their own shape data, since a made-up flat Z would
-/// poison nearby walls. Rubble swaps in its building's art but keeps the
+/// Sloped resources and literal legacy identity7E also select the raw
+/// optional surface owned by OverlayAtlas. IsVeins/IsVeinholeMonster do
+/// not disable native depth. Rubble swaps in its building's art but keeps the
 /// ordinary flags-derived Z: 0047F6A0's IsRubble arm computes level,
 /// gradient and DrawFlat term exactly as the ordinary arm does.
+struct OverlayBodyDepth {
+    render_z: RenderZPolicy,
+    z_adjust: f32,
+    gradient: ZGradient,
+    shape: Option<crate::render::overlay_atlas::OverlayShapeRequest>,
+}
+
 fn ordinary_overlay_z(
+    overlay_id: u8,
     flags: Option<&OverlayTypeFlags>,
     slope: u8,
     level: u8,
-) -> (RenderZPolicy, f32, u32) {
+) -> Option<OverlayBodyDepth> {
     let Some(flags) = flags else {
-        return (RenderZPolicy::None, 0.0, 0);
+        return Some(OverlayBodyDepth {
+            render_z: RenderZPolicy::None,
+            z_adjust: 0.0,
+            gradient: ZGradient::Flat,
+            shape: None,
+        });
     };
-    if (flags.tiberium && slope != 0) || flags.is_veins || flags.is_veinhole_monster {
-        return (RenderZPolicy::None, 0.0, 0);
-    }
-    let (gradient, class_term) = if flags.tiberium {
+    let legacy_veins = !flags.tiberium && !flags.wall && overlay_id == 0x7E;
+    let shape = if (flags.tiberium || legacy_veins) && slope != 0 {
+        // Only AA1060..AA106C are native optional-shape pointers. Higher
+        // slopes index unrelated globals; skip that malformed draw safely.
+        if !(1..=4).contains(&slope) {
+            return None;
+        }
+        Some(crate::render::overlay_atlas::OverlayShapeRequest {
+            slope,
+            offset: if legacy_veins { [30, -2] } else { [0, 0] },
+        })
+    } else {
+        None
+    };
+    let (gradient, class_term) = if flags.tiberium || legacy_veins {
         (ZGradient::Flat, -2)
     } else if flags.wall {
         (ZGradient::Vertical, -2)
@@ -123,11 +146,12 @@ fn ordinary_overlay_z(
             },
         )
     };
-    (
-        RenderZPolicy::ReadWrite,
-        native_z::ground_anchored_z_adjust(i32::from(level), class_term) as f32,
-        pack_z_gradient(gradient, false),
-    )
+    Some(OverlayBodyDepth {
+        render_z: RenderZPolicy::ReadWrite,
+        z_adjust: native_z::ground_anchored_z_adjust(i32::from(level), class_term) as f32,
+        gradient,
+        shape,
+    })
 }
 
 /// `CellClass::DrawOverlay_Body @ 0x0047F6A0`'s IsRubble arm: the cell draws
@@ -166,13 +190,12 @@ pub(super) fn overlay_render_identity(
         .then_some((static_overlay_id, live_cell.overlay_data))
 }
 
-/// Choose the display-only identity for a flat resource cell.
+/// Choose the display-only identity for a resource cell.
 ///
 /// Active YR `CellClass__DrawOverlay_Body @ 0x0047F6A0` keeps the Cell's
 /// overlay identity/data as resource state but selects a coordinate-derived
-/// flat image when the resolved cell is not sloped. Missing render metadata,
-/// invalid signed indices, slopes, and non-resource overlays retain the live
-/// identity without approximation.
+/// image for the resolved slope. Missing metadata/non-resource overlays keep
+/// the live identity. Native-invalid slope selectors are skipped safely.
 fn overlay_display_identity(
     live_overlay_id: u8,
     overlay_data: u8,
@@ -181,22 +204,23 @@ fn overlay_display_identity(
     slope_type: Option<u8>,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     tiberium_types: Option<&crate::rules::tiberium_type::TiberiumTypeRegistry>,
-) -> (u8, u8) {
+) -> Option<(u8, u8)> {
     let (Some(overlay_registry), Some(tiberium_types)) = (overlay_registry, tiberium_types) else {
-        return (live_overlay_id, overlay_data);
+        return Some((live_overlay_id, overlay_data));
     };
-    if slope_type != Some(0)
+    if slope_type.is_none()
         || !overlay_registry
             .flags(live_overlay_id)
             .is_some_and(|flags| flags.tiberium)
     {
-        return (live_overlay_id, overlay_data);
+        return Some((live_overlay_id, overlay_data));
     }
 
-    let display_overlay_id = overlay_registry
-        .flat_tiberium_display_overlay_id(tiberium_types, live_overlay_id, rx, ry)
-        .unwrap_or(live_overlay_id);
-    (display_overlay_id, overlay_data)
+    let slope = slope_type.unwrap_or(0);
+    overlay_registry
+        .tiberium_display_overlay_id(tiberium_types, live_overlay_id, rx, ry, slope)
+        .or_else(|| (slope == 0).then_some(live_overlay_id))
+        .map(|display| (display, overlay_data))
 }
 
 /// Borrowed inputs to the one retained dynamic-effect traversal. App startup,
@@ -689,7 +713,7 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             .terrain
             .and_then(|terrain| terrain.cell(entry.rx, entry.ry))
             .map(|cell| cell.slope_type);
-        let (display_overlay_id, live_overlay_data) = overlay_display_identity(
+        let Some((display_overlay_id, live_overlay_data)) = overlay_display_identity(
             live_overlay_id,
             live_overlay_data,
             entry.rx,
@@ -697,7 +721,9 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             slope_type,
             overlay_registry,
             input.tiberium_types,
-        );
+        ) else {
+            continue;
+        };
         let name = if display_overlay_id == live_overlay_id {
             input.names.get(&live_overlay_id).cloned()
         } else {
@@ -786,33 +812,47 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
         let depth_z: u8 = z;
         let depth: f32 =
             compute_sprite_depth_params(input.origin_y, input.world_height, screen_y, depth_z);
-        let (policy, z_adjust, z_gradient) =
-            ordinary_overlay_z(overlay_flags, slope_type.unwrap_or(0), depth_z);
+        let Some(body_z) = ordinary_overlay_z(
+            live_overlay_id,
+            overlay_flags,
+            slope_type.unwrap_or(0),
+            depth_z,
+        ) else {
+            continue;
+        };
         let tint: [f32; 3] = input.lighting.overlay_tint_at((entry.rx, entry.ry));
         let palette_light =
             ordinary_overlay_palette_light(overlay_flags, input.lighting, (entry.rx, entry.ry));
+        let mut instance = SpriteInstance {
+            position: [
+                screen_x + TILE_WIDTH / 2.0 + spr.offset_x,
+                screen_y + TILE_HEIGHT / 2.0 + spr.offset_y,
+            ],
+            size: spr.pixel_size,
+            uv_origin: spr.uv_origin,
+            uv_size: spr.uv_size,
+            depth,
+            tint,
+            palette_light,
+            alpha: 1.0,
+            z_adjust: body_z.z_adjust,
+            z_gradient: pack_z_gradient(body_z.gradient, false),
+            ..Default::default()
+        };
+        if body_z.shape.is_some_and(|shape| {
+            !input
+                .atlas
+                .apply_zshape(shape, spr, input.camera, input.viewport, &mut instance)
+        }) {
+            continue;
+        }
         bodies.push(super::CellBody {
             cell: (entry.rx, entry.ry),
             draw: super::CellBodyDraw {
                 atlas: super::CellBodyAtlas::Overlay,
-                render_z: policy,
+                render_z: body_z.render_z,
             },
-            instance: SpriteInstance {
-                position: [
-                    screen_x + TILE_WIDTH / 2.0 + spr.offset_x,
-                    screen_y + TILE_HEIGHT / 2.0 + spr.offset_y,
-                ],
-                size: spr.pixel_size,
-                uv_origin: spr.uv_origin,
-                uv_size: spr.uv_size,
-                depth,
-                tint,
-                palette_light,
-                alpha: 1.0,
-                z_adjust,
-                z_gradient,
-                ..Default::default()
-            },
+            instance,
         });
     }
 
@@ -1546,13 +1586,63 @@ mod tests {
             (4, ZGradient::Flat, -2),
         ] {
             for level in [0, 1, 4, 14] {
-                let (policy, z_adjust, packed) = ordinary_overlay_z(registry.flags(id), 0, level);
-                assert_eq!(policy, RenderZPolicy::ReadWrite);
+                let depth = ordinary_overlay_z(id, registry.flags(id), 0, level).unwrap();
+                assert_eq!(depth.render_z, RenderZPolicy::ReadWrite);
                 assert_eq!(
-                    packed, gradient as u32,
+                    depth.gradient, gradient,
                     "ordinary overlays have no BUILDNGZ"
                 );
-                assert_eq!(z_adjust as i32, class_term - i32::from(level) * 15);
+                assert_eq!(depth.z_adjust as i32, class_term - i32::from(level) * 15);
+            }
+        }
+    }
+
+    #[test]
+    fn retail_slope_bodies_use_read_write_depth() {
+        // Cell47F943 (sloped ore) and literal7E both request flags4E00.
+        // DUMMYOLD is the retail identity7E, independent of vein flags.
+        let Some((ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+            return;
+        };
+        let registry = OverlayTypeRegistry::from_ini(&ini, Some(&art_ini));
+        for name in ["TIB01", "DUMMYOLD"] {
+            let id = registry.id_for_name(name).expect("retail overlay");
+            assert!(!body_draw_skips_live_identity(id));
+            for slope in 0..=4 {
+                let depth = ordinary_overlay_z(id, registry.flags(id), slope, 5).unwrap();
+                assert_eq!(
+                    depth.render_z,
+                    RenderZPolicy::ReadWrite,
+                    "{name}, slope{slope}"
+                );
+                assert_eq!(
+                    depth.shape.map(|shape| shape.offset),
+                    (slope != 0).then_some(if id == 0x7E { [30, -2] } else { [0, 0] }),
+                    "{name}, slope{slope}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn vein_flags_do_not_bypass_depth_or_select_a_shape() {
+        // The ordinary47FB6B arm does not test these legacy INI flags.
+        // Supplied flags cover custom overlays; VEINHOLE is not a retail
+        // OverlayTypes entry, and the retail VEINHOLEDUMMY body is skipped.
+        for flags in [
+            OverlayTypeFlags {
+                is_veins: true,
+                ..Default::default()
+            },
+            OverlayTypeFlags {
+                is_veinhole_monster: true,
+                ..Default::default()
+            },
+        ] {
+            for slope in 0..=4 {
+                let depth = ordinary_overlay_z(0, Some(&flags), slope, 5).unwrap();
+                assert_eq!(depth.render_z, RenderZPolicy::ReadWrite);
+                assert!(depth.shape.is_none());
             }
         }
     }
@@ -1666,7 +1756,7 @@ mod tests {
     }
 
     #[test]
-    fn gsi_13_05_flat_resource_changes_only_display_identity_on_known_flat_cells() {
+    fn resource_display_selection_preserves_live_density_for_flat_and_slope_cells() {
         let mut text = String::from(
             "[Tiberiums]\n0=Riparius\n1=Cruentus\n\
              [Riparius]\nImage=1\n\
@@ -1674,14 +1764,14 @@ mod tests {
              [OverlayTypes]\n",
         );
         let mut resource_names = Vec::new();
-        for overlay_id in 0..=113 {
+        for overlay_id in 0..=121 {
             let name = match overlay_id {
                 27..=38 => format!("GEM{:02}", overlay_id - 26),
-                102..=113 => format!("TIB{:02}", overlay_id - 101),
+                102..=121 => format!("TIB{:02}", overlay_id - 101),
                 _ => format!("FILL{overlay_id:03}"),
             };
             text.push_str(&format!("{overlay_id}={name}\n"));
-            if matches!(overlay_id, 27..=38 | 102..=113) {
+            if matches!(overlay_id, 27..=38 | 102..=121) {
                 resource_names.push(name);
             }
         }
@@ -1694,22 +1784,23 @@ mod tests {
         let tib12 = overlays.id_for_name("TIB12").expect("TIB12");
         let tib01 = overlays.id_for_name("TIB01").expect("TIB01");
         let tib05 = overlays.id_for_name("TIB05").expect("TIB05");
+        let tib15 = overlays.id_for_name("TIB15").expect("TIB15");
         let gem12 = overlays.id_for_name("GEM12").expect("GEM12");
         let gem01 = overlays.id_for_name("GEM01").expect("GEM01");
         let non_tiberium = overlays.id_for_name("FILL000").expect("FILL000");
 
         assert_eq!(
             overlay_display_identity(tib12, 8, 4, 7, Some(0), Some(&overlays), Some(&tiberiums),),
-            (tib05, 8)
+            Some((tib05, 8))
         );
         assert_eq!(
             overlay_display_identity(gem12, 11, 0, 7, Some(0), Some(&overlays), Some(&tiberiums),),
-            (gem01, 11)
+            Some((gem01, 11))
         );
         assert_eq!(
             overlay_display_identity(tib12, 8, 4, 7, Some(2), Some(&overlays), Some(&tiberiums),),
-            (tib12, 8),
-            "sloped resource cells retain their stored display identity"
+            Some((tib15, 8)),
+            "slope2 selects its first extra image without changing live density"
         );
         assert_eq!(
             overlay_display_identity(
@@ -1721,7 +1812,7 @@ mod tests {
                 Some(&overlays),
                 Some(&tiberiums),
             ),
-            (non_tiberium, 9),
+            Some((non_tiberium, 9)),
             "non-resource overlays remain unchanged"
         );
         assert_eq!(
@@ -1734,7 +1825,7 @@ mod tests {
                 Some(&overlays),
                 Some(&tiberiums),
             ),
-            (tib01.checked_sub(1).expect("registered base - 1"), 8),
+            Some((tib01.checked_sub(1).expect("registered base - 1"), 8)),
             "signed base-relative display selection must not change live density state"
         );
     }
