@@ -555,6 +555,18 @@ impl ShellCaptureCheckpoint {
             "campaign-sov02-objective-expiry" => Ok(Self::CampaignRestart(
                 movies::RestartTarget::ObjectiveExpiry,
             )),
+            "campaign-all1-defeat-replay-enter" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::DefeatReturnedEnter,
+            )),
+            "campaign-all1-defeat-replay-numpad-enter" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::DefeatReturnedNumpadEnter,
+            )),
+            "campaign-all1-defeat-replay-escape" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::DefeatReturnedEscape,
+            )),
+            "campaign-all1-defeat-replay-repeated-enter" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::DefeatReturnedRepeatedEnter,
+            )),
             "campaign-sov05-first-live-frame" => {
                 Ok(Self::CampaignExplicitFirstLive("SOV05UMD.MAP"))
             }
@@ -727,6 +739,18 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignRestart(movies::RestartTarget::DefeatReturned) => {
                 CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_NO
+            }
+            Self::CampaignRestart(movies::RestartTarget::DefeatReturnedEnter) => {
+                "campaign-all1-defeat-replay-enter"
+            }
+            Self::CampaignRestart(movies::RestartTarget::DefeatReturnedNumpadEnter) => {
+                "campaign-all1-defeat-replay-numpad-enter"
+            }
+            Self::CampaignRestart(movies::RestartTarget::DefeatReturnedEscape) => {
+                "campaign-all1-defeat-replay-escape"
+            }
+            Self::CampaignRestart(movies::RestartTarget::DefeatReturnedRepeatedEnter) => {
+                "campaign-all1-defeat-replay-repeated-enter"
             }
             Self::CampaignRestart(movies::RestartTarget::DefeatReplayed) => {
                 CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_YES
@@ -2567,6 +2591,42 @@ mod tests {
                     side: Allied,
                     target: movies::CampaignStartTarget::Restart(
                         movies::RestartTarget::DefeatReplayed,
+                    ),
+                },
+            ),
+            (
+                "campaign-all1-defeat-replay-enter",
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::DefeatReturnedEnter,
+                    ),
+                },
+            ),
+            (
+                "campaign-all1-defeat-replay-numpad-enter",
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::DefeatReturnedNumpadEnter,
+                    ),
+                },
+            ),
+            (
+                "campaign-all1-defeat-replay-escape",
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::DefeatReturnedEscape,
+                    ),
+                },
+            ),
+            (
+                "campaign-all1-defeat-replay-repeated-enter",
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::DefeatReturnedRepeatedEnter,
                     ),
                 },
             ),

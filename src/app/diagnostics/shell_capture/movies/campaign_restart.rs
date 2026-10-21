@@ -17,6 +17,11 @@ pub enum RestartTarget {
     DefeatReplayed,
     /// No on that box; the ordinary shell and its INTRO theme.
     DefeatReturned,
+    /// Return to the shell through the production keyboard admission owner.
+    DefeatReturnedEnter,
+    DefeatReturnedNumpadEnter,
+    DefeatReturnedEscape,
+    DefeatReturnedRepeatedEnter,
     /// The sidebar 0xF2 tab pressed and released: the restate briefing 0x10C.
     Restate,
     /// Save/load in game, then press the restored campaign Restart.
@@ -30,6 +35,17 @@ pub enum RestartTarget {
 }
 
 impl RestartTarget {
+    fn return_key(self) -> Option<(winit::keyboard::KeyCode, bool)> {
+        use winit::keyboard::KeyCode;
+        match self {
+            Self::DefeatReturnedEnter => Some((KeyCode::Enter, false)),
+            Self::DefeatReturnedNumpadEnter => Some((KeyCode::NumpadEnter, false)),
+            Self::DefeatReturnedEscape => Some((KeyCode::Escape, false)),
+            Self::DefeatReturnedRepeatedEnter => Some((KeyCode::Enter, true)),
+            _ => None,
+        }
+    }
+
     pub(super) fn timeout(self) -> Duration {
         match self {
             Self::AbortShown | Self::Restate => Duration::from_secs(90),
@@ -204,6 +220,10 @@ impl RestartCapture {
             RestartTarget::DefeatPrompt
             | RestartTarget::DefeatReplayed
             | RestartTarget::DefeatReturned
+            | RestartTarget::DefeatReturnedEnter
+            | RestartTarget::DefeatReturnedNumpadEnter
+            | RestartTarget::DefeatReturnedEscape
+            | RestartTarget::DefeatReturnedRepeatedEnter
             | RestartTarget::MenuDefeatReplayed => {
                 capture.step = Step::AwaitBattleTheme;
             }
@@ -521,6 +541,55 @@ impl RestartCapture {
                     if self.target == RestartTarget::DefeatPrompt {
                         Self::restore_pointer(state);
                         self.step = Step::Settling(0);
+                    } else if let Some((key, repeat)) = self.target.return_key() {
+                        // Exercise the exact owner called by WindowEvent's
+                        // physical-key branch, including ignored key edges.
+                        ensure!(
+                            !crate::app::frontend::shell_transition::blocks_shell_input(state)
+                                && state.frontend.keyboard_dialog.is_none()
+                                && state.frontend.fullscreen_movie.is_none()
+                                && state.frontend.credits_roll.is_none(),
+                            "an earlier WindowEvent owner would block the replay key"
+                        );
+                        for (ignored, pressed, repeated) in [
+                            (key, false, false),
+                            (winit::keyboard::KeyCode::Tab, true, false),
+                            (winit::keyboard::KeyCode::Tab, true, true),
+                        ] {
+                            ensure!(App::handle_main_menu_dialog_key(
+                                state, ignored, pressed, repeated
+                            ));
+                            ensure!(
+                                state.frontend.shell_message_box.is_some(),
+                                "release/unrelated key answered the replay box"
+                            );
+                        }
+                        let modifiers = state.platform.live_modifiers;
+                        state.platform.live_modifiers = winit::keyboard::ModifiersState::ALT;
+                        for modified in [
+                            winit::keyboard::KeyCode::Enter,
+                            winit::keyboard::KeyCode::NumpadEnter,
+                        ] {
+                            for repeated in [false, true] {
+                                ensure!(App::handle_main_menu_dialog_key(
+                                    state, modified, true, repeated
+                                ));
+                                ensure!(
+                                    state.frontend.shell_message_box.is_some(),
+                                    "Alt+{modified:?} answered the replay box"
+                                );
+                            }
+                        }
+                        state.platform.live_modifiers = modifiers;
+                        ensure!(App::handle_main_menu_dialog_key(state, key, true, repeat));
+                        ensure!(
+                            state.frontend.shell_message_box.is_none(),
+                            "{key:?} press (repeat={repeat}) did not answer the replay box"
+                        );
+                        route.push(json!({"frame": frame, "action": "replay keyboard answer",
+                            "physical_key": format!("{key:?}"), "repeat": repeat, "dialog": 0x120}));
+                        Self::restore_pointer(state);
+                        self.step = Step::AwaitShellReturn;
                     } else {
                         let answer_no = self.target == RestartTarget::DefeatReturned;
                         let layout = crate::ui::shell::modal::quit_confirm_layout(
@@ -569,6 +638,7 @@ impl RestartCapture {
                 if state.frontend.screen == GameScreen::MainMenu
                     && state.frontend.shell_message_box.is_none()
                     && state.audio.theme.current_song() == state.audio.theme.from_name("INTRO")
+                    && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))?
                 {
                     ensure!(
                         state
@@ -696,7 +766,11 @@ impl RestartCapture {
             RestartTarget::DefeatPrompt => {
                 self.step == Step::Settling(0) && state.frontend.shell_message_box.is_some()
             }
-            RestartTarget::DefeatReturned => {
+            RestartTarget::DefeatReturned
+            | RestartTarget::DefeatReturnedEnter
+            | RestartTarget::DefeatReturnedNumpadEnter
+            | RestartTarget::DefeatReturnedEscape
+            | RestartTarget::DefeatReturnedRepeatedEnter => {
                 self.step == Step::Done && state.frontend.screen == GameScreen::MainMenu
             }
             RestartTarget::Restate => {
