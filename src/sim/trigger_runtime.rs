@@ -2162,6 +2162,72 @@ impl Simulation {
         self.trigger_runtime.cell_tags.get(&cell).copied()
     }
 
+    /// FootClass::AI4DA7B0..4DA806, after sight refresh and before Process.
+    /// The absolute Frame gate and shared virtual+54 predicate admit a holding
+    /// high flyer too. GetOccupiedCell5F6960 runs twice; the second query owns
+    /// the receiver while GetMapCoords41BEA0 supplies the packed Location.
+    /// Source: tools/spatial_oracle/tag_lifecycle.py --periodic-cell-events.
+    /// No producer RNG, timer, detach or per-object cadence state.
+    pub(crate) fn dispatch_periodic_airborne_cell_tag_event(
+        &mut self,
+        actor: u64,
+        context: crate::sim::world::UninitContext<'_>,
+    ) {
+        if self.session.binary_frame() % 16 != 0 {
+            return;
+        }
+        let Some(entity) = self.substrate.entities.get(actor) else {
+            return;
+        };
+        let rules = context.rules();
+        let terrain = context.terrain().or(self.resolved_terrain.as_ref());
+        if !entity.category().is_foot()
+            || !crate::sim::movement::air_movement::is_high_flying(
+                entity,
+                terrain,
+                Some((rules, &self.interner)),
+            )
+        {
+            return;
+        }
+        let Some(terrain) = terrain else { return };
+        let cells = NativeCellQuery::canonical(terrain);
+        let physical = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+        let first = crate::sim::movement::ground_pose::query_object_cell(&cells, physical);
+        if !self.trigger_runtime.cell_tags.contains_key(&first) {
+            return;
+        }
+        let Some(entity) = self.substrate.entities.get(actor) else {
+            return;
+        };
+        let cell = crate::sim::movement::coord_cell(
+            crate::sim::movement::ground_pose::position_world_coord(&entity.position),
+        );
+        let Some(entity) = self.substrate.entities.get(actor) else {
+            return;
+        };
+        let physical = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+        let second = crate::sim::movement::ground_pose::query_object_cell(&cells, physical);
+        let Some(&tag) = self.trigger_runtime.cell_tags.get(&second) else {
+            return;
+        };
+        let mut effects = Vec::new();
+        self.dispatch_live_tag_event(
+            tag,
+            TagEventInput {
+                kind: 59,
+                actor: Some(actor),
+                cell,
+                ..Default::default()
+            },
+            &mut effects,
+            rules,
+            context.registry(),
+            context.effects(),
+        );
+        self.publish_trigger_effects(effects);
+    }
+
     /// Foot4D8978..4D8A6B, reached from the unique Arrival per-cell owner.
     /// Cell5657A0 and its Tag pointer are retained before the first callback;
     /// each raise re-reads the actor's packed Location cell. Bridge100/400
@@ -4813,6 +4879,10 @@ mod movement_event_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_shroud_spy_tests.rs"]
 mod shroud_spy_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_periodic_cell_tests.rs"]
+mod periodic_cell_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_infantry_psycho_tests.rs"]

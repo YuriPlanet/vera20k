@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "35 original Foot4DA7B0..4DA806/getter controls and eight complete periodic-to-Tag/action/cleanup histories. Not full AI, natural flight or rendered retail parity.",
+  "assumptions": [
+    "Actual Unit/Infantry/Aircraft vtables, Object scalar initializers, GetHeight, GetOccupiedCell double lookup, GetMapCoords and designated Rocket IsMovingNow execute. Actor/type/Rules/terrain and marked/height/phase are explicit supplied priors. The 35 caller controls stop at Tag entry.",
+    "Eight histories reuse the existing execute lifecycle owner with its original-layout Infantry prior and resolved definitions. Original periodic caller, Tag/Trigger constructors, Register/HasOccurred59,47,1/Spring, Action28 global7, immediate detach and deferred deletion execute. Full three-stream state is compared before/after each saved history; next_random is a terminal probe outside history.",
+    "SessionMode A8B238 is explicitly5 (Skirmish); NewINIFormat A8ED7C is independently4. No existing control default is changed.",
+    "Frame15 and relative207 reject; marked relative208 admits. Repeated same-frame visits dispatch again for repeat2; repeat0 immediately clears Cell+3C and queues the actual Trigger/Tag before drain. A Tag containing47 but no59 still runs;1 alone does not match. No selected action writes a countdown timer; ResetTimers is still called for a successful59 persistence flag."
+  ],
+  "substitutions": [
+    "Existing Fixture/execute allocation and CRT transport; supplied actor/world/flight priors. No selected caller/getter, Tag lifecycle, event predicate, action or RNG return is replaced."
+  ],
+  "entry_points": {
+    "foot_periodic": "0x004DA7B0",
+    "high_flying": "0x005F6B90",
+    "aircraft_high": "0x0041B920",
+    "occupied_cell": "0x005F6960",
+    "map_coords": "0x0041BEA0",
+    "tag": "0x006E53A0",
+    "register": "0x007264C0",
+    "reset_timers": "0x00726400",
+    "action": "0x006DD8B0",
+    "deferred_drain": "0x00725C70"
+  },
+  "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --periodic-cell-events",
+  "payload_sha256": "052a7dae7dd3c52e6cb0cfae3355269672c51a96ecc64e24ada426d013768b6c"
+}

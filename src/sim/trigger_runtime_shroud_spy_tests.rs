@@ -242,6 +242,13 @@ fn retail_spy_house_entry_survives_restore_and_reaches_the_message_consumer() {
             .set_country_for_test(Some(country));
     }
     sim.session.set_current_house_for_test(Some(houses[1]));
+    // Execute_DoList64C4FB admits registered IsHuman/PlayerControl senders;
+    // the synchronized Move below comes from this human House, while the
+    // displayed player remains House1 for the Spy identity comparison.
+    sim.houses
+        .get_mut(&houses[0])
+        .unwrap()
+        .set_is_human_for_test(true);
     let actor = sim
         .spawn_object("SPY", "House0", 16, 15, 0, &rules)
         .unwrap();
