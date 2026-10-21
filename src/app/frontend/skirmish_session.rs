@@ -4,7 +4,7 @@
 //! retains the durable `[Skirmish]` snapshot, the process-continuity Scenario
 //! RNG, and Cooperative progress records across shell closes and matches.
 
-mod cooperative;
+pub(crate) mod cooperative;
 mod persistence;
 
 use std::io;
@@ -119,10 +119,21 @@ impl LocalMultiplayerPreferences {
 
 /// Borrowed presentation of the active canonical Cooperative progress record.
 pub(crate) struct CooperativeSetupView<'a> {
-    pub player_countries: &'a [String],
-    pub campaign_index: usize,
-    pub stage_index: usize,
+    /// `0x005C23B0`'s countries; None leaves the combos as they are.
+    pub player_countries: Option<&'a [String]>,
+    /// `NAME:COOPDESC%d%d`'s `(CampaignType, CurrentMap)`, while the active
+    /// record is valid.
+    pub description: Option<(i32, i32)>,
+    /// `[0xA8EB68]`, which the slider always shows (`0x005C22F2`).
     pub difficulty: i32,
+}
+
+/// The Cooperative mode object's state with the process owners its slots
+/// use: the campaign registry and the Scenario RNG.
+pub(crate) struct CooperativeParts<'a> {
+    pub progress: &'a mut CooperativeProgressState,
+    pub registry: &'a CooperativeRegistry,
+    pub rng: &'a mut SimRng,
 }
 
 /// App-owned state whose lifetime matches the front-end process, not one map.
@@ -330,7 +341,7 @@ impl MultiplayerShellRuntime {
     /// the profile in EDX). Slot01..07 describe visible rows1..7; row0 is the
     /// new local host. 697F10 uses defaults2/2 for both.
     pub(crate) fn new_network_setup(
-        &self,
+        &mut self,
         profile: SetupProfile,
         catalog: &crate::app::scenario_catalog::ScenarioCatalog,
         modes: &[SkirmishGameMode],
@@ -347,7 +358,7 @@ impl MultiplayerShellRuntime {
             AiDifficulty, LaunchStartPosition, LaunchTeam, PreFillHouseRoster, SkirmishAiSlot,
             SkirmishLaunchMode,
         };
-        let snapshot = self.network_snapshot(profile);
+        let snapshot = self.network_snapshot(profile).clone();
         let mut mode = mode_by_id(modes, snapshot.game_mode)
             .or_else(|| modes.first())
             .ok_or_else(|| anyhow::anyhow!("network setup has no game mode"))?;
@@ -358,16 +369,34 @@ impl MultiplayerShellRuntime {
             mode = modes.first().expect("checked above");
         }
         // 0x5ED69C..0x5ED6E0: a saved map IsValidMap refuses gives way to
-        // the mode's first valid map (vtable+44, 5D6370).
-        let is_valid = |record: &&crate::map::skirmish_scenarios::SkirmishScenarioRecord| {
-            crate::map::skirmish_scenarios::is_valid_map(record, mode, room_only)
-        };
+        // the mode's default scenario (vtable+44): the first valid map
+        // (5D6370), or Cooperative's campaign map (5C1CC0). When that finds
+        // none, the default mode (5D5E10) and its +44 take over.
         let records = catalog.records();
         let preferred = usize::try_from(snapshot.scenario_index).unwrap_or(0);
-        let selected = records
-            .get(preferred)
-            .filter(is_valid)
-            .or_else(|| records.iter().find(is_valid))
+        let valid = |mode: &SkirmishGameMode, index: usize| {
+            records.get(index).is_some_and(|record| {
+                crate::map::skirmish_scenarios::is_valid_map(record, mode, room_only)
+            })
+        };
+        let mut selected = valid(mode, preferred).then_some(preferred);
+        if selected.is_none() && mode.class == crate::skirmish_modes::MpModeClass::Cooperative {
+            let scenarios: Vec<&str> = records
+                .iter()
+                .map(|record| record.file_name.as_str())
+                .collect();
+            selected = self.cooperative_progress.default_scenario(
+                &self.cooperative_registry,
+                &mut self.scenario_rng,
+                &scenarios,
+            );
+            if selected.is_none() {
+                mode = modes.first().expect("checked above");
+            }
+        }
+        let selected = selected
+            .or_else(|| (0..records.len()).find(|index| valid(mode, *index)))
+            .and_then(|index| records.get(index))
             .ok_or_else(|| anyhow::anyhow!("network game mode has no eligible map"))?;
         options.game_speed = game_speed_from_visual_position(
             bounds
@@ -794,7 +823,10 @@ impl MultiplayerShellRuntime {
         maps: &[MapMenuEntry],
         modes: &[SkirmishGameMode],
     ) {
-        state.selected_mode_id = mode_by_id(modes, self.local_preferences.game_mode)
+        // SkirmishDialog__OnSetup reads Session+0x18C (`[0xA8B3C4]`,
+        // 0x006AEAC5), the `[Skirmish] GameMode` 0x00697F10 stores there
+        // (called at 0x00698451), not `[MultiPlayer] GameMode` (Session+4).
+        state.selected_mode_id = mode_by_id(modes, self.snapshot.game_mode)
             .or_else(|| modes.first())
             .map(|mode| mode.id)
             .unwrap_or(state.selected_mode_id);
@@ -881,7 +913,7 @@ impl MultiplayerShellRuntime {
         // Validation may already have built a borrowed-input session, but it is
         // a pure local read. Material launch state deliberately starts without
         // AI arrays so their first write occurs after the local-country draw.
-        let mut staged_session = SkirmishLaunchSession {
+        let staged_session = SkirmishLaunchSession {
             mode: session.mode.clone(),
             selected_map_file: session.selected_map_file.clone(),
             humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
@@ -896,26 +928,13 @@ impl MultiplayerShellRuntime {
             pre_fill_house_roster: session.pre_fill_house_roster.clone(),
             options: session.options.clone(),
         };
-        let cooperative = is_cooperative_mode(session);
-        if cooperative
-            && let Some(map) = session.selected_map_file.as_deref()
-            && let Some(chosen_map) = self.ensure_cooperative_selection(map, maps)?
-        {
-            staged_session.selected_map_file = Some(chosen_map);
-        }
-
-        let progress = cooperative.then(|| {
-            self.cooperative_progress
-                .active()
-                .cloned()
-                .unwrap_or_else(CooperativeProgressRecord::default)
-        });
+        // Skirmish never lists Cooperative (vtable +0x40 `0x005D6360`), so
+        // no campaign record takes part here.
         let registry = &self.cooperative_registry;
         let roster = &self.cooperative_country_roster;
         let mut assignments = ShellRandomAssignmentState::new(&staged_session);
-        let mut draw_country = |role, rng: &mut SimRng| {
-            draw_shell_country(registry, progress.as_ref(), roster, role, rng)
-        };
+        let mut draw_country =
+            |role, rng: &mut SimRng| draw_shell_country(registry, None, roster, role, rng);
 
         assignments.resolve_local_country(&mut self.scenario_rng, &mut draw_country)?;
         assignments.pack_ai_assignments(&session.opponents);
@@ -958,48 +977,58 @@ impl MultiplayerShellRuntime {
     pub(crate) fn resolve_launch_session(
         &mut self,
         session: &SkirmishLaunchSession,
-        maps: &[MapMenuEntry],
-    ) -> Result<SkirmishLaunchSession, CooperativeError> {
-        if !is_cooperative_mode(session) {
-            return Ok(session.resolve_shell_random_assignments(&mut self.scenario_rng));
-        }
-
-        let mut cooperative_session = session.clone();
-        if let Some(map) = session.selected_map_file.as_deref()
-            && let Some(chosen_map) = self.ensure_cooperative_selection(map, maps)?
-        {
-            cooperative_session.selected_map_file = Some(chosen_map);
-        }
-        let progress = self
-            .cooperative_progress
-            .active()
-            .cloned()
-            .unwrap_or_else(CooperativeProgressRecord::default);
-        let registry = &self.cooperative_registry;
-        let roster = &self.cooperative_country_roster;
-        let rng = &mut self.scenario_rng;
-        cooperative_session.try_resolve_shell_random_assignments_with(rng, |role, rng| {
-            let cooperative_role = match role {
-                RandomCountryRole::Human => CooperativeCountryRole::Player,
-                RandomCountryRole::Ai { .. } => CooperativeCountryRole::Enemy,
-            };
-            draw_country_for_progress(registry, &progress, cooperative_role, roster, rng)
-                .map(|index| LaunchCountry::from_country_index(index as u32))
-        })
+    ) -> SkirmishLaunchSession {
+        session.resolve_shell_random_assignments(&mut self.scenario_rng)
     }
 
-    pub(crate) fn cooperative_setup_view(&self) -> Option<CooperativeSetupView<'_>> {
-        let progress = self.cooperative_progress.active()?;
-        let campaign_index = usize::try_from(progress.campaign_type).ok()?;
-        let stage_index = usize::try_from(progress.current_map).ok()?;
-        let campaign = self.cooperative_registry.campaign(campaign_index)?;
-        let stage = campaign.stages.get(stage_index)?;
-        Some(CooperativeSetupView {
-            player_countries: &stage.player_countries,
-            campaign_index,
-            stage_index,
+    pub(crate) fn cooperative_setup_view(&self) -> CooperativeSetupView<'_> {
+        CooperativeSetupView {
+            player_countries: self
+                .cooperative_progress
+                .setup_countries(&self.cooperative_registry),
+            description: self.cooperative_progress.description(),
             difficulty: self.cooperative_difficulty,
-        })
+        }
+    }
+
+    pub(crate) fn cooperative_parts(&mut self) -> CooperativeParts<'_> {
+        CooperativeParts {
+            progress: &mut self.cooperative_progress,
+            registry: &self.cooperative_registry,
+            rng: &mut self.scenario_rng,
+        }
+    }
+
+    /// A campaign's `CampaignName` string-table key, for `+0x4C`'s rows.
+    pub(crate) fn cooperative_campaign_name(&self, campaign: usize) -> Option<&str> {
+        self.cooperative_registry
+            .campaign(campaign)
+            .map(|campaign| campaign.campaign_name.as_str())
+    }
+
+    /// Cooperative `+0x1C` for a native country value (-2 Random).
+    pub(crate) fn cooperative_admits(&self, country: i32) -> bool {
+        self.cooperative_progress.admits_country(
+            &self.cooperative_registry,
+            &self.cooperative_country_roster,
+            country,
+        )
+    }
+
+    /// Cooperative `+0x28` as a launch country: None is Random.
+    pub(crate) fn cooperative_default_country(&self) -> Option<LaunchCountry> {
+        self.cooperative_country(
+            self.cooperative_progress
+                .default_country(&self.cooperative_registry, &self.cooperative_country_roster),
+        )
+    }
+
+    /// A roster index as the launch country (`HouseTypeClass` index).
+    pub(crate) fn cooperative_country(&self, index: i32) -> Option<LaunchCountry> {
+        usize::try_from(index)
+            .ok()
+            .filter(|index| *index < self.cooperative_country_roster.len())
+            .map(|index| LaunchCountry::from_country_index(index as u32))
     }
 
     /// Cooperative mode+14 writes partner names before the later Start gates
@@ -1017,10 +1046,10 @@ impl MultiplayerShellRuntime {
     }
 
     pub(crate) fn cooperative_player_countries(&self) -> Option<Vec<LaunchCountry>> {
-        let view = self.cooperative_setup_view()?;
+        let countries = self.cooperative_setup_view().player_countries?;
         Some(
             cooperative::country_indices_in_authored_order(
-                view.player_countries,
+                countries,
                 &self.cooperative_country_roster,
             )
             .into_iter()
@@ -1065,11 +1094,8 @@ impl MultiplayerShellRuntime {
         if !session.mode.class.uses_cooperative_setup() {
             return Ok(Default::default());
         }
-        let campaign = self
-            .cooperative_progress
-            .active()
-            .and_then(|record| usize::try_from(record.campaign_type).ok())
-            .unwrap_or(0);
+        // 0x005C30C0 reads the campaign at +0x33C.
+        let campaign = self.cooperative_progress.campaign();
         cooperative::prepare_ai(
             &self.cooperative_registry,
             self.cooperative_progress.active(),
@@ -1089,11 +1115,8 @@ impl MultiplayerShellRuntime {
         if !session.mode.class.uses_cooperative_setup() {
             return Ok(());
         }
-        let campaign = self
-            .cooperative_progress
-            .active()
-            .and_then(|record| usize::try_from(record.campaign_type).ok())
-            .unwrap_or(0);
+        // 0x005C2710 reads the campaign at +0x33C.
+        let campaign = self.cooperative_progress.campaign();
         let colors: Vec<_> = session
             .humans
             .iter()
@@ -1122,83 +1145,6 @@ impl MultiplayerShellRuntime {
     /// Cooperative5C31A5 later maps0→Easy,1→Normal,other→Hard.
     pub(crate) fn set_cooperative_difficulty(&mut self, difficulty: i32) {
         self.cooperative_difficulty = difficulty;
-    }
-
-    /// Bind/open the active Cooperative progress record for a highlighted map.
-    /// Reopening an already active campaign consumes no map-variant draw.
-    pub(crate) fn ensure_cooperative_selection(
-        &mut self,
-        scenario: &str,
-        available_maps: &[MapMenuEntry],
-    ) -> Result<Option<String>, CooperativeError> {
-        let Some(campaign_index) = self.cooperative_registry.campaign_for_map(scenario) else {
-            return Ok(None);
-        };
-        let rng_checkpoint = self.scenario_rng.clone();
-        let progress_checkpoint = self.cooperative_progress.clone();
-        let result = (|| {
-            self.cooperative_progress.ensure_active(
-                &self.cooperative_registry,
-                campaign_index,
-                &mut self.scenario_rng,
-            )?;
-            let chosen = self
-                .cooperative_progress
-                .active()
-                .and_then(CooperativeProgressRecord::current_chosen_map)
-                .map(str::to_string);
-            validate_cooperative_map_binding(chosen, available_maps)
-        })();
-        if result.is_err() {
-            self.scenario_rng = rng_checkpoint;
-            self.cooperative_progress = progress_checkpoint;
-        }
-        result
-    }
-
-    /// Apply an accepted Cooperative campaign selection. Moving to another
-    /// campaign swaps in its preconstructed record and initializes exactly one
-    /// replacement reserve record on the same front-end RNG.
-    pub(crate) fn accept_cooperative_selection(
-        &mut self,
-        scenario: &str,
-        available_maps: &[MapMenuEntry],
-    ) -> Result<Option<String>, CooperativeError> {
-        let Some(campaign_index) = self.cooperative_registry.campaign_for_map(scenario) else {
-            return Ok(None);
-        };
-        let rng_checkpoint = self.scenario_rng.clone();
-        let progress_checkpoint = self.cooperative_progress.clone();
-        let result = (|| {
-            if self.cooperative_progress.active().is_none() {
-                self.cooperative_progress.ensure_active(
-                    &self.cooperative_registry,
-                    campaign_index,
-                    &mut self.scenario_rng,
-                )?;
-            } else if self
-                .cooperative_progress
-                .active()
-                .is_some_and(|active| active.campaign_type != campaign_index as i32)
-            {
-                self.cooperative_progress.accept_campaign_swap(
-                    &self.cooperative_registry,
-                    campaign_index,
-                    &mut self.scenario_rng,
-                )?;
-            }
-            let chosen = self
-                .cooperative_progress
-                .active()
-                .and_then(CooperativeProgressRecord::current_chosen_map)
-                .map(str::to_string);
-            validate_cooperative_map_binding(chosen, available_maps)
-        })();
-        if result.is_err() {
-            self.scenario_rng = rng_checkpoint;
-            self.cooperative_progress = progress_checkpoint;
-        }
-        result
     }
 
     /// Apply all snapshot keys to one in-memory buffer and perform one write.
@@ -1379,22 +1325,6 @@ fn pack_snapshot_options(snapshot: &mut MultiplayerSetupSnapshot, state: &Skirmi
     snapshot.build_off_ally = state.build_off_ally;
     snapshot.mcv_repacks = state.mcv_redeploy;
     snapshot.crates_appear = state.crates;
-}
-
-fn validate_cooperative_map_binding(
-    chosen: Option<String>,
-    available_maps: &[MapMenuEntry],
-) -> Result<Option<String>, CooperativeError> {
-    if let Some(chosen_map) = chosen.as_deref()
-        && !available_maps
-            .iter()
-            .any(|map| map.file_name.eq_ignore_ascii_case(chosen_map))
-    {
-        return Err(CooperativeError::MissingScenarioMap {
-            scenario: chosen_map.to_string(),
-        });
-    }
-    Ok(chosen)
 }
 
 pub(crate) fn skirmish_global_defaults(state: &SkirmishShellState) -> SkirmishGlobalDefaults {
@@ -1640,13 +1570,6 @@ mod tests {
         map_named("test.mmx")
     }
 
-    fn cooperative_maps() -> Vec<MapMenuEntry> {
-        ["A1", "A1B", "A1C", "A2", "A2B", "A2C", "W1", "W1B", "W1C"]
-            .into_iter()
-            .map(map_named)
-            .collect()
-    }
-
     fn mode() -> SkirmishGameMode {
         SkirmishGameMode {
             class: crate::skirmish_modes::MpModeClass::Battle,
@@ -1808,7 +1731,7 @@ mod tests {
         ];
         owner.wol_snapshot.game_mode = 2;
         owner.wol_snapshot.scenario_index = 1;
-        let restore = |room| {
+        let mut restore = |room| {
             owner
                 .new_network_setup(
                     SetupProfile::Wol,
@@ -2496,8 +2419,8 @@ WOLTaunts=junk
         let mut shell = SkirmishShellState::default();
         runtime.hydrate_shell(&mut shell, &[map()], &[mode_9.clone(), mode()]);
         assert_eq!(
-            shell.selected_mode_id, 1,
-            "MultiPlayer default, not conflicting Skirmish mode, owns restore"
+            shell.selected_mode_id, 9,
+            "Skirmish OnSetup restores Session+0x18C ([Skirmish] GameMode), not Session+4"
         );
 
         let bytes =
@@ -2513,7 +2436,7 @@ WOLTaunts=junk
         assert!(text.contains("GameMode=1"));
         assert!(text.contains("[Skirmish]\nGameMode=9"));
 
-        runtime.local_preferences.game_mode = 999;
+        runtime.snapshot.game_mode = 999;
         runtime.hydrate_shell(&mut shell, &[map()], &[mode_9, mode()]);
         assert_eq!(shell.selected_mode_id, 9, "unknown mode falls to first row");
     }
@@ -2562,17 +2485,16 @@ WOLTaunts=junk
             game_mode: 1,
         };
         let cached = runtime.local_preferences.clone();
-        let mut session = random_session();
-        session.mode = SkirmishLaunchMode::from_game_mode(&cooperative_mode());
-        session.selected_map_file = Some("A2B".to_string());
+        // An empty country roster makes the resolved-country check refuse.
+        runtime.cooperative_country_roster.clear();
 
         assert!(
             runtime
                 .close_shell_transaction(
                     &SkirmishShellState::default(),
-                    &[map_named("A2B")],
-                    &[cooperative_mode()],
-                    &session,
+                    &[map()],
+                    &[mode()],
+                    &random_session(),
                 )
                 .is_err()
         );
@@ -2613,9 +2535,7 @@ WOLTaunts=junk
         let mut runtime = runtime(snapshot, 11);
         let session = random_session();
 
-        let resolved = runtime
-            .resolve_launch_session(&session, &[])
-            .expect("ordinary resolver");
+        let resolved = runtime.resolve_launch_session(&session);
 
         assert!(session.local_slot().country_random);
         assert!(session.local_slot().color_random);
@@ -2674,96 +2594,6 @@ WOLTaunts=junk
         );
         assert_eq!(runtime.snapshot(), &snapshot);
         assert_eq!(runtime.scenario_rng_state(), rng_before);
-    }
-
-    #[test]
-    fn cooperative_selection_uses_progress_chosen_map_not_clicked_variant() {
-        let mut runtime = cooperative_runtime(0x2345);
-
-        let first_campaign_map = runtime
-            .ensure_cooperative_selection("A2B", &cooperative_maps())
-            .expect("bind active campaign")
-            .expect("chosen active map");
-        assert!(["A1", "A1B", "A1C"].contains(&first_campaign_map.as_str()));
-        assert_eq!(
-            runtime
-                .cooperative_progress
-                .active()
-                .map(|progress| (progress.campaign_type, progress.current_map)),
-            Some((0, 0))
-        );
-
-        let switched_map = runtime
-            .accept_cooperative_selection("W1B", &cooperative_maps())
-            .expect("accept campaign swap")
-            .expect("chosen switched map");
-        assert!(["W1", "W1B", "W1C"].contains(&switched_map.as_str()));
-        assert_eq!(
-            runtime
-                .cooperative_progress
-                .active()
-                .map(|progress| (progress.campaign_type, progress.current_map)),
-            Some((1, 0))
-        );
-    }
-
-    #[test]
-    fn cooperative_resolution_replaces_clicked_variant_with_progress_choice() {
-        let mut runtime = cooperative_runtime(0x3456);
-        let mut session = random_session();
-        session.mode = SkirmishLaunchMode::from_game_mode(&cooperative_mode());
-        session.selected_map_file = Some("A2C".to_string());
-        session.local_slot_mut().country_random = false;
-        session.local_slot_mut().color_random = false;
-        session.opponents[0].country_random = false;
-        session.opponents[0].color_random = false;
-        let shell = SkirmishShellState::default();
-
-        let resolved = runtime
-            .close_shell_transaction(&shell, &cooperative_maps(), &[cooperative_mode()], &session)
-            .expect("Cooperative launch resolution");
-
-        assert!(
-            ["A1", "A1B", "A1C"]
-                .contains(&resolved.selected_map_file.as_deref().unwrap_or_default())
-        );
-    }
-
-    #[test]
-    fn missing_cooperative_map_rolls_back_progress_and_rng() {
-        let mut runtime = cooperative_runtime(0x4567);
-        let rng_before = runtime.scenario_rng_state();
-        let progress_before = runtime.cooperative_progress.clone();
-
-        let error = runtime
-            .ensure_cooperative_selection("A2B", &[map_named("A2B")])
-            .expect_err("the stage-zero chosen variant is absent");
-
-        assert!(matches!(error, CooperativeError::MissingScenarioMap { .. }));
-        assert_eq!(runtime.scenario_rng_state(), rng_before);
-        assert_eq!(runtime.cooperative_progress, progress_before);
-    }
-
-    #[test]
-    fn failed_cooperative_swap_rolls_back_progress_and_rng() {
-        let mut runtime = cooperative_runtime(0x5678);
-        runtime
-            .ensure_cooperative_selection("A2B", &cooperative_maps())
-            .expect("bind first campaign");
-        let rng_before = runtime.scenario_rng_state();
-        let progress_before = runtime.cooperative_progress.clone();
-        let allied_maps: Vec<_> = cooperative_maps()
-            .into_iter()
-            .filter(|map| map.file_name.starts_with('A'))
-            .collect();
-
-        let error = runtime
-            .accept_cooperative_selection("W1B", &allied_maps)
-            .expect_err("the selected World variant is absent");
-
-        assert!(matches!(error, CooperativeError::MissingScenarioMap { .. }));
-        assert_eq!(runtime.scenario_rng_state(), rng_before);
-        assert_eq!(runtime.cooperative_progress, progress_before);
     }
 
     #[test]

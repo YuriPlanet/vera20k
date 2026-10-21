@@ -824,6 +824,50 @@ impl MatchSession {
         Ok(removed)
     }
 
+    /// Cooperative's country refresh (`0x005C2500`), on the host and a
+    /// guest alike: every row below the setup's capacity (`[0xA8BB0C]`)
+    /// takes `country` (None is Random) in its combo and its node
+    /// (`NodeNameTag__SetCountry`), whoever owns the row. Without `ai_rows`
+    /// the AI rows keep theirs.
+    pub(crate) fn reset_network_countries(
+        &mut self,
+        country: Option<crate::skirmish_launch::LaunchCountry>,
+        ai_rows: bool,
+    ) -> anyhow::Result<()> {
+        let rows = self.network_setup_capacity().unwrap_or(0).clamp(0, 8) as u8;
+        let Some(NetworkSession {
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    inactive_choices,
+                    ..
+                },
+            ..
+        }) = self.network.as_mut()
+        else {
+            anyhow::bail!("network setup is not editable");
+        };
+        let set = |current: crate::skirmish_launch::LaunchCountry| match country {
+            Some(country) => (country, false),
+            None => (current, true),
+        };
+        for human in &mut launch.humans {
+            if human.raw_slot_index.is_some_and(|row| row < rows) {
+                (human.slot.country, human.slot.country_random) = set(human.slot.country);
+            }
+        }
+        for ai in launch.opponents.iter_mut().filter(|_| ai_rows) {
+            if ai.raw_slot_index < rows {
+                (ai.country, ai.country_random) = set(ai.country);
+            }
+        }
+        for choices in inactive_choices.iter_mut().take(usize::from(rows)) {
+            (choices.country, choices.country_random) = set(choices.country);
+        }
+        launch.rebuild_house_roster();
+        Ok(())
+    }
+
     pub(crate) fn set_network_row_choices(
         &mut self,
         row: u8,
@@ -2226,6 +2270,49 @@ mod tests {
         assert_eq!(setup.local_player_index, 0);
         assert_eq!(setup.required_start_count(), 2);
         assert!(setup.house_roster_is_consistent());
+    }
+
+    #[test]
+    fn cooperative_country_refresh_can_keep_the_ai_rows() {
+        use crate::skirmish_launch::LaunchCountry;
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::LanLobby);
+        let mut launch = network_fixture();
+        launch
+            .opponents
+            .push(crate::skirmish_launch::SkirmishAiSlot {
+                raw_slot_index: 2,
+                country: LaunchCountry::Yuri,
+                country_random: false,
+                color_index: 3,
+                color_random: false,
+                start_position: crate::skirmish_launch::LaunchStartPosition::Auto,
+                team: crate::skirmish_launch::LaunchTeam::None,
+                difficulty: crate::skirmish_launch::AiDifficulty::Easy,
+            });
+        launch.ai_player_count = 1;
+        launch.rebuild_house_roster();
+        session.accept_network_setup(launch, false, None).unwrap();
+        let ai_country = |session: &MatchSession| {
+            let ai = &session.network_setup().unwrap().opponents[0];
+            (ai.country, ai.country_random)
+        };
+        // BC open's refreshes leave the AI rows to the profile restore.
+        session
+            .reset_network_countries(Some(LaunchCountry::Russia), false)
+            .unwrap();
+        let setup = session.network_setup().unwrap();
+        assert!(
+            setup
+                .humans
+                .iter()
+                .all(|human| human.slot.country == LaunchCountry::Russia
+                    && !human.slot.country_random)
+        );
+        assert_eq!(ai_country(&session), (LaunchCountry::Yuri, false));
+        // Use Map's refresh (`+0x18`) takes every row.
+        session.reset_network_countries(None, true).unwrap();
+        assert_eq!(ai_country(&session), (LaunchCountry::Yuri, true));
     }
 
     #[test]

@@ -3,6 +3,7 @@
 //! MatchSession alone owns accepted participants, setup and loading admission.
 
 use super::*;
+use crate::app::frontend::skirmish_session::cooperative::encode_name;
 use crate::app::input::multiplayer_setup as setup_input;
 use crate::app::match_runtime::session::{
     NetworkLoadingRequest, NetworkMapMetadata, NetworkVacancy, SessionMode,
@@ -16,6 +17,8 @@ use winit::event::MouseButton;
 use winit::keyboard::KeyCode;
 
 const TRANSFER_FILE: &str = "CONTROLLED.MAP";
+/// The Soviet campaign's first map (`coopcampmd.ini` `[Soviet]` `Map1`).
+const COOP_MAP: &str = "C2S01MD.MAP";
 const TRANSFER_ROOT_MARKER: &str = ".vera20k-lan-capture-root";
 /// The controlled host's own install directory inside the isolated root, from
 /// which it generates its random map.
@@ -165,6 +168,20 @@ pub enum LanTarget {
     StartPrompt,
     StartPromptAccepted,
     LoadingTimeoutReturn,
+    /// Choose Map over BC with Cooperative clicked: `+0x4C`'s campaign rows.
+    CoopChooser,
+    /// Use Map on the Soviet campaign row: BC in Cooperative with the
+    /// campaign's description and stage countries, its C0 published.
+    CoopHost,
+    /// That BC once a guest joins: its country admitted by the stage
+    /// (`+0x1C`, `+0x28`) and the campaign published again (`+0x94`).
+    CoopJoin,
+    /// The two-human Cooperative match through Start to its first loading
+    /// frame.
+    CoopHostGo,
+    /// BD given Cooperative host options and the host's C0: the campaign's
+    /// description and stage countries.
+    CoopGuest,
 }
 
 pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
@@ -181,6 +198,11 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("lan-0xbc-solo-start", LanTarget::SoloStart),
     ("lan-0x6b-steady", LanTarget::ChooseMap),
     ("lan-0x6b-cancel", LanTarget::ChooseMapCancel),
+    ("lan-0x6b-coop-campaigns", LanTarget::CoopChooser),
+    ("lan-0xbc-coop-soviet", LanTarget::CoopHost),
+    ("lan-0xbc-coop-join", LanTarget::CoopJoin),
+    ("lan-coop-host-loading-first", LanTarget::CoopHostGo),
+    ("lan-0xbd-coop-campaign", LanTarget::CoopGuest),
     ("lan-0xbc-back", LanTarget::HostBack),
     ("lan-0xbc-missing-map", LanTarget::HostMissingMap),
     ("lan-0xbc-readiness", LanTarget::HostReadiness),
@@ -264,6 +286,12 @@ impl LanTarget {
                 | Self::TransferGo
         )
     }
+    fn cooperative_host(self) -> bool {
+        matches!(
+            self,
+            Self::CoopChooser | Self::CoopHost | Self::CoopJoin | Self::CoopHostGo
+        )
+    }
     fn random_map_guest(self) -> bool {
         matches!(self, Self::GuestRandomMap | Self::GuestRandomMapPreview)
     }
@@ -293,6 +321,7 @@ impl LanTarget {
                 | Self::JoinDenied
                 | Self::JoinDeniedReturn
                 | Self::JoinTimeoutReturn
+                | Self::CoopGuest
         )
     }
 }
@@ -391,6 +420,8 @@ pub(super) struct LanCapture {
     /// The random-map route has committed `RandMap.Sed` to BC.
     random_map_committed: bool,
     random_map_host: Option<ControlledRandomMap>,
+    /// The Cooperative route has used its campaign row on BC.
+    cooperative_committed: bool,
 }
 impl LanCapture {
     pub(super) fn new(target: LanTarget) -> Self {
@@ -409,6 +440,7 @@ impl LanCapture {
             offline_selection: None,
             random_map_committed: false,
             random_map_host: None,
+            cooperative_committed: false,
             inputs: super::native_corpus("tools/storage_oracle/lan_shell_controls.json")
                 .expect("native LAN corpus"),
         }
@@ -489,14 +521,20 @@ impl LanCapture {
             .clone();
         let values = &self.inputs["host_options"];
         let mode_id = values["mode_id"].as_i64().context("native mode")? as i32;
-        let mode = state
-            .frontend
-            .skirmish_modes
-            .iter()
-            .find(|m| m.id == mode_id)
-            .context("retail native mode")?;
+        let mode = if self.target == LanTarget::CoopGuest {
+            cooperative_mode(state)?
+        } else {
+            state
+                .frontend
+                .skirmish_modes
+                .iter()
+                .find(|m| m.id == mode_id)
+                .context("retail native mode")?
+        };
         launch.mode = SkirmishLaunchMode::from_game_mode(mode);
-        let file = if self.target.missing_map() {
+        let file = if self.target == LanTarget::CoopGuest {
+            COOP_MAP
+        } else if self.target.missing_map() {
             self.assert_map_absent(state)?;
             TRANSFER_FILE
         } else if self.target.random_map_guest() {
@@ -547,13 +585,23 @@ impl LanCapture {
             NetworkSetupEvent::HostSetup(crate::app::shell_network_setup::HostOptions {
                 launch,
                 vacancies,
-                map_metadata: self.map_metadata()?,
-                // Packet7+57 -> observer reservation8316A4/5E08C8.
-                observer_row: Some(
-                    self.inputs["host_options"]["observer_row"]
-                        .as_u64()
-                        .context("native observer row")? as u8,
-                ),
+                map_metadata: if self.target == LanTarget::CoopGuest {
+                    setup::local_map_metadata(state, COOP_MAP)?
+                } else {
+                    self.map_metadata()?
+                },
+                // Packet7+57 -> observer reservation8316A4/5E08C8. A
+                // Cooperative host has none: its +0x20 (0x005C1A10) clears
+                // it and sends "O8".
+                observer_row: if self.target == LanTarget::CoopGuest {
+                    None
+                } else {
+                    Some(
+                        self.inputs["host_options"]["observer_row"]
+                            .as_u64()
+                            .context("native observer row")? as u8,
+                    )
+                },
                 cooperative_difficulty: 0,
                 seed: Some(self.seed()?),
             }),
@@ -675,6 +723,172 @@ impl LanCapture {
     }
     /// The peer's 0x1B: the host clears its acceptance and sends the `'W'`
     /// with the staging Generate wrote; the peer then accepts again.
+    /// Click Cooperative in the chooser's game types: `+0x4C` lists the
+    /// campaigns. The other routes then use the Soviet row.
+    fn cooperative_chooser(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let layout = crate::app::frontend::shell_layout::choose_map_layout(state);
+        let mode_id = cooperative_mode(state)?.id;
+        let modal = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_ref()
+            .context("chooser")?;
+        let row = modal
+            .mode_rows()
+            .iter()
+            .position(|id| *id == mode_id)
+            .context("Cooperative listed on the network")?;
+        let point = list_row_point(modal.mode_geometry(&layout), row, modal.mode_top_index);
+        chooser_press(state, point);
+        let modal = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_ref()
+            .context("chooser")?;
+        ensure!(
+            modal.selected_mode_id == mode_id,
+            "the game-type click missed Cooperative"
+        );
+        let labels = modal.row_labels.clone().context("Cooperative rows")?;
+        ensure!(
+            labels.first().is_some_and(|label| label.starts_with("1. ")),
+            "Cooperative rows lack the first campaign: {labels:?}"
+        );
+        self.route
+            .push(json!({"frame":frame,"action":"Cooperative clicked in 0x6B","rows":labels}));
+        if self.target == LanTarget::CoopChooser {
+            self.settle(state);
+            return Ok(());
+        }
+        let row = labels
+            .iter()
+            .position(|label| label.starts_with("2. "))
+            .context("the Soviet campaign row")?;
+        let point = list_row_point(modal.map_geometry(&layout), row, modal.map_top_index);
+        chooser_press(state, point);
+        ensure!(
+            state
+                .frontend
+                .skirmish_shell_state
+                .choose_map_modal
+                .as_ref()
+                .is_some_and(|modal| modal.highlighted_filtered_index == Some(row)),
+            "the Soviet row was not selected"
+        );
+        let button = layout.use_map_button;
+        chooser_press(state, (button.x + button.w / 2, button.y + button.h / 2));
+        self.event(frame, "Soviet campaign row used");
+        self.phase = LanPhase::ChooserReturn;
+        Ok(())
+    }
+
+    /// BC after Use Map on the Soviet row: Cooperative on its first map,
+    /// the stage's description, Random countries and the published C0.
+    fn assert_cooperative_campaign_used(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let mode_id = cooperative_mode(state)?.id;
+        let launch = state.match_state.session.network_setup().context("BC")?;
+        ensure!(launch.mode.id == mode_id, "Use Map left Cooperative");
+        let file = launch.selected_map_file.clone().context("campaign map")?;
+        ensure!(
+            file.eq_ignore_ascii_case(COOP_MAP),
+            "the Soviet row chose {file}"
+        );
+        ensure!(
+            launch.local_slot().country_random,
+            "the Soviet first stage has three countries: Random"
+        );
+        let requests = self.drain_requests(state);
+        let text = requests
+            .iter()
+            .find_map(|request| match request {
+                NetworkSetupRequest::PublishCooperativeCampaign(text) => Some(text.clone()),
+                _ => None,
+            })
+            .context("Use Map published no C0")?;
+        ensure!(
+            text.starts_with("C0,1,0,"),
+            "C0 names another campaign: {text}"
+        );
+        let view = setup::view(state).context("BC")?;
+        ensure!(
+            view.cooperative && view.cooperative_description.is_some(),
+            "BC lacks the campaign description"
+        );
+        self.route
+            .push(json!({"frame":frame,"action":"Cooperative campaign on BC",
+            "map":file,"c0":text,"description":view.cooperative_description}));
+        Ok(())
+    }
+
+    /// The guest's join in Cooperative: its America is not a Soviet stage
+    /// country, so it takes the stage default (Random), and `+0x94`
+    /// publishes the campaign with both names.
+    fn assert_cooperative_join(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let peer = self.human(false)?.name;
+        let launch = state.match_state.session.network_setup().context("BC")?;
+        let guest = launch
+            .humans
+            .iter()
+            .find(|human| human.name == peer)
+            .context("joined guest")?;
+        ensure!(
+            guest.slot.country_random,
+            "the stage admitted the guest's America"
+        );
+        let requests = self.drain_requests(state);
+        let text = requests
+            .iter()
+            .find_map(|request| match request {
+                NetworkSetupRequest::PublishCooperativeCampaign(text) => Some(text.clone()),
+                _ => None,
+            })
+            .context("the join published no C0")?;
+        let names = format!(
+            ",{},{}",
+            encode_name(self.human(true)?.name.as_bytes()),
+            encode_name(peer.as_bytes())
+        );
+        ensure!(
+            text.starts_with("C0,1,0,") && text.ends_with(&names),
+            "the join's C0 lacks the campaign or names: {text}"
+        );
+        self.route
+            .push(json!({"frame":frame,"action":"guest joined Cooperative BC","c0":text}));
+        Ok(())
+    }
+
+    /// The host's C0 for the Soviet campaign at its first stage (variant 0
+    /// each), names in the host's order.
+    fn guest_receives_campaign(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let text = format!(
+            "C0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,{},{}",
+            encode_name(self.human(true)?.name.as_bytes()),
+            encode_name(self.human(false)?.name.as_bytes())
+        );
+        setup::service_event(state, NetworkSetupEvent::CooperativeCampaign(text.clone()))?;
+        let view = setup::view(state).context("BD")?;
+        let expected = App::csf_label(state, "NAME:COOPDESC21", "NAME:COOPDESC21");
+        ensure!(
+            view.cooperative && view.cooperative_description.as_deref() == Some(expected.as_str()),
+            "BD lacks the received campaign's description"
+        );
+        ensure!(
+            state
+                .match_state
+                .session
+                .network_setup()
+                .context("BD")?
+                .local_slot()
+                .country_random,
+            "the received stage has three countries: Random"
+        );
+        self.route
+            .push(json!({"frame":frame,"action":"host C0 received on BD","c0":text}));
+        Ok(())
+    }
+
     fn host_answers_preview_request(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         self.drain_requests(state);
         setup::service_event(state, NetworkSetupEvent::PreviewRequested)?;
@@ -1432,6 +1646,12 @@ impl LanCapture {
                         setup_button(state, crate::ui::multiplayer_setup::CHOOSE_MAP)?;
                         self.phase = LanPhase::RandomMapChooser;
                     }
+                    target if target.cooperative_host() && !self.cooperative_committed => {
+                        self.offline_selection = Some(offline_selection(state));
+                        setup_button(state, crate::ui::multiplayer_setup::CHOOSE_MAP)?;
+                        self.phase = LanPhase::Chooser;
+                    }
+                    LanTarget::CoopHost => self.settle(state),
                     LanTarget::ChooseMap | LanTarget::ChooseMapCancel => {
                         self.offline_selection = Some(offline_selection(state));
                         setup_button(state, crate::ui::multiplayer_setup::CHOOSE_MAP)?;
@@ -1516,7 +1736,7 @@ impl LanCapture {
                                 .position(|map| map.player_capacity >= 3)
                                 .context("a map for three players")?;
                             crate::app::shell_network_setup::commit_map_selection(
-                                state, mode_id, index,
+                                state, mode_id, index, None,
                             )?;
                             let file = state
                                 .match_state
@@ -1530,6 +1750,11 @@ impl LanCapture {
                             state,
                             NetworkSetupEvent::ParticipantJoined(self.human(false)?),
                         )?;
+                        if self.target == LanTarget::CoopJoin {
+                            self.assert_cooperative_join(state, frame)?;
+                            self.settle(state);
+                            return Ok(());
+                        }
                         if matches!(
                             self.target,
                             LanTarget::HostObserverGo
@@ -2064,6 +2289,9 @@ impl LanCapture {
                     }
                     let launch = self.host_options(state)?;
                     self.publish_setup(state, launch)?;
+                    if self.target == LanTarget::CoopGuest {
+                        self.guest_receives_campaign(state, frame)?;
+                    }
                     let status = if self.target == LanTarget::NoMap {
                         0
                     } else if matches!(
@@ -2106,6 +2334,7 @@ impl LanCapture {
             }
             LanPhase::Configured if setup_settled(state, false) => match self.target {
                 LanTarget::Guest
+                | LanTarget::CoopGuest
                 | LanTarget::NoMap
                 | LanTarget::TransferEligible
                 | LanTarget::GuestRandomMapPreview => self.settle(state),
@@ -2386,7 +2615,9 @@ impl LanCapture {
                     self.offline_selection == Some(offline_selection(state)),
                     "LAN Choose Map wrote the offline Skirmish selection"
                 );
-                if self.target == LanTarget::ChooseMap {
+                if self.target.cooperative_host() {
+                    self.cooperative_chooser(state, frame)?;
+                } else if self.target == LanTarget::ChooseMap {
                     self.settle(state);
                 } else {
                     state.match_state.input.cursor_x = 720.;
@@ -2414,7 +2645,13 @@ impl LanCapture {
                     self.offline_selection == Some(offline_selection(state)),
                     "LAN Choose Map Cancel wrote the offline Skirmish selection"
                 );
-                self.settle(state);
+                if self.target.cooperative_host() {
+                    self.assert_cooperative_campaign_used(state, frame)?;
+                    self.cooperative_committed = true;
+                    self.phase = LanPhase::Host;
+                } else {
+                    self.settle(state);
+                }
             }
             LanPhase::Returned if rendered == PresentedShell::LanLobby && lobby_settled(state) => {
                 ensure!(
@@ -3922,6 +4159,37 @@ impl LanCapture {
         )
     }
 }
+/// The retail Cooperative game type.
+fn cooperative_mode(state: &AppState) -> Result<&crate::skirmish_modes::SkirmishGameMode> {
+    state
+        .frontend
+        .skirmish_modes
+        .iter()
+        .find(|mode| mode.class == crate::skirmish_modes::MpModeClass::Cooperative)
+        .context("retail Cooperative mode")
+}
+
+/// The middle of a chooser list's row.
+fn list_row_point(
+    geometry: crate::ui::shell::list::ShellListGeometry,
+    row: usize,
+    top: usize,
+) -> (i32, i32) {
+    let row_h = geometry.metrics.row_h;
+    (
+        geometry.content.x + 4,
+        geometry.content.y + (row.saturating_sub(top) as i32) * row_h + row_h / 2,
+    )
+}
+
+/// A press and release on the chooser through its production handlers.
+fn chooser_press(state: &mut AppState, (x, y): (i32, i32)) {
+    state.match_state.input.cursor_x = x as f32;
+    state.match_state.input.cursor_y = y as f32;
+    App::handle_choose_map_modal_mouse_down(state);
+    App::handle_choose_map_modal_mouse_up(state);
+}
+
 fn session_receipt(state: &AppState) -> Value {
     json!({"mode":format!("{:?}",state.match_state.session_mode()),"host":state.match_state.session.host(),
         "setup":state.match_state.session.network_setup(),"seed":state.match_state.session.network_start_seed(),

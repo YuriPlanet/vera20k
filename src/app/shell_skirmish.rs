@@ -39,37 +39,8 @@ impl App {
         }
     }
 
-    fn selected_skirmish_mode_is_cooperative(state: &AppState, mode_id: i32) -> bool {
-        crate::skirmish_modes::mode_by_id(&state.frontend.skirmish_modes, mode_id)
-            .is_some_and(|mode| mode.override_file.eq_ignore_ascii_case("MPCoopMD.ini"))
-    }
-
-    fn selected_shell_map_file(state: &AppState) -> Option<String> {
-        state
-            .frontend
-            .scenario_catalog
-            .shell_maps()
-            .get(state.frontend.skirmish_shell_state.selected_map_idx)
-            .map(|map| map.file_name.clone())
-    }
-
-    fn apply_selected_shell_map_file(state: &mut AppState, file_name: &str) -> bool {
-        let Some(map_idx) = state
-            .frontend
-            .scenario_catalog
-            .shell_maps()
-            .iter()
-            .position(|map| map.file_name.eq_ignore_ascii_case(file_name))
-        else {
-            log::warn!("No loadable Skirmish map entry exists for {file_name}");
-            return false;
-        };
-        Self::apply_selected_shell_map_index(state, map_idx)
-    }
-
     /// One production mutation point for shell selection plus retained-RMG
-    /// identity invalidation, whether selection came from Cooperative repair or
-    /// the Choose Map dialog.
+    /// identity invalidation.
     fn apply_selected_shell_map_index(state: &mut AppState, map_idx: usize) -> bool {
         let Some(file_name) = state
             .frontend
@@ -88,61 +59,6 @@ impl App {
         state.frontend.random_map_retention.select_map(&file_name);
         state.frontend.skirmish_preview_texture = None;
         true
-    }
-
-    pub(super) fn ensure_active_cooperative_shell_selection(state: &mut AppState) {
-        if !Self::selected_skirmish_mode_is_cooperative(
-            state,
-            state.frontend.skirmish_shell_state.selected_mode_id,
-        ) {
-            return;
-        }
-        let Some(file_name) = Self::selected_shell_map_file(state) else {
-            return;
-        };
-        let chosen_map = match state
-            .frontend
-            .multiplayer_shell_runtime
-            .ensure_cooperative_selection(&file_name, state.frontend.scenario_catalog.shell_maps())
-        {
-            Ok(chosen_map) => chosen_map,
-            Err(err) => {
-                log::warn!("Could not bind Cooperative shell progress: {err}");
-                None
-            }
-        };
-        if let Some(chosen_map) = chosen_map {
-            Self::apply_selected_shell_map_file(state, &chosen_map);
-        }
-    }
-
-    fn ensure_active_cooperative_modal_selection(state: &mut AppState) {
-        let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_ref()
-        else {
-            return;
-        };
-        let mode_id = modal.selected_mode_id;
-        let record_index = modal.selected_record_index();
-        if !Self::selected_skirmish_mode_is_cooperative(state, mode_id) {
-            return;
-        }
-        let Some(file_name) = record_index
-            .and_then(|index| state.frontend.scenario_catalog.records().get(index))
-            .map(|record| record.file_name.clone())
-        else {
-            return;
-        };
-        if let Err(err) = state
-            .frontend
-            .multiplayer_shell_runtime
-            .ensure_cooperative_selection(&file_name, state.frontend.scenario_catalog.shell_maps())
-        {
-            log::warn!("Could not bind Cooperative Choose Map progress: {err}");
-        }
     }
 
     /// Skirmish Back (`0x5C0`): the proc packs the session like Start does
@@ -473,7 +389,41 @@ impl App {
                 state.frontend.scenario_catalog.records(),
                 &layout,
             ));
-        Self::ensure_active_cooperative_modal_selection(state);
+        Self::list_cooperative_campaigns(state, false);
+    }
+
+    /// Cooperative fills Choose Map's list itself (`+0x4C`), on the network
+    /// only: Skirmish never lists the mode.
+    fn list_cooperative_campaigns(state: &mut AppState, clicked: bool) {
+        let Some((mode_id, records)) = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_ref()
+            .map(|modal| {
+                (
+                    modal.selected_mode_id,
+                    modal.filtered_record_indices.clone(),
+                )
+            })
+        else {
+            return;
+        };
+        let Some(rows) = crate::app::shell_network_setup::cooperative_chooser_rows(
+            state, mode_id, &records, clicked,
+        ) else {
+            return;
+        };
+        let layout = Self::skirmish_choose_map_layout(state);
+        let records = state.frontend.scenario_catalog.records();
+        if let Some(modal) = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_mut()
+        {
+            modal.replace_rows(rows, records, &layout, clicked);
+        }
     }
 
     pub(super) fn current_choose_map_record_index(state: &AppState) -> Option<usize> {
@@ -519,26 +469,7 @@ impl App {
         let Some(record) = state.frontend.scenario_catalog.records().get(record_idx) else {
             return false;
         };
-        let clicked_file_name = record.file_name.clone();
-        let selected_file_name =
-            if Self::selected_skirmish_mode_is_cooperative(state, selection.mode_id) {
-                match state
-                    .frontend
-                    .multiplayer_shell_runtime
-                    .accept_cooperative_selection(
-                        &clicked_file_name,
-                        state.frontend.scenario_catalog.shell_maps(),
-                    ) {
-                    Ok(Some(chosen_map)) => chosen_map,
-                    Ok(None) => clicked_file_name,
-                    Err(err) => {
-                        log::warn!("Could not accept Cooperative campaign selection: {err}");
-                        return false;
-                    }
-                }
-            } else {
-                clicked_file_name
-            };
+        let selected_file_name = record.file_name.clone();
         let Some(map_idx) = state
             .frontend
             .scenario_catalog
@@ -554,10 +485,18 @@ impl App {
         };
 
         if state.frontend.shell_route.network_setup() {
+            // `+0x18` reads the list's selected row (`0x005E66D0`).
+            let row = state
+                .frontend
+                .skirmish_shell_state
+                .choose_map_modal
+                .as_ref()
+                .and_then(|modal| modal.highlighted_filtered_index);
             return match crate::app::shell_network_setup::commit_map_selection(
                 state,
                 selection.mode_id,
                 map_idx,
+                row,
             ) {
                 Ok(()) => true,
                 Err(error) => {
@@ -624,7 +563,7 @@ impl App {
                 // (`0x0061AA5A`).
                 Self::play_skirmish_shell_generic_click_sound(state);
                 if rebuilt {
-                    Self::ensure_active_cooperative_modal_selection(state);
+                    Self::list_cooperative_campaigns(state, true);
                 }
                 state.platform.window.request_redraw();
                 true

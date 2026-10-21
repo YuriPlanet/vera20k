@@ -90,14 +90,12 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         capacity
     };
     let cooperative = mode.class.uses_cooperative_setup();
-    let coop = cooperative
-        .then(|| {
-            state
-                .frontend
-                .multiplayer_shell_runtime
-                .cooperative_setup_view()
-        })
-        .flatten();
+    let coop = cooperative.then(|| {
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .cooperative_setup_view()
+    });
     let mut combos = Vec::with_capacity(40);
     let mut row_icons = std::array::from_fn(|_| None);
     for row in 0..8u8 {
@@ -220,10 +218,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             .into_iter()
             .map(|item| choice(state, item))
             .collect();
-        if let Some(coop) = &coop {
+        if let Some(player_countries) = coop.as_ref().and_then(|coop| coop.player_countries) {
             //5C23B0 rebuilds country entries in the campaign's authored order.
             let mut allowed = Vec::new();
-            if coop.player_countries.len() > 1 {
+            if player_countries.len() > 1 {
                 allowed.push(SetupChoice {
                     value: -2,
                     text: label(state, "GUI:Random"),
@@ -416,16 +414,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         no_preview: protocol.wol_no_preview().0,
         preview_hidden: protocol.wol_no_preview().1,
         cooperative,
-        cooperative_description: coop.as_ref().map(|coop| {
-            label(
-                state,
-                &format!(
-                    "NAME:COOPDESC{}{}",
-                    coop.campaign_index + 1,
-                    coop.stage_index + 1
-                ),
-            )
-        }),
+        cooperative_description: coop.as_ref().and_then(|coop| coop.description).map(
+            |(campaign, stage)| {
+                label(
+                    state,
+                    &format!("NAME:COOPDESC{}{}", campaign + 1, stage + 1),
+                )
+            },
+        ),
     })
 }
 

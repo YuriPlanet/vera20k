@@ -5,6 +5,8 @@
 //! `wol`; every shared helper branches on GameMode like the native ones.
 
 mod actions;
+mod cooperative;
+pub(crate) use cooperative::chooser_rows as cooperative_chooser_rows;
 mod service;
 pub(crate) use service::{HostOptions, NetworkSetupEvent, poll, service_event};
 mod view;
@@ -35,6 +37,9 @@ pub(crate) enum NetworkSetupRequest {
     PublishOptions,
     PublishRoster,
     PublishCooperativeAssignments(Vec<[[i32; 2]; 8]>),
+    /// Cooperative's campaign record, the `C0` text type `0x17` carries to
+    /// every guest (`0x0049D680` through `0x005E3720`).
+    PublishCooperativeCampaign(String),
     MapStatus(u8),
     PrepareMapForHandoff {
         received_budget: i32,
@@ -342,6 +347,13 @@ impl App {
             log::error!("Could not admit local network setup: {error:#}");
             open_service_lobby(state, dialog);
             return;
+        }
+        // The WOL C2's own +20/+18 calls (0x791293, 0x7912A3) belong to a
+        // later chain; LAN BC runs them here.
+        if !dialog.wol()
+            && let Err(error) = cooperative::host_opened(state)
+        {
+            log::error!("Could not open the Cooperative campaign: {error:#}");
         }
         let agreed_seed = if dialog.wol() {
             wol::resident_seed(state)

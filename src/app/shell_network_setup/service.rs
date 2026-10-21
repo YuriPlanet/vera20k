@@ -51,6 +51,8 @@ pub(crate) enum NetworkSetupEvent {
         reason = "the network transport, outside this change, delivers these packets"
     )]
     CooperativeAssignments(Vec<[[i32; 2]; 8]>),
+    /// The host's `C0` campaign text (packet `0x17` at `+0x2F`).
+    CooperativeCampaign(String),
     HostGo {
         agreed_seed: u32,
         max_ahead_frames: i32,
@@ -203,7 +205,11 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 }
             }
         }
-        NetworkSetupEvent::ParticipantJoined(human) => {
+        NetworkSetupEvent::ParticipantJoined(mut human) => {
+            if dialog.host {
+                // 0x5E1945..0x5E1973: the mode's +1C/+28 country check.
+                super::cooperative::admit_join_country(state, &mut human.slot);
+            }
             state.match_state.session.add_network_participant(human)?;
             // Type3 admission5E0770 and accepted host type6 at5E1B32.
             // This adapter is the admitted setup (membership>=2); repeated
@@ -213,6 +219,20 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .and_then(|rules| rules.general.player_joined_sound())
                 .map(str::to_owned);
             App::play_shell_ui_sound_by_id(state, sound.as_deref());
+            if dialog.host {
+                // 0x5E1B5A..0x5E1BF2: the options, the 0x16 roster to every
+                // guest, then 0x5E2FA0's mode +94.
+                let protocol = state
+                    .frontend
+                    .network_setup_protocol
+                    .as_mut()
+                    .expect("setup owns protocol");
+                protocol.requests.extend([
+                    NetworkSetupRequest::PublishOptions,
+                    NetworkSetupRequest::PublishRoster,
+                ]);
+                super::cooperative::guest_joined(state)?;
+            }
         }
         NetworkSetupEvent::ParticipantLeft { index } => {
             state
@@ -245,10 +265,14 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         } => {
             // Cooperative's mode +0x1C (0x5C17B0) admits its campaign's
             // countries; the other modes' (0x5D67A0) admit any.
-            let countries = state
-                .frontend
-                .multiplayer_shell_runtime
-                .cooperative_player_countries();
+            let countries = super::cooperative::current(state)
+                .then(|| {
+                    state
+                        .frontend
+                        .multiplayer_shell_runtime
+                        .cooperative_player_countries()
+                })
+                .flatten();
             let change = state.match_state.session.accept_network_peer_choices(
                 index,
                 choices,
@@ -354,6 +378,16 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .network_setup()
                 .ok_or_else(|| anyhow::anyhow!("no admitted setup"))?
                 .clone();
+            // 0x5E5411..0x5E541D: the current mode's +24 on every parse.
+            if !dialog.wol() && super::cooperative::current(state) {
+                state
+                    .frontend
+                    .multiplayer_shell_runtime
+                    .cooperative_parts()
+                    .progress
+                    .request_refresh();
+            }
+            let mode_changed = before.mode.id != launch.mode.id;
             let map_changed = state
                 .match_state
                 .session
@@ -417,6 +451,10 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 local_map.as_deref(),
                 map_changed,
             )?;
+            // 0x5E542B..0x5E5466: a changed mode's +9C/+20, then +7C.
+            if !dialog.wol() && mode_changed {
+                super::cooperative::guest_mode_entered(state)?;
+            }
             if let Some(admission) = map_admission {
                 apply_local_map_admission(state, admission)?;
             }
@@ -639,6 +677,9 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         }
         NetworkSetupEvent::PreviewFileReceived { transferred_file } => {
             preview_file_received(state, transferred_file)?;
+        }
+        NetworkSetupEvent::CooperativeCampaign(text) => {
+            super::cooperative::campaign_received(state, &text)?;
         }
         NetworkSetupEvent::StartStaging(text) => {
             // The 'W' arm is not gated on role or map type; a string short

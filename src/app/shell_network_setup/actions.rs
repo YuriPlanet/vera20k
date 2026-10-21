@@ -108,7 +108,7 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
     state.platform.window.request_redraw();
 }
 
-fn queue(state: &mut AppState, request: NetworkSetupRequest) {
+pub(super) fn queue(state: &mut AppState, request: NetworkSetupRequest) {
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
         protocol.requests.push(request);
     }
@@ -416,6 +416,7 @@ pub(crate) fn commit_map_selection(
     state: &mut AppState,
     mode_id: i32,
     map_index: usize,
+    row: Option<usize>,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
         state
@@ -435,6 +436,11 @@ pub(crate) fn commit_map_selection(
         .ok_or_else(|| anyhow::anyhow!("unknown chosen map"))?;
     let file = map.file_name.clone();
     let metadata = super::local_map_metadata(state, &file)?;
+    let mode_changed = state
+        .match_state
+        .session
+        .network_setup()
+        .is_none_or(|launch| launch.mode.id != mode_id);
     let changed = state
         .match_state
         .session
@@ -472,6 +478,8 @@ pub(crate) fn commit_map_selection(
         }
         queue(state, NetworkSetupRequest::Advertise);
     }
+    // Use Map (`0x005E7160`) runs the mode's slots on LAN and WOL alike.
+    super::cooperative::map_used(state, mode_changed, row.unwrap_or(0))?;
     queue(state, NetworkSetupRequest::PublishOptions);
     Ok(())
 }

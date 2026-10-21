@@ -2113,7 +2113,7 @@ mod tests {
         let mut alternate_seed = RandomMapGenerationRetention::default();
         alternate_seed.finish_generation(generated_preview(34, 35));
         alternate_seed.accept_setup("RandMap.Sed");
-        // This is the retention authority used by apply_selected_shell_map_file:
+        // This is the retention authority used by apply_selected_shell_map_index:
         // another seed selection must invalidate, not merely refuse this call.
         alternate_seed.select_map("Other.Sed");
         assert!(

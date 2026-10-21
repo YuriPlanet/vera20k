@@ -87,6 +87,12 @@ pub struct ChooseMapModalState {
     /// [`ChooseMapContext::official_only`].
     official_only: bool,
     pub filtered_record_indices: Vec<usize>,
+    /// The rows' text when the mode fills its own list (Cooperative's
+    /// `+0x4C`: `"%d. %s"` per campaign); otherwise each record's name.
+    pub row_labels: Option<Vec<String>>,
+    /// The highlighted map's name when the game type was last clicked
+    /// (`[0xAC0EC8]`), which a rebuilt list reselects.
+    reselect_name: String,
     pub highlighted_filtered_index: Option<usize>,
     pub mode_top_index: usize,
     pub map_top_index: usize,
@@ -196,6 +202,8 @@ impl ChooseMapModalState {
             random_maps_allowed: false,
             official_only: context.official_only(),
             filtered_record_indices: Vec::new(),
+            row_labels: None,
+            reselect_name: String::new(),
             highlighted_filtered_index: None,
             mode_top_index: 0,
             map_top_index: 0,
@@ -261,6 +269,7 @@ impl ChooseMapModalState {
         self.filtered_record_indices = mode
             .map(|mode| filter_records_for_mode(records, mode, self.official_only))
             .unwrap_or_default();
+        self.row_labels = None;
         self.random_maps_allowed = mode.is_some_and(|mode| mode.random_maps_allowed);
         self.map_scroll.cancel();
     }
@@ -284,22 +293,55 @@ impl ChooseMapModalState {
         if mode_by_id(modes, mode_id).is_none() {
             return false;
         }
-        let name = self
+        self.reselect_name = self
             .selected_record_index()
             .and_then(|record| records.get(record))
             .map(|record| record.display_name.clone())
             .unwrap_or_default();
         self.selected_mode_id = mode_id;
         self.build_map_list(modes, records);
+        self.reselect(records, layout);
+        true
+    }
+
+    fn reselect(&mut self, records: &[SkirmishScenarioRecord], layout: &ChooseMapModalLayout) {
+        let name = &self.reselect_name;
         let matched = self.filtered_record_indices.iter().rposition(|record| {
             records
                 .get(*record)
-                .is_some_and(|record| record.display_name == name)
+                .is_some_and(|record| &record.display_name == name)
         });
         self.highlighted_filtered_index =
             matched.or_else(|| (!self.filtered_record_indices.is_empty()).then_some(0));
         self.scroll_map_selection_to_top(layout);
-        true
+    }
+
+    /// A mode that fills its own list (Cooperative's `+0x4C`) replaces the
+    /// rows built from the mode's valid records: `(record, text)` each. When
+    /// the chooser opens the current record is selected (`0x005E6F99`);
+    /// after a game-type click the name highlighted before it is
+    /// (`0x005E6CA2..0x005E6D43`).
+    pub fn replace_rows(
+        &mut self,
+        rows: Vec<(usize, String)>,
+        records: &[SkirmishScenarioRecord],
+        layout: &ChooseMapModalLayout,
+        clicked: bool,
+    ) {
+        let current = self.saved_selection.record_index;
+        let (indices, labels) = rows.into_iter().unzip();
+        self.filtered_record_indices = indices;
+        self.row_labels = Some(labels);
+        if clicked {
+            self.reselect(records, layout);
+        } else {
+            self.highlighted_filtered_index = current.and_then(|record| {
+                self.filtered_record_indices
+                    .iter()
+                    .position(|idx| *idx == record)
+            });
+            self.scroll_map_selection_to_top(layout);
+        }
     }
 
     /// Whether a press is the second click of a double-click on one list's

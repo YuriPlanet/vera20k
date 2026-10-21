@@ -1959,3 +1959,56 @@ fn signed_country_crew_type_and_rng_match_original() {
         );
     }
 }
+
+/// A sale's refused absorbed passenger (Mission_Selling `0x0044A56D`) is
+/// recorded with a NULL source (`0x0044A56F`): its house books the loss and no
+/// house is credited the kill.
+#[test]
+fn a_refused_passenger_of_a_sale_books_a_loss_with_no_kill() {
+    let rules = rules();
+    let mut sim = sim_with_houses(9);
+    let reactor = spawn(&mut sim, &rules, "YAPOWR", "Americans", 10, 10);
+    let absorbed = load_absorbed(&mut sim, &rules, reactor, 2);
+    sim.substrate
+        .entities
+        .get_mut(reactor)
+        .unwrap()
+        .no_survivor
+        .set_for_test(true);
+    let stats = |sim: &Simulation| {
+        sim.houses
+            .order()
+            .iter()
+            .map(|id| *sim.houses[id].stats())
+            .collect::<Vec<_>>()
+    };
+    let americans = sim.interner.get("Americans").unwrap();
+    let lost = sim.houses[&americans].stats().units_lost();
+    let before = stats(&sim);
+    sim.clear_lifecycle_test_events_for_test();
+    sim.eject_absorbed_passengers(
+        &rules,
+        None,
+        reactor,
+        None,
+        &foundation_cells(10, 10, "2x2"),
+        crate::sim::world::FrameEffects::default(),
+    );
+    for &id in &absorbed {
+        assert!(
+            sim.lifecycle_test_events_for_test()
+                .iter()
+                .any(|event| matches!(
+                    event,
+                    crate::sim::world::LifecycleTestEvent::RecordKillBookkeeping { stable_id }
+                        if *stable_id == id
+                )),
+            "absorbed passenger {id} has its kill recorded"
+        );
+    }
+    assert_eq!(sim.houses[&americans].stats().units_lost(), lost + 2);
+    for (after, before) in stats(&sim).iter().zip(&before) {
+        assert_eq!(after.units_killed(), before.units_killed());
+        assert_eq!(after.buildings_killed(), before.buildings_killed());
+    }
+}

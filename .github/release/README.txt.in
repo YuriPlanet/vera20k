@@ -9,10 +9,11 @@ If you used the Windows installer, you are set: it wrote config.toml in the
 install folder. To use another game folder, run the installer again.
 
 On macOS, drag VERA20k from the disk image into Applications and open it (the
-first time, see REQUIREMENTS). It asks for your Yuri's Revenge folder, then
-keeps config.toml, its settings, logs, saves and replays in
-~/Library/Application Support/VERA20k (in Finder, choose Go > Go to Folder).
-To use another game folder, change ra2_dir in that config.toml.
+first time, see REQUIREMENTS). It looks for Yuri's Revenge in Porting Kit,
+Wineskin and CrossOver installs and offers the one it finds, or asks you to
+choose the folder. It keeps config.toml, its settings, logs, saves and replays
+in ~/Library/Application Support/VERA20k (in Finder, choose Go > Go to
+Folder). To use another game folder, change ra2_dir in that config.toml.
 
 Otherwise, either:
   - copy these files into your Yuri's Revenge folder (the one with gamemd.exe)

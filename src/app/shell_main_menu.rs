@@ -716,7 +716,6 @@ impl App {
         // A new 0x102 creates its kind-1 statics hidden (0x0060A5B0).
         state.frontend.skirmish_shell_state.statics.reset();
         state.frontend.skirmish_shell_last_painted_pressed_button = None;
-        Self::ensure_active_cooperative_shell_selection(state);
         // The skirmish dialog (0x102) slides its controls in on first paint like
         // every shell dialog; the per-frame slide trigger starts that wave once
         // the skirmish shell becomes the showing screen. Clear any stale wave

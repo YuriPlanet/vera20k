@@ -289,302 +289,11 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                 if !state.match_state.input.tactical_mouse.end_left_press() {
                     return;
                 }
-                // Repair / Sell cursor modes consume the click — toggle repair or
-                // sell the own building under the cursor. The mode stays active
-                // (sticky) so the player can act on several buildings in a row.
-                if crate::app::input::commands::try_repair_sell_mode_click(state) {
-                    return;
-                }
-                if let Some(section) = state.armed_super_weapon_type().map(str::to_owned) {
-                    crate::app::input::commands::launch_super_weapon_at_cursor(state, &section);
-                    return;
-                }
-                if let Some(type_id) = state.armed_building_type().map(str::to_owned) {
-                    place_ready_building_at_cursor(state, &type_id);
-                    return;
-                }
-                if crate::app::input::planning_mode::connect_at_cursor(state) {
-                    return;
-                }
-                // Only an active band box owns a clamped tactical endpoint.
-                // A pending press is still an ordinary click at the actual
-                // release point, including after sticky capture routing.
-                let release_point = if state.match_state.input.selection_state.is_band_box_active()
-                {
-                    let (tactical_width, tactical_height) =
-                        crate::app::input::camera::tactical_viewport_size(state);
-                    clamp_tactical_drag_endpoint(
-                        state.match_state.input.cursor_x,
-                        state.match_state.input.cursor_y,
-                        tactical_width,
-                        tactical_height,
-                    )
-                } else {
-                    (
-                        state.match_state.input.cursor_x,
-                        state.match_state.input.cursor_y,
-                    )
-                };
-                let mut action: SelectAction = state
-                    .match_state
-                    .input
-                    .selection_state
-                    .end_drag(release_point.0, release_point.1);
-                let band_release = matches!(action, SelectAction::BoxSelect(..));
-                if band_release {
-                    // BandBox_LeftUp4ABCF0 -> StartTimer70D150 precedes the
-                    // empty-catch bail and click fallthrough. The old
-                    // selection therefore flashes even when the box is empty.
-                    // Evidence: tools/procedural_drawing_oracle/action_lines.
-                    apply_selection_action_line_policy(
-                        state,
-                        ORDINARY_SELECTION_ACTION_LINE_POLICY,
-                    );
-                }
-                // BandBox_LeftUp 0x004AB9B0 does not early-return when nothing
-                // was armed: with the band flag clear it falls straight through
-                // to the action dispatch. So a release whose press never armed
-                // a drag -- because the shared capture byte was already held, or
-                // because a cursor mode swallowed the press -- is still an
-                // ordinary click at its own release point, not a no-op.
-                if matches!(action, SelectAction::None) {
-                    action = SelectAction::Click(release_point.0, release_point.1);
-                }
-                let shift = is_shift_held(state);
-                // A band box that caught no drawn object leaves the selection
-                // exactly as it was, and the release is handled as an ordinary
-                // click at the release point — the native release only clears
-                // when something was inside the rectangle.
-                //
-                // The whole empty/clear/fall-through block sits inside the
-                // native "shift is not held" arm, and the fall-through flag is
-                // the only thing that lets control reach the click/action path.
-                // So a shift drag that catches nothing does nothing at all: it
-                // must not walk the army to the release point.
-                let mut band_preflight_order = None;
-                if let SelectAction::BoxSelect(min_x, min_y, max_x, max_y) = action
-                    && !shift
-                {
-                    let order =
-                        crate::app::presentation::instances::tactical_band_preflight_entity_encounter_order(state);
-                    if band_caught_drawn_object(state, &order, min_x, min_y, max_x, max_y) {
-                        band_preflight_order = Some(order);
-                    } else {
-                        action = SelectAction::Click(release_point.0, release_point.1);
-                    }
-                }
-                // TypeSelect modifies only actions that already resolved as
-                // selection/toggle. Ground move, attack, and every other
-                // context action keep their ordinary priority while T is held.
-                let type_select_held = state.match_state.input.type_select.held();
-                if matches!(
-                    route_click_action_before_type_select(action, |sx, sy| {
-                        // A resolved context dispatch consumes the click
-                        // even when its receiver admits no command.
-                        try_queue_context_order_at_screen_point(state, sx, sy, true).then_some(())
-                    },),
-                    ClickActionRoute::ContextOrder(())
-                ) {
-                    return;
-                }
-                let mut queued_selection: Option<SelectionMutation> = None;
-                let mut held_type_select_batch = false;
-                if let Some(sim) = state
-                    .match_state
-                    .sim_runtime
-                    .as_ref()
-                    .map(|rt| &rt.simulation)
-                {
-                    let screen_order =
-                        crate::app::presentation::instances::tactical_screen_entity_encounter_order(
-                            state,
-                        );
-                    let current_selection = selected_stable_ids_in_order(
-                        state
-                            .match_state
-                            .sim_runtime
-                            .as_ref()
-                            .map(|rt| &rt.simulation),
-                        state.rules(),
-                        &state.match_state.input.selection_order,
-                        state.match_state.input.selection_order_pending,
-                    );
-                    let map_order = map_entity_creation_order(sim.entities());
-                    let held_type_select = type_select_held;
-                    let scope_order = if state.match_state.input.type_select.across_map {
-                        map_order.as_slice()
-                    } else {
-                        screen_order.as_slice()
-                    };
-                    match action {
-                        SelectAction::Click(sx, sy) => {
-                            // Native TacticalPick6DA380 reads the retained
-                            // Display registrations after the projected click
-                            // gate. ScreenSelection's raw-anchor filter belongs
-                            // to band/type scope, not this pointer pick.
-                            let click_order = crate::app::presentation::instances::
-                                tactical_entity_encounter_order(sim);
-                            let world_x: f32 = sx / state.match_state.input.zoom_level
-                                + state.match_state.input.camera_x;
-                            let world_y: f32 = sy / state.match_state.input.zoom_level
-                                + state.match_state.input.camera_y;
-                            let fog_ref = if state.match_state.sandbox_full_visibility {
-                                None
-                            } else {
-                                Some(sim.fog())
-                            };
-                            if held_type_select {
-                                let picked = pick_entity_at_point(
-                                    crate::app::input::entity_pick::presented(state, sim),
-                                    &click_order,
-                                    fog_ref,
-                                    preferred_local_owner_name(state).as_deref(),
-                                    world_x,
-                                    world_y,
-                                    Some(sim.interner()),
-                                    sim.resolved_terrain(),
-                                );
-                                queued_selection = if let Some(clicked_id) = picked {
-                                    Some(compute_type_select_click_mutation_with_playfield(
-                                        sim.entities(),
-                                        scope_order,
-                                        &current_selection,
-                                        clicked_id,
-                                        shift,
-                                        preferred_local_owner_name(state).as_deref(),
-                                        state.rules(),
-                                        Some(sim.interner()),
-                                        sim.playfield_bounds().is_some(),
-                                    ))
-                                } else {
-                                    compute_click_selection_snapshot_with_playfield(
-                                        crate::app::input::entity_pick::presented(state, sim),
-                                        &click_order,
-                                        &current_selection,
-                                        fog_ref,
-                                        preferred_local_owner_name(state).as_deref(),
-                                        world_x,
-                                        world_y,
-                                        shift,
-                                        state.rules(),
-                                        Some(sim.interner()),
-                                        sim.playfield_bounds().is_some(),
-                                        sim.resolved_terrain(),
-                                    )
-                                };
-                                held_type_select_batch = true;
-                            } else {
-                                queued_selection = compute_click_selection_snapshot_with_playfield(
-                                    crate::app::input::entity_pick::presented(state, sim),
-                                    &click_order,
-                                    &current_selection,
-                                    fog_ref,
-                                    preferred_local_owner_name(state).as_deref(),
-                                    world_x,
-                                    world_y,
-                                    shift,
-                                    state.rules(),
-                                    Some(sim.interner()),
-                                    sim.playfield_bounds().is_some(),
-                                    sim.resolved_terrain(),
-                                );
-                            }
-                        }
-                        SelectAction::BoxSelect(min_x, min_y, max_x, max_y) => {
-                            let fog_ref = if state.match_state.sandbox_full_visibility {
-                                None
-                            } else {
-                                Some((sim.fog(), sim.house_alliances()))
-                            };
-                            let z = state.match_state.input.zoom_level;
-                            let (min_x, min_y, max_x, max_y) = (
-                                min_x / z + state.match_state.input.camera_x,
-                                min_y / z + state.match_state.input.camera_y,
-                                max_x / z + state.match_state.input.camera_x,
-                                max_y / z + state.match_state.input.camera_y,
-                            );
-                            if held_type_select {
-                                queued_selection =
-                                    Some(compute_type_select_box_mutation_with_playfield(
-                                        crate::app::input::entity_pick::presented(state, sim),
-                                        &screen_order,
-                                        scope_order,
-                                        &current_selection,
-                                        fog_ref.map(|(fog, _)| fog),
-                                        preferred_local_owner_name(state).as_deref(),
-                                        min_x,
-                                        min_y,
-                                        max_x,
-                                        max_y,
-                                        shift,
-                                        state.rules(),
-                                        Some(sim.interner()),
-                                        sim.playfield_bounds().is_some(),
-                                    ));
-                                held_type_select_batch = true;
-                            } else {
-                                let preflight_order = band_preflight_order
-                                    .as_deref()
-                                    .unwrap_or(screen_order.as_slice());
-                                queued_selection = compute_box_selection_snapshot_with_playfield(
-                                    crate::app::input::entity_pick::presented(state, sim),
-                                    preflight_order,
-                                    &screen_order,
-                                    &current_selection,
-                                    fog_ref,
-                                    preferred_local_owner_name(state).as_deref(),
-                                    min_x,
-                                    min_y,
-                                    max_x,
-                                    max_y,
-                                    shift,
-                                    state.rules(),
-                                    Some(sim.houses()),
-                                    Some(sim.interner()),
-                                    sim.playfield_bounds().is_some(),
-                                );
-                            }
-                        }
-                        SelectAction::None => {}
-                    }
-                }
-                if let Some(mutation) = queued_selection {
-                    if held_type_select_batch {
-                        if mutation.select.is_empty() {
-                            apply_selection_mutation(
-                                state,
-                                mutation,
-                                false,
-                                ORDINARY_SELECTION_VOICE_POLICY,
-                            );
-                        } else {
-                            let prior = state.match_state.input.selection_voice_enabled;
-                            state.match_state.input.selection_voice_enabled = false;
-                            apply_selection_mutation(
-                                state,
-                                mutation,
-                                false,
-                                HELD_TYPE_SELECT_VOICE_POLICY,
-                            );
-                            state.match_state.input.selection_voice_enabled = prior;
-                        }
-                    } else {
-                        apply_selection_mutation(
-                            state,
-                            mutation,
-                            true,
-                            ORDINARY_SELECTION_VOICE_POLICY,
-                        );
-                    }
-                    // Click-select4ABE83 starts separately. A band release
-                    // already started before its empty-catch decision above.
-                    if !band_release {
-                        apply_selection_action_line_policy(
-                            state,
-                            ORDINARY_SELECTION_ACTION_LINE_POLICY,
-                        );
-                    }
-                }
+                band_box_left_up(state);
+                // `0x00731CF0` ends the attack-move mode (`0x00B0FE58`) before
+                // each of BandBox_LeftUp's returns (`0x004ABC67`, `0x004ABC85`,
+                // `0x004AC294`), whatever the release did.
+                state.match_state.input.queued_order_mode = OrderMode::Move;
             }
         }
         MouseButton::Right => {
@@ -613,6 +322,284 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
             }
         }
         _ => {}
+    }
+}
+
+/// `DisplayClass::BandBox_LeftUp @ 0x004AB9B0` for a left release that held
+/// the capture.
+fn band_box_left_up(state: &mut AppState) {
+    // Repair / Sell cursor modes consume the click — toggle repair or
+    // sell the own building under the cursor. The mode stays active
+    // (sticky) so the player can act on several buildings in a row.
+    if crate::app::input::commands::try_repair_sell_mode_click(state) {
+        return;
+    }
+    if let Some(section) = state.armed_super_weapon_type().map(str::to_owned) {
+        crate::app::input::commands::launch_super_weapon_at_cursor(state, &section);
+        return;
+    }
+    if let Some(type_id) = state.armed_building_type().map(str::to_owned) {
+        place_ready_building_at_cursor(state, &type_id);
+        return;
+    }
+    if crate::app::input::planning_mode::connect_at_cursor(state) {
+        return;
+    }
+    // Only an active band box owns a clamped tactical endpoint.
+    // A pending press is still an ordinary click at the actual
+    // release point, including after sticky capture routing.
+    let release_point = if state.match_state.input.selection_state.is_band_box_active() {
+        let (tactical_width, tactical_height) =
+            crate::app::input::camera::tactical_viewport_size(state);
+        clamp_tactical_drag_endpoint(
+            state.match_state.input.cursor_x,
+            state.match_state.input.cursor_y,
+            tactical_width,
+            tactical_height,
+        )
+    } else {
+        (
+            state.match_state.input.cursor_x,
+            state.match_state.input.cursor_y,
+        )
+    };
+    let mut action: SelectAction = state
+        .match_state
+        .input
+        .selection_state
+        .end_drag(release_point.0, release_point.1);
+    let band_release = matches!(action, SelectAction::BoxSelect(..));
+    if band_release {
+        // BandBox_LeftUp4ABCF0 -> StartTimer70D150 precedes the
+        // empty-catch bail and click fallthrough. The old
+        // selection therefore flashes even when the box is empty.
+        // Evidence: tools/procedural_drawing_oracle/action_lines.
+        apply_selection_action_line_policy(state, ORDINARY_SELECTION_ACTION_LINE_POLICY);
+    }
+    // BandBox_LeftUp 0x004AB9B0 does not early-return when nothing
+    // was armed: with the band flag clear it falls straight through
+    // to the action dispatch. So a release whose press never armed
+    // a drag -- because the shared capture byte was already held, or
+    // because a cursor mode swallowed the press -- is still an
+    // ordinary click at its own release point, not a no-op.
+    if matches!(action, SelectAction::None) {
+        action = SelectAction::Click(release_point.0, release_point.1);
+    }
+    let shift = is_shift_held(state);
+    // A band box that caught no drawn object leaves the selection
+    // exactly as it was, and the release is handled as an ordinary
+    // click at the release point — the native release only clears
+    // when something was inside the rectangle.
+    //
+    // The whole empty/clear/fall-through block sits inside the
+    // native "shift is not held" arm, and the fall-through flag is
+    // the only thing that lets control reach the click/action path.
+    // So a shift drag that catches nothing does nothing at all: it
+    // must not walk the army to the release point.
+    let mut band_preflight_order = None;
+    if let SelectAction::BoxSelect(min_x, min_y, max_x, max_y) = action
+        && !shift
+    {
+        let order =
+            crate::app::presentation::instances::tactical_band_preflight_entity_encounter_order(
+                state,
+            );
+        if band_caught_drawn_object(state, &order, min_x, min_y, max_x, max_y) {
+            band_preflight_order = Some(order);
+        } else {
+            action = SelectAction::Click(release_point.0, release_point.1);
+        }
+    }
+    // TypeSelect modifies only actions that already resolved as
+    // selection/toggle. Ground move, attack, and every other
+    // context action keep their ordinary priority while T is held.
+    let type_select_held = state.match_state.input.type_select.held();
+    if matches!(
+        route_click_action_before_type_select(action, |sx, sy| {
+            // A resolved context dispatch consumes the click
+            // even when its receiver admits no command.
+            try_queue_context_order_at_screen_point(state, sx, sy, true).then_some(())
+        },),
+        ClickActionRoute::ContextOrder(())
+    ) {
+        return;
+    }
+    let mut queued_selection: Option<SelectionMutation> = None;
+    let mut held_type_select_batch = false;
+    if let Some(sim) = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|rt| &rt.simulation)
+    {
+        let screen_order =
+            crate::app::presentation::instances::tactical_screen_entity_encounter_order(state);
+        let current_selection = selected_stable_ids_in_order(
+            state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .map(|rt| &rt.simulation),
+            state.rules(),
+            &state.match_state.input.selection_order,
+            state.match_state.input.selection_order_pending,
+        );
+        let map_order = map_entity_creation_order(sim.entities());
+        let held_type_select = type_select_held;
+        let scope_order = if state.match_state.input.type_select.across_map {
+            map_order.as_slice()
+        } else {
+            screen_order.as_slice()
+        };
+        match action {
+            SelectAction::Click(sx, sy) => {
+                // Native TacticalPick6DA380 reads the retained
+                // Display registrations after the projected click
+                // gate. ScreenSelection's raw-anchor filter belongs
+                // to band/type scope, not this pointer pick.
+                let click_order =
+                    crate::app::presentation::instances::tactical_entity_encounter_order(sim);
+                let world_x: f32 =
+                    sx / state.match_state.input.zoom_level + state.match_state.input.camera_x;
+                let world_y: f32 =
+                    sy / state.match_state.input.zoom_level + state.match_state.input.camera_y;
+                let fog_ref = if state.match_state.sandbox_full_visibility {
+                    None
+                } else {
+                    Some(sim.fog())
+                };
+                if held_type_select {
+                    let picked = pick_entity_at_point(
+                        crate::app::input::entity_pick::presented(state, sim),
+                        &click_order,
+                        fog_ref,
+                        preferred_local_owner_name(state).as_deref(),
+                        world_x,
+                        world_y,
+                        Some(sim.interner()),
+                        sim.resolved_terrain(),
+                    );
+                    queued_selection = if let Some(clicked_id) = picked {
+                        Some(compute_type_select_click_mutation_with_playfield(
+                            sim.entities(),
+                            scope_order,
+                            &current_selection,
+                            clicked_id,
+                            shift,
+                            preferred_local_owner_name(state).as_deref(),
+                            state.rules(),
+                            Some(sim.interner()),
+                            sim.playfield_bounds().is_some(),
+                        ))
+                    } else {
+                        compute_click_selection_snapshot_with_playfield(
+                            crate::app::input::entity_pick::presented(state, sim),
+                            &click_order,
+                            &current_selection,
+                            fog_ref,
+                            preferred_local_owner_name(state).as_deref(),
+                            world_x,
+                            world_y,
+                            shift,
+                            state.rules(),
+                            Some(sim.interner()),
+                            sim.playfield_bounds().is_some(),
+                            sim.resolved_terrain(),
+                        )
+                    };
+                    held_type_select_batch = true;
+                } else {
+                    queued_selection = compute_click_selection_snapshot_with_playfield(
+                        crate::app::input::entity_pick::presented(state, sim),
+                        &click_order,
+                        &current_selection,
+                        fog_ref,
+                        preferred_local_owner_name(state).as_deref(),
+                        world_x,
+                        world_y,
+                        shift,
+                        state.rules(),
+                        Some(sim.interner()),
+                        sim.playfield_bounds().is_some(),
+                        sim.resolved_terrain(),
+                    );
+                }
+            }
+            SelectAction::BoxSelect(min_x, min_y, max_x, max_y) => {
+                let fog_ref = if state.match_state.sandbox_full_visibility {
+                    None
+                } else {
+                    Some((sim.fog(), sim.house_alliances()))
+                };
+                let z = state.match_state.input.zoom_level;
+                let (min_x, min_y, max_x, max_y) = (
+                    min_x / z + state.match_state.input.camera_x,
+                    min_y / z + state.match_state.input.camera_y,
+                    max_x / z + state.match_state.input.camera_x,
+                    max_y / z + state.match_state.input.camera_y,
+                );
+                if held_type_select {
+                    queued_selection = Some(compute_type_select_box_mutation_with_playfield(
+                        crate::app::input::entity_pick::presented(state, sim),
+                        &screen_order,
+                        scope_order,
+                        &current_selection,
+                        fog_ref.map(|(fog, _)| fog),
+                        preferred_local_owner_name(state).as_deref(),
+                        min_x,
+                        min_y,
+                        max_x,
+                        max_y,
+                        shift,
+                        state.rules(),
+                        Some(sim.interner()),
+                        sim.playfield_bounds().is_some(),
+                    ));
+                    held_type_select_batch = true;
+                } else {
+                    let preflight_order = band_preflight_order
+                        .as_deref()
+                        .unwrap_or(screen_order.as_slice());
+                    queued_selection = compute_box_selection_snapshot_with_playfield(
+                        crate::app::input::entity_pick::presented(state, sim),
+                        preflight_order,
+                        &screen_order,
+                        &current_selection,
+                        fog_ref,
+                        preferred_local_owner_name(state).as_deref(),
+                        min_x,
+                        min_y,
+                        max_x,
+                        max_y,
+                        shift,
+                        state.rules(),
+                        Some(sim.houses()),
+                        Some(sim.interner()),
+                        sim.playfield_bounds().is_some(),
+                    );
+                }
+            }
+            SelectAction::None => {}
+        }
+    }
+    if let Some(mutation) = queued_selection {
+        if held_type_select_batch {
+            if mutation.select.is_empty() {
+                apply_selection_mutation(state, mutation, false, ORDINARY_SELECTION_VOICE_POLICY);
+            } else {
+                let prior = state.match_state.input.selection_voice_enabled;
+                state.match_state.input.selection_voice_enabled = false;
+                apply_selection_mutation(state, mutation, false, HELD_TYPE_SELECT_VOICE_POLICY);
+                state.match_state.input.selection_voice_enabled = prior;
+            }
+        } else {
+            apply_selection_mutation(state, mutation, true, ORDINARY_SELECTION_VOICE_POLICY);
+        }
+        // Click-select4ABE83 starts separately. A band release
+        // already started before its empty-catch decision above.
+        if !band_release {
+            apply_selection_action_line_policy(state, ORDINARY_SELECTION_ACTION_LINE_POLICY);
+        }
     }
 }
 

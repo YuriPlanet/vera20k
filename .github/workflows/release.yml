@@ -292,8 +292,8 @@ jobs:
           if (-not (Test-Path (Join-Path $app 'config.toml'))) { throw 'uninstall removed config.toml' }
           Write-Output 'Installer: refused, installed, upgraded and uninstalled as expected.'
       # macOS also gets the program as VERA20k.app on a disk image: it keeps its
-      # files in ~/Library/Application Support/VERA20k and asks for the Yuri's
-      # Revenge folder on its first launch (.github/release/macos).
+      # files in ~/Library/Application Support/VERA20k and finds or asks for the
+      # Yuri's Revenge folder on its first launch (.github/release/macos).
       - name: macOS app
         if: runner.os == 'macOS'
         env:
@@ -314,7 +314,10 @@ jobs:
           trap 'hdiutil detach "$mount" > /dev/null || true' EXIT
           app="$mount/VERA20k.app"
           test -L "$mount/Applications"
-          test -f "$mount/README.txt"
+          # The window's arrow and layout (dmg_settings.py).
+          test -f "$mount/.background.tiff"
+          test -f "$mount/.DS_Store"
+          test -f "$app/Contents/Resources/README.txt"
           codesign --verify --strict --verbose=2 "$app"
           # Started from the bundle, it works in its data folder: the usage
           # switch logs there and exits before the folder chooser or a window.

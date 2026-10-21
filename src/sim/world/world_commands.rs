@@ -1612,7 +1612,7 @@ impl Simulation {
                     owner,
                     other,
                 ) {
-                    self.make_enemy(owner, other, rules, true);
+                    self.make_enemy(owner, other, rules, overlay_registry, frame_effects, true);
                 } else {
                     self.make_ally(owner, other, rules, overlay_registry, frame_effects, true);
                 }
@@ -1995,8 +1995,9 @@ impl Simulation {
 
     /// The rally click's event 0x1E for each selected factory:
     /// `BuildingClass::SetRallyPoint @ 0x00443860` queues it and
-    /// `EventClass::Execute @ 0x004C6DAA` runs `Set_ArchiveTarget @
-    /// 0x0070C610`, so the factory archives the cell (its only store).
+    /// [`Self::execute_archive_event`] runs it, so the factory archives the
+    /// cell (its only store). [`Self::takes_rally_point`] is VERA's command
+    /// admission.
     ///
     /// The input owner `factory_rally_cell_input` has already run native
     /// Map56DC20's nearby-passable search separately for each producer. This
@@ -2013,10 +2014,8 @@ impl Simulation {
         ids.sort_unstable();
         ids.dedup();
         for stable_id in ids {
-            if self.takes_rally_point(stable_id, command_owner, rules)
-                && let Some(entity) = self.substrate.entities.get_mut(stable_id)
-            {
-                entity.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(rx, ry)));
+            if self.takes_rally_point(stable_id, command_owner, rules) {
+                self.execute_archive_event(stable_id, crate::sim::combat::TargetKind::Cell(rx, ry));
             }
         }
         // `EVA_NewRallyPointEstablished` is not a sim fact: `BuildingClass::
@@ -2026,30 +2025,42 @@ impl Simulation {
     }
 
     /// The object click's event 0x1E for a non-factory building
-    /// ([`Command::ArchiveObject`]), `EventClass::Execute @ 0x004C6DAA`: the
-    /// resolved building's planning tokens are cleared (`0x006386E0`, event
-    /// NULL), a dead building (`+0x90`) is skipped, and otherwise it archives
-    /// the target as the event resolves it ([`Self::resolve_event_token`]):
-    /// null when the object no longer exists. The owner test is VERA's
-    /// command admission.
+    /// ([`Command::ArchiveObject`]), run by [`Self::execute_archive_event`].
+    /// The owner test is VERA's command admission.
     ///
     /// [`Command::ArchiveObject`]: crate::sim::command::Command::ArchiveObject
     fn archive_object(&mut self, command_owner: &str, entity_id: u64, target_id: u64) -> bool {
-        if !self.entity_owned_by_id(command_owner, entity_id) {
-            return false;
-        }
+        self.entity_owned_by_id(command_owner, entity_id)
+            && self
+                .execute_archive_event(entity_id, crate::sim::combat::TargetKind::Entity(target_id))
+    }
+
+    /// `EventClass::Execute @ 0x004C6DAA`'s event 0x1E (ARCHIVE) for
+    /// `entity_id`: its planning tokens are cleared (`0x006386E0`, event
+    /// NULL), a dead object (`+0x90`) is skipped, and otherwise
+    /// `Set_ArchiveTarget @ 0x0070C610` stores `target` as the event resolves
+    /// it ([`Self::resolve_event_token`]): null for an object no longer
+    /// present, while a Cell always resolves. Returns whether it archived.
+    fn execute_archive_event(
+        &mut self,
+        entity_id: u64,
+        target: crate::sim::combat::TargetKind,
+    ) -> bool {
         self.planning_detach_actor(entity_id);
-        let target =
-            self.resolve_event_token(Some(crate::sim::combat::TargetKind::Entity(target_id)));
-        let Some(building) = self
+        // The target resolves only for a live object (`0x004C6DCD` precedes
+        // `0x006E6E20`), so a dead one stamps no fallback Cell.
+        if !self
             .substrate
             .entities
-            .get_mut(entity_id)
-            .filter(|building| building.lifecycle.object_alive())
-        else {
+            .get(entity_id)
+            .is_some_and(|object| object.lifecycle.object_alive())
+        {
             return false;
-        };
-        building.set_archive_target(target);
+        }
+        let target = self.resolve_event_token(Some(target));
+        if let Some(object) = self.substrate.entities.get_mut(entity_id) {
+            object.set_archive_target(target);
+        }
         true
     }
 

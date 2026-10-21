@@ -1193,21 +1193,31 @@ pub(super) fn push_choose_map_modal_text_draws(
         );
     }
     let geometry = modal.map_geometry(layout);
-    for (visible, record_idx) in modal
+    for (visible, (index, record_idx)) in modal
         .filtered_record_indices
         .iter()
+        .enumerate()
         .skip(modal.map_top_index)
         .take(geometry.visible_rows)
         .enumerate()
     {
-        let Some(record) = state.frontend.scenario_catalog.records().get(*record_idx) else {
+        let label = match &modal.row_labels {
+            Some(labels) => labels.get(index).map(String::as_str),
+            None => state
+                .frontend
+                .scenario_catalog
+                .records()
+                .get(*record_idx)
+                .map(|record| record.display_name.as_str()),
+        };
+        let Some(label) = label else {
             continue;
         };
         let row = geometry.row(visible);
         push_text_draw(
             out,
             state,
-            &record.display_name,
+            label,
             rect_to_text_rect(RectPx::new(
                 row.x + list_text_inset(scale),
                 row.y,

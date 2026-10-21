@@ -358,13 +358,14 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     // When they refuse, as under a plain, Ctrl or Ctrl+Shift hover, the
     // object's later rungs answer.
     let forced = modifier == crate::app::input::context_order::OrderModifier::ForceFire;
+    let terrain_forced = super::context_order::terrain_forced(modifier);
     if let Some(HoverObject::Terrain(terrain_id)) = hover_object
         && let Some(feedback) = best_id.and_then(|id| {
             terrain_object_feedback(
                 sim,
                 id,
                 terrain_id,
-                forced,
+                terrain_forced,
                 selected.len(),
                 state.rules(),
                 state.overlay_registry(),

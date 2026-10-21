@@ -18,6 +18,7 @@ Thumbs.db
 *.txt
 !tools/requirements-test.txt
 !tools/telemetry-dashboard/vendor/THREE-LICENSE.txt
+!.github/release/macos/requirements.txt
 *.tmp
 *.map
 *_todo.md

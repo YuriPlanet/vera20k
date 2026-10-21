@@ -2874,8 +2874,22 @@ impl Simulation {
                 let Some(target) = self.live_action_house(live, value, rules) else {
                     return false;
                 };
-                self.make_enemy(source, target, rules, false);
-                self.make_enemy(target, source, rules, false);
+                self.make_enemy(
+                    source,
+                    target,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                    false,
+                );
+                self.make_enemy(
+                    target,
+                    source,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                    false,
+                );
             }
             23..=27 => {
                 use crate::sim::scenario_session::ScenarioTimerAction;
