@@ -123,7 +123,7 @@ fn ares_side_sidebar_waits_for_full_type_pass_and_preserves_failed_process_state
     let prepass =
         process_native_noncampaign_rules_prepass(NativeRulesRegistryState::default(), &root);
     let state = prepass.registry_state().families[&RulesTypeFamily::Side][0]
-        .side_sidebar
+        .ares_side
         .as_ref()
         .unwrap();
     assert_eq!(
@@ -169,6 +169,7 @@ fn ares_side_sidebar_waits_for_full_type_pass_and_preserves_failed_process_state
             &IniFile::empty(),
             trace.into_registry_state_discarding_events(),
             RulesProcessContext::Ordinary,
+            &crate::rules::sound_ini::EvaRegistry::default(),
         )
         .unwrap_err();
     let (_, failed) = failure.into_parts();

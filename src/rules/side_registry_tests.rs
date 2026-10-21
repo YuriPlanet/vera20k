@@ -150,10 +150,18 @@ fn setup_processor(controls: &Value, row: &Value) -> RulesPassProcessor {
     let mut processor = RulesPassProcessor::default();
     let art = IniFile::empty();
     processor
-        .apply_pass(&ordered_ini(&controls["ordered_palette_sections"]), &art)
+        .apply_pass(
+            &ordered_ini(&controls["ordered_palette_sections"]),
+            &art,
+            &crate::rules::sound_ini::EvaRegistry::default(),
+        )
         .unwrap();
     processor
-        .apply_pass(&ordered_ini(&row["ordered_setup_sections"]), &art)
+        .apply_pass(
+            &ordered_ini(&row["ordered_setup_sections"]),
+            &art,
+            &crate::rules::sound_ini::EvaRegistry::default(),
+        )
         .unwrap();
     assert_registry(&processor.families, &row["before"], "direct reader setup");
     assert_eq!(

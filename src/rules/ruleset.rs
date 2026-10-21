@@ -3961,7 +3961,7 @@ pub struct RuleSet {
     /// Read-only projection of the live SideExt owner, in the same native
     /// array order as side_ids. Rebuilt after every Process/reset/save restore.
     #[cfg(feature = "ares")]
-    side_sidebar: Vec<(i32, bool)>,
+    side_extensions: Vec<(i32, bool, i32)>,
     /// Uppercase side identity -> source-order index.
     side_indices: HashMap<String, SideIdx>,
     /// Effective side for each country after `[Sides]` membership and the
@@ -5330,7 +5330,7 @@ impl RuleSet {
             country_indices: country_side_registry.country_indices,
             side_ids: country_side_registry.side_ids,
             #[cfg(feature = "ares")]
-            side_sidebar: country_side_registry.side_sidebar,
+            side_extensions: country_side_registry.side_extensions,
             side_indices: country_side_registry.side_indices,
             country_sides: country_side_registry.country_sides,
             color_schemes,
@@ -5815,7 +5815,7 @@ impl RuleSet {
         {
             b"ares-side-sidebar-v1".hash(&mut hasher);
             self.side_ids.hash(&mut hasher);
-            self.side_sidebar.hash(&mut hasher);
+            self.side_extensions.hash(&mut hasher);
         }
         self.object_list
             .iter()
@@ -6656,7 +6656,7 @@ impl RuleSet {
         self.side_ids = projection.side_ids;
         #[cfg(feature = "ares")]
         {
-            self.side_sidebar = projection.side_sidebar;
+            self.side_extensions = projection.side_extensions;
         }
         self.side_indices = projection.side_indices;
         self.country_sides = projection.country_sides;
@@ -6897,9 +6897,9 @@ impl RuleSet {
     pub fn side_sidebar_mix_file_index(&self, index: SideIdx) -> Option<i32> {
         #[cfg(feature = "ares")]
         return self
-            .side_sidebar
+            .side_extensions
             .get(usize::from(index.0))
-            .map(|&(mix, _)| mix);
+            .map(|&(mix, _, _)| mix);
         #[cfg(not(feature = "ares"))]
         {
             let _ = index;
@@ -6912,14 +6912,24 @@ impl RuleSet {
     pub fn side_sidebar_yuri_file_names(&self, index: SideIdx) -> Option<bool> {
         #[cfg(feature = "ares")]
         return self
-            .side_sidebar
+            .side_extensions
             .get(usize::from(index.0))
-            .map(|&(_, yuri)| yuri);
+            .map(|&(_, yuri, _)| yuri);
         #[cfg(not(feature = "ares"))]
         {
             let _ = index;
             None
         }
+    }
+
+    /// Signed SideExt+90 after reached EVA.Tag reads. Binding uses saved
+    /// Scenario.Side and preserves an out-of-catalog value; filename selection
+    /// decides whether that value has a column. Native: Ares1002FB00.
+    #[cfg(feature = "ares")]
+    pub fn side_eva_voice_index(&self, side: i32) -> Option<i32> {
+        self.side_extensions
+            .get(usize::try_from(side).ok()?)
+            .map(|&(_, _, voice)| voice)
     }
 
     /// Return the country's effective side after its optional `Side=`
@@ -7714,7 +7724,7 @@ struct ProjectedCountrySideRegistry {
     country_indices: HashMap<String, CountryIdx>,
     side_ids: Vec<String>,
     #[cfg(feature = "ares")]
-    side_sidebar: Vec<(i32, bool)>,
+    side_extensions: Vec<(i32, bool, i32)>,
     side_indices: HashMap<String, SideIdx>,
     country_sides: Vec<Option<SideIdx>>,
 }
@@ -7730,7 +7740,7 @@ fn project_country_side_registry<'a>(
     let sides = sides.collect::<Vec<_>>();
     let side_ids: Vec<String> = sides.iter().map(|(id, _)| (*id).to_owned()).collect();
     #[cfg(feature = "ares")]
-    let side_sidebar = sides
+    let side_extensions = sides
         .iter()
         .map(|(_, sidebar)| sidebar.expect("allocated Side owns its Ares extension"))
         .collect();
@@ -7773,7 +7783,7 @@ fn project_country_side_registry<'a>(
         country_indices,
         side_ids,
         #[cfg(feature = "ares")]
-        side_sidebar,
+        side_extensions,
         side_indices,
         country_sides,
     }
@@ -8007,10 +8017,15 @@ mod tests {
         for row in rows {
             let pass = detail_cached_ini(&row["sections"]);
             if row["kind"] == "audio_visual" {
-                retained =
-                    process_native_rules_cold_start(retained, &pass, &IniFile::empty(), None)
-                        .unwrap()
-                        .into_registry_state_discarding_events();
+                retained = process_native_rules_cold_start(
+                    retained,
+                    &pass,
+                    &IniFile::empty(),
+                    None,
+                    &crate::rules::sound_ini::EvaRegistry::default(),
+                )
+                .unwrap()
+                .into_registry_state_discarding_events();
             } else if row["kind"] == "type_reset_and_process" {
                 retained = retained.destructive_reset();
             }

@@ -17,6 +17,7 @@ use crate::rules::error::RulesError;
 use crate::rules::gunner_turrets::GunnerTurrets;
 use crate::rules::ini_parser::{IniFile, IniSection, is_native_none_type_name};
 use crate::rules::locomotor_type::SpeedType;
+use crate::rules::sound_ini::EvaRegistry;
 
 use crate::rules::missile_spawn::{MissileFamily, MissileSpawnRules};
 use crate::rules::object_type::{
@@ -147,14 +148,15 @@ impl RulesLayerStack {
     /// readers. It contains the final live scalar values, unioned registries,
     /// and only the per-type keys read at or after that type was allocated.
     ///
-    /// Production active-YR loading must call [`Self::process_with_fixed_art`]
-    /// with the one selected ARTMD.INI snapshot. This convenience exists for
-    /// synthetic Rules-only fixtures whose fixed-Art source is genuinely empty.
+    /// Production active-YR loading uses NativeRulesProcessOwner with its
+    /// fixed ARTMD and EVAMD snapshots. This convenience exists for synthetic
+    /// Rules-only fixtures whose fixed Art/EVA sources are genuinely empty.
     pub fn process(&self) -> Result<ProcessedRulesLayers, RulesError> {
         self.process_with_fixed_art(&IniFile::empty())
     }
 
-    /// Apply every Rules pass against the same fixed ARTMD.INI snapshot.
+    /// Apply every Rules pass against fixed ARTMD with an empty EVA catalog.
+    /// Production uses the process owner to supply its fixed EVAMD catalog.
     ///
     /// Retail provenance: `Load_Game_Rules @ 0x0052CD70` selects ARTMD before
     /// the first `RulesClass::Process @ 0x00668BF0`; `ReadTypeData @ 0x00679A10`
@@ -183,6 +185,7 @@ impl RulesLayerStack {
             fixed_art,
             registry_state,
             RulesProcessContext::Ordinary,
+            &EvaRegistry::default(),
         )
         .map_err(NativeRulesProcessingFailure::into_error)
     }
@@ -201,6 +204,7 @@ impl RulesLayerStack {
         fixed_art: &IniFile,
         registry_state: NativeRulesRegistryState,
         context: RulesProcessContext,
+        fixed_eva: &EvaRegistry,
     ) -> Result<ProcessedRulesLayers, NativeRulesProcessingFailure> {
         let (registry_state, mut root_color_add_reread) = match context {
             RulesProcessContext::Ordinary => (registry_state, None),
@@ -220,7 +224,7 @@ impl RulesLayerStack {
                 // particular, LANG's AudioVisual selectors stay current.
                 processor.rules_color_add.apply_pass(root);
             }
-            if let Err(error) = processor.apply_pass(ini, fixed_art) {
+            if let Err(error) = processor.apply_pass(ini, fixed_art, fixed_eva) {
                 let (_, partial_trace, _) = processor.finish();
                 return Err(NativeRulesProcessingFailure {
                     error,
@@ -281,9 +285,16 @@ pub(crate) fn process_native_rules_cold_start(
     selected_rules_root: &IniFile,
     fixed_art: &IniFile,
     langrule: Option<&IniFile>,
+    fixed_eva: &EvaRegistry,
 ) -> Result<NativeTypeConstructionTrace, RulesError> {
-    process_native_rules_cold_start_inner(registry_state, selected_rules_root, fixed_art, langrule)
-        .map(|(trace, _phase_event_counts)| trace)
+    process_native_rules_cold_start_inner(
+        registry_state,
+        selected_rules_root,
+        fixed_art,
+        langrule,
+        fixed_eva,
+    )
+    .map(|(trace, _phase_event_counts)| trace)
 }
 
 /// Shared production/test implementation. Counts are cumulative boundaries
@@ -295,6 +306,7 @@ fn process_native_rules_cold_start_inner(
     selected_rules_root: &IniFile,
     fixed_art: &IniFile,
     langrule: Option<&IniFile>,
+    fixed_eva: &EvaRegistry,
 ) -> Result<(NativeTypeConstructionTrace, [usize; 5]), RulesError> {
     let mut processor = RulesPassProcessor::with_registry_state(registry_state);
     // Cold52D111 reads ColorAdd66D480 before AudioVisual52D132.
@@ -302,7 +314,7 @@ fn process_native_rules_cold_start_inner(
     processor.allocate_audio_visual_references(selected_rules_root);
     let after_audio_visual = processor.native_type_construction_events.len();
     if let Some(langrule) = langrule {
-        processor.apply_pass(langrule, fixed_art)?;
+        processor.apply_pass(langrule, fixed_art, fixed_eva)?;
     }
     processor.allocate_explicit_family(
         selected_rules_root,
@@ -356,10 +368,11 @@ pub(crate) fn process_native_campaign_rules_prepass(
     registry_state: NativeRulesRegistryState,
     scenario_named_ini: Option<&IniFile>,
     fixed_art: &IniFile,
+    fixed_eva: &EvaRegistry,
 ) -> Result<NativeTypeConstructionTrace, NativeRulesProcessingFailure> {
     let mut processor = RulesPassProcessor::with_registry_state(registry_state);
     if let Some(ini) = scenario_named_ini
-        && let Err(error) = processor.apply_pass(ini, fixed_art)
+        && let Err(error) = processor.apply_pass(ini, fixed_art, fixed_eva)
     {
         let (_, partial_trace, _) = processor.finish();
         return Err(NativeRulesProcessingFailure {
@@ -596,7 +609,7 @@ impl ProcessedRulesLayers {
         for (&family, members) in &registry.families {
             for member in members {
                 #[cfg(feature = "ares")]
-                if member.side_sidebar.is_some() != (family == RulesTypeFamily::Side) {
+                if member.ares_side.is_some() != (family == RulesTypeFamily::Side) {
                     return Err(RulesError::InvalidSavedState(
                         "retained Side sidebar extension belongs to the wrong family",
                     ));
@@ -1781,23 +1794,39 @@ pub(crate) struct CountryVeterancyState {
 /// Live Side identity plus the immutable selected extension fields. The
 /// retained ProcessedType owns initialization and reads; the RuleSet view does
 /// not replay either. No extension exists in an ordinary retail build.
-pub(crate) type SideProjection<'a> = (&'a str, Option<(i32, bool)>);
+pub(crate) type SideProjection<'a> = (&'a str, Option<(i32, bool, i32)>);
 
 /// Ares3.0 SideExt constructor1002D9F0 and dispatcher1002B450 retain the phase
-/// with selected fields+88/+8C. The first ReadTypeData entry initializes defaults
+/// with selected fields+88/+8C/+90. The first ReadTypeData entry initializes defaults
 /// by stored ID at1002E190, then reads the current INI at1002E450; later calls
-/// retain current fields. Evidence: tools/rules_oracle/ares_side_sidebar.md.
+/// retain current fields. Evidence: tools/rules_oracle/ares_side_sidebar.md
+/// and tools/spatial_oracle/ares_eva.md.
 #[cfg(feature = "ares")]
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-struct SideSidebarState {
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct AresSideState {
     phase: i32,
     mix_file_index: i32,
     yuri_file_names: bool,
+    eva_voice_index: i32,
 }
 
 #[cfg(feature = "ares")]
-impl SideSidebarState {
-    fn read_pass(&mut self, id: &str, pass: &IniFile) {
+impl Default for AresSideState {
+    fn default() -> Self {
+        // SideExt constructor1002D9F0 leaves+90=-1; its first reader phase
+        // supplies ID-based defaults. Executed: spatial_oracle/ares_eva.json.
+        Self {
+            phase: 0,
+            mix_file_index: 0,
+            yuri_file_names: false,
+            eva_voice_index: -1,
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl AresSideState {
+    fn read_pass(&mut self, id: &str, pass: &IniFile, eva: &EvaRegistry) {
         if !(0..=2).contains(&self.phase) {
             return;
         }
@@ -1809,9 +1838,27 @@ impl SideSidebarState {
                     1
                 };
             self.yuri_file_names = id.eq_ignore_ascii_case("ThirdSide");
+            // First-phase1002E190 selects by stored Side ID, not array index.
+            self.eva_voice_index = if id.eq_ignore_ascii_case("Nod") {
+                1
+            } else if id.eq_ignore_ascii_case("ThirdSide") {
+                2
+            } else {
+                0
+            };
             self.phase = 1;
         }
         if let Some(section) = pass.section(id) {
+            // SideExt1002EC00 reads EVA.Tag before the two sidebar keys.
+            // Fixed EVAMD catalog lookup precedes literal none handling;
+            // missing/empty/unknown retains the old index and never rebinds Vox.
+            if let Some(tag) = section.read_name("EVA.Tag", 0x800) {
+                if let Some(index) = eva.voice_index_for_tag(tag) {
+                    self.eva_voice_index = index;
+                } else if is_native_none_type_name(tag) {
+                    self.eva_voice_index = -1;
+                }
+            }
             self.mix_file_index =
                 section.read_ares_int("Sidebar.MixFileIndex", self.mix_file_index);
             self.yuri_file_names =
@@ -2022,10 +2069,13 @@ impl NativeRulesRegistryState {
             .flatten()
             .map(|member| {
                 #[cfg(feature = "ares")]
-                let sidebar = member
-                    .side_sidebar
-                    .as_ref()
-                    .map(|state| (state.mix_file_index, state.yuri_file_names));
+                let sidebar = member.ares_side.as_ref().map(|state| {
+                    (
+                        state.mix_file_index,
+                        state.yuri_file_names,
+                        state.eva_voice_index,
+                    )
+                });
                 #[cfg(not(feature = "ares"))]
                 let sidebar = None;
                 (member.native_stored_id.as_str(), sidebar)
@@ -2465,7 +2515,7 @@ struct ProcessedType {
     /// complete ReadTypeData entry, not Country-only prepasses. Ordinary
     /// Process, failures and saved Rules retain this same owner.
     #[cfg(feature = "ares")]
-    side_sidebar: Option<SideSidebarState>,
+    ares_side: Option<AresSideState>,
     /// False until the native AnimType ART-body boundary has been entered.
     /// Kept on the process-resident type so subsequent Rules passes retain it.
     anim_art_read: bool,
@@ -2875,7 +2925,7 @@ impl ProcessedType {
             country_veterancy: CountryVeterancyState::default(),
             side_country_members: Vec::new(),
             #[cfg(feature = "ares")]
-            side_sidebar: None,
+            ares_side: None,
             anim_art_read: false,
             building_foundation: 0,
             building_target_coord_offset: [0; 3],
@@ -3040,7 +3090,12 @@ impl RulesPassProcessor {
         }
     }
 
-    fn apply_pass(&mut self, pass: &IniFile, fixed_art: &IniFile) -> Result<(), RulesError> {
+    fn apply_pass(
+        &mut self,
+        pass: &IniFile,
+        fixed_art: &IniFile,
+        fixed_eva: &EvaRegistry,
+    ) -> Result<(), RulesError> {
         if let Some(ordinary) = self.ordinary.as_mut() {
             ordinary.merge_rules_projection(pass);
         } else {
@@ -3065,7 +3120,7 @@ impl RulesPassProcessor {
         self.allocate_ai_references(pass);
         self.read_prerequisite_lists(pass);
         self.allocate_general_references(pass);
-        self.process_type_data(pass, fixed_art);
+        self.process_type_data(pass, fixed_art, fixed_eva);
 
         // ReadDifficulty66D270 skips an absent section. Once present, each
         // absent key receives its literal default, rather than a prior-pass
@@ -3270,7 +3325,7 @@ impl RulesPassProcessor {
         members.push(ProcessedType::new(native_stored_id.clone()));
         #[cfg(feature = "ares")]
         if family == RulesTypeFamily::Side {
-            members[index].side_sidebar = Some(SideSidebarState::default());
+            members[index].ares_side = Some(AresSideState::default());
         }
         if family == RulesTypeFamily::Terrain {
             members[index].armor_id = ArmorId::WOOD;
@@ -3784,7 +3839,7 @@ impl RulesPassProcessor {
         Some((native_stored_id, raw, member.body.clone()))
     }
 
-    fn process_type_data(&mut self, pass: &IniFile, fixed_art: &IniFile) {
+    fn process_type_data(&mut self, pass: &IniFile, fixed_art: &IniFile, _fixed_eva: &EvaRegistry) {
         // Ares ReadTypeData679A10 hook1002EFC0 sweeps every Side before
         // Country bodies. It does not require [Sides] or a Side section.
         // Country-only prepasses do not enter this hook. The live loop sees
@@ -3792,10 +3847,10 @@ impl RulesPassProcessor {
         #[cfg(feature = "ares")]
         for member in self.family_mut(RulesTypeFamily::Side) {
             member
-                .side_sidebar
+                .ares_side
                 .as_mut()
                 .expect("allocated Side owns its Ares extension")
-                .read_pass(&member.native_stored_id, pass);
+                .read_pass(&member.native_stored_id, pass, _fixed_eva);
         }
         // Installed BeforeTypeData679A15 reads ArmorTypes/defaults before
         // any ordinary ObjectType/Warhead body in this Process pass.
@@ -5294,3 +5349,7 @@ mod control_line_rules_tests;
 #[cfg(test)]
 #[path = "native_type_reader_tests.rs"]
 mod native_type_reader_tests;
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "ares_side_eva_tests.rs"]
+mod ares_side_eva_tests;

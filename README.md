@@ -112,6 +112,8 @@ The enabled build also supports [generic production prerequisites](docs/ares-pre
 including alternate owned types and installed-upgrade qualification.
 It also supports [Ares House survival](docs/ares-house-survival.md), including
 `KeepAlive` and the complete `BaseUnit` list for short games.
+Additional [EVA voice tags and Side selection](docs/ares-eva.md) use the fixed
+EVAMD catalog and the existing announcement queue.
 
 To launch single-player YR skirmishes or campaigns through a dedicated CnCNet
 client, see the [offline client setup](integrations/cncnet/README.md). This needs

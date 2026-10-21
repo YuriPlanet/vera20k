@@ -62,6 +62,24 @@ afterward selects the restored value.
 
 ## Ownership and substitutions
 
+The dequeue connection is established separately by original instructions and
+the installed DLL hook records. Insert752596/7525AF retains the event pointer
+in node+0C; dequeue7528AF restores that same pointer into EBP. The actual
+7528E8 hook enters10063AB0, which takes hook-frame EBP at10063AB5 and calls
+10063610. That forwarding trampoline jumps to753380 at1006361B/10063620;
+the actual GetFilename hook enters10063920 and reads the then-current
+B1D4C8 at10063921. The result returns through752901 to the ordinary `.WAV`
+assembly and PlayFile407B60 path. Thus enqueue does not freeze a voice/sample.
+The stock queue execution and the component controls here are joined by this
+instruction-level connection, not by an executed installed-hook/audio replay.
+Reading EVA.Tag and restoring its scalar do not bind that process cache.
+
+The Rust owner remains the immutable fixed EVAMD `EvaRegistry` and the existing
+retained Side extension. The latter stores a signed voice index during each
+actual read pass. Fresh/successful saved-load adoption calls the same Vox
+SetSide boundary using Scenario.Side; dequeue selects a column from the fixed
+catalog. No second queue, playback route or mutable catalog is introduced.
+
 The read/bind experiment extends `trigger_action_values.ActionFixture`. Its
 explicit per-instance stack address avoids the DLL's preferred image base;
 legacy fixtures keep their default stack layout. `native_oracle.map_pe32_image`

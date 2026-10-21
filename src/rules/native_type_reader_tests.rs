@@ -619,6 +619,7 @@ fn after_rules_class_references(context: RulesProcessContext) -> RuleSet {
             &IniFile::empty(),
             trace.into_registry_state_discarding_events(),
             context,
+            &crate::rules::sound_ini::EvaRegistry::default(),
         )
         .unwrap();
     RuleSet::from_processed_rules(&processed).unwrap()
@@ -833,6 +834,7 @@ fn retail_published_references_are_pinned() {
                         &artmd,
                         state,
                         RulesProcessContext::ScenarioReset,
+                        &crate::rules::sound_ini::EvaRegistry::default(),
                     )
                     .unwrap();
                 assert_eq!(publish(&reset), published, "{mode:?} after a reset");

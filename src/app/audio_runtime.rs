@@ -444,7 +444,10 @@ pub(crate) fn bind_match_eva_context(state: &mut crate::app::AppState) {
         state.match_state.sim_runtime.as_ref(),
         state.audio.sfx_player.as_mut(),
     ) {
-        sfx.set_eva_side(runtime.simulation.session().scenario_side());
+        sfx.set_eva_side(
+            runtime.simulation.session().scenario_side(),
+            &runtime.resources.rules,
+        );
     }
 }
 
