@@ -649,7 +649,7 @@ impl App {
                 state.process_assets.audio_catalog(),
             ) {
                 (Some(sfx), Some(assets), Some(catalog)) => {
-                    sfx.pump_and_check_voices(catalog.sounds(), assets, catalog.index())
+                    sfx.pump_and_check_voices(catalog.eva(), assets, catalog.index())
                 }
                 _ => false,
             };
@@ -731,14 +731,11 @@ impl App {
                 // `GameExit::BattleControlTerminated 0x00686616`:
                 // `VoxClass::PlayEVA("EVA_BattleControlTerminated", 2)` — the
                 // INTERRUPT override; the entry itself is STANDARD CRITICAL.
-                let eva_side = crate::app::presentation::building_anim::local_eva_side(state);
                 if let (Some(sfx), Some(assets), Some(catalog)) = (&mut state.audio.sfx_player, state.process_assets.manager(), state.process_assets.audio_catalog()) {
                     let _ = sfx.play_eva(
                         "EVA_BattleControlTerminated",
                         Some(crate::rules::sound_ini::EvaType::Interrupt),
                         catalog.eva(),
-                        eva_side,
-                        catalog.sounds(),
                         assets,
                         catalog.index(),
                     );
