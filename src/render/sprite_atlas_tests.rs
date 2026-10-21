@@ -801,11 +801,12 @@ fn building_animation_frames_render_from_the_file_they_were_counted_in() {
         "[YAGRND_B]\nImage=YAGRND_B\nLoopEnd=1\n",
     ));
 
-    let (count, file) =
+    let (count, raw_count, file) =
         scan_building_anim_frame_count(&assets, &art, "YAGRND_B", 1, "tem", "TEMPERATE")
             .expect("the anim naming finds the forced-G file");
     assert_eq!(file, "YGGRND_B.SHP");
     assert_eq!(count, 1, "two stored frames: one body frame, one shadow");
+    assert_eq!(raw_count, 2);
 
     assert!(
         load_shp_source(
@@ -885,6 +886,145 @@ fn gsi_13_08_effect_frame_count_halves_only_shadowed_non_scheduler_assets() {
     assert_eq!(available_effect_anim_frame_count(20, true, true), 20);
     assert_eq!(available_effect_anim_frame_count(1, false, true), 1);
     assert_eq!(available_effect_anim_frame_count(0, false, true), 0);
+}
+
+#[test]
+fn effect_shadow_frames_are_resident_without_extending_body_timing() {
+    for scheduler_owned in [false, true] {
+        let mut needed = HashSet::new();
+        let mut counts = HashMap::new();
+        let count = register_effect_anim_frames(
+            &mut needed,
+            &mut counts,
+            "SHADOWFX",
+            4,
+            scheduler_owned,
+            true,
+        );
+        let expected_count = if scheduler_owned { 4 } else { 2 };
+        assert_eq!(count, expected_count);
+        assert_eq!(counts["SHADOWFX"], expected_count);
+        assert_eq!(needed.len(), 4);
+        for frame in 0..4 {
+            assert!(needed.contains(&ShpSpriteKey {
+                palette_context: ShpPaletteContext::Legacy,
+                type_id: "SHADOWFX".into(),
+                facing: 0,
+                frame,
+                house_color: HouseColorIndex(0),
+            }));
+        }
+    }
+}
+
+#[test]
+fn building_anim_shadow_frames_follow_each_attached_palette_context() {
+    let directory = StoredFrameTestDirectory::new();
+    std::fs::write(directory.0.join("YGTEST.SHP"), raw_shp(&[([2, 2], 1); 4]))
+        .expect("write four physical animation frames");
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    for (cell_drawer, context) in [
+        ("yes", ShpPaletteContext::SelectedScheme),
+        ("no", ShpPaletteContext::GlobalAnim),
+    ] {
+        let art = ArtRegistry::from_ini(&crate::rules::ini_parser::IniFile::from_str(&format!(
+            "[YATEST]\nShadow=yes\nLoopEnd=2\nShouldUseCellDrawer={cell_drawer}\n"
+        )));
+        let mut needed = HashSet::new();
+        let mut counts = HashMap::new();
+        let mut files = HashMap::new();
+        for color in [HouseColorIndex(1), HouseColorIndex(2)] {
+            register_building_anim(
+                &mut needed,
+                &mut counts,
+                &mut files,
+                &assets,
+                &art,
+                "YATEST",
+                2,
+                color,
+                "tem",
+                "TEMPERATE",
+            );
+            for frame in 0..4 {
+                assert!(needed.contains(&ShpSpriteKey {
+                    palette_context: context,
+                    type_id: "YATEST".into(),
+                    facing: 0,
+                    frame,
+                    house_color: if context == ShpPaletteContext::GlobalAnim {
+                        HouseColorIndex(0)
+                    } else {
+                        color
+                    },
+                }));
+            }
+        }
+        assert_eq!(counts["YATEST"], (2, 4));
+        assert_eq!(files["YATEST"], "YGTEST.SHP");
+        assert_eq!(needed.len(), if cell_drawer == "yes" { 8 } else { 4 });
+    }
+}
+
+#[test]
+fn retail_refinery_anim_loads_its_physical_shadow_companions() {
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets()
+        .expect("Battle rules came from the explicit retail install");
+    let mut needed = HashSet::new();
+    let mut counts = HashMap::new();
+    let mut files = HashMap::new();
+    register_building_anim(
+        &mut needed,
+        &mut counts,
+        &mut files,
+        &assets,
+        battle.rules.art(),
+        "YAREFN_A",
+        2,
+        HouseColorIndex(1),
+        "tem",
+        "TEMPERATE",
+    );
+    assert_eq!(counts["YAREFN_A"], (2, 4));
+    assert_eq!(files["YAREFN_A"], "YGREFN_A.SHP");
+    let source = load_shp_source(
+        &assets,
+        "YAREFN_A",
+        Some(&files["YAREFN_A"]),
+        "tem",
+        "TEMPERATE",
+        Some(&battle.rules),
+        Some(battle.rules.art()),
+    )
+    .expect("physical refinery animation");
+    let palette = Palette::from_bytes(assets.get_ref("unittem.pal").unwrap()).unwrap();
+    for frame in 0..4 {
+        let key = ShpSpriteKey {
+            palette_context: ShpPaletteContext::SelectedScheme,
+            type_id: "YAREFN_A".into(),
+            facing: 0,
+            frame,
+            house_color: HouseColorIndex(1),
+        };
+        assert!(needed.contains(&key), "missing refinery frame {frame}");
+        let sprite = render_shp_frame(
+            &source,
+            &palette,
+            true,
+            &key,
+            Some(&battle.rules),
+            &mut ShpPalettes::default(),
+        )
+        .expect("refinery body and shadow frames contain pixels");
+        assert_eq!(
+            [sprite.width, sprite.height],
+            if frame < 2 { [24, 20] } else { [26, 20] }
+        );
+        assert!(sprite.indices().iter().any(|&index| index != 0));
+    }
 }
 
 #[test]

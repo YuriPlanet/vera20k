@@ -380,7 +380,15 @@ pub(crate) fn build_display_effect_instances(
         ) {
             continue;
         }
-        let Ok(frame) = u16::try_from(anim.runtime().current_frame) else {
+        // DrawIt423055..42305D resolves the ordinary source as AC + AnimType.Start,
+        // just as the building-slot caller. Special draw arms retain their
+        // existing frame selection until their own renderer is ported.
+        let start = if super::anim_draw::ordinary_anim_type(type_name, config) {
+            config.map_or(0, |config| config.start)
+        } else {
+            0
+        };
+        let Ok(frame) = u16::try_from(anim.runtime().current_frame.wrapping_add(start)) else {
             continue;
         };
         // `AnimClass::GetCoords @ 0x00422BE0`: an owner-attached anim stores an
@@ -405,11 +413,6 @@ pub(crate) fn build_display_effect_instances(
             );
             [center_x, center_y] = sample.screen;
             lift_px = sample.lift.round() as i32;
-        }
-        if !in_view(
-            center_x, center_y, 200.0, 200.0, cam_x, cam_y, sw, sh, 200.0,
-        ) {
-            continue;
         }
         let tint = input.lighting.anim_tint_at((rx, ry), config);
         let remap_color =
@@ -437,10 +440,8 @@ pub(crate) fn build_display_effect_instances(
             frame,
             house_color: remap_color.unwrap_or(HouseColorIndex(0)),
         };
-        let Some(entry) = atlas.get(&key) else {
-            continue;
-        };
-        let Some(alpha) = anim_instance_alpha_with_flags(
+        let entry = atlas.get(&key);
+        let Some(flags) = anim_instance_flags(
             config,
             anim.draw_flags(),
             anim.runtime().current_frame,
@@ -453,6 +454,7 @@ pub(crate) fn build_display_effect_instances(
         ) else {
             continue;
         };
+        let alpha = anim_translucency_source_alpha(flags);
         let (origin_y, world_height) = (input.axis.origin_y, input.axis.world_height);
         let fire_depth = super::helpers::compute_sprite_depth_params_lifted(
             origin_y,
@@ -461,16 +463,9 @@ pub(crate) fn build_display_effect_instances(
             lift_px,
         );
         debug_assert!(!anim.terrain_attached() || anim.use_cell_drawer());
-        // Native Z (`AnimClass__DrawIt @ 0x00422CA0`): 0x2800, gradient entry
-        // 2 (0 when Flat), `YDrawOffset + ZAdjust - AdjustForZ - 2`; tests Z
-        // per pixel and never writes. YDrawOffset is already in the atlas
-        // offset, so only ZAdjust - 2 remains beside the lift cancel.
+        // Prepare the ordinary body coordinate/material. The shared DrawIt
+        // pass builder owns Flat's separate Z term and the optional shadow.
         let instance = SpriteInstance {
-            position: [center_x + entry.offset_x, center_y + entry.offset_y],
-            size: entry.pixel_size,
-            uv_origin: entry.uv_origin,
-            uv_size: entry.uv_size,
-            source_palette: entry.source_palette,
             depth: apply_shape_z_adjust(
                 fire_depth,
                 anim.z_adjust() + ANIM_DRAW_DEPTH_BIAS_PX,
@@ -499,11 +494,21 @@ pub(crate) fn build_display_effect_instances(
             ground_objects.push(
                 crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance::object(
                     parent,
-                    vec![crate::app::presentation::render::draw_plan_lowering::ObjectPieceInstance {
-                        target: crate::app::presentation::render::draw_plan_lowering::ObjectTexture::ShpPage(entry.page as usize),
-                        render_z: parent.policy.render_z,
-                        instance,
-                    }],
+                    super::anim_draw::anim_draw_pieces(
+                        atlas,
+                        super::anim_draw::AnimDrawInput {
+                            key: &key,
+                            entry,
+                            point: [center_x, center_y],
+                            body: instance,
+                            config,
+                            flags,
+                            lift_px,
+                            axis: input.axis,
+                            viewport: [cam_x, cam_y, sw, sh],
+                            legacy_policy: parent.policy.render_z,
+                        },
+                    ),
                 ),
             );
         }
@@ -538,6 +543,7 @@ fn anim_instance_alpha(
 /// `AnimClass::DrawIt`'s translucency selection (`0x00423061`) as a source
 /// alpha, or `None` where it skips the draw. Free anims and building slot
 /// anims both draw through it.
+#[cfg(test)]
 pub(super) fn anim_instance_alpha_with_flags(
     config: Option<&AnimTypeRuntimeConfig>,
     base_flags: u32,
@@ -546,6 +552,27 @@ pub(super) fn anim_instance_alpha_with_flags(
     game_detail_level: i32,
     draw_runtime: crate::sim::anim_class::AnimDrawRuntime,
 ) -> Option<f32> {
+    anim_instance_flags(
+        config,
+        base_flags,
+        current_frame,
+        shp_frame_count,
+        game_detail_level,
+        draw_runtime,
+    )
+    .map(anim_translucency_source_alpha)
+}
+
+/// Keep DrawIt's selected flags for both the body and its later shadow.
+/// The alpha-only helper remains available to the separate legacy callers.
+pub(super) fn anim_instance_flags(
+    config: Option<&AnimTypeRuntimeConfig>,
+    base_flags: u32,
+    current_frame: i32,
+    shp_frame_count: i32,
+    game_detail_level: i32,
+    draw_runtime: crate::sim::anim_class::AnimDrawRuntime,
+) -> Option<u32> {
     let result = crate::sim::anim_class::anim_translucency_selection(
         crate::sim::anim_class::AnimTranslucencyInput {
             base_flags,
@@ -561,9 +588,7 @@ pub(super) fn anim_instance_alpha_with_flags(
             instance_ramp: i32::from(draw_runtime.translucency_ramp),
         },
     );
-    result
-        .draw
-        .then(|| anim_translucency_source_alpha(result.flags))
+    result.draw.then_some(result.flags)
 }
 
 pub(super) fn presentation_anim_frame_count(
