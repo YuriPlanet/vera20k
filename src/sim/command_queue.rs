@@ -35,6 +35,9 @@ pub struct ChecksumMismatch {
 /// Try_Append_Event_To_OutList6521C0's process-wide capacity.
 pub const OUT_LIST_CAPACITY: usize = 0x80;
 
+/// Send_OutList649CA0 caps its local mirror at 0x2000 occupied DoList slots.
+pub const NETWORK_LOCAL_MIRROR_LIMIT: usize = 0x2000;
+
 /// Native events consume an OutList slot. Local-only Rust extensions share
 /// issue order with them without pretending to be native EventClass records.
 pub trait LocalCommandEvent {

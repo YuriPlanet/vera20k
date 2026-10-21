@@ -1,5 +1,5 @@
-//! Decoded LAN/WOL service results. These inputs exercise the original shell
-//! boundaries without implementing transport, file transfer or peers.
+//! Decoded LAN/WOL service results. The LAN transport and controlled captures
+//! share these shell boundaries; this owner applies admission and UI effects.
 
 use super::*;
 use crate::skirmish_launch::{SkirmishLaunchSession, SkirmishLocalSlot};
@@ -58,6 +58,15 @@ pub(crate) enum NetworkSetupEvent {
         max_ahead_frames: i32,
     },
     GoCompleted,
+    /// Explicit capture input, never emitted by the physical transport.
+    ControlledGoCompleted,
+    /// Type13 from a participant in the host's current GO reply wait.
+    GoAcknowledged {
+        source_index: usize,
+    },
+    GoMapRequested {
+        source_index: usize,
+    },
     MapTransferStarted,
     MapTransferProgress {
         completed: u32,
@@ -136,6 +145,9 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 NetworkSetupEvent::Timing { .. }
                     | NetworkSetupEvent::HostGo { .. }
                     | NetworkSetupEvent::GoCompleted
+                    | NetworkSetupEvent::ControlledGoCompleted
+                    | NetworkSetupEvent::GoAcknowledged { .. }
+                    | NetworkSetupEvent::GoMapRequested { .. }
                     | NetworkSetupEvent::MapTransferStarted
                     | NetworkSetupEvent::MapTransferProgress { .. }
                     | NetworkSetupEvent::MapTransferFinished { .. }
@@ -620,6 +632,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .as_mut()
                 .expect("setup owns protocol");
             protocol.locked = true;
+            protocol.lan_go = Some(LanGoWait::GuestPreparing);
             protocol
                 .requests
                 .push(NetworkSetupRequest::PrepareMapForHandoff {
@@ -627,7 +640,48 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 });
             state.frontend.skirmish_preview_texture = None;
         }
+        NetworkSetupEvent::GoAcknowledged { source_index } => {
+            anyhow::ensure!(
+                dialog.host && !dialog.wol(),
+                "GO reply has no LAN host receiver"
+            );
+            let protocol = state
+                .frontend
+                .network_setup_protocol
+                .as_mut()
+                .expect("setup");
+            if let Some(phase) = protocol.lan_go.as_mut() {
+                phase.acknowledge(source_index);
+            }
+        }
+        NetworkSetupEvent::GoMapRequested { source_index } => {
+            let required = state
+                .frontend
+                .network_setup_protocol
+                .as_ref()
+                .and_then(|protocol| protocol.lan_go.as_ref())
+                .is_some_and(|phase| {
+                    matches!(phase, LanGoWait::HostReplies { pending, .. }
+                    if pending.contains(&source_index))
+                });
+            if required {
+                // Native5DD6F8 records a file requester. This bounded local-map
+                // path cannot serve that file; retain an explicit failure.
+                fail_go_handoff(state);
+            }
+        }
         NetworkSetupEvent::GoCompleted => {
+            anyhow::ensure!(
+                state
+                    .frontend
+                    .network_setup_protocol
+                    .as_ref()
+                    .is_some_and(|protocol| matches!(protocol.lan_go, Some(LanGoWait::Complete))),
+                "physical GO completion preceded its native wait"
+            );
+            finish_go(state)?;
+        }
+        NetworkSetupEvent::ControlledGoCompleted => {
             prepare_local_map_for_handoff(state)?;
             finish_go(state)?;
         }
@@ -773,26 +827,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     }
                 }
             } else {
-                let message =
-                    App::csf_label(state, "TXT_UNABLE_PLAY_WAAUGH", "TXT_UNABLE_PLAY_WAAUGH");
-                let ok = App::csf_label(state, "TXT_OK", "OK");
-                state
-                    .frontend
-                    .multiplayer_setup
-                    .as_mut()
-                    .expect("setup interaction")
-                    .notice = Some(SkirmishValidationModalState::new(message, ok));
-                let protocol = state
-                    .frontend
-                    .network_setup_protocol
-                    .as_mut()
-                    .expect("setup owns protocol");
-                protocol.return_after_notice = true;
-                protocol.go_deadline = None;
-                state
-                    .frontend
-                    .shell_controller
-                    .push(crate::ui::shell::descriptor::DialogId(0xCE), true);
+                fail_go_handoff(state);
             }
         }
         NetworkSetupEvent::HostLeft => {
@@ -824,6 +859,52 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
     }
     state.platform.window.request_redraw();
     Ok(())
+}
+
+/// Verify through the existing map owner before the transport queues Type13.
+/// A missing or mismatched map is not a successful local handoff.
+pub(crate) fn prepare_lan_guest_handoff(state: &mut AppState) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        state
+            .frontend
+            .network_setup_protocol
+            .as_ref()
+            .is_some_and(|protocol| matches!(protocol.lan_go, Some(LanGoWait::GuestPreparing))),
+        "no guest GO map preparation is pending"
+    );
+    if let Err(error) = prepare_local_map_for_handoff(state) {
+        fail_go_handoff(state);
+        return Err(error);
+    }
+    state
+        .frontend
+        .network_setup_protocol
+        .as_mut()
+        .expect("checked setup")
+        .lan_go = Some(LanGoWait::GuestSending);
+    Ok(())
+}
+
+fn fail_go_handoff(state: &mut AppState) {
+    let message = App::csf_label(state, "TXT_UNABLE_PLAY_WAAUGH", "TXT_UNABLE_PLAY_WAAUGH");
+    let ok = App::csf_label(state, "TXT_OK", "OK");
+    state
+        .frontend
+        .multiplayer_setup
+        .as_mut()
+        .expect("setup interaction")
+        .notice = Some(SkirmishValidationModalState::new(message, ok));
+    let protocol = state
+        .frontend
+        .network_setup_protocol
+        .as_mut()
+        .expect("setup owner");
+    protocol.return_after_notice = true;
+    protocol.lan_go = Some(LanGoWait::Failed);
+    state
+        .frontend
+        .shell_controller
+        .push(crate::ui::shell::descriptor::DialogId(0xCE), true);
 }
 
 fn prepare_local_map_for_handoff(state: &mut AppState) -> anyhow::Result<()> {
@@ -1165,7 +1246,8 @@ fn finish_go(state: &mut AppState) -> anyhow::Result<()> {
         .as_mut()
         .ok_or_else(|| anyhow::anyhow!("no setup protocol"))?;
     anyhow::ensure!(protocol.locked, "no accepted GO is pending");
-    protocol.go_deadline = None;
+    // Keep dequeue deferred until the transition removes this protocol.
+    protocol.lan_go = Some(LanGoWait::HandingOff);
     protocol.map_transfer_pending = false;
     protocol.transfer_progress = None;
     let seed = state
@@ -1265,19 +1347,24 @@ fn poll_preview_offer(state: &mut AppState) -> Option<Instant> {
 }
 
 fn poll_go(state: &mut AppState) -> Option<Instant> {
-    let protocol = state.frontend.network_setup_protocol.as_ref()?;
-    let deadline = protocol.go_deadline?;
-    if protocol.map_transfer_pending {
-        return None;
-    }
-    if Instant::now() >= deadline {
-        if let Err(error) = finish_go(state) {
-            // The start cannot proceed; leave like a failed network start.
-            log::error!("LAN GO completion refused: {error:#}");
-            super::commit_back(state);
-        }
-        None
-    } else {
-        Some(deadline)
-    }
+    let phase = state
+        .frontend
+        .network_setup_protocol
+        .as_ref()?
+        .lan_go
+        .as_ref()?;
+    let now = super::super::match_runtime::frame_pacer::frame_bucket(
+        super::super::match_runtime::frame_pacer::wall_clock_ms(),
+    );
+    let buckets = match phase {
+        LanGoWait::HostReplies { timer, .. } => timer.remaining(now),
+        LanGoWait::HostSending { .. }
+        | LanGoWait::HostDrain { .. }
+        | LanGoWait::GuestPreparing
+        | LanGoWait::GuestSending
+        | LanGoWait::GuestDrain => 1,
+        LanGoWait::Complete | LanGoWait::HandingOff | LanGoWait::Failed => return None,
+    };
+    // Scheduling is a derived view; only transport observations advance GO.
+    Some(Instant::now() + std::time::Duration::from_millis(u64::from(buckets) * 16))
 }

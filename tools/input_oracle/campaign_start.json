@@ -2090,6 +2090,222 @@
       "width": 301
     }
   ],
+  "local_variable_controls": [
+    {
+      "initial_set": [
+        1,
+        7,
+        99
+      ],
+      "name": "retained_slots",
+      "passes": [
+        {
+          "names": {},
+          "ordered_sections": [],
+          "sections": {},
+          "set_slots": [
+            1,
+            7,
+            99
+          ]
+        },
+        {
+          "names": {
+            "1": "Clear",
+            "2": "Set",
+            "7": "Renamed"
+          },
+          "ordered_sections": [
+            {
+              "entries": [
+                [
+                  "1",
+                  "Clear,0"
+                ],
+                [
+                  "2",
+                  "Set,1"
+                ],
+                [
+                  "7",
+                  "Renamed"
+                ]
+              ],
+              "name": "VariableNames"
+            }
+          ],
+          "sections": {
+            "VariableNames": {
+              "1": "Clear,0",
+              "2": "Set,1",
+              "7": "Renamed"
+            }
+          },
+          "set_slots": [
+            2,
+            7,
+            99
+          ]
+        },
+        {
+          "names": {
+            "7": "Clear"
+          },
+          "ordered_sections": [
+            {
+              "entries": [
+                [
+                  "7",
+                  "Clear,0"
+                ]
+              ],
+              "name": "VariableNames"
+            }
+          ],
+          "sections": {
+            "VariableNames": {
+              "7": "Clear,0"
+            }
+          },
+          "set_slots": [
+            2,
+            99
+          ]
+        }
+      ]
+    },
+    {
+      "initial_set": [],
+      "name": "aliased_slot",
+      "passes": [
+        {
+          "names": {
+            "0": "LastName"
+          },
+          "ordered_sections": [
+            {
+              "entries": [
+                [
+                  "0",
+                  "First,1"
+                ],
+                [
+                  "junk",
+                  "LastName"
+                ]
+              ],
+              "name": "VariableNames"
+            }
+          ],
+          "sections": {
+            "VariableNames": {
+              "0": "First,1",
+              "junk": "LastName"
+            }
+          },
+          "set_slots": [
+            0
+          ]
+        },
+        {
+          "names": {
+            "0": "AnotherName"
+          },
+          "ordered_sections": [
+            {
+              "entries": [
+                [
+                  "junk",
+                  "Clear,0"
+                ],
+                [
+                  "0",
+                  "AnotherName"
+                ]
+              ],
+              "name": "VariableNames"
+            }
+          ],
+          "sections": {
+            "VariableNames": {
+              "0": "AnotherName",
+              "junk": "Clear,0"
+            }
+          },
+          "set_slots": []
+        }
+      ]
+    },
+    {
+      "initial_set": [
+        3,
+        4
+      ],
+      "name": "case_and_tokens",
+      "passes": [
+        {
+          "names": {},
+          "ordered_sections": [
+            {
+              "entries": [
+                [
+                  "3",
+                  "WrongCase,0"
+                ]
+              ],
+              "name": "variablenames"
+            }
+          ],
+          "sections": {
+            "variablenames": {
+              "3": "WrongCase,0"
+            }
+          },
+          "set_slots": [
+            3,
+            4
+          ]
+        },
+        {
+          "names": {
+            "3": "Keep",
+            "4": "Clear",
+            "5": "Set"
+          },
+          "ordered_sections": [
+            {
+              "entries": [
+                [
+                  "3",
+                  "Keep,"
+                ],
+                [
+                  "4",
+                  "Clear,garbage"
+                ],
+                [
+                  "5",
+                  "Set,-2"
+                ]
+              ],
+              "name": "VariableNames"
+            }
+          ],
+          "sections": {
+            "VariableNames": {
+              "3": "Keep,",
+              "4": "Clear,garbage",
+              "5": "Set,-2"
+            }
+          },
+          "set_slots": [
+            3,
+            5
+          ]
+        }
+      ]
+    }
+  ],
   "metadata": {
     "csf": {
       "entries": {

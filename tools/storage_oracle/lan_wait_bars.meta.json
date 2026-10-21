@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Whole64A7B0 numeric projection and terminal paint arguments, including unsigned millisecond scaling and signed width clamp",
+  "assumptions": [
+    "Native648881..6488AE writes one raw timeGetTime value to all peer+14 fields at wait entry. Valid FrameSync64A606..64A60D writes wall-bucket-now minus wait-entry to peer+C.648C06..648C36 snapshots waitelapsed and peer rows for the dialog.",
+    "Each control supplies waitelapsedAFA418, peer+C and peer+14 at AFA278, plus raw timeGetTime return. These are explicit timing inputs; original64A7B0 computes every lag, scale, division, branch and width.",
+    "Two source rows (local0/remote7) map through original541040 to one supplied admitted connection. Local row lag is natively0. Rectangles are supplied200x20 pixels, RGB565 format explicitly selected; rasterization is excluded.",
+    "Original executable sections must remain unchanged. Full64A7B0 must return with correct stack, produce both rows, and leave timing input storage unchanged."
+  ],
+  "substitutions": [
+    "Shared shell_relayout.Machine supplies native resource children, allocation and Win32 geometry imports. timeGetTime returns the declared raw milliseconds. Terminal surface GetRect/DrawRect/FillRect capture output; no bar arithmetic is substituted."
+  ],
+  "entry_points": {
+    "bar": "0x0064A7B0",
+    "peer_lookup": "0x00541040",
+    "lag_subtract": "0x0064A86A",
+    "scaled_subtract": "0x0064A920",
+    "unsigned_divide": "0x0064A922",
+    "threshold": "0x0064A927",
+    "blue_override": "0x0064A92F",
+    "percent": "0x0064A972",
+    "width": "0x0064A99D"
+  },
+  "replay_command": "python -m tools.storage_oracle.lan_lobby --wait-bars",
+  "payload_sha256": "419bd5384077fd1daeee81307b765bcb55a383006ff0c01c49553e9330b8ce0d"
+}

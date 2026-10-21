@@ -19,8 +19,8 @@
 //!   carried (inert on retail data; see `sim::campaign_carry_over`).
 //! Saved campaigns use the retained Scenario index and incoming carry-over
 //! through the same retry path as freshly started campaigns.
-//! - Enter on the box: callback `0x005D36A0` maps IDOK to result 1 (the
-//!   shell); VERA's shell message boxes answer only clicks and Escape.
+//! Message-box keyboard admission maps Enter's IDOK and Escape's IDCANCEL
+//! through callback `0x005D36A0` to result 1 (the shell).
 
 use super::{App, AppState};
 use crate::app::match_bootstrap::PreparedCampaignStartup;

@@ -35,6 +35,8 @@ pub trait LocalPlanningBoundary {
 pub enum NetworkCommandError {
     #[error(transparent)]
     Mismatch(#[from] crate::sim::command_queue::ChecksumMismatch),
+    #[error(transparent)]
+    Interrupted(#[from] super::network_commands::NetworkInterruption),
     #[error("{0}")]
     Unavailable(String),
 }
@@ -43,6 +45,16 @@ pub enum NetworkCommandError {
 /// A frame borrows that owner at the native post-Logic queue boundary; no
 /// history or transport state is copied into Simulation.
 pub trait NetworkCommandBoundary {
+    /// `None` keeps diagnostic/replay's already-admitted event route. A live
+    /// transport must return its Queue_AI decision and own all local transfer.
+    fn exchange_commands(
+        &self,
+        _context: super::network_commands::NetworkQueueContext,
+        _queues: &mut super::network_commands::NetworkCommandQueues<'_>,
+    ) -> Result<Option<super::network_commands::NetworkQueuePass>, NetworkCommandError> {
+        Ok(None)
+    }
+
     fn record_frame_checksum(&self, frame: u32, checksum: u32);
     fn compare_frame_info(
         &self,
@@ -83,6 +95,15 @@ pub struct FrameEffects<'a> {
 }
 
 impl<'a> FrameEffects<'a> {
+    pub(crate) fn exchange_commands(
+        self,
+        context: super::network_commands::NetworkQueueContext,
+        queues: &mut super::network_commands::NetworkCommandQueues<'_>,
+    ) -> Result<Option<super::network_commands::NetworkQueuePass>, NetworkCommandError> {
+        self.network_commands.map_or(Ok(None), |boundary| {
+            boundary.exchange_commands(context, queues)
+        })
+    }
     pub const fn empty() -> Self {
         Self {
             sound: None,

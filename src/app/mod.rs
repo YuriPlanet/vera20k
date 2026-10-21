@@ -49,6 +49,7 @@ mod frame;
 pub mod frontend;
 mod handler;
 mod in_game;
+pub(crate) mod lan_service;
 mod initialize;
 pub(crate) mod input;
 pub(crate) mod loading;

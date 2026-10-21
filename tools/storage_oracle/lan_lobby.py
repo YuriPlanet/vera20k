@@ -569,6 +569,43 @@ def generate():
 
 
 if __name__ == "__main__":
+    import sys
+    if "--messages" in sys.argv:
+        from tools.storage_oracle import lan_messages
+        finish_vectors(lan_messages.generate, Path(__file__).with_name("lan_messages.json"),
+                       provenance=lan_messages.metadata,
+                       argv=[arg for arg in sys.argv[1:] if arg != "--messages"],
+                       source_paths=lan_messages.SOURCE_PATHS)
+        raise SystemExit
+    if "--wait-bars" in sys.argv:
+        from tools.storage_oracle import lan_wait_bars
+        finish_vectors(lan_wait_bars.generate, Path(__file__).with_name("lan_wait_bars.json"),
+                       provenance=lan_wait_bars.metadata,
+                       argv=[arg for arg in sys.argv[1:] if arg != "--wait-bars"],
+                       source_paths=lan_wait_bars.SOURCE_PATHS)
+        raise SystemExit
+    if "--ingame-messages" in sys.argv:
+        from tools.storage_oracle import lan_ingame_messages
+        finish_vectors(lan_ingame_messages.generate, Path(__file__).with_name("lan_ingame_messages.json"),
+                       provenance=lan_ingame_messages.metadata,
+                       argv=[arg for arg in sys.argv[1:] if arg != "--ingame-messages"],
+                       source_paths=lan_ingame_messages.SOURCE_PATHS)
+        raise SystemExit
+    if "--global-connection" in sys.argv:
+        from tools.storage_oracle import lan_global
+        finish_vectors(lan_global.generate, Path(__file__).with_name("lan_global.json"),
+                       provenance=lan_global.metadata,
+                       argv=[arg for arg in sys.argv[1:] if arg != "--global-connection"],
+                       source_paths={"global": Path(lan_global.__file__),
+                                     "native_oracle": Path(__import__("tools.native_oracle", fromlist=["x"]).__file__),
+                                     "shared_machine": Path(__import__("tools.storage_oracle.shell_relayout", fromlist=["x"]).__file__)})
+        raise SystemExit
+    if "--event-packets" in sys.argv:
+        from tools.storage_oracle.lan_event_packets import generate as event_packets, metadata
+        finish_vectors(event_packets, Path(__file__).with_name("lan_event_packets.json"),
+                       provenance=metadata,
+                       argv=[arg for arg in sys.argv[1:] if arg != "--event-packets"])
+        raise SystemExit
     finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=lambda: provenance(
         scope="Original host/guest LAN MaxAhead blocks 5DD48D/5DD2CD and response getters 5424C0/48BA80; BC host seed block 5DEC3B..5DEC61 (Main RNG -> CRT srand/rand), Battle assignments 69B8C0, observer starts 5D6890, Cooperative AI preparation 5C30C0 and campaign round assignments 5C2710 with full Scenario RNG state/draw order; BB/BC/BD/BC6 relayout/help and NewEdit 614B30 -> BB 5DDBD0 -> chat cap 5EDD00 -> send 5DE360",
         assumptions=[

@@ -18,5 +18,13 @@
 // pub mod protocol;
 
 pub mod lockstep;
+pub mod event_packet;
+pub mod command_exchange;
+pub mod reliable;
+pub mod udp;
+pub mod live_commands;
+pub mod global;
 #[cfg(test)]
 mod lockstep_sim_convergence_tests;
+
+pub mod lan_messages;

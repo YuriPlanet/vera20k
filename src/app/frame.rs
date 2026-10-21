@@ -54,6 +54,7 @@ impl App {
         // current outcome Vox before it raises the victory/defeat exit global.
         // Drive that gate before deciding whether another sim frame is legal.
         let scenario_now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+        crate::app::lan_service::poll(state, scenario_now_ms);
         if crate::app::match_runtime::network_failure::pending(state) {
             // ExecuteDoList64CD0C blocks inside ShellMessageBox5D3490. Its
             // message pump still reaches Network_ServiceLoop48D080/audio,
@@ -153,11 +154,17 @@ impl App {
         // match running behind other windows instead. The gate sits at the
         // call site, not inside the runtime, so a focus edge never re-anchors
         // the frame pacer on its own.
-        if simulation_allowed
-            && matches!(state.frontend.screen, GameScreen::InGame)
-            && !state.platform.focus_freeze_active()
-            && state.match_state.scenario_exit.is_none()
-            && state.match_state.scenario_outcome.is_none()
+        let network_frame_pending = state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .is_some_and(|rt| rt.simulation.pending_network_wait());
+        if matches!(state.frontend.screen, GameScreen::InGame)
+            && (network_frame_pending
+                || (simulation_allowed
+                    && !state.platform.focus_freeze_active()
+                    && state.match_state.scenario_exit.is_none()
+                    && state.match_state.scenario_outcome.is_none()))
         {
             let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
             // Wait_For_Players runs inside the frame's network service, ahead
@@ -165,6 +172,14 @@ impl App {
             if crate::app::match_runtime::network_match::service_wait(state, now_ms)
                 == crate::app::match_runtime::network_match::WaitPass::Leave
             {
+                if state
+                    .match_state
+                    .sim_runtime
+                    .as_ref()
+                    .is_some_and(|rt| rt.simulation.pending_network_wait())
+                {
+                    sim_tick::leave_network_wait(state);
+                }
                 // Result 8 clears GameActive without an EXIT event, so
                 // Main_Game returns past the router without 0x00686570's
                 // EVA and fades (0x0064806C..0x006482A6, 0x0055D347).

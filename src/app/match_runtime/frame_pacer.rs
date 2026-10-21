@@ -278,7 +278,7 @@ impl LocalFramePacer {
     }
 }
 
-const fn frame_bucket(now_ms: u64) -> u32 {
+pub(crate) const fn frame_bucket(now_ms: u64) -> u32 {
     (now_ms as u32) >> FRAME_BUCKET_SHIFT
 }
 

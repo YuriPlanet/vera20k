@@ -877,6 +877,54 @@ def reset_control():
     return row
 
 
+def local_variable_controls():
+    """Whole ReadLocal689B20, retaining the previous values between reads."""
+    histories = (
+        ("retained_slots", [1, 7, 99], (
+            {},
+            {"VariableNames": {"1": "Clear,0", "2": "Set,1", "7": "Renamed"}},
+            {"VariableNames": {"7": "Clear,0"}},
+        )),
+        ("aliased_slot", [], (
+            {"VariableNames": {"0": "First,1", "junk": "LastName"}},
+            {"VariableNames": {"junk": "Clear,0", "0": "AnotherName"}},
+        )),
+        ("case_and_tokens", [3, 4], (
+            {"variablenames": {"3": "WrongCase,0"}},
+            {"VariableNames": {"3": "Keep,", "4": "Clear,garbage", "5": "Set,-2"}},
+        )),
+    )
+    rows = []
+    for name, initial_set, passes in histories:
+        m = CampaignReader()
+        m.invoke(0x6832C0, m.scenario)
+        for index in range(100):
+            m.u.mem_write(m.scenario + 0x248A + index * 41, b"Prior\0")
+            m.u.mem_write(m.scenario + 0x24B2 + index * 41, bytes([index in initial_set]))
+        history = []
+        for values in passes:
+            m.ordered_ini(values)
+            before = m.rng_state()
+            m.invoke(0x689B20, m.scenario, (INI,))
+            names, set_slots = {}, []
+            for index in range(100):
+                record = bytes(m.u.mem_read(m.scenario + 0x248A + index * 41, 41))
+                label = record[:40].split(b"\0", 1)[0].decode("latin1")
+                if label:
+                    names[str(index)] = label
+                if record[40]:
+                    set_slots.append(index)
+            if m.rng_state() != before:
+                raise AssertionError(f"ReadLocal changed RNG state: {name}")
+            m.check_code()
+            ordered = [dict(name=name, entries=list(entries.items()))
+                       for name, entries in values.items()]
+            history.append(dict(sections=values, ordered_sections=ordered,
+                                names=names, set_slots=set_slots))
+        rows.append(dict(name=name, initial_set=initial_set, passes=history))
+    return rows
+
+
 def edge_controls():
     m = CampaignReader()
     rows = []
@@ -1855,6 +1903,7 @@ def generate():
                 loading_geometry=loading_geometry(), mission_loading=mission_loading(),
                 progress_rows=progress_rows(), basic_start=basic_start_cases(),
                 special_controls=special_controls(), reset_control=reset_control(),
+                local_variable_controls=local_variable_controls(),
                 rng_cases=[rng_case(override=override, tick_count=tick) for override, tick in
                            ((0, 0), (0, 1), (0, 31), (1, 99), (0x12345678, 99))] +
                           [rng_case(override=99, tick_count=23, **flag) for flag in

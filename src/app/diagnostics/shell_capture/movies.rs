@@ -208,11 +208,17 @@ pub(super) struct MoviesCapture {
 }
 
 impl MoviesCapture {
-    pub(super) fn new(target: MoviesTarget, output: &Path) -> Self {
+    pub(super) fn new(
+        target: MoviesTarget,
+        output: &Path,
+        live_lan: Option<super::LiveLanConfig>,
+    ) -> Self {
         Self {
             target,
             lan: if let MoviesTarget::Lan(target) = target {
-                Some(lan::LanCapture::new(target))
+                let mut capture = lan::LanCapture::new(target);
+                capture.configure_live(live_lan);
+                Some(capture)
             } else {
                 None
             },
@@ -1579,6 +1585,14 @@ impl MoviesCapture {
                 CampaignStartTarget::Restart(RestartTarget::DefeatPrompt) => "defeat-replay-prompt",
                 CampaignStartTarget::Restart(RestartTarget::DefeatReplayed) => "defeat-replayed",
                 CampaignStartTarget::Restart(RestartTarget::DefeatReturned) => "defeat-returned",
+                CampaignStartTarget::Restart(RestartTarget::DefeatReturnedEnter) =>
+                    "defeat-returned-enter",
+                CampaignStartTarget::Restart(RestartTarget::DefeatReturnedNumpadEnter) =>
+                    "defeat-returned-numpad-enter",
+                CampaignStartTarget::Restart(RestartTarget::DefeatReturnedEscape) =>
+                    "defeat-returned-escape",
+                CampaignStartTarget::Restart(RestartTarget::DefeatReturnedRepeatedEnter) =>
+                    "defeat-returned-repeated-enter",
                 CampaignStartTarget::Restart(RestartTarget::Restate) => "restate",
                 CampaignStartTarget::Restart(RestartTarget::ObjectiveExpiry) =>
                     "objective-expired-after-menu",

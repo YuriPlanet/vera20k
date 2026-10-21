@@ -555,6 +555,18 @@ impl ShellCaptureCheckpoint {
             "campaign-sov02-objective-expiry" => Ok(Self::CampaignRestart(
                 movies::RestartTarget::ObjectiveExpiry,
             )),
+            "campaign-all1-defeat-replay-enter" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::DefeatReturnedEnter,
+            )),
+            "campaign-all1-defeat-replay-numpad-enter" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::DefeatReturnedNumpadEnter,
+            )),
+            "campaign-all1-defeat-replay-escape" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::DefeatReturnedEscape,
+            )),
+            "campaign-all1-defeat-replay-repeated-enter" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::DefeatReturnedRepeatedEnter,
+            )),
             "campaign-sov05-first-live-frame" => {
                 Ok(Self::CampaignExplicitFirstLive("SOV05UMD.MAP"))
             }
@@ -727,6 +739,18 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignRestart(movies::RestartTarget::DefeatReturned) => {
                 CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_NO
+            }
+            Self::CampaignRestart(movies::RestartTarget::DefeatReturnedEnter) => {
+                "campaign-all1-defeat-replay-enter"
+            }
+            Self::CampaignRestart(movies::RestartTarget::DefeatReturnedNumpadEnter) => {
+                "campaign-all1-defeat-replay-numpad-enter"
+            }
+            Self::CampaignRestart(movies::RestartTarget::DefeatReturnedEscape) => {
+                "campaign-all1-defeat-replay-escape"
+            }
+            Self::CampaignRestart(movies::RestartTarget::DefeatReturnedRepeatedEnter) => {
+                "campaign-all1-defeat-replay-repeated-enter"
             }
             Self::CampaignRestart(movies::RestartTarget::DefeatReplayed) => {
                 CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_YES
@@ -1004,6 +1028,15 @@ pub struct ShellCaptureRequest {
     cursor_x: u32,
     cursor_y: u32,
     output_dir: PathBuf,
+    live_lan: Option<LiveLanConfig>,
+}
+
+/// Explicit sockets for the physical two-process LAN diagnostic. They do not
+/// replace any gameplay/session identity and are unavailable to other captures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LiveLanConfig {
+    pub bind: std::net::SocketAddrV4,
+    pub peer: std::net::SocketAddrV4,
 }
 
 impl ShellCaptureRequest {
@@ -1070,6 +1103,8 @@ where
     let mut cursor_x = None;
     let mut cursor_y = None;
     let mut output_dir = None;
+    let mut lan_bind = None;
+    let mut lan_peer = None;
 
     while let Some(flag) = args.next() {
         let flag = flag
@@ -1108,6 +1143,20 @@ where
                     .ok_or_else(|| anyhow::anyhow!("missing value after --output"))?;
                 set_once(&mut output_dir, PathBuf::from(value), "--output")?;
             }
+            "--lan-bind" => set_once(
+                &mut lan_bind,
+                next_utf8(&mut args, "value after --lan-bind")?
+                    .parse::<std::net::SocketAddrV4>()
+                    .context("--lan-bind requires an IPv4 address and port")?,
+                "--lan-bind",
+            )?,
+            "--lan-peer" => set_once(
+                &mut lan_peer,
+                next_utf8(&mut args, "value after --lan-peer")?
+                    .parse::<std::net::SocketAddrV4>()
+                    .context("--lan-peer requires an IPv4 address and port")?,
+                "--lan-peer",
+            )?,
             _ => bail!("unknown shell-capture option {flag:?}"),
         }
     }
@@ -1130,6 +1179,37 @@ where
         checkpoint.as_str()
     );
     validate_new_output_dir(&output_dir)?;
+    let live = matches!(checkpoint, ShellCaptureCheckpoint::Lan(target) if target.live());
+    let live_lan = if live {
+        let bind = lan_bind.context("live LAN capture requires --lan-bind")?;
+        let peer = lan_peer.context("live LAN capture requires --lan-peer")?;
+        ensure!(
+            (1..=u16::MAX - 2).contains(&bind.port()),
+            "--lan-bind needs a nonzero port with room for alternate port+2"
+        );
+        ensure!(
+            !bind.ip().is_broadcast() && !bind.ip().is_multicast(),
+            "--lan-bind is not a unicast bind address"
+        );
+        ensure!(
+            peer.port() != 0
+                && !peer.ip().is_unspecified()
+                && !peer.ip().is_broadcast()
+                && !peer.ip().is_multicast(),
+            "--lan-peer needs a unicast IPv4 endpoint"
+        );
+        ensure!(
+            peer != bind && !(peer.ip() == bind.ip() && peer.port() == bind.port() + 2),
+            "LAN peer overlaps a local socket"
+        );
+        Some(LiveLanConfig { bind, peer })
+    } else {
+        ensure!(
+            lan_bind.is_none() && lan_peer.is_none(),
+            "LAN socket options require a live LAN checkpoint"
+        );
+        None
+    };
 
     Ok(AppLaunchMode::ShellCapture(ShellCaptureRequest {
         checkpoint,
@@ -1138,6 +1218,7 @@ where
         cursor_x,
         cursor_y,
         output_dir,
+        live_lan,
     }))
 }
 
@@ -1471,10 +1552,9 @@ impl ShellCaptureSession {
             ),
             _ => None,
         };
-        let movies = request
-            .checkpoint
-            .movies_target()
-            .map(|target| movies::MoviesCapture::new(target, request.output_dir()));
+        let movies = request.checkpoint.movies_target().map(|target| {
+            movies::MoviesCapture::new(target, request.output_dir(), request.live_lan)
+        });
         let score = match request.checkpoint {
             ShellCaptureCheckpoint::Score0x108Steady => Some(score::ScoreTarget::Steady),
             ShellCaptureCheckpoint::Score0x108Entry(tick) => Some(score::ScoreTarget::Entry(tick)),
@@ -2301,6 +2381,50 @@ mod tests {
     }
 
     #[test]
+    fn live_lan_capture_requires_two_explicit_unicast_endpoints() {
+        let output = new_output_path("live-lan");
+        let mut values = valid_args(&output);
+        values[1] = "lan-live-host".into();
+        assert!(parse_launch_args(values.clone()).is_err());
+        values.extend(args(&[
+            "--lan-bind",
+            "127.0.0.1:31000",
+            "--lan-peer",
+            "127.0.0.1:31010",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture");
+        };
+        assert_eq!(
+            request.live_lan,
+            Some(LiveLanConfig {
+                bind: "127.0.0.1:31000".parse().unwrap(),
+                peer: "127.0.0.1:31010".parse().unwrap()
+            })
+        );
+        values[1] = "lan-live-guest".into();
+        assert!(parse_launch_args(values.clone()).is_ok());
+        values[1] = "lan-0xbb-steady".into();
+        assert!(parse_launch_args(values).is_err());
+    }
+
+    #[test]
+    fn live_lan_capture_rejects_overlapping_and_invalid_socket_parameters() {
+        let output = new_output_path("live-lan-invalid");
+        for (bind, peer) in [
+            ("127.0.0.1:65534", "127.0.0.1:31010"),
+            ("127.0.0.1:31000", "127.0.0.1:31002"),
+            ("127.0.0.1:31000", "0.0.0.0:31010"),
+        ] {
+            let mut values = valid_args(&output);
+            values[1] = "lan-live-host".into();
+            values.extend(args(&["--lan-bind", bind, "--lan-peer", peer]));
+            assert!(parse_launch_args(values).is_err(), "{bind}/{peer}");
+        }
+    }
+
+    #[test]
     fn strict_capture_args_accept_main_menu_entry_sequence() {
         let output = new_output_path("entry-sequence");
         let mut values = valid_args(&output);
@@ -2567,6 +2691,42 @@ mod tests {
                     side: Allied,
                     target: movies::CampaignStartTarget::Restart(
                         movies::RestartTarget::DefeatReplayed,
+                    ),
+                },
+            ),
+            (
+                "campaign-all1-defeat-replay-enter",
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::DefeatReturnedEnter,
+                    ),
+                },
+            ),
+            (
+                "campaign-all1-defeat-replay-numpad-enter",
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::DefeatReturnedNumpadEnter,
+                    ),
+                },
+            ),
+            (
+                "campaign-all1-defeat-replay-escape",
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::DefeatReturnedEscape,
+                    ),
+                },
+            ),
+            (
+                "campaign-all1-defeat-replay-repeated-enter",
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::DefeatReturnedRepeatedEnter,
                     ),
                 },
             ),

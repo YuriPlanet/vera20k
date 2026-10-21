@@ -1,0 +1,2009 @@
+{
+  "cases": [
+    {
+      "clock_returns": [],
+      "input": {
+        "name": "green_upper",
+        "now_ms": 7000,
+        "peer_elapsed": 0,
+        "reference_ms": 0,
+        "wait_elapsed": 240
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            156,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "branch_color": "green",
+          "effective_lag": 240,
+          "lag": 240,
+          "outer_fill_width": 160,
+          "percent_before_signed_clamp": 80
+        }
+      }
+    },
+    {
+      "clock_returns": [],
+      "input": {
+        "name": "yellow_lower",
+        "now_ms": 7000,
+        "peer_elapsed": 0,
+        "reference_ms": 0,
+        "wait_elapsed": 241
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 52800,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            156,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "branch_color": "yellow",
+          "effective_lag": 241,
+          "lag": 241,
+          "outer_fill_width": 160,
+          "percent_before_signed_clamp": 80
+        }
+      }
+    },
+    {
+      "clock_returns": [],
+      "input": {
+        "name": "yellow_upper",
+        "now_ms": 7000,
+        "peer_elapsed": 0,
+        "reference_ms": 0,
+        "wait_elapsed": 480
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 52800,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            116,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "branch_color": "yellow",
+          "effective_lag": 480,
+          "lag": 480,
+          "outer_fill_width": 120,
+          "percent_before_signed_clamp": 60
+        }
+      }
+    },
+    {
+      "clock_returns": [
+        6999
+      ],
+      "input": {
+        "name": "blue_just_below_threshold",
+        "now_ms": 6999,
+        "peer_elapsed": 0,
+        "reference_ms": 0,
+        "wait_elapsed": 481
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 25,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            128,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "age_ticks": 419,
+          "branch_color": "blue",
+          "effective_lag": 419,
+          "lag": 481,
+          "outer_fill_width": 132,
+          "percent_before_signed_clamp": 66,
+          "scaled_millis_wrapped": 419940
+        }
+      }
+    },
+    {
+      "clock_returns": [
+        7000
+      ],
+      "input": {
+        "name": "red_at_threshold",
+        "now_ms": 7000,
+        "peer_elapsed": 0,
+        "reference_ms": 0,
+        "wait_elapsed": 481
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 51200,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            116,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "age_ticks": 420,
+          "branch_color": "red",
+          "effective_lag": 481,
+          "lag": 481,
+          "outer_fill_width": 120,
+          "percent_before_signed_clamp": 60,
+          "scaled_millis_wrapped": 420000
+        }
+      }
+    },
+    {
+      "clock_returns": [
+        7017
+      ],
+      "input": {
+        "name": "red_above_threshold",
+        "now_ms": 7017,
+        "peer_elapsed": 0,
+        "reference_ms": 0,
+        "wait_elapsed": 481
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 51200,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            116,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "age_ticks": 421,
+          "branch_color": "red",
+          "effective_lag": 481,
+          "lag": 481,
+          "outer_fill_width": 120,
+          "percent_before_signed_clamp": 60,
+          "scaled_millis_wrapped": 421020
+        }
+      }
+    },
+    {
+      "clock_returns": [],
+      "input": {
+        "name": "lag_wrap_to_small",
+        "now_ms": 7000,
+        "peer_elapsed": 4294967293,
+        "reference_ms": 0,
+        "wait_elapsed": 5
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "branch_color": "green",
+          "effective_lag": 8,
+          "lag": 8,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        }
+      }
+    },
+    {
+      "clock_returns": [
+        7000
+      ],
+      "input": {
+        "name": "lag_wrap_to_max",
+        "now_ms": 7000,
+        "peer_elapsed": 1,
+        "reference_ms": 0,
+        "wait_elapsed": 0
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 51200,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            2,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "age_ticks": 420,
+          "branch_color": "red",
+          "effective_lag": 4294967295,
+          "lag": 4294967295,
+          "outer_fill_width": 6,
+          "percent_before_signed_clamp": 4291388257,
+          "scaled_millis_wrapped": 420000
+        }
+      }
+    },
+    {
+      "clock_returns": [
+        7000
+      ],
+      "input": {
+        "name": "lag_high_bit_width_wrap",
+        "now_ms": 7000,
+        "peer_elapsed": 0,
+        "reference_ms": 0,
+        "wait_elapsed": 2147483648
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 51200,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "age_ticks": 420,
+          "branch_color": "red",
+          "effective_lag": 2147483648,
+          "lag": 2147483648,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100,
+          "scaled_millis_wrapped": 420000
+        }
+      }
+    },
+    {
+      "clock_returns": [
+        32
+      ],
+      "input": {
+        "name": "raw_clock_wrap_small_delta",
+        "now_ms": 32,
+        "peer_elapsed": 0,
+        "reference_ms": 4294967280,
+        "wait_elapsed": 481
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 25,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "age_ticks": 2,
+          "branch_color": "blue",
+          "effective_lag": 2,
+          "lag": 481,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100,
+          "scaled_millis_wrapped": 2880
+        }
+      }
+    },
+    {
+      "clock_returns": [
+        2147483648
+      ],
+      "input": {
+        "name": "raw_clock_high_bit",
+        "now_ms": 2147483648,
+        "peer_elapsed": 0,
+        "reference_ms": 0,
+        "wait_elapsed": 481
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 25,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "age_ticks": 0,
+          "branch_color": "blue",
+          "effective_lag": 0,
+          "lag": 481,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100,
+          "scaled_millis_wrapped": 0
+        }
+      }
+    },
+    {
+      "clock_returns": [
+        0
+      ],
+      "input": {
+        "name": "raw_reference_high_bit",
+        "now_ms": 0,
+        "peer_elapsed": 0,
+        "reference_ms": 2147483648,
+        "wait_elapsed": 481
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 25,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "age_ticks": 0,
+          "branch_color": "blue",
+          "effective_lag": 0,
+          "lag": 481,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100,
+          "scaled_millis_wrapped": 0
+        }
+      }
+    },
+    {
+      "clock_returns": [
+        4294967295
+      ],
+      "input": {
+        "name": "raw_clock_max",
+        "now_ms": 4294967295,
+        "peer_elapsed": 0,
+        "reference_ms": 0,
+        "wait_elapsed": 481
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 51200,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            116,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "age_ticks": 4294967,
+          "branch_color": "red",
+          "effective_lag": 481,
+          "lag": 481,
+          "outer_fill_width": 120,
+          "percent_before_signed_clamp": 60,
+          "scaled_millis_wrapped": 4294967236
+        }
+      }
+    },
+    {
+      "clock_returns": [
+        16
+      ],
+      "input": {
+        "name": "raw_negative_delta",
+        "now_ms": 16,
+        "peer_elapsed": 0,
+        "reference_ms": 32,
+        "wait_elapsed": 481
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 51200,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            116,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "age_ticks": 4294966,
+          "branch_color": "red",
+          "effective_lag": 481,
+          "lag": 481,
+          "outer_fill_width": 120,
+          "percent_before_signed_clamp": 60,
+          "scaled_millis_wrapped": 4294966336
+        }
+      }
+    },
+    {
+      "clock_returns": [
+        71582788
+      ],
+      "input": {
+        "name": "raw_delta_before_times60_wrap",
+        "now_ms": 71582788,
+        "peer_elapsed": 0,
+        "reference_ms": 0,
+        "wait_elapsed": 481
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 51200,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            116,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "age_ticks": 4294967,
+          "branch_color": "red",
+          "effective_lag": 481,
+          "lag": 481,
+          "outer_fill_width": 120,
+          "percent_before_signed_clamp": 60,
+          "scaled_millis_wrapped": 4294967280
+        }
+      }
+    },
+    {
+      "clock_returns": [
+        71582789
+      ],
+      "input": {
+        "name": "raw_delta_after_times60_wrap",
+        "now_ms": 71582789,
+        "peer_elapsed": 0,
+        "reference_ms": 0,
+        "wait_elapsed": 481
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 25,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "age_ticks": 0,
+          "branch_color": "blue",
+          "effective_lag": 0,
+          "lag": 481,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100,
+          "scaled_millis_wrapped": 44
+        }
+      }
+    },
+    {
+      "clock_returns": [
+        71589788
+      ],
+      "input": {
+        "name": "raw_delta_after_wrap_blue_edge",
+        "now_ms": 71589788,
+        "peer_elapsed": 0,
+        "reference_ms": 0,
+        "wait_elapsed": 481
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 25,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            128,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "age_ticks": 419,
+          "branch_color": "blue",
+          "effective_lag": 419,
+          "lag": 481,
+          "outer_fill_width": 132,
+          "percent_before_signed_clamp": 66,
+          "scaled_millis_wrapped": 419984
+        }
+      }
+    },
+    {
+      "clock_returns": [
+        71589789
+      ],
+      "input": {
+        "name": "raw_delta_after_wrap_red_edge",
+        "now_ms": 71589789,
+        "peer_elapsed": 0,
+        "reference_ms": 0,
+        "wait_elapsed": 481
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 51200,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            116,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "age_ticks": 420,
+          "branch_color": "red",
+          "effective_lag": 481,
+          "lag": 481,
+          "outer_fill_width": 120,
+          "percent_before_signed_clamp": 60,
+          "scaled_millis_wrapped": 420044
+        }
+      }
+    },
+    {
+      "clock_returns": [
+        2147490647
+      ],
+      "input": {
+        "name": "high_reference_blue_edge",
+        "now_ms": 2147490647,
+        "peer_elapsed": 0,
+        "reference_ms": 2147483648,
+        "wait_elapsed": 481
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 25,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            128,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "age_ticks": 419,
+          "branch_color": "blue",
+          "effective_lag": 419,
+          "lag": 481,
+          "outer_fill_width": 132,
+          "percent_before_signed_clamp": 66,
+          "scaled_millis_wrapped": 419940
+        }
+      }
+    },
+    {
+      "clock_returns": [
+        2147490648
+      ],
+      "input": {
+        "name": "high_reference_red_edge",
+        "now_ms": 2147490648,
+        "peer_elapsed": 0,
+        "reference_ms": 2147483648,
+        "wait_elapsed": 481
+      },
+      "original_code_unchanged": true,
+      "paint": [
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 1600,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            196,
+            16
+          ],
+          "row": 0
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 0,
+          "operation": "outline",
+          "rect": [
+            10,
+            20,
+            200,
+            20
+          ],
+          "row": 1
+        },
+        {
+          "clip": [
+            0,
+            0,
+            800,
+            600
+          ],
+          "color": 51200,
+          "operation": "fill",
+          "rect": [
+            12,
+            22,
+            116,
+            16
+          ],
+          "row": 1
+        }
+      ],
+      "rows": {
+        "0": {
+          "branch_color": "green",
+          "effective_lag": 0,
+          "lag": 0,
+          "outer_fill_width": 200,
+          "percent_before_signed_clamp": 100
+        },
+        "1": {
+          "age_ticks": 420,
+          "branch_color": "red",
+          "effective_lag": 481,
+          "lag": 481,
+          "outer_fill_width": 120,
+          "percent_before_signed_clamp": 60,
+          "scaled_millis_wrapped": 420000
+        }
+      }
+    }
+  ],
+  "source": "unicorn/gamemd.exe"
+}

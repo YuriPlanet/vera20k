@@ -825,7 +825,12 @@ fn advance_in_game_runtime_mode(
         super::scenario_pause::apply_service(state, ScenarioServiceInput::StepChronoScreen);
         state.platform.frame_pacer.record_admitted_frame(wall_ms);
     }
-    let decision = decide_runtime_pass(RuntimePassInputs {
+    let resume_wait = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .is_some_and(|rt| rt.simulation.pending_network_wait());
+    let mut decision = decide_runtime_pass(RuntimePassInputs {
         exact_step: matches!(mode, RuntimeAdvanceMode::ExactOneStep),
         window_active: state.platform.window_active,
         focus_frozen: state.platform.focus_freeze_active(),
@@ -839,6 +844,15 @@ fn advance_in_game_runtime_mode(
         network_wait: state.match_state.network_wait.waiting(),
         network_dialog_open: state.match_state.network_wait.dialog_open(),
     });
+    if resume_wait {
+        // Native Wait_For_Players is inside the already admitted MainTick.
+        // Pacing and pause cannot re-admit that frame. Before0xEA opens,
+        // Wait_For_Players6497F1..64984D still services tactical input; the
+        // existing dialog gate alone suppresses that presentation work.
+        decision.run_sim = true;
+        decision.tick_lane = TickLane::Ordinary;
+        decision.admitted_by_pacer = matches!(mode, RuntimeAdvanceMode::WallClock { .. });
+    }
     if frame_stepping {
         state.diag.debug_frame_step_requested = false;
         if let RuntimeAdvanceMode::WallClock { now_ms } = mode {
@@ -853,7 +867,12 @@ fn advance_in_game_runtime_mode(
         .then(|| crate::app::input::camera::poll_mouse_scroll(state));
     if decision.run_sim {
         let tick_lane = decision.tick_lane;
-        let frame_committed = advance_one_simulation_frame(state, tick_lane, mouse_scroll, false);
+        let resume = if resume_wait {
+            FrameResume::NetworkWait
+        } else {
+            FrameResume::None
+        };
+        let frame_committed = advance_one_simulation_frame(state, tick_lane, mouse_scroll, resume);
         if super::network_failure::pending(state) {
             super::network_failure::show(state);
             return false;
@@ -970,15 +989,28 @@ fn should_record_replay_tick(
 /// Complete the exact frame suspended by ExecuteDoList's message box. Reuse
 /// every output consumer below; neither input admission nor Logic runs again.
 pub(crate) fn resume_after_network_failure(state: &mut AppState) -> bool {
-    advance_one_simulation_frame(state, TickLane::Ordinary, None, true)
+    advance_one_simulation_frame(state, TickLane::Ordinary, None, FrameResume::ChecksumModal)
+}
+
+pub(crate) fn leave_network_wait(state: &mut AppState) -> bool {
+    advance_one_simulation_frame(state, TickLane::Ordinary, None, FrameResume::NetworkLeave)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FrameResume {
+    None,
+    ChecksumModal,
+    NetworkWait,
+    NetworkLeave,
 }
 
 fn advance_one_simulation_frame(
     state: &mut AppState,
     tick_lane: TickLane,
     mouse_scroll: Option<(f32, f32)>,
-    resume_network_failure: bool,
+    resume: FrameResume,
 ) -> bool {
+    let resuming = resume != FrameResume::None;
     let mut refresh_atlases_after_tick = false;
     // Trigger definitions are runtime-bound (F07), so a live runtime is the
     // only activity source; the old trigger-only fixture mode is unrepresentable.
@@ -989,7 +1021,7 @@ fn advance_one_simulation_frame(
     // Input QueueVoice requests precede this Logic pass. This shared consumer
     // only admits queued requests; positional redrive/EVA service remain at
     // their existing owners, and voices wait for actual Techno-head markers.
-    if !resume_network_failure {
+    if !resuming {
         crate::app::presentation::building_anim::drain_pending_sound_events(state);
     }
     let mut frame_committed = state.match_state.sim_runtime.is_none();
@@ -1011,7 +1043,7 @@ fn advance_one_simulation_frame(
         let local_owner_name = crate::app::input::commands::preferred_local_owner_name(state);
         let sound_listener = crate::app::presentation::building_anim::sound_listener(state);
         let rules_owner = state.process_assets.native_rules();
-        let initial_save = if !resume_network_failure && tick_lane == TickLane::Ordinary {
+        let initial_save = if !resuming && tick_lane == TickLane::Ordinary {
             crate::app::persistence::commands::prepare_initial_campaign_save(state, rules_owner)
         } else {
             None
@@ -1029,7 +1061,7 @@ fn advance_one_simulation_frame(
         if let Some(rt) = state.match_state.sim_runtime.as_mut() {
             let sim = &mut rt.simulation;
             let native_frame = sim.session().binary_frame();
-            if !resume_network_failure {
+            if !resuming {
                 sim.prepare_unit_voice_visits(unit_voice_owners);
             }
             // Normal play hashes its state once every PLAY_HASH_INTERVAL
@@ -1042,7 +1074,7 @@ fn advance_one_simulation_frame(
             // Delay-zero AnimClass construction can emit StartSound during the
             // final map-load sweep. Keep it until this first tactical drain;
             // `drain(..)` below still consumes every event exactly once.
-            let due_commands = if !resume_network_failure && tick_lane == TickLane::Ordinary {
+            let due_commands = if !resuming && tick_lane == TickLane::Ordinary {
                 sim.take_due_commands()
             } else {
                 Vec::new()
@@ -1100,15 +1132,19 @@ fn advance_one_simulation_frame(
                     &mut state.match_state.input.planning,
                     &mut state.match_state.input.selection_state,
                 )
-                .with_network_session(&mut state.match_state.session);
+                .with_network_session(&mut state.match_state.session)
+                .with_live_network(state.match_state.live_network.as_mut());
                 let effects = FrameEffects::for_sound(&boundary)
                     .with_local_planning(&boundary)
                     .with_network_commands(&boundary)
                     .with_before_logic(&before_logic);
-                if resume_network_failure {
-                    rt.resume_after_network_failure(effects)
-                } else {
-                    rt.advance_frame(&due_commands, SIM_TICK_MS, tick_lane, effects)
+                match resume {
+                    FrameResume::ChecksumModal => rt.resume_after_network_failure(effects),
+                    FrameResume::NetworkWait => rt.resume_network_wait(effects),
+                    FrameResume::NetworkLeave => rt.leave_network_wait(effects),
+                    FrameResume::None => {
+                        rt.advance_frame(&due_commands, SIM_TICK_MS, tick_lane, effects)
+                    }
                 }
                 .expect("simulation frame failed; prior world mutations remain")
             };
@@ -1168,6 +1204,7 @@ fn advance_one_simulation_frame(
                 lighting_events,
                 multiplayer_checksum,
                 network_failure,
+                network_waiting,
                 ..
             } = output;
             // Queue_AI already published this checksum to the process session
@@ -1293,7 +1330,7 @@ fn advance_one_simulation_frame(
             if should_record_replay_tick(
                 &tick_result,
                 &admitted_commands,
-                network_failure.is_some(),
+                network_failure.is_some() || network_waiting,
             ) && let Some(log) = &mut state.match_state.match_diagnostics.replay_log
             {
                 log.record_tick(tick_result.tick, admitted_commands, tick_result.state_hash);

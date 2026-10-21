@@ -314,9 +314,8 @@ fn route_houses(
 /// Receive `0x0048D8DD..0x0048D9B8`: the line under the sender's node
 /// name in its colour, then one more IncomingMessage (`0x0048D995`) on top
 /// of Add_Message's own. No mask, alliance or defeat filter applies.
-/// RESIDUAL: the packet's own name and colour fields stand as the sending
-/// participant's name and House colour; the `-MESSAGES` hash filter
-/// (`[0xA8D60D]`, off by default) is not modelled.
+/// Controlled service input resolves the participant's name/colour. Physical
+/// global messages use receive_packet with their original carrier fields.
 pub(crate) fn receive(state: &mut AppState, source_index: usize, text: &str) {
     let session = &state.match_state.session;
     let name = crate::app::match_runtime::network_match::participant_name(session, source_index);
@@ -333,7 +332,18 @@ pub(crate) fn receive(state: &mut AppState, source_index: usize, text: &str) {
     let rgb = owner.map_or([1.0; 3], |owner| {
         crate::app::input::messages::player_line_rgb(state, owner)
     });
-    crate::app::input::messages::post_chat_line(state, &name, text, rgb);
+    receive_resolved(state, &name, text, rgb);
+}
+
+/// Global packet48D8DD supplies its own name and colour. Endpoint admission
+/// and the optional -MESSAGES hash gate belong to the network service.
+pub(crate) fn receive_packet(state: &mut AppState, name: &str, color: i32, text: &str) {
+    let rgb = crate::app::input::messages::packet_player_line_rgb(state, color);
+    receive_resolved(state, name, text, rgb);
+}
+
+fn receive_resolved(state: &mut AppState, name: &str, text: &str, rgb: [f32; 3]) {
+    crate::app::input::messages::post_chat_line(state, name, text, rgb);
     let sound = state
         .rules()
         .and_then(|rules| rules.general.incoming_message_sound().map(str::to_owned));

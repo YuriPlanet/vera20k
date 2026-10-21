@@ -564,7 +564,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                     .simulation
                     .restore_campaign_carry_over(record, &runtime.resources.rules);
             }
-            Ok(())
+            crate::app::lan_service::install_gameplay(state).map_err(|error| error.to_string())
         }
         crate::app::match_bootstrap::LoadingStartup::UnverifiedLegacy { .. }
         | crate::app::match_bootstrap::LoadingStartup::Generic { .. } => {

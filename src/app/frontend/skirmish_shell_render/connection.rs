@@ -91,14 +91,11 @@ pub(crate) fn render_connection_shell(
     ));
     // 0x0064A7B0 draws one bar per live node, row 0 (local) with no lag.
     for (row, source) in nodes.iter().enumerate().take(rows) {
-        let lag = if row == 0 {
-            0
+        let (lag, age) = if row == 0 {
+            (0, 0)
         } else {
-            state.match_state.network_wait.bar_lag(*source)
+            state.match_state.network_wait.bar_timing(*source)
         };
-        // The record's millisecond age ×60/1000; a silent peer's age is the
-        // wait's own, so its bar turns red, not blue.
-        let age = (u64::from(lag) * 16 * 60 / 1000) as u32;
         let bar = bar_paint(layout.bars[row], lag, age);
         push_rect_outline(
             &mut controls,

@@ -403,6 +403,18 @@ pub(crate) fn player_line_rgb(state: &AppState, owner: crate::sim::intern::Inter
     )
 }
 
+/// Network packet colour is a Session priority, converted by69A310 before
+/// TextLabel72A4A0. Keep this in the same message-colour owner as local echoes.
+pub(crate) fn packet_player_line_rgb(state: &AppState, priority: i32) -> [f32; 3] {
+    let Some(rules) = state.rules() else {
+        return MESSAGE_RGB_SYSTEM;
+    };
+    country_message_rgb(
+        crate::rules::color_scheme::scheme_index_for_priority(priority) as i32,
+        &rules.color_schemes,
+    )
+}
+
 /// A chat line: Add_Message with the sender's name as prefix, style 4046,
 /// MessageDelay*900 buckets and silent 0, so IncomingMessage plays once
 /// (`0x0055F0A8..0x0055F104` echo, `0x0048D93A..0x0048D98D` receive).

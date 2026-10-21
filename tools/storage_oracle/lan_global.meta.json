@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original global ConnectionClass constructor/send/receive/dequeue/cleanup/age-strip and shared send service, with original direct route normalization",
+  "assumptions": [
+    "Explicit boundary constructor capacities8/2/3/4 plus retail-sized send160/receive320 and payload455, discriminator1236, productAA04 (or foreign1357). No Windows process or real sockets.",
+    "GameMode3 with supplied address mode2 is the explicit VERA IPv4-LAN adaptation; retail main-menu LAN constructs IPX. Three synthetic IPv4 sources192.0.2.11/.22/.33 use port1234; original53ECB0/53ED20 build their endpoint storage.",
+    "External clock globals887338=-1/887340 expose declared16ms bucket inputs. Stack is poisonedA5 before each top-level call. Each call must reach its real return with exact callee stack cleanup.",
+    "Every transmitted frame and ACK originates in original53FBD0/53FCB0; frame bytes are never encoded or edited by Python. Delivery changes only declared external source metadata. Observations retain native queue bytes, flags, counters and endpoint/sequence history.",
+    "Cancellation controls keep an ACKed entry, remove an uncompleted send with matching host and override despite a different endpoint port, and retain a differing override. Age controls include signed-boundary and unsigned-addition-wrap inputs to the original540110 comparison.",
+    "The shared shell_relayout.Machine maps retail through native_oracle.load_image and provides its allocator/import fail-closed hooks. Its unused dialog state is not evidence of shell or network integration."
+  ],
+  "substitutions": [
+    "Existing Machine operator-new/delete storage. Debug4068E0 is a sink. The minimal supplied interface vtable captures final+0C addressed output and+10 broadcast output; original540050/5403F0 route bodies execute.",
+    "Declared wall-clock globals and address-mode/GameMode inputs only. No global/private constructor, CommBuffer, send-service, response, framing, receive, delivery or cleanup body is substituted."
+  ],
+  "entry_points": {
+    "global_ctor": "0x0053FA90",
+    "ipx_ctor": "0x0053F430",
+    "connection_ctor": "0x0048BE60",
+    "comm_ctor": "0x0048B0E0",
+    "global_send": "0x0053FBD0",
+    "global_receive": "0x0053FCB0",
+    "global_pop": "0x0053FF10",
+    "consumed_cleanup": "0x005400D0",
+    "age_strip": "0x00540110",
+    "service": "0x0048C3B0",
+    "send_service": "0x0048C3E0",
+    "response": "0x0048BA10",
+    "send_route": "0x00540050",
+    "direct_route": "0x005403F0",
+    "queue_send": "0x0048B410",
+    "queue_receive": "0x0048B750",
+    "delete_receive": "0x0048B890",
+    "failed_cleanup": "0x005402D0",
+    "cancel_sends": "0x00540340"
+  },
+  "replay_command": "python -m tools.storage_oracle.lan_lobby --global-connection",
+  "payload_sha256": "0e7ea95b08009f5e54dad6b6d3954fb7edc2a689338b3666915d13d2ba599ce2"
+}

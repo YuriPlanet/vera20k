@@ -63,5 +63,5 @@
   "csf_sha256": "f3382231d7eb3bd713bf3908ecdba175a1b2e20d9d80fa2702e9ab84c3a79deb",
   "reproduce_command": "RA2_DIR='<retail-directory-containing-original-gamemd.exe>' VERA20K_CAMPAIGN_START_ASSETS='<extracted-retail-campaign-directory>' python -m tools.input_oracle.campaign_start --check",
   "replay_command": "python -m tools.input_oracle.campaign_start",
-  "payload_sha256": "1fc33eec1676736e593ac2971f66167760e5a8d24871cfaf583e3e81b6242d0b"
+  "payload_sha256": "14ed85bdb7d6dd52f8fccd73c0cf11e2f43352e4321fe42c66c9dd863cd74b5e"
 }

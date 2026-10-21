@@ -16,6 +16,8 @@ use crate::ui::shell::geom::RectPx;
 use winit::event::MouseButton;
 use winit::keyboard::KeyCode;
 
+mod live;
+
 const TRANSFER_FILE: &str = "CONTROLLED.MAP";
 /// The Soviet campaign's first map (`coopcampmd.ini` `[Soviet]` `Map1`).
 const COOP_MAP: &str = "C2S01MD.MAP";
@@ -74,6 +76,8 @@ impl Drop for OwnedTransferFile {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LanTarget {
+    LiveHost,
+    LiveGuest,
     Lobby,
     Chat,
     Discovery,
@@ -194,6 +198,8 @@ pub enum LanTarget {
 }
 
 pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
+    ("lan-live-host", LanTarget::LiveHost),
+    ("lan-live-guest", LanTarget::LiveGuest),
     ("lan-0xbb-steady", LanTarget::Lobby),
     ("lan-0xbb-chat", LanTarget::Chat),
     ("lan-0xbb-discovery", LanTarget::Discovery),
@@ -281,6 +287,9 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ),
 ];
 impl LanTarget {
+    pub(crate) fn live(self) -> bool {
+        matches!(self, Self::LiveHost | Self::LiveGuest)
+    }
     fn host_observer(self) -> bool {
         matches!(
             self,
@@ -429,6 +438,7 @@ enum LanPhase {
 }
 
 pub(super) struct LanCapture {
+    live: Option<live::LiveLanCapture>,
     target: LanTarget,
     phase: LanPhase,
     route: Vec<Value>,
@@ -453,8 +463,14 @@ pub(super) struct LanCapture {
     cooperative_first_map: Option<String>,
 }
 impl LanCapture {
+    pub(super) fn configure_live(&mut self, config: Option<super::super::LiveLanConfig>) {
+        if self.target.live() {
+            self.live = config.map(|config| live::LiveLanCapture::new(self.target, config));
+        }
+    }
     pub(super) fn new(target: LanTarget) -> Self {
         Self {
+            live: None,
             target,
             phase: LanPhase::Main,
             route: Vec::new(),
@@ -471,11 +487,18 @@ impl LanCapture {
             random_map_host: None,
             cooperative_committed: false,
             cooperative_first_map: None,
-            inputs: super::native_corpus("tools/storage_oracle/lan_shell_controls.json")
-                .expect("native LAN corpus"),
+            inputs: if target.live() {
+                Value::Null
+            } else {
+                super::native_corpus("tools/storage_oracle/lan_shell_controls.json")
+                    .expect("native LAN corpus")
+            },
         }
     }
     pub(super) fn timeout(&self) -> Duration {
+        if self.target.live() {
+            return Duration::from_secs(180);
+        }
         // Original peer wait is3600 wall-clock buckets (57.6s). Only this
         // diagnostic budget grows; loading retains its production timer.
         Duration::from_secs(
@@ -1301,6 +1324,13 @@ impl LanCapture {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
+        if self.target.live() {
+            return self
+                .live
+                .as_mut()
+                .context("live LAN configuration")?
+                .after_present(state, rendered, frame);
+        }
         if frame % 120 == 0 {
             log::debug!(
                 "LAN capture {:?} frame {frame}: phase={:?} rendered={rendered:?} route={:?} slide={:?} wave={} title_terminal={} main={:?}",
@@ -1323,9 +1353,9 @@ impl LanCapture {
             && state.frontend.screen == GameScreen::Loading
         {
             let requests = state.match_state.session.take_network_loading_requests();
-            // The local terminal report is raw 100, or 200 for a random map,
-            // whose milestones are halved for display; the peer, loading the
-            // same map, reports the same terminal value.
+            // The local terminal report is display100, including random maps
+            // whose raw milestones were halved before publication. A peer
+            // loading the same map reports the same terminal value.
             if let Some(terminal) = requests.iter().find_map(|request| match request {
                 NetworkLoadingRequest::ReportProgress(percent) if *percent >= 100 => Some(*percent),
                 _ => None,
@@ -2011,7 +2041,7 @@ impl LanCapture {
                     );
                 }
                 self.admitted = Some(session_receipt(state));
-                setup::service_event(state, NetworkSetupEvent::GoCompleted)?;
+                setup::service_event(state, NetworkSetupEvent::ControlledGoCompleted)?;
                 self.phase = LanPhase::Loading;
             }
             LanPhase::SettingsControl(step)
@@ -2532,7 +2562,7 @@ impl LanCapture {
                                 | LanTarget::GuestAbortReturn
                                 | LanTarget::RemoteLoadingProgress
                         ) {
-                            setup::service_event(state, NetworkSetupEvent::GoCompleted)?;
+                            setup::service_event(state, NetworkSetupEvent::ControlledGoCompleted)?;
                             self.phase = LanPhase::Loading;
                         } else {
                             setup::service_event(state, NetworkSetupEvent::MapTransferStarted)?;
@@ -4313,11 +4343,17 @@ impl LanCapture {
         )
     }
     pub(super) fn owns_simulation_steps(&self, state: &AppState) -> bool {
+        if let Some(live) = &self.live {
+            return live.owns_simulation_steps();
+        }
         self.abort_return()
             && self.phase == LanPhase::Loading
             && state.frontend.screen == GameScreen::InGame
     }
     pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
+        if let Some(live) = &self.live {
+            return Ok(live.ready());
+        }
         if self.phase == LanPhase::CoopNextLoading {
             return Ok(state.frontend.screen == GameScreen::Loading
                 && crate::app::loading::pump::next_native_loading_frame(state)
@@ -4348,6 +4384,9 @@ impl LanCapture {
             && state.frontend.shell_first_paint_slide.is_none())
     }
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
+        if let Some(live) = &self.live {
+            return live.receipt(state);
+        }
         let loader_source = self.transferred_loader_source(state)?;
         let presentation = crate::app::loading::pump::network_loading_presentation(state);
         if self.target == LanTarget::HostObserverGo {

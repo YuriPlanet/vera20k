@@ -24,7 +24,6 @@
 //! holds it. A network visit's mode follows from the service it visits
 //! (`NetworkReturnContext`), so the visit stores no copy either.
 
-#[cfg(test)]
 use crate::sim::command_queue::MultiplayerChecksumHistory;
 use crate::sim::command_queue::{ChecksumMismatch, FrameChecksumState, FrameInfo};
 use crate::skirmish_launch::{
@@ -70,6 +69,50 @@ pub(crate) enum NetworkVacancy {
     Open,
     Closed,
     OpenObserver,
+    ///5E8EA0's AC11B0: a roster name whose type3 node has not arrived.
+    Waiting,
+}
+
+/// A received5E8EA0 row binding. Human indices refer to the already-admitted
+/// source vector; a display packet never creates a participant or endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NetworkRosterEntry {
+    Human(usize),
+    Vacancy(NetworkVacancy),
+    Ai(crate::skirmish_launch::AiDifficulty),
+}
+
+/// Session's five raw AI-array words (A8B27C/29C/2BC/2DC/2FC).
+/// Active rows are derived from `launch.opponents`; only inactive rows retain
+/// these words, independently of the visible human or vacant-row controls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NetworkAiOptions {
+    pub difficulty: i32,
+    pub country: i32,
+    pub color: i32,
+    pub start: i32,
+    pub team: i32,
+}
+
+impl NetworkAiOptions {
+    /// Fresh BC: BSS difficulty0, cleared country/color, and5DEC98..BD's
+    /// explicit -2 start/team fills. Later row transitions retain their own
+    /// -1 clears and5EE510's final team write instead of recreating this state.
+    const INITIAL_INACTIVE: Self = Self {
+        difficulty: 0,
+        country: -1,
+        color: -1,
+        start: -2,
+        team: -2,
+    };
+    ///5ED0CF..5ED0EB /5ED17D..5ED199 clear all five words to -1.
+    const CLEARED: Self = Self {
+        difficulty: -1,
+        country: -1,
+        color: -1,
+        start: -1,
+        team: -1,
+    };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,6 +193,10 @@ enum NetworkPhase {
         /// Authoritative only while the corresponding row is vacant. Entering
         /// a human/AI row makes its canonical participant choices authoritative.
         inactive_choices: [SkirmishLocalSlot; 8],
+        inactive_ai_options: [NetworkAiOptions; 8],
+        /// A8DA90 AI display pointers. Roster packets change these without
+        /// changing Session's AI arrays; global packets may arrive reordered.
+        display_ai: [Option<crate::skirmish_launch::AiDifficulty>; 8],
         /// Native831700/8316A4: prior capacity and independent reserved observer row.
         capacity: i32,
         observer_row: Option<u8>,
@@ -172,6 +219,7 @@ enum NetworkPhase {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum NetworkLoadingRequest {
+    ///69AE90's effective display percent; random-map milestones are already halved.
     ReportProgress(i32),
     Disconnect {
         source_index: usize,
@@ -216,6 +264,10 @@ struct NetworkSession {
     /// OnGameStart/Start Game Now for the accepted start.
     wol_start: WolStartTerms,
     loading_requests: Vec<NetworkLoadingRequest>,
+    /// Node addresses belong to the accepted participants, not discovery UI
+    /// rows. Native node+28 is carried into697B70's House/connection binding.
+    /// The IPv4 LAN adaptation uses the actual global-envelope source endpoint.
+    endpoints: std::collections::BTreeMap<String, std::net::SocketAddrV4>,
     map_metadata: Option<NetworkMapMetadata>,
     proposed_seed: Option<u32>,
     max_ahead_frames: Option<i32>,
@@ -422,6 +474,7 @@ impl MatchSession {
             room: NetworkRoom::default(),
             wol_start: WolStartTerms::default(),
             loading_requests: Vec::new(),
+            endpoints: Default::default(),
             map_metadata: None,
             proposed_seed: None,
             max_ahead_frames: None,
@@ -470,16 +523,79 @@ impl MatchSession {
             .collect();
         let inactive_choices =
             std::array::from_fn(|_| native_network_row_defaults(&launch.mode, false));
+        let display_ai = std::array::from_fn(|row| {
+            launch
+                .opponents
+                .iter()
+                .find(|ai| usize::from(ai.raw_slot_index) == row)
+                .map(|ai| ai.difficulty)
+        });
         network.phase = NetworkPhase::Setup {
+            display_ai,
             capacity: 8,
             observer_row,
             launch,
             admission,
             vacancies: [NetworkVacancy::Open; 8],
             inactive_choices,
+            inactive_ai_options: [NetworkAiOptions::INITIAL_INACTIVE; 8],
         };
         self.host = host;
         Ok(())
+    }
+
+    /// Bind the source of an admitted type3/type6 node. Discovery alone
+    /// cannot create an endpoint for an unaccepted participant. Frozen starts
+    /// retain the same identity/address binding until their cleanup.
+    pub(crate) fn bind_network_endpoint(
+        &mut self,
+        name: &str,
+        endpoint: std::net::SocketAddrV4,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.network_setup()
+                .is_some_and(|launch| launch.humans.iter().any(|human| human.name == name)),
+            "endpoint has no admitted network participant"
+        );
+        anyhow::ensure!(
+            endpoint.port() != 0
+                && !endpoint.ip().is_unspecified()
+                && !endpoint.ip().is_broadcast()
+                && !endpoint.ip().is_multicast(),
+            "participant endpoint is not a direct IPv4 address"
+        );
+        let network = self.network.as_mut().expect("admitted network participant");
+        anyhow::ensure!(
+            !matches!(network.phase, NetworkPhase::Frozen { .. }),
+            "cannot replace endpoint of an accepted start"
+        );
+        anyhow::ensure!(
+            !network
+                .endpoints
+                .iter()
+                .any(|(other, address)| other != name && *address == endpoint),
+            "endpoint already belongs to another participant"
+        );
+        network.endpoints.insert(name.to_owned(), endpoint);
+        Ok(())
+    }
+
+    pub(crate) fn network_endpoint(&self, source_index: usize) -> Option<std::net::SocketAddrV4> {
+        let name = &self.network_setup()?.humans.get(source_index)?.name;
+        self.network.as_ref()?.endpoints.get(name).copied()
+    }
+
+    pub(crate) fn network_endpoint_source(
+        &self,
+        endpoint: std::net::SocketAddrV4,
+    ) -> Option<usize> {
+        self.network_setup()?
+            .humans
+            .iter()
+            .enumerate()
+            .find_map(|(index, _)| {
+                (self.network_endpoint(index) == Some(endpoint)).then_some(index)
+            })
     }
 
     pub(crate) fn network_setup(&self) -> Option<&SkirmishLaunchSession> {
@@ -506,17 +622,22 @@ impl MatchSession {
         &mut self,
         human: crate::skirmish_launch::SkirmishHumanSlot,
     ) -> anyhow::Result<usize> {
+        let host = self.host;
         let Some(NetworkSession {
-            phase: NetworkPhase::Setup {
-                launch, admission, ..
-            },
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    admission,
+                    display_ai,
+                    ..
+                },
             ..
         }) = self.network.as_mut()
         else {
             anyhow::bail!("network setup is not editable");
         };
         anyhow::ensure!(
-            launch.humans.len() + launch.opponents.len()
+            launch.humans.len() + if host { launch.opponents.len() } else { 0 }
                 < crate::skirmish_launch::SKIRMISH_PLAYER_SLOT_COUNT,
             "network setup has no free slot"
         );
@@ -528,13 +649,12 @@ impl MatchSession {
                         .humans
                         .iter()
                         .any(|entry| entry.raw_slot_index == Some(row))
-                    && !launch
-                        .opponents
-                        .iter()
-                        .any(|entry| entry.raw_slot_index == row)
             }),
             "participant row is occupied or out of range"
         );
+        if let Some(row) = human.raw_slot_index {
+            display_ai[usize::from(row)] = None;
+        }
         let index = launch.humans.len();
         launch.humans.push(human);
         admission.push(ParticipantAdmission {
@@ -550,6 +670,7 @@ impl MatchSession {
             phase: NetworkPhase::Setup {
                 launch, admission, ..
             },
+            endpoints,
             ..
         }) = self.network.as_mut()
         else {
@@ -559,7 +680,8 @@ impl MatchSession {
             index < launch.humans.len() && index != launch.local_player_index,
             "remote removal requires a remote participant"
         );
-        launch.humans.remove(index);
+        let removed = launch.humans.remove(index);
+        endpoints.remove(&removed.name);
         admission.remove(index);
         if index < launch.local_player_index {
             launch.local_player_index -= 1;
@@ -634,84 +756,76 @@ impl MatchSession {
             self.editable_network_setup()?.rebuild_house_roster();
             return Ok(change);
         }
-        let launch = self.editable_network_setup()?;
-        let current = launch.humans[index].slot.clone();
-        let native_country =
-            |slot: &SkirmishLocalSlot| (!slot.country_random).then_some(slot.country);
-        let allowed = |country: Option<crate::skirmish_launch::LaunchCountry>| {
-            countries.is_none_or(|list| country.is_none_or(|country| list.contains(&country)))
-        };
-        let mut slot = current.clone();
-        // An observer's country is -3 on both sides.
-        if observer {
-        } else if allowed(native_country(&choices)) {
-            if native_country(&choices) != native_country(&current) {
-                slot.country = choices.country;
-                slot.country_random = choices.country_random;
-                change.options = true;
-            }
-        } else {
-            if !allowed(native_country(&current)) {
-                slot.country_random = true;
-            }
-            change.options = true;
-        }
-        let native_color =
-            |slot: &SkirmishLocalSlot| (!slot.color_random).then_some(slot.color_index);
-        if native_color(&choices) != native_color(&current) {
-            // 0x69B600: every node of the session and every AI row.
-            let taken = native_color(&choices).is_some_and(|color| {
-                launch
-                    .humans
-                    .iter()
-                    .any(|human| native_color(&human.slot) == Some(color))
-                    || launch
-                        .opponents
-                        .iter()
-                        .any(|ai| !ai.color_random && ai.color_index == color)
-            });
-            slot.color_random = choices.color_random || taken;
-            if !slot.color_random {
-                slot.color_index = choices.color_index;
-            }
-            change.options = true;
-        }
-        if choices.start_position != current.start_position {
-            // 0x5E9720: the nodes on a row and every AI row.
-            let taken = choices.start_position != crate::skirmish_launch::LaunchStartPosition::Auto
-                && (launch.humans.iter().any(|human| {
-                    human.raw_slot_index.is_some()
-                        && human.slot.start_position == choices.start_position
-                }) || launch
-                    .opponents
-                    .iter()
-                    .any(|ai| ai.start_position == choices.start_position));
-            slot.start_position = if taken {
-                crate::skirmish_launch::LaunchStartPosition::Auto
-            } else {
-                choices.start_position
-            };
-            change.options = true;
-        }
-        if choices.team != current.team {
-            // Mode +0x34 (0x5D5DE0) admits only 0..3; +0x2C (0x5D5DC0) is
-            // Team 0 under MustAlly, else none.
-            use crate::skirmish_launch::LaunchTeam;
-            slot.team = match choices.team {
-                LaunchTeam::Team(team) if team <= 3 => choices.team,
-                _ if launch.mode.must_ally => LaunchTeam::Team(0),
-                _ => LaunchTeam::None,
-            };
-            change.options = true;
-        }
-        launch.humans[index].slot = slot;
-        launch.rebuild_house_roster();
+        let applied = self.apply_peer_choice_fields(
+            index,
+            choices,
+            observer,
+            PeerChoicePolicy::Wol { countries },
+        )?;
+        change.options |= applied.options;
         Ok(change)
+    }
+
+    /// LAN Type18 receiver5E0D1C..5E0F20: writes country and team directly,
+    /// with the same color/start collision checks as WOL. It does not perform
+    /// WOL's observer row moves or mode country/team validation.
+    pub(crate) fn accept_lan_peer_choices(
+        &mut self,
+        index: usize,
+        choices: SkirmishLocalSlot,
+    ) -> anyhow::Result<PeerChoicesChange> {
+        anyhow::ensure!(self.host, "only the host checks LAN peer choices");
+        let launch = self.editable_network_setup()?;
+        anyhow::ensure!(
+            index != launch.local_player_index,
+            "the host's own row is not a peer's"
+        );
+        let human = launch
+            .humans
+            .get(index)
+            .ok_or_else(|| anyhow::anyhow!("unknown participant"))?;
+        if human.raw_slot_index.is_none() {
+            return Ok(PeerChoicesChange::default());
+        }
+        let observer = human.is_observer();
+        self.apply_peer_choice_fields(index, choices, observer, PeerChoicePolicy::Lan)
+    }
+
+    fn apply_peer_choice_fields(
+        &mut self,
+        index: usize,
+        choices: SkirmishLocalSlot,
+        observer: bool,
+        policy: PeerChoicePolicy<'_>,
+    ) -> anyhow::Result<PeerChoicesChange> {
+        let Some(NetworkSession {
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    inactive_ai_options,
+                    ..
+                },
+            ..
+        }) = self.network.as_mut()
+        else {
+            anyhow::bail!("network setup is not editable");
+        };
+        Ok(apply_peer_choices(
+            launch,
+            inactive_ai_options,
+            index,
+            choices,
+            observer,
+            policy,
+        ))
     }
 
     pub(crate) fn network_vacancy(&self, row: u8) -> Option<NetworkVacancy> {
         let NetworkPhase::Setup {
-            launch, vacancies, ..
+            launch,
+            vacancies,
+            display_ai,
+            ..
         } = &self.network.as_ref()?.phase
         else {
             return None;
@@ -721,11 +835,38 @@ impl MatchSession {
                 .humans
                 .iter()
                 .any(|human| human.raw_slot_index == Some(row))
-            || launch.opponents.iter().any(|ai| ai.raw_slot_index == row)
+            || display_ai[usize::from(row)].is_some()
         {
             return None;
         }
         Some(vacancies[usize::from(row)])
+    }
+
+    pub(crate) fn network_display_ai(
+        &self,
+        row: u8,
+    ) -> Option<crate::skirmish_launch::AiDifficulty> {
+        let NetworkPhase::Setup { display_ai, .. } = &self.network.as_ref()?.phase else {
+            return None;
+        };
+        display_ai.get(usize::from(row)).copied().flatten()
+    }
+
+    ///69B600 shared by peer-choice changes and5E96A0 new-node admission.
+    pub(crate) fn network_color_in_use(&self, color: u8) -> bool {
+        let Some(NetworkSession {
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    inactive_ai_options,
+                    ..
+                },
+            ..
+        }) = self.network.as_ref()
+        else {
+            return false;
+        };
+        network_color_in_use(launch, inactive_ai_options, color)
     }
 
     pub(crate) fn network_row_choices(&self, row: u8) -> Option<SkirmishLocalSlot> {
@@ -744,7 +885,9 @@ impl MatchSession {
         {
             return Some(human.slot.clone());
         }
-        if let Some(ai) = launch.opponents.iter().find(|ai| ai.raw_slot_index == row) {
+        if self.network_display_ai(row).is_some()
+            && let Some(ai) = launch.opponents.iter().find(|ai| ai.raw_slot_index == row)
+        {
             return Some(SkirmishLocalSlot {
                 country: ai.country,
                 country_random: ai.country_random,
@@ -755,6 +898,128 @@ impl MatchSession {
             });
         }
         inactive_choices.get(usize::from(row)).cloned()
+    }
+
+    /// Build_Options_String5DBD5C reads the AI arrays even where a human
+    /// occupies the same display row. Human start/team never leak into them.
+    pub(crate) fn network_ai_options(&self, row: u8) -> Option<NetworkAiOptions> {
+        let NetworkPhase::Setup {
+            launch,
+            inactive_ai_options,
+            ..
+        } = &self.network.as_ref()?.phase
+        else {
+            return None;
+        };
+        if let Some(ai) = launch.opponents.iter().find(|ai| ai.raw_slot_index == row) {
+            return Some(NetworkAiOptions {
+                difficulty: ai.difficulty.as_i32(),
+                country: if ai.country_random {
+                    -2
+                } else {
+                    i32::from(ai.country.raw_index())
+                },
+                color: if ai.color_random {
+                    -2
+                } else {
+                    i32::from(ai.color_index)
+                },
+                start: match ai.start_position {
+                    crate::skirmish_launch::LaunchStartPosition::Auto => -2,
+                    crate::skirmish_launch::LaunchStartPosition::Position(index) => {
+                        i32::from(index)
+                    }
+                },
+                team: match ai.team {
+                    crate::skirmish_launch::LaunchTeam::None => -2,
+                    crate::skirmish_launch::LaunchTeam::Team(index) => i32::from(index),
+                },
+            });
+        }
+        inactive_ai_options.get(usize::from(row)).copied()
+    }
+
+    ///5E5BAB..5E5C3C retains every received AI word. Active rows have already
+    /// entered HostSetup's opponents; only the inactive words need retention.
+    pub(crate) fn accept_network_inactive_ai_options(
+        &mut self,
+        incoming: [NetworkAiOptions; 8],
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(!self.host, "host cannot receive its own AI arrays");
+        let Some(NetworkSession {
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    inactive_ai_options,
+                    ..
+                },
+            ..
+        }) = self.network.as_mut()
+        else {
+            anyhow::bail!("network setup is not editable");
+        };
+        for (row, value) in incoming.into_iter().enumerate() {
+            if !launch
+                .opponents
+                .iter()
+                .any(|ai| usize::from(ai.raw_slot_index) == row)
+            {
+                inactive_ai_options[row] = value;
+            }
+        }
+        Ok(())
+    }
+
+    /// LAN/WOL roster receiver5E8EA0 replaces the eight display pointers,
+    /// retaining source-list order, node acknowledgements and endpoints.
+    /// Unknown names enter as Waiting; a later type3 admission binds its row.
+    pub(crate) fn accept_network_roster(
+        &mut self,
+        rows: [NetworkRosterEntry; 8],
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(!self.host, "a host cannot receive its own roster");
+        let Some(NetworkSession {
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    vacancies,
+                    display_ai,
+                    ..
+                },
+            ..
+        }) = self.network.as_mut()
+        else {
+            anyhow::bail!("network setup is not editable");
+        };
+        let mut candidate = launch.clone();
+        for human in &mut candidate.humans {
+            human.raw_slot_index = None;
+        }
+        let mut next_vacancies = [NetworkVacancy::Open; 8];
+        let mut next_ai = [None; 8];
+        for (row, binding) in rows.into_iter().enumerate() {
+            match binding {
+                NetworkRosterEntry::Human(source) => {
+                    let human = candidate
+                        .humans
+                        .get_mut(source)
+                        .ok_or_else(|| anyhow::anyhow!("roster names an unadmitted source"))?;
+                    anyhow::ensure!(
+                        human.raw_slot_index.is_none(),
+                        "duplicate roster participant"
+                    );
+                    human.raw_slot_index = Some(row as u8);
+                }
+                NetworkRosterEntry::Vacancy(vacancy) => next_vacancies[row] = vacancy,
+                NetworkRosterEntry::Ai(difficulty) => next_ai[row] = Some(difficulty),
+            }
+        }
+        validate_network_option_rows(&candidate)?;
+        candidate.rebuild_house_roster();
+        *launch = candidate;
+        *vacancies = next_vacancies;
+        *display_ai = next_ai;
+        Ok(())
     }
 
     /// Sole5EC9F0 row-kind transition: any AI selection resets its choices,
@@ -769,19 +1034,14 @@ impl MatchSession {
         anyhow::ensure!(self.host, "only the host may change participant row kinds");
         //5EC9F0 returns before any reset when the selected item pointer is unchanged.
         let current_kind = self
-            .network_setup()
-            .and_then(|launch| {
-                launch
-                    .opponents
-                    .iter()
-                    .find(|ai| ai.raw_slot_index == row)
-                    .map(|ai| NetworkRowKind::Ai(ai.difficulty))
-            })
+            .network_display_ai(row)
+            .map(NetworkRowKind::Ai)
             .or_else(|| {
-                self.network_vacancy(row).map(|vacancy| match vacancy {
-                    NetworkVacancy::Open => NetworkRowKind::Open,
-                    NetworkVacancy::Closed => NetworkRowKind::Closed,
-                    NetworkVacancy::OpenObserver => NetworkRowKind::OpenObserver,
+                self.network_vacancy(row).and_then(|vacancy| match vacancy {
+                    NetworkVacancy::Open => Some(NetworkRowKind::Open),
+                    NetworkVacancy::Closed => Some(NetworkRowKind::Closed),
+                    NetworkVacancy::OpenObserver => Some(NetworkRowKind::OpenObserver),
+                    NetworkVacancy::Waiting => None,
                 })
             });
         if current_kind == Some(kind) {
@@ -793,6 +1053,8 @@ impl MatchSession {
                     launch,
                     vacancies,
                     inactive_choices,
+                    inactive_ai_options,
+                    display_ai,
                     ..
                 },
             ..
@@ -818,6 +1080,12 @@ impl MatchSession {
         let had_ai = launch.opponents.iter().any(|ai| ai.raw_slot_index == row);
         launch.opponents.retain(|ai| ai.raw_slot_index != row);
         let index = usize::from(row);
+        let was_observer = removed.as_ref().is_some_and(|human| human.is_observer())
+            || vacancies[index] == NetworkVacancy::OpenObserver;
+        display_ai[index] = match kind {
+            NetworkRowKind::Ai(difficulty) => Some(difficulty),
+            _ => None,
+        };
         if let NetworkRowKind::Ai(difficulty) = kind {
             let defaults = native_network_row_defaults(&launch.mode, true);
             launch.opponents.push(SkirmishAiSlot {
@@ -832,6 +1100,16 @@ impl MatchSession {
             });
             launch.opponents.sort_by_key(|ai| ai.raw_slot_index);
         } else {
+            //5ECFD7 clears three fields when leaving an observer;5ED0CF
+            //and5ED17D clear five when entering one or removing an AI.
+            //Open <-> Closed alone retains these separate array words.
+            if had_ai || (!was_observer && kind == NetworkRowKind::OpenObserver) {
+                inactive_ai_options[index] = NetworkAiOptions::CLEARED;
+            } else if was_observer && kind != NetworkRowKind::OpenObserver {
+                inactive_ai_options[index].difficulty = -1;
+                inactive_ai_options[index].country = -1;
+                inactive_ai_options[index].color = -1;
+            }
             if had_ai || removed.is_some() || vacancies[index] == NetworkVacancy::OpenObserver {
                 inactive_choices[index] = native_network_row_defaults(&launch.mode, false);
             }
@@ -847,6 +1125,12 @@ impl MatchSession {
                 inactive_choices[index].color_index = 8;
             }
             inactive_choices[index].team = native_network_row_defaults(&launch.mode, false).team;
+            //5ED1B0 ->5EE510 runs after the clear above, including for Open
+            //and Closed rows: the raw team array takes mode+2C last.
+            inactive_ai_options[index].team = match inactive_choices[index].team {
+                crate::skirmish_launch::LaunchTeam::None => -2,
+                crate::skirmish_launch::LaunchTeam::Team(team) => i32::from(team),
+            };
         }
         launch.ai_player_count = launch.opponents.len() as i32;
         launch.rebuild_house_roster();
@@ -955,6 +1239,7 @@ impl MatchSession {
             NetworkVacancy::Open => NetworkRowKind::Open,
             NetworkVacancy::Closed => NetworkRowKind::Closed,
             NetworkVacancy::OpenObserver => NetworkRowKind::OpenObserver,
+            NetworkVacancy::Waiting => anyhow::bail!("Waiting is admitted by a received roster"),
         };
         anyhow::ensure!(
             self.network_setup().is_none_or(|launch| !launch
@@ -1129,7 +1414,7 @@ impl MatchSession {
                     .all(|(old, new)| old.name == new.name),
             "host options cannot replace admitted participant identity or source order"
         );
-        validate_network_rows(&incoming)?;
+        validate_network_option_rows(&incoming)?;
         incoming.opponents.sort_by_key(|ai| ai.raw_slot_index);
         incoming.rebuild_house_roster();
         *launch = incoming;
@@ -1361,6 +1646,7 @@ impl MatchSession {
                 NetworkPhase::Setup {
                     launch,
                     inactive_choices,
+                    inactive_ai_options,
                     observer_row,
                     ..
                 },
@@ -1383,6 +1669,14 @@ impl MatchSession {
         for choices in inactive_choices {
             choices.start_position = crate::skirmish_launch::LaunchStartPosition::Auto;
             choices.team = human_team;
+        }
+        //5EE510 writes A8B2FC even for rows whose display pointer is human
+        //or vacant.5E9E70's start reset affects controls, not A8B2DC.
+        for raw in inactive_ai_options {
+            raw.team = match human_team {
+                crate::skirmish_launch::LaunchTeam::None => -2,
+                crate::skirmish_launch::LaunchTeam::Team(team) => i32::from(team),
+            };
         }
         launch.rebuild_house_roster();
         *self = candidate;
@@ -1875,6 +2169,7 @@ impl MatchSession {
     pub(crate) fn return_to_network_lobby(&mut self) -> Option<NetworkReturnContext> {
         let network = self.network.as_mut()?;
         network.phase = NetworkPhase::Lobby;
+        network.endpoints.clear();
         network.loading_requests.clear();
         network.map_metadata = None;
         network.proposed_seed = None;
@@ -1924,7 +2219,6 @@ impl MatchSession {
         self.frame_checksums.compare_frame_info(info, current_frame)
     }
 
-    #[cfg(test)]
     pub(crate) fn checksum_history(&self) -> &MultiplayerChecksumHistory {
         self.frame_checksums.checksum_history()
     }
@@ -2025,6 +2319,130 @@ fn host_extra_row(
     capacity < limit
 }
 
+#[derive(Clone, Copy)]
+enum PeerChoicePolicy<'a> {
+    Lan,
+    Wol {
+        countries: Option<&'a [crate::skirmish_launch::LaunchCountry]>,
+    },
+}
+
+/// Shared69B600/5E9720 collision checks; caller selects the native country/team policy.
+fn apply_peer_choices(
+    launch: &mut SkirmishLaunchSession,
+    inactive_ai_options: &[NetworkAiOptions; 8],
+    index: usize,
+    choices: SkirmishLocalSlot,
+    observer: bool,
+    policy: PeerChoicePolicy<'_>,
+) -> PeerChoicesChange {
+    let mut change = PeerChoicesChange::default();
+    let current = launch.humans[index].slot.clone();
+    let native_country = |slot: &SkirmishLocalSlot| (!slot.country_random).then_some(slot.country);
+    let countries = match policy {
+        PeerChoicePolicy::Lan => None,
+        PeerChoicePolicy::Wol { countries } => countries,
+    };
+    let allowed = |country: Option<crate::skirmish_launch::LaunchCountry>| {
+        countries.is_none_or(|list| country.is_none_or(|country| list.contains(&country)))
+    };
+    let mut slot = current.clone();
+    // An observer's country is -3 on both sides.
+    if observer {
+    } else if allowed(native_country(&choices)) {
+        if native_country(&choices) != native_country(&current) {
+            slot.country = choices.country;
+            slot.country_random = choices.country_random;
+            change.options = true;
+        }
+    } else {
+        if !allowed(native_country(&current)) {
+            slot.country_random = true;
+        }
+        change.options = true;
+    }
+    let native_color = |slot: &SkirmishLocalSlot| (!slot.color_random).then_some(slot.color_index);
+    if native_color(&choices) != native_color(&current) {
+        // 0x69B600: every node of the session and every AI row.
+        let taken = native_color(&choices)
+            .is_some_and(|color| network_color_in_use(launch, inactive_ai_options, color));
+        slot.color_random = choices.color_random || taken;
+        if !slot.color_random {
+            slot.color_index = choices.color_index;
+        }
+        change.options = true;
+    }
+    if choices.start_position != current.start_position {
+        // 0x5E9720: the nodes on a row and every AI row.
+        let taken = network_start_in_use(launch, inactive_ai_options, choices.start_position);
+        slot.start_position = if taken {
+            crate::skirmish_launch::LaunchStartPosition::Auto
+        } else {
+            choices.start_position
+        };
+        change.options = true;
+    }
+    if choices.team != current.team {
+        // Mode +0x34 (0x5D5DE0) admits only 0..3; +0x2C (0x5D5DC0) is
+        // Team 0 under MustAlly, else none.
+        use crate::skirmish_launch::LaunchTeam;
+        slot.team = match (policy, choices.team) {
+            (PeerChoicePolicy::Lan, _) => choices.team,
+            (_, LaunchTeam::Team(team)) if team <= 3 => choices.team,
+            _ if launch.mode.must_ally => LaunchTeam::Team(0),
+            _ => LaunchTeam::None,
+        };
+        change.options = true;
+    }
+    launch.humans[index].slot = slot;
+    launch.rebuild_house_roster();
+    change
+}
+
+fn network_color_in_use(
+    launch: &SkirmishLaunchSession,
+    inactive: &[NetworkAiOptions; 8],
+    color: u8,
+) -> bool {
+    launch
+        .humans
+        .iter()
+        .any(|human| !human.slot.color_random && human.slot.color_index == color)
+        || launch
+            .opponents
+            .iter()
+            .any(|ai| !ai.color_random && ai.color_index == color)
+        || inactive.iter().enumerate().any(|(row, raw)| {
+            raw.color == i32::from(color)
+                && !launch
+                    .opponents
+                    .iter()
+                    .any(|ai| usize::from(ai.raw_slot_index) == row)
+        })
+}
+
+fn network_start_in_use(
+    launch: &SkirmishLaunchSession,
+    inactive: &[NetworkAiOptions; 8],
+    start: crate::skirmish_launch::LaunchStartPosition,
+) -> bool {
+    let crate::skirmish_launch::LaunchStartPosition::Position(position) = start else {
+        return false;
+    };
+    launch
+        .humans
+        .iter()
+        .any(|human| human.raw_slot_index.is_some() && human.slot.start_position == start)
+        || launch.opponents.iter().any(|ai| ai.start_position == start)
+        || inactive.iter().enumerate().any(|(row, raw)| {
+            raw.start == i32::from(position)
+                && !launch
+                    .opponents
+                    .iter()
+                    .any(|ai| usize::from(ai.raw_slot_index) == row)
+        })
+}
+
 fn native_network_row_defaults(
     mode: &crate::skirmish_launch::SkirmishLaunchMode,
     ai: bool,
@@ -2045,6 +2463,37 @@ fn native_network_row_defaults(
             crate::skirmish_launch::LaunchTeam::None
         },
     }
+}
+
+/// Each packet owns one domain. Until both arrive, a display human and a raw
+/// AI slot may share a row; only final start admission requires disjoint rows.
+fn validate_network_option_rows(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        launch.local_player().raw_slot_index.is_some(),
+        "local participant must have a visible setup row"
+    );
+    for rows in [
+        launch
+            .humans
+            .iter()
+            .filter_map(|human| human.raw_slot_index)
+            .collect::<Vec<_>>(),
+        launch
+            .opponents
+            .iter()
+            .map(|ai| ai.raw_slot_index)
+            .collect::<Vec<_>>(),
+    ] {
+        let mut occupied = [false; 8];
+        for row in rows {
+            anyhow::ensure!(
+                row < 8 && !occupied[usize::from(row)],
+                "duplicate or invalid network row"
+            );
+            occupied[usize::from(row)] = true;
+        }
+    }
+    Ok(())
 }
 
 fn validate_network_rows(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
@@ -2072,6 +2521,7 @@ fn validate_network_rows(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
 /// continuation: a consistent House roster, resolved assignments and an
 /// exact map.
 fn admit_network_start_roster(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
+    validate_network_rows(launch)?;
     anyhow::ensure!(
         launch.house_roster_is_consistent(),
         "network House constructor cache disagrees with the participant roster"
@@ -2111,6 +2561,29 @@ mod tests {
         launch.humans.push(guest);
         launch.local_player_index = 1;
         launch
+    }
+
+    #[test]
+    fn endpoint_bindings_follow_admitted_participants_and_source_compaction() {
+        use super::NetworkReturnContext;
+        use std::net::{Ipv4Addr, SocketAddrV4};
+        let mut session = MatchSession::default();
+        session.enter_network(NetworkReturnContext::LanLobby);
+        let endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1234);
+        assert!(session.bind_network_endpoint("absent", endpoint).is_err());
+        let launch = network_fixture();
+        let host = launch.humans[0].name.clone();
+        session.accept_network_setup(launch, false, None).unwrap();
+        session.bind_network_endpoint(&host, endpoint).unwrap();
+        assert!(session.bind_network_endpoint("Guest", endpoint).is_err());
+        assert_eq!(session.network_endpoint_source(endpoint), Some(0));
+        assert_eq!(session.network_endpoint(1), None);
+        session.remove_network_participant(0).unwrap();
+        assert_eq!(session.network_endpoint_source(endpoint), None);
+        assert_eq!(session.network_setup().unwrap().local_player_index, 0);
+        session.bind_network_endpoint("Guest", endpoint).unwrap();
+        session.return_to_network_lobby();
+        assert_eq!(session.network_endpoint_source(endpoint), None);
     }
 
     #[test]

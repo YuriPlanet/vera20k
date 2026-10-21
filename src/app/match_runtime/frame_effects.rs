@@ -36,6 +36,7 @@ pub(crate) struct FrameClientBoundary<'a> {
     admit_radar: RefCell<&'a mut RadarAdmission<'a>>,
     planning: Option<RefCell<(&'a mut PlanningInputState, &'a mut SelectionState)>>,
     network: Option<RefCell<&'a mut super::session::MatchSession>>,
+    live_network: Option<RefCell<&'a mut crate::net::live_commands::LiveCommandSession>>,
 }
 
 impl<'a> FrameClientBoundary<'a> {
@@ -53,6 +54,7 @@ impl<'a> FrameClientBoundary<'a> {
             admit_radar: RefCell::new(admit_radar),
             planning: None,
             network: None,
+            live_network: None,
         }
     }
 
@@ -72,9 +74,53 @@ impl<'a> FrameClientBoundary<'a> {
         self.network = Some(RefCell::new(session));
         self
     }
+
+    pub(crate) fn with_live_network(
+        mut self,
+        live: Option<&'a mut crate::net::live_commands::LiveCommandSession>,
+    ) -> Self {
+        self.live_network = live.map(RefCell::new);
+        self
+    }
 }
 
 impl NetworkCommandBoundary for FrameClientBoundary<'_> {
+    fn exchange_commands(
+        &self,
+        context: crate::sim::world::NetworkQueueContext,
+        queues: &mut crate::sim::world::NetworkCommandQueues<'_>,
+    ) -> Result<Option<crate::sim::world::NetworkQueuePass>, NetworkCommandError> {
+        use crate::net::command_exchange::CommandExchangeError;
+        use crate::net::event_packet::DecodeFailureKind;
+        use crate::net::live_commands::LiveCommandError;
+        use crate::sim::world::NetworkInterruption;
+        let Some(live) = &self.live_network else {
+            return Ok(None);
+        };
+        let max_ahead = queues.max_ahead_frames().ok_or_else(|| {
+            NetworkCommandError::Unavailable("live network has no admitted MaxAhead".to_owned())
+        })?;
+        let now_ms = super::frame_pacer::wall_clock_ms();
+        let now = super::frame_pacer::frame_bucket(now_ms);
+        live.borrow_mut()
+            .poll(queues, context, max_ahead, now, now_ms as u32)
+            .map(Some)
+            .map_err(|error| {
+                log::error!("live network command exchange: {error}");
+                match error {
+                    LiveCommandError::Exchange(CommandExchangeError::InitialChecksum {
+                        ..
+                    }) => NetworkInterruption::ScenariosDiffer.into(),
+                    LiveCommandError::Exchange(CommandExchangeError::Decode(error))
+                        if error.kind == DecodeFailureKind::AdmissionFull =>
+                    {
+                        NetworkInterruption::QueueFull.into()
+                    }
+                    error => NetworkCommandError::Unavailable(error.to_string()),
+                }
+            })
+    }
+
     fn record_frame_checksum(&self, frame: u32, checksum: u32) {
         if let Some(network) = &self.network {
             network.borrow_mut().record_frame_checksum(frame, checksum);

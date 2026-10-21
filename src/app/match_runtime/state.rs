@@ -21,6 +21,12 @@ pub(crate) struct MatchState {
     /// Input state for ExecuteDoList's blocking checksum-error message box.
     /// The suspended frame and mismatch remain owned by Simulation.
     pub(crate) network_failure: Option<super::network_failure::NetworkFailureModal>,
+    /// Physical byte transport and packet progress for an installed match.
+    /// Session owns the accepted participant roster and checksum history.
+    pub(crate) live_network: Option<crate::net::live_commands::LiveCommandSession>,
+    /// LAN visit transport before the match, then discovery metadata while the
+    /// same sockets are owned by live_network. Session owns admitted endpoints.
+    pub(crate) lan_service: Option<crate::app::lan_service::LanService>,
     pub(crate) sim_runtime: Option<crate::sim::runtime::SimRuntime>,
     /// Match input owner (F12): camera, zoom, cursor, keys, hotkeys.
     pub(crate) input: crate::app::input::state::MatchInputState,

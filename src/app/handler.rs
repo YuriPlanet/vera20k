@@ -18,6 +18,57 @@ fn launcher_options_consumes_escape<T>(dialog: &Option<T>, is_escape: bool) -> b
 }
 
 impl App {
+    /// Route the physical keyboard edge before any underlying shell input.
+    /// This owns main-menu modal admission; the existing message-box owner
+    /// owns its result and teardown.
+    /// Native source: gamemd.exe's modal pump5D4D50 and MessageBoxProc5D36A0;
+    /// [Win32 dialog key dispatch](https://learn.microsoft.com/en-us/windows/win32/dlgbox/dlgbox-programming-considerations#dialog-box-keyboard-interface).
+    pub(crate) fn handle_main_menu_dialog_key(
+        state: &mut AppState,
+        code: KeyCode,
+        pressed: bool,
+        repeat: bool,
+    ) -> bool {
+        if !Self::main_menu_dialog_open(state) {
+            return false;
+        }
+        let is_escape = code == KeyCode::Escape && pressed && !repeat;
+        if state.frontend.shell_message_box.is_some() {
+            // IsDialogMessage in the native modal pump5D4D50 admits Enter
+            // as IDOK1 and Escape as IDCANCEL2. MessageBoxProc5D36A0 maps
+            // both to result1; GameExitDefeat6860EA returns to the shell.
+            // Keep retained launcher dialogs on their separate Escape path.
+            // The native message pump forwards repeated WM_KEYDOWN too;
+            // its IsDialogMessage path has no previous-key-state filter.
+            if pressed
+                && let Some(key @ (ShellKey::Enter | ShellKey::Escape)) =
+                    Self::shell_key_for_code(code)
+                // Alt+Enter is WM_SYSKEYDOWN, not the IDOK-producing
+                // WM_KEYDOWN path. Winit combines them; retain the native
+                // distinction using the existing modifier owner.
+                && (key != ShellKey::Enter || !state.platform.live_modifiers.alt_key())
+                && !Self::route_shell_message_box_key(state, key)
+            {
+                // Preserve the existing empty-controller-route fallback.
+                Self::resolve_shell_message_box(
+                    state,
+                    crate::ui::shell::modal::ModalResult::MessageBox(1),
+                );
+                state.platform.window.request_redraw();
+            }
+        } else if is_escape {
+            if launcher_options_consumes_escape(&state.frontend.options_dialog, is_escape) {
+                // `0xD5` ignores IDCANCEL=2. Preserve the same
+                // dialog instance and emit no Apply/write/event.
+                state.platform.window.request_redraw();
+            } else {
+                Self::close_main_menu_dialogs(state);
+                state.platform.window.request_redraw();
+            }
+        }
+        true
+    }
+
     /// Drop every sticky in-game pointer byte.
     ///
     /// gamemd's capture-changed case drops the button-held byte and tears the
@@ -817,36 +868,12 @@ impl ApplicationHandler for App {
                         return;
                     }
 
-                    // A main-menu modal dialog (exit confirm, options, movies,
-                    // campaign select) takes ESC first: close it and stay,
-                    // never propagating to the shell-close handlers below.
-                    // The exit-confirm modal routes through the controller
-                    // (on_key → LIFO pop, D-B3); the retained child dialogs are
-                    // not on the stack and keep the direct close.
-                    if Self::main_menu_dialog_open(state) {
-                        if is_escape {
-                            if state.frontend.shell_message_box.is_some() {
-                                if !Self::route_shell_message_box_key(state, ShellKey::Escape) {
-                                    // Defensive: on_key only fails with an
-                                    // empty route — still answer IDCANCEL.
-                                    Self::resolve_shell_message_box(
-                                        state,
-                                        crate::ui::shell::modal::ModalResult::MessageBox(1),
-                                    );
-                                    state.platform.window.request_redraw();
-                                }
-                            } else if launcher_options_consumes_escape(
-                                &state.frontend.options_dialog,
-                                is_escape,
-                            ) {
-                                // `0xD5` ignores IDCANCEL=2. Preserve the same
-                                // dialog instance and emit no Apply/write/event.
-                                state.platform.window.request_redraw();
-                            } else {
-                                Self::close_main_menu_dialogs(state);
-                                state.platform.window.request_redraw();
-                            }
-                        }
+                    if Self::handle_main_menu_dialog_key(
+                        state,
+                        code,
+                        event.state.is_pressed(),
+                        event.repeat,
+                    ) {
                         return;
                     }
 

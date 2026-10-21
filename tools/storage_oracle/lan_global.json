@@ -1,0 +1,4661 @@
+{
+  "age_boundaries": [
+    {
+      "admitted": {
+        "emitted": [
+          {
+            "alternate": 0,
+            "bucket": 2147483646,
+            "direct": 0,
+            "endpoint": "d2040000c000020b00000000",
+            "frame": "361202000000000000000000000004aa",
+            "kind": "direct",
+            "port": 0
+          }
+        ],
+        "returned": 1,
+        "state": {
+          "receive_count": 1,
+          "receives": [
+            {
+              "arrival": 2147483646,
+              "flags": 1,
+              "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+              "source": "d2040000c000020b00000000"
+            }
+          ],
+          "response": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "ring": [
+            {
+              "endpoint": "d2040000c000020b00000000",
+              "sequence": 0
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            }
+          ],
+          "ring_cursor": 1,
+          "send_count": 0,
+          "sends": [],
+          "total_receive": 1,
+          "total_send": 0
+        }
+      },
+      "after": {
+        "receive_count": 0,
+        "receives": [],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 1,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 1,
+        "total_send": 0
+      },
+      "arrived": 2147483646,
+      "maximum_age": 2,
+      "now": 2147483647
+    },
+    {
+      "admitted": {
+        "emitted": [
+          {
+            "alternate": 0,
+            "bucket": 2147483646,
+            "direct": 0,
+            "endpoint": "d2040000c000020b00000000",
+            "frame": "361202000000000000000000000004aa",
+            "kind": "direct",
+            "port": 0
+          }
+        ],
+        "returned": 1,
+        "state": {
+          "receive_count": 1,
+          "receives": [
+            {
+              "arrival": 2147483646,
+              "flags": 1,
+              "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+              "source": "d2040000c000020b00000000"
+            }
+          ],
+          "response": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "ring": [
+            {
+              "endpoint": "d2040000c000020b00000000",
+              "sequence": 0
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            }
+          ],
+          "ring_cursor": 1,
+          "send_count": 0,
+          "sends": [],
+          "total_receive": 1,
+          "total_send": 0
+        }
+      },
+      "after": {
+        "receive_count": 1,
+        "receives": [
+          {
+            "arrival": 2147483646,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000020b00000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 1,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 1,
+        "total_send": 0
+      },
+      "arrived": 2147483646,
+      "maximum_age": 2,
+      "now": 2147483648
+    },
+    {
+      "admitted": {
+        "emitted": [
+          {
+            "alternate": 0,
+            "bucket": 4294967294,
+            "direct": 0,
+            "endpoint": "d2040000c000020b00000000",
+            "frame": "361202000000000000000000000004aa",
+            "kind": "direct",
+            "port": 0
+          }
+        ],
+        "returned": 1,
+        "state": {
+          "receive_count": 1,
+          "receives": [
+            {
+              "arrival": 4294967294,
+              "flags": 1,
+              "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+              "source": "d2040000c000020b00000000"
+            }
+          ],
+          "response": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "ring": [
+            {
+              "endpoint": "d2040000c000020b00000000",
+              "sequence": 0
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            }
+          ],
+          "ring_cursor": 1,
+          "send_count": 0,
+          "sends": [],
+          "total_receive": 1,
+          "total_send": 0
+        }
+      },
+      "after": {
+        "receive_count": 1,
+        "receives": [
+          {
+            "arrival": 4294967294,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000020b00000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 1,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 1,
+        "total_send": 0
+      },
+      "arrived": 4294967294,
+      "maximum_age": 3,
+      "now": 0
+    },
+    {
+      "admitted": {
+        "emitted": [
+          {
+            "alternate": 0,
+            "bucket": 4294967294,
+            "direct": 0,
+            "endpoint": "d2040000c000020b00000000",
+            "frame": "361202000000000000000000000004aa",
+            "kind": "direct",
+            "port": 0
+          }
+        ],
+        "returned": 1,
+        "state": {
+          "receive_count": 1,
+          "receives": [
+            {
+              "arrival": 4294967294,
+              "flags": 1,
+              "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+              "source": "d2040000c000020b00000000"
+            }
+          ],
+          "response": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "ring": [
+            {
+              "endpoint": "d2040000c000020b00000000",
+              "sequence": 0
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            }
+          ],
+          "ring_cursor": 1,
+          "send_count": 0,
+          "sends": [],
+          "total_receive": 1,
+          "total_send": 0
+        }
+      },
+      "after": {
+        "receive_count": 0,
+        "receives": [],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 1,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 1,
+        "total_send": 0
+      },
+      "arrived": 4294967294,
+      "maximum_age": 3,
+      "now": 2
+    }
+  ],
+  "age_strip": {
+    "a_reaccepted_after_first_matching_sequence_invalidated": {
+      "emitted": [
+        {
+          "alternate": 0,
+          "bucket": 1003,
+          "direct": 0,
+          "endpoint": "d2040000c000020b00000000",
+          "frame": "361202000000000000000000000004aa",
+          "kind": "direct",
+          "port": 0
+        }
+      ],
+      "returned": 1,
+      "state": {
+        "receive_count": 1,
+        "receives": [
+          {
+            "arrival": 1003,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000020b00000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "d2040000c000021600000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 3,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 3,
+        "total_send": 0
+      }
+    },
+    "b_duplicate_after_its_queue_entry_aged": {
+      "emitted": [
+        {
+          "alternate": 0,
+          "bucket": 1003,
+          "direct": 0,
+          "endpoint": "d2040000c000021600000000",
+          "frame": "361202000000000000000000000004aa",
+          "kind": "direct",
+          "port": 0
+        }
+      ],
+      "returned": 1,
+      "state": {
+        "receive_count": 0,
+        "receives": [],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "d2040000c000021600000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 2,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 2,
+        "total_send": 0
+      }
+    },
+    "cleanup_a": {
+      "returned": 1,
+      "state": {
+        "receive_count": 1,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000021600000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "d2040000c000021600000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 2,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 2,
+        "total_send": 0
+      }
+    },
+    "consume_a": {
+      "endpoint": "d2040000c000020b00000000",
+      "payload": "676c6f62616c2d41",
+      "product": 43524,
+      "returned": 1,
+      "state": {
+        "receive_count": 2,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 3,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000020b00000000"
+          },
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000021600000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "d2040000c000021600000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 2,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 2,
+        "total_send": 0
+      }
+    },
+    "exact_age_retained": {
+      "receive_count": 1,
+      "receives": [
+        {
+          "arrival": 1000,
+          "flags": 1,
+          "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+          "source": "d2040000c000021600000000"
+        }
+      ],
+      "response": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "ring": [
+        {
+          "endpoint": "d2040000c000020b00000000",
+          "sequence": 0
+        },
+        {
+          "endpoint": "d2040000c000021600000000",
+          "sequence": 0
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        }
+      ],
+      "ring_cursor": 2,
+      "send_count": 0,
+      "sends": [],
+      "total_receive": 2,
+      "total_send": 0
+    },
+    "first_a": {
+      "emitted": [
+        {
+          "alternate": 0,
+          "bucket": 1000,
+          "direct": 0,
+          "endpoint": "d2040000c000020b00000000",
+          "frame": "361202000000000000000000000004aa",
+          "kind": "direct",
+          "port": 0
+        }
+      ],
+      "returned": 1,
+      "state": {
+        "receive_count": 1,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000020b00000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 1,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 1,
+        "total_send": 0
+      }
+    },
+    "over_age_b_removed": {
+      "receive_count": 0,
+      "receives": [],
+      "response": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "ring": [
+        {
+          "endpoint": "d2040000c000020b00000000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "d2040000c000021600000000",
+          "sequence": 0
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        }
+      ],
+      "ring_cursor": 2,
+      "send_count": 0,
+      "sends": [],
+      "total_receive": 2,
+      "total_send": 0
+    },
+    "second_b": {
+      "emitted": [
+        {
+          "alternate": 0,
+          "bucket": 1000,
+          "direct": 0,
+          "endpoint": "d2040000c000021600000000",
+          "frame": "361202000000000000000000000004aa",
+          "kind": "direct",
+          "port": 0
+        }
+      ],
+      "returned": 1,
+      "state": {
+        "receive_count": 2,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000020b00000000"
+          },
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000021600000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "d2040000c000021600000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 2,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 2,
+        "total_send": 0
+      }
+    }
+  },
+  "basic": {
+    "c_retried_after_capacity_recovered": {
+      "emitted": [
+        {
+          "alternate": 0,
+          "bucket": 1000,
+          "direct": 0,
+          "endpoint": "d2040000c000022100000000",
+          "frame": "361202000000000000000000000004aa",
+          "kind": "direct",
+          "port": 0
+        }
+      ],
+      "returned": 1,
+      "state": {
+        "receive_count": 1,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000022100000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000022100000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "d2040000c000021600000000",
+            "sequence": 0
+          }
+        ],
+        "ring_cursor": 1,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 3,
+        "total_send": 0
+      }
+    },
+    "cleanup_a": {
+      "returned": 1,
+      "state": {
+        "receive_count": 1,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000021600000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "d2040000c000021600000000",
+            "sequence": 0
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 2,
+        "total_send": 0
+      }
+    },
+    "cleanup_b": {
+      "returned": 1,
+      "state": {
+        "receive_count": 0,
+        "receives": [],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "d2040000c000021600000000",
+            "sequence": 0
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 2,
+        "total_send": 0
+      }
+    },
+    "constructor": {
+      "receive_count": 0,
+      "receives": [],
+      "response": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "ring": [
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        }
+      ],
+      "ring_cursor": 0,
+      "send_count": 0,
+      "sends": [],
+      "total_receive": 0,
+      "total_send": 0
+    },
+    "distinct_b_same_sequence": {
+      "emitted": [
+        {
+          "alternate": 0,
+          "bucket": 1000,
+          "direct": 0,
+          "endpoint": "d2040000c000021600000000",
+          "frame": "361202000000000000000000000004aa",
+          "kind": "direct",
+          "port": 0
+        }
+      ],
+      "returned": 1,
+      "state": {
+        "receive_count": 2,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000020b00000000"
+          },
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000021600000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "d2040000c000021600000000",
+            "sequence": 0
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 2,
+        "total_send": 0
+      }
+    },
+    "duplicate_a_after_cleanup": {
+      "emitted": [
+        {
+          "alternate": 0,
+          "bucket": 1000,
+          "direct": 0,
+          "endpoint": "d2040000c000020b00000000",
+          "frame": "361202000000000000000000000004aa",
+          "kind": "direct",
+          "port": 0
+        }
+      ],
+      "returned": 1,
+      "state": {
+        "receive_count": 1,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000021600000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "d2040000c000021600000000",
+            "sequence": 0
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 2,
+        "total_send": 0
+      }
+    },
+    "duplicate_a_when_full": {
+      "emitted": [
+        {
+          "alternate": 0,
+          "bucket": 1000,
+          "direct": 0,
+          "endpoint": "d2040000c000020b00000000",
+          "frame": "361202000000000000000000000004aa",
+          "kind": "direct",
+          "port": 0
+        }
+      ],
+      "returned": 1,
+      "state": {
+        "receive_count": 2,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000020b00000000"
+          },
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000021600000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "d2040000c000021600000000",
+            "sequence": 0
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 2,
+        "total_send": 0
+      }
+    },
+    "duplicate_a_with_empty_queue": {
+      "emitted": [
+        {
+          "alternate": 0,
+          "bucket": 1000,
+          "direct": 0,
+          "endpoint": "d2040000c000020b00000000",
+          "frame": "361202000000000000000000000004aa",
+          "kind": "direct",
+          "port": 0
+        }
+      ],
+      "returned": 1,
+      "state": {
+        "receive_count": 0,
+        "receives": [],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "d2040000c000021600000000",
+            "sequence": 0
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 2,
+        "total_send": 0
+      }
+    },
+    "native_frame": {
+      "alternate": 0,
+      "bucket": 1000,
+      "direct": 0,
+      "endpoint": "d2040000c000021600000000",
+      "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+      "kind": "direct",
+      "port": 0
+    },
+    "new_c_when_full": {
+      "emitted": [],
+      "returned": 1,
+      "state": {
+        "receive_count": 2,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000020b00000000"
+          },
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000021600000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "d2040000c000021600000000",
+            "sequence": 0
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 2,
+        "total_send": 0
+      }
+    },
+    "pop_a": {
+      "endpoint": "d2040000c000020b00000000",
+      "payload": "676c6f62616c2d41",
+      "product": 43524,
+      "returned": 1,
+      "state": {
+        "receive_count": 2,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 3,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000020b00000000"
+          },
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000021600000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "d2040000c000021600000000",
+            "sequence": 0
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 2,
+        "total_send": 0
+      }
+    },
+    "pop_again_before_service": {
+      "returned": 0,
+      "state": {
+        "receive_count": 2,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 3,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000020b00000000"
+          },
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000021600000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "d2040000c000021600000000",
+            "sequence": 0
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 2,
+        "total_send": 0
+      }
+    },
+    "pop_b": {
+      "endpoint": "d2040000c000021600000000",
+      "payload": "676c6f62616c2d41",
+      "product": 43524,
+      "returned": 1,
+      "state": {
+        "receive_count": 1,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 3,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000021600000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "d2040000c000021600000000",
+            "sequence": 0
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 2,
+        "total_send": 0
+      }
+    },
+    "unknown_a": {
+      "emitted": [
+        {
+          "alternate": 0,
+          "bucket": 1000,
+          "direct": 0,
+          "endpoint": "d2040000c000020b00000000",
+          "frame": "361202000000000000000000000004aa",
+          "kind": "direct",
+          "port": 0
+        }
+      ],
+      "returned": 1,
+      "state": {
+        "receive_count": 1,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d2040000c000020b00000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 1,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 1,
+        "total_send": 0
+      }
+    }
+  },
+  "cancellation": {
+    "acknowledged": {
+      "emitted": [],
+      "returned": 1,
+      "state": {
+        "receive_count": 0,
+        "receives": [],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 3,
+        "sends": [
+          {
+            "attempts": 1,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 3,
+            "frame": "361200000000000000000000000004aa636f6d706c65746564",
+            "last": 1000,
+            "port": 0
+          },
+          {
+            "attempts": 1,
+            "destination": "5c110000c000021600000000",
+            "first": 1000,
+            "flags": 1,
+            "frame": "361200000100000000000000000004aa73616d652d686f73742d6f746865722d656e64706f696e742d706f7274",
+            "last": 1000,
+            "port": 0
+          },
+          {
+            "attempts": 1,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 1,
+            "frame": "361200000200000000000000000004aa6f746865722d6f76657272696465",
+            "last": 1000,
+            "port": 5555
+          }
+        ],
+        "total_receive": 0,
+        "total_send": 3
+      }
+    },
+    "cancelled": {
+      "returned": 1,
+      "state": {
+        "receive_count": 0,
+        "receives": [],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 2,
+        "sends": [
+          {
+            "attempts": 1,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 3,
+            "frame": "361200000000000000000000000004aa636f6d706c65746564",
+            "last": 1000,
+            "port": 0
+          },
+          {
+            "attempts": 1,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 1,
+            "frame": "361200000200000000000000000004aa6f746865722d6f76657272696465",
+            "last": 1000,
+            "port": 5555
+          }
+        ],
+        "total_receive": 0,
+        "total_send": 3
+      }
+    },
+    "sent": {
+      "emitted": [
+        {
+          "alternate": 0,
+          "bucket": 1000,
+          "direct": 0,
+          "endpoint": "d2040000c000021600000000",
+          "frame": "361200000000000000000000000004aa636f6d706c65746564",
+          "kind": "direct",
+          "port": 0
+        },
+        {
+          "alternate": 0,
+          "bucket": 1000,
+          "direct": 0,
+          "endpoint": "5c110000c000021600000000",
+          "frame": "361200000100000000000000000004aa73616d652d686f73742d6f746865722d656e64706f696e742d706f7274",
+          "kind": "direct",
+          "port": 0
+        },
+        {
+          "alternate": 0,
+          "bucket": 1000,
+          "direct": 0,
+          "endpoint": "d2040000c000021600000000",
+          "frame": "361200000200000000000000000004aa6f746865722d6f76657272696465",
+          "kind": "direct",
+          "port": 5555
+        }
+      ],
+      "returned": 1,
+      "state": {
+        "receive_count": 0,
+        "receives": [],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 3,
+        "sends": [
+          {
+            "attempts": 1,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 1,
+            "frame": "361200000000000000000000000004aa636f6d706c65746564",
+            "last": 1000,
+            "port": 0
+          },
+          {
+            "attempts": 1,
+            "destination": "5c110000c000021600000000",
+            "first": 1000,
+            "flags": 1,
+            "frame": "361200000100000000000000000004aa73616d652d686f73742d6f746865722d656e64706f696e742d706f7274",
+            "last": 1000,
+            "port": 0
+          },
+          {
+            "attempts": 1,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 1,
+            "frame": "361200000200000000000000000004aa6f746865722d6f76657272696465",
+            "last": 1000,
+            "port": 5555
+          }
+        ],
+        "total_receive": 0,
+        "total_send": 3
+      }
+    },
+    "serviced": {
+      "emitted": [
+        {
+          "alternate": 0,
+          "bucket": 1004,
+          "direct": 0,
+          "endpoint": "d2040000c000021600000000",
+          "frame": "361200000200000000000000000004aa6f746865722d6f76657272696465",
+          "kind": "direct",
+          "port": 5555
+        }
+      ],
+      "returned": 1,
+      "state": {
+        "receive_count": 0,
+        "receives": [],
+        "response": [
+          4,
+          1,
+          4,
+          4
+        ],
+        "ring": [
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 1,
+        "sends": [
+          {
+            "attempts": 2,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 1,
+            "frame": "361200000200000000000000000004aa6f746865722d6f76657272696465",
+            "last": 1004,
+            "port": 5555
+          }
+        ],
+        "total_receive": 0,
+        "total_send": 3
+      }
+    }
+  },
+  "endpoints": {
+    "a": "d2040000c000020b00000000",
+    "b": "d2040000c000021600000000",
+    "c": "d2040000c000022100000000"
+  },
+  "foreign_product": {
+    "native_frame": "36120000000000000000000000005713666f726569676e2d70726f64756374",
+    "pop": {
+      "endpoint": "d2040000c000020b00000000",
+      "payload": "666f726569676e2d70726f64756374",
+      "product": 4951,
+      "returned": 1,
+      "state": {
+        "receive_count": 1,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 3,
+            "frame": "36120000000000000000000000005713666f726569676e2d70726f64756374",
+            "source": "d2040000c000020b00000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 1,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 1,
+        "total_send": 0
+      }
+    },
+    "receive": {
+      "emitted": [
+        {
+          "alternate": 0,
+          "bucket": 1000,
+          "direct": 0,
+          "endpoint": "d2040000c000020b00000000",
+          "frame": "361202000000000000000000000004aa",
+          "kind": "direct",
+          "port": 0
+        }
+      ],
+      "returned": 1,
+      "state": {
+        "receive_count": 1,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 1,
+            "frame": "36120000000000000000000000005713666f726569676e2d70726f64756374",
+            "source": "d2040000c000020b00000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d2040000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 1,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 1,
+        "total_send": 0
+      }
+    }
+  },
+  "global_sequence": {
+    "admission": [
+      {
+        "override": 0,
+        "reliable": false,
+        "send": {
+          "returned": 1,
+          "state": {
+            "receive_count": 0,
+            "receives": [],
+            "response": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "ring": [
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              }
+            ],
+            "ring_cursor": 0,
+            "send_count": 1,
+            "sends": [
+              {
+                "attempts": 0,
+                "destination": "d2040000c000021600000000",
+                "first": 0,
+                "flags": 1,
+                "frame": "361201000000000000000000000004aa01",
+                "last": 0,
+                "port": 0
+              }
+            ],
+            "total_receive": 0,
+            "total_send": 1
+          }
+        }
+      },
+      {
+        "override": 0,
+        "reliable": true,
+        "send": {
+          "returned": 1,
+          "state": {
+            "receive_count": 0,
+            "receives": [],
+            "response": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "ring": [
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              }
+            ],
+            "ring_cursor": 0,
+            "send_count": 2,
+            "sends": [
+              {
+                "attempts": 0,
+                "destination": "d2040000c000021600000000",
+                "first": 0,
+                "flags": 1,
+                "frame": "361201000000000000000000000004aa01",
+                "last": 0,
+                "port": 0
+              },
+              {
+                "attempts": 0,
+                "destination": "d2040000c000021600000000",
+                "first": 0,
+                "flags": 1,
+                "frame": "361200000100000000000000000004aa02",
+                "last": 0,
+                "port": 0
+              }
+            ],
+            "total_receive": 0,
+            "total_send": 2
+          }
+        }
+      },
+      {
+        "override": 77,
+        "reliable": true,
+        "send": {
+          "returned": 1,
+          "state": {
+            "receive_count": 0,
+            "receives": [],
+            "response": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "ring": [
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              }
+            ],
+            "ring_cursor": 0,
+            "send_count": 3,
+            "sends": [
+              {
+                "attempts": 0,
+                "destination": "d2040000c000021600000000",
+                "first": 0,
+                "flags": 1,
+                "frame": "361201000000000000000000000004aa01",
+                "last": 0,
+                "port": 0
+              },
+              {
+                "attempts": 0,
+                "destination": "d2040000c000021600000000",
+                "first": 0,
+                "flags": 1,
+                "frame": "361200000100000000000000000004aa02",
+                "last": 0,
+                "port": 0
+              },
+              {
+                "attempts": 0,
+                "destination": "d2040000c000021600000000",
+                "first": 0,
+                "flags": 1,
+                "frame": "361200004d00000000000000000004aa03",
+                "last": 0,
+                "port": 0
+              }
+            ],
+            "total_receive": 0,
+            "total_send": 3
+          }
+        }
+      },
+      {
+        "override": 0,
+        "reliable": true,
+        "send": {
+          "returned": 0,
+          "state": {
+            "receive_count": 0,
+            "receives": [],
+            "response": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "ring": [
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              },
+              {
+                "endpoint": "ffffffffffffffffffff0000",
+                "sequence": 4294967295
+              }
+            ],
+            "ring_cursor": 0,
+            "send_count": 3,
+            "sends": [
+              {
+                "attempts": 0,
+                "destination": "d2040000c000021600000000",
+                "first": 0,
+                "flags": 1,
+                "frame": "361201000000000000000000000004aa01",
+                "last": 0,
+                "port": 0
+              },
+              {
+                "attempts": 0,
+                "destination": "d2040000c000021600000000",
+                "first": 0,
+                "flags": 1,
+                "frame": "361200000100000000000000000004aa02",
+                "last": 0,
+                "port": 0
+              },
+              {
+                "attempts": 0,
+                "destination": "d2040000c000021600000000",
+                "first": 0,
+                "flags": 1,
+                "frame": "361200004d00000000000000000004aa03",
+                "last": 0,
+                "port": 0
+              }
+            ],
+            "total_receive": 0,
+            "total_send": 3
+          }
+        }
+      }
+    ],
+    "service": {
+      "emitted": [
+        {
+          "alternate": 0,
+          "bucket": 1000,
+          "direct": 0,
+          "endpoint": "d2040000c000021600000000",
+          "frame": "361201000000000000000000000004aa01",
+          "kind": "direct",
+          "port": 0
+        },
+        {
+          "alternate": 0,
+          "bucket": 1000,
+          "direct": 0,
+          "endpoint": "d2040000c000021600000000",
+          "frame": "361200000100000000000000000004aa02",
+          "kind": "direct",
+          "port": 0
+        },
+        {
+          "alternate": 0,
+          "bucket": 1000,
+          "direct": 0,
+          "endpoint": "d2040000c000021600000000",
+          "frame": "361200004d00000000000000000004aa03",
+          "kind": "direct",
+          "port": 0
+        }
+      ],
+      "returned": 1,
+      "state": {
+        "receive_count": 0,
+        "receives": [],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 3,
+        "sends": [
+          {
+            "attempts": 1,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 3,
+            "frame": "361201000000000000000000000004aa01",
+            "last": 1000,
+            "port": 0
+          },
+          {
+            "attempts": 1,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 1,
+            "frame": "361200000100000000000000000004aa02",
+            "last": 1000,
+            "port": 0
+          },
+          {
+            "attempts": 1,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 1,
+            "frame": "361200004d00000000000000000004aa03",
+            "last": 1000,
+            "port": 0
+          }
+        ],
+        "total_receive": 0,
+        "total_send": 3
+      }
+    }
+  },
+  "null_destination_broadcast": {
+    "emitted": [
+      {
+        "alternate": 0,
+        "bucket": 1000,
+        "frame": "361201000000000000000000000004aa676c6f62616c2d62726f616463617374",
+        "kind": "broadcast"
+      }
+    ],
+    "returned": 1,
+    "state": {
+      "receive_count": 0,
+      "receives": [],
+      "response": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "ring": [
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        }
+      ],
+      "ring_cursor": 0,
+      "send_count": 1,
+      "sends": [
+        {
+          "attempts": 1,
+          "destination": "ffffffffffffffffffffa5a5",
+          "first": 1000,
+          "flags": 3,
+          "frame": "361201000000000000000000000004aa676c6f62616c2d62726f616463617374",
+          "last": 1000,
+          "port": 0
+        }
+      ],
+      "total_receive": 0,
+      "total_send": 1
+    }
+  },
+  "original_entries": {
+    "0048B0E0": 18,
+    "0048B410": 12,
+    "0048B750": 15,
+    "0048B890": 6,
+    "0048BA10": 2,
+    "0048BE60": 18,
+    "0048C3B0": 12,
+    "0048C3E0": 12,
+    "0053F430": 18,
+    "0053FA90": 18,
+    "0053FBD0": 12,
+    "0053FCB0": 21,
+    "0053FF10": 8,
+    "00540050": 34,
+    "005400D0": 14,
+    "00540110": 6,
+    "005402D0": 1,
+    "00540340": 1,
+    "005403F0": 33
+  },
+  "payload_extents": [
+    {
+      "input": "",
+      "native_frame": {
+        "alternate": 0,
+        "bucket": 1000,
+        "direct": 0,
+        "endpoint": "d2040000c000021600000000",
+        "frame": "361200000000000000000000000004aa",
+        "kind": "direct",
+        "port": 0
+      },
+      "pop": {
+        "endpoint": "d2040000c000020b00000000",
+        "payload": "",
+        "product": 43524,
+        "returned": 1,
+        "state": {
+          "receive_count": 1,
+          "receives": [
+            {
+              "arrival": 1000,
+              "flags": 3,
+              "frame": "361200000000000000000000000004aa",
+              "source": "d2040000c000020b00000000"
+            }
+          ],
+          "response": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "ring": [
+            {
+              "endpoint": "d2040000c000020b00000000",
+              "sequence": 0
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            }
+          ],
+          "ring_cursor": 1,
+          "send_count": 0,
+          "sends": [],
+          "total_receive": 1,
+          "total_send": 0
+        }
+      },
+      "receive": {
+        "emitted": [
+          {
+            "alternate": 0,
+            "bucket": 1000,
+            "direct": 0,
+            "endpoint": "d2040000c000020b00000000",
+            "frame": "361202000000000000000000000004aa",
+            "kind": "direct",
+            "port": 0
+          }
+        ],
+        "returned": 1,
+        "state": {
+          "receive_count": 1,
+          "receives": [
+            {
+              "arrival": 1000,
+              "flags": 1,
+              "frame": "361200000000000000000000000004aa",
+              "source": "d2040000c000020b00000000"
+            }
+          ],
+          "response": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "ring": [
+            {
+              "endpoint": "d2040000c000020b00000000",
+              "sequence": 0
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            }
+          ],
+          "ring_cursor": 1,
+          "send_count": 0,
+          "sends": [],
+          "total_receive": 1,
+          "total_send": 0
+        }
+      }
+    },
+    {
+      "input": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6",
+      "native_frame": {
+        "alternate": 0,
+        "bucket": 1000,
+        "direct": 0,
+        "endpoint": "d2040000c000021600000000",
+        "frame": "361200000000000000000000000004aa000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6",
+        "kind": "direct",
+        "port": 0
+      },
+      "pop": {
+        "endpoint": "d2040000c000020b00000000",
+        "payload": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6",
+        "product": 43524,
+        "returned": 1,
+        "state": {
+          "receive_count": 1,
+          "receives": [
+            {
+              "arrival": 1000,
+              "flags": 3,
+              "frame": "361200000000000000000000000004aa000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6",
+              "source": "d2040000c000020b00000000"
+            }
+          ],
+          "response": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "ring": [
+            {
+              "endpoint": "d2040000c000020b00000000",
+              "sequence": 0
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            }
+          ],
+          "ring_cursor": 1,
+          "send_count": 0,
+          "sends": [],
+          "total_receive": 1,
+          "total_send": 0
+        }
+      },
+      "receive": {
+        "emitted": [
+          {
+            "alternate": 0,
+            "bucket": 1000,
+            "direct": 0,
+            "endpoint": "d2040000c000020b00000000",
+            "frame": "361202000000000000000000000004aa",
+            "kind": "direct",
+            "port": 0
+          }
+        ],
+        "returned": 1,
+        "state": {
+          "receive_count": 1,
+          "receives": [
+            {
+              "arrival": 1000,
+              "flags": 1,
+              "frame": "361200000000000000000000000004aa000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6",
+              "source": "d2040000c000020b00000000"
+            }
+          ],
+          "response": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "ring": [
+            {
+              "endpoint": "d2040000c000020b00000000",
+              "sequence": 0
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            },
+            {
+              "endpoint": "ffffffffffffffffffff0000",
+              "sequence": 4294967295
+            }
+          ],
+          "ring_cursor": 1,
+          "send_count": 0,
+          "sends": [],
+          "total_receive": 1,
+          "total_send": 0
+        }
+      }
+    }
+  ],
+  "retail_constructor": {
+    "receive_count": 0,
+    "receives": [],
+    "response": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "ring": [
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      },
+      {
+        "endpoint": "ffffffffffffffffffff0000",
+        "sequence": 4294967295
+      }
+    ],
+    "ring_cursor": 0,
+    "send_count": 0,
+    "sends": [],
+    "total_receive": 0,
+    "total_send": 0
+  },
+  "retry_failure": {
+    "after_failed_cleanup": {
+      "receive_count": 0,
+      "receives": [],
+      "response": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "ring": [
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        }
+      ],
+      "ring_cursor": 0,
+      "send_count": 0,
+      "sends": [],
+      "total_receive": 0,
+      "total_send": 3
+    },
+    "equal_delta": {
+      "emitted": [],
+      "returned": 1,
+      "state": {
+        "receive_count": 0,
+        "receives": [],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 2,
+        "sends": [
+          {
+            "attempts": 1,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 1,
+            "frame": "361200000100000000000000000004aa02",
+            "last": 1000,
+            "port": 0
+          },
+          {
+            "attempts": 1,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 1,
+            "frame": "361200004d00000000000000000004aa03",
+            "last": 1000,
+            "port": 0
+          }
+        ],
+        "total_receive": 0,
+        "total_send": 3
+      }
+    },
+    "failed_cleanup_returned": 2,
+    "greater_delta": {
+      "emitted": [
+        {
+          "alternate": 0,
+          "bucket": 1003,
+          "direct": 0,
+          "endpoint": "d2040000c000021600000000",
+          "frame": "361200000100000000000000000004aa02",
+          "kind": "direct",
+          "port": 0
+        },
+        {
+          "alternate": 0,
+          "bucket": 1003,
+          "direct": 0,
+          "endpoint": "d2040000c000021600000000",
+          "frame": "361200004d00000000000000000004aa03",
+          "kind": "direct",
+          "port": 0
+        }
+      ],
+      "returned": 1,
+      "state": {
+        "receive_count": 0,
+        "receives": [],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 2,
+        "sends": [
+          {
+            "attempts": 2,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 1,
+            "frame": "361200000100000000000000000004aa02",
+            "last": 1003,
+            "port": 0
+          },
+          {
+            "attempts": 2,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 1,
+            "frame": "361200004d00000000000000000004aa03",
+            "last": 1003,
+            "port": 0
+          }
+        ],
+        "total_receive": 0,
+        "total_send": 3
+      }
+    },
+    "timeout": {
+      "emitted": [
+        {
+          "alternate": 0,
+          "bucket": 1064,
+          "direct": 0,
+          "endpoint": "d2040000c000021600000000",
+          "frame": "361200000100000000000000000004aa02",
+          "kind": "direct",
+          "port": 0
+        },
+        {
+          "alternate": 0,
+          "bucket": 1064,
+          "direct": 0,
+          "endpoint": "d2040000c000021600000000",
+          "frame": "361200004d00000000000000000004aa03",
+          "kind": "direct",
+          "port": 0
+        }
+      ],
+      "returned": 0,
+      "state": {
+        "receive_count": 0,
+        "receives": [],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 2,
+        "sends": [
+          {
+            "attempts": 3,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 5,
+            "frame": "361200000100000000000000000004aa02",
+            "last": 1064,
+            "port": 0
+          },
+          {
+            "attempts": 3,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 5,
+            "frame": "361200004d00000000000000000004aa03",
+            "last": 1064,
+            "port": 0
+          }
+        ],
+        "total_receive": 0,
+        "total_send": 3
+      }
+    }
+  },
+  "source": "unicorn/gamemd.exe",
+  "source_port_normalization": {
+    "emitted": [
+      {
+        "alternate": 0,
+        "bucket": 1000,
+        "direct": 0,
+        "endpoint": "d2040000c000020b00000000",
+        "frame": "361202000000000000000000000004aa",
+        "kind": "direct",
+        "port": 4567
+      }
+    ],
+    "pop": {
+      "endpoint": "d7110000c000020b00000000",
+      "payload": "676c6f62616c2d41",
+      "product": 43524,
+      "returned": 1,
+      "state": {
+        "receive_count": 1,
+        "receives": [
+          {
+            "arrival": 1000,
+            "flags": 3,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "source": "d7110000c000020b00000000"
+          }
+        ],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "d7110000c000020b00000000",
+            "sequence": 0
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 1,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 1,
+        "total_send": 0
+      }
+    },
+    "returned": 1,
+    "state": {
+      "receive_count": 1,
+      "receives": [
+        {
+          "arrival": 1000,
+          "flags": 1,
+          "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+          "source": "d7110000c000020b00000000"
+        }
+      ],
+      "response": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "ring": [
+        {
+          "endpoint": "d7110000c000020b00000000",
+          "sequence": 0
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        }
+      ],
+      "ring_cursor": 1,
+      "send_count": 0,
+      "sends": [],
+      "total_receive": 1,
+      "total_send": 0
+    }
+  },
+  "wrong_source_ack": {
+    "ack_frame": "361202000000000000000000000004aa",
+    "after_service": {
+      "emitted": [],
+      "returned": 1,
+      "state": {
+        "receive_count": 0,
+        "receives": [],
+        "response": [
+          4,
+          1,
+          4,
+          4
+        ],
+        "ring": [
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 0,
+        "sends": [],
+        "total_receive": 0,
+        "total_send": 1
+      }
+    },
+    "received_from_unrelated_c": {
+      "emitted": [],
+      "returned": 1,
+      "state": {
+        "receive_count": 0,
+        "receives": [],
+        "response": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ring": [
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          },
+          {
+            "endpoint": "ffffffffffffffffffff0000",
+            "sequence": 4294967295
+          }
+        ],
+        "ring_cursor": 0,
+        "send_count": 1,
+        "sends": [
+          {
+            "attempts": 1,
+            "destination": "d2040000c000021600000000",
+            "first": 1000,
+            "flags": 3,
+            "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+            "last": 1000,
+            "port": 0
+          }
+        ],
+        "total_receive": 0,
+        "total_send": 1
+      }
+    },
+    "sender_before": {
+      "receive_count": 0,
+      "receives": [],
+      "response": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "ring": [
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        },
+        {
+          "endpoint": "ffffffffffffffffffff0000",
+          "sequence": 4294967295
+        }
+      ],
+      "ring_cursor": 0,
+      "send_count": 1,
+      "sends": [
+        {
+          "attempts": 1,
+          "destination": "d2040000c000021600000000",
+          "first": 1000,
+          "flags": 1,
+          "frame": "361200000000000000000000000004aa676c6f62616c2d41",
+          "last": 1000,
+          "port": 0
+        }
+      ],
+      "total_receive": 0,
+      "total_send": 1
+    }
+  }
+}

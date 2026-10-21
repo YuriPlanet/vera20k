@@ -1671,7 +1671,8 @@ Details: {details}"
         if !state.frontend.shell_controller.on_key(key) {
             return false;
         }
-        // Escape is IDCANCEL (control 2): result 1, the same as Cancel.
+        // Native MessageBoxProc5D36A0 maps IDOK1 (Enter with no default
+        // pushbutton) and IDCANCEL2 (Escape) to result1, the negative answer.
         Self::resolve_shell_message_box(state, crate::ui::shell::modal::ModalResult::MessageBox(1));
         state.platform.window.request_redraw();
         true
