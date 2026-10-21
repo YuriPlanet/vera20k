@@ -1354,6 +1354,12 @@ impl Simulation {
             // CanDeploySlashUnload (`0x00700D50`) is the sender's admission
             // (deploy key, `Simulation::can_deploy_slash_unload`), not this
             // receiver's.
+            //
+            // RESIDUAL: this arm uses the clicked-mission owner instead of
+            // Event9 (`0x004C76D7..0x004C7818`). Trigger: a deployer infantry
+            // in Construction/Selling, a WeaponsFactory cell or a rejected
+            // ground projection. Effect: it can deploy where native ignores D.
+            // Frequency: rare; downstream risk: low.
             Command::ToggleInfantryDeploy { entity_id } => {
                 if !self.entity_owned_by_id(command_owner, *entity_id) {
                     return false;
@@ -1755,13 +1761,6 @@ impl Simulation {
                         // Unit transport D uses deploy::issue_order instead:
                         // Event9 (`0x004C76D7..0x004C7818`) retains its own
                         // admission guards and archive/suspended state.
-                        //
-                        // RESIDUAL: ToggleInfantryDeploy still uses this
-                        // clicked-mission owner instead of Event9. Trigger:
-                        // a deployer infantry in Construction/Selling, a
-                        // WeaponsFactory cell or a rejected ground projection.
-                        // Effect: it can deploy where native ignores D.
-                        // Frequency: rare; downstream risk: low.
                         self.apply_megamission_command(
                             *transport_id,
                             MissionType::Unload,
