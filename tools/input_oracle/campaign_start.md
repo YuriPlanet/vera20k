@@ -253,3 +253,7 @@ Production Rust comparisons, retail release loading and rendered output need
 their own validation. Full Rules Process, scenario/world initialization,
 trigger execution, whole-campaign behavior and engine parity remain outside
 this native fixture's coverage.
+
+The independent [explicit filename/index prefix](campaign_start_prefix.md) is
+replayed with `--start-prefix`; it uses synthetic inputs and needs no campaign
+asset extraction. It stops before selected CD handling and full map loading.

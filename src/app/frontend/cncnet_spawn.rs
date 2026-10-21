@@ -8,8 +8,8 @@
 //! https://github.com/CnCNet/xna-cncnet-client/tree/develop/DXMainClient/DXGUI
 //!
 //! This boundary admits one local human, Battle and stock YR campaigns. Ares
-//! builds also carry allocated custom Country identities into Battle startup
-//! and resolve campaign missions through the retained campaign catalog.
+//! builds also carry allocated custom Country identities into Battle startup.
+//! External campaigns pass an explicit Scenario independently of record0.
 //! It does not load native saves, run network sessions or load extension DLLs.
 
 use std::path::{Path, PathBuf};
@@ -50,29 +50,19 @@ pub(crate) struct CampaignSpawn {
 
 impl CampaignSpawn {
     /// Normalize an external campaign selection through the ordinary campaign
-    /// startup owner. CampaignID remains client metadata; Side is an adapter
-    /// selector, never an index into Country/HouseType or the Campaign array.
+    /// startup owner. CampaignID and Side remain client metadata, never indexes
+    /// into Country/HouseType or the Campaign array.
     pub(crate) fn prepare_startup(
         self,
         catalog: &crate::rules::campaigns::CampaignRegistry,
         game_speed: i32,
         clock: &mut impl crate::app::match_bootstrap::MatchSeedClock,
     ) -> Result<crate::app::match_bootstrap::PreparedCampaignStartup> {
-        let stock_index = match self.side {
-            0 => catalog.find_index("ALL1"),
-            1 => catalog.find_index("SOV1"),
-            _ => None,
-        };
-        #[cfg(feature = "ares")]
-        let campaign_index = catalog.find_scenario_index(&self.scenario).or(stock_index);
-        #[cfg(not(feature = "ares"))]
-        let campaign_index = stock_index;
-        let campaign_index = campaign_index.with_context(|| {
-            format!(
-                "campaign Scenario {:?} has no matching catalog record (Side={})",
-                self.scenario, self.side
-            )
-        })?;
+        // CnCNet/yrpp-spawner de64f070, Spawner.cpp327 passes
+        // StartScenario(ScenarioName,1,0). Original683AB0 keeps this index
+        // independently of the explicit filename; see campaign_start_prefix.json.
+        // Do not infer a record from Scenario, Side or client CampaignID.
+        let campaign_index = 0;
         crate::app::match_bootstrap::prepare_campaign_startup_at_index(
             catalog,
             campaign_index,

@@ -343,9 +343,11 @@ pub fn prepare_campaign_startup(
     )
 }
 
-/// Retain an already-resolved catalog identity, including entries whose native
-/// truncated IDs collide. Both named shell starts and external Scenario lookup
-/// use this one constructor and consume the seed only after admission succeeds.
+/// Retain the caller's catalog identity independently of an explicit filename.
+/// Original683AC8..683AFE uses the record's Scenario only for a null/empty
+/// filename;683B0A stores the supplied index. See campaign_start_prefix.json.
+/// Named shell starts and external starts share this constructor and consume
+/// the seed only after checked catalog admission succeeds.
 pub(crate) fn prepare_campaign_startup_at_index(
     campaigns: &crate::rules::campaigns::CampaignRegistry,
     campaign_index: usize,
@@ -356,7 +358,9 @@ pub(crate) fn prepare_campaign_startup_at_index(
 ) -> Option<PreparedCampaignStartup> {
     let campaign = campaigns.get(campaign_index)?.clone();
     let (scenario, scenario_file) = prepare_campaign_scenario(
-        scenario.unwrap_or_else(|| campaign.scenario()),
+        scenario
+            .filter(|filename| !filename.is_empty())
+            .unwrap_or_else(|| campaign.scenario()),
         launch_options.as_ref(),
     );
     Some(PreparedCampaignStartup {

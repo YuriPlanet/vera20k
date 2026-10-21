@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original683AB0 filename/index/CD prefix; stops before selected CD operation683BC9, not complete map load.",
+  "assumptions": [
+    "Synthetic source-order INI cache constructs two Campaign records and Movies through original constructors/readers. No MO resources or predetermined accepted filename/index/CD results are supplied.",
+    "Campaign Session0 and special-name override off are supplied priors. Six cases use valid catalog indexes0/1; null/empty and explicit unlisted/other-record names are independent arguments.",
+    "Required native index write683B0A, uppercase call683B5D and selected CD lookup683B86 execute. Original683B65 supplies literal-1 to original4790B0 before the selected-CD boundary.",
+    "Main/Scenario/MapGen streams are native-seeded31 before each prefix, and complete storage remains unchanged; the existing Windows clock transport is not called by the prefix (constructor clock0 calls are recorded separately). Later timer cadence, entropy sampling and live simulation are excluded.",
+    "All executable PE sections remain byte-identical. FinalMovie is retained record state only: final movie playback, full StartScenario return, file/archive admission, mission/world loading and installed legacy MO spawner equivalence are not established.",
+    "Invalid indexes and an empty catalog are not executed; native unchecked pointer boundaries do not establish a safe fallback. VERA keeps a checked failure before reading the startup seed."
+  ],
+  "substitutions": [
+    "Existing CampaignReader/BulletReader VM, INI cache projection, bounded allocation, original CRT TLS/atomic transport; synthetic DebugOnly descriptions avoid physical CSF lookup.",
+    "Diagnostic4068E0 is a cdecl sink returning0 through existing return_from_sink; the native caller ignores that return. No media, map admission or gameplay result is supplied."
+  ],
+  "entry_points": {
+    "scenario_ctor": "0x006832C0",
+    "campaign_list": "0x0046CE10",
+    "campaign_read": "0x0046CCD0",
+    "movie_catalog": "0x00674550",
+    "start_scenario": "0x00683AB0",
+    "uppercase": "0x007DCFC4",
+    "initial_media": "0x004790B0",
+    "selected_cd_boundary": "0x00683BC9"
+  },
+  "replay_command": "python -m tools.input_oracle.campaign_start --start-prefix",
+  "payload_sha256": "f73c1fe569d4cbfdb3e1a5281dd3155fec64c6f6c38849b1e29e674609485471"
+}

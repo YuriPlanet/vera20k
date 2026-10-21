@@ -23,16 +23,16 @@ reader without replaying cached shell settings or consuming a PortPool RNG draw.
 Campaign, observer and generated-map presentation retain their existing paths;
 this support does not certify custom participant insignia or whole-frame parity.
 
-For offline CnCNet campaign launches, Ares builds resolve the client's logical `Scenario`
-against the retained `BATTLEMD.INI` campaign catalog before preparing the ordinary campaign
-startup. A matching record keeps its actual index, final movie and continuation identity;
-`CampaignID` is client metadata and never selects a retail array entry. The adapter accepts
-byte-wide campaign `Side` values without interpreting them as Country indices. If no Scenario
-matches, Side 0/1 retain the existing ALL1/SOV1 explicit-mission override when those records
-exist; this fallback does not check which campaign owns an arbitrary mission. Other unmatched
-selections fail before consuming a match seed. Default builds retain the stock Side 0/1 path.
-This is an external-launch adapter capability, not native CnCNet patch parity or a claim that
-all custom campaigns and their gameplay extensions are supported.
+For offline CnCNet campaign launches, both builds pass the client's explicit `Scenario`
+independently of campaign record 0, as the upstream spawner's
+`StartScenario(ScenarioName, 1, 0)` call does. The retained first record supplies its real CD,
+final movie and continuation identity even when its authored Scenario differs. `CampaignID`
+and `Side` do not select a retail array entry; an empty catalog fails before reading the seed.
+Ares builds additionally accept byte-wide campaign `Side` metadata, while default builds
+retain their existing Side 0/1 admission. This does not change named campaigns in VERA's menu.
+The [native prefix controls](../tools/input_oracle/campaign_start_prefix.md) demonstrate
+filename/index/CD independence; they do not certify the installed legacy mod spawner,
+complete mission loading or all downstream campaign extensions.
 
 Supported extensions:
 

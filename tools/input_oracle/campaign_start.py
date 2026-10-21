@@ -11,6 +11,7 @@ import hashlib
 import argparse
 import os
 import struct
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -280,6 +281,86 @@ def metadata_history():
         lookups.append(dict(request=name, index=index))
     m.check_code()
     return dict(physical_battlemd_sha256=hashlib.sha256(raw).hexdigest(), csf=csf, entries=entries, lookups=lookups)
+
+
+def generate_start_prefix():
+    """Execute StartScenario's filename/index/CD prefix, not scenario loading.
+
+    The existing cached-INI owner constructs both campaign definitions and movie
+    names through the original readers. Only diagnostic4068E0 is a cdecl sink;
+    its return is not used. Original683B65 selects media-1 and4790B0 executes
+    that initial operation. Each run stops BEFORE the selected campaign's media
+    operation, so neither file admission nor a StartScenario success is supplied
+    or claimed. No out-of-range campaign pointer is dereferenced here.
+    """
+    values = {
+        "Battles": {"0": "FIRST", "1": "SECOND"},
+        "FIRST": {"CD": "2", "Scenario": "first.map", "FinalMovie": "END0",
+                  "DebugOnly": "yes", "Description": "First"},
+        "SECOND": {"CD": "1", "Scenario": "second.map", "FinalMovie": "END1",
+                   "DebugOnly": "yes", "Description": "Second"},
+    }
+    cases = (("explicit_unlisted_index0", "other.map", 0),
+             ("explicit_other_record_index0", "second.map", 0),
+             ("explicit_unlisted_index1", "other.map", 1),
+             ("null_uses_index0", None, 0),
+             ("empty_uses_index0", "", 0),
+             ("null_uses_index1", None, 1))
+    rows = []
+    with tempfile.TemporaryDirectory(prefix="campaign-start-prefix-") as root:
+        for name, filename, index in cases:
+            m = CampaignReader(root=Path(root))
+            u = m.u
+            m.invoke(0x6832C0, m.scenario)
+            m.ordered_ini({"Movies": {"0": "END0", "1": "END1"}})
+            m.invoke(0x674550, 0, (INI,))
+            m.ordered_ini(values)
+            m.invoke(0x46CE10, INI, context={"case": name, "phase": "campaign_list"})
+            array, count = m.read32(0xA83CFC), m.read32(0xA83D08)
+            entries = [campaign_state(m, m.read32(array + i * 4)) for i in range(count)]
+            u.mem_write(0xA8B238, dwords(0))  # campaign Session mode
+            u.mem_write(0xA8ED5D, b"\0")  # no special scenario-name override
+            m.seed_streams(31)
+            rng_before = m.rng_state()
+            construction_clock_reads = list(m.clock_reads)
+            m.clock_reads.clear()
+            logs, media = [], []
+
+            def observe(_u, pc, _size, _data):
+                if pc == 0x4068E0:
+                    sp = u.reg_read(UC_X86_REG_ESP)
+                    logs.append(dict(caller=f"{m.read32(sp):08x}",
+                                     format=m.string(m.read32(sp + 4))))
+                    return_from_sink(u, 0, 0)
+                elif pc == 0x4790B0:
+                    media.append(dict(caller=f"{m.read32(u.reg_read(UC_X86_REG_ESP)):08x}",
+                                      cd=struct.unpack("<i", dwords(u.reg_read(UC_X86_REG_ECX)))[0]))
+
+            hook = u.hook_add(UC_HOOK_CODE, observe)
+            try:
+                u.mem_write(SP, dwords(RET_MAGIC, index))
+                u.reg_write(UC_X86_REG_ESP, SP)
+                u.reg_write(UC_X86_REG_ECX, 0 if filename is None else m.cstring(filename))
+                u.reg_write(UC_X86_REG_EDX, 1)
+                run_checked(u, 0x683AB0, 0x683BC9, count=2_000_000,
+                            required_addresses=(0x683B0A, 0x683B5D, 0x683B86),
+                            context={"case": name, "filename": filename, "campaign_index": index})
+                observed_index = struct.unpack("<i", u.mem_read(m.scenario + 0x34CC, 4))[0]
+                rows.append(dict(name=name, filename=filename, campaign_index=index,
+                    catalog=entries, logical_scenario=m.string(m.scenario + 0x125C),
+                    stored_campaign_index=observed_index,
+                    selected_media_cd=struct.unpack("<i", dwords(u.reg_read(UC_X86_REG_ECX)))[0],
+                    selected_record=campaign_state(m, m.read32(array + observed_index * 4)),
+                    initial_media_calls=media, diagnostic_calls=logs,
+                    rng_before=rng_before, rng_after=m.rng_state(),
+                    construction_clock_reads=construction_clock_reads, clock_reads=list(m.clock_reads),
+                    stop_before="00683BC9", executable_sections_unchanged=True))
+                assert m.rng_state() == rng_before
+                assert not m.clock_reads
+                m.check_code()
+            finally:
+                u.hook_del(hook)
+    return dict(schema_version=1, sections=values, rows=rows)
 
 
 def metadata_controls():
@@ -1545,6 +1626,27 @@ def metadata(*, houses=False):
     return result
 
 
+def start_prefix_metadata():
+    result = provenance(
+        scope="Original683AB0 filename/index/CD prefix; stops before selected CD operation683BC9, not complete map load.",
+        entry_points={"scenario_ctor": 0x6832C0, "campaign_list": 0x46CE10,
+                      "campaign_read": 0x46CCD0, "movie_catalog": 0x674550,
+                      "start_scenario": 0x683AB0, "uppercase": 0x7DCFC4,
+                      "initial_media": 0x4790B0, "selected_cd_boundary": 0x683BC9},
+        assumptions=[
+            "Synthetic source-order INI cache constructs two Campaign records and Movies through original constructors/readers. No MO resources or predetermined accepted filename/index/CD results are supplied.",
+            "Campaign Session0 and special-name override off are supplied priors. Six cases use valid catalog indexes0/1; null/empty and explicit unlisted/other-record names are independent arguments.",
+            "Required native index write683B0A, uppercase call683B5D and selected CD lookup683B86 execute. Original683B65 supplies literal-1 to original4790B0 before the selected-CD boundary.",
+            "Main/Scenario/MapGen streams are native-seeded31 before each prefix, and complete storage remains unchanged; the existing Windows clock transport is not called by the prefix (constructor clock0 calls are recorded separately). Later timer cadence, entropy sampling and live simulation are excluded.",
+            "All executable PE sections remain byte-identical. FinalMovie is retained record state only: final movie playback, full StartScenario return, file/archive admission, mission/world loading and installed legacy MO spawner equivalence are not established.",
+            "Invalid indexes and an empty catalog are not executed; native unchecked pointer boundaries do not establish a safe fallback. VERA keeps a checked failure before reading the startup seed."],
+        substitutions=[
+            "Existing CampaignReader/BulletReader VM, INI cache projection, bounded allocation, original CRT TLS/atomic transport; synthetic DebugOnly descriptions avoid physical CSF lookup.",
+            "Diagnostic4068E0 is a cdecl sink returning0 through existing return_from_sink; the native caller ignores that return. No media, map admission or gameplay result is supplied."])
+
+    return result
+
+
 def source_paths():
     paths = {"producer": Path(__file__), "native_runner": HERE.parent / "native_oracle.py",
         "native_inspect": HERE.parent / "native_inspect.py",
@@ -1568,10 +1670,11 @@ if __name__ == "__main__":
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--houses", action="store_true")
     selection.add_argument("--scenario-names", action="store_true")
+    selection.add_argument("--start-prefix", action="store_true")
     args, remaining = parser.parse_known_args()
-    generator = generate_scenario_names if args.scenario_names else generate_houses if args.houses else generate
-    filename = "campaign_house_names.json" if args.scenario_names else "campaign_start_houses.json" if args.houses else "campaign_start.json"
-    evidence = scenario_names_metadata if args.scenario_names else lambda: metadata(houses=args.houses)
+    generator = generate_start_prefix if args.start_prefix else generate_scenario_names if args.scenario_names else generate_houses if args.houses else generate
+    filename = "campaign_start_prefix.json" if args.start_prefix else "campaign_house_names.json" if args.scenario_names else "campaign_start_houses.json" if args.houses else "campaign_start.json"
+    evidence = start_prefix_metadata if args.start_prefix else scenario_names_metadata if args.scenario_names else lambda: metadata(houses=args.houses)
     finish_vectors(generator, HERE / filename,
                    provenance=evidence, argv=remaining,
                    source_paths=source_paths())
