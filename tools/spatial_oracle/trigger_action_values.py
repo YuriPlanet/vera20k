@@ -196,8 +196,8 @@ SOURCE_PATHS = {name:Path(__file__).parents[2]/path for name,path in {
 class ActionFixture(FlagsFixture):
     """Existing native reader transport plus spare counted registry storage."""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *, stack_base=STACK_BASE):
+        super().__init__(stack_base=stack_base)
         u = self.u
         for n, base in enumerate((0xB0E658,0xB0F670,0xB0F658,
                                   *REFERENCE_REGISTRIES.values())):
@@ -343,11 +343,11 @@ def initialize_eva(f, physical):
     u.reg_write(UC_X86_REG_ESP,sp)
     u.mem_write(0xB1D4A4,dwords(f.allocate(4096),1024,1,0,10))
     f.ordered_ini(physical)
-    u.mem_write(SP,dwords(RET_MAGIC))
-    u.reg_write(UC_X86_REG_ESP,SP)
+    u.mem_write(f.sp,dwords(RET_MAGIC))
+    u.reg_write(UC_X86_REG_ESP,f.sp)
     u.reg_write(UC_X86_REG_ECX,INI)
     run_checked(u,0x753000,RET_MAGIC,count=100_000_000,timeout_us=60_000_000)
-    assert u.reg_read(UC_X86_REG_ESP)==SP+4
+    assert u.reg_read(UC_X86_REG_ESP)==f.sp+4
     stream = f.allocate(0xA8)
     # Supplied initialized stream shell, no backend/file/channel. The
     # original queued-action route is paused before PlayNext's device checks.
