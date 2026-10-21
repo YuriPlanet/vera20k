@@ -137,10 +137,6 @@ pub(crate) struct MatchPresentationState {
     /// In-game chat/system message surface (study §3.1) — re-anchored to the
     /// tactical viewport per frame by `input::messages`.
     pub(crate) message_list: crate::ui::messages::MessageList,
-    /// Pause-adjusted clock for message deadlines (contract §4.2 step 8 /
-    /// §4.3: the native composite timer freezes during pause). Fed pause
-    /// edges by `messages::update`.
-    pub(crate) message_clock: crate::ui::messages::PauseAwareClock,
     /// The in-battle chat target and chat mask, beside the list whose edit
     /// line they route.
     pub(crate) chat: crate::app::input::chat::ChatState,

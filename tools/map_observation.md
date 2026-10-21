@@ -1072,7 +1072,7 @@ The v4 `render.presentation_clock` records actual consumed presentation times:
 
 For a positive budget N, exactly N game draws occur at completed steps 1 through
 N. A zero-step observation has one draw at step 0, with all three times zero.
-Every row must contain the exact radar tick, tooltip poll and adjusted message
+Every row must contain the exact radar tick, tooltip poll and wall-clock message
 management times consumed by that draw; each must equal its completed step × 22.
 The budget is bounded at 100000 steps. Unknown fields/policies, missing or extra
 rows, reordered/repeated steps, wrong integer types and any time discrepancy fail

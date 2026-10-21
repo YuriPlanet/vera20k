@@ -648,11 +648,7 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
     );
     let pacer_admitted = service.simulation && inputs.pacer_timing_admits;
     let run_sim = !inputs.focus_frozen
-        && !(inputs.scenario_paused
-            && matches!(
-                inputs.session_mode,
-                SessionMode::Campaign | SessionMode::Skirmish
-            ))
+        && !super::scenario_pause::blocks_main_tick(inputs.session_mode, inputs.scenario_paused)
         && inputs.startup_admitted
         && !inputs.network_wait
         && (inputs.frame_stepping || pacer_admitted);
@@ -682,21 +678,21 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
     }
 }
 
-pub(crate) fn advance_in_game_runtime(state: &mut AppState, now_ms: u64) {
+pub(crate) fn advance_in_game_runtime(state: &mut AppState, now_ms: u64) -> bool {
     let startup_admitted = state.match_state.startup.admits_ordinary_tick();
     if !startup_admitted {
         log::error!("Accepted match tick blocked: matching Rust L0 receipt is absent");
         // The whole pass is skipped: nothing below may run un-receipted. The
         // runtime decision re-checks the same predicate so the freeze contract
         // stays complete even without this call-site return.
-        return;
+        return false;
     }
 
     advance_in_game_runtime_mode(
         state,
         RuntimeAdvanceMode::WallClock { now_ms },
         startup_admitted,
-    );
+    )
 }
 
 /// Advance exactly one production simulation step for the hidden tactical
@@ -765,12 +761,12 @@ fn advance_in_game_runtime_mode(
     state: &mut AppState,
     mode: RuntimeAdvanceMode,
     startup_admitted: bool,
-) {
+) -> bool {
     // ExecuteDoList64CD0C is a blocking message box inside this frame. Even
     // exact-step diagnostics must not admit another Logic pass while it waits.
     if super::network_failure::pending(state) {
         super::network_failure::show(state);
-        return;
+        return false;
     }
     crate::app::input::commands::reconcile_paid_super_weapon_cursor(state);
     let frame_stepping = matches!(mode, RuntimeAdvanceMode::WallClock { .. })
@@ -818,10 +814,9 @@ fn advance_in_game_runtime_mode(
         .as_ref()
         .is_some_and(|rt| rt.simulation.session().scenario_paused());
     if service_live
-        && scenario_paused
-        && matches!(
+        && super::scenario_pause::blocks_main_tick(
             state.match_state.session_mode(),
-            SessionMode::Campaign | SessionMode::Skirmish
+            scenario_paused,
         )
         && pacer_timing_admits
     {
@@ -861,7 +856,7 @@ fn advance_in_game_runtime_mode(
         let frame_committed = advance_one_simulation_frame(state, tick_lane, mouse_scroll, false);
         if super::network_failure::pending(state) {
             super::network_failure::show(state);
-            return;
+            return false;
         }
         #[cfg(feature = "telemetry-dashboard")]
         if frame_committed && state.diag.telemetry_active() {
@@ -957,6 +952,7 @@ fn advance_in_game_runtime_mode(
         crate::app::input::camera::animate_zoom(state);
         update_building_placement_preview(state);
     }
+    decision.run_sim
 }
 
 /// Tick simulation: advance movement and animation systems.

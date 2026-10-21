@@ -34,6 +34,18 @@ const fn bucket(wall_ms: u64) -> i32 {
     ((wall_ms as u32) >> 4) as i32
 }
 
+/// Main_Tick55D7C2..55D877 checks Scenario62C only in offline modes0/5.
+/// Share its admission with message Manage55DDA5; a radar flag alone misses
+/// timed Action110 and other consumers of the same Scenario pause owner.
+/// Source: original gamemd.exe instructions.
+pub(crate) fn blocks_main_tick(mode: super::session::SessionMode, paused: bool) -> bool {
+    paused
+        && matches!(
+            mode,
+            super::session::SessionMode::Campaign | super::session::SessionMode::Skirmish
+        )
+}
+
 pub(crate) fn enter(state: &mut AppState, duration: i32, outermost: bool, wall_ms: u64) {
     state
         .match_state

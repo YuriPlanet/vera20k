@@ -652,7 +652,6 @@ impl App {
                         crate::ui::messages::MESSAGE_MAX_VISIBLE_RETAIL,
                         0,
                     ),
-                    message_clock: crate::ui::messages::PauseAwareClock::default(),
                     chat: Default::default(),
                     in_game_menu: crate::ui::pause_menu::InGameMenuState::default(),
                     modal_latch: true,

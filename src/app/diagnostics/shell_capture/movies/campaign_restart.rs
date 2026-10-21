@@ -25,6 +25,8 @@ pub enum RestartTarget {
     MenuDefeatReplayed,
     /// Save/load, win through TAction67, continue the score into ALL02.
     SavedVictory,
+    /// SOV02's authored objective, held behind B5 past its wall deadline.
+    ObjectiveExpiry,
 }
 
 impl RestartTarget {
@@ -46,6 +48,10 @@ enum Step {
     AwaitVictoryScore,
     ReplayPressed,
     AwaitShellReturn,
+    AwaitObjective,
+    AwaitObjectiveMenu,
+    HoldObjectiveMenu,
+    ObjectiveResumed,
     AwaitRestartedLive,
     Done,
 }
@@ -61,6 +67,13 @@ struct Mission {
     /// which the carry-over restore (`0x004C6295`) may replace.
     menu_difficulty: Option<i32>,
     player_difficulty: Option<i32>,
+}
+
+#[derive(Debug)]
+struct ObjectivePause {
+    text: String,
+    deadline_ms: u64,
+    paused_tick: u64,
 }
 
 impl Mission {
@@ -114,6 +127,8 @@ pub(super) struct RestartCapture {
     restored: Option<Value>,
     battle_theme: Option<i32>,
     theme_observations: Vec<Value>,
+    objective_pause: Option<ObjectivePause>,
+    objective_observations: Vec<Value>,
 }
 
 impl RestartCapture {
@@ -173,6 +188,8 @@ impl RestartCapture {
             restored,
             battle_theme: None,
             theme_observations: Vec::new(),
+            objective_pause: None,
+            objective_observations: Vec::new(),
         };
         match target {
             RestartTarget::AbortShown
@@ -202,6 +219,13 @@ impl RestartCapture {
             RestartTarget::Restate => {
                 Self::click_briefing_tab(state, route, frame)?;
                 capture.step = Step::Settling(SETTLE_FRAMES);
+            }
+            RestartTarget::ObjectiveExpiry => {
+                ensure!(
+                    capture.before.map_name.eq_ignore_ascii_case("SOV02SMD.MAP"),
+                    "objective expiry must use physical SOV02"
+                );
+                capture.step = Step::AwaitObjective;
             }
         }
         Ok(capture)
@@ -328,6 +352,108 @@ impl RestartCapture {
                 self.step = Step::Settling(remaining - 1);
             }
             Step::Settling(_) | Step::Done => {}
+            Step::AwaitObjective => {
+                let expected = App::csf_label(state, "MISSION:Sov2Obj2", "MISSION:Sov2Obj2");
+                let row = state
+                    .match_state
+                    .match_presentation
+                    .message_list
+                    .messages()
+                    .iter()
+                    .find(|row| row.text == expected);
+                if let Some(row) = row {
+                    let deadline_ms = row.deadline_ms.context("objective must have a deadline")?;
+                    self.objective_pause = Some(ObjectivePause {
+                        text: expected,
+                        deadline_ms,
+                        paused_tick: 0,
+                    });
+                    self.observe_objective(state, "objective visible");
+                    self.abort = Some(abort_return::AbortReturnInput::begin_menu(
+                        state, route, frame,
+                    )?);
+                    self.objective_pause.as_mut().unwrap().paused_tick =
+                        Self::simulation_tick(state)?;
+                    self.step = Step::AwaitObjectiveMenu;
+                }
+            }
+            Step::AwaitObjectiveMenu => {
+                if self
+                    .abort
+                    .as_mut()
+                    .context("objective menu input owner")?
+                    .after_present(state, route, frame)?
+                {
+                    self.observe_objective(state, "menu presented");
+                    self.step = Step::HoldObjectiveMenu;
+                }
+            }
+            Step::HoldObjectiveMenu => {
+                let pause = self
+                    .objective_pause
+                    .as_ref()
+                    .context("objective pause observation")?;
+                ensure!(
+                    Self::simulation_tick(state)? == pause.paused_tick,
+                    "B5 advanced the campaign simulation"
+                );
+                let now = crate::app::input::tooltips::now_ms(state);
+                if now > pause.deadline_ms + 64 {
+                    ensure!(
+                        state
+                            .match_state
+                            .match_presentation
+                            .message_list
+                            .messages()
+                            .iter()
+                            .any(|row| row.text == pause.text),
+                        "Main_Tick expiry ran inside offline B5"
+                    );
+                    self.observe_objective(state, "menu held past deadline");
+                    let layout = crate::app::input::pause_menu::current_layout(state)
+                        .context("B5 layout")?;
+                    let rect = layout
+                        .button(crate::ui::shell::pause_menu::PauseMenuButton::Resume)
+                        .context("B5 Resume")?;
+                    let point = set_window_pointer_to_rect_center(state, rect);
+                    crate::app::input::dispatch::handle_cursor_moved_in_game(state);
+                    for edge in [
+                        winit::event::ElementState::Pressed,
+                        winit::event::ElementState::Released,
+                    ] {
+                        crate::app::input::dispatch::handle_mouse_input(
+                            state,
+                            winit::event::MouseButton::Left,
+                            edge,
+                        );
+                    }
+                    ensure!(
+                        !state.match_state.match_presentation.in_game_menu.is_open(),
+                        "Resume did not close B5"
+                    );
+                    route.push(json!({"frame": frame, "action": "Resume press and release", "point": point}));
+                    self.step = Step::ObjectiveResumed;
+                }
+            }
+            Step::ObjectiveResumed => {
+                let pause = self
+                    .objective_pause
+                    .as_ref()
+                    .context("objective pause observation")?;
+                ensure!(
+                    !state
+                        .match_state
+                        .match_presentation
+                        .message_list
+                        .messages()
+                        .iter()
+                        .any(|row| row.text == pause.text),
+                    "objective survived the first resumed Main_Tick past its deadline"
+                );
+                self.observe_objective(state, "first resumed frame");
+                Self::restore_pointer(state);
+                self.step = Step::Done;
+            }
             Step::AwaitBattleTheme => {
                 let theme = state.audio.theme.current_song();
                 let playing = state.audio.music_player.as_ref().is_some_and(|player| {
@@ -515,6 +641,24 @@ impl RestartCapture {
         MoviesCapture::restore_neutral_pointer(state);
     }
 
+    fn simulation_tick(state: &AppState) -> Result<u64> {
+        Ok(state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .context("live campaign runtime")?
+            .simulation
+            .session()
+            .tick())
+    }
+
+    fn observe_objective(&mut self, state: &AppState, phase: &str) {
+        self.objective_observations.push(json!({"phase": phase,
+            "wall_ms": crate::app::input::tooltips::now_ms(state), "tick": Self::simulation_tick(state).ok(),
+            "rows": state.match_state.match_presentation.message_list.messages().iter()
+                .map(|row| json!({"text": row.text, "deadline_ms": row.deadline_ms})).collect::<Vec<_>>() }));
+    }
+
     fn check_retained_battle_theme(&self, state: &AppState) -> Result<()> {
         ensure!(
             Some(state.audio.theme.current_song()) == self.battle_theme,
@@ -567,12 +711,16 @@ impl RestartCapture {
             | RestartTarget::SavedVictory => {
                 self.step == Step::Done && state.frontend.screen == GameScreen::InGame
             }
+            RestartTarget::ObjectiveExpiry => {
+                self.step == Step::Done && state.frontend.screen == GameScreen::InGame
+            }
         })
     }
 
     pub(super) fn receipt(&self) -> Value {
         json!({"target": format!("{:?}", self.target), "before": self.before.receipt(),
             "restart_loading": self.observed_restart_loading, "restored": self.restored,
-            "after": self.after.as_ref().map(Mission::receipt), "theme_observations": self.theme_observations})
+            "after": self.after.as_ref().map(Mission::receipt), "theme_observations": self.theme_observations,
+            "objective_observations": self.objective_observations})
     }
 }

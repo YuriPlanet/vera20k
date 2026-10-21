@@ -552,6 +552,9 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE => Ok(Self::CampaignFirstLive(
                 crate::ui::campaign_shell::CampaignSide::Soviet,
             )),
+            "campaign-sov02-objective-expiry" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::ObjectiveExpiry,
+            )),
             "campaign-sov05-first-live-frame" => {
                 Ok(Self::CampaignExplicitFirstLive("SOV05UMD.MAP"))
             }
@@ -715,6 +718,9 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignRestart(movies::RestartTarget::AbortRestarted) => {
                 CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART
+            }
+            Self::CampaignRestart(movies::RestartTarget::ObjectiveExpiry) => {
+                "campaign-sov02-objective-expiry"
             }
             Self::CampaignRestart(movies::RestartTarget::DefeatPrompt) => {
                 CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_PROMPT
@@ -903,6 +909,14 @@ impl ShellCaptureCheckpoint {
                 side,
                 target: movies::CampaignStartTarget::AbortReturn,
             },
+            Self::CampaignRestart(movies::RestartTarget::ObjectiveExpiry) => {
+                movies::MoviesTarget::CampaignStart {
+                    side: crate::ui::campaign_shell::CampaignSide::Soviet,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::ObjectiveExpiry,
+                    ),
+                }
+            }
             Self::CampaignRestart(target) => movies::MoviesTarget::CampaignStart {
                 side: crate::ui::campaign_shell::CampaignSide::Allied,
                 target: movies::CampaignStartTarget::Restart(target),
@@ -2488,6 +2502,15 @@ mod tests {
                 movies::MoviesTarget::CampaignStart {
                     side: Soviet,
                     target: movies::CampaignStartTarget::FirstLive,
+                },
+            ),
+            (
+                "campaign-sov02-objective-expiry",
+                movies::MoviesTarget::CampaignStart {
+                    side: Soviet,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::ObjectiveExpiry,
+                    ),
                 },
             ),
             (

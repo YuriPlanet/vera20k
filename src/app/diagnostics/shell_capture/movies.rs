@@ -123,6 +123,16 @@ pub(super) enum CampaignStartTarget {
     Restart(RestartTarget),
 }
 
+impl CampaignStartTarget {
+    fn explicit_scenario(self) -> Option<&'static str> {
+        match self {
+            Self::ExplicitFirstLive(scenario) => Some(scenario),
+            Self::Restart(RestartTarget::ObjectiveExpiry) => Some("SOV02SMD.MAP"),
+            _ => None,
+        }
+    }
+}
+
 /// A `0x10E` button the capture presses once the page has settled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WolPress {
@@ -788,10 +798,8 @@ impl MoviesCapture {
             }
             (Phase::Campaign, PresentedShell::Campaign) => {
                 if Self::slide_settled(state, ShellSlideKind::Campaign) {
-                    if let MoviesTarget::CampaignStart {
-                        target: CampaignStartTarget::ExplicitFirstLive(scenario),
-                        side,
-                    } = self.target
+                    if let MoviesTarget::CampaignStart { side, target } = self.target
+                        && let Some(scenario) = target.explicit_scenario()
                     {
                         let side = match side {
                             crate::ui::campaign_shell::CampaignSide::Allied => 0,
@@ -1274,7 +1282,7 @@ impl MoviesCapture {
             if self.phase != Phase::CampaignStarting {
                 return Ok(false);
             }
-            if !matches!(target, CampaignStartTarget::ExplicitFirstLive(_))
+            if target.explicit_scenario().is_none()
                 && let Some(startup) = crate::app::loading::pump::loading_campaign_startup(state)
             {
                 ensure!(
@@ -1572,6 +1580,8 @@ impl MoviesCapture {
                 CampaignStartTarget::Restart(RestartTarget::DefeatReplayed) => "defeat-replayed",
                 CampaignStartTarget::Restart(RestartTarget::DefeatReturned) => "defeat-returned",
                 CampaignStartTarget::Restart(RestartTarget::Restate) => "restate",
+                CampaignStartTarget::Restart(RestartTarget::ObjectiveExpiry) =>
+                    "objective-expired-after-menu",
                 CampaignStartTarget::Restart(RestartTarget::SavedVictory) =>
                     "saved-victory-next-mission",
                 CampaignStartTarget::Restart(RestartTarget::SavedAbortRestarted) =>

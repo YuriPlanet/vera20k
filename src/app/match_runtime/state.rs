@@ -111,18 +111,19 @@ impl MatchState {
     /// Main_Tick (`0x0055D360`) is not running. A LAN/WOL modal's pump
     /// `0x00623120` keeps calling it in GameMode 3/4, so what Main_Tick
     /// drives keeps going under the dialog: `MessageListClass::Manage`
-    /// (`0x005D4430`, its only caller) ages the rows. The debug pause and
-    /// the radar movie pause still stop it.
+    /// (`0x005D4430`, its only caller) ages the rows. Debug pause remains a
+    /// local diagnostic gate; native offline Scenario62C gates all its holds.
     pub(crate) fn main_tick_frozen(&self) -> bool {
         self.sim_runtime
             .as_ref()
             .is_some_and(|rt| rt.simulation.pending_network_failure().is_some())
             || self.debug_pause
-            || self
-                .match_presentation
-                .radar_anim
-                .as_ref()
-                .is_some_and(|radar| radar.movie_pause())
+            || super::scenario_pause::blocks_main_tick(
+                self.session_mode(),
+                self.sim_runtime
+                    .as_ref()
+                    .is_some_and(|rt| rt.simulation.session().scenario_paused()),
+            )
             || (self.match_presentation.in_game_menu.is_open() && !self.session_mode().is_network())
     }
 

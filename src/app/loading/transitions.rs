@@ -486,8 +486,6 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         crate::ui::messages::MESSAGE_MAX_VISIBLE_RETAIL,
         0,
     );
-    state.match_state.match_presentation.message_clock =
-        crate::ui::messages::PauseAwareClock::default();
     state.match_state.match_presentation.chat = Default::default();
     state.match_state.input.minimap_dragging = false;
     state.match_state.input.tactical_mouse.reset_for_new_view();

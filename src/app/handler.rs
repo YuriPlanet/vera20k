@@ -1459,7 +1459,7 @@ impl ApplicationHandler for App {
                     // edge reaches first. macOS stops presenting to an occluded
                     // layer, so this loop cannot ride on redraws; it wakes at
                     // half the pacer bucket to hold the cadence.
-                    if Self::service_match_runtime(state, event_loop, true) {
+                    if Self::service_match_runtime(state, event_loop, true).quit_requested {
                         return;
                     }
                     event_loop.set_control_flow(ControlFlow::WaitUntil(

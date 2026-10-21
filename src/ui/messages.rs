@@ -2,9 +2,8 @@
 //! of text-label rows over the tactical viewport. Pure: text measurement is
 //! injected (`measure: &dyn Fn(&str) -> i32`, pixels) so the model never
 //! touches the renderer; deadlines are injected `now_ms` values. The app
-//! driver owns the clock and MUST feed pause-adjusted time (`PauseAwareClock`
-//! below): the native composite timer FREEZES during pause (contract §4.2
-//! step 8 / §4.3), so a row's remaining lifetime survives a pause intact.
+//! driver supplies the advancing process wall clock. Offline pauses defer
+//! Manage; expired rows disappear on the first poll after the pause.
 //!
 //! ## Dependency rules
 //! - ui/ module: std only — no render/, assets/, audio/, net/.
@@ -397,10 +396,9 @@ impl MessageList {
 
     /// Contract §4.3 — expiry: remove rows whose deadline passed strictly
     /// (`now > deadline`), then restack. Returns true when anything expired.
-    /// `now_ms` must come from the pause-adjusted clock (`PauseAwareClock`):
-    /// the native composite timer freezes during pause, so deadlines resume
-    /// with their remaining lifetime intact. The driver additionally skips
-    /// this call entirely while paused.
+    /// Add5D3DD5 and Manage5D4449 use the same process timer887338/887340.
+    /// The driver skips this call while Main_Tick is blocked, without
+    /// subtracting that interval from `now_ms`. Source: original gamemd.exe.
     pub fn manage(&mut self, now_ms: u64) -> bool {
         let before = self.messages.len();
         self.messages
@@ -492,44 +490,6 @@ fn fit_prefix_bytes(
         fitted = end;
     }
     fitted
-}
-
-/// Pause-aware message clock (contract §4.2 step 8 / §4.3): the native
-/// composite timer FREEZES during pause, so message `now` must stop too —
-/// otherwise a deadline that elapses on the wall clock during a pause would
-/// expire its row the instant the game unpauses, instead of resuming the
-/// remaining lifetime. Pure: wall-clock ms are injected; the app driver feeds
-/// pause edges via `set_paused`.
-#[derive(Debug, Default)]
-pub struct PauseAwareClock {
-    /// Sum of all completed pause spans, in wall ms.
-    paused_total_ms: u64,
-    /// Wall timestamp when the current pause began (None = not paused).
-    pause_started_wall_ms: Option<u64>,
-}
-
-impl PauseAwareClock {
-    /// Feed the live pause flag once per frame; edges are detected here.
-    pub fn set_paused(&mut self, paused: bool, wall_ms: u64) {
-        match (paused, self.pause_started_wall_ms) {
-            (true, None) => self.pause_started_wall_ms = Some(wall_ms),
-            (false, Some(started)) => {
-                self.paused_total_ms += wall_ms.saturating_sub(started);
-                self.pause_started_wall_ms = None;
-            }
-            _ => {}
-        }
-    }
-
-    /// Pause-adjusted now: wall ms minus every paused span. Constant (frozen)
-    /// for the duration of a pause.
-    pub fn now(&self, wall_ms: u64) -> u64 {
-        let in_pause = self
-            .pause_started_wall_ms
-            .map(|s| wall_ms.saturating_sub(s))
-            .unwrap_or(0);
-        wall_ms.saturating_sub(self.paused_total_ms + in_pause)
-    }
 }
 
 #[cfg(test)]
@@ -654,36 +614,19 @@ mod tests {
     }
 
     #[test]
-    fn pause_freezes_deadline_arithmetic() {
-        // Contract §4.2 step 8 / §4.3: the native composite timer FREEZES
-        // during pause. Post(timeout 4000) at t=0, pause wall 1000..11000:
-        // the row must survive until pause-ADJUSTED now exceeds 4000 (i.e.
-        // wall > 14000), NOT expire on unpause.
+    fn first_poll_after_a_pause_expires_elapsed_deadlines() {
         let mut l = list(6, 500);
-        let mut clock = PauseAwareClock::default();
-        l.add_message(&post(None, "temp", Some(4000), true), clock.now(0), &mono);
-        clock.set_paused(true, 1000);
-        assert_eq!(clock.now(5000), 1000, "clock frozen mid-pause");
-        clock.set_paused(false, 11000);
-        assert_eq!(clock.now(11000), 1000, "10 s pause span subtracted");
-        assert!(
-            !l.manage(clock.now(12000)),
-            "wall 12000 → adjusted 2000: kept"
-        );
-        assert!(
-            !l.manage(clock.now(14000)),
-            "adjusted 4000 == deadline: kept (strict >)"
-        );
-        assert!(
-            l.manage(clock.now(14001)),
-            "adjusted 4001 > deadline: expired"
-        );
+        l.add_message(&post(None, "temp", Some(4_000), true), 0, &mono);
+        assert!(!l.manage(1_000));
+        // The modal does not poll Manage. The process clock keeps running.
+        assert_eq!(l.messages().len(), 1);
+        assert!(l.manage(11_000));
+        assert!(l.messages().is_empty());
     }
 
     #[test]
     fn typing_counts_utf16_paints_and_raw_wall_time_independently_of_expiry() {
         let mut l = list(6, 500);
-        let mut clock = PauseAwareClock::default();
         // Five UTF-16 units, including a surrogate pair and a space.
         l.add_message(&post(None, "A😀 B", Some(1_000), false), 0, &mono);
         assert_eq!(l.advance_reveal(100), 1);
@@ -700,12 +643,11 @@ mod tests {
             "count == UTF16 length still types"
         );
         assert_eq!(l.messages()[0].reveal_count(), 5);
-        clock.set_paused(true, 180);
-        assert!(!l.manage(clock.now(10_000)), "expiry is frozen");
+        // Paint/reveal may be serviced while expiry polling is suspended.
+        assert_eq!(l.messages().len(), 1);
         assert_eq!(l.advance_reveal(10_000), 0, "typing uses raw wall time");
         assert!(l.messages()[0].reveal_count() > 5 + 8);
-        clock.set_paused(false, 10_000);
-        assert!(l.manage(clock.now(11_000)));
+        assert!(l.manage(11_000));
         assert_eq!(l.advance_reveal(11_001), 0, "expired labels own no state");
     }
 
