@@ -461,6 +461,123 @@ fn a_retail_area_guard_tanya_with_a_building_target_plants_c4() {
     );
 }
 
+/// Ctrl permits the allied target in Techno7003C4; the Sabotage click arm
+/// 4D7788 and arrival51A4BF..51A664 add no alliance check. The command
+/// already carries that selected action. Exercise its normal queue, Walk,
+/// charge, forced receiver and retirement on production retail rules.
+#[test]
+fn forced_retail_tanya_orders_reach_allied_and_own_detonations() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    assert!(rules.object("TANY").unwrap().c4);
+    assert!(rules.object("GAPOWR").unwrap().can_c4);
+    for (case, target_owner, edges) in [
+        ("enemy", "Russians", &[][..]),
+        (
+            "target-only ally",
+            "Russians",
+            &[("Russians", "Americans")][..],
+        ),
+        (
+            "actor-only ally",
+            "Russians",
+            &[("Americans", "Russians")][..],
+        ),
+        (
+            "mutual allies",
+            "Russians",
+            &[("Americans", "Russians"), ("Russians", "Americans")][..],
+        ),
+        ("own", "Americans", &[][..]),
+    ] {
+        let (mut sim, grid) = arena(&rules);
+        sim.session.game_options_mut_for_test().short_game = false;
+        let mut alliances = crate::map::houses::HouseAllianceMap::default();
+        for &(from, to) in edges {
+            alliances
+                .entry(from.to_ascii_uppercase())
+                .or_default()
+                .insert(to.to_ascii_uppercase());
+        }
+        sim.install_house_alliances(
+            crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(alliances),
+            &rules,
+        );
+        let building = spawn(&mut sim, &rules, "GAPOWR", target_owner, 14, 10);
+        let tanya = spawn(&mut sim, &rules, "TANY", "Americans", 10, 10);
+        order_plant(&mut sim, "Americans", tanya, building);
+        step(&mut sim, &rules, &grid);
+        step(&mut sim, &rules, &grid);
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(tanya)
+                .unwrap()
+                .navigation
+                .nav_com(),
+            Some(NavTargetRef::object(building)),
+            "{case}: selected PlantC4 must reach the Sabotage destination"
+        );
+
+        let planted = step_until_planted(&mut sim, &rules, &grid, building);
+        let pending = sim
+            .substrate
+            .entities
+            .get(building)
+            .unwrap()
+            .pending_c4_detonation
+            .pending()
+            .unwrap();
+        assert_eq!(pending.source_entity_id(), Some(tanya), "{case}");
+        assert_eq!(pending.timer().start_frame(), planted as i32, "{case}");
+        assert_eq!(
+            pending.timer().duration(),
+            rules.c4_delay_frames(),
+            "{case}"
+        );
+        let detonates = planted + pending.timer().duration() as u32;
+        loop {
+            let frame = sim.session.binary_frame();
+            step(&mut sim, &rules, &grid);
+            if sim
+                .substrate
+                .entities
+                .get(building)
+                .is_none_or(|building| building.death.is_dying())
+            {
+                assert_eq!(frame, detonates, "{case}: C4 detonation frame");
+                break;
+            }
+            assert!(frame < detonates, "{case}: charge must detonate");
+        }
+        for _ in 0..120 {
+            if !sim.substrate.entities.contains(building) {
+                break;
+            }
+            step(&mut sim, &rules, &grid);
+        }
+        assert!(
+            !sim.substrate.entities.contains(building),
+            "{case}: retirement"
+        );
+        let planter = sim.substrate.entities.get(tanya).unwrap();
+        assert!(planter.is_alive() && !planter.death.is_dying(), "{case}");
+        assert_ne!(
+            planter.attack_target.target(),
+            Some(TargetKind::Entity(building)),
+            "{case}"
+        );
+        assert_ne!(
+            planter.navigation.nav_com(),
+            Some(NavTargetRef::object(building)),
+            "{case}"
+        );
+    }
+}
+
 /// Two identical worlds plant and set the charge off frame for frame alike.
 #[test]
 fn a_plant_replays_identically() {

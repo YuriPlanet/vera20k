@@ -1249,10 +1249,11 @@ use crate::util::save_codec;
 // type lists in processed Rules records.
 // 469 -> 470: ScenarioSession retains the WOL tournament value, the clan
 // lists and FixedAlliance.
-// 470 -> 471: ScenarioSession saves the independent signed Scenario.Side
+// 470 -> 471: retained Type.Nominal and Infantry+6D9 building-survivor flag.
+// 471 -> 472: ScenarioSession saves the independent signed Scenario.Side
 // (+34B8), used to rebind EVA after successful restoration. The process Vox
 // cache and ordinary queue nodes are not native saved state.
-const SNAPSHOT_VERSION: u32 = 471;
+const SNAPSHOT_VERSION: u32 = 472;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -10295,7 +10296,8 @@ mod tests {
         // 467 -> 468: retained Country ParentCountry+98.
         // 468 -> 469: retained Country starting-veterancy lists.
         // 469 -> 470: WOL tournament value, clan lists and FixedAlliance.
-        // 470 -> 471: independent saved Scenario.Side.
-        assert_eq!(super::SNAPSHOT_VERSION, 471);
+        // 470 -> 471: retained Type.Nominal and Infantry survivor marker.
+        // 471 -> 472: independent saved Scenario.Side.
+        assert_eq!(super::SNAPSHOT_VERSION, 472);
     }
 }

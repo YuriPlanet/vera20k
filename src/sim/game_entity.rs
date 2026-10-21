@@ -715,6 +715,11 @@ pub struct GameEntity {
     /// [`NoSurvivor`]: crate::sim::crew_survival::NoSurvivor
     #[serde(default)]
     pub(crate) no_survivor: crate::sim::crew_survival::NoSurvivor,
+    /// Infantry+6D9, initialized clear at517A98. Building crew producers
+    /// mark it before death Unlimbo443127 or after sale Unlimbo44A747;
+    /// placement, ownership transfer and removal never clear it.
+    #[serde(default)]
+    nominal_survivor: bool,
     /// Both ends of the tank-bunker reciprocal link, a [`BunkerLinks`] that
     /// `docking::bunker_link` owns.
     ///
@@ -847,6 +852,19 @@ fn default_build_rejects_saved_delivery_base_override_and_keeps_base_space() {
 }
 
 impl GameEntity {
+    /// Infantry+6D9: building survivor identity, not Type.Nominal.
+    /// Added_To_Game502C3C skips its active counter; UI-name51F2C0 uses
+    /// TXT_TECHNICIAN. The flag persists across placement and capture.
+    pub const fn is_nominal_survivor(&self) -> bool {
+        self.nominal_survivor
+    }
+
+    /// The two building crew producers' stores443127 and44A747.
+    pub(crate) fn mark_nominal_survivor(&mut self) {
+        debug_assert_eq!(self.category, EntityCategory::Infantry);
+        self.nominal_survivor = true;
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn set_unit_delivery_base_normal(&mut self, base_normal: bool) {
         self.unit_delivery_no_base = self.category() == EntityCategory::Structure && !base_normal;
@@ -1307,6 +1325,11 @@ impl GameEntity {
         self.stable_id = stable_id;
     }
 
+    /// Supply the building crew producer's retained marker in a UI fixture.
+    pub fn mark_nominal_survivor_for_test(&mut self) {
+        self.mark_nominal_survivor();
+    }
+
     pub(crate) fn set_native_unique_id_for_test(&mut self, native_unique_id: i32) {
         self.native_unique_id = native_unique_id;
     }
@@ -1642,6 +1665,7 @@ impl GameEntity {
             pending_c4_detonation: Default::default(),
             has_been_captured: Default::default(),
             no_survivor: Default::default(),
+            nominal_survivor: false,
             bunker: Default::default(),
             building_gate: None,
             door: crate::sim::door::DoorClass::at_frame(construction_frame),

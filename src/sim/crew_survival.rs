@@ -100,9 +100,12 @@
 //!   before its UnInit. A UnitAbsorb passenger (no stock building) leaves
 //!   without its Scatter in Phase A and with it in a sale; VERA scatters
 //!   neither.
-//! - The Nominal survivor flag (Infantry `+0x6D9`, set from the crew type's
-//!   `+0xC9E`; a sale sets it at `0x0044A747`; read by
-//!   `HouseClass::Added_To_Game @ 0x00502C3C`) is not represented.
+//! - Nominal crew retain Infantry+6D9: death443127 sets it before Unlimbo
+//!   when Building+6E9 is set; sale44A747 sets it after successful Unlimbo.
+//!   Added_To_Game502C3C skips only the active infantry increment, while
+//!   Removed_From_Game still decrements it. The two producer timings differ.
+//!   The BuildupAssetCatalog supplies immutable fresh-match Building+6E9;
+//!   live art rebinding/reinitialization of existing buildings is not modeled.
 //! - The off-map cell a passenger past the occupy list places in keeps the
 //!   coordinate its lookup stamps (`MapClass::operator[]`); VERA's absorbed
 //!   exit reads the off-map cell's bytes without stamping it. After Phase A
@@ -403,7 +406,13 @@ impl Simulation {
                     building_id,
                 )
                 && self.spawn_building_survivor(
-                    rules, registry, &crew, owner, cell, c4_source, effects,
+                    rules,
+                    registry,
+                    &crew,
+                    building_id,
+                    cell,
+                    c4_source,
+                    effects,
                 )
             {
                 count -= 1;
@@ -421,16 +430,30 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         crew: &str,
-        owner: InternedId,
+        building_id: u64,
         cell: (u16, u16),
         c4_source: Option<u64>,
         effects: FrameEffects<'_>,
     ) -> bool {
+        let Some(building) = self.substrate.entities.get(building_id) else {
+            return false;
+        };
+        let owner = building.owner();
+        //443111..443127: the immutable fresh-match Buildup binding is the
+        //existing owner of Building+6E9. This is not AI-sellable+6DC.
+        let has_buildup = rules.has_buildup(self.interner.resolve(building.type_ref()));
         let unlimbo = self.survivor_unlimbo(cell);
         let (_, _, z) = unlimbo.cell_level();
         let Some(id) = self.construct_crew_limbo(rules, crew, owner, cell, z, effects) else {
             return false;
         };
+        if has_buildup && rules.object(crew).is_some_and(|object| object.nominal()) {
+            self.substrate
+                .entities
+                .get_mut(id)
+                .expect("constructed building crew")
+                .mark_nominal_survivor();
+        }
         //443141 raises A8E7AC after the constructor and before the caller's
         //ordinary481180. It remains raised through Scatter/Walk and the
         //mission queue, and is decremented at443288, including failed exits.
@@ -1233,6 +1256,21 @@ impl Simulation {
                 ) {
                     sim.discard_constructed_limbo(id, rules, effects);
                     return false;
+                }
+                //44A733..44A747 precedes lowering A8E7AC at44A74E.
+                //Unlimbo has already incremented the unmarked crew's count.
+                let nominal = sim
+                    .substrate
+                    .entities
+                    .get(id)
+                    .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+                    .is_some_and(|object| object.nominal());
+                if nominal {
+                    sim.substrate
+                        .entities
+                        .get_mut(id)
+                        .expect("successfully revealed sale crew")
+                        .mark_nominal_survivor();
                 }
                 true
             });

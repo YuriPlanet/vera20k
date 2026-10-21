@@ -389,6 +389,10 @@ pub struct ObjectType {
     /// — the enslaved miners and the three spawner missiles, all of which die
     /// constantly in ordinary play.
     pub dont_score: bool,
+    /// TechnoType+C9E, exact Rules key `Nominal`: constructor7113F0=false,
+    /// retained ReadBool713F2C..713F3E. This type input is distinct from
+    /// an Infantry's runtime survivor marker (Infantry+6D9).
+    nominal: bool,
     /// `SpecialThreatValue=` candidate multiplier used by threat scoring.
     pub special_threat_value: f64,
     /// `ThreatPosed=` (`TechnoTypeClass+0x670`, read by
@@ -2104,6 +2108,12 @@ fn native_minutes_to_ticks(value: f64) -> u32 {
 }
 
 impl ObjectType {
+    /// Retained TechnoType+C9E; building crew admission reads this input
+    /// separately from the constructed Infantry's survivor marker.
+    pub const fn nominal(&self) -> bool {
+        self.nominal
+    }
+
     /// The optional Ares manual-action restriction, shared by cursor and
     /// click through the existing action owner. INIs cannot enable it in a
     /// retail-only build.
@@ -2731,6 +2741,7 @@ impl ObjectType {
             not_human: category == ObjectCategory::Infantry && section.read_bool("NotHuman", false),
             strength: section.read_int("Strength", 0),
             dont_score: section.read_bool("DontScore", false),
+            nominal: section.read_bool("Nominal", false),
             special_threat_value: section.read_double("SpecialThreatValue", 0.0),
             threat_posed: section.read_int("ThreatPosed", 0),
             leadership_rating: section.read_int("LeadershipRating", 5),
