@@ -1008,6 +1008,10 @@ impl GameEntity {
         self.door.phase()
     }
 
+    pub(crate) fn door_draw_progress(&self, frame: u32) -> f64 {
+        self.door.draw_progress(frame)
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn door_timer_fields(&self) -> (i32, i32, i32) {
         self.door.timer_fields()

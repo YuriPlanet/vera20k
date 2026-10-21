@@ -42,6 +42,11 @@ impl SidebarCameoAtlas {
         self.entries.get(&type_id.to_ascii_uppercase())
     }
 
+    /// Loaded-art admission for the shared alternate-cameo selector.
+    pub fn has_alternate(&self, type_id: &str) -> bool {
+        self.alt_entries.contains_key(&type_id.to_ascii_uppercase())
+    }
+
     /// The cameo `TechnoTypeClass::GetCameo @ 0x00712040` returns: the
     /// type's `AltCameo=` image when `alt` holds and it loaded
     /// (`pAltCameo != NULL`), else its plain cameo.

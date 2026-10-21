@@ -25,6 +25,8 @@ use crate::ui::wol_lobby::{
 use crate::ui::wol_login::{BACK, LOGIN, WolCredential};
 use crate::ui::wol_options::WolPreferences;
 
+mod quick_match;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WolTarget {
     /// `0x10F` settled after a controlled server list, empty fields.
@@ -263,6 +265,40 @@ pub enum WolTarget {
     ClanSurrenderOk,
     /// A stalled peer's `0xEA` row answers `TXT_CANT_KICK`.
     ClanCantKick,
+    /// Test service: welcome Quick Match, login; the stand-in matchbot's
+    /// match ends in "Scenarios don't match" over `0x130`.
+    QmTestService,
+    /// Then the box's OK: the logged-out `0x10E`.
+    QmTestServiceOk,
+    /// `0x117` after the Quick Match lobby join: the request line and a dot.
+    QmRequesting,
+    /// The matchbot's progress, fail and unknown texts as `0x117` lines.
+    QmMatchbotLines,
+    /// No chat lobby at all: `WOL:NoMatchingAgentFound`.
+    QmNoAgent,
+    /// Lobbies, none of them `Lob_40_`: `WOL:MatchingServerUnavailable`.
+    QmServerUnavailable,
+    /// Stage 4's timeout: the `WOL:MatchTimeout` box.
+    QmTimeout,
+    /// Then its OK: the logged-out `0x10E`.
+    QmTimeoutOk,
+    /// `0x117` Cancel: the logged-out `0x10E`.
+    QmCancel,
+    /// The matchbot's `Exit`: the `WOL:MatchFailExit` box.
+    QmExit,
+    /// `Start` naming the user as host: the game channel is created and
+    /// `0x117` waits for the guest.
+    QmHostWaiting,
+    /// `Start` naming the user as guest: the host's game found and joined,
+    /// the host's options accepted.
+    QmGuestJoined,
+    /// The host's guest joins and accepts: StartGame, OnGameStart, the
+    /// verify, then the first loading frame.
+    QmHostStartLoading,
+    /// That match left through B5/B6: the postmatch `0x122`.
+    QmPostmatch,
+    /// Then `0x122` Yes: the opponent added, the logged-out `0x10E`.
+    QmPostmatchYes,
 }
 
 impl WolTarget {
@@ -427,7 +463,31 @@ impl WolTarget {
                     | Self::PageReceived
                     | Self::PageReceivedReply
                     | Self::PageReceivedBack
+                    | Self::QmTestService
+                    | Self::QmTestServiceOk
             )
+    }
+
+    /// Welcome's Quick Match runs the runner `0x0079FC40`.
+    fn quick_match(self) -> bool {
+        matches!(
+            self,
+            Self::QmTestService
+                | Self::QmTestServiceOk
+                | Self::QmRequesting
+                | Self::QmMatchbotLines
+                | Self::QmNoAgent
+                | Self::QmServerUnavailable
+                | Self::QmTimeout
+                | Self::QmTimeoutOk
+                | Self::QmCancel
+                | Self::QmExit
+                | Self::QmHostWaiting
+                | Self::QmGuestJoined
+                | Self::QmHostStartLoading
+                | Self::QmPostmatch
+                | Self::QmPostmatchYes
+        )
     }
 
     /// `0x11E` over `0x10E` after lobby Back.
@@ -497,6 +557,8 @@ impl WolTarget {
                 | Self::ClanSurrender
                 | Self::ClanSurrenderOk
                 | Self::ClanCantKick
+                | Self::QmPostmatch
+                | Self::QmPostmatchYes
         )
     }
 }
@@ -609,6 +671,21 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-clan-surrender", WolTarget::ClanSurrender),
     ("wol-clan-surrender-ok", WolTarget::ClanSurrenderOk),
     ("wol-clan-cant-kick", WolTarget::ClanCantKick),
+    ("wol-qm-test-service", WolTarget::QmTestService),
+    ("wol-qm-test-service-ok", WolTarget::QmTestServiceOk),
+    ("wol-0x117-requesting", WolTarget::QmRequesting),
+    ("wol-0x117-matchbot-lines", WolTarget::QmMatchbotLines),
+    ("wol-qm-no-agent", WolTarget::QmNoAgent),
+    ("wol-qm-server-unavailable", WolTarget::QmServerUnavailable),
+    ("wol-qm-timeout", WolTarget::QmTimeout),
+    ("wol-qm-timeout-ok", WolTarget::QmTimeoutOk),
+    ("wol-0x117-cancel", WolTarget::QmCancel),
+    ("wol-qm-exit", WolTarget::QmExit),
+    ("wol-qm-host-waiting", WolTarget::QmHostWaiting),
+    ("wol-qm-guest-joined", WolTarget::QmGuestJoined),
+    ("wol-qm-host-start-loading", WolTarget::QmHostStartLoading),
+    ("wol-0x122-postmatch", WolTarget::QmPostmatch),
+    ("wol-0x122-yes", WolTarget::QmPostmatchYes),
 ];
 
 /// The controlled guest of the C2 targets, the host of the C9 targets.
@@ -716,6 +793,8 @@ enum WolPhase {
     },
     /// A clan game's peer stalled: waiting for `0xEA`.
     ClanStalled,
+    /// The Quick Match runner's own steps ([`quick_match`]).
+    Qm(quick_match::QmPhase),
 }
 
 pub(super) struct WolCapture {
@@ -887,13 +966,18 @@ impl WolCapture {
                     self.phase = next;
                     return Ok(());
                 }
+                let (mode_button, mode_name) = if self.target.quick_match() {
+                    (crate::ui::wol_shell::QUICK_MATCH, "Quick Match")
+                } else {
+                    (crate::ui::wol_shell::CUSTOM_MATCH, "Custom Match")
+                };
                 if self.target.test_service() {
                     let rect = App::wol_welcome_layout(state)
                         .page
-                        .button_rect(crate::ui::wol_shell::CUSTOM_MATCH)
-                        .context("Custom Match")?;
+                        .button_rect(mode_button)
+                        .context("mode button")?;
                     welcome_click(state, rect);
-                    self.event(frame, "0x10E Custom Match (Options test service)");
+                    self.event(frame, format!("0x10E {mode_name} (Options test service)"));
                     self.phase = WolPhase::ServiceLogin;
                     return Ok(());
                 }
@@ -905,14 +989,14 @@ impl WolCapture {
                     .set_provider(WolProvider::Controlled);
                 let rect = App::wol_welcome_layout(state)
                     .page
-                    .button_rect(crate::ui::wol_shell::CUSTOM_MATCH)
-                    .context("Custom Match")?;
+                    .button_rect(mode_button)
+                    .context("mode button")?;
                 welcome_click(state, rect);
                 ensure!(
                     state.frontend.shell_exit.is_some(),
-                    "Custom Match did not tear 0x10E down"
+                    "{mode_name} did not tear 0x10E down"
                 );
-                self.event(frame, "0x10E Custom Match (controlled service)");
+                self.event(frame, format!("0x10E {mode_name} (controlled service)"));
                 self.phase = WolPhase::Custom;
             }
             WolPhase::Custom if state.frontend.shell_exit.is_none() => {
@@ -930,10 +1014,15 @@ impl WolCapture {
                         && requests[applies] == WolServiceRequest::EnsureApi,
                     "the flow did not start with the WOLAPI object: {requests:?}"
                 );
+                let mode = if self.target.quick_match() {
+                    crate::ui::wol_shell::WolMode::QuickMatch
+                } else {
+                    crate::ui::wol_shell::WolMode::CustomMatch
+                };
                 ensure!(
-                    state.frontend.wol.as_ref().and_then(|visit| visit.mode())
-                        == Some(crate::ui::wol_shell::WolMode::CustomMatch),
-                    "Custom Match did not write mode 4"
+                    state.frontend.wol.as_ref().and_then(|visit| visit.mode()) == Some(mode),
+                    "the welcome did not write mode {}",
+                    mode.native()
                 );
                 service_event(state, WolServiceEvent::Api(WolApiStatus::Available));
                 let requests = self.requests(state, frame)?;
@@ -1495,6 +1584,8 @@ impl WolCapture {
                         text: "mid-match".encode_utf16().collect(),
                         private: false,
                         action: false,
+                        ansi: false,
+                        options: None,
                     },
                 );
                 ensure!(
@@ -1554,6 +1645,16 @@ impl WolCapture {
                         &mut self.route,
                         frame,
                     )?,
+                    // A Quick Match game is a tournament game (+0x14 = 1):
+                    // Abort opens the Surrender box, whose OK leaves.
+                    WolTarget::QmPostmatch | WolTarget::QmPostmatchYes => {
+                        abort_return::AbortReturnInput::begin_surrender(
+                            state,
+                            &mut self.route,
+                            frame,
+                            true,
+                        )?
+                    }
                     _ => abort_return::AbortReturnInput::begin(state, &mut self.route, frame)?,
                 });
                 self.phase = WolPhase::AbortInput;
@@ -1659,6 +1760,12 @@ impl WolCapture {
                     self.event(frame, "EXIT consumed");
                     self.exit_consumed = true;
                 }
+                if self.target.quick_match() {
+                    if self.exit_consumed {
+                        self.phase = WolPhase::Qm(quick_match::QmPhase::AddBuddyQuery);
+                    }
+                    return Ok(());
+                }
                 if self.target == WolTarget::AbortRelogin
                     && state.frontend.shell_route == crate::app::shell_route::ShellRoute::Wol
                     && state.frontend.shell_exit.is_none()
@@ -1715,6 +1822,10 @@ impl WolCapture {
                 self.event(frame, "0x10F Login (test service)");
                 self.phase = if self.target.buddy() && self.target != WolTarget::BuddyFromLobby {
                     WolPhase::BuddyShown
+                } else if self.target.quick_match() {
+                    // The test service runs the whole match: lobby, request,
+                    // Start, the guest's join and accept, OnGameStart.
+                    WolPhase::Mismatch
                 } else {
                     WolPhase::ServiceLobby
                 };
@@ -1958,15 +2069,39 @@ impl WolCapture {
                     "the mismatch box over 0x130: {verify:?}"
                 );
                 self.event(frame, json!({"0x130": verify.names, "box": message.body}));
-                if self.target == WolTarget::MismatchOk {
+                if self.target.quick_match() {
+                    ensure!(
+                        crate::app::shell_wol::quick_match::dialog(state).is_none()
+                            && state
+                                .match_state
+                                .session
+                                .network_setup()
+                                .is_some_and(|launch| launch.humans.len() == 2
+                                    && launch.local_player_index == 0),
+                        "the Quick Match start did not close 0x117 with the user hosting"
+                    );
+                }
+                if matches!(
+                    self.target,
+                    WolTarget::MismatchOk | WolTarget::QmTestServiceOk
+                ) {
                     let (width, height) = (
                         state.renderer.gpu.config.width as i32,
                         state.renderer.gpu.config.height as i32,
                     );
                     let ok = crate::ui::shell::modal::body_ok_layout(width, height).ok;
-                    setup_click(state, ok);
+                    if self.target.quick_match() {
+                        // No setup dialog: 0x130 takes the WOL input routes.
+                        welcome_click(state, ok);
+                    } else {
+                        setup_click(state, ok);
+                    }
                     self.event(frame, "mismatch box OK");
                     self.phase = WolPhase::MismatchClosed;
+                    return Ok(());
+                }
+                if self.target.quick_match() {
+                    self.hover_settle(state);
                     return Ok(());
                 }
                 MoviesCapture::restore_neutral_pointer(state);
@@ -2089,6 +2224,7 @@ impl WolCapture {
                 self.event(frame, json!({"0x10E profile": texts}));
                 self.hover_settle(state);
             }
+            WolPhase::Qm(phase) => self.qm_after_present(state, rendered, frame, phase)?,
             WolPhase::Settle(remaining) if remaining > 0 => {
                 self.phase = WolPhase::Settle(remaining - 1);
             }
@@ -2435,6 +2571,8 @@ impl WolCapture {
                 text: "\u{4f60}\u{597d}".encode_utf16().collect(),
                 private: false,
                 action: false,
+                ansi: false,
+                options: None,
             },
         );
         ensure!(
@@ -2869,6 +3007,8 @@ impl WolCapture {
                             text: text.encode_utf16().collect(),
                             private,
                             action,
+                            ansi: false,
+                            options: None,
                         },
                     );
                 }
@@ -2902,6 +3042,8 @@ impl WolCapture {
                             text: text.encode_utf16().collect(),
                             private: false,
                             action: false,
+                            ansi: false,
+                            options: None,
                         },
                     );
                 };
@@ -3521,6 +3663,8 @@ impl WolCapture {
             WolPhase::PersonaPage
         } else if self.target.asks_auto_login() {
             WolPhase::PersonaPage
+        } else if self.target.quick_match() {
+            WolPhase::Qm(quick_match::QmPhase::Runner)
         } else {
             WolPhase::Lobby
         };
@@ -3883,15 +4027,26 @@ impl WolCapture {
         // Behind a box `0x10E`/`0x10F` is gone, and with it the status line;
         // a hidden or covered `0x113` paints none either, nor does C2/C9's
         // family line belong to this check.
-        let backdrop = state.frontend.wol.as_ref().is_some_and(|visit| {
-            matches!(
-                visit.page,
-                crate::app::shell_wol::WolPage::Backdrop { .. }
-                    | crate::app::shell_wol::WolPage::Message { .. }
-            ) || visit
-                .lobby()
-                .is_some_and(|lobby| !lobby.shown || lobby.covered || lobby.ui.popup.is_some())
-        }) || state.frontend.shell_route.network_setup();
+        // The Quick Match runner's lobby is never shown, but `0x117` over
+        // it paints the status line unless a box or the wait covers it.
+        let quick_match_page = crate::app::shell_wol::quick_match::dialog(state).is_some()
+            && state
+                .frontend
+                .wol
+                .as_ref()
+                .and_then(|visit| visit.lobby())
+                .is_some_and(|lobby| lobby.message().is_none() && lobby.wait.is_none());
+        let backdrop = !quick_match_page
+            && state.frontend.wol.as_ref().is_some_and(|visit| {
+                matches!(
+                    visit.page,
+                    crate::app::shell_wol::WolPage::Backdrop { .. }
+                        | crate::app::shell_wol::WolPage::Message { .. }
+                ) || visit
+                    .lobby()
+                    .is_some_and(|lobby| !lobby.shown || lobby.covered || lobby.ui.popup.is_some())
+            })
+            || state.frontend.shell_route.network_setup();
         if let Some(menu) = match self.target {
             WolTarget::InternetMenu => Some(crate::ui::pause_menu::InGameMenuState::Menu),
             WolTarget::IngameConnectionLost | WolTarget::IngamePageCancel => {
@@ -4219,14 +4374,16 @@ fn unverified_host_options(state: &AppState) -> Result<NetworkSetupEvent> {
     let file = launch.selected_map_file.clone().context("host map")?;
     let mut map_metadata = crate::app::shell_network_setup::local_map_metadata(state, &file)?;
     map_metadata.digest = "another version".into();
-    Ok(NetworkSetupEvent::HostSetup {
-        launch,
-        map_metadata,
-        vacancies: [crate::app::match_runtime::session::NetworkVacancy::Open; 8],
-        observer_row: None,
-        cooperative_difficulty: 0,
-        seed: state.match_state.session.network_start_seed(),
-    })
+    Ok(NetworkSetupEvent::HostSetup(
+        crate::app::shell_network_setup::HostOptions {
+            launch,
+            map_metadata,
+            vacancies: [crate::app::match_runtime::session::NetworkVacancy::Open; 8],
+            observer_row: None,
+            cooperative_difficulty: 0,
+            seed: state.match_state.session.network_start_seed(),
+        },
+    ))
 }
 
 fn setup_requests(state: &mut AppState) -> Vec<NetworkSetupRequest> {

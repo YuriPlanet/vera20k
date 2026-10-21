@@ -37,6 +37,10 @@ pub struct TerrainObjectType {
     pub immune: bool,
     /// Inherited `LegalTarget=`. `IsVeinhole=yes` force-enables it in gamemd.
     pub legal_target: bool,
+    /// Inherited `Bombable=` (`+0x22E`): ObjectTypeClass::ReadINI's
+    /// ReadBool over the constructor's 1 (`0x005F9417..0x005F9431`). No
+    /// retail TerrainType sets it, so a Crazy Ivan may bomb every one.
+    pub bombable: bool,
     /// Inherited `Insignificant=`. TerrainTypeClass constructor defaults true.
     pub insignificant: bool,
     /// Inherited `RadarInvisible=`. TerrainTypeClass constructor defaults true.
@@ -100,6 +104,7 @@ impl TerrainObjectType {
             },
             immune: section.read_bool("Immune", false),
             legal_target: section.read_bool("LegalTarget", false) || is_veinhole,
+            bombable: section.read_bool("Bombable", true),
             insignificant: section.read_bool("Insignificant", true),
             radar_invisible: section.read_bool("RadarInvisible", true),
             water_bound: section.read_bool("WaterBound", false),

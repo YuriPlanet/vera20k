@@ -273,6 +273,7 @@ fn queue_orders_in_sim(
             order.payload,
             crate::sim::command::Command::TogglePrimaryFactory { .. }
                 | crate::sim::command::Command::SetRally { .. }
+                | crate::sim::command::Command::ArchiveObject { .. }
                 | crate::sim::command::Command::SellBuilding { .. }
                 | crate::sim::command::Command::UndeployBuilding { .. }
                 | crate::sim::command::Command::MoveFlash { .. }
@@ -638,6 +639,10 @@ mod tests {
                 producer_ids: vec![42],
                 rx: 5,
                 ry: 6,
+            },
+            Command::ArchiveObject {
+                entity_id: 42,
+                target_id: 43,
             },
             Command::SellBuilding { entity_id: 42 },
             Command::UndeployBuilding { entity_id: 42 },

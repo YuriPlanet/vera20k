@@ -1202,6 +1202,36 @@ mod tests {
         );
     }
 
+    /// The drain re-check (`0x007361A9..0x00736204`) precedes
+    /// `TemporalClass::Update` (`0x00736204`), so a disc being erased still
+    /// drops a ray left with no link.
+    #[test]
+    fn a_warped_disc_still_drops_a_ray_with_no_link() {
+        let rules = rules();
+        let mut sim = Simulation::with_seed(0x0073_61A9);
+        let _yuri = house(&mut sim, "YuriCountry", false, 500);
+        let _americans = house(&mut sim, "Americans", true, 500);
+        base(&mut sim, &rules, "YuriCountry", 40, 40);
+        base(&mut sim, &rules, "Americans", 4, 4);
+        let disk = sim
+            .spawn_object("DISK", "YuriCountry", 30, 30, 0, &rules)
+            .expect("disc spawns");
+        attach_drain_anim(&mut sim, disk, &rules);
+        let stray = assert_drain_anim(&sim, disk);
+        sim.substrate
+            .entities
+            .get_mut(disk)
+            .unwrap()
+            .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(
+                disk,
+            ));
+        run_ticks(&mut sim, &rules, 1);
+        let disc = sim.entities().get(disk).unwrap();
+        assert!(disc.is_warped_out(), "the fixture keeps the disc warped");
+        assert_eq!(disc.drain.anim, None);
+        assert!(anim_uninited(&sim, stray));
+    }
+
     /// `UnitClass::AI @ 0x007361B3`: every 16th frame the disc re-checks the
     /// building under it and releases the link once it has moved off;
     /// `0x0070FD70` refuses to link a disc that is not over the target.

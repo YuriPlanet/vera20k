@@ -7,6 +7,19 @@ use crate::ui::lan_shell::LanChatLine;
 use crate::ui::skirmish_shell::SkirmishValidationModalState;
 use std::time::Instant;
 
+/// A host's full options as `0x005E3D10`'s default (digit-led) arm decodes
+/// them: from the host, or in Quick Match from the matchbot's `Start`
+/// (`[0xB73714]`), which the host applies too (`0x007A6DE2..0x007A6DF3`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HostOptions {
+    pub(crate) launch: SkirmishLaunchSession,
+    pub(crate) map_metadata: crate::app::match_runtime::session::NetworkMapMetadata,
+    pub(crate) vacancies: [NetworkVacancy; 8],
+    pub(crate) observer_row: Option<u8>,
+    pub(crate) cooperative_difficulty: i32,
+    pub(crate) seed: Option<u32>,
+}
+
 pub(crate) enum NetworkSetupEvent {
     ParticipantJoined(SkirmishHumanSlot),
     ParticipantLeft {
@@ -26,14 +39,7 @@ pub(crate) enum NetworkSetupEvent {
         index: usize,
         status: u8,
     },
-    HostSetup {
-        launch: SkirmishLaunchSession,
-        map_metadata: crate::app::match_runtime::session::NetworkMapMetadata,
-        vacancies: [NetworkVacancy; 8],
-        observer_row: Option<u8>,
-        cooperative_difficulty: i32,
-        seed: Option<u32>,
-    },
+    HostSetup(HostOptions),
     StartPrompt,
     /// Accepted LAN protocol timing, independent of local input-delay settings.
     Timing {
@@ -114,7 +120,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
     // The route stays NetworkSetup until the match returns, but GO's handoff
     // drops the setup protocol: later setup packets have no receiver.
     anyhow::ensure!(
-        state.frontend.shell_route.network_setup()
+        (state.frontend.shell_route.network_setup() || super::quick_match(state))
             && state.frontend.network_setup_protocol.is_some(),
         "no network setup is active"
     );
@@ -162,9 +168,20 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .and_then(|rules| rules.general.player_joined_sound())
                 .map(str::to_owned);
             App::play_shell_ui_sound_by_id(state, sound.as_deref());
+            let quick_match = super::quick_match(state);
+            if dialog.host && quick_match {
+                // 0x007A6DC2..0x007A6E50: modes 1/2 parse the matchbot's
+                // Start payload [0xB73714] (0x5E3D10) and select its
+                // scenario.
+                match crate::app::shell_wol::quick_match::start_options(state) {
+                    Some(options) => service_event(state, NetworkSetupEvent::HostSetup(options))?,
+                    None => log::warn!("WOL Quick Match host has no matchbot options"),
+                }
+            }
             if dialog.host {
                 // 0x7A6E7D..9E: observer row, slot names, options, pings,
-                // then the refreshed advertisement.
+                // then the refreshed advertisement (0x78F000, skipped in
+                // modes 1-3 at 0x7A6B0D).
                 let row = state
                     .match_state
                     .session
@@ -180,8 +197,10 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     NetworkSetupRequest::PublishRoster,
                     NetworkSetupRequest::PublishOptions,
                     NetworkSetupRequest::RequestPings,
-                    NetworkSetupRequest::Advertise,
                 ]);
+                if !quick_match {
+                    protocol.requests.push(NetworkSetupRequest::Advertise);
+                }
             }
         }
         NetworkSetupEvent::ParticipantJoined(human) => {
@@ -308,14 +327,14 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 );
             }
         }
-        NetworkSetupEvent::HostSetup {
+        NetworkSetupEvent::HostSetup(HostOptions {
             launch,
             map_metadata,
             vacancies,
             observer_row,
             cooperative_difficulty,
             seed,
-        } => {
+        }) => {
             // 0x5E3E73..0x5E3E90: a WOL parse drops every option text while
             // the game runs ([0xB77DC1]) or a StartGame is pending ([0xB77E28]).
             if dialog.wol()
@@ -323,6 +342,12 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             {
                 return Ok(());
             }
+            // Only a Quick Match host parses options it did not author.
+            let quick_match = super::quick_match(state);
+            anyhow::ensure!(
+                !dialog.host || quick_match,
+                "a host cannot receive guest-authored host setup"
+            );
             let before = state
                 .match_state
                 .session
@@ -385,6 +410,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 vacancies,
                 map_metadata.player_capacity,
                 observer_row,
+                quick_match,
             )?;
             state.match_state.session.accept_network_map_metadata(
                 map_metadata,
@@ -414,7 +440,8 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     protocol.requests.push(NetworkSetupRequest::RequestPreview);
                 }
             }
-            if dialog.wol() && !dialog.host {
+            // 0x007A7F72: modes 1-3 skip the guest's preview handling.
+            if dialog.wol() && !dialog.host && !quick_match {
                 super::wol::options_preview(state, map_changed);
             }
             // Full options5E5AAB updates persistent Color for the local name,
@@ -460,6 +487,9 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 invalidate_local_acceptance(state)?;
             }
             state.frontend.skirmish_preview_texture = None;
+            if dialog.wol() && !dialog.host && quick_match {
+                super::wol::quick_match_accept(state);
+            }
         }
         NetworkSetupEvent::StartPrompt => {
             let index = state

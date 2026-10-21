@@ -67,6 +67,9 @@ impl Default for HouseSpatialThreat {
 impl<'de> serde::Deserialize<'de> for HouseSpatialThreat {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let values = <Vec<i32> as serde::Deserialize>::deserialize(deserializer)?;
+        if crate::util::save_codec::layout::describing() {
+            return Ok(Self::default());
+        }
         if values.len() != LENGTH {
             return Err(serde::de::Error::custom(
                 "native House threat grid must contain 16900 dwords",

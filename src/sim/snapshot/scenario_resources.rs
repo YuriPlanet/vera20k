@@ -227,6 +227,11 @@ mod source_identity {
         deserializer: D,
     ) -> Result<crate::map::source::LoadedMapSource, D::Error> {
         let json = String::deserialize(deserializer)?;
+        // The JSON inside is outside the traced save layout; a schema change
+        // fails here as a decode error rather than as another layout.
+        if crate::util::save_codec::layout::describing() {
+            return Ok(crate::map::source::LoadedMapSource::LegacyFallback { label: json });
+        }
         serde_json::from_str(&json).map_err(serde::de::Error::custom)
     }
 }

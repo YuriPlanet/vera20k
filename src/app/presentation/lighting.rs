@@ -142,8 +142,8 @@ pub(crate) fn aircraft_extra_light(
 /// Building DrawBody's body and bib (`0x0043D812..0x0043D85F`), whichever
 /// image GetImage returned, Buildup included; TerrainPalette overrides both
 /// scalar and Convert in 00705EC7..00705F52. Only the gate branch
-/// (`0x0043D644`, Mission Open while its UnloadTimer runs) omits
-/// ExtraLight; VERA does not draw that branch.
+/// (`0x0043D644`, [`crate::sim::building_art::gate_open_body_frame`])
+/// omits ExtraLight; VERA keeps it there (retail's gate sets none).
 pub(crate) fn building_palette_light(
     grid: &CellLightGrid,
     cell: (u16, u16),

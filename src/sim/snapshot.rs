@@ -1,16 +1,17 @@
 //! Simulation snapshot serialization for mid-match save/load.
 //!
 //! Serializes the full `Simulation` state into a compact binary blob via
-//! `util::save_codec`, which writes bincode 1's layout (the version notes
-//! below call it bincode). Caches and event queues are `#[serde(skip)]`'d on
-//! `Simulation` and must be rebuilt through the validated cache and
-//! map-authority restore sequence before the simulation is exposed again.
+//! `util::save_codec`, which writes bincode 1's layout. Caches and event
+//! queues are `#[serde(skip)]`'d on `Simulation` and must be rebuilt through
+//! the validated cache and map-authority restore sequence before the
+//! simulation is exposed again.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends only on sim/world (Simulation).
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -27,1237 +28,22 @@ use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
 use crate::util::save_codec;
 
-/// Bump this when the snapshot binary format changes in a breaking way.
-// Bumped 13 -> 14 for the serialized occupancy entry-order fields used to rebuild
-// the skipped CellClass-style occupancy cache after load.
-// Bumped 14 -> 15: active-vector order + id/enter-order counters relocated under
-// Simulation.substrate (ObjectSubstrate); bincode layout changed (state hash unchanged).
-// Bumped 15 -> 16: EntityStore relocated under Simulation.substrate (Slice 1b); bincode
-// layout changed (state hash unchanged — world_hash reads the store via the new path).
-// Bumped 16 -> 17: MissionCom folded into state_hash (Slice 8); bincode layout
-// unchanged (MissionCom already serialized since Slice 6), only the hash changed.
-// Bumped 17 -> 18: Factory/Economy authority flip (P5b) — the factory registry +
-// the per-house economy statistics are now serialized + hashed; the frames-timer
-// per-item field progress_carry is removed from the hash (progress lives in
-// Factory; remaining_base_frames stays as the sidebar-ETA mirror); next_insertion_seq
-// + seq_carry fields removed (insertion_seq == front enqueue_order); the C1
-// factory-step-before-house-tail ordering lock is folded in.
-// Bumped 18 -> 19: queue-of-record retirement (P5d) — `queues_by_owner` + `BuildQueueItem`
-// are retired; the FIFO queue-of-record moves into the registry (`Factory.queue` of
-// `QueueEntry{type_id, enqueue_order, total_base_frames}` + the new active-build
-// `Factory.active_total_base_frames`). The per-item `queues_by_owner` hash fold is removed;
-// `remaining_base_frames` no longer exists (derived from `progress` at sidebar-view time,
-// not hashed). bincode layout changes (the `queues_by_owner` field is gone, the registry
-// gains fields), so the version MUST bump.
-// Bumped 19 -> 20: S2 — `mission.current`/`substate` authority moves to dispatch time for
-// scoped move units (arrival tick hashes Move) and load trusts the serialized MissionCom
-// (post-load re-derive deleted). Layout is unchanged, but a pre-S2 save replayed on S2
-// logic diverges on arrival ticks, so cross-version restores must be refused.
-// Bumped 20 -> 21: per-cell radiation field (substrate Slice 7). `Simulation` gains the
-// serialized `radiation` state (cell levels + site registry, both state-hashed) and
-// `GameEntity` gains `immune_to_radiation`; RadLevel>0 detonations now deal periodic
-// foot-unit damage, so a pre-21 save replayed on 21 logic diverges.
-// Bumped 21 -> 22: ScenarioSession (SC-2) — `seed`/frame-clock/`GameOptions` move under
-// `Simulation.session` and the session identity fields (map name, theater, bounds, MP
-// start waypoints, slot->house) are serialized; bincode layout changes. The move itself
-// is hash-neutral (golden baseline unshifted); the identity fields fold into the hash in
-// the same slice (documented on the golden-harness constant).
-// Bumped 22 -> 23: S3 — Unit barrel destinations are read per-object pre-death (kill-tick
-// aim hold changes hashed FacingClass values on kill ticks) and idle machine-less Units
-// hash mission Guard(5) instead of the legacy None placeholder. Layout unchanged, but a
-// pre-S3 save replayed on S3 logic diverges on the first idle-unit tick, so cross-version
-// restores must be refused. (21 and 22 were taken by the parallel radiation and
-// ScenarioSession slices; the concurrent bumps merged as 22 -> 23.)
-// Bumped 23 -> 24: S4a authoritative flip (Option B) — each live non-miner Unit's
-// mission (+0xC4 tick_counter + derived_mission) is now committed at the per-object
-// AI host (pre-movement, LogicVector order) instead of in movement_tick (scoped
-// movers) / the Phase-9 tail (idle). Commit timing is the gamemd-faithful per-object
-// point: a unit that retasks mid-tick (e.g. an idle Guard unit that opportunity-
-// acquires a target during combat) now hashes the host-committed mission, not the
-// end-of-tick re-derivation. Layout unchanged and the committed goldens are unshifted
-// (those scenarios don't exercise mid-tick non-miner retasking), but a pre-S4a save
-// replayed on S4a logic diverges on the first such tick, so cross-version restores
-// must be refused.
-// S4b: GameEntity gains the hashed `damage_particle_live_until` (`+0x308`-
-// equivalent) field, folded into the state hash, so 24→25 re-baselines. The new
-// field is zero for every entity in stock YR (the AI_Update spark gate is
-// Cyborg-only, with no stock users), so the only hash shift is the extra per-
-// entity zero in the fold — no behavior change to any committed golden scenario.
-// Bumped 25 -> 26: HouseState gains the serialized + hashed native per-house
-// difficulty field (Hard=0, Normal=1, Easy=2). A pre-26 save lacks the field and
-// cannot preserve mixed-difficulty AI behavior after load.
-// Bumped 26 -> 27: ObjectSubstrate gains the serialized AnimStore and GameEntity
-// gains the authoritative damage-fire transition cache plus eight animation IDs.
-// Bumped 27 -> 28: independent object-alive/limbo/cell lifecycle state,
-// lifecycle bookkeeping, and the ordered pending-delete queue are serialized and
-// hashed instead of being reconstructed from store/LogicVector presence.
-// Bumped 28 -> 29: exact native-width Mission state, category readiness leaves,
-// archived target/falling state, and raw locomotor-readiness inputs replace the
-// reduced Mission schema and are serialized + hashed.
-// Bumped 29 -> 30: the miner FSM cursor (`Miner.state`) retired from the
-// serialized Miner component — `MissionCom.handler_state` is the cursor of
-// record (Harvest handler absorption / substate-authority flip).
-// Bumped 33 -> 34: ParticleSystemStore moved into ObjectSubstrate and became
-// serialized; particle systems now share object IDs, LogicVector membership,
-// and deferred finalization.
-// Bumped 34 -> 35: Phase-0 persistence contract. ScenarioSession gains native
-// HouseClass registration order and a wrapping 32-bit frame; frame-anchored
-// timers replace reduced countdown state; HouseState gains MapIsClear;
-// GameEntity persists MoveSound grace state and HomingTarget's object/cell
-// discriminator; PassengerCargo persists one Size value per entry; animation
-// membership is rebuilt rather than serialized. Production loading now also
-// enforces exact map/rules/session metadata before stable-ID fixup.
-// Bumped 35 -> 36: lifecycle target and animation identity state is persisted.
-// Bumped 36 -> 37: process-global Main/MapGen RNG cursors are no longer
-// serialized; in-scenario production load retains their live process state.
-// Bumped 37 -> 38: DriveLocomotionRuntime persists the independent head-to
-// occupation footprint and whether the current-cell occupation was cleared.
-// Bumped 38 -> 39: overlay wall ownership became authoritative persisted state.
-// Bumped 39 -> 40: ObjectSubstrate persists the authoritative per-cell raw
-// ground/deck occupation bytes instead of reconstructing them from object lists.
-// Bumped 40 -> 41: HouseState gains the serialized MultiplayPassive house-type
-// fact. Defeat evaluation and the game-over alive scan both skip passive houses,
-// so the saved house-type fact remains authority on load. Serialized but NOT hashed.
-// Bumped 41 -> 42: GameEntity gains the passive target-acquisition bookkeeping
-// — `last_target_scan_frame` and `passively_acquired_target` — and its
-// `passive_scan_timer` is now armed at the construction frame instead of left
-// unarmed. All three are HASHED, so a v41 save written before this change
-// restores into a world whose hash differs from a v41 written after it.
-// Bumped 42 -> 43: `InfantryRuntime` gains `idle_action_timer` (two u32s), so
-// the component grows from 3 to 11 bytes. The encoding is bincode, which is not
-// self-describing — the decoder reads the next field's bytes unconditionally and
-// a `#[serde(default)]` never fires for a short record. A v42 save read by this
-// code would therefore pass the version check and then misread every byte after
-// the first infantry entity. The bump turns that silent corruption into a clean
-// rejection. The new field is also HASHED.
-// Bumped 43 -> 44: `GameEntity` gains the spawn-manager pool
-// (`spawn_manager: Option<SpawnManagerState>` — spawn type, missile family,
-// regen/reload/kamikaze frames, both manager timers, both targets, manager
-// mode, and a variable-length slot vector) and the child back-pointer
-// (`spawn_owner_id: Option<u64>`). Same bincode trap as 42 -> 43: the encoding
-// is not self-describing, so the decoder reads the next field's bytes
-// unconditionally and `#[serde(default)]` never fires for a short record. A v43
-// save read by this code would pass the version check and then misread every
-// byte from the first entity onward — these two fields are on EVERY entity, not
-// just spawner parents, so the corruption starts at entity one. Both are
-// HASHED, but only when present (see `world_hash.rs`).
-//
-// Bumped 44 -> 45: `AnimOverlayState`'s `rate_ms`/`elapsed_ms` became
-// `rate_logic_frames`/`elapsed_logic_frames`. Both fields were `u32` before and
-// after, so the encoded record is exactly the same width and a v44 save
-// deserializes without any error at all — it just means something else. gamemd
-// counts an animation's frame delay in logic frames, not wall-clock time, so a
-// stored `rate_ms` of 266 comes back as a 266-*frame* delay: the building
-// animation is roughly 44x too slow and looks stopped. Identical width is what
-// makes this dangerous rather than safe — the test a unit change has to pass is
-// whether old bytes still deserialize to the correct meaning, not whether they
-// deserialize at all. At v45 this was treated as presentation state and was not
-// hashed; v79 below changes that contract.
-// (44 is claimed by the in-flight spawner slice, which lands first; this jumps
-// over it deliberately.)
-//
-// FORK WARNING — versions 41 through 46 are AMBIGUOUS. Two branches (this
-// repo's dev and the foundations-contracts line merged via PR #109/#110)
-// diverged from v40 and independently assigned 41..46 to entirely different
-// layout changes. The two lineages are preserved verbatim above and below;
-// a version tag in that range does NOT identify a unique layout, so no
-// compatibility path may ever key on 41..46. The merge of the two branches
-// lands on 47, whose layout is the union of both lineages' fields.
-// [foundations lineage] Bumped 40 -> 41: persistent BulletClass-style projectile state is serialized.
-// Bumped 41 -> 42: persistent BulletClass collision policy is serialized.
-// Bumped 42 -> 43: TriggerRuntime latches now participate in the lockstep hash.
-// Bumped 43 -> 44: TeamClass raw actions, deferred advance, timers, attachment
-// identities, per-type counts, and non-CRC success state are authoritative.
-// Bumped 44 -> 45: piggyback persistence stores one complete nested locomotor runtime.
-// Bumped 45 -> 46: Tunnel and DropPod typed special-locomotor runtimes are
-// serialized on GameEntity, including their phase and landing state.
-// Bumped {41..46 fork} -> 47: merge of the two lineages; layout is the
-// union of every field both sides added.
-//
-// Bumped 47 -> 48: `DriveLocomotionRuntime` gains `occupation_handoff`, the
-// forward RawTrack handoff mark that accompanies the head-to mark, and it is
-// inserted BETWEEN `occupation_head_to` and `current_occupation_cleared` rather
-// than appended. Same bincode trap as 42 -> 43 and 43 -> 44: the encoding is not
-// self-describing, so the decoder reads the next field's bytes unconditionally
-// and `#[serde(default)]` never fires for a short record — a mid-struct
-// insertion is exactly the case it cannot cover. A v47 save written before this
-// change would pass the version check and then misread every byte from that
-// field onward, for that vehicle and every entity after it. Both occupation
-// marks were then rebuilt into the transient `CellOccupationGrid` on load, so
-// a misread was a wrong cell reservation, not just a cosmetic field.
-//
-// Bumped 48 -> 49: ObjectSubstrate gains authoritative serialized building
-// hidden-occupation counters, and GameEntity gains the immutable fixed-slot
-// type profile needed to reverse a contribution after load. RemoveOccupy's
-// enter-only cancellation makes this state impossible to reconstruct exactly
-// from the currently placed object set.
-//
-// Bumped 49 -> 50: ObjectSubstrate gains authoritative serialized per-house
-// Building base reservations (including shared dummy state), and GameEntity
-// gains the immutable signed AIBaseSpacing writer profile.
-// Bumped 50 -> 51: GameEntity gains serialized airborne spatial-bucket
-// membership and vector-tail order. These fields drive Apply_area_damage
-// receiver order and therefore must not be defaulted from an older bincode tail.
-// Bumped 51 -> 52: GameEntity gains the mutable per-Techno armor multiplier;
-// its exact double bits affect every later receiver result.
-// Bumped 52 -> 53: GameEntity gains the authoritative Psychedelic berserk byte
-// and signed timer; both affect subsequent receiver callbacks and targeting.
-// Bumped 53 -> 54: GameEntity gains the persistent WasAttackedByEnemy byte;
-// building AI reads it after load when deciding whether to sell at red health.
-// Bumped 54 -> 55: HouseState gains authoritative CurrentIQ.
-// Bumped 55 -> 56: GameEntity gains the damage-Smoke ParticleSystem identity.
-// Bumped 56 -> 57: GameEntity gains the controller-owned CaptureManager
-// capacity snapshot and ordered victim-link vector. Bincode cannot default a
-// missing mid-record field safely, and both fields change later mission state.
-// Bumped 57 -> 58: HouseState gains receiver-updated AngerStruct scores and
-// the selected enemy-house identity. Both feed later AI target decisions.
-// Bumped 58 -> 59: the Building shared C4/PostMortem latch now preserves its
-// signed start/duration and nullable retained source identity.
-// Bumped 59 -> 60: wall-sale commands may persist in the pending queue, and
-// HouseState/ScenarioSession now preserve distinct PlayerControl and GameMode
-// inputs used by their native EventClass receiver gate.
-// Bumped 60 -> 61: ScenarioSession now persists native ScenarioFlags bit 0x20,
-// which suppresses direct and area damage and therefore changes later world state.
-// Bumped 61 -> 62: Position gains authoritative signed exact-Z leptons, and
-// active low-bridge TubeMovement now persists its sole live
-// `{tube_id, cursor, target_xyz}` payload. Both change GameEntity's bincode
-// layout and must resume without rebuilding the mover's detached cell state.
-// Bumped 62 -> 63: GameEntity persists the immutable `Factory=BuildingType`
-// profile that gates later house-edge refreshes on reveal and owner transfer.
-// Bumped 63 -> 64: HouseState persists the aggregate active SpySat latch.
-// Bumped 64 -> 65: ScenarioSession persists both map lighting profiles plus
-// the mutable global ambient target/profile and signed transition timer;
-// the disproven queued Lightning Storm payload is removed at the same boundary.
-// Bumped 65 -> 66: synchronized projectile trajectory/visual state,
-// Techno cloak/disguise producers, and the active typed locomotor payload are
-// now serialized. Bincode cannot safely decode the old mid-struct layouts.
-// Bumped 66 -> 67: persistent WaveClass lifecycle, aircraft release-tail,
-// guided projectile, CellClass visibility, BuildingLight, and Anim draw state.
-// Bumped 67 -> 68: projectile collision policy, Wave recorded-cell damage
-// payload, infantry subcell owners, fogged-object footprints, and per-house
-// sensor state are serialized and hashed.
-// Bumped 68 -> 69: CellClass per-cell cloak-owner words are serialized and hashed.
-// Bumped 69 -> 70: terrain, projectile, and wave stores dropped their local
-// counters after consolidation into the serialized global object-id source.
-// Bumped 70 -> 71: ProjectileTarget adds the explicit native null-target
-// discriminant and stores CellClass identity rather than a frozen target Vec3.
-// Bumped 71 -> 72: the snapshot prefix now carries explicit VERA product and
-// public-envelope identity plus the player-authored save description.
-// Bumped 72 -> 73: HouseState now persists the accepted match-result kind,
-// absolute SavourDelay frame target, and expiry latch. These fields control
-// the terminal frame and cannot be reconstructed from app state after load.
-// Bumped 73 -> 74: pending CommandEnvelope payloads can now carry the native
-// EXIT event. App-consumed execution edges remain transient and are not saved.
-// Bumped 74 -> 75: generic Building delayed-fire state now persists its signed
-// remaining counter and saved weapon slot across save/load.
-// Bumped 75 -> 76: AnimClass now persists its cell-drawer and
-// terrain-attached constructor bytes.
-// Bumped 76 -> 77: GameEntity now persists FootClass's wrapping SHP body-frame
-// counter plus Drive/Ship's SHP movement-predicate runtime. Both are
-// hash-authoritative and resume without a visual-sequence reset.
-// Bumped 77 -> 78: living GameEntity Animation state now advances inside the
-// committed master frame and all four serialized fields participate in the
-// lockstep hash. Layout is unchanged, but cross-version replay would diverge.
-// Bumped 78 -> 79: BuildingAnimOverlays was already serialized with this exact
-// layout, but crane, refinery-bale, and tank-bunker overlays now finalize inside
-// the committed master frame before `state_hash`, and component presence, vector
-// order, and every overlay field participate in the lockstep hash. This is a
-// behavior/hash-only boundary: old bytes would decode, but resume under different
-// timing and produce an incompatible returned hash, so cross-version load is refused.
-// Bumped 79 -> 80: the natural win/loss terminal edge now serializes and hashes
-// its one-shot raw score snapshot before returning. This adds the snapshot field
-// and prevents score-bonus Scenario RNG draws from repeating after load.
-// Bumped 80 -> 81: pending CommandEnvelope payloads can now carry an offline
-// SetGameSpeed transition. Appending the enum variant changes the bincode schema.
-// Bumped 84 -> 85: Simulation now retains the signed `[Map] Size=` height used
-// to normalize later trigger-action-40 LocalSize writers. Without the serialized
-// input, a second writer after load could diverge even though mutable bounds load.
-// Bumped 85 -> 86: every trigger-action-40 execution now serializes and hashes a
-// distinct playfield revision so repeated writers rebuild presentation after save/load.
-// Bumped 86 -> 87: GameEntity now persists and hashes the canonical
-// TechnoClass+0x3D5 playfield-membership byte. Its hysteretic ordinary-movement
-// writer means it cannot be reconstructed from position after load.
-// Bumped 87 -> 88: GameEntity now persists the exact deposited sensor owner,
-// cell, add/remove radii and building/unit discriminator. Limbo, movement, and
-// owner transfer must remove the historical deposit rather than recomputing it
-// from current position/rules, so this future-affecting cache is hash authority.
-// Bumped 88 -> 89: ProjectileTarget adds the native shared-dummy pointer kind.
-// Bumped 89 -> 90: exact real-cell 0x1180 values join Scenario persistence and
-// hashing, while the process-global dummy's live subset joins the canonical
-// hash even without a retained projectile. The dummy remains outside the
-// payload and accepted Resize/load reconstructs it to zero.
-// Bumped 90 -> 91: the active factory PendingObject now persists the one-shot
-// completion-accounted latch so a refused delivery resumed after load cannot
-// increment the score-screen Built statistic again.
-// Bumped 91 -> 92: persist each House's BaseClass reservation bounds/vector;
-// the process-global reservation dummy mask remains outside the payload and
-// reconstructs cleared like native CellClass save/load.
-// Bumped 92 -> 93: HouseState gains the serialized/hash-authoritative strategy
-// emergency mode, persistent All-To-Hunt target-bias latch, and signed last-
-// Building-attack frame. Bincode cannot safely default an absent struct tail.
-// Bumped 93 -> 94: add the House last-attacker index plus persistent Techno
-// recruitment/archive/base-response cooldown state.
-// Bumped 94 -> 95: add TeamType priority/base-defence metadata and TeamClass
-// response latches/timer state.
-// Bumped 95 -> 96: TeamScriptVm persists the ordered AIMD/map registries.
-// Bumped 96 -> 97: resolved ScriptType and TaskForce records now persist their
-// fixed-AIMD/scenario provenance. Bincode encodes structs positionally, so serde
-// defaults cannot safely decode the shorter v96 record.
-// Bumped 97 -> 98: resolved AITriggerType records now persist every proven
-// typed raw-reader field in addition to their lossless 18-token source record.
-// Bumped 98 -> 99: remove the falsely retained AITrigger token-4 scalar;
-// native requires that token but discards it before deriving `+0xB0`.
-// Bumped 99 -> 100: retain the three TeamType post-load zone-derivation
-// fields serialized inside the ordered TeamScriptVm registry.
-// Bumped 100 -> 101: retain each compact TaskForce member's category-distinct
-// resolved TechnoType identity rather than an ambiguous interned name alone.
-// Bumped 101 -> 102: retain AITrigger token 6's category-distinct resolved
-// TechnoType identity rather than an ambiguous interned name alone.
-// Bumped 102 -> 103: WaveClass persists live ownership/fade/CellClass identity,
-// and destroyable-cliff replacement persists exact changed CellClass values.
-// Bumped 103 -> 104: every Techno persists its constructor Scenario-RNG low
-// word, and authored structure-upgrade Technos persist their parent/slot link.
-// Bumped 104 -> 105: persist active and stashed Drive/Ship locomotor slope
-// cache/global-frame timer state; the positional payload enum changed shape.
-// Bumped 105 -> 106: active-retail Cell ground is one 104-lepton numeric
-// authority rather than the false 90-lepton duplicate. Shape is unchanged,
-// but retained Cell targets/world state would resume with different Z results.
-// Bumped 106 -> 107: behavior-3 Spark now consumes the shared CellClass dummy's
-// persistent Level and Slope without requiring a retained dummy projectile.
-// The wire shape remains unchanged, but older saves do not certify the same
-// future-affecting lockstep hash authority for those live process-global bytes.
-// Bumped 107 -> 108: HouseState gains the serialized/hash-authoritative packed
-// alternate base cell written by trigger actions 137/138. Bincode encodes the
-// HouseState layout positionally, so an older record cannot supply this field.
-// Bumped 108 -> 109: persist the lifecycle-maintained per-House BuildConst
-// acquisition order and each entity's immutable resolved membership bit.
-// Bumped 109 -> 110: persist ordered House BasePlan authority and the immutable
-// BuildingType facts consumed by its Unlimbo/Limbo lifecycle writers.
-// Bumped 110 -> 111: persist the distinct BaseClass plan center written after
-// a successful non-controlled ConstructionYard deployment.
-// Bumped 111 -> 112: persist the three independent House AI activation
-// latches co-enabled by successful qualifying base-unit deployment.
-// Bumped 112 -> 113: persist House AutocreateAllowed beside the three deploy
-// latches in native conceptual byte order.
-// Bumped 113 -> 114: persist the raw 256-entry MapClass crate-slot table,
-// including accepted ghosts and all native timer words, plus the per-Anim
-// Convert palette selector installed by startup crate CellAnim.
-// Bumped 114 -> 115: OverlayGrid persists and hashes the retained real-cell
-// authored/runtime wall-neighbor count plane. Final overlay identities cannot
-// reconstruct counts left behind by a later authored low-body overwrite. The
-// v115 hash schema also folds the live shared-dummy overlay identity/state;
-// that process-global pair is intentionally not Scenario-serialized.
-// Bumped 115 -> 116: `NativeTiberiumClassState` carries the native queue stores
-// (`NativeTiberiumQueue`: entry array, heap of references, capacity) and
-// `OreGrowthState::native_rect`; the serialized queue shape changed.
-// Bumped 116 -> 117: the v117 hash schema folds the disguise-detect plane —
-// FogState's `CellClass+0xAC[house]` counters and the cached
-// `DetectDisguiseRange=` radius on each SensorDeposit. Both fields already
-// round-trip (they are `#[serde(default)]` additive), so this bump exists to
-// keep the hash-schema probes and the serialized version aligned.
-// Bumped 117 -> 118: `GameEntity` gains the `UnitClass+0x6AF` turret rotation
-// latch and the `TechnoClass+0x120` last-fire frame. Both are inserted
-// MID-STRUCT — after `barrel_facing`, before `building_up` — and both are
-// present on EVERY entity. Bincode is not self-describing: the decoder reads
-// the next field's bytes unconditionally and `#[serde(default)]` never fires
-// for a short record, so a v117 save would pass the version check and then
-// misread every byte from entity one onward. A mid-struct insertion is exactly
-// the case serde defaults cannot cover, so the version has to move.
-// Bumped 118 -> 119: `ProjectileGuidance` gains the five fields the native
-// speed ramp needs — `BulletClass::AI @ 0x00466985` accelerates a homing bullet
-// from one lepton per frame toward the MaxSpeed stored at `+0x110`, so a
-// projectile must carry its current speed, its cap, its acceleration and its
-// flight heading. The heading is stored rather than derived because VERA's
-// velocity is integral: at magnitude 1 the direction would be destroyed by
-// truncation and the missile would leave along an axis instead of the barrel.
-// `ProjectileTrajectory` also gains a `Vertical` variant. All five fields are
-// APPENDED at the end of the struct and the variant is appended to the enum, so
-// unlike the 117 and 118 bumps this one is serde-coverable in principle; the
-// version still moves because the hash schema folds the new state.
-// Bumped 119 -> 120: `ObjectSubstrate` gains the `VoxelAnimClass` registry —
-// the flying VXL debris a vehicle or building death throws. The field is
-// `#[serde(default)]` and appended, so bincode can read a v119 record, but the
-// version still moves because the hash schema folds the new store AND because
-// the death path now consumes draws it did not before: one
-// `RandomRanged(MinDebris, MaxDebris - 1)` per destroyed Techno with
-// `MaxDebris > 0`, then per debris entry one `Random__Next()` and seven draws
-// per voxel piece, then one `RandomRanged` per SHP debris anim
-// (`TechnoClass::ReceiveDamage @ 0x00701900`, `0x00702281`..`0x0070256C`).
-// Every consumer after a death in the same tick therefore reads a different
-// cursor than it did on v119.
-// Bumped 120 -> 123: combat explosions became `AnimClass` instances. They used
-// to be legacy `WorldEffect` records, which are in neither `AnimStore`'s
-// serialized shape nor the multiplayer checksum; they are now ordinary members
-// of `substrate.anims`, which is in both. So every shot that spawns a warhead
-// `AnimList=` animation now adds a hash-participating, serialized object where
-// it previously added none. No committed golden actually moved on this change
-// — the global parity harness authors no `AnimList=`/`Explosion=`/
-// `DestroyAnim=`, so it never reached the new path — but any future fixture
-// that fires a shot with explosion art will hash differently from a v120 one,
-// which is exactly what the version guards. `AnimTypeRuntimeConfig` also
-// gained the twenty previously unparsed art keys; that is rules data and is
-// not serialized.
-//
-// 121 and 122 are deliberately skipped because live unmerged branches already
-// stamp them, and two branches stamping different serialized shapes with one
-// number defeats the guard: a snapshot written under one and loaded under the
-// other passes the version check and then mis-decodes. Re-surveyed across
-// every local and `origin` ref when this branch was rebased for merge —
-// 120 `origin/main` (the `VoxelAnimClass` debris store, now landed),
-// 121 `origin/feature/phase3-map-spatial-close`,
-// 122 `origin/feature/phase3-map-spatial-integration`;
-// nothing else claims 123. Whoever resolves a `snapshot.rs` merge conflict
-// here must re-run that survey rather than picking a side.
-// v126 adds the retained homing Inaccurate flag, consumed by BulletClass's
-// final impact-coordinate snap. v123 cannot decode the new guidance shape.
-// Versions 124 and 125 are reserved by the concurrent parasite and audio-lane
-// changes, respectively; this format must not share either version.
-// v128 retains Bullet launch/previous-cell collision inputs and policy.
-// v129 stores exact Bullet binary64 velocity, removes duplicate Vertical
-// direction and captured gravity, and retains the Floater policy.
-// v130 replaces the visit counter with the signed frame-anchored Bullet Arm timer
-// and retains Dropping so Check runs before detector-only admission is suppressed.
-// v131 persists the `ScenarioClass` flags bits `0x40`/`0x80` (`TiberiumGrows`/
-// `TiberiumSpreads`) on the session and the growth-driver reload selector on
-// `OreGrowthConfig`. A v130 skirmish save would restore them clear and reload the
-// growth timer at the raw `Growth=` instead of `ftol(Growth * 0.3)`.
-// v132 persists the `HouseClass+0x242` harvester no-ore latch on `HouseState`
-// (set by `UnitClass::Mission_Harvest` state 0, never cleared). A v131 save
-// would restore it clear for a house whose harvester had already exhausted
-// its scan, and the state hash folds it.
-// v133 persists the `HouseClass+0x57D4` funds-nag timer and the `[0xA8F040]`
-// low-power guard on `HouseState` (`HouseClass::Update 0x004F8B3C..0x004F8DAB`).
-// A v132 save would restore the timer at its constructor value and the guard
-// clear, re-announcing "Low power" on load; the state hash folds both.
-// v134 changes the bincode layout for repair-depot docking (GSI-07.38): the
-// FIFO `ProductionState.depot_dock_reservations` is gone (native has no
-// stored dock queue; admission is RadioClass contact capacity, BuildingClass
-// ctor 0x0043BCBD) and `DockState.enter_retry` carries each waiter's
-// `FootClass::Mission_Enter @ 0x004D9290` re-probe timer.
-// v135 (GSI-09.01) appends three fields to `GameEntity`: the
-// `BuildingClass+0x6D0/+0x6D8` ProduceCash timer (oil-derrick income) and the
-// `TechnoClass+0x1CC/+0x1D0` drain link pair (Floating Disc money drain). They
-// sit ahead of the `#[serde(skip)]` debug log, so a v134 record is short by
-// their bytes and bincode would read the next entity's bytes as them; the hash
-// schema also folds all three (`include_credit_income_v135`).
-// v136 adds the retained Infantry terminal policy, independently of sprite
-// animation progress. The entity layout and current deterministic hash change.
-// v137 changes ordinary ground-coordinate resume invariants: Walk samples Z
-// at its coordinate commits; Drive/Ship retain the last native paid sample,
-// while their residual XY can already
-// have changed the current cell, OnBridge, and track-relative offset. A v135
-// mover may instead carry no exact Z and the previous cell/track frame. Its
-// historic paid height cannot be reconstructed from the residual XY on load.
-// Reject those saves instead of inventing an idle terrain sample. No fields or
-// hash folds were added; see RAMP_UNIT_HEIGHT_GHIDRA_REPORT.md (4B1A96/4B253F).
-// v138 combines both branches. The locally runnable v137 candidate did not
-// contain infantry_terminal, so its serialized entity layout differs from this
-// merged build. Reject v136/v137 saves instead of treating either as compatible.
-// v139 persists Scenario+34A4 (map FreeRadar) in ScenarioSession. Bincode
-// encodes fields positionally, so serde(default) cannot safely read v138 bytes.
-// v140 pairs BridgeRuntimeState records with source Map Size for the native
-// signed/clamped zone-node projection. Bincode positional layout changes;
-// pre-v140 automatic-shell records also contain non-native invented spans.
-// v141 retains CellClass400/800 alongside1180 and hashes live dummy gap flags.
-// Old saves lack authoritative post-load gap state; do not invent it on restore.
-// v142 retains viewer-owned knowledge, local/effective sight, pending conceal
-// and stable generator admission receipts. New positional fields require rejection.
-// v143 adds MCV pending deployment and the Drive rotation-edge latch.
-// Bincode positional entity layout changes; reject older payloads.
-// v144 retains Building6C8/Techno269/26C gap operational/deposit authority.
-// Restoring cannot reclassify power or replay a fresh gap event.
-// v145 adds literal CellClass+2C allocation identities to dynamic terrain facts.
-// The self relation cannot reconstruct pointers preserved by overlapping stamps.
-// v146 removes the duplicate BridgeRuntimeCell pavement Boolean. CellClass
-// raw flags in dynamic terrain retain bit0x2000 for every allocated cell.
-// v147 persists the Scenario+214 native numeric-ID cursor. A v146 save has no
-// continuation for live constructors; the missing mid-record field cannot be
-// defaulted safely by bincode. Original689310/689470 evidence: native_id_snapshot.
-// v148 stores ordinary Drive/Ship destination/head Z in raw world leptons.
-// v147 mixed level indices and raw ForceTrack/Tube coordinates; the lost
-// original head heights cannot be reconstructed from a later terrain snapshot.
-// v149 gives Drive and Ship the same retained signed track state. The prior
-// Drive cursor was u16 and Ship had no independent residual/selector fields;
-// bincode cannot infer those records across this ownership migration.
-// v150 moves Foot+5E0/+558 replay from class payloads to NavigationState.
-// Bincode field order changes even for owners without Drive/Ship instances.
-// v151 moves applied speed and its existing query cache to the live Foot owner.
-// v152 stores Foot occupation enable, pending fresh Apply1, and Ship head/handoff
-// projection metadata alongside the existing serialized raw occupation plane.
-// Drive END permission and the distinct Foot forced-swap gate are retained too.
-// v156 persists current-house process input. Versions153-155 belong to
-// the separate unmerged bridge locomotor layouts; do not accept those saves.
-// v159 persists actual Cell membership/order, discovery history and the exact
-// immutable Sight==0 predicate. Versions157-158 belong to the bridge branch.
-// v160 moves the two Foot path timers, blocked latch and dword retry count
-// from MovementTarget into persistent NavigationState.
-// v161 adds the bridge locomotor instance state (Walk head/destination/moving
-// bytes, Hover head, Jumpjet cached XYZ/moving/phase, including stashes) and
-// raw Infantry house identities. None of the earlier branch-local layouts can
-// be decoded as this combined schema.
-// v163 adds the Jumpjet locomotor's linked type block and flight fields
-// (facing, speed doubles, target height, bob phase) to its runtime payload.
-// v165 adds DriveTrackState::before_first_point, which sits mid-record
-// between point_index and residual. serde(default) does not help here -
-// bincode cannot default a missing mid-record field - so a v164 save would
-// otherwise decode residual, transform_flags and both head offsets from the
-// wrong bytes instead of being rejected.
-// v164 adds the per-cell AltObject air slots (CellClass+0xE0), the authority
-// that keeps one hovering Jumpjet per cell.
-// 165 -> 166: remove the duplicate HouseState credit balance; Economy owns cash.
-// 166 -> 167: remove ordinary/forced geometry records; retained class track owns progress.
-// Drive/Ship also own valid/turn-latched bytes; retire the MCV-only entity latch.
-// 167 -> 168: retain signed Object+70 targeting reservations independently of HP.
-// 168 -> 169 replaces cached u16 HP/max with signed actual Object health.
-// The Health width is unchanged but its meaning differs. Building ART retains
-// its native damaged-state latch and saves its 21 owned Anim slot references.
-// 169 -> 170: aircraft dock indices widen from u8 to u32; save only reservation
-// slots and rebuild their reverse lookup, rejecting duplicate occupants on load.
-// 170 -> 171: save shared pixel-conversion bounds and retained HasEngineer.
-// 171 -> 172: remove the refinery dock registry from ProductionState; the radio
-// bus (entity contacts and the dock-entered flag) is the only contact record.
-// 172 -> 173: teleport WarpOut, superweapon invoke and Lightning Storm
-// animations are AnimStore members. The layout is unchanged, but those objects
-// are now saved, hashed and take ids from the shared stable-id counter, so a
-// 172 save taken after a teleport or storm resumes with different ids.
-// 173 -> 174: remove the per-cell resource node map and the fallback ore
-// overlay id from ProductionState, the node-era scanner and queue fields from
-// OreGrowthState and the scan rate from OreGrowthConfig; the overlay grid is the
-// only tiberium store.
-// 174 -> 175: bridge collapse explosions are AnimStore members. The layout is
-// unchanged, but they are now saved, hashed and take ids from the shared
-// stable-id counter, so a 174 save taken during a collapse resumes differently.
-// 175 -> 176: the effect asset catalog folded into `simulation_config_hash`
-// now holds particle images only. The layout is unchanged, but a 175 save
-// carries the old rules hash and would fail as a rules mismatch; the version
-// gate names the real cause instead.
-// 176 -> 177: AnimStore coordinates are world leptons on every axis. Anims a
-// producer placed by height level used to store `level * 128`; they now store
-// `level * 104`, and an attached anim's delta is taken from the owner's actual
-// height. The layout is unchanged, but a 176 save with such an anim above
-// level 0 would draw and hash it at the wrong height.
-// 177 -> 178: weapon and occupant muzzle flashes are AnimStore members. The
-// layout is unchanged, but they are now saved, hashed and take ids from the
-// shared stable-id counter, so a 177 save taken mid-firefight resumes with
-// different ids.
-// 178 -> 179: a dropped object's parachute canopy is an AnimStore member
-// attached to it. The layout is unchanged, but a 178 save taken during a
-// paradrop resumes without canopies and with different ids.
-// 179 -> 180: a Jumpjet's `air_phase` is no longer written as a mirror of its
-// state field, and `AirMovePhase::Hovering`, which only that mirror produced, is
-// gone, so the enum's encoding and a flying Jumpjet's stored value both differ
-// from what a 179 save holds.
-// 180 -> 181: Foot+580 crate speed multiplier is retained with the Foot owner,
-// including across locomotor replacement. It is serialized and hashed.
-// 181 -> 182: persistent DisplayClass layer membership and order. Its lookup
-// cache is rebuilt, but history cannot be recovered from current coordinates.
-// 182 -> 183: display vectors now include terrain, particle systems, bullets,
-// waves and voxel debris. Prior snapshots cannot recover their registration history.
-// 183 -> 184: animation display membership, retained instance YSortAdjust and
-// Object+74 marking. Prior snapshots cannot reconstruct attachment history.
-// 184 -> 185: Fly owns its integer height target and native takeoff/landing
-// flags; the shared synthetic air phase, target and climb-rate fields are gone.
-// 185 -> 186: aircraft retain signed Ammo and the pending-release byte outside
-// the Attack variant. Duplicate mission flags and the fabricated release tail
-// are removed; pending state cannot be recovered from the old representation.
-// 186 -> 187: object burst position replaces AttackTarget's remaining-shot count.
-// 187 -> 188: Fly retains exact destination XYZ, independent of the cell cache.
-// 188 -> 189: retained Techno+3D4 cannot be recovered from live type or cargo.
-// 189 -> 190: Foot+55C history and the combined retained wall/Foot Cell+122 plane.
-// 190 -> 191: Fly retains its native cruise-mode byte through save and piggyback.
-// 191 -> 192: Fly moving+34, the landing-effect latch +52, the linked
-// AirportBound+18 and Techno+2E8 flight attitude are saved and hashed. A 191
-// save cannot recover an in-progress landing effect or approach pitch.
-// 192 -> 193: ParasiteClass (Foot+69C) and the victim's Foot+694 link,
-// Foot+698 launch lock and Foot+6A0 paralysis timer are saved and hashed.
-// 193 -> 194: Building+6E3 HasBeenCaptured is saved and hashed; a 193 save
-// cannot tell a captured building from one built by its owner.
-// 194 -> 195: death anims construct with the death producers' arguments
-// (flags 0x600, zAdjust 0, the exact coordinate) and a building's per-cell
-// `Explosion=` and `DestroyAnim=` anims are AnimStore members. The layout is
-// unchanged, but a 194 save holding a death anim draws and hashes it with the
-// impact's arguments, and one taken during a building's death resumes without
-// its anims and with different ids.
-// 195 -> 196: mind control: the CaptureManager keeps each node's original
-// house and the overload countdown and voice latch; the victim keeps its
-// controller and ring anim. A 195 save cannot tell whom a captive returns to.
-// 196 -> 197: TemporalClass: a Temporal firer keeps its link (target, chain
-// neighbours, WarpRemaining) and a warped object its chain head. A 196 save
-// cannot tell a warped object from a free one.
-// 197 -> 198: the house keeps its native defeat counts (`house_tracking`) in
-// place of the two retired owned counts; an entity keeps its DontScore and
-// tracking facts, and `owned_count_released` is renamed
-// `destruction_recorded`. A 197 save holds none of the counts.
-// 198 -> 199: a Crazy Ivan bomb: the carrier keeps its bomb (planter, house,
-// fuse, who sees it); the carrier index is rebuilt on load. A 198 save has
-// no bombs.
-// 199 -> 200: Gattling: an entity keeps its stage and value (`+0x140`,
-// `+0x144`) and the turret animation counter `+0x148`; the report latch is not
-// saved (`TechnoClass::Load` clears it, `0x0070C20E`). A 199 save has none.
-// 200 -> 201: an entity no longer keeps `last_attacker_id` (retaliation is the
-// receiver's inline ShouldRetaliate), and a TeamType keeps `Suicide=`.
-// 201 -> 202: the rearm countdown moves onto the object (`TechnoClass+0x2EC`):
-// AttackTarget loses its cooldown/burst-delay counters and the cloak runtime
-// its copy of the timer.
-// 202 -> 203: the Simulation no longer keeps its own CloseEnough copy; the
-// movement owners read `Rules+0x1718` (`[General] CloseEnough=`).
-// 203 -> 204: a bullet keeps OnBridge and no owner house, a house its ROF
-// bias (`HouseClass+0x1A8`), and a TeamType `Aggressive=`.
-// 204 -> 205: a bullet keeps its `Arcing=` (`BulletTypeClass+0x29B`) and an
-// anim its BounceClass body (`AnimClass+0x128`).
-// 205 -> 206: a miner no longer keeps the Chrono Miner's retired dock phases
-// (home refinery, dock-queued byte, dock phase, pivot facing, enter/approach/
-// deploy timers, exit cell); an entity keeps Techno+0x1F8.
-// 206 -> 207: a miner keeps Unit+0x6D2 and one +0xF8 StageClass (the unload
-// counter renamed) instead of its target-ore cell, harvest timer, rescan
-// cooldown and archive copy (the archive is Techno+0x218).
-// 207 -> 208: an entity keeps the crash latch and its AI edge (Foot+0x425/
-// +0x426) and a Fly its fall counter (+0x58).
-// 208 -> 209: a master keeps its SlaveManagerClass (Techno+0x2D8) and a slave
-// its SlaveOwner (+0x2DC) and Storage, replacing the production slave
-// bindings and the slave harvester cursor.
-// 209 -> 210: a locomotor no longer keeps the retired copy of the Jumpjet type
-// block (speed, accel, current speed, deviation, crash speed, turn rate).
-// 210 -> 211: a building's build-up and pack-up keep the construction
-// animation's StageClass (stage, rate, timer, the type's control), the
-// Construction mission's progress or Sell's stage, and the `+0x6DD` byte
-// instead of fixed elapsed/total tick counts.
-// 211 -> 212: an entity no longer keeps the weapon id of its last live
-// selection (`current_weapon_ref`), which nothing read; `CurrentWeaponNumber`
-// (`TechnoClass+0x138`) stays.
-// 212 -> 213: a sale's pack-up keeps Sell's stage in the Selling mission
-// (`+0xBC`) and marks the player's undeploy order instead of carrying the
-// undeploy's unit type, owner, cell and selection; a building keeps its AI
-// sale byte (`+0x6DC`) and a house its authored IQ (`+0x1D0`).
-// 213 -> 214: BridgeStrength retains its native signed dword (formerly u16).
-// 214 -> 215: Terrain objects retain their construction-time world Z instead
-// of sampling later ground changes in damage and presentation consumers.
-// 215 -> 216: a building keeps its AI repair byte (`+0x6CB`) and a house its
-// repair delay (`+0x1C0`), auto-repair latch (`+0x245`) and the latch's
-// timer (`+0x280`).
-// 216 -> 217: runtime constructors retain native Abstract IDs; guided bullets
-// use those IDs with global frame, native binary64 velocity and signed course/
-// closing counters. Removed approximate heading/age/phase cannot be recovered.
-// 217 -> 218: a passenger keeps `TechnoClass+0x82` (InOpenToppedTransport) in
-// its Inside role, and the weapon override loses the transport-side
-// open-transport slot that stood in for it.
-// 218 -> 219: passive acquisition now honors live bridge layers and native
-// cell-query order; low/high flight reads live physical height. Layout is
-// unchanged, but an old save can acquire different targets and evolve its
-// shared Dummy differently on the next scan, so reject mixed continuations.
-// 219 -> 220: a factory's rally point lives only in its ArchiveTarget
-// (`Techno+0x218`); the house's rally copy and the building's rally cell go.
-// 220 -> 221: buildings run their Guard and Attack missions
-// (`techno_ai::building_missions`): a placed building queues Guard with
-// `+0x6DD` set, and combat serves a building's Mission_Attack request instead
-// of deciding its shot. Layout is unchanged, but a 220 save's buildings hold
-// no mission and would idle on a MissionClass stub, so reject it.
-// 221 -> 222: pending production commands carry no house of their own; they
-// act on their envelope's house. Dropping the fields changes the bincode schema.
-// 222 -> 223: Move orders and movement targets lose the group id that capped a
-// group to its slowest member; gamemd's speed getter (`0x004DB1A0`) reads only
-// the unit's own state. Dropping the fields changes the bincode schema.
-// 223 -> 224: Infantry uses its native Foot SpeedType default, live AStar/Walk
-// cell admission and ordered Walk responses. Engineer hut entry and repaired
-// structural side-cell consumers consequently change saved continuations.
-// Foot+68A now retains its exact path-failure sound byte through a snapshot.
-// Existing valid SpeedType variant tags and zero-latch hash streams are preserved.
-// 224 -> 225: Prism forwarding. A building's delayed fire carries a support
-// beam mode, buildings keep a support count, bullets a damage multiplier and
-// houses their building list (House+0x68), which a 224 save never filled.
-// 225 -> 226: a factory's step timer is the frame-anchored CDTimer (`+0x2C`)
-// armed when a build starts (`0x004C9EA0`), and the stored sidebar build-time
-// estimates go. The factory and queue-entry schemas change.
-// 226 -> 227: Techno+3CD/+3CE retain surface-ship sinking and its Foot sound
-// edge. Fatal naval receivers now retain the hull through Unit AI's exact-Z
-// fall, terminal RecordKill and UnInit; the new fields change the bincode layout.
-// The envelope also preserves the presentation-owned Techno+3CA waterline
-// shorts, outside Simulation and its deterministic state hash.
-// House MatchStatistics now persists and hashes its existing live totals;
-// an active-sinking save must retain its first RecordKill before the terminal one.
-// 227 -> 228: Cost_Of. A house's building registrations carry the FactoryPlant
-// cost bonuses instead of a raw cost, which a 227 save never filled; the house
-// keeps its FactoryPlant list (House+0x140), hashed from schema 228, and drops
-// its unread tracked-building count and base radius; a factory keeps no
-// VERA-only full-cost copy of its Balance.
-// 228 -> 229: the production commands are the native events: QueueProduction
-// loses its unused mode, SuspendProduction replaces the pause toggle,
-// CancelProductionByType gains ABANDON_ALL and CancelLastProduction goes. A
-// factory keeps its construction order when it promotes a queued build, and a
-// user hold now clears its rate and restarts its timer.
-// 229 -> 230: every building keeps its `+0x388` FacingClass (BuildingClass::
-// Init's Set_ROT at 0x00442CA5), which a 229 save holds only for turreted ones.
-// The layout is unchanged, but a 229 save's turretless buildings would neither
-// aim their body nor turn it when hit, so reject it.
-// 230 -> 231: a computer house's MCV deploys through its own missions
-// (`sim::mcv_deploy`), so the AI player state loses its `mcv_deployed` latch,
-// and the build-site test (`sim::build_site`) replaces the terrain's derived
-// `build_blocked` cache, which the dynamic cell state no longer carries.
-// 231 -> 232: a computer house's building choice, production mode and naval
-// latch (`HouseAiProduction`), and its factory buildings' own factories and
-// placement timers (`production::factory_ai`).
-// 232 -> 233: each House keeps its type's `Cost*Mult=` and the value totals
-// of its forces on the map (`house_tracking`), and each Techno the value arm
-// its type takes in them.
-// 233 -> 234: each House keeps its Strategy timer (`sim::house_strategy`).
-// 234 -> 235: a House's EVA funds and repair latch timers, a spawn
-// manager's timers, and the cloak stage and disguise block timers are
-// `CdTimer`s (the last two save their words in a new order).
-// 235 -> 236: a harvester's overlay no longer saves its unread frame count.
-// 236 -> 237: each Techno keeps its body heading once, as its `+0x388`
-// FacingClass (`GameEntity::body_facing`, no longer optional); the 8-bit
-// facing mirror and the turn target are gone, and a building's `+0x388` moves
-// from `barrel_facing` into it. Drive's unwritten turn target goes too.
-// 237 -> 238: the computer's teams (`sim::ai_team_creation`): each House's
-// team timer, trigger-team ratio, unit choices and per-type counts; each
-// team's creation frame and forming state; each AI trigger's track record
-// and its named multiplayer and side fields.
-// 238 -> 239: each Techno keeps its barrel elevation, the `+0x370`
-// FacingClass that Unlimbo aims by `FireAngle=`.
-// 239 -> 240: a TeamType's metadata no longer saves an unread copy of its raw
-// INI fields.
-// 240 -> 241: each team keeps its members, their TaskForce counts and its
-// recruitment, centre and script state, with each member's team
-// (`sim::team_script_vm`); a TeamType keeps the team keys they read.
-// 241 -> 242: each team keeps `Coordinate_Attack`'s restart flag (`+0x81`),
-// a TeamType its `Droppod=` and `OnlyTargetHouseEnemy=`; the `sim::ai`
-// stand-in's per-house attack-wave state is gone.
-// 242 -> 243: a locomotor and its piggyback stash no longer save a copy of
-// `ROT=`; the body FacingClass holds the rate.
-// 243 -> 244: the locomotor and its piggyback stash no longer save the
-// VERA-only ground move phase.
-// 244 -> 245: a house's economy no longer saves the retained OrePurifier count;
-// deposits count purifiers on demand.
-// 245 -> 246: a Techno no longer saves its veterancy rank beside the
-// accumulator; the rank is sampled from it.
-// 246 -> 247: every overlay grid saves its retained wall plane; the plane-less
-// legacy mode is gone.
-// 247 -> 248: LocomotorKind holds only the eight installable classes
-// (renumbered; the dormant Tunnel, DropPod, Mech and Parachute kinds, their
-// payloads and a Techno's tunnel and drop-pod states are gone), and the
-// installed slot stores it.
-// 248 -> 249: a particle no longer saves its unread previous coordinates,
-// ground-hit flag or colour triple, a particle system its directionless flag; a
-// boarding passenger no longer saves a phase; an entity no longer saves a
-// garrison original owner.
-// 249 -> 250: a locomotor and its piggyback stash no longer save the
-// always-1.0 speed multiplier.
-// 250 -> 251: Fly's target and current speed move from the shared locomotor
-// state into the Fly runtime; the unread air progress and wobble phase are
-// gone.
-// 251 -> 252: an entity no longer saves a homing state; nothing in production
-// ever created one.
-// 252 -> 253: a Teleport or Rocket locomotor no longer saves a copy of the
-// entity's teleport or rocket state.
-// 253 -> 254: an order intent can no longer be the garrison Unloading flag;
-// a garrison unloads through its Unload mission.
-// 254 -> 255: an entity no longer saves its unread TooBigToFitUnderBridge and
-// ZFudgeBridge copies; movement never read them and the draw reads the type.
-// 255 -> 256: a Foot owner no longer saves a cached GetCurrentSpeed; readers
-// query the live getter.
-// 256 -> 257: bridge cells, anchor spans and endpoint records no longer save
-// unread group ids, per-cell destroyable or span damage copies; paradrop
-// missions no longer save the inert fog latch or LandingState mirror.
-// 257 -> 258: a piggyback stash saves the complete suspended locomotor object
-// instead of a separate runtime copy of its fields, and a locomotor no longer
-// saves the installed slot the stash's own kind already records.
-// 258 -> 259: bridge cells no longer save a bridgehead anchor class; the
-// bridgehead branch writes CellClass tiles and the draw reads them.
-// 259 -> 260: an entity no longer saves bridge_occupancy or a ground cell
-// enter order; the enter-order counter serves only the AirTracker.
-// 260 -> 261: an entity no longer saves the ObjectClass falling byte; the
-// parachute descent it saves is IsFallingDown.
-// 261 -> 262: the combined branch retains House4FD150 base radius, Foot688
-// stopped/cannot-fire latch and inherited Unit/Aircraft raw Foot68D.
-// 262 -> 263: bridge cells no longer save a runtime copy of CellClass bridge
-// state (deck, damage state, axis, role, span, overlay); anchor spans are gone.
-// 263 -> 264: each Techno saves its sole private native StageClass. Miner
-// and Building metadata no longer save competing stage/rate/timer copies.
-// Infantry retains the native pending-Deploy6E4 and Techno crush2A4 bytes;
-// its TarCom no longer saves a competing cached sequence/discharge frame.
-// 264 -> 265: a parachute descent no longer saves an altitude; the falling
-// object's height is its Location Z.
-// 265 -> 266: a depot dock state no longer saves an Approach phase;
-// WaitForDock is the depot as pending entry (Unit+0x500).
-// 266 -> 267: Infantry retains signed water-transition state+6E8, whose
-// pre-admission writes gate EnterWaterSound/LeaveWaterSound.
-// 267 -> 268: retained Cell targets and navigation retain the live fallback
-// coordinate in deterministic state hashing for range and pursuit.
-// 268 -> 269: the Hover locomotor saves its native object (destination, head,
-// steering facing, the four doubles, Shove and Push state); the locomotor's
-// throttle, request and bob copies are gone.
-// 269 -> 270: a movement target no longer saves the removed Drive/Ship lane's
-// speed ramp, grid/terrain-cost bypasses and adapter-route flag.
-// 270 -> 271: a movement target no longer saves the removed lane's
-// wall-refusal memo.
-// 271 -> 272: a movement target no longer saves its unread direction vector,
-// and a locomotor no longer saves the Walk lane's sub-cell destination.
-// 272 -> 273: Reveal commits every unit's and aircraft's Unlimbo Z, and the
-// Fly wrapper no longer rebuilds a missing one from the altitude cache. A v272
-// save can hold a revealed Fly aircraft without an exact Z. No fields change.
-// 273 -> 274: Foot navigation retains its Unlimbo threat coefficient,
-// TeamType metadata retains AvoidThreats, each House persists its spatial
-// threat grid, and Techno retains its optional contribution. Bincode changes.
-// ZoneGrid retains the native saved base class/height/base-ID plane and13 raw
-// movement rows; LoadContent67E8CD rebuilds its hierarchy after map binding.
-// State hashing also includes the retained navigation topology/history;
-// ordinary load still performs the native full hierarchy rebuild.
-// 274 -> 275: a movement target no longer saves route cells, their layers or
-// a cursor; the Foot+5E0 queue is a Foot's only route.
-// 275 -> 276: each House saves its type's `Speed*Mult=` beside the cost ones.
-// 276 -> 277: terrain animations preserve native float probability, signed
-// Stage/rate and a frame-anchored CdTimer; obsolete micros/phase mirrors are gone.
-// 277 -> 278: Construction/Selling use MissionCom cadence/status and the
-// single MissionLeaf ready byte. Building persists private body/queued mode
-// and type control, without BuildingUp's duplicate mission/clock/latch or
-// BuildingDown's duplicate ready/timer. Factory primary state is lifecycle-owned.
-// 279 -> 280: Unit deployment uses private6E0..6E2 and retained Techno
-// animation/landing state, removing the independent deployment countdown.
-// Anim palettes also retain either a color scheme or the creation-time House.
-// 280 -> 281: one signed current weapon/turret pair replaces weapon overrides
-// and last-fire slot state; charge drawing retains the native saved ROF duration.
-// 281 -> 282: depot docking no longer serializes a retry-timer mirror;
-// MissionCom owns the saved Enter cadence for every Foot consumer. The
-// private native pending entry can coexist with an admitted service visit.
-// 282 -> 283: optional entity-owned turret/barrel recoil survives save/load.
-// 283 -> 284: SmudgeGrid retains runtime Smudge identities through the shared
-// deferred destructor, separately from its persistent cell marks.
-// 284 -> 285: every Techno saves one shared DoorClass; Gate Open/handler
-// status come from MissionCom rather than a second gate mission/transition.
-// 285 -> 286: native Foot+500 replaces the duplicate Unit depot FSM;
-// BuildingMissionLeaf retains the independent+620 progress StageClass. The
-// hash includes that clock and the pending entry. Anim+179 retains normal
-// completion and+118's independent Building-Anim marker for slot expiry and
-// presentation. Prior layout cannot resume.
-// 286 -> 287: Teleport's request, armed/resolved XYZ and warp adapter live
-// in its complete locomotor payload, including suspended instances. The
-// entity mirror is removed; serialization and lockstep hash layout changed.
-// 287 -> 288: Drive and Ship retain slope, destination, progress, speed and
-// occupation together in installed or suspended locomotor payloads. Entity
-// copies are removed; the prior layout cannot resume these instances.
-// 288 -> 289: Factory changed5D and inherited Foot idle-entry6B3 retain
-// next-frame production publication and same-frame idle admission.
-// 289 -> 290: one private Foot air owner saves the independent native+560
-// tracker Cell and+564 slot-notification Cell beside its retained bucket/order.
-// These Cells affect synchronous Jumpjet callbacks and lockstep continuation;
-// neither can be reconstructed from position, phase or Cell+E0. Prior bincode
-// records lack the Cells and cannot resume the callback chain.
-// 290 -> 291: the nuclear missile saves Anim+17C/+180 (attached Bullet, owner
-// House), Building+5F8 (the Super a Missile mission fires), the House's
-// NukeTarget, PreferredDefensiveCell and its frame, and Bullet+114 (the
-// FirersPalette House). Prior records lack them.
-// 291 -> 292: the Chronosphere's Super saves its source cell and placement
-// anim (+0x62/+0x68) and the Teleport its Chronosphere warp state (both
-// added without a bump at 291); the Psychic Dominator's globals, the
-// Techno's permanent-control byte (+0x2C4) and the map's Dominator lighting
-// profile are added. Prior records lack them.
-// 292 -> 293: the Rocket locomotor saves its native object (destination, both
-// timers, mission state, speed, latch, elite byte, pitch and cruise start
-// distance) in its payload; the entity's rocket phase machine is removed; the
-// kamikaze tracker saves its nodes.
-// 293 -> 294: the Iron Curtain's state saves the Techno's tint stage (+0x1A4)
-// and its timer (+0x198). Prior records lack them.
-// 294 -> 295: the scenario's lighting saves the nuke flash (0x00A9FABC and its
-// timer) and NukeAmbientChangeRate= (+0x3578); a bullet saves its wait on a
-// NUKE impact's anim (+0x154/+0x158). Prior records lack them.
-// 295 -> 296: a Super saves the Force Shield's fade countdown (+0x50) and its
-// coordinate (+0x54). Prior records lack them.
-// 296 -> 297: the Lightning Storm saves its native globals (Active, TimeToEnd,
-// Deferment, Duration, StartTime, Coords, Owner) and its two cloud lists in
-// place of VERA's storm record; a House's power state saves its radar outage
-// timer (+0x2B0). Prior records lack them.
-// 297 -> 298: remove cached cloak Rules/query fields and visual phase; retain
-// Techno+24C raw f32 displacement bits. The unmerged first-reveal candidate
-// also used version297 for a different layout; neither layout can resume.
-// 298 -> 299: an aircraft's mission leaf saves its paradrop passes (+0x6D3);
-// the paradrop carrier's two AircraftMission states are removed, its flight
-// now the native missions 26 and 27. Prior records cannot resume.
-// 299 -> 300: an infantryman's InfDeath anim constructs with the death
-// producers' arguments (flags 0x600, zAdjust 0, its Location); InfDeath 8's
-// and 9's take the killing house, and a GENDEATH's end creates its Brute in
-// place of the launch's immediate one. The layout is unchanged, but a 299 save
-// draws and hashes an infantry death anim with the impact's arguments, and one
-// taken while a GENDEATH plays already holds its Brute while the ownerless
-// anim would add a civilian one.
-// 300 -> 301: a guided bullet's guidance no longer copies its BulletType's
-// Airburst=, Inaccurate= and Level=; it reads the collision policy's, which
-// held the same values. Prior records cannot resume.
-// 301 -> 302: FogState drops the version-81 wire shadow of the view-cache
-// generation, which nothing read. Prior records cannot resume.
-// 302 -> 303: LocomotorState drops its unread HoverAttack copy, TechnoAmmo
-// its target_pad and AircraftMission's Docking/DockedIdle their pad_index:
-// write-only copies of the AirfieldDocks reservation. Prior records cannot
-// resume.
-// 303 -> 304: a Super saves its place in the Super timer list (0x00A83D50).
-// Prior records lack it.
-// 304 -> 305: PowerState drops was_low_power (it fed only a discarded
-// transition event) and Miner its forced_return flag (reserved_refinery is
-// only set beside it). Prior records cannot resume.
-// 305 -> 306: OwnerVisibility keeps one byte of CellClass ground bits per cell
-// instead of the legacy counter projection and visibility marks, and
-// SightAdmission drops its fog_of_war copy. Prior records cannot resume.
-// 306 -> 307: ScenarioSession drops its LocalSize copy; playfield_bounds owns
-// it. Prior records cannot resume.
-// 307 -> 308: ProductionState drops terrain_occupation_bits, a per-cell copy of
-// the terrain objects' occupation that nothing read. Prior records cannot resume.
-// 308 -> 309: Factory drops its special item, which every writer set to the
-// -1 "none" and nothing read. Prior records cannot resume.
-// 309 -> 310: GameEntity drops blocked_scatter_timer, which nothing wrote
-// after construction or read. Prior records cannot resume.
-// 310 -> 311: AircraftDockPhase drops Launching; a reloaded aircraft parks
-// instead. Prior records cannot resume.
-// 311 -> 312: HouseTracking saves the house's AirportDocks (+0x2D4). Prior
-// records lack it.
-// 312 -> 313: the house score (+0x54E8) is one Economy field; MatchStatistics
-// drops its kill half. Prior records cannot resume.
-// 313 -> 314: HouseTracking saves the house's factory counters
-// (+0x5378..+0x5388) and each building its factory counter. Prior records
-// lack them.
-// 314 -> 315: ProductionState drops ready_by_owner; a completed building
-// waiting for placement is its factory's held object. Prior records carry it.
-// 315 -> 316: the native airfield loop replaces the legacy dock state:
-// TechnoAmmo keeps the aircraft's dock (+0x6CC) in place of its dock phase,
-// airfield, reload timer and rescan cooldown, GameEntity drops AircraftMission
-// (Mission+0xBC holds Mission_Move's and Mission_Attack's states), and
-// ProductionState drops the AirfieldDocks pad reservations. Prior records
-// cannot resume.
-// 316 -> 317: the neutral presentation supplement preserves the local owner's
-// four retained sidebar entry lists and scroll rows. Re-sorting after load
-// loses insertion history when live comparison inputs changed; prior records
-// lack that order and viewport state.
-// 317 -> 318: Foot MoveSound keeps its native signed dword countdown in
-// one private owner, replacing the lossy byte. Old bincode records cannot resume.
-// 318 -> 319: Guard commands retain a Cell/object/null post and no longer
-// serialize the competing OrderIntent::Guard anchor. Old commands cannot resume.
-// 319 -> 320: Mirage disguise owns the constructor-anchored timer and drops
-// the invented +1E4 packed-cell word. Prior bincode records cannot resume.
-// 320 -> 321: ParticleSystem and each owned Particle retain AbstractClass+10
-// identities; constructors now advance the shared Scenario native-ID cursor.
-// Old snapshots cannot recover those checksum inputs or resume the cursor.
-// 321 -> 322: campaign Session inputs, House/Super native identities, authored
-// House ratios/credits/Edge and the complete shared difficulty bias aggregate
-// are retained by their existing owners. Prior bincode records cannot resume.
-// 322 -> 323: each object keeps its Foot building-entry latches (+0x68F).
-// Prior bincode records lack them.
-// 323 -> 324: the latches add +0x690, and a garrison's occupants are kept in
-// admission order. Prior records lack the latch and hold occupants reversed.
-// 324 -> 325: each entity retains the turret rotation-sound control latch
-// (TechnoClass+0x49C). Load reconstructs the external handle but retains the
-// saved latch; version 324 records lack this field.
-// 325 -> 326: each overlay cell retains the destroyed building type its rubble
-// draws (CellClass+0x40). Serialized but NOT hashed: only the draw and rect
-// code read it. Version 325 records lack this field.
-// 326 -> 327: live Tag/Trigger and typed deletion owners, retained LoadObject
-// registry, neutral Tactical view/focus metadata, and per-plane native map-cell
-// edge cache/canonical Dummy visibility survive campaign load.
-// Prior bincode records cannot resume these lifecycle and camera authorities.
-// 327 -> 328: each house keeps the last building it lost to an owner change
-// (HouseClass+0x54E0). Version 327 records lack this field.
-// 328 -> 329: each house keeps what its spies took (HouseClass+0x2BC..+0x2C0).
-// Version 328 records lack these flags.
-// 329 -> 330: the move-order adapter (`MovementTarget`) keeps no goal; its
-// `final_goal` is gone (#689). Version 329 records carry it.
-// 330 -> 331: objects keep the custom sound trigger action 99 assigns
-// (ObjectClass+0x64), and each type-7 trigger action its resolved sound
-// (+0x90). Version 330 records lack these fields.
-// 331 -> 332: the C4 order's walk-up intent (`c4_plant`) is gone; a planter
-// is on Sabotage with the building as its NavCom. Version 331 records carry it.
-// 332 -> 333: the fog keeps the sight a computer house's RevealToAll building
-// shows the current house (UpdateReveal's alternate house). Version 332
-// records lack this map.
-// 333 -> 334: HouseTracking saves the house's war factory count (+0x160) and
-// each building whether it counts there. Version 333 records lack them.
-// 334 -> 335: ordinary Teleport delay uses a global-frame CdTimer, and
-// a cargo owner retains its independent boarding/inside carrier relation.
-// 335 -> 336: save the processed Rules/resource inputs and the local view
-// (bookmarks, selection, groups, Follow, cursor modes) needed to restore through the same
-// owners from a cold menu or another map; the Tactical view keeps its
-// committed center instead of the window-dependent top-left. Version 335
-// records lack these inputs.
-// 336 -> 337: objects keep the Magnetron's links and drop credit
-// (Techno+2AC/+2B0/+427/+428, Foot+6AE), and the warp credit house (+42C)
-// moves from the Chrono Warp payload to the object. Version 336 records
-// carry the payload's house.
-// 337 -> 338: objects keep the deactivated latch (Techno+1C8), buildings
-// whether they count as a powered center (+662), and houses that count
-// (+2D8). Version 337 records lack them.
-// 338 -> 339: every bullet keeps its ProximityDetector reference (+0xD0),
-// which a FlakScatter= Inviso shot's moved placement sets; guidance no longer
-// carries it. Version 338 records keep it in the guidance of guided bullets.
-// 339 -> 340: a bounce body keeps its native orientation and rotation
-// quaternions (BounceClass+0x30/+0x40) instead of the axis and angle that
-// built them. Version 339 records carry the axis and angle.
-// 340 -> 341: each object keeps its attack-move order, the Foot MegaMission
-// (+0x5C4..+0x5D1), in place of the OrderIntent goal. Version 340 records
-// carry the goal.
-// 341 -> 342: each House retains its tech-tree recheck byte (+1FC).
-// Version 341 records cannot preserve a pending strip cancellation decision.
-// 342 -> 343: objects retain the complete Object fall state (rate, parachute,
-// falling and IsABomb), and falling runs inside MissionAI before dispatch.
-// 343 -> 344: each Techno retains its one-shot deploy-voice suppression
-// (+4F8); Rules retain registered Harvest/Deploy/Undeploy scalar voice slots.
-// Version343 lacks these bincode fields and cannot resume their history.
-// 344 -> 345: particle speed and system spawn accumulator retain native f32
-// bits; children retain individual Display IDs and System Alive/Limbo state;
-// the existing Rules registry retains WindDirection across passes. The
-// superseded animation counter is removed; native cadence uses UID/EC.
-// Old records cannot resume these scalar authorities.
-// 345 -> 346: pending Move and AttackMove commands drop the unread queue flag,
-// and a Move onto an object is a new Command variant; both change the bincode
-// schema.
-// 346 -> 347: a pending AttackMove carries the event's target and destination
-// tokens, and MegaDestination may name an object.
-// 347 -> 348: the Simulation retains whether it batches code-2 re-path
-// searches and the Foots waiting for the next frame's batch.
-// 348 -> 349: the move-order adapter (`MovementTarget`) is gone (#689); Foot's
-// NavCom and the locomotor own every order. Version 348 records carry it.
-// 349 -> 350: each waiting Foot names the request it repeats, no-queue or
-// code-2 ladder.
-// 350 -> 351: a Building's animation art fields move into one record
-// (`BuildingArt`), which changes the entity's field order.
-// 351 -> 352: the locomotor's altitude mirror is gone (#692); an object's
-// height is its Location Z. Version 351 records carry it.
-// 352 -> 353: each object carries its infantry house-tracking latches
-// (`Techno+0x438/+0x439`), which changes the entity's field order.
-// 353 -> 354: integrate the ALL01 r6 branch (its fork-local schema345).
-// TriggerType Event+54/LiveTrigger+2C and capture-transfer state, active
-// ChronoScreenEffect, initial House Techno type/cell records, shared result
-// CdTimer, automatic-garrison seek691, PatrolScan and Team transport-origin
-// inputs retain their existing owners. Main353 and r6/345 records do not
-// share this integrated bincode layout and are both refused. The one House
-// tech-tree recheck stays main's authority; EntityStore indexes remain derived.
-// 354 -> 355: the path batch keeps where its next capped pass starts.
-// 355 -> 356: the Foot navigation list (`+0x5AC`) and its loop flag (`+0x6B1`).
-// 356 -> 357: the voxel HVA and OREGATH frame clocks are gone (#1593); draws
-// take both frames from Foot+0x538. Version 356 records carry them.
-// 357 -> 358: the process-resident BuildingType retains TargetCoordOffset.
-// Its three signed dwords change the saved type-registry layout.
-// 358 -> 359: ordered Tesla charger pointers, the separate Building weapon
-// latch and Foot's automatic charging-target flag survive saves.
-// 359 -> 360: Airstrike manager state/links, tint clocks and sampled building
-// animation light; retained per-pass type settings and type-based aircraft gate.
-// The unused MissionLeaf airstrike boolean is removed.
-// 360 -> 361: retained RadialFireSegments per-layer type state and the
-// independent per-firer radial launch counter (Techno+43C).
-// 361 -> 362: Bullet targets can retain a Terrain object identity. Its target
-// tag and strong-reference validation differ from Entity and Cell targets.
-// 362 -> 363: Scenario owns the campaign countdown and authored caption, and
-// sidebar entry flash deadlines and redraw scheduling survive saves.
-// 363 -> 364: Bullet constructor type/Bright and the independently nullable
-// installed WeaponType replace the conflated payload weapon identity.
-// 364 -> 365: RadSite creation order survives saves; native updates reverse
-// creation order, which affects rounded field subtraction and later damage.
-// 365 -> 366: process scalable Bullet order and retained type cadence values.
-// 366 -> 367: authoritative PlanMgr nodes/tokens and local planning input mode.
-// 367 -> 368: ordered Techno DistributedFire candidates/scores and history.
-// 368 -> 369: tracked navy scalar and retained Unit Naval/Passengers admission.
-// 369 -> 370: VoxelAnim retains its constructor-assigned native numeric ID.
-// 370 -> 371: Parasite retains grapple Anim, phase/stage/delay/invalidation.
-// 371 -> 372: Rocking retains its four binary32 fields without a synthetic
-// ship-rocking flag; tiny impulse rates affect the next native damping branch.
-// 372 -> 373: House retains four class-local last-built type indices.
-// 373 -> 374: the Simulation retains whether it batches target scans.
-// 374 -> 375: CaptureManager retains its overload pip countdown.
-// 375 -> 376: Foots retain their shared signed Ammo and chrono reinforcements
-// retain the pending Teleport state (Techno+280).
-// 376 -> 377: sight cache254/260 persists independently of latch250.
-// Earlier saves omitted inactive caches and are rejected, not reconstructed.
-// 377 -> 378: per-Super recharge override and House scripted offensive target.
-// 378 -> 379: Factory queue cleanup runs at Building lifecycle callbacks;
-// StartNext uses forced Begin admission and Abandon retains held identity
-// through destruction. Layout is unchanged; older sale continuations differ.
-// 379 -> 380: live type TechLevels and the process registry's global type order.
-// 380 -> 381: Factory+70 owns user hold and completion; the duplicate semantic
-// manual flag is removed. Older paused factories have incompatible state/layout.
-// 381 -> 382: retained Secret Lab rules/lists, House membership and per-
-// building fallback production. Startup assignment must not repeat on load.
-// 382 -> 383: Factory+71 persists automatic-recovery eligibility separately
-// from +70 suspension. System holds must survive load and retain their owner.
-// 383 -> 384: saved rules retain each Weapon's damage and Warhead reference.
-// 383 -> 385: Drive retains its native +64 straight/crush track flag.
-// 385 -> 386: combine retained Weapon fields with Drive's track state.
-// 385 -> 386: retained Building primary flags are sets per owner/category.
-// Manual448160 preserves limbo peers and queued events can toggle them later.
-// 386 -> 387: combine retained Weapon, Drive and Building primary layouts.
-// 387 -> 388: RadSite retains its independent light countdown, activation
-// tint/decrement and current source. Loading must not reconstruct lifetime age.
-// 388 -> 389: particle-system offsets retain constructor-relative coordinates.
-// Older saves stored zero even for an offset smoke source; resuming their new
-// follow behavior would snap it to the owner, so reject that continuation.
-// 389 -> 390: saved RulesClass AV ambient rate/step retain original raw fields.
-// 390 -> 391: retained ColorAdd slots and four AudioVisual selectors are
-// serialized with the existing processed Rules owner; older layouts lack them.
-// 391 -> 392: existing processed Rules owner retains the three survivor
-// divisors across scene/Type resets; older registry layouts lack those fields.
-// 392 -> 393: Unit transport entry runs after locomotor arrival. Earlier
-// cargo can retain an active pre-boarding Drive track; resuming it after
-// unload returns the passenger to the old shore. Do not migrate that state.
-// 393 -> 394: Mouse-save sidebar records retain pending request1/2 and
-// House prediction gates; NoInit resets only their predicted clocks.
-// Bumped 394 -> 395: retained General.MaximumCheerRate in Rules/registry
-// serialization; Cheer command appended without renumbering existing variants.
-// 395 -> 396: Techno+308 stores its actual Spark system handle instead of
-// an approximate expiry tick. Particle systems retain a TargetKind (including
-// Cells) instead of an entity-only target, and retain removed child bodies
-// until the common deferred drain. Old layouts cannot resume these states.
-// 396 -> 397: retained Particle bodies preserve Object+81 independently of
-// Alive, so the shared Object Limbo/UnInit owners can resume either boundary.
-// 397 -> 398: House retains per-family/type successful-production history.
-// Older saves contain its score total only and cannot reconstruct lifetime
-// BuildLimit admission from the currently owned objects.
-// 398 -> 399: PowerState no longer serializes the obsolete theoretical total.
-// Power's rated input is read from the already-saved canonical House list.
-// 399 -> 400: local view carries retained Power bands/cache/Flash/active state.
-// 400 -> 401: retain native scenario House names independently of internal
-// owner keys and display handles; authored-object admission cannot reconstruct
-// them from mutable human flags or country after loading.
-// 401 -> 402: retained DiskLaser bodies and Rules+28C charge-up reference.
-// 402 -> 403: resident Map+D4 ordered pending bridge-collapse coordinates.
-// 403 -> 404: retained House+310 capacity and Building Storage type input.
-// 404 -> 405: retained Rules+1866 ChronoBeamColor in saved processed rules.
-// 405 -> 406: preserve live Action71/72 ambient Rules inputs across saves.
-// 406 -> 407: FogState no longer saves a copy of the House ally graph; the
-// saved Simulation::house_alliances is the only one.
-// 407 -> 408: a saved Wave's endpoints, corners and direction follow
-// FireAt's constructor order and GetFLH, and its fades keep double precision.
-// 408 -> 409: retain ordered DropZoneAnim/DropZoneRadius in saved Rules resources.
-// 409 -> 410: Command::ForceAttack is gone (it was the Attack event under a
-// second name), which renumbers the later Command variants in pending
-// CommandEnvelope payloads.
-// 410 -> 411: retain House preferred superweapon target kind and independent
-// trigger-controlled Building controller/original-owner House pointers.
-// 411 -> 412: processed UnitTypes retain SpeedType across admitted Rules
-// passes. Older records lack this field and use the wrong vehicle defaults.
-// 412 -> 413: retained Super one-time and provider-loss/hold flags.
-// 413 -> 414: retain the global GasCloudSys reference and Particle CC/D0/D4 motion words.
-// 414 -> 415: a path batch's code-2 re-paths keep the urgency they
-// registered at, and the batch keeps those a capped pass left out.
-// 415 -> 416: retain Building+660 independently of Temporal state.
-// 416 -> 417: retain control-node line timers and ordered Rules/Type line settings.
-// 417 -> 418: saved map presentation retains its parsed campaign `[Ranking]`
-// par times and result strings for the standalone score page.
-// 418 -> 419: Drive and Ship no longer save head-to and handoff occupation
-// footprints; only the removed vehicle-occupation index read them. The raw
-// ground/deck bytes remain the occupation record.
-// 419 -> 420: retain Infantry+6D8 Psycho independently of Techno Berserk.
-// 420 -> 421: process Rules state retains General.TalkBubbleTime.
-// 421 -> 422: the drain link retains the drainer's DrainAnim (Techno+0x1D4).
-// 422 -> 423: processed TechnoTypes retain their per-pass weapon block and
-// ParticleSystemTypes their HoldsWhat binding in saved Rules resources.
-// 423 -> 424: processed Types retain their Image, DeathWeapon, DeploysInto,
-// occupy weapons, SuperWeapon WeaponType and ShrapnelWeapon, and process
-// Rules state its [CombatDamage] DeathWeapon.
-// 424 -> 425: Scenario retains TrainCrate, TruckCrate and the raw ice-growth byte.
-// 425 -> 426: retain the Techno+0x12C Behind indicator Anim.
-// 426 -> 427: retained IonBlast rules inputs, pending damaging blasts and Foot draw lift.
-// 427 -> 428: the Infantry terminal policy is gone from TerminalLifetime,
-// which keeps only the dying mark; an infantry corpse is an ordinary
-// IsAlive object at Health 0.
-// 428 -> 429: saved dynamic terrain cells keep one CellClass+0xEC LandType
-// (and its pre-overlay base) instead of two copies of it.
-// 429 -> 430: processed Types retain their remaining Type references
-// (TechnoType pointers and lists, Weapon anims and particle system,
-// SuperWeapon AuxBuilding, ParticleType, VoxelAnimType and AnimType
-// references, Warhead DebrisTypes), and process Rules state keeps its
-// RulesClass Type pointers and lists, the crate and rocket ones included.
-// 430 -> 431: saved dynamic terrain cells drop the terrain-class, water,
-// cliff, rough and road copies of that LandType.
-// 431 -> 432: the VERA-only Boarding passenger relation is gone, which
-// renumbers the later PassengerRole and carrier-relation variants.
-// 432 -> 433: a NavCom-family
-// reference (NavCom, its auxiliary, SuspendedNavCom, NavQueue and navigation
-// list) is a Cell or an Object. The Entity and Building spellings of an
-// Object pointer are gone, which renumbers the reference's variants.
-// 433 -> 434: saved scenario resources drop their copies of the map's
-// [Triggers], [Events] and [Actions] records and the always-empty trigger
-// graph. The trigger runtime saved with the Simulation is the only owner of
-// those definitions.
-// 434 -> 435: retain Scenario34A7, ScenarioPause62C/630/prior lock,
-// and the credit of the unrestored physical Radar video queue.
-// 435 -> 436: process-resident Rules retain IRepairStep, URepairRate and
-// IRepairRate across layer reads, saved state and destructive Type resets.
-// 436 -> 437: independent BuildingLight objects and retained Spotlight rules.
-// 437 -> 438: retain the GenericWarhead payload reference in processed rules.
-// 438 -> 439: retain optional Ares auxiliary and negative building lists.
-// 439 -> 440: UnitDelivery rules, pending effects and per-building base override.
-// 440 -> 441: Cargo SizeLimit and each passenger Size use binary64; the cached
-// CargoTotalSize is the signed low-32-bit result of native's ordered per-entry
-// FTOL. The positional passenger-size payload widened, so a v440 body cannot
-// be decoded under this schema.
-// 441 -> 442: FootSpeedState retains the native Foot+6B5 crush flag shared
-// by Drive/Ship speed prefixes and Techno RockingUpdate.
-// 442 -> 443: exact session mode and multiplayer launch/observer state;
-// retained CompEasyBonus rules scalar and House Flag_To_Die latch.
-// The positional session/House payload changed.
-// 443 -> 444: retained fixed-ART TechnoType ShadowIndex in the process
-// registry and its runtime ObjectType projection.
-// 444 -> 445: processed BuildingTypes retain the native signed integer light
-// fields across per-layer reads. Their positional rules-state payload replaces
-// the merged-INI float light projection, so v444 cannot use this schema.
-// 445 -> 446: the House array saves its registration order beside the House
-// states; the session no longer carries a separate copy of that order.
-// 446 -> 447: terrain objects and ore growth leave the production state for
-// their own owners (the terrain object store, the ore growth config/state).
-// 447 -> 448: GameEntity retains UnitClass's signed firing counter across
-// LimboLaunch/parasite release. Its positional entity payload grows by a dword.
-// 448 -> 449: the Techno disguise state retains the firing blink timer
-// (+1EC/+1F4); WeaponType retains DisguiseFakeBlinkTime= and [General]
-// DisabledDisguiseDetectionPercent=.
-// 449 -> 450: the retained `[Basic]` section carries Scenario+0x1440 `Lose`,
-// the movie campaign defeat plays before its retry prompt.
-// 450 -> 451: HouseState retains House+0x1602A's UI name source (handle,
-// TXT_COMPUTER, map UIName= key or the type's UIName).
-// 451 -> 452: dynamic terrain cell records no longer carry a copy of the
-// cell's overlay identity and state byte, in its bridge facts or its bridge
-// layer; OverlayGrid alone holds them.
-// 452 -> 453: GameEntity retains a building's NoSurvivor byte (+0x6E0) for the
-// second SpawnSurvivors of a building that outlives its killing blow.
-// 453 -> 454: HouseState retains House+0x248, the executed-EXIT flag.
-// 454 -> 455: BunkerState gains WallsUp (UpdateBunker state 5) before Occupied.
-// 455 -> 456: retain paid two-stage selection sequences and one-use tickets
-// on Super instances, plus ticketed completion/cancellation command variants.
-// Positional bincode cannot default the new per-instance fields in v455 saves.
-// 456 -> 457: the retained type registry stores Warhead+0xA0 after each
-// reached ReadINI, including its per-layer literal default; its positional
-// payload and the effective rules configuration hash change.
-// 457 -> 458: retained upgrade rules, host-owned installed type slots and
-// scenario-owned mutable BuildingType upgrade animation names. Temporary
-// upgrade objects no longer retain a competing authored-building identity.
-// 458 -> 459: retain the build's extension capability in Rules and the save
-// header; reject cross-capability saves before deserializing Simulation.
-// 459 -> 460: retained Ares generic prerequisite definitions and custom group
-// references in typed TechnoType prerequisites.
-// 460 -> 461: a Tiberium queue's heap is the shared native heap: its slots
-// lose the unused slot 0 and its size word replaces the queue's capacity.
-// 461 -> 462: Command::MinerReturn, RepairAtDepot, EnterTransport, EnterBunker
-// and HarvestCell are gone (each was the MEGAMISSION event under a second
-// name), which renumbers the later Command variants in pending
-// CommandEnvelope payloads.
-// 462 -> 463: retained ObjectType armor IDs, Ares armor registry and independent
-// Warhead extension records; the capability metadata header still starts at 459.
-// 463 -> 464: the retained type registry keeps each InfantryType's
-// ReadSequenceData sound pairs from every reached pass.
-// 464 -> 465: an Anim keeps its Temporal erase pause (+0x11A) and no longer
-// keeps a DoubleThick copy; DrawIt reads the type's.
-// 465 -> 466: retain Techno's constructor house independently of its current
-// owner; Building ChangeOwner uses it to decide the computer capture sale.
-// 466 -> 467: bunker entry uses radio contacts, removing the separate
-// Approaching link, ArriveWait enum variant and installing_unit payload.
-// Enum ordinals and the positional building runtime payload both change.
-// 467 -> 468: retained Country ParentCountry+98 in processed Rules records.
-// 468 -> 469: retained Country VeteranInfantry/VeteranUnits/VeteranAircraft
-// type lists in processed Rules records.
-// 469 -> 470: ScenarioSession retains the WOL tournament value, the clan
-// lists and FixedAlliance.
-// 470 -> 471: retained Type.Nominal and Infantry+6D9 building-survivor flag.
-// 471 -> 472: ScenarioSession saves the independent signed Scenario.Side
-// (+34B8), used to rebind EVA after successful restoration. The process Vox
-// cache and ordinary queue nodes are not native saved state.
-// 472 -> 473: Ares HouseTracking retains its signed KeepAlive event count;
-// constructor-bound TrackingFacts retains each object's removal admission.
-// 473 -> 474: retain Building+53C across save/load and live sale callbacks.
-// 474 -> 475: optional Ares SideExt phase/MIX/Yuri filename retained state.
-const SNAPSHOT_VERSION: u32 = 475;
+/// The layout this build writes and accepts: a digest of the
+/// [`save_codec::layout`] description of [`GameSnapshot`], traced once per
+/// process. It changes whenever a saved type, field or enum variant does, so
+/// nothing bumps it by hand and two branches cannot share one id for different
+/// layouts. A change in what an unchanged field means renames that field. The
+/// top bit is always set; the hand-kept counter used before stayed far below
+/// it, so those saves read as another layout.
+fn snapshot_layout() -> u32 {
+    static LAYOUT: OnceLock<u32> = OnceLock::new();
+    *LAYOUT.get_or_init(|| {
+        let description = save_codec::layout::describe::<GameSnapshot>()
+            .unwrap_or_else(|error| panic!("cannot describe the snapshot layout: {error}"));
+        let digest = crate::util::sha256::sha256_bytes(description.as_bytes());
+        u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]) | 0x8000_0000
+    })
+}
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1379,8 +165,8 @@ pub struct GameSnapshot {
     pub product_magic: [u8; 8],
     /// Public envelope contract. This changes only when the outer prefix does.
     pub envelope_version: u32,
-    /// Format version — checked on load to reject incompatible saves.
-    pub version: u32,
+    /// [`snapshot_layout`] of the writing build; load rejects any other.
+    pub layout: u32,
     /// Player-authored save description used by the load-game list.
     pub description: String,
     /// Hash of the map file — caller verifies on load to ensure same map.
@@ -1417,7 +203,7 @@ pub struct GameSnapshot {
 pub struct GameSnapshotHeader {
     pub product_magic: [u8; 8],
     pub envelope_version: u32,
-    pub version: u32,
+    pub layout: u32,
     pub description: String,
     pub map_hash: u64,
     pub rules_hash: u64,
@@ -1446,7 +232,7 @@ struct LegacyGameSnapshotHeader {
 struct GameSnapshotPreamble {
     product_magic: [u8; 8],
     envelope_version: u32,
-    version: u32,
+    layout: u32,
 }
 
 /// Errors that can occur during snapshot deserialization.
@@ -1460,8 +246,8 @@ pub enum SnapshotError {
     ProductMismatch { found: [u8; 8] },
     #[error("snapshot envelope version {found} does not match expected {expected}")]
     EnvelopeVersionMismatch { expected: u32, found: u32 },
-    #[error("snapshot version {found} does not match expected {expected}")]
-    VersionMismatch { expected: u32, found: u32 },
+    #[error("save layout {found:#010x} does not match this build's {expected:#010x}")]
+    LayoutMismatch { expected: u32, found: u32 },
     #[error("snapshot capability {found:?} does not match this build's {expected:?}")]
     CapabilityMismatch {
         expected: RulesCompatibility,
@@ -1710,7 +496,7 @@ type SavedPresentationRef<'a> = (
 struct GameSnapshotRef<'a> {
     product_magic: [u8; 8],
     envelope_version: u32,
-    version: u32,
+    layout: u32,
     description: String,
     map_hash: u64,
     rules_hash: u64,
@@ -1747,7 +533,7 @@ impl GameSnapshot {
         let snapshot = GameSnapshotRef {
             product_magic: SNAPSHOT_PRODUCT_MAGIC,
             envelope_version: SNAPSHOT_ENVELOPE_VERSION,
-            version: SNAPSHOT_VERSION,
+            layout: snapshot_layout(),
             description: description.to_string(),
             map_hash,
             rules_hash,
@@ -1863,7 +649,7 @@ impl GameSnapshot {
         )
     }
 
-    /// Deserialize a current-version snapshot without content validation.
+    /// Deserialize a current-layout snapshot without content validation.
     ///
     /// This exists for internal tests and diagnostics. Production restoration
     /// uses [`Self::load_with_resources`] and validates the incoming resources.
@@ -1885,7 +671,7 @@ impl GameSnapshot {
 
     /// Deserialize only when the save belongs to the exact active content.
     ///
-    /// Version and compatibility metadata are rejected before the simulation
+    /// Layout and compatibility metadata are rejected before the simulation
     /// body is admitted. The duplicated preview metadata must also agree with
     /// `ScenarioSession`; no warning/continue or zero-hash sentinel exists.
     /// The returned Scenario RNG is the canonical seed-zero state. Main/MapGen
@@ -1960,15 +746,15 @@ impl GameSnapshot {
         Ok(snapshot)
     }
 
-    /// Admit a current-version header without deserializing Simulation. The
-    /// fixed preamble rejects incompatible schemas before any variable-length
-    /// header fields; browser metadata has a separate compatibility policy.
+    /// Admit a current-layout header without deserializing Simulation. The
+    /// fixed preamble rejects other layouts before any variable-length header
+    /// fields; browser metadata has a separate compatibility policy.
     pub fn read_header(bytes: &[u8]) -> Result<GameSnapshotHeader, SnapshotError> {
         let preamble = Self::read_preamble(bytes)?;
-        if preamble.version != SNAPSHOT_VERSION {
-            return Err(SnapshotError::VersionMismatch {
-                expected: SNAPSHOT_VERSION,
-                found: preamble.version,
+        if preamble.layout != snapshot_layout() {
+            return Err(SnapshotError::LayoutMismatch {
+                expected: snapshot_layout(),
+                found: preamble.layout,
             });
         }
         let header: GameSnapshotHeader = save_codec::deserialize(bytes)?;
@@ -1983,15 +769,17 @@ impl GameSnapshot {
 
     /// SaveInfo681840/559ED0 reads metadata even when its internal version is
     /// incompatible. Browser5596A0 sorts those rows before5599DF hides them;
-    /// full load still requires the strict current-version header above.
+    /// full load still requires the strict current-layout header above.
     pub fn read_metadata(bytes: &[u8]) -> Result<GameSnapshotHeader, SnapshotError> {
         let preamble = Self::read_preamble(bytes)?;
-        if preamble.version < 459 {
+        // Counter saves before 459 carry no capability marker. A layout id
+        // always has its top bit set, so it is never below 459.
+        if preamble.layout < 459 {
             let header: LegacyGameSnapshotHeader = save_codec::deserialize(bytes)?;
             return Ok(GameSnapshotHeader {
                 product_magic: header.product_magic,
                 envelope_version: header.envelope_version,
-                version: header.version,
+                layout: header.version,
                 description: header.description,
                 map_hash: header.map_hash,
                 rules_hash: header.rules_hash,
@@ -2031,7 +819,7 @@ impl GameSnapshotHeader {
     }
 
     pub fn is_compatible(&self) -> bool {
-        self.version == SNAPSHOT_VERSION && self.compatibility.matches_build()
+        self.layout == snapshot_layout() && self.compatibility.matches_build()
     }
 }
 
@@ -4343,7 +3131,7 @@ mod tests {
         let bytes = save_codec::serialize(&GameSnapshotHeader {
             product_magic: SNAPSHOT_PRODUCT_MAGIC,
             envelope_version: SNAPSHOT_ENVELOPE_VERSION,
-            version: SNAPSHOT_VERSION,
+            layout: snapshot_layout(),
             description: "current fixture".to_string(),
             map_hash: 1,
             rules_hash: 2,
@@ -4371,7 +3159,7 @@ mod tests {
         let header = GameSnapshot::read_header(&bytes).expect("current VERA header");
         assert_eq!(header.product_magic, SNAPSHOT_PRODUCT_MAGIC);
         assert_eq!(header.envelope_version, SNAPSHOT_ENVELOPE_VERSION);
-        assert_eq!(header.version, SNAPSHOT_VERSION);
+        assert_eq!(header.layout, snapshot_layout());
         assert_eq!(header.compatibility, RulesCompatibility::default());
         assert_eq!(header.description, "Hold the northern ridge");
         assert_eq!(header.map_name, "OFFICIAL.MAP");
@@ -4418,13 +3206,13 @@ mod tests {
         ))
         .unwrap();
         let header = GameSnapshot::read_metadata(&bytes).unwrap();
-        assert_eq!(header.version, 457);
+        assert_eq!(header.layout, 457);
         assert_eq!(header.description, "older layout");
         assert_eq!(header.map_name, "OLD.MAP");
         assert!(!header.is_compatible());
         assert!(matches!(
             GameSnapshot::read_header(&bytes),
-            Err(SnapshotError::VersionMismatch { found: 457, .. })
+            Err(SnapshotError::LayoutMismatch { found: 457, .. })
         ));
     }
 
@@ -4433,7 +3221,7 @@ mod tests {
         let foreign_preamble = GameSnapshotPreamble {
             product_magic: *b"NOTVERA\0",
             envelope_version: SNAPSHOT_ENVELOPE_VERSION,
-            version: SNAPSHOT_VERSION,
+            layout: snapshot_layout(),
         };
         let preamble_only = save_codec::serialize(&foreign_preamble).expect("foreign preamble");
 
@@ -4448,7 +3236,7 @@ mod tests {
         let wrong_public = GameSnapshotPreamble {
             product_magic: SNAPSHOT_PRODUCT_MAGIC,
             envelope_version: SNAPSHOT_ENVELOPE_VERSION + 1,
-            version: SNAPSHOT_VERSION,
+            layout: snapshot_layout(),
         };
         let preamble_only = save_codec::serialize(&wrong_public).expect("public-version preamble");
         assert!(matches!(
@@ -4462,16 +3250,16 @@ mod tests {
         let wrong_internal = GameSnapshotPreamble {
             product_magic: SNAPSHOT_PRODUCT_MAGIC,
             envelope_version: SNAPSHOT_ENVELOPE_VERSION,
-            version: SNAPSHOT_VERSION - 1,
+            layout: snapshot_layout() ^ 1,
         };
         let preamble_only =
             save_codec::serialize(&wrong_internal).expect("schema-version preamble");
         assert!(matches!(
             GameSnapshot::load(&preamble_only),
-            Err(SnapshotError::VersionMismatch {
-                expected: SNAPSHOT_VERSION,
+            Err(SnapshotError::LayoutMismatch {
+                expected,
                 found,
-            }) if found == SNAPSHOT_VERSION - 1
+            }) if expected == snapshot_layout() && found == snapshot_layout() ^ 1
         ));
     }
 
@@ -5201,8 +3989,8 @@ mod tests {
             let description = format!("house-ai-activation-{bits}");
             let bytes = GameSnapshot::save(&sim, 0, 0, &description, 0);
             assert_eq!(
-                GameSnapshot::read_header(&bytes).unwrap().version,
-                super::SNAPSHOT_VERSION
+                GameSnapshot::read_header(&bytes).unwrap().layout,
+                super::snapshot_layout()
             );
             let restored = GameSnapshot::load(&bytes)
                 .expect("current v115 snapshot")
@@ -5227,8 +4015,8 @@ mod tests {
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "alternate-base-center", 0);
         assert_eq!(
-            GameSnapshot::read_header(&bytes).unwrap().version,
-            super::SNAPSHOT_VERSION
+            GameSnapshot::read_header(&bytes).unwrap().layout,
+            super::snapshot_layout()
         );
         let restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
 
@@ -5315,8 +4103,8 @@ mod tests {
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "naval-build-const", 0);
         assert_eq!(
-            GameSnapshot::read_header(&bytes).unwrap().version,
-            super::SNAPSHOT_VERSION
+            GameSnapshot::read_header(&bytes).unwrap().layout,
+            super::snapshot_layout()
         );
         let restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
 
@@ -5380,8 +4168,8 @@ mod tests {
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "base-plan", 0);
         assert_eq!(
-            GameSnapshot::read_header(&bytes).unwrap().version,
-            super::SNAPSHOT_VERSION
+            GameSnapshot::read_header(&bytes).unwrap().layout,
+            super::snapshot_layout()
         );
         let restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
         assert_eq!(restored.houses[&owner].base_plan().percent_built(), -17);
@@ -5513,8 +4301,8 @@ mod tests {
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "gsi_04_05_strategy", 0);
         assert_eq!(
-            GameSnapshot::read_header(&bytes).unwrap().version,
-            super::SNAPSHOT_VERSION
+            GameSnapshot::read_header(&bytes).unwrap().layout,
+            super::snapshot_layout()
         );
         let restored = GameSnapshot::load(&bytes).expect("v102 snapshot").sim;
         let emergency = restored.houses[&owner].strategy_emergency();
@@ -5951,8 +4739,8 @@ mod tests {
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let expected = sim.state_hash();
         assert_eq!(
-            GameSnapshot::read_header(&bytes).unwrap().version,
-            SNAPSHOT_VERSION
+            GameSnapshot::read_header(&bytes).unwrap().layout,
+            snapshot_layout()
         );
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
         restored.restore_after_snapshot_load().unwrap();
@@ -6236,7 +5024,7 @@ mod tests {
 
         let bytes = GameSnapshot::save(&sim, 1, 2, "speed.map", 0);
         let header = GameSnapshot::read_header(&bytes).expect("current GameSpeed header");
-        assert_eq!(header.version, SNAPSHOT_VERSION);
+        assert_eq!(header.layout, snapshot_layout());
         let mut restored = GameSnapshot::load(&bytes)
             .expect("current GameSpeed snapshot")
             .sim;
@@ -6496,8 +5284,8 @@ mod tests {
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "house_no_ore_latch", 0);
         assert_eq!(
-            GameSnapshot::read_header(&bytes).unwrap().version,
-            super::SNAPSHOT_VERSION
+            GameSnapshot::read_header(&bytes).unwrap().layout,
+            super::snapshot_layout()
         );
         let restored = GameSnapshot::load(&bytes)
             .expect("v132 house latch snapshot")
@@ -6522,8 +5310,8 @@ mod tests {
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "house_eva_advice", 0);
         assert_eq!(
-            GameSnapshot::read_header(&bytes).unwrap().version,
-            super::SNAPSHOT_VERSION
+            GameSnapshot::read_header(&bytes).unwrap().layout,
+            super::snapshot_layout()
         );
         let restored = GameSnapshot::load(&bytes)
             .expect("v133 house EVA snapshot")
@@ -6563,8 +5351,8 @@ mod tests {
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "gsi_04_18_shroud", 0);
         assert_eq!(
-            GameSnapshot::read_header(&bytes).unwrap().version,
-            super::SNAPSHOT_VERSION
+            GameSnapshot::read_header(&bytes).unwrap().layout,
+            super::snapshot_layout()
         );
         let restored = GameSnapshot::load(&bytes).expect("v65 SpySat snapshot").sim;
 
@@ -6611,8 +5399,8 @@ mod tests {
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "gsi_04_15_tube", 0);
         assert_eq!(
-            GameSnapshot::read_header(&bytes).unwrap().version,
-            super::SNAPSHOT_VERSION
+            GameSnapshot::read_header(&bytes).unwrap().layout,
+            super::snapshot_layout()
         );
         let mut restored = GameSnapshot::load(&bytes)
             .expect("current tube snapshot")
@@ -6930,8 +5718,8 @@ mod tests {
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "gsi_04_07_air_spatial", 0);
         assert_eq!(
-            GameSnapshot::read_header(&bytes).unwrap().version,
-            super::SNAPSHOT_VERSION
+            GameSnapshot::read_header(&bytes).unwrap().layout,
+            super::snapshot_layout()
         );
         let mut restored = GameSnapshot::load(&bytes).expect("v60 snapshot").sim;
         restored
@@ -6991,8 +5779,8 @@ mod tests {
         assert_eq!(
             GameSnapshot::read_header(&bytes)
                 .expect("current snapshot header")
-                .version,
-            super::SNAPSHOT_VERSION
+                .layout,
+            super::snapshot_layout()
         );
 
         let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
@@ -7053,8 +5841,8 @@ mod tests {
         assert_eq!(
             GameSnapshot::read_header(&bytes)
                 .expect("current snapshot header")
-                .version,
-            super::SNAPSHOT_VERSION
+                .layout,
+            super::snapshot_layout()
         );
 
         let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
@@ -7456,8 +6244,8 @@ mod tests {
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "gsi_04_16_edge_profile", 0);
         assert_eq!(
-            GameSnapshot::read_header(&bytes).unwrap().version,
-            super::SNAPSHOT_VERSION
+            GameSnapshot::read_header(&bytes).unwrap().layout,
+            super::snapshot_layout()
         );
         let restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
         assert!(
@@ -7556,8 +6344,8 @@ mod tests {
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "gsi_04_05_reservation", 0);
         assert_eq!(
-            GameSnapshot::read_header(&bytes).unwrap().version,
-            super::SNAPSHOT_VERSION
+            GameSnapshot::read_header(&bytes).unwrap().layout,
+            super::snapshot_layout()
         );
         sim.substrate
             .base_reservations
@@ -7631,8 +6419,8 @@ mod tests {
         assert_eq!(
             GameSnapshot::read_header(&bytes)
                 .expect("current snapshot header")
-                .version,
-            super::SNAPSHOT_VERSION
+                .layout,
+            super::snapshot_layout()
         );
 
         let mut restored_a = GameSnapshot::load(&bytes).expect("current snapshot").sim;
@@ -7697,8 +6485,8 @@ mod tests {
         assert_eq!(
             GameSnapshot::read_header(&bytes)
                 .expect("current snapshot header")
-                .version,
-            super::SNAPSHOT_VERSION
+                .layout,
+            super::snapshot_layout()
         );
         let restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
         let cell = restored
@@ -9242,7 +8030,7 @@ mod tests {
     }
 
     /// A cell TarCom survives serialize → deserialize as the same
-    /// `TargetKind::Cell` variant (regression for SNAPSHOT_VERSION 4 → 5).
+    /// `TargetKind::Cell` variant.
     #[test]
     fn cell_attack_target_round_trips_through_snapshot() {
         use crate::sim::combat::TargetKind;
@@ -9870,497 +8658,15 @@ mod tests {
         assert_eq!(list(&restored), vec![3, 1, 2], "fixup is idempotent");
     }
 
-    /// Concurrent-slice ladder: radiation took 20 -> 21, ScenarioSession (SC-2)
-    /// took 21 -> 22, S3 (per-object pre-death facing read + idle-Guard authority)
-    /// took 22 -> 23, the S4a authoritative flip (per-object mission commit
-    /// relocated to the AI host) took 23 -> 24, and S4b (the hashed
-    /// `damage_particle_live_until` `+0x308`-equivalent field) took 24 -> 25,
-    /// per-house native AI difficulty took 25 -> 26, and scheduler-owned
-    /// animation persistence took 26 -> 27, and independent serialized lifecycle
-    /// axes plus the pending-delete boundary took 27 -> 28, and exact Mission
-    /// state/readiness schema took 28 -> 29, and the Harvest handler
-    /// absorption (the miner FSM cursor retired into
-    /// `MissionCom.handler_state`) took 29 -> 30. Particle systems reached 34;
-    /// the consolidated Phase-0 persistence schema took 34 -> 35, and
-    /// lifecycle target/animation identity state took 35 -> 36, and omission
-    /// of process-global Main/MapGen RNG state took 36 -> 37, and serialized
-    /// Drive occupation footprints took 37 -> 38, and authoritative wall
-    /// ownership took 38 -> 39, and raw occupation bytes took 39 -> 40. Versions
-    /// 41..46 are a FORK: dev assigned them to MultiplayPassive, passive-acquire
-    /// bookkeeping, the infantry idle timer, the spawn-manager pool, and the
-    /// anim-overlay unit change, while the foundations line assigned the same
-    /// numbers to projectile state, trigger hashing, TeamClass state, piggyback
-    /// persistence, and typed special locomotors. The merge unified both as 47.
-    /// This pins it so a later accidental bump is caught. 47 -> 48 added
-    /// `DriveLocomotionRuntime::occupation_handoff` mid-struct; 48 -> 49 added
-    /// the serialized building hidden-occupation grid and per-entity profile;
-    /// 49 -> 50 added Building base reservations and per-entity spacing;
-    /// 50 -> 51 added airborne spatial-bucket membership and vector order;
-    /// 51 -> 52 added the mutable per-Techno armor multiplier; 52 -> 53 added
-    /// the Psychedelic berserk byte and signed timer; 53 -> 54 added the
-    /// persistent WasAttackedByEnemy byte; 54 -> 55 added per-house CurrentIQ;
-    /// 55 -> 56 added the Techno damage-Smoke ParticleSystem identity; 56 ->
-    /// 57 added controller-owned CaptureManager capacity and victim links; 57
-    /// -> 58 added per-house AngerStruct scores and selected enemy identity;
-    /// 58 -> 59 replaced the lossy C4 timer with the shared signed
-    /// C4/PostMortem timer and nullable retained source; 59 -> 60 added the
-    /// wall-sale command plus house/game-mode receiver inputs; 60 -> 61 added
-    /// ScenarioFlags no-damage; 61 -> 62 added exact object Z and the sole live
-    /// low-bridge TubeMovement payload; 62 -> 63 added the immutable
-    /// `Factory=BuildingType` house-edge callback profile; 63 -> 64 added the
-    /// aggregate per-house SpySat-active latch; 64 -> 65 added persistent
-    /// Scenario lighting transition authority and removed queued storm state;
-    /// 65 -> 66 added synchronized projectile/Techno/locomotor state; 66 -> 67
-    /// added Wave, aircraft-tail, guided-projectile, Cell visibility,
-    /// BuildingLight, and Anim state; 67 -> 68 added projectile collision,
-    /// Wave recorded-cell payloads, infantry owners, and fog/sensor state; 68
-    /// -> 69 added per-cell cloak-owner words; 69 -> 70 removed the terrain,
-    /// projectile, and wave local counters in favor of the global object-id
-    /// source; 70 -> 71 added ProjectileTarget's native null discriminant and
-    /// replaced frozen cell-target coordinates with stable CellClass identity;
-    /// 71 -> 72 added explicit product/public-envelope identity and the save
-    /// description to the common prefix; 72 -> 73 added persistent per-house
-    /// accepted outcome kind, SavourDelay target, and expiry latch; 73 -> 74
-    /// added the serialized pending-command EXIT payload; 74 -> 75 added the
-    /// generic Building delayed-fire signed counter and saved weapon slot; 75
-    /// -> 76 added AnimClass cell-drawer and terrain-attached bytes; 76 -> 77
-    /// added the persistent Foot SHP body-frame counter and Ship-owned
-    /// destination/target/current speed state used by its SHP movement slots;
-    /// 77 -> 78 made living GameEntity Animation timing hash-authoritative;
-    /// 78 -> 79 moved building-overlay finalization before the returned hash
-    /// and made the already-serialized overlay component hash-authoritative;
-    /// 79 -> 80 added the serialized/hash-authoritative terminal score snapshot;
-    /// 80 -> 81 added the pending-command offline GameSpeed transition payload;
-    /// 81 -> 82 made a serialized `AnimClass` coordinate owner-RELATIVE while
-    /// its `owner_entity` is set, matching
-    /// `AnimClass::SetOwnerObject @ 0x00424B50`. The layout is unchanged, so
-    /// old bytes still decode — and would then be re-resolved through the owner
-    /// a whole owner-coordinate away, moving every attached anim and the
-    /// returned hash with it. Cross-version load is refused for that reason;
-    /// 82 -> 83 collapsed `ParticleSystem`'s `marked_for_deletion` and
-    /// `done_spawning` into the single `done_spawning`, which is what
-    /// `ParticleSystemClass+0xF8` actually is — one byte set by the lifetime
-    /// countdown, the spawn cutoff and the spark countdown alike, and read by
-    /// both the spawn gate and the removal predicate. A serialized field is
-    /// gone, so old bytes no longer decode; 84 -> 85 retained signed map Size
-    /// height for action-40 normalization; 85 -> 86 added the mutable
-    /// playfield revision; 86 -> 87 added Techno+0x3D5 membership; 87 -> 88
-    /// added the exact historical sensor deposit needed for later removal;
-    /// 88 -> 89 adds the `ProjectileTarget::DummyCell` pointer kind while the
-    /// process-global dummy contents remain deliberately outside the payload;
-    /// 89 -> 90 adds exact allocated real-cell 0x1180 values to Scenario
-    /// persistence/hash plus the live dummy subset to the canonical hash,
-    /// while retaining the native dummy reconstruct-to-zero load behavior;
-    /// 90 -> 91 adds the held factory object's completion-accounted latch so
-    /// delivery retries cannot replay completion after load; 91 -> 92 adds the
-    /// persisted per-house BaseClass reservation bounds/vector while retaining
-    /// the native reconstruct-cleared reservation dummy mask; 92 -> 93 adds
-    /// House strategy emergency state; 93 -> 94 adds the House last-attacker
-    /// index plus persistent Techno recruitment/archive/base-response state;
-    /// 94 -> 95 adds TeamType priority/base-defence metadata and TeamClass
-    /// response latches/timer state; 95 -> 96 adds the ordered AIMD/map static
-    /// registries retained by TeamScriptVm; 96 -> 97 adds resolved ScriptType
-    /// and TaskForce source provenance; 97 -> 98 adds the resolved typed
-    /// AITrigger owner/object/scalar/mask/weight/difficulty payload; 98 -> 99
-    /// removes the falsely retained AITrigger token-4 scalar after binary
-    /// verification proved that token is required but discarded; 99 -> 100
-    /// adds the three post-load TeamType zone-derivation fields; 100 -> 101
-    /// adds category-distinct resolved TaskForce member identities; 101 -> 102
-    /// adds category-distinct resolved AITrigger token-6 identities; 102 -> 103
-    /// adds WaveClass state and destroyable-cliff replacement CellClass values;
-    /// 103 -> 104 adds the persistent Techno constructor word and authored
-    /// structure-upgrade parent/slot identity; 104 -> 105 adds active/stashed
-    /// Drive/Ship slope-transition state; 105 -> 106 rejects saves that would
-    /// resume under the corrected one-authority 104-lepton Cell ground formula
-    /// despite unchanged wire shape; 106 -> 107 adds unconditional shared-
-    /// dummy level/slope hash authority for active Spark queries; 107 -> 108
-    /// adds the packed House alternate base cell; 108 -> 109 adds the ordered
-    /// House BuildConst vector and immutable entity membership; 109 -> 110
-    /// adds ordered BasePlan state and immutable BuildingType facts; 110 -> 111
-    /// adds the distinct BaseClass plan center; 111 -> 112 adds the three House
-    /// AI activation latches; 112 -> 113 adds House AutocreateAllowed;
-    /// 113 -> 114 adds the raw 256-entry scenario-crate slot table and the
-    /// per-Anim Convert palette selector used by startup crate CellAnim;
-    /// 114 -> 115 adds retained wall-neighbor count authority and begins the
-    /// live shared-dummy overlay pair in the current hash schema; 115 -> 116
-    /// replaces the per-class tiberium heap vectors with the native queue
-    /// stores (entry array, heap of references, capacity) and adds the
-    /// `MapRect` the stores are sized from; 116 -> 117 folds the
-    /// disguise-detect counter plane and the cached `DetectDisguiseRange=`
-    /// deposit radius into the hash schema; 117 -> 118 inserts the
-    /// `UnitClass+0x6AF` turret rotation latch and the `TechnoClass+0x120`
-    /// last-fire frame mid-`GameEntity`, on every entity, which bincode cannot
-    /// decode from a shorter v117 record; 118 -> 119 gives `ProjectileGuidance`
-    /// the native `BulletClass` flight state — `Bullet+0x110` MaxSpeed,
-    /// `BulletTypeClass+0x2D0` Acceleration, the launch-frozen
-    /// `ProximityDetector` reference coordinate, and the `Bullet+0x118/+0x120`
-    /// closing-rate pair — and appends the `Vertical` trajectory variant. All
-    /// five guidance additions (`max_speed`, `acceleration`, `fuse_reference`,
-    /// `closing_frames`, `closing_accumulator_bits`) sit at the END of the
-    /// struct, but a v118 record still stops short of them, so bincode would
-    /// run off the end of every in-flight projectile; 119 -> 120 adds the
-    /// `VoxelAnimClass` debris registry to `ObjectSubstrate` and wires the
-    /// death-side debris producer, which changes both the hash schema and the
-    /// shared RNG cursor at every Techno death whose type authors a POSITIVE
-    /// `MaxDebris=` — the 83 stock sections that author `MaxDebris=0` stop at
-    /// `0x00702291` and still cost the stream nothing; 120 -> 123 moves combat
-    /// explosions off the legacy `WorldEffect` list and into `AnimStore`, so a
-    /// warhead `AnimList=` animation is now a serialized, checksum-folded
-    /// object where it used to be neither. 121 and 122 are skipped because
-    /// unmerged branches already stamp them — 121
-    /// `origin/feature/phase3-map-spatial-close`, 122
-    /// `origin/feature/phase3-map-spatial-integration` — and two branches
-    /// sharing one version number defeat the mismatch guard entirely.
-    /// 123 -> 126 adds the retained homing Inaccurate flag; 124 and 125 are
-    /// reserved by the concurrent parasite and audio-lane changes.
-    /// 130 -> 131 persists the session `TiberiumGrows`/`TiberiumSpreads`
-    /// flag bits and the `OreGrowthConfig` growth-reload selector.
-    /// 131 -> 132 persists the `HouseClass+0x242` harvester no-ore latch.
-    /// 132 -> 133 persists the `HouseClass+0x57D4` funds-nag timer and the
-    /// `[0xA8F040]` low-power guard.
+    /// Every saved type traces to one description, and its id can never equal
+    /// a counter from the hand-kept scheme.
     #[test]
-    fn current_snapshot_version_includes_voxel_shadow_index() {
-        // 133 -> 134: repair-depot docking layout (see the constant's comment).
-        // 134 -> 135: GameEntity ProduceCash timer + drain link pair (GSI-09.01).
-        // 135 -> 136: explicit retained Infantry terminal lifetime policy.
-        // Separate v137: ordinary ground-coordinate resume invariants.
-        // v138 combines both layouts without accepting prior local v137 saves.
-        // 138 -> 139: map-owned ScenarioSession FreeRadar authority.
-        // 139 -> 140: retained bridge record source Size for native zone lookup.
-        // 140 -> 141: retained real CellClass gap flags400/800.
-        // 141 -> 142: sustained sight and pending 120-frame gap conceal.
-        // 142 -> 143: MCV pending and Drive previous-rotation latches.
-        // 143 -> 144: per-Building operational edge and retained gap deposit.
-        // 145 -> 146: pavement is owned by raw terrain flags, not bridge cells.
-        // 146 -> 147: retain Scenario+214 for subsequent native constructors.
-        // 150 -> 151: Foot also owns applied speed independently of its locomotor.
-        // 151 -> 152: Foot occupation enable and pending fresh Apply1 obligation.
-        // 161 -> 162: Infantry+6DC current-cell entry answer of the failed path.
-        // 162 -> 163: Jumpjet linked type block and flight fields.
-        // 164 -> 165: DriveTrackState::before_first_point, inserted mid-record.
-        // 165 -> 166: Economy owns the sole house credit balance.
-        // 170 -> 171: shared animation bounds and retained HasEngineer.
-        // 173 -> 174: ProductionState drops the resource node map.
-        // 174 -> 175: bridge collapse explosions join the AnimStore.
-        // 180 -> 181: Foot+580 crate multiplier survives save/restore.
-        // 184 -> 185: Fly owns its integer height target and takeoff/landing flags.
-        // 185 -> 186: Aircraft pending ammo survives independently of Attack.
-        // 186 -> 187: object burst position replaces the target-owned count.
-        // 187 -> 188: retained Fly destination XYZ cannot be recovered from cells.
-        // 189 -> 190: Foot neighbor history and retained live counters.
-        // 190 -> 191: Fly cruise mode survives save and locomotor suspension.
-        // 191 -> 192: Fly moving/landing latch/AirportBound and flight attitude.
-        // 192 -> 193: ParasiteClass and the victim's parasite/paralysis fields.
-        // 193 -> 194: Building+6E3 HasBeenCaptured.
-        // 194 -> 195: death anims take the death producers' arguments.
-        // 195 -> 196: mind-control nodes, overload state and victim links.
-        // 196 -> 197: TemporalClass links and the warped object's chain head.
-        // 197 -> 198: the house defeat counts.
-        // 198 -> 199: the Crazy Ivan bomb on its carrier.
-        // 199 -> 200: the Gattling stage, value and turret animation counter.
-        // 200 -> 201: no `last_attacker_id`; TeamType `Suicide=`.
-        // 201 -> 202: the rearm timer on the object.
-        // 202 -> 203: no Simulation copy of CloseEnough.
-        // 203 -> 204: bullet OnBridge, no owner house; house ROF bias; TeamType
-        // `Aggressive=`.
-        // 204 -> 205: bullet `Arcing=`; an anim's bounce body.
-        // 205 -> 206: the retired Chrono dock phases; Techno+0x1F8.
-        // 206 -> 207: the native ore field (Unit+0x6D2, the StageClass).
-        // 207 -> 208: the crash latch and edge; the Fly fall counter.
-        // 208 -> 209: the slave manager and the slave's links and Storage.
-        // 209 -> 210: the retired Jumpjet type-block copy.
-        // 210 -> 211: the construction animation's StageClass on build-ups
-        // and pack-ups.
-        // 211 -> 212: no copy of the last selection's weapon id.
-        // 212 -> 213: Sell's stage in the Selling mission; no undeploy
-        // spawn copy on pack-ups.
-        // 213 -> 214: signed BridgeStrength in serialized bridge state.
-        // 214 -> 215: Terrain retains its placement height across ground changes.
-        // 215 -> 216: the building's AI repair byte; the house's repair
-        // delay, auto-repair latch and its timer.
-        // 216 -> 217: native constructor IDs and signed guided control state.
-        // 217 -> 218: a passenger's `+0x82`; no open-transport weapon override.
-        // 218 -> 219: bridge-layer acquisition and live cell/height-query behavior.
-        // 219 -> 220: the rally point is the factory's ArchiveTarget alone.
-        // 220 -> 221: buildings' Guard and Attack missions.
-        // 221 -> 222: production commands take their envelope's house.
-        // 222 -> 223: no group speed cap on Move orders.
-        // 223 -> 224: live Infantry movement/repair and structural side consumers.
-        // 224 -> 225: Prism forwarding.
-        // 225 -> 226: the factory step timer is the CDTimer a build start arms;
-        // no stored build-time estimates.
-        // 226 -> 227: retained surface-ship sinking and its sound edge.
-        // 227 -> 228: FactoryPlant cost bonuses; no full-cost Balance copy.
-        // 228 -> 229: the native production events; a user hold clears the rate.
-        // 229 -> 230: every building's `+0x388` facing.
-        // 230 -> 231: no AI `mcv_deployed` latch; no terrain `build_blocked`.
-        // 231 -> 232: computer production state on houses and factory buildings.
-        // 232 -> 233: house country cost factors and force values; each
-        // Techno's value arm.
-        // 233 -> 234: the house Strategy timer.
-        // 234 -> 235: house, spawn manager, cloak and disguise timers are
-        // `CdTimer`s.
-        // 235 -> 236: the harvest overlay drops its unread frame count.
-        // 236 -> 237: one body FacingClass per Techno; no facing mirror or target.
-        // 237 -> 238: the computer's teams and their production.
-        // 238 -> 239: each Techno's barrel elevation FacingClass.
-        // 239 -> 240: no raw INI field copy in TeamType metadata.
-        // 240 -> 241: team members, recruitment and script state.
-        // 241 -> 242: the team restart flag and two TeamType keys; no
-        // `sim::ai` state.
-        // 242 -> 243: no locomotor `ROT=` copy.
-        // 243 -> 244: no ground move phase.
-        // 244 -> 245: no retained purifier count.
-        // 245 -> 246: no stored veterancy rank.
-        // 246 -> 247: every overlay grid has a wall plane.
-        // 247 -> 248: one eight-class locomotor enum; no dormant locomotor
-        // states.
-        // 248 -> 249: no dead particle, boarding-phase or garrison-owner
-        // fields.
-        // 249 -> 250: no always-1.0 locomotor speed multiplier.
-        // 250 -> 251: Fly speeds live in the Fly runtime; no air progress or
-        // wobble phase.
-        // 251 -> 252: no entity homing state.
-        // 252 -> 253: no Teleport/Rocket payload copies.
-        // 253 -> 254: no garrison Unloading order intent.
-        // 254 -> 255: entity TooBigToFitUnderBridge/ZFudgeBridge copies removed.
-        // 255 -> 256: no cached GetCurrentSpeed.
-        // 256 -> 257: no bridge group/destroyable/span-damage copies or
-        // inert paradrop latches.
-        // 257 -> 258: the stash saves the complete suspended locomotor.
-        // 258 -> 259: no bridgehead anchor class.
-        // 259 -> 260: no bridge_occupancy or ground enter order.
-        // 260 -> 261: no falling byte beside the parachute descent.
-        // 261 -> 262: retained House radius, Foot688 and inherited Foot68D.
-        // 262 -> 263: no runtime copy of CellClass bridge cell state.
-        // 263 -> 264: shared native StageClass; no Miner/Building clock copies.
-        // 264 -> 265: no parachute altitude beside the Location Z.
-        // 265 -> 266: no Approach depot phase; WaitForDock is pending entry.
-        // 266 -> 267: Infantry water-transition state+6E8.
-        // 267 -> 268: retained Cell targets hash the live fallback coordinate.
-        // 268 -> 269: the native Hover locomotor object.
-        // 269 -> 270: no lane speed ramp, bypasses or adapter flag on a move.
-        // 270 -> 271: no lane wall-refusal memo on a move.
-        // 271 -> 272: no move direction vector or Walk sub-cell destination.
-        // 272 -> 273: Reveal commits every Unlimbo Z; no Fly rebuild.
-        // 273 -> 274: retained coefficient, Team flag, House threat and cache;
-        // retained native base navigation is saved; its live history is hashed.
-        // 274 -> 275: movement targets no longer save route cells.
-        // 275 -> 276: each House saves its type's Speed*Mult.
-        // 276 -> 277: retained native terrain animation probability and timer.
-        // 277 -> 278: lifecycle-owned building body, ready, mission and primary.
-        // 278 -> 279: native Building health sample; dirty House assessment,
-        // retained House discovery/capture notifications and Engineer identity;
-        // and its anchored power-blackout clock/radar projection.
-        // 279 -> 280: Unit deploy flags, Techno animation/landing ownership and
-        // the animation's retained palette source replace the legacy countdown.
-        // 280 -> 281: authoritative weapon/turret pair and saved charge duration.
-        // 281 -> 282: independent depot pending entry and sole MissionCom cadence.
-        // 282 -> 283: private optional turret/barrel recoil components.
-        // 283 -> 284: retained runtime Smudge identities/pending deletion.
-        // 284 -> 285: shared Techno Door/Gate.
-        // 285 -> 286: pending entry, independent repair Stage and Anim completion.
-        // 286 -> 287: the complete Teleport locomotor owns resolved XYZ,
-        // request byte and warp effect, including suspended instances.
-        // 287 -> 288: complete Drive/Ship instance-owned retained state.
-        // 288 -> 289: Factory publication and shared Foot idle latch.
-        // 289 -> 290: independent Foot air tracker/slot Cells and callbacks.
-        // 290 -> 291: the nuclear missile's Anim, Building, House and Bullet
-        // fields.
-        // 291 -> 292: the Chronosphere's Super and Teleport state, the Psychic
-        // Dominator's globals, permanent control and Dominator lighting.
-        // 292 -> 293: the native Rocket locomotor object; no rocket phase
-        // machine; the kamikaze tracker's nodes.
-        // 293 -> 294: the Iron Curtain's tint stage and timer.
-        // 294 -> 295: the nuke flash and NukeAmbientChangeRate= in the
-        // scenario's lighting; a bullet's wait on its NUKE anim.
-        // 295 -> 296: the Force Shield's fade countdown and coordinate.
-        // 296 -> 297: the Lightning Storm's globals and cloud lists; a House's
-        // radar outage timer.
-        // 297 -> 298: canonical cloak query and retained native displacement.
-        // 298 -> 299: the aircraft's paradrop passes; no paradrop carrier
-        // AircraftMission states.
-        // 299 -> 300: infantry death anims with the death producers'
-        // arguments and the killing house; a GENDEATH's end makes its Brute.
-        // 300 -> 301: guidance reads Airburst/Inaccurate/Level from the
-        // collision policy instead of keeping copies.
-        // 301 -> 302: FogState drops its unread v81 generation wire shadow.
-        // 302 -> 303: unread HoverAttack copy and aircraft pad-index copies.
-        // 303 -> 304: a Super's place in the Super timer list.
-        // 304 -> 305: write-only power transition latch and miner return flag.
-        // 305 -> 306: ground bits replace the legacy visibility counters.
-        // 306 -> 307: the session's LocalSize copy.
-        // 307 -> 308: the unread terrain occupation copy.
-        // 308 -> 309: the Factory special item.
-        // 309 -> 310: the dead infantry scatter timer.
-        // 310 -> 311: the legacy dock Launching phase.
-        // 311 -> 312: the house's AirportDocks.
-        // 312 -> 313: the house's one score.
-        // 313 -> 314: the house's factory counters.
-        // 314 -> 315: no ready-building list beside the factories.
-        // 315 -> 316: the native airfield loop replaces the legacy dock FSM.
-        // 316 -> 317: the local owner's retained sidebar insertion history.
-        // 318 -> 319: Guard carries its native post, with one mission owner.
-        // 319 -> 320: Mirage retains only its established timer words.
-        // 320 -> 321: particle constructors retain native IDs and their cursor.
-        // 321 -> 322: campaign Session and complete House initialization state.
-        // 322 -> 323: the Foot building-entry latches.
-        // 323 -> 324: the +0x690 latch and garrison admission order.
-        // 324 -> 325: each entity's turret rotation-sound control latch.
-        // 325 -> 326: each overlay cell's rubble building type.
-        // 326 -> 327: live Tag/Trigger and typed deletion owners, retained
-        // LoadObject registry, and neutral Tactical view/focus metadata.
-        // 327 -> 328: each house's last lost building (+0x54E0).
-        // 328 -> 329: each house's spy gains (+0x2BC..+0x2C0).
-        // 329 -> 330: the move-order adapter keeps no goal (#689).
-        // 330 -> 331: object custom sounds and type-7 action sounds.
-        // 331 -> 332: the C4 order's walk-up intent is gone.
-        // 332 -> 333: the fog's RevealToAll alternate-house sight.
-        // 333 -> 334: the house's war factory count.
-        // 334 -> 335: global Teleport delay and independent carrier relation.
-        // 335 -> 336: saved world resources, local view and Tactical center.
-        // 336 -> 337: Magnetron links and the object's warp credit house.
-        // 337 -> 338: the deactivated latch and the powered-center counts.
-        // 338 -> 339: every bullet's ProximityDetector reference.
-        // 339 -> 340: a bounce body's orientation and rotation quaternions.
-        // 340 -> 341: the Foot MegaMission replaces the OrderIntent goal.
-        // 341 -> 342: the House tech-tree recheck byte.
-        // 342 -> 343: the complete Object fall state.
-        // 343 -> 344: retained deploy-voice suppression and bound voice slots.
-        // 344 -> 345: Smoke scalars and individual Particle AIR identities.
-        // 345 -> 346: Move commands without the queue flag, and MoveToObject.
-        // 346 -> 347: AttackMove tokens and an object MegaDestination.
-        // 347 -> 348: the batched re-path setting and its waiting Foots.
-        // 348 -> 349: no move-order adapter (`MovementTarget`).
-        // 349 -> 350: the request each waiting Foot repeats.
-        // 350 -> 351: the Building's animation art in one record.
-        // 351 -> 352: no locomotor altitude copy; height is the Location Z.
-        // 352 -> 353: each object's infantry house-tracking latches.
-        // 353 -> 354: integrated ALL01 retained Tag/ChronoScreen/House/Team state.
-        // 354 -> 355: the path batch's next capped turn.
-        // 355 -> 356: the Foot navigation list and its loop flag.
-        // 356 -> 357: no voxel HVA or OREGATH frame clock.
-        // 357 -> 358: retained BuildingType TargetCoordOffset.
-        // 358 -> 359: Tesla charger list, weapon latch and Foot intent.
-        // 359 -> 360: retained airstrike managers and aircraft relationships.
-        // 360 -> 361: retained radial launch settings and firing index.
-        // 361 -> 362: Terrain Bullet target identity and reference validation.
-        // 362 -> 363: retained Scenario countdown and sidebar cameo flash deadlines.
-        // 363 -> 364: independent Bullet constructor and installed-weapon fields.
-        // 364 -> 365: retained RadSite creation/update order.
-        // 365 -> 366: process scalable Bullet order and type cadence.
-        // 366 -> 367: synchronized planning nodes, paths and local input mode.
-        // 367 -> 368: retained runtime DistributedFire state.
-        // 368 -> 369: tracked navy and its retained type admission.
-        // 369 -> 370: constructor-assigned VoxelAnim native IDs.
-        // 370 -> 371: retained Parasite grapple progress.
-        // 371 -> 372: authoritative binary32 body angles/rates.
-        // 372 -> 373: retained House last-built type indices.
-        // 373 -> 374: the batched target scan setting.
-        // 374 -> 375: retained CaptureManager overload pip countdown.
-        // 375 -> 376: retained Foot Ammo and chrono reinforcement pending state.
-        // 376 -> 377: retained source cache and independent sight latch.
-        // 377 -> 378: Super recharge override and House offensive target.
-        // 378 -> 379: synchronous Factory lifecycle and sale continuation.
-        // 379 -> 380: live type TechLevels and global constructor chronology.
-        // 380 -> 381: one Factory suspension authority; no duplicate manual bit.
-        // 381 -> 382: retained Secret Lab rules, membership and reward.
-        // 382 -> 383: private Factory+71 automatic-recovery eligibility.
-        // 383 -> 384: retained Weapon damage and Warhead identity in saved rules.
-        // 383 -> 385: retained Drive straight/crush track flag.
-        // 385 -> 386: combined Weapon and Drive layouts.
-        // 385 -> 386: retained primary flags include matching limbo peers.
-        // 386 -> 387: combined Weapon, Drive and Building primary layouts.
-        // 387 -> 388: independent RadSite light clock and source parameters.
-        // 388 -> 389: particle owner-relative offsets have native semantics.
-        // 389 -> 390: retained AV ambient rate/step fields in saved Rules.
-        // 390 -> 391: retained ColorAdd slots and AudioVisual selectors.
-        // 391 -> 392: retained RulesClass survivor divisors.
-        // 392 -> 393: reject cargo with the old mid-track boarding semantics.
-        // 393 -> 394: saved requests/gates, with NoInit clock reset.
-        // 394 -> 395: retained Cheer rate and the appended Cheer command.
-        // 395 -> 396: actual Spark link/target and retained Particle bodies.
-        // 396 -> 397: retained Particle has independent Alive and Limbo.
-        // 397 -> 398: per-family/type produced history for lifetime limits.
-        // 398 -> 399: remove the derived theoretical-power cache.
-        // 399 -> 400: retain the local Power bar projection.
-        // 400 -> 401: retained native House names and their array binding.
-        // 401 -> 402: retain delayed DiskLaser bodies and Rules charge-up.
-        // 402 -> 403: retain pending Map+D4 collapse coordinates/order.
-        // 403 -> 404: retain House capacity and future Building Storage input.
-        // 404 -> 405: retain AudioVisual ChronoBeamColor in processed rules.
-        // 405 -> 406: live ambient Rules writes from Action71/72.
-        // 406 -> 407: the fog's copy of the ally graph is gone.
-        // 407 -> 408: Wave geometry follows FireAt's constructor order.
-        // 408 -> 409: ordered DropZone inputs in saved Rules resources.
-        // 409 -> 410: Command::ForceAttack is gone.
-        // 410 -> 411: preferred Super target kind and House-control pointers.
-        // 411 -> 412: retained vehicle SpeedType in processed Rules.
-        // 412 -> 413: retained Super one-time and provider-loss/hold flags.
-        // 413 -> 414: global GasCloudSys reference and Particle motion words.
-        // 414 -> 415: path-batch code-2 re-path urgencies.
-        // 415 -> 416: Building online latch independent of Temporal.
-        // 416 -> 417: control-node line timers and ordered line settings.
-        // 417 -> 418: campaign score map-rank presentation metadata.
-        // 418 -> 419: the Drive/Ship occupation footprints are gone.
-        // 419 -> 420: Infantry Psycho latch independent of Techno Berserk.
-        // 420 -> 421: process Rules retain TalkBubbleTime.
-        // 421 -> 422: the drain link retains the drainer's DrainAnim.
-        // 422 -> 423: retained weapon blocks and HoldsWhat bindings.
-        // 423 -> 424: retained Type references and Rules DeathWeapon.
-        // 424 -> 425: Scenario cargo flags and the ice-growth byte.
-        // 425 -> 426: the Techno+0x12C Behind indicator Anim.
-        // 426 -> 427: IonBlast process inputs, pending forces and Foot lift.
-        // 427 -> 428: TerminalLifetime keeps only the dying mark.
-        // 428 -> 429: one CellClass+0xEC LandType per saved terrain cell.
-        // 429 -> 430: the remaining Type references and RulesClass Type
-        // pointers and lists.
-        // 430 -> 431: no derived land caches beside that LandType.
-        // 431 -> 432: the Boarding passenger relation is gone.
-        // 432 -> 433: one Object spelling for a NavCom-family pointer.
-        // 433 -> 434: no trigger-record copies in saved scenario resources.
-        // 434 -> 435: Scenario vein switch and shared Scenario pause.
-        // 435 -> 436: retained repair service inputs.
-        // 436 -> 437: independent BuildingLight and retained Spotlight rules.
-        // 437 -> 438: the retained GenericWarhead payload binding.
-        // 438 -> 439: retained Ares building requirement lists.
-        // 439 -> 440: UnitDelivery state and instance base policy.
-        // 440 -> 441: binary64 passenger Size/SizeLimit and signed CargoTotalSize.
-        // 441 -> 442: the Foot-owned crush slowdown / rocking flag.
-        // 442 -> 443: exact session mode, multiplayer launch/observer state,
-        // CompEasyBonus and the House Flag_To_Die latch.
-        // 443 -> 444: retained TechnoType ShadowIndex.
-        // 444 -> 445: retained per-pass BuildingType light integers.
-        // 445 -> 446: the House array's registration order.
-        // 446 -> 447: terrain objects and ore growth have their own owners.
-        // 447 -> 448: retained Unit firing counter through parasite release.
-        // 448 -> 449: the disguise firing blink and its rules keys.
-        // 449 -> 450: the retained `[Basic]` Lose movie.
-        // 450 -> 451: the House UI name source.
-        // 451 -> 452: terrain records drop their overlay identity/state copy.
-        // 452 -> 453: a building's NoSurvivor byte.
-        // 453 -> 454: the House left-game flag.
-        // 454 -> 455: BunkerState::WallsUp.
-        // 455 -> 456: saved paid two-stage selections and ticketed commands.
-        // 456 -> 457: retained per-pass Warhead Verses table.
-        // 457 -> 458: host-owned installed upgrades and shared type art.
-        // 458 -> 459: the retained Rules/build extension capability.
-        // 459 -> 460: retained generic prerequisite definitions.
-        // 460 -> 461: Tiberium queues hold the shared native heap.
-        // 461 -> 462: the typed Enter and Harvest commands are gone.
-        // 462 -> 463: retained armor IDs and Ares warhead extension records.
-        // 463 -> 464: retained InfantryType sequence sound pairs.
-        // 464 -> 465: the Anim Temporal erase pause.
-        // 465 -> 466: retained Techno constructor house for capture-sale policy.
-        // 466 -> 467: remove duplicate bunker approach state.
-        // 467 -> 468: retained Country ParentCountry+98.
-        // 468 -> 469: retained Country starting-veterancy lists.
-        // 469 -> 470: WOL tournament value, clan lists and FixedAlliance.
-        // 470 -> 471: retained Type.Nominal and Infantry survivor marker.
-        // 471 -> 472: independent saved Scenario.Side.
-        // 472 -> 473: retained Ares KeepAlive count and per-object input.
-        // 473 -> 474: retained Building+53C.
-        // 474 -> 475: optional retained Ares Side sidebar fields.
-        assert_eq!(super::SNAPSHOT_VERSION, 475);
+    fn snapshot_layout_describes_every_saved_type() {
+        let description = save_codec::layout::describe::<GameSnapshot>()
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert!(description.starts_with("GameSnapshot\n"));
+        assert!(description.contains("\nSimulation struct{"));
+        assert_ne!(super::snapshot_layout() & 0x8000_0000, 0);
+        assert_eq!(super::snapshot_layout(), super::snapshot_layout());
     }
 }

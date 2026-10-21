@@ -33,6 +33,9 @@ pub(crate) const GAME_LIMIT_640: u32 = 0x200;
 pub(crate) const GAME_LIMIT_800: u32 = 0x400;
 /// Quick Match / World Domination games (`>> 0xB & 1`, `>> 0xC & 1`).
 const GAME_RANKED: u32 = 0x1800;
+/// `0x00789EC4..0x00789EEE`: the bit a Quick Match or Quick Co-op create
+/// sets.
+pub(crate) const GAME_QUICK_MATCH: u32 = 0x800;
 
 /// One channel record (`0x10C` bytes): a chat lobby in `0xB73E18` or a game
 /// in `0xB76AE8`.
@@ -117,6 +120,13 @@ impl WolChannel {
     /// `atol(name + 7)` of a `Lob_41_` channel.
     pub(crate) fn lobby_number(&self) -> Option<i32> {
         self.name.strip_prefix(LOBBY_PREFIX).map(crt_atoi)
+    }
+
+    /// `[0xB77DD4]` from the join sink (`0x007A5ED5..0x007A5EFD`):
+    /// `atoi(name + strlen("Lob_41_"))` of any chat lobby, whatever its
+    /// prefix (`Lob_40_3` gives 3).
+    pub(crate) fn joined_lobby_number(&self) -> i32 {
+        self.name.get(LOBBY_PREFIX.len()..).map_or(0, crt_atoi)
     }
 
     /// The shown player count and capacity (`cur - f4 + f3`, `max - (f4||f5)`).

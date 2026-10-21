@@ -931,6 +931,14 @@ pub enum Command {
     /// owner's `+0x16C0` byte is clear; that House byte is not ported.
     /// Appended to preserve existing serialized variant indices.
     SetBuildingOnLine { entity_id: u64, on: bool },
+    /// ARCHIVE (native opcode 0x1E) naming an object: a non-factory
+    /// building's Move click over an object (`BuildingClass::ClickedAction
+    /// @ 0x00443410`, `0x0044363C..0x00443688`) archives that object.
+    /// `EventClass::Execute` (`0x004C6DAA..0x004C6DDE`) runs
+    /// `Set_ArchiveTarget @ 0x0070C610` on a live (`+0x90`) building; a
+    /// target gone by then resolves to null and clears the archive.
+    /// Appended to preserve existing serialized variant indices.
+    ArchiveObject { entity_id: u64, target_id: u64 },
 }
 
 impl Command {

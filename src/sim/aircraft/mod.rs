@@ -16,9 +16,9 @@ pub(crate) mod fire_at;
 pub(crate) mod guard_mission;
 mod hunt_mission;
 mod idle_entry;
-pub(crate) use idle_entry::enter_idle_mode_for;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use idle_entry::record_idle_calls_for_test;
+pub(crate) use idle_entry::{enter_idle_mode_after_attack, enter_idle_mode_for};
 pub(crate) mod landing_base;
 mod leave_map;
 #[cfg(test)]

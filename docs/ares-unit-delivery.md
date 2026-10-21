@@ -71,8 +71,8 @@ provide compatibility references. No Ares DLL or C# simulation is loaded.
 
 The private pending queue and per-building flag are saved and hashed. Empty
 queues/default flags add no stock hash input. Resolved extension settings enter
-the rules hash. Snapshot version 440 accounts for the changed positional rules,
-simulation and entity records; older versions are rejected.
+the rules hash. The changed positional rules, simulation and entity records change
+the save layout id, so older saves are rejected.
 
 Empty payloads, invalid targets, missing owners and unsupported charge drain
 refuse before charge or effects. The type remains one-click even if PreClick or

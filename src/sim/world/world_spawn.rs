@@ -2904,17 +2904,14 @@ impl Simulation {
             unit.veterancy.inherit(&veterancy);
         }
         self.transfer_slave_manager(sid, new_sid, false, rules, overlay_registry, frame_effects);
-        // Cell clicks and the SlaveManager relocation share ArchiveTarget;
-        // conversion sends the new Unit to that existing goal.
-        if let Some(TargetKind::Cell(x, y)) = archive {
-            if !self.set_unit_destination(
-                new_sid,
-                crate::sim::components::NavTargetRef::cell(x, y),
-                rules,
-                true,
-                frame_effects,
-            ) {
-                log::debug!("undeployed unit {new_sid} refused its archive ({x}, {y})");
+        // Cell clicks, object clicks (event 0x1E) and the SlaveManager
+        // relocation share ArchiveTarget; conversion sends the new Unit to
+        // that existing goal, a Cell or an object: vt+0x480
+        // Assign_Destination(archive, 1), then vt+0x1E8 Move
+        // (`0x0044A091..0x0044A0AE`).
+        if let Some(archive) = archive {
+            if !self.set_unit_destination(new_sid, archive.into(), rules, true, frame_effects) {
+                log::debug!("undeployed unit {new_sid} refused its archive {archive:?}");
             }
             if let Some(unit) = self.substrate.entities.get_mut(new_sid) {
                 crate::sim::mission::authority::queue_entity_mission_deferred(

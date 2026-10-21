@@ -881,7 +881,7 @@ fn attack_prelude(sim: &mut Simulation, id: u64, rules: &RuleSet) -> Option<(Tar
         );
         clear_support_count(&mut sim.substrate, id);
         //44AFA5..44AFB1: the warp-in readiness gate precedes705D60 ->6385C0.
-        sim.planning_enter_idle(id, rules);
+        sim.planning_enter_idle(id, rules, true);
         if !waits(sim, id) {
             queue_and_commence(sim, id, MissionType::Guard, rules);
         }
@@ -921,7 +921,7 @@ fn attack_arm(
                 sim.assign_target_represented(id, None, rules, ctx.overlay_registry, ctx.effects);
             clear_support_count(&mut sim.substrate, id);
             //44B0F3..44B0FF: retain the Wait queued by planned dispatch.
-            sim.planning_enter_idle(id, rules);
+            sim.planning_enter_idle(id, rules, true);
             if waits(sim, id) {
                 return 1;
             }

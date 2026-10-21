@@ -307,7 +307,10 @@ impl Simulation {
         // restriction: Infantry517CE7, Unit735604/746827, and the reached
         // Aircraft InitFromType413F98 called by constructor413E2E.
         // Aircraft read VeteranAircraft but neither of the spy flags below.
-        // Evidence: tools/rules_oracle/country_veterancy.md.
+        // Ares Building Init_Managers442D1B ->100236D0 adds the current
+        // Country's retained VeteranBuildings membership, also without a
+        // Trainable gate. The shared Rules query owns all four categories.
+        // Evidence: tools/rules_oracle/{country_veterancy,ares_country_veterancy}.md.
         let house = houses.get(&ge.owner());
         if let Some(house) = house
             && rules.country_starts_veteran(interner.resolve(house.house_type_id()), obj)

@@ -1417,6 +1417,9 @@ Details: {details}"
             ShellExitThen::WolSoundOptionsBack => {
                 crate::app::shell_wol::options::commit_sound_back(state)
             }
+            ShellExitThen::WolAddBuddyClose { yes, ask_again } => {
+                crate::app::shell_wol::persona::commit_add_buddy(state, yes, ask_again)
+            }
             ShellExitThen::WolAutoLoginClose(answer) => {
                 crate::app::shell_wol::persona::commit_auto_login(state, answer)
             }

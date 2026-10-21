@@ -31,7 +31,7 @@ use crate::render::shell_text::{ShellAlign, ShellTextDraw};
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeEntry;
 use crate::ui::shell::geom::{RectPx, RightPanelRects, ShellScale};
-use crate::ui::shell::slide::{ColumnDraw, column_draw_origin};
+use crate::ui::shell::slide::{ColumnDraw, PanelArt, column_draw_origin, panel_art_origin};
 
 /// Parent background sits behind the movie in the Z stack. Greater depth =
 /// farther back, so this must exceed `MOVIE_DEPTH`. 0xE2-only (the main-menu
@@ -386,6 +386,40 @@ pub fn paint_chrome(
         if let Some(entry) = lower_strip_entry {
             push_entry_rect(&mut out, entry, strip, CHROME_DEPTH);
         }
+    }
+    out
+}
+
+/// A `+0xD5` dialog's top-panel shapes over [`paint_chrome`]'s SDTP, in
+/// draw order (later on top): the parent paint's SDTP frame 1
+/// (`0x0072E8C0`) when steady, or the slide engine's SDTP and SDWRNTMP
+/// draws of one tick ([`crate::ui::shell::slide::SlideColumn::panel_art`]).
+pub(crate) fn paint_top_panel(
+    atlas: &MainMenuShellChromeAtlas,
+    panel: RightPanelRects,
+    art: &[PanelArt],
+) -> Vec<SpriteInstance> {
+    let (scale_x, scale_y) = panel.stretch();
+    let mut out = Vec::new();
+    for (index, art) in art.iter().enumerate() {
+        let entry = match *art {
+            PanelArt::Sdtp(frame) => atlas.top_panel.sdtp.get(frame).copied().flatten(),
+            PanelArt::Warning(frame) => atlas.top_panel.warning.get(frame).copied().flatten(),
+            // No main-menu-atlas dialog has a map button or score art.
+            PanelArt::MapButton(_) | PanelArt::Scrt(_) | PanelArt::ScrBackdrop => None,
+        };
+        let Some(entry) = entry else {
+            continue;
+        };
+        let w = (entry.pixel_size[0] * scale_x).round() as i32;
+        let h = (entry.pixel_size[1] * scale_y).round().max(1.0) as i32;
+        let (x, y) = panel_art_origin(panel, *art, w, h);
+        push_entry_rect(
+            &mut out,
+            entry,
+            RectPx::new(x, y, w, h),
+            CHROME_DEPTH - 0.00001 - index as f32 * 1e-6,
+        );
     }
     out
 }

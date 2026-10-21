@@ -5,7 +5,10 @@ Revenge. It contains no game files: you need your own copy of Yuri's Revenge
 1.001, for example from The Ultimate Collection on Steam or the EA app.
 
 GETTING STARTED
-Either:
+If you used the Windows installer, you are set: it wrote config.toml in the
+install folder. To use another game folder, run the installer again.
+
+Otherwise, either:
   - copy these files into your Yuri's Revenge folder (the one with gamemd.exe)
     and start vera20k there, or
   - keep them in a folder of your own, copy config.toml.example to config.toml

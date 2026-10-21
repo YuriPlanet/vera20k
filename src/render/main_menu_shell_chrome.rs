@@ -56,6 +56,11 @@ pub struct MainMenuShellChromeAtlas {
     /// atlas). `None` where the SHP lacks that frame.
     pub button_wave_frames: [Option<MainMenuShellChromeEntry>; SDBTNANM_WAVE_FRAMES],
     pub right_panel_top_sdtp: Option<MainMenuShellChromeEntry>,
+    /// SDTP frames 0 and 1 and SDWRNTMP frames 0..=5 (SHELL palette): the
+    /// top panel of a `+0xD5` dialog (WOL's custom lobby `0x113`), which
+    /// the parent paint covers with SDTP frame 1 (`0x0072E8C0`) and the
+    /// slide engine draws with its warning display.
+    pub top_panel: TopPanelArt,
     pub right_panel_tile_sdbtnbkgd: Option<MainMenuShellChromeEntry>,
     pub right_panel_bottom_sdbtm: Option<MainMenuShellChromeEntry>,
     pub lower_side_640_lwscrns: Option<MainMenuShellChromeEntry>,
@@ -123,6 +128,13 @@ struct RenderedChromeEntry {
     rgba: Vec<u8>,
 }
 
+/// The `+0xD5` top panel's shapes, indexed by frame; `None` where missing.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TopPanelArt {
+    pub sdtp: [Option<MainMenuShellChromeEntry>; 2],
+    pub warning: [Option<MainMenuShellChromeEntry>; 6],
+}
+
 pub fn build_main_menu_shell_chrome_atlas(
     gpu: &GpuContext,
     batch: &BatchRenderer,
@@ -136,6 +148,8 @@ pub fn build_main_menu_shell_chrome_atlas(
     let shell2_palette = load_named_palette(assets, "SHELL2.PAL");
     if let Some(pal) = shell_palette.as_ref() {
         push_optional_shp(&mut rendered, assets, "SDTP.SHP", pal, 0);
+        rendered.extend(render_shp_frames(assets, "SDTP.SHP", pal, "top"));
+        rendered.extend(render_shp_frames(assets, "SDWRNTMP.SHP", pal, "warning"));
         push_optional_shp(&mut rendered, assets, "SDBTM.SHP", pal, 0);
         push_optional_shp(&mut rendered, assets, "LWSCRNS.SHP", pal, 0);
         push_optional_shp(&mut rendered, assets, "LWSCRNL.SHP", pal, 0);
@@ -208,6 +222,16 @@ pub fn build_main_menu_shell_chrome_atlas(
             by_label.get(&format!("sdbtnanm.shp:wave#{frame}")).copied()
         }),
         right_panel_top_sdtp: by_label.get("sdtp.shp").copied(),
+        top_panel: TopPanelArt {
+            sdtp: std::array::from_fn(|frame| {
+                by_label.get(&format!("sdtp.shp:top#{frame}")).copied()
+            }),
+            warning: std::array::from_fn(|frame| {
+                by_label
+                    .get(&format!("sdwrntmp.shp:warning#{frame}"))
+                    .copied()
+            }),
+        },
         right_panel_tile_sdbtnbkgd: by_label.get("sdbtnbkgd.shp").copied(),
         right_panel_bottom_sdbtm: by_label.get("sdbtm.shp").copied(),
         lower_side_640_lwscrns: by_label.get("lwscrns.shp").copied(),

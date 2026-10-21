@@ -35,6 +35,9 @@ impl<'de> Deserialize<'de> for PlanningState {
             paths: BTreeMap<u64, PlanningPath>,
         }
         let stored = StoredPlanningState::deserialize(deserializer)?;
+        if crate::util::save_codec::layout::describing() {
+            return Ok(Self::default());
+        }
         let mut state = Self {
             next_node: stored.next_node,
             nodes: stored.nodes,
@@ -1444,22 +1447,27 @@ impl Simulation {
         }
     }
 
-    /// Techno709A40 ->705D50 (!warp-in) ->6385C0. Called only after the
-    /// existing RefreshMegaMission owner declined to resume attack-move.
+    /// Techno709A40 -> vt+0x430 -> 6385C0. Called only after the existing
+    /// RefreshMegaMission owner declined to resume attack-move. vt+0x430 is
+    /// the not-warping-in test (`0x00705D50`) for every class but Aircraft,
+    /// whose override (`0x0041B9E0`) answers its `+0x6D5` byte,
+    /// `aircraft_arrival` here (clear only inside Mission_Attack state 10's
+    /// idle call, [`crate::sim::aircraft::enter_idle_mode_after_attack`]).
     pub(crate) fn planning_enter_idle(
         &mut self,
         actor: u64,
         rules: &crate::rules::ruleset::RuleSet,
+        aircraft_arrival: bool,
     ) -> bool {
-        if self
-            .substrate
-            .entities
-            .get(actor)
-            .is_none_or(|entity| entity.is_warping_in())
-        {
+        let Some(entity) = self.substrate.entities.get(actor) else {
             return false;
-        }
-        self.planning_start_actor(actor, rules)
+        };
+        let admitted = if entity.category() == crate::map::entities::EntityCategory::Aircraft {
+            aircraft_arrival
+        } else {
+            !entity.is_warping_in()
+        };
+        admitted && self.planning_start_actor(actor, rules)
     }
 
     pub(crate) fn planning_start_actor(
@@ -1489,6 +1497,19 @@ impl Simulation {
         else {
             return false;
         };
+        // `0x00638602..0x0063860C`: Queue_Mission(Deliberate, 1) through
+        // vt+0x1E8 commences it at once when the object is ready, before
+        // 0x00636590 consumes the node and the planned event is staged.
+        // Neither this owner nor its container consumes RNG.
+        let _ = self.mission_queue_exact(
+            actor,
+            crate::sim::mission::MissionId::from_known(
+                crate::sim::mission::MissionType::Deliberate,
+            ),
+            1,
+            self.session.binary_frame(),
+            &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+        );
         record.payload_mut()[22] = 2;
         record.set_issue_header(
             4,
@@ -1505,17 +1526,6 @@ impl Simulation {
         if !keep_member {
             self.planning.remove_member(node_id, actor);
         }
-        // Native638623 queues Deliberate without Commence, before staging the
-        // planned event. Neither this owner nor its container consumes RNG.
-        let _ = self.mission_queue_exact(
-            actor,
-            crate::sim::mission::MissionId::from_known(
-                crate::sim::mission::MissionType::Deliberate,
-            ),
-            0,
-            self.session.binary_frame(),
-            &crate::sim::mission::authority::LiveReadyInputProvider { rules },
-        );
         // 637550 ->652230: deferred publication stamps frame+1. Reverse
         // pending traversal plus ring prepend restores generation order.
         self.queue_command(CommandEnvelope::new(

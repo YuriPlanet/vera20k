@@ -160,6 +160,14 @@ pub(crate) enum WolServiceRequest {
     /// `0x0079D110`: the ladder API `[0xAC1170]` vt+0x14/+0x38 for up to
     /// ten names; the answer is [`WolServiceEvent::Ladder`].
     LadderRecords(Vec<String>),
+    /// `0x007A0690`: API+0x30, the private ANSI text
+    /// [`super::quick_match::MatchRequest::text`] to the Quick Match lobby's
+    /// matchbot. The service fills the transport fields
+    /// ([`super::quick_match::MatchTransport`]).
+    RequestMatch {
+        matchbot: String,
+        request: super::quick_match::MatchRequest,
+    },
 }
 
 /// One ladder record (`0x6C` bytes) of the ladder sink
@@ -259,12 +267,18 @@ pub(crate) enum WolServiceEvent {
     PageResult(Result<(), u32>),
     /// A chat or action line from another user: the chat sinks
     /// `0x007A8DA0` (public), `0x007A8FC0` (private), `0x007AB170` (public
-    /// action), `0x007AAFB0` (private action) and their UTF-16 forms.
+    /// action), `0x007AAFB0` (private action) and, without `ansi`, their
+    /// UTF-16 forms (`0x007A8ED0`, `0x007A9110`, `0x007AB260`,
+    /// `0x007AB0A0`). A matchbot's private `Start <options>:<players>`
+    /// carries its options decoded (`0x005E3D10`'s default arm, as for a
+    /// host's options).
     Message {
         from: WolMember,
         text: Vec<u16>,
         private: bool,
         action: bool,
+        ansi: bool,
+        options: Option<Box<crate::app::shell_network_setup::HostOptions>>,
     },
     /// The find sink `0x007A9970`: the channel the located user is in, or
     /// the result code.
@@ -508,7 +522,12 @@ impl WolVisit {
             (Awaiting::Api, WolServiceEvent::Api(WolApiStatus::Available)) => {
                 if !matches!(
                     self.mode,
-                    Some(WolMode::CustomMatch | WolMode::MyInformation | WolMode::PlayBuddy)
+                    Some(
+                        WolMode::CustomMatch
+                            | WolMode::MyInformation
+                            | WolMode::PlayBuddy
+                            | WolMode::QuickMatch
+                    )
                 ) {
                     log::warn!(
                         "WOL mode {:?} after WOLAPI creation is not implemented",
@@ -810,8 +829,20 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             text,
             private,
             action,
+            ansi,
+            options,
         } => {
-            super::lobby::message_received(state, from, text, private, action);
+            super::lobby::message_received(
+                state,
+                super::lobby::ReceivedMessage {
+                    from,
+                    text,
+                    private,
+                    action,
+                    ansi,
+                    options,
+                },
+            );
             return;
         }
         WolServiceEvent::Located(result) => {
@@ -1154,7 +1185,7 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
-    if matches!(visit.page, WolPage::Lobby) {
+    if matches!(visit.page, WolPage::Lobby | WolPage::QuickMatch(_)) {
         super::lobby::box_command(state, control);
         answer_unavailable(state);
         state.platform.window.request_redraw();

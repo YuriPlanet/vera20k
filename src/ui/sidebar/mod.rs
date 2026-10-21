@@ -6,12 +6,12 @@
 //! Native screen geometry comes from `6A5090`/`6A5130`, with shape sizes
 //! from the loaded assets and fixed 60×48 cameo hit zones (`6A8220`).
 
-pub mod gadget_flash;
-pub mod command_bar;
-mod frame;
 pub(crate) mod cameo_order;
 #[cfg(test)]
 mod cameo_order_tests;
+pub mod command_bar;
+mod frame;
+pub mod gadget_flash;
 mod layout_spec;
 pub mod power_bar_anim;
 mod sidebar_view;
@@ -21,8 +21,8 @@ use crate::sim::production::ProductionCategory;
 pub use frame::{BOTTOM_STRIP_HEIGHT_PX, SIDEBAR_WIDTH_PX, SidebarFrame};
 pub use layout_spec::{SidebarChromeLayoutSpec, SidebarTheme};
 pub use power_bar_anim::PowerBarAnimState;
-pub(crate) use sidebar_view::build_sidebar_view_with_spec;
 pub(crate) use sidebar_view::ArmedSidebarEntry;
+pub(crate) use sidebar_view::build_sidebar_view_with_spec;
 pub(crate) use sidebar_view::{CameoFactoryStatus, ObjectCameoDrawInputs, draw_object_cameo};
 
 /// Cameo hit zones are fixed 60×48 (`6A8220`), independent of artwork size.
@@ -49,7 +49,12 @@ pub fn radar_minimap_rect(screen_w: f32) -> Rect {
 
 pub fn radar_minimap_rect_with_spec(screen_w: f32, spec: SidebarChromeLayoutSpec) -> Rect {
     // Radar One_Time 652CF0 and Init_For_House 652E90: fixed aperture.
-    Rect { x: screen_w - spec.sidebar_width + 16.0, y: 49.0, w: 140.0, h: 108.0 }
+    Rect {
+        x: screen_w - spec.sidebar_width + 16.0,
+        y: 49.0,
+        w: 140.0,
+        h: 108.0,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,7 +71,9 @@ impl SidebarTab {
             ProductionCategory::Building => Self::Building,
             ProductionCategory::Defense => Self::Defense,
             ProductionCategory::Infantry => Self::Infantry,
-            ProductionCategory::Vehicle | ProductionCategory::Aircraft | ProductionCategory::Ship => Self::Vehicle,
+            ProductionCategory::Vehicle
+            | ProductionCategory::Aircraft
+            | ProductionCategory::Ship => Self::Vehicle,
         }
     }
 
@@ -313,8 +320,12 @@ pub(crate) fn compute_layout_with_spec(
 /// Native PowerClass tooltip (`6403A0`). The 8-pixel hit width is distinct
 /// from POWERP's actual canvas width and the 3-pixel paint stride.
 pub fn power_bar_rect(layout: &SidebarLayout, spec: SidebarChromeLayoutSpec) -> Rect {
-    Rect { x: layout.sidebar_x + spec.power_bar_x, y: 227.0, w: 8.0,
-        h: layout.cameo_grid_bottom - layout.cameo_grid_top }
+    Rect {
+        x: layout.sidebar_x + spec.power_bar_x,
+        y: 227.0,
+        w: 8.0,
+        h: layout.cameo_grid_bottom - layout.cameo_grid_top,
+    }
 }
 
 /// Native R-DN/R-UP anchors (`6ABD30`), with actual SHP canvas hit sizes.
@@ -328,8 +339,15 @@ pub fn scroll_button_rects(
     let [uw, uh] = up_size.unwrap_or([0.0, 0.0]);
     let x = layout.sidebar_x + spec.scroll_x;
     let y = layout.cameo_grid_bottom + 7.0;
-    (Rect { x, y, w: dw, h: dh },
-     Rect { x: x + spec.scroll_pitch, y, w: uw, h: uh })
+    (
+        Rect { x, y, w: dw, h: dh },
+        Rect {
+            x: x + spec.scroll_pitch,
+            y,
+            w: uw,
+            h: uh,
+        },
+    )
 }
 
 /// Forward cameo presses to the live Super or Factory click decision.

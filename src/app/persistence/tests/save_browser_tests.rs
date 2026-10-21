@@ -57,7 +57,7 @@ fn browser_admission_keeps_empty_descriptions_and_uses_file_time() {
         .set_times(std::fs::FileTimes::new().set_modified(modified))
         .unwrap();
     let mut header = GameSnapshot::read_header(&bytes).unwrap();
-    header.version = 0;
+    header.layout = 0;
     repository
         .write_named("incompatible.bin", &save_codec::serialize(&header).unwrap())
         .unwrap();

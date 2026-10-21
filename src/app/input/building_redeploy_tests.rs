@@ -266,6 +266,23 @@ fn rallies(click: &BuildingClick) -> Vec<u64> {
     }
 }
 
+/// The buildings that archive an object (event 0x1E) and the object.
+fn archives(click: &BuildingClick) -> Vec<(u64, u64)> {
+    match click {
+        BuildingClick::Orders(orders, _) => orders
+            .iter()
+            .filter_map(|order| match order {
+                Command::ArchiveObject {
+                    entity_id,
+                    target_id,
+                } => Some((*entity_id, *target_id)),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 fn packs_up(click: &BuildingClick) -> bool {
     matches!(click, BuildingClick::Orders(orders, _)
         if orders.iter().any(|order| matches!(order, Command::SellBuilding { .. })))
@@ -321,6 +338,12 @@ fn a_selected_factory_or_yard_selects_another_houses_unit_instead_of_rallying() 
             Vec::new()
         };
         assert_eq!(rallies(&alt), expected, "{selection:?}: {alt:?}");
+        let archived = if selection.contains(&yard) {
+            vec![(yard, enemy)]
+        } else {
+            Vec::new()
+        };
+        assert_eq!(archives(&alt), archived, "{selection:?}: {alt:?}");
         assert_eq!(
             click(
                 &sim,
@@ -603,4 +626,126 @@ fn an_alt_click_rallies_a_war_factory_only_onto_an_object_it_can_reach() {
     for target in [near, across, ship] {
         assert_eq!(cursor(depot, target), CursorFeedbackKind::Move);
     }
+}
+
+/// Alt over an object: a Construction Yard archives the object itself
+/// (event 0x1E, `0x0044363C..0x00443688`; `EventClass::Execute
+/// 0x004C6DAA`). A later pack-up whose click archives nothing (SELL alone,
+/// as after a ground click whose rally search misses) keeps that archive, and
+/// the MCV is sent to the object (Assign_Destination then Move,
+/// `0x0044A091..0x0044A0AE`).
+#[test]
+fn a_yard_alt_click_archives_the_object_and_its_mcv_drives_there() {
+    use HoverTargetKind::FriendlyUnit;
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let mut rules = retail.rules;
+    // As above: a finite build-up binding for the INI-only fixture.
+    rules.set_buildup_control_for_test("GACNST", [0, 29, 1]);
+    let (mut sim, owner) = yard_arena(&rules);
+    sim.set_input_delay_ticks(0);
+    sim.spawn_object("GAPOWR", "Russians", 3, 3, 0, &rules)
+        .unwrap();
+    let yard = sim
+        .spawn_object("GACNST", "Americans", 12, 12, 0, &rules)
+        .unwrap();
+    let tank = sim
+        .spawn_object("MTNK", "Americans", 21, 8, 64, &rules)
+        .unwrap();
+    let alt = click(
+        &sim,
+        &rules,
+        &[yard],
+        Some((FriendlyUnit, tank)),
+        (21, 8),
+        OrderModifier::ForceMove,
+    );
+    let BuildingClick::Orders(orders, false) = alt else {
+        panic!("{alt:?}");
+    };
+    assert_eq!(
+        orders,
+        [Command::ArchiveObject {
+            entity_id: yard,
+            target_id: tank,
+        }]
+    );
+    let tick = sim.session().tick();
+    sim.queue_commands(
+        orders
+            .into_iter()
+            .chain([Command::SellBuilding { entity_id: yard }])
+            .map(|payload| CommandEnvelope::new(owner, tick, payload)),
+    );
+    step(&mut sim, &rules);
+    assert_eq!(
+        sim.entities().get(yard).map(|yard| yard.archive_target()),
+        Some(Some(TargetKind::Entity(tank)))
+    );
+    let mut mcv = None;
+    for _ in 0..80 {
+        step(&mut sim, &rules);
+        mcv = sim
+            .entities()
+            .values()
+            .find(|e| sim.interner().resolve(e.type_ref()) == "AMCV")
+            .map(|e| e.stable_id());
+        if mcv.is_some() {
+            break;
+        }
+    }
+    let mcv = mcv.expect("the yard must pack up");
+    let unit = sim.entities().get(mcv).unwrap();
+    assert!(
+        [unit.mission.current(), unit.mission.queued()]
+            .iter()
+            .any(|mission| mission.known() == Some(MissionType::Move))
+    );
+    let beside_tank = |sim: &Simulation| {
+        let unit = sim.entities().get(mcv).unwrap();
+        unit.position.rx().abs_diff(21) <= 1 && unit.position.ry().abs_diff(8) <= 1
+    };
+    for _ in 0..600 {
+        if beside_tank(&sim) {
+            break;
+        }
+        step(&mut sim, &rules);
+    }
+    assert!(beside_tank(&sim), "the MCV must drive to the archived tank");
+}
+
+/// `EventClass::Execute 0x004C6DAA` resolves the event's target when it
+/// runs: an object gone by then is null, which clears the archive.
+#[test]
+fn an_object_archive_whose_target_is_gone_clears_the_archive() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let (mut sim, _) = yard_arena(&rules);
+    let yard = sim
+        .spawn_object("GACNST", "Americans", 12, 12, 0, &rules)
+        .unwrap();
+    sim.entities_mut_for_test()
+        .get_mut(yard)
+        .unwrap()
+        .set_archive_target(Some(TargetKind::Cell(20, 12)));
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::ArchiveObject {
+            entity_id: yard,
+            target_id: 0xDEAD,
+        },
+        Some(&rules)
+    ));
+    assert_eq!(sim.entities().get(yard).unwrap().archive_target(), None);
+    assert!(!sim.apply_command(
+        "Russians",
+        &Command::ArchiveObject {
+            entity_id: yard,
+            target_id: yard,
+        },
+        Some(&rules)
+    ));
 }

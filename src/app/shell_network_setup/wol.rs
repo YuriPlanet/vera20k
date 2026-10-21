@@ -279,8 +279,61 @@ pub(crate) fn player_ready(state: &mut AppState, name: &str, value: i32) -> anyh
         return Ok(());
     }
     let result = ready_arm(state, name, value);
-    guest_sink_tail(state);
+    if super::quick_match(state) {
+        quick_match_start(state, name);
+    } else {
+        guest_sink_tail(state);
+    }
     result
+}
+
+/// `0x0077E900`'s Quick Match tail (`0x0077EA53..0x0077EB72`): any `A<n>`
+/// (`n` untested) from the node at index 1 while the channel has exactly
+/// two users, on the host before its StartGame: every channel user, in
+/// reverse channel order, to API+0x48, stage 9 (90 s) and `[0xB77DEC]`.
+fn quick_match_start(state: &mut AppState, name: &str) {
+    let session = &state.match_state.session;
+    let second = session
+        .network_setup()
+        .and_then(|launch| launch.humans.get(1))
+        .is_some_and(|human| human.name.eq_ignore_ascii_case(name));
+    let users = crate::app::shell_wol::lobby::member_names(state);
+    if !session.host() || !second || users.len() != 2 {
+        return;
+    }
+    let Some(protocol) = state.frontend.network_setup_protocol.as_mut() else {
+        return;
+    };
+    if protocol.wol_start_pending {
+        return;
+    }
+    protocol.wol_start_pending = true;
+    protocol.requests.push(NetworkSetupRequest::StartGame {
+        users: users.into_iter().rev().collect(),
+    });
+    crate::app::shell_wol::quick_match::start_requested(state);
+}
+
+/// The Quick Match guest's options sink `+0x58` after its parse
+/// (`0x007A7F72..0x007A8014`): its own node with a side and a colour, and
+/// exactly two channel users, accept at once: `"A1"` channel-wide
+/// (API+0x3C). The text is the host's digit-led options, and the parse
+/// already dropped it while a match runs or a start is pending.
+/// RESIDUAL: the channel-owner gate (`0x007931A0`, the first operator is
+/// not this user) holds for every guest the matchbot names.
+pub(super) fn quick_match_accept(state: &mut AppState) {
+    let assigned = state
+        .match_state
+        .session
+        .network_setup()
+        .is_some_and(|launch| {
+            let slot = &launch.local_player().slot;
+            !slot.country_random && !slot.color_random
+        });
+    if !assigned || crate::app::shell_wol::lobby::member_names(state).len() != 2 {
+        return;
+    }
+    queue(state, NetworkSetupRequest::Ready(true));
 }
 
 fn ready_arm(state: &mut AppState, name: &str, value: i32) -> anyhow::Result<()> {
@@ -475,6 +528,12 @@ pub(crate) fn kicked_key(state: &AppState) -> &'static str {
 /// lobby rejoins (`0x788A30`). No box.
 pub(crate) fn local_left(state: &mut AppState) {
     play_player_left(state);
+    if super::quick_match(state) {
+        // No dialog: the nodes go with the setup; the runner's stage
+        // timeout moves on.
+        super::abandon_for_wol_runner(state);
+        return;
+    }
     let dialog = super::dialog(state);
     App::leave_shell_dialog(
         state,
@@ -559,8 +618,9 @@ pub(super) fn game_started(
         }
         return Ok(());
     }
-    // 0x7A7CEE..0x7A7CFC: an open 0xCF closes. (0x117 closes first in the
-    // Quick Match modes 1-3.)
+    // 0x7A7CC3..0x7A7CE9: modes 1-3 close 0x117; 0x7A7CEE..0x7A7CFC: an
+    // open 0xCF closes.
+    crate::app::shell_wol::quick_match::game_started(state);
     crate::app::shell_wol::page::close_page_dialog(state);
     // 0x794F6F..: the first user row with flag bit0 is the channel owner.
     let channel_owner = users
@@ -669,6 +729,12 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
             protocol.wol_verify = None;
             protocol.requests.push(NetworkSetupRequest::Leave);
             state.frontend.skirmish_preview_texture = None;
+            if super::quick_match(state) {
+                // 0x130 closes without a slide and no setup dialog exists.
+                crate::app::shell_wol::quick_match::start_leave(state);
+                super::commit_start(state, seed);
+                return Ok(());
+            }
             App::leave_shell_dialog(
                 state,
                 shell_transition::ShellExitThen::NetworkStart {

@@ -1913,21 +1913,36 @@ fn native_startup_prepass_repeat_and_reset_keep_each_phase_on_one_registry_owner
     let retained_state = repeat.into_registry_state_discarding_events();
     let (prepass, prepass_boundaries) =
         process_native_noncampaign_rules_prepass_inner(retained_state, &root);
-    assert_eq!(prepass_boundaries, [1, 2, 6]);
+    assert_eq!(
+        prepass_boundaries,
+        if crate::rules::ARES_ENABLED {
+            [1, 2, 3]
+        } else {
+            [1, 2, 6]
+        }
+    );
     assert_eq!(
         prepass
             .events()
             .iter()
             .map(|event| (event.family(), event.native_stored_id()))
             .collect::<Vec<_>>(),
-        vec![
-            (NativeTypeConstructorFamily::HouseType, "HOUSE"),
-            (NativeTypeConstructorFamily::AnimType, "PREANIM"),
-            (NativeTypeConstructorFamily::InfantryType, "INF"),
-            (NativeTypeConstructorFamily::UnitType, "HUNIT"),
-            (NativeTypeConstructorFamily::AircraftType, "HAIR"),
-            (NativeTypeConstructorFamily::Side, "HSIDE"),
-        ],
+        if crate::rules::ARES_ENABLED {
+            vec![
+                (NativeTypeConstructorFamily::HouseType, "HOUSE"),
+                (NativeTypeConstructorFamily::AnimType, "PREANIM"),
+                (NativeTypeConstructorFamily::Side, "HSIDE"),
+            ]
+        } else {
+            vec![
+                (NativeTypeConstructorFamily::HouseType, "HOUSE"),
+                (NativeTypeConstructorFamily::AnimType, "PREANIM"),
+                (NativeTypeConstructorFamily::InfantryType, "INF"),
+                (NativeTypeConstructorFamily::UnitType, "HUNIT"),
+                (NativeTypeConstructorFamily::AircraftType, "HAIR"),
+                (NativeTypeConstructorFamily::Side, "HSIDE"),
+            ]
+        },
         "prepass must retain lookup state and read each House body in Infantry/Unit/Aircraft/Side order",
     );
 

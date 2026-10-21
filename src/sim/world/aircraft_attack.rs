@@ -7,7 +7,7 @@
 use super::{FrameEffects, Simulation};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::aircraft::{attack_mission, enter_idle_mode_for};
+use crate::sim::aircraft::attack_mission;
 use crate::sim::combat::TargetKind;
 use crate::sim::combat::{combat_weapon, fire_coord};
 use crate::sim::components::NavTargetRef;
@@ -259,6 +259,12 @@ impl attack_mission::ExitHost for WorldExit<'_> {
     }
 
     fn enter_idle_mode(&mut self) {
-        enter_idle_mode_for(self.sim, self.id, self.rules, self.registry, self.effects);
+        crate::sim::aircraft::enter_idle_mode_after_attack(
+            self.sim,
+            self.id,
+            self.rules,
+            self.registry,
+            self.effects,
+        );
     }
 }

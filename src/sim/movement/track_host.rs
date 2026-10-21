@@ -1184,6 +1184,19 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
+        self.foot_enter_idle_base_with(id, rules, registry, effects, true)
+    }
+
+    /// [`Self::foot_enter_idle_base`] with an Aircraft's `+0x6D5` as
+    /// `planning_arrival` ([`Self::planning_enter_idle`]).
+    pub(crate) fn foot_enter_idle_base_with(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+        planning_arrival: bool,
+    ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
         };
@@ -1202,7 +1215,7 @@ impl Simulation {
             id,
         );
         if !self.foot_refresh_mega_mission(id, rules, registry, effects) {
-            self.planning_enter_idle(id, rules);
+            self.planning_enter_idle(id, rules, planning_arrival);
         }
         // Foot4D831A..8376 asks the active IPiggyback, whatever its class,
         // and ends it before NavQueue when its Is_Ok_To_End allows.

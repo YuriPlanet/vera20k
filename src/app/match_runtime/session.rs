@@ -1005,15 +1005,18 @@ impl MatchSession {
     /// The admitted host's options packet (ParsePacket5E3D10) replaces setup
     /// values, never roster identity or its independent ready/map acknowledgements.
     /// The service adapter applies the packet's local-ready invalidation separately.
+    /// A WOL Quick Match host applies the matchbot's options the same way
+    /// (`matchbot`, `0x007A6DE2..0x007A6DF3`).
     pub(crate) fn accept_network_host_setup(
         &mut self,
         mut incoming: SkirmishLaunchSession,
         incoming_vacancies: [NetworkVacancy; 8],
         capacity: i32,
         observer_row: Option<u8>,
+        matchbot: bool,
     ) -> anyhow::Result<()> {
         anyhow::ensure!(
-            !self.host,
+            !self.host || matchbot,
             "a host cannot receive guest-authored host setup"
         );
         anyhow::ensure!(capacity > 0, "host map capacity must be positive");
@@ -2239,7 +2242,7 @@ mod tests {
         let options =
             |session: &mut MatchSession, vacancies: [super::NetworkVacancy; 8], capacity: i32| {
                 session
-                    .accept_network_host_setup(launch.clone(), vacancies, capacity, None)
+                    .accept_network_host_setup(launch.clone(), vacancies, capacity, None, false)
                     .unwrap();
                 let metadata = super::NetworkMapMetadata {
                     display_name: "Map".into(),
@@ -2437,7 +2440,13 @@ mod tests {
                 .unwrap()
         );
         session
-            .accept_network_host_setup(launch.clone(), [super::NetworkVacancy::Open; 8], 2, Some(7))
+            .accept_network_host_setup(
+                launch.clone(),
+                [super::NetworkVacancy::Open; 8],
+                2,
+                Some(7),
+                false,
+            )
             .unwrap();
         session
             .accept_network_map_metadata(metadata.clone(), None, true)
@@ -2502,7 +2511,7 @@ mod tests {
         incoming.humans[0].role = crate::skirmish_launch::LaunchHumanRole::Player { group: 2 };
         let vacancies = [super::NetworkVacancy::Closed; 8];
         session
-            .accept_network_host_setup(incoming, vacancies, 4, Some(7))
+            .accept_network_host_setup(incoming, vacancies, 4, Some(7), false)
             .unwrap();
         assert!(session.network_player_ready(0));
         assert!(session.network_player_ready(1));
@@ -2518,7 +2527,7 @@ mod tests {
         reordered.humans.swap(0, 1);
         assert!(
             session
-                .accept_network_host_setup(reordered, vacancies, 4, Some(7))
+                .accept_network_host_setup(reordered, vacancies, 4, Some(7), false)
                 .is_err()
         );
         assert_eq!(session, accepted);

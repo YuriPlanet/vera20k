@@ -351,34 +351,47 @@ pub(crate) fn build_shp_instances(
                         let art = art_reg.and_then(|registry| {
                             registry.resolve_metadata_entry(type_str, &obj.image)
                         });
+                        // DrawBody's gate branch replaces GetCurrentFrame while
+                        // the gate opens, stands open or closes.
+                        let gate_frame = obj.gate.then(|| {
+                            crate::sim::building_art::gate_open_body_frame(
+                                entity,
+                                art.map_or(9, |entry| entry.building_gate_stages),
+                                obj.strength,
+                                cy,
+                                sim.session().binary_frame(),
+                            )
+                        });
                         // The completed body shares GetCurrentFrame43EF90 with
                         // receiver health comparisons. In particular Idle's
                         // damaged frame is base+1, including the first frame
                         // after Construction; it is not always body frame0.
-                        let frame = crate::sim::building_art::body_frame(
-                            crate::sim::building_art::BodyFrameInput {
-                                state: entity.building_body_state().unwrap_or(1),
-                                base_frame: entity.construction_stage_value(),
-                                laser_frame: obj.laser_fence.then_some(0),
-                                firestorm_frame: obj.firestorm_wall.then_some(0),
-                                gate_stages: obj
-                                    .gate
-                                    .then_some(art.map_or(9, |entry| entry.building_gate_stages)),
-                                occupants: obj.can_be_occupied.then_some(occupant_count as i32),
-                                tech_level: sim.object_tech_level(obj),
-                                selling: entity.building_down(),
-                                buildup: [0, 1],
-                                ordinary: art.map_or([[0, 1]; 4], |entry| {
-                                    entry
-                                        .building_body_ranges
-                                        .map(|[start, count, _]| [start, count])
-                                }),
-                            },
-                            entity.health,
-                            obj.strength,
-                            cy,
-                            cr,
-                        );
+                        let frame = gate_frame.flatten().unwrap_or_else(|| {
+                            crate::sim::building_art::body_frame(
+                                crate::sim::building_art::BodyFrameInput {
+                                    state: entity.building_body_state().unwrap_or(1),
+                                    base_frame: entity.construction_stage_value(),
+                                    laser_frame: obj.laser_fence.then_some(0),
+                                    firestorm_frame: obj.firestorm_wall.then_some(0),
+                                    gate_stages: obj.gate.then_some(
+                                        art.map_or(9, |entry| entry.building_gate_stages),
+                                    ),
+                                    occupants: obj.can_be_occupied.then_some(occupant_count as i32),
+                                    tech_level: sim.object_tech_level(obj),
+                                    selling: entity.building_down(),
+                                    buildup: [0, 1],
+                                    ordinary: art.map_or([[0, 1]; 4], |entry| {
+                                        entry
+                                            .building_body_ranges
+                                            .map(|[start, count, _]| [start, count])
+                                    }),
+                                },
+                                entity.health,
+                                obj.strength,
+                                cy,
+                                cr,
+                            )
+                        });
                         u16::try_from(frame).unwrap_or(0)
                     } else {
                         0

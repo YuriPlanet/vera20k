@@ -226,6 +226,8 @@ pub(crate) fn active_page_title_text(
         ShellSlideKind::WolLocale => crate::ui::wol_persona::LOCALE_PAGE.title_key,
         ShellSlideKind::WolMyInformation => crate::ui::wol_my_info::PAGE.title_key,
         ShellSlideKind::WolBuddyList => crate::ui::wol_buddy::PAGE.title_key,
+        ShellSlideKind::WolQuickMatch => crate::ui::wol_quick_match::PAGE.title_key,
+        ShellSlideKind::WolAddBuddyQuery => crate::ui::wol_persona::ADD_BUDDY_PAGE.title_key,
         ShellSlideKind::Keyboard => crate::ui::shell::keyboard::KEYBOARD_PAGE.title_key,
         ShellSlideKind::NetworkOptions => crate::ui::network_options::PAGE.title_key,
         ShellSlideKind::LanLobby => crate::ui::lan_shell::PAGE.title_key,

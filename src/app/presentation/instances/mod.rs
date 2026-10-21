@@ -22,6 +22,8 @@ mod anim_draw;
 #[cfg(test)]
 mod anim_translucency_tests;
 mod foot_depth;
+#[cfg(test)]
+mod parachute_scene_tests;
 
 mod units;
 pub(crate) use units::*;

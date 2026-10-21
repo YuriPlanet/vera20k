@@ -634,3 +634,269 @@ fn a_c4_planter_arriving_at_a_building_raises_its_entered_by_event() {
         );
     }
 }
+
+/// Infantry519710 raises the building's Entered event with the entering
+/// infantryman, before AddGarrisonOccupant522910 conceals him. A rejected
+/// admission must not raise it, and the building's House is not the actor.
+#[test]
+fn garrison_arrival_raises_entered_by_only_for_an_admitted_infantryman() {
+    for (actor_house, health, entered) in [(0, 500, true), (1, 500, false), (0, 50, false)] {
+        let (mut sim, rules, registry, houses) = super::tests::event_ingress_fixture_with_rules(
+            "[Country7]\nMultiplayPassive=yes\n\
+             [InfantryTypes]\n0=TAGINF\n[TAGINF]\nStrength=100\nSpeed=4\n\
+             Occupier=yes\nSpeedType=Foot\n\
+             Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+             [BuildingTypes]\n0=TAGGARRISON\n[TAGGARRISON]\nStrength=500\n\
+             CanBeOccupied=yes\nMaxNumberOccupants=3\n",
+        );
+        sim.houses
+            .get_mut(&houses[1])
+            .unwrap()
+            .resolve_multiplay_passive(&rules, Some("Country7"));
+        let building = sim
+            .spawn_object("TAGGARRISON", "House1", 16, 16, 0, &rules)
+            .unwrap();
+        let actor_owner = sim.interner.resolve(houses[actor_house]).to_owned();
+        let infantry = sim
+            .spawn_object("TAGINF", &actor_owner, 15, 16, 0, &rules)
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(building)
+            .unwrap()
+            .health
+            .set_for_test(health);
+        install(&mut sim, &rules, "1,0,0");
+        sim.attach_object_trigger_tag(building, Some("MOVETAG"));
+        arrive_at_building(
+            &mut sim,
+            &rules,
+            &registry,
+            infantry,
+            building,
+            crate::sim::mission::MissionType::Capture,
+        );
+        assert_eq!(
+            sim.trigger_runtime.globals_set.contains(&7),
+            entered,
+            "actor House{actor_house}, building health {health}"
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(infantry)
+                .unwrap()
+                .passenger_role
+                .inside_transport_id(),
+            (health == 500).then_some(building),
+        );
+    }
+}
+
+/// The physical ALL03 Space Needle links Entered events to full-map reveal
+/// on campaign rows 0/1 and six waypoint reveals on row 2. Exercise the
+/// selected original trigger chain on flat ground through Capture, Walk and
+/// PerCell; this is not a replay of the whole campaign or its authored terrain.
+#[test]
+fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
+    use crate::map::map_file::MapFile;
+    use crate::rules::process_owner::NativeScenarioRulesPrefix;
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let map = MapFile::from_bytes(assets.get_ref("ALL03UMD.MAP").unwrap()).unwrap();
+    let named = assets.resolve_ref("ALL03UMD.INI").map(|_| {
+        crate::rules::retail_sources::select_ini(&assets, "ALL03UMD.INI")
+            .unwrap()
+            .ini
+    });
+    let mut reader = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+    let (rules, _, _, _) = reader
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(named.as_ref()),
+            &map.ini,
+        )
+        .unwrap()
+        .into_parts();
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&map.ini, None);
+    let roster =
+        crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
+    let needle = map
+        .entities
+        .iter()
+        .find(|entity| entity.type_id == "CASEAT01")
+        .unwrap();
+    assert_eq!(needle.trigger_tag.as_deref(), Some("0BFA637C"));
+    assert_eq!(map.tags["0BFA637C"].trigger(), Some("0B7BAC0C"));
+    assert_eq!(map.triggers["092589AC"].difficulty(), [true, true, false]);
+    assert_eq!(map.triggers["092C7F3C"].difficulty(), [false, false, true]);
+    for trigger in ["092589AC", "092C7F3C", "0BFA668C"] {
+        assert_eq!(map.events[trigger].conditions()[0].kind, 1);
+        assert_eq!(map.events[trigger].conditions()[0].value, 0);
+    }
+    assert_eq!(map.actions["092589AC"].entries()[0].kind, 16);
+    assert_eq!(
+        map.actions["092C7F3C"]
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind == 17)
+            .count(),
+        6
+    );
+    assert!(rules.object("CASEAT01").unwrap().can_be_occupied);
+    let radar = map
+        .entities
+        .iter()
+        .find(|entity| entity.trigger_tag.as_deref() == Some("0BFA6C7C"))
+        .unwrap();
+    assert_eq!(radar.type_id, "GAAIRC");
+
+    // Keep the authored linked triggers and radar attachment, excluding
+    // unrelated mission scripts from this small scene's House polling.
+    let triggers = [
+        "0BFA3F3C", "0BFA668C", "0B7BAC0C", "092C7F3C", "0B7BCAAC", "092589AC",
+    ];
+    let tags = ["0BFA6C7C", "0BFA637C"];
+    let mut chain = String::new();
+    for (section_name, ids) in [
+        ("Tags", tags.as_slice()),
+        ("Triggers", triggers.as_slice()),
+        ("Events", triggers.as_slice()),
+        ("Actions", triggers.as_slice()),
+    ] {
+        chain.push_str(&format!("[{section_name}]\n"));
+        let section = map.ini.section(section_name).unwrap();
+        for key in section.keys().filter(|key| ids.contains(key)) {
+            chain.push_str(&format!("{key}={}\n", section.get_for_test(key).unwrap()));
+        }
+    }
+
+    for (difficulty, whole_map) in [(0, true), (1, true), (2, false)] {
+        let mut sim = Simulation::with_seed(3);
+        crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        // A Size 16x16 diamond fits the arena's 32x32 cell storage.
+        sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
+            theater: "TEMPERATE".into(),
+            fill: "Clear".into(),
+            level: 0,
+            width: 16,
+            height: 16,
+            local_left: 0,
+            local_top: 0,
+            local_width: 16,
+            local_height: 16,
+        });
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+        );
+        sim.session
+            .initialize_campaign_startup(difficulty, 3, None)
+            .unwrap();
+        sim.session.game_options_mut_for_test().short_game = false;
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        crate::sim::scenario_bootstrap::initialize_map_roster_houses(
+            &mut sim,
+            &roster,
+            &rules,
+            Some(&map.ini),
+        );
+        let player = sim.interner.get("Americans").unwrap();
+        sim.session.set_current_house_for_test(Some(player));
+        sim.houses
+            .get_mut(&player)
+            .unwrap()
+            .set_is_human_for_test(true);
+        sim.session.install_waypoints(&map.waypoints);
+        install_event_ingress_map(&mut sim, &rules, &chain);
+        let building = sim
+            .spawn_object(&needle.type_id, &needle.owner, 16, 16, 0, &rules)
+            .unwrap();
+        sim.attach_object_trigger_tag(building, needle.trigger_tag.as_deref());
+        let radar_building = sim
+            .spawn_object(&radar.type_id, &radar.owner, 7, 17, 0, &rules)
+            .unwrap();
+        sim.attach_object_trigger_tag(radar_building, radar.trigger_tag.as_deref());
+        sim.spawn_object("GAPOWR", "Americans", 11, 20, 0, &rules)
+            .unwrap();
+        let infantry = sim
+            .spawn_object("E1", "Americans", 13, 16, 0, &rules)
+            .unwrap();
+        assert!(!sim.fog.whole_map_revealed_for_owner(player));
+        assert!(!sim.fog.is_cell_revealed(player, 24, 16));
+        assert!(sim.apply_command(
+            "Americans",
+            &crate::sim::command::Command::CaptureBuilding {
+                engineer_id: infantry,
+                target_building_id: building,
+            },
+            Some(&rules)
+        ));
+        let mut garrisoned = false;
+        for _ in 0..256 {
+            sim.advance_app_frame(
+                &[],
+                &rules,
+                Some(&registry),
+                67,
+                crate::sim::world::TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .unwrap();
+            if sim
+                .substrate
+                .entities
+                .get(infantry)
+                .unwrap()
+                .passenger_role
+                .inside_transport_id()
+                == Some(building)
+            {
+                garrisoned = true;
+                break;
+            }
+        }
+        assert!(
+            garrisoned,
+            "difficulty {difficulty}: ordinary Capture must enter the Needle"
+        );
+        assert_eq!(
+            sim.fog.whole_map_revealed_for_owner(player),
+            whole_map,
+            "difficulty {difficulty}"
+        );
+        assert_eq!(sim.fog.is_cell_revealed(player, 24, 16), whole_map);
+        let actions: Vec<_> = sim
+            .trigger_runtime
+            .action_trace
+            .iter()
+            .map(|row| row.0)
+            .collect();
+        assert_eq!(
+            actions.iter().filter(|&&kind| kind == 16).count(),
+            usize::from(whole_map)
+        );
+        assert_eq!(
+            actions.iter().filter(|&&kind| kind == 17).count(),
+            if whole_map { 0 } else { 6 }
+        );
+        assert!(
+            actions.contains(&53),
+            "entry also enables the authored radar reward"
+        );
+        for _ in 0..16 {
+            sim.advance_app_frame(
+                &[],
+                &rules,
+                Some(&registry),
+                67,
+                crate::sim::world::TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        }
+        assert_eq!(sim.fog.whole_map_revealed_for_owner(player), whole_map);
+        assert_eq!(sim.fog.is_cell_revealed(player, 24, 16), whole_map);
+    }
+}

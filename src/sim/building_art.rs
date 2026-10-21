@@ -954,6 +954,55 @@ pub fn body_frame(
     frame
 }
 
+/// Building DrawBody's gate branch (`0x0043D546..0x0043D68F`): a building
+/// on Mission Open (Get_Mission, vt+0x184) whose door (`+0x350`) is opening,
+/// closing or open draws this frame instead of GetCurrentFrame's. The frame
+/// is `ftol(progress * GateStages)` of the door's drawing progress
+/// (`0x004A52F0`, [`crate::sim::door::DoorClass::draw_progress`]), counted
+/// back from GateStages while closing, `GateStages - 1` once open, clamped
+/// to `0..GateStages`, plus `GateStages + 1` at ConditionYellow health or
+/// below (`0x005F5C60` against Rules `+0x1700`). The branch then returns, so
+/// no bib is drawn. None outside it.
+///
+/// RESIDUAL: the branch lights the body without the type's `ExtraLight=`
+/// (its vt+0x1D0 call adds no `+0x1548`); VERA keeps the ordinary body
+/// light. Retail's only gate, GAGATE_A, sets no ExtraLight.
+pub fn gate_open_body_frame(
+    entity: &GameEntity,
+    gate_stages: i32,
+    strength: i32,
+    yellow: f64,
+    frame: u32,
+) -> Option<i32> {
+    use crate::sim::door::DoorPhase;
+    if entity.mission.effective().known() != Some(crate::sim::mission::MissionType::Open) {
+        return None;
+    }
+    let phase = entity.door_phase();
+    let mut stage = match phase {
+        DoorPhase::ClosedStable => return None,
+        DoorPhase::OpenStable => gate_stages.wrapping_sub(1),
+        DoorPhase::Opening | DoorPhase::Closing => {
+            let done = (entity.door_draw_progress(frame) * f64::from(gate_stages)) as i32;
+            if phase == DoorPhase::Closing {
+                gate_stages.wrapping_sub(done)
+            } else {
+                done
+            }
+        }
+    };
+    if stage >= gate_stages {
+        stage = gate_stages.wrapping_sub(1);
+    }
+    stage = stage.max(0);
+    let damaged = requested_damage_state(entity.health, strength, yellow);
+    Some(if damaged {
+        stage.wrapping_add(gate_stages.wrapping_add(1))
+    } else {
+        stage
+    })
+}
+
 /// The image `BuildingClass::GetImage @ 0x004513D0` hands DrawBody.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuildingImage {

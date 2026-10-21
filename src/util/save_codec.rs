@@ -16,11 +16,15 @@
 //! in declaration order, so `deserialize_any`, `deserialize_ignored_any` and
 //! identifiers are refused. A value decodes from a prefix of its input; the
 //! save header is read that way without decoding the body behind it.
+//! [`layout`] describes what a type reads, so saves can name their layout.
 
 use std::fmt;
 
 use serde::de::{self, DeserializeSeed, Deserializer as _, IntoDeserializer, Visitor};
 use serde::ser::{self, Serialize};
+
+#[path = "save_codec/layout.rs"]
+pub mod layout;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

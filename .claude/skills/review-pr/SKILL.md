@@ -71,8 +71,6 @@ oracles, scripts) until steps 1 and 2 are clean.
      `--wait 3600` in the background rather than creating a worktree.
    - In the slot, `git fetch origin main pull/<N>/head`,
      `git checkout --detach <PR head SHA>`, then merge `origin/main`.
-   - On a snapshot clash, keep both changelog lines and take the next free
-     `SNAPSHOT_VERSION`.
    - Push a slot merge to the contributor's branch, and confirm the PR head
      equals the SHA you pushed.
    - Apply [Contributor attribution](#contributor-attribution) before choosing the

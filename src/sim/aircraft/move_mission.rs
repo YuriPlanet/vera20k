@@ -37,11 +37,15 @@
 //! states; `world::aircraft_move`'s tests replay every row through
 //! [`move_visit`] and the world queries it gives the production host.
 //!
-//! RESIDUAL: state 2's planning-path arm (`0x004167CE..0x00416885`: with
-//! `PlanningPathIdx` `+0x520` set, within 256 leptons of the NavCom it steps
-//! to the path's next waypoint through `0x004DC8C0`) is not ported; VERA keeps
-//! no planning path on an aircraft. Trigger: a waypoint path the player
-//! planned for aircraft. Effect: none until such paths exist.
+//! Not ported, unreachable in YR: state 2's waypoint-path arm
+//! (`0x004167CE..0x00416885`: with `+0x520` set, within 256 leptons of the
+//! NavCom it steps to the path's next waypoint through `0x004DC8C0`). `+0x520`
+//! is written only by `FootClass::SetPathIndex @ 0x004DC810` (vt+0x1A4), with
+//! an index that `HouseClass @ 0x005023B0` finds among the waypoints of the
+//! house paths `+0x210`. The only routine that adds such a waypoint,
+//! `WaypointPathClass @ 0x007639A0`, is called only from `0x00502160`, which
+//! no call, jump or pointer reaches, so those paths stay empty. YR planning
+//! mode uses its own nodes (`world::planning`).
 
 /// What a Mission_Move visit asks and does, each where the original does it.
 pub(crate) trait MoveHost {

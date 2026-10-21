@@ -553,6 +553,12 @@ impl Simulation {
             .is_some_and(|entity| entity.category() == EntityCategory::Unit)
         {
             self.deactivated_unit_sparks(id, rules);
+            // `0x007361A9..0x00736204`, right after the sparks and ahead of
+            // Temporal, the tube test and FootClass::AI: a draining Floating
+            // Disc re-checks the building under it every 16th frame and drops
+            // the link when it has drifted off, then removes a ray left with
+            // no link.
+            crate::sim::credit_income::drain_unit_ai_step(self, id, rules);
         }
         let Some(entity) = self.substrate.entities.get(id) else {
             return ObjectAiOutcome::default();
@@ -2192,11 +2198,6 @@ fn unit_techno_bracket(
     // (start = current frame, delay = handler return). One committed-selector
     // match routes Harvest, Attack and the other represented Foot handlers.
     outcome.bridge_state_changed |= dispatch_foot_mission(sim, id, rules, ctx);
-    // `UnitClass::AI @ 0x007361A9..0x00736204`: a draining Floating Disc
-    // re-checks the building under it every 16th frame and drops the link
-    // when it has drifted off, then removes a ray left with no link (after
-    // FootClass::AI in the native order).
-    crate::sim::credit_income::drain_unit_ai_step(sim, id, rules);
     // Passive / opportunity target acquisition sits between mission dispatch
     // and the second IsAlive guard, before the object's own locomotion.
     passive_acquire_step(sim, id, rules, ctx);

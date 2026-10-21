@@ -74,3 +74,32 @@ replaced its only consumer and the helper is deleted
 ([issue #1027](https://github.com/YuriPlanet/vera20k/issues/1027)).
 No ordinary-map overflow was demonstrated in the other inspected shared helpers;
 the documentation now states their result/intermediate bounds explicitly.
+
+## Stock American paradrop lifecycle regression
+
+`retail_american_paradrop_produces_and_retires_its_own_canopies` exercises the
+rebuilt engine beyond the coordinate prefix. It loads physical XMP03T4 with
+the American launch House and declares an initial completed GAPOWR and AMRADR
+on clear level foundations through normal object construction and Unlimbo.
+The power plant supplies the provider's operating power; no House, readiness,
+timer, falling or Anim fields are set to make the drop happen.
+
+The test observes the provider grant, requires the physical 3600-frame recharge,
+and queues one ordinary `LaunchSuperWeapon` command. It follows the real
+PDPLANE's eight E1 passengers through cargo departure, a lower descent sample,
+landing and canopy removal, then requires the carrier to leave. Each retained
+canopy must keep its owner, House remap and owner-relative 75-lepton Z lift;
+landing releases its loop without deleting it immediately.
+
+Set `RA2_DIR` to the retail install and `VERA20K_REQUIRE_RETAIL_ASSETS=1`, then run:
+
+```sh
+cargo test --locked -p vera20k --lib retail_american_paradrop_produces_and_retires_its_own_canopies -- --ignored --nocapture --test-threads=1
+```
+
+This asset-dependent test is ignored by default because it runs the full normal
+recharge and flight. It declares no computer opponents, uses normal starting
+bases with zero starting combat units, and disables crates, shroud and fog.
+It does not test buying the initial buildings, mouse input, rendered pixels,
+or a matching whole original mission. The native coordinate-prefix comparison
+above retains its narrower boundary.

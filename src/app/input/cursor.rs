@@ -437,14 +437,13 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
 /// Shift, Alt and Ctrl+Alt answer before it
 /// ([`super::context_order::object_key_action`]).
 ///
+/// A player's Crazy Ivan with Ctrl answers IvanBomb (`0x0051EB48..0x0051EB66`)
+/// over every retail Terrain object
+/// ([`super::context_order::ivan_bomb_object_refused`]).
+///
 /// RESIDUALS, each a rare chord or unit over a Terrain object:
 /// - Ctrl+Shift and VERA's sticky attack-move mode answer the Cell. Native:
 ///   the unforced answer (NoMove for a player's Unit or Infantryman).
-/// - A player's Crazy Ivan with Ctrl: native answers IvanBomb
-///   (`0x0051EB48..0x0051EB66`) on every Terrain object, which are all
-///   `Bombable=` (ObjectType ctor `+0x22E`; no retail TerrainType clears it),
-///   and plants a bomb on it. VERA attaches no bomb to Terrain; it answers
-///   NoIvanBomb and sends nothing.
 pub(crate) fn terrain_object_feedback(
     sim: &crate::sim::world::Simulation,
     actor_id: u64,
@@ -479,8 +478,13 @@ pub(crate) fn terrain_object_feedback(
         .and_then(|actor| rules.and_then(|r| sim.interner().object_type(actor.type_ref(), r)))
         .is_some_and(|object| object.ivan);
     Some(
-        infantry_weapon_feedback(sim, rules, actor_id, terrain_id, kind)
-            .unwrap_or_else(|| ivan_attack_feedback(kind, is_ivan, None, None)),
+        infantry_weapon_feedback(sim, rules, actor_id, terrain_id, kind).unwrap_or_else(|| {
+            ivan_attack_feedback(kind, is_ivan, || {
+                rules.is_none_or(|rules| {
+                    super::context_order::ivan_bomb_object_refused(sim, rules, terrain_id)
+                })
+            })
+        }),
     )
 }
 
@@ -897,7 +901,11 @@ pub(super) fn capability_cursor_for_hover(
                 let kind = kind.unwrap_or(CursorFeedbackKind::Default);
                 return infantry_weapon_feedback(sim, rules, best_id, hover.stable_id, kind)
                     .unwrap_or_else(|| {
-                        ivan_attack_feedback(kind, best_is_ivan, hovered_entity, hovered_obj)
+                        ivan_attack_feedback(kind, best_is_ivan, || {
+                            !hovered_entity.is_some_and(|target| {
+                                !super::context_order::ivan_bomb_refused(target, hovered_obj)
+                            })
+                        })
                     });
             }
         }
@@ -960,7 +968,11 @@ pub(super) fn capability_cursor_for_hover(
             };
             return infantry_weapon_feedback(sim, Some(rules), best_id, hover.stable_id, kind)
                 .unwrap_or_else(|| {
-                    ivan_attack_feedback(kind, best_is_ivan, hovered_entity, hovered_obj)
+                    ivan_attack_feedback(kind, best_is_ivan, || {
+                        !hovered_entity.is_some_and(|target| {
+                            !super::context_order::ivan_bomb_refused(target, hovered_obj)
+                        })
+                    })
                 });
         }
     }
@@ -1078,7 +1090,11 @@ pub(super) fn capability_cursor_for_hover(
             best_id
                 .and_then(|id| infantry_weapon_feedback(sim, rules, id, hover.stable_id, kind))
                 .unwrap_or_else(|| {
-                    ivan_attack_feedback(kind, best_is_ivan, hovered_entity, hovered_obj)
+                    ivan_attack_feedback(kind, best_is_ivan, || {
+                        !hovered_entity.is_some_and(|target| {
+                            !super::context_order::ivan_bomb_refused(target, hovered_obj)
+                        })
+                    })
                 })
         }
         HoverTargetKind::HiddenEnemy => CursorFeedbackKind::Invalid,
@@ -1198,15 +1214,15 @@ fn unit_repair_feedback(
 }
 
 /// `InfantryClass::What_Action_OnObject` (`0x0051EB24..0x0051EB7E`) for a
-/// Crazy Ivan (`Ivan=`) whose action is Attack ([`ivan_bomb_action`]). A shot
+/// Crazy Ivan (`Ivan=`) whose action is Attack: IvanBomb unless `refused`
+/// ([`super::context_order::ivan_bomb_refused`]). A shot
 /// ILLEGAL to him, such as one at a target that already carries a bomb
 /// (`0x006FCBAD`), never reaches it unforced: [`super::context_order::attack_action`]
 /// answers the Techno tail there.
 fn ivan_attack_feedback(
     kind: CursorFeedbackKind,
     selector_is_ivan: bool,
-    target: Option<&crate::sim::game_entity::GameEntity>,
-    target_obj: Option<&crate::rules::object_type::ObjectType>,
+    refused: impl FnOnce() -> bool,
 ) -> CursorFeedbackKind {
     let attack = matches!(
         kind,
@@ -1217,20 +1233,13 @@ fn ivan_attack_feedback(
     if !selector_is_ivan || !attack {
         return kind;
     }
-    ivan_bomb_action(target, target_obj)
-}
-
-/// The Crazy Ivan's arm itself (`0x0051EB24`,
-/// [`super::context_order::ivan_bomb_refused`]): IvanBomb, or NoIvanBomb
-/// (NoMove's row).
-fn ivan_bomb_action(
-    target: Option<&crate::sim::game_entity::GameEntity>,
-    target_obj: Option<&crate::rules::object_type::ObjectType>,
-) -> CursorFeedbackKind {
-    if target.is_some_and(|target| !super::context_order::ivan_bomb_refused(target, target_obj)) {
-        CursorFeedbackKind::IvanBomb
-    } else {
+    // The Crazy Ivan's arm itself (`0x0051EB24`,
+    // [`super::context_order::ivan_bomb_refused`]): IvanBomb, or NoIvanBomb
+    // (NoMove's row).
+    if refused() {
         CursorFeedbackKind::Invalid
+    } else {
+        CursorFeedbackKind::IvanBomb
     }
 }
 

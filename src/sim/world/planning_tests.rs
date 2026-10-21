@@ -268,7 +268,11 @@ fn special_ordinary_retask_cancels_shared_route(kind: &str) {
         );
     }
     assert!(
-        !sim.planning_enter_idle(actor, crate::rules::ruleset::RuleSet::empty_for_test()),
+        !sim.planning_enter_idle(
+            actor,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            true
+        ),
         "{kind} must not restart an old leg"
     );
     assert!(sim.pending_command_snapshot().is_empty());
@@ -349,6 +353,8 @@ fn native_dispatch_latches_match_production_flags_and_keep_path_shape() {
     }
 }
 
+/// The node start queues Deliberate with commence 1 (`0x00638606`), so a
+/// ready object makes it current at once and queues nothing.
 #[test]
 fn guard_commit_consumes_first_node_stages_deliberate_and_retains_next_node() {
     let (mut sim, rules, owner) = fixture();
@@ -370,16 +376,12 @@ fn guard_commit_consumes_first_node_stages_deliberate_and_retains_next_node() {
     assert_eq!(path.nodes.len(), 1);
     assert_eq!(path.pending, -1);
     assert_eq!(path.current.as_ref().unwrap().payload()[22], 2);
+    let mission = &sim.substrate.entities.get(1).unwrap().mission;
     assert_eq!(
-        sim.substrate
-            .entities
-            .get(1)
-            .unwrap()
-            .mission
-            .queued()
-            .known(),
+        mission.current().known(),
         Some(crate::sim::mission::MissionType::Deliberate)
     );
+    assert_eq!(mission.queued(), crate::sim::mission::MissionId::NONE);
     assert!(sim.take_due_commands().is_empty());
     sim.session.set_tick_for_test(sim.session.tick() + 1);
     let due = sim.take_due_commands();
@@ -1692,4 +1694,31 @@ fn press_refusals_and_hover_follow_the_selected_paths() {
     assert_eq!(sim.planning.paths[&1].loop_start, Some(0));
     assert_eq!(sim.planning_invalid_node_reason(&[1], 1), Some(1));
     assert_eq!(sim.planning_press_refusal(&[1], first), Some(InvalidNode));
+}
+
+/// TechnoClass::Enter_Idle_Mode asks vt+0x430 before the node start
+/// (`0x00709A6B`): an Aircraft answers its `+0x6D5` byte (`0x0041B9E0`),
+/// which only Mission_Attack state 10 clears around its idle call, so that
+/// call starts no planned node; a later idle entry does.
+#[test]
+fn an_aircraft_starts_its_planned_node_only_with_its_arrival_byte_set() {
+    let (mut sim, rules, owner) = fixture();
+    assert_eq!(sim.substrate.allocate_stable_id(), 4);
+    crate::sim::world::lifecycle_tests::insert_entity(
+        &mut sim,
+        4,
+        crate::map::entities::EntityCategory::Aircraft,
+    );
+    let jet = sim.substrate.entities.get_mut(4).unwrap();
+    jet.lifecycle.set_in_limbo_for_test(false);
+    jet.in_logic_vector.set_for_test(true);
+    append(&mut sim, &rules, owner, 4, (12, 15));
+    append(&mut sim, &rules, owner, 4, (16, 15));
+    let path = sim.planning.paths.get_mut(&4).unwrap();
+    path.pending = 1;
+    path.executing = false;
+    assert!(!sim.planning_enter_idle(4, &rules, false));
+    assert!(!sim.planning.paths[&4].executing);
+    assert!(sim.planning_enter_idle(4, &rules, true));
+    assert!(sim.planning.paths[&4].executing);
 }

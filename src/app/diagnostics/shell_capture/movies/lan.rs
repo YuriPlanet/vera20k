@@ -544,7 +544,7 @@ impl LanCapture {
         vacancies[7] = NetworkVacancy::Closed;
         setup::service_event(
             state,
-            NetworkSetupEvent::HostSetup {
+            NetworkSetupEvent::HostSetup(crate::app::shell_network_setup::HostOptions {
                 launch,
                 vacancies,
                 map_metadata: self.map_metadata()?,
@@ -556,7 +556,7 @@ impl LanCapture {
                 ),
                 cooperative_difficulty: 0,
                 seed: Some(self.seed()?),
-            },
+            }),
         )?;
         self.assert_guest_order(state, true)
     }

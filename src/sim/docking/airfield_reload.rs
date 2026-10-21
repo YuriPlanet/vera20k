@@ -15,8 +15,9 @@
 //!
 //! Releasing is `Enter_Idle_Mode(0, 1)` (vt+0x484), `Assign_Mission(Guard)`
 //! (vt+0x1F0, the aircraft's `0x0041B9F0`) and vt+0x334 (`FootClass @
-//! 0x004DE580`, which resumes a planning path `+0x520`; VERA keeps none on
-//! an aircraft, see `aircraft::move_mission`).
+//! 0x004DE580`), which resumes the house waypoint path `+0x520` names. That
+//! index is never set in YR (see `aircraft::move_mission`), so vt+0x334 does
+//! nothing here.
 //!
 //! A visit that serviced a contact returns `ftol(ReloadRate x 900)`
 //! (`0x0044C937..0x0044C948`, Rules `+0x1508`); any other queues the

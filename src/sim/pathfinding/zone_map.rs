@@ -215,42 +215,47 @@ impl serde::Serialize for ZoneGrid {
 impl<'de> serde::Deserialize<'de> for ZoneGrid {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let retained = RetainedZoneGrid::deserialize(deserializer)?;
-        let count = usize::from(retained.width) * usize::from(retained.height);
         let base = retained.base_topology;
-        if base.movement_classes.len() != count
-            || base.levels.len() != count
-            || base.zone_ids.len() != count
-        {
-            return Err(serde::de::Error::custom(
-                "saved navigation plane dimensions differ",
-            ));
-        }
-        let labels = base.raw_zone_ids_by_row[0].len();
-        if labels == 0
-            || base
-                .raw_zone_ids_by_row
+        // A traced placeholder skips the plane checks and the row projection.
+        let maps = if crate::util::save_codec::layout::describing() {
+            BTreeMap::new()
+        } else {
+            let count = usize::from(retained.width) * usize::from(retained.height);
+            if base.movement_classes.len() != count
+                || base.levels.len() != count
+                || base.zone_ids.len() != count
+            {
+                return Err(serde::de::Error::custom(
+                    "saved navigation plane dimensions differ",
+                ));
+            }
+            let labels = base.raw_zone_ids_by_row[0].len();
+            if labels == 0
+                || base
+                    .raw_zone_ids_by_row
+                    .iter()
+                    .any(|row| row.len() != labels)
+                || base.zone_ids.iter().any(|id| usize::from(*id) >= labels)
+            {
+                return Err(serde::de::Error::custom(
+                    "saved navigation raw rows do not cover base IDs",
+                ));
+            }
+            MovementZone::all_ground()
                 .iter()
-                .any(|row| row.len() != labels)
-            || base.zone_ids.iter().any(|id| usize::from(*id) >= labels)
-        {
-            return Err(serde::de::Error::custom(
-                "saved navigation raw rows do not cover base IDs",
-            ));
-        }
-        let maps = MovementZone::all_ground()
-            .iter()
-            .map(|&movement| {
-                (
-                    movement,
-                    zone_build::build_zone_map_from_base_topology(
-                        &base,
+                .map(|&movement| {
+                    (
                         movement,
-                        retained.width,
-                        retained.height,
-                    ),
-                )
-            })
-            .collect();
+                        zone_build::build_zone_map_from_base_topology(
+                            &base,
+                            movement,
+                            retained.width,
+                            retained.height,
+                        ),
+                    )
+                })
+                .collect()
+        };
         let native_bridge_source_size = base.native_bridge_source_size;
         let empty = || super::zone_hierarchy::ZoneLevelGraph::new(0);
         Ok(Self {

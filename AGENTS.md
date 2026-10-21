@@ -253,7 +253,7 @@ Build captures and play-tests with `--profile fast`, timing and performance numb
 space follow the [Cargo ownership procedure](tools/README.md#cargo-ownership-and-labeled-builds).
 Run `python -m tools.prepare_checkout` in a new worktree or clone.
 Format edited leaf files only (`rustfmt --edition 2024 <file>`), never crate-wide
-or recursive `mod.rs`. Coordinate snapshot versions/rebaselines; exclude others' WIP.
+or recursive `mod.rs`. Coordinate rebaselines; exclude others' WIP.
 
 Don't poll: each check re-reads the whole session context. Run no separate build
 process checks. Wait for a long command or CI
