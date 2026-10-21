@@ -234,6 +234,10 @@ fn retail_spy_house_entry_survives_restore_and_reaches_the_message_consumer() {
     let (mut sim, _, registry, houses) = fixture();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
+    // This path submits a player Move through DoList, including after load.
+    let owner = sim.houses.get_mut(&houses[0]).unwrap();
+    owner.set_is_human_for_test(true);
+    owner.set_player_control_for_test(true);
     for (index, name) in ["Americans", "Russians", "Americans"].iter().enumerate() {
         let country = sim.interner.intern(name);
         sim.houses

@@ -2139,6 +2139,73 @@ impl Simulation {
         true
     }
 
+    /// FootAI4DA7B0..4DA80C, after high-flight sight and before Process.
+    /// Every signed frame divisible by16 raises CellTag59 for a +54 high
+    /// flyer, including stationary actors hostile to the local viewer.
+    /// Original Unit/Infantry/Aircraft +1B8=41BEA0 and +1BC=5F6960 use
+    /// physical Location, independently of the locomotor navigation head.
+    /// Source: original retail gamemd instructions and actual class tables;
+    /// shared query comparisons: spatial_oracle/object_get_cell and
+    /// object_flight_height. No own RNG, timer or detach operation.
+    pub(crate) fn dispatch_airborne_cell_tag_event(
+        &mut self,
+        actor: u64,
+        context: crate::sim::world::UninitContext<'_>,
+    ) {
+        if self.session.binary_frame() & 15 != 0 {
+            return;
+        }
+        let (tag, cell) = {
+            let Some(entity) = self.substrate.entities.get(actor) else {
+                return;
+            };
+            if !entity.category().is_foot() {
+                return;
+            }
+            let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref()) else {
+                return;
+            };
+            let cells = NativeCellQuery::canonical(terrain);
+            if !crate::sim::movement::air_movement::is_high_flying_in_query(
+                entity,
+                &cells,
+                Some((context.rules(), &self.interner)),
+            ) {
+                return;
+            }
+            let physical =
+                || crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+            //4DA7D2 tests the first Cell's Tag;4DA7F8 obtains the receiver
+            //again after41BEA0 packs Location XY. Each5F6960 preserves both
+            //Map565730 lookups and the canonical Dummy's retained fields.
+            let first = crate::sim::movement::ground_pose::query_object_cell(&cells, physical());
+            if !self.trigger_runtime.cell_tags.contains_key(&first) {
+                return;
+            }
+            let cell = crate::sim::movement::coord_cell(physical());
+            let second = crate::sim::movement::ground_pose::query_object_cell(&cells, physical());
+            let Some(&tag) = self.trigger_runtime.cell_tags.get(&second) else {
+                return;
+            };
+            (tag, cell)
+        };
+        let mut effects = Vec::new();
+        self.dispatch_live_tag_event(
+            tag,
+            TagEventInput {
+                kind: 59,
+                actor: Some(actor),
+                cell,
+                ..Default::default()
+            },
+            &mut effects,
+            context.rules(),
+            context.registry(),
+            context.effects(),
+        );
+        self.publish_trigger_effects(effects);
+    }
+
     /// Bridge575EE0's per-cell ingress: each visited CellClass whose +3C Tag
     /// is nonnull calls Tag6E53A0(31, null actor, Cell ABD480, unforced,
     /// null source). ABD480 is the zero Cell (startup5618B0). The raise is
