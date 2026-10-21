@@ -1,0 +1,47 @@
+{
+  "color_scheme_rows": [
+    {
+      "convert": 0,
+      "hsv": [
+        17,
+        128,
+        240
+      ],
+      "index": 0,
+      "kind": 1,
+      "name": "PrefixColor"
+    },
+    {
+      "convert": 0,
+      "hsv": [
+        17,
+        128,
+        240
+      ],
+      "index": 1,
+      "kind": 53,
+      "name": "PrefixColor"
+    }
+  ],
+  "entry": "0052D0F3",
+  "input": "[Colors]\nPrefixColor=17,128,240\n",
+  "langrule": "Absent; no Rules Process invoked",
+  "reached": [
+    "0052D0FF",
+    "0066D3A0",
+    "00474C70",
+    "0068C9C0",
+    "0068C710",
+    "0068C840",
+    "0068C84C",
+    "0068C9C0",
+    "0068C710",
+    "0068C840",
+    "0068C84C"
+  ],
+  "stop": "0052D104",
+  "substitutions": [
+    "Palette/Convert generation excluded; NULL, native ret32 ABI",
+    "Palette/Convert generation excluded; NULL, native ret32 ABI"
+  ]
+}
