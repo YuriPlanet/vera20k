@@ -31,5 +31,5 @@
     "disguise_house": "0x0041BE70"
   },
   "replay_command": "python -m tools.procedural_drawing_oracle.shroud --health-hover",
-  "payload_sha256": "7269694579e4634f4718dcfa4cdb35696f871ecd140f9ebcbc07f1530c0b8337"
+  "payload_sha256": "f845a49fb6bb64293c0ddccc5fbcbb1edc5fdd9bd4178a16aa52b9ce1b016d96"
 }

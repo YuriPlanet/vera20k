@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from tools.procedural_drawing_oracle import rally_production as production
+from tools.procedural_drawing_oracle import rally
 
 
 def archived_captures(archive, names):
@@ -19,6 +20,28 @@ def archived_captures(archive, names):
         captures.append((json.loads(raw), pixels))
         hashes.append(production.digest(raw))
     return captures, hashes
+
+
+class StockTypeInputTests(unittest.TestCase):
+    def test_physical_input_paths_have_the_same_spelling_on_every_host(self):
+        files = {'rulesmd.ini': b'[GAPILE]\r\nFactory=InfantryType\r\n',
+                 'artmd.ini': b'[GAPILE]\r\nFoundation=3x2\r\n'}
+        for flavor in (PurePosixPath, PureWindowsPath):
+            with self.subTest(flavor=flavor.__name__):
+                class FixturePath(flavor):
+                    def read_bytes(self):
+                        return files[self.name]
+
+                with patch.object(rally, 'Path', FixturePath):
+                    inputs = rally.stock_type_physical()
+                for kind, name in (('rules', 'rulesmd.ini'), ('art', 'artmd.ini')):
+                    self.assertEqual(inputs[kind]['path'], f'ini/{name}')
+                    self.assertEqual(inputs[kind]['bytes'], len(files[name]))
+                    self.assertEqual(inputs[kind]['sha256'], production.digest(files[name]))
+                self.assertEqual(inputs['rules']['keys'], {
+                    'Image': None, 'Factory': 'InfantryType',
+                    'UnitRepair': None, 'Cloning': None})
+                self.assertEqual(inputs['art']['keys'], {'Foundation': '3x2'})
 
 
 class RetainedEvidenceTests(unittest.TestCase):
