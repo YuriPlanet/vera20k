@@ -120,7 +120,13 @@ mod tests {
 
     #[test]
     fn secret_lab_assignment_matches_original_rewards_and_all_three_full_rng_states() {
-        for row in native()["assignment"].as_array().unwrap() {
+        let corpus = native();
+        for row in corpus["assignment"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain(corpus["authored_startup"].as_array().unwrap())
+        {
             let mut ini = String::from(
                 "[BuildingTypes]\n0=LAB\n[LAB]\nStrength=100\nSecretLab=yes\n[General]\n",
             );
@@ -183,12 +189,40 @@ mod tests {
                 row["rng_before"]["mapgen"].as_str().unwrap(),
             );
             let (_, draws) = trace_draws(|| {
-                Simulation::assign_secret_lab_production(
-                    &mut sim.interner,
-                    &mut sim.scenario_rng,
-                    &mut sim.substrate,
-                    &rules,
-                )
+                if let Some(gate) = row.get("startup_gate") {
+                    sim.install_session_mode(
+                        crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
+                            gate["game_mode"].as_i64().unwrap() as i32,
+                        ),
+                    );
+                    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+                        &IniFile::empty(),
+                        None,
+                    );
+                    let roster = crate::map::houses::HouseRoster::default();
+                    // The native control executes the admission gate then,
+                    // only when admitted, the unchanged assignment body.
+                    // No terrain/ore exists in either bounded fixture.
+                    sim.finalize_scenario_post_map(
+                        crate::sim::scenario_post_map::ScenarioPostMapInput {
+                            map_width: 0,
+                            map_height: 0,
+                            fill_silos: false,
+                            rules: &rules,
+                            overlay_registry: &overlays,
+                            house_roster: &roster,
+                            skirmish_session: None,
+                            campaign_new_game_map: None,
+                        },
+                    );
+                } else {
+                    Simulation::assign_secret_lab_production(
+                        &mut sim.interner,
+                        &mut sim.scenario_rng,
+                        &mut sim.substrate,
+                        &rules,
+                    );
+                }
             });
             assert_eq!(
                 draws.len() as u64,

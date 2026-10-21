@@ -117,14 +117,18 @@ impl Simulation {
             None
         };
 
-        // Post_Map_Init686AFE calls68C050 after launch alliances, before
-        // Full_Init's particle/OreTwinkle tail. Restore never reruns this pass.
-        Self::assign_secret_lab_production(
-            &mut self.interner,
-            &mut self.scenario_rng,
-            &mut self.substrate,
-            input.rules,
-        );
+        // Post_Map_Init686AFE calls68C050 after launch alliances. Authored
+        // Full_Init687BC8..687BF1 skips that pass in GameMode0 (campaign).
+        // Generated/.SED maps have a separate684990 call, but the admitted
+        // generated family is noncampaign. Restore never reruns this owner.
+        if self.session.game_mode_nonzero() {
+            Self::assign_secret_lab_production(
+                &mut self.interner,
+                &mut self.scenario_rng,
+                &mut self.substrate,
+                input.rules,
+            );
+        }
 
         // ReadScenario684ACE → FillInData684F02..684F7F, before restamp
         // and the particle/OreTwinkle tail. Every nonnull House participates;
@@ -360,6 +364,95 @@ mod tests {
             house_roster,
             skirmish_session: None,
             campaign_new_game_map: None,
+        }
+    }
+
+    #[test]
+    fn campaign_post_map_skips_random_secret_lab_assignment_on_retail_missions() {
+        use crate::map::map_file::MapFile;
+        use crate::rules::process_owner::NativeScenarioRulesPrefix;
+        use crate::rules::retail_ini_fixture;
+        use crate::sim::house_state::HouseState;
+        use crate::sim::rng::trace_draws;
+        use crate::sim::scenario_session::ScenarioGameMode;
+
+        let Some((_, assets)) = retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        for (filename, reward) in [("SOV05UMD.MAP", "DESO"), ("SOV07TMD.MAP", "GTGCAN")] {
+            let map = MapFile::from_bytes(assets.get_ref(filename).expect("retail campaign map"))
+                .expect("retail campaign map parses");
+            let prefix_name = filename.replace(".MAP", ".INI");
+            let prefix = assets.resolve_ref(&prefix_name).map(|_| {
+                crate::rules::retail_sources::select_ini(&assets, &prefix_name)
+                    .expect("present campaign prefix parses")
+                    .ini
+            });
+            let mut process = retail_ini_fixture::retail_rules_owner(&assets);
+            let (rules, processed, art, _) = process
+                .load_scenario(
+                    NativeScenarioRulesPrefix::Campaign(prefix.as_ref()),
+                    &map.ini,
+                )
+                .expect("production campaign rules reader")
+                .into_parts();
+            let overlays = OverlayTypeRegistry::from_ini(&processed, Some(&art));
+            let lab_type = rules.object("CASLAB").expect("stock Secret Lab");
+            assert!(lab_type.secret_lab().enabled());
+            assert_eq!(
+                lab_type
+                    .secret_lab()
+                    .production_override()
+                    .map(|(_, name)| name),
+                Some(reward),
+                "{filename}: native map override remains authoritative"
+            );
+            assert_eq!(
+                rules
+                    .general
+                    .secret_lab_choices()
+                    .iter()
+                    .map(Vec::len)
+                    .sum::<usize>(),
+                8
+            );
+            let labs: Vec<_> = map
+                .entities
+                .iter()
+                .filter(|entity| entity.type_id == "CASLAB")
+                .collect();
+            assert_eq!(labs.len(), 1, "{filename}: placed stock Secret Lab");
+            let mut sim = Simulation::with_seed(1);
+            sim.install_session_mode(ScenarioGameMode::Campaign);
+            sim.intern_rule_type_ids(&rules);
+            sim.resolve_type_handles(&rules);
+            let owner = sim.interner.intern(&labs[0].owner);
+            sim.houses
+                .register(HouseState::new(owner, 0, None, false, 0, 10));
+            // Only this registered building is needed to exercise the actual
+            // post-map dispatcher. Terrain, combat and prior mission play are
+            // outside this bounded startup regression.
+            let lab = sim
+                .spawn_object("CASLAB", &labs[0].owner, 10, 10, 0, &rules)
+                .unwrap();
+            let before = sim.rng_state();
+            let roster = HouseRoster::default();
+            let (_, draws) = trace_draws(|| {
+                sim.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster))
+            });
+            assert!(
+                draws.is_empty(),
+                "{filename}: campaign skips Post_Map_Init's random reward pass"
+            );
+            assert_eq!(sim.rng_state(), before, "{filename}: all three RNG streams");
+            assert_eq!(
+                sim.substrate
+                    .entities
+                    .get(lab)
+                    .unwrap()
+                    .secret_lab_fallback(),
+                None
+            );
         }
     }
 

@@ -238,6 +238,7 @@ pub enum ShellCaptureCheckpoint {
     /// The same route's first rendered InGame frame, with simulation frozen
     /// at tick zero. Authored opening triggers (#1308) are not certified.
     CampaignFirstLive(crate::ui::campaign_shell::CampaignSide),
+    CampaignExplicitFirstLive(&'static str),
     /// First installed campaign, then physical Escape/B5 Abort/B6 Leave and
     /// ordinary queued EXIT/audio teardown, read back on the settled main menu.
     CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide),
@@ -549,6 +550,12 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE => Ok(Self::CampaignFirstLive(
                 crate::ui::campaign_shell::CampaignSide::Soviet,
             )),
+            "campaign-sov05-first-live-frame" => {
+                Ok(Self::CampaignExplicitFirstLive("SOV05UMD.MAP"))
+            }
+            "campaign-sov07-first-live-frame" => {
+                Ok(Self::CampaignExplicitFirstLive("SOV07TMD.MAP"))
+            }
             CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN => Ok(Self::CampaignAbortReturn(
                 crate::ui::campaign_shell::CampaignSide::Allied,
             )),
@@ -674,6 +681,8 @@ impl ShellCaptureCheckpoint {
             Self::CampaignFirstLive(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE
             }
+            Self::CampaignExplicitFirstLive("SOV05UMD.MAP") => "campaign-sov05-first-live-frame",
+            Self::CampaignExplicitFirstLive(_) => "campaign-sov07-first-live-frame",
             Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::Allied) => {
                 CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN
             }
@@ -853,6 +862,10 @@ impl ShellCaptureCheckpoint {
             Self::CampaignFirstLive(side) => movies::MoviesTarget::CampaignStart {
                 side,
                 target: movies::CampaignStartTarget::FirstLive,
+            },
+            Self::CampaignExplicitFirstLive(scenario) => movies::MoviesTarget::CampaignStart {
+                side: crate::ui::campaign_shell::CampaignSide::Soviet,
+                target: movies::CampaignStartTarget::ExplicitFirstLive(scenario),
             },
             Self::CampaignAbortReturn(side) => movies::MoviesTarget::CampaignStart {
                 side,
@@ -2382,6 +2395,20 @@ mod tests {
     fn campaign_start_checkpoints_select_only_the_normal_route_targets() {
         use crate::ui::campaign_shell::CampaignSide::{Allied, Soviet};
         for (name, target) in [
+            (
+                "campaign-sov05-first-live-frame",
+                movies::MoviesTarget::CampaignStart {
+                    side: Soviet,
+                    target: movies::CampaignStartTarget::ExplicitFirstLive("SOV05UMD.MAP"),
+                },
+            ),
+            (
+                "campaign-sov07-first-live-frame",
+                movies::MoviesTarget::CampaignStart {
+                    side: Soviet,
+                    target: movies::CampaignStartTarget::ExplicitFirstLive("SOV07TMD.MAP"),
+                },
+            ),
             (
                 CHECKPOINT_CAMPAIGN_ALL1_LOADING_FIRST,
                 movies::MoviesTarget::CampaignStart {

@@ -45,6 +45,14 @@ CAMPAIGN_CHECKPOINTS = {
 CAMPAIGN_CHECKPOINTS["campaign-back-return"] = (None, "campaign-back-return")
 CAMPAIGN_CHECKPOINTS["campaign-all1-opening-load-unlocked"] = (
     "all1", "opening-load-unlocked-while-locked")
+EXPLICIT_CAMPAIGN_MAPS = {
+    "campaign-sov05-first-live-frame": "SOV05UMD.MAP",
+    "campaign-sov07-first-live-frame": "SOV07TMD.MAP",
+}
+for checkpoint in EXPLICIT_CAMPAIGN_MAPS:
+    # The native external-start owner retains catalog record0 even when an
+    # explicit filename selects a mission from the other campaign.
+    CAMPAIGN_CHECKPOINTS[checkpoint] = ("all1", "explicit-first-live-frame")
 for phase in ("opening-locked", "opening-pan", "opening-flash", "opening-arrows",
               "opening-unlocked", "opening-restore-unlocked",
               "opening-timer-running", "opening-timer-expired"):
@@ -116,14 +124,21 @@ def validate_campaign_capture(manifest):
                  "campaign Back did not retire the campaign/loading route")
         return {"phase": phase, "parity_certification": "NONE"}
 
-    press_index, press = route_action("emblem press", 0x94, new_index)
-    release_index, release = route_action("emblem release", 0x94, press_index)
+    explicit_map = EXPLICIT_CAMPAIGN_MAPS.get(checkpoint)
+    if explicit_map:
+        release_index, press = route_action("explicit campaign spawn", after=new_index)
+        release = press
+        _require(press.get("scenario") == explicit_map and press.get("seed") == 1,
+                 "explicit campaign admission changed")
+    else:
+        press_index, press = route_action("emblem press", 0x94, new_index)
+        release_index, release = route_action("emblem release", 0x94, press_index)
+        emblem = {"all1": 0x6EA, "sov1": 0x6EC}[campaign_id]
+        _require(press.get("emblem") == emblem and release.get("emblem") == emblem
+                 and press.get("campaign") == campaign_id and release.get("campaign") == campaign_id,
+                 "campaign route selected a different emblem")
+        _require(press["frame"] < release["frame"], "emblem press was not presented before release")
     admitted_index, _ = route_action("campaign loading admitted", after=release_index)
-    emblem = {"all1": 0x6EA, "sov1": 0x6EC}[campaign_id]
-    _require(press.get("emblem") == emblem and release.get("emblem") == emblem
-             and press.get("campaign") == campaign_id and release.get("campaign") == campaign_id,
-             "campaign route selected a different emblem")
-    _require(press["frame"] < release["frame"], "emblem press was not presented before release")
     startup = manifest["startup"]
     campaign = startup["campaign"]
     _require(str(campaign["id"]).lower() == campaign_id, "admitted campaign differs from emblem")
@@ -148,7 +163,10 @@ def validate_campaign_capture(manifest):
     selected_name = source["logical_name"] if source["kind"] == "mix" else source["path"]
     _require(isinstance(selected_name, str), "selected map filename is missing")
     selected_name = selected_name.replace("\\", "/").rsplit("/", 1)[-1].lower()
-    scenario_name = campaign["scenario"].replace("\\", "/").rsplit("/", 1)[-1].lower()
+    selected_scenario = startup.get("scenario", campaign["scenario"])
+    scenario_name = selected_scenario.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    if explicit_map:
+        _require(startup.get("scenario") == explicit_map, "explicit campaign selected another map")
     _require(selected_name == scenario_name, "map byte source differs from the admitted scenario")
     if source["kind"] == "mix":
         _require(isinstance(source["source_archive"], str) and source["source_archive"]
@@ -269,7 +287,7 @@ def validate_campaign_capture(manifest):
                  and returned["campaign_mission_counter"] == cleanup["campaign_mission_counter"],
                  "campaign abort omitted EXIT consumption/lease return/retained Session counter reset")
     _require("mission_opening_1308" in manifest["coverage"], "capture omits its mission-opening limit")
-    return {"campaign": campaign_id, "phase": phase, "scenario": campaign["scenario"],
+    return {"campaign": campaign_id, "phase": phase, "scenario": selected_scenario,
             "selected_map_sha256": source["source_sha256"],
             "map_admission": manifest["map_admission"], "parity_certification": "NONE"}
 

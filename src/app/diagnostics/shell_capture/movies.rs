@@ -115,6 +115,8 @@ pub(super) enum MoviesTarget {
 pub(super) enum CampaignStartTarget {
     LoadingFirst,
     FirstLive,
+    /// Explicit-map CnCNet admission, without playing preceding missions.
+    ExplicitFirstLive(&'static str),
     AbortReturn,
     Opening(OpeningTarget),
     Restart(RestartTarget),
@@ -717,6 +719,23 @@ impl MoviesCapture {
             }
             (Phase::Campaign, PresentedShell::Campaign) => {
                 if Self::slide_settled(state, ShellSlideKind::Campaign) {
+                    if let MoviesTarget::CampaignStart {
+                        target: CampaignStartTarget::ExplicitFirstLive(scenario),
+                        ..
+                    } = self.target
+                    {
+                        let request = crate::app::frontend::cncnet_spawn::SpawnRequest::parse(
+                            &format!(
+                                "[Settings]\nIsSinglePlayer=Yes\nScenario={scenario}\nSide=1\nDifficultyModeHuman=1\nDifficultyModeComputer=1\nGameSpeed=2\nSeed=1\n"
+                            ),
+                        )?;
+                        App::start_spawn_session(state, request)?;
+                        self.route.push(json!({"frame": frame,
+                            "action": "explicit campaign spawn", "scenario": scenario,
+                            "difficulty": 1, "seed": 1}));
+                        self.phase = Phase::CampaignStarting;
+                        return Ok(());
+                    }
                     let layout = crate::ui::campaign_shell::compute_layout(
                         state.renderer.gpu.config.width,
                         state.renderer.gpu.config.height,
@@ -1176,7 +1195,9 @@ impl MoviesCapture {
             if self.phase != Phase::CampaignStarting {
                 return Ok(false);
             }
-            if let Some(startup) = crate::app::loading::pump::loading_campaign_startup(state) {
+            if !matches!(target, CampaignStartTarget::ExplicitFirstLive(_))
+                && let Some(startup) = crate::app::loading::pump::loading_campaign_startup(state)
+            {
                 ensure!(
                     startup
                         .campaign()
@@ -1198,7 +1219,7 @@ impl MoviesCapture {
                     }
                     Ok(ready)
                 }
-                CampaignStartTarget::FirstLive => {
+                CampaignStartTarget::FirstLive | CampaignStartTarget::ExplicitFirstLive(_) => {
                     if state.frontend.screen != GameScreen::InGame {
                         return Ok(false);
                     }
@@ -1435,6 +1456,7 @@ impl MoviesCapture {
                     crate::app::loading::pump::loading_map_source(state)
                 }
                 CampaignStartTarget::FirstLive
+                | CampaignStartTarget::ExplicitFirstLive(_)
                 | CampaignStartTarget::AbortReturn
                 | CampaignStartTarget::Opening(_)
                 | CampaignStartTarget::Restart(_) => state.match_state.loaded_map_source.as_ref(),
@@ -1459,6 +1481,7 @@ impl MoviesCapture {
             manifest["checkpoint_phase"] = json!(match target {
                 CampaignStartTarget::LoadingFirst => "loading-first-frame",
                 CampaignStartTarget::FirstLive => "first-live-frame",
+                CampaignStartTarget::ExplicitFirstLive(_) => "explicit-first-live-frame",
                 CampaignStartTarget::AbortReturn => "abort-return",
                 CampaignStartTarget::Opening(target) => target.phase(),
                 CampaignStartTarget::Restart(RestartTarget::AbortShown) => "abort-restart-shown",
@@ -1475,7 +1498,9 @@ impl MoviesCapture {
             });
             manifest["runtime"] = match target {
                 CampaignStartTarget::LoadingFirst => Value::Null,
-                CampaignStartTarget::FirstLive => campaign_runtime_receipt(state)?,
+                CampaignStartTarget::FirstLive | CampaignStartTarget::ExplicitFirstLive(_) => {
+                    campaign_runtime_receipt(state)?
+                }
                 CampaignStartTarget::AbortReturn | CampaignStartTarget::Restart(_) => self
                     .observed_campaign_runtime
                     .clone()
@@ -1565,6 +1590,7 @@ impl MoviesCapture {
             self.target,
             MoviesTarget::CampaignStart {
                 target: CampaignStartTarget::FirstLive
+                    | CampaignStartTarget::ExplicitFirstLive(_)
                     | CampaignStartTarget::AbortReturn
                     | CampaignStartTarget::Opening(_)
                     | CampaignStartTarget::Restart(_),
@@ -1607,6 +1633,7 @@ fn campaign_startup_receipt(
     json!({
         "campaign": {"id": campaign.id(), "index": startup.campaign_index(), "cd": campaign.cd(),
             "scenario": campaign.scenario(), "final_movie": campaign.final_movie()},
+        "scenario": startup.scenario(),
         "difficulty": startup.difficulty(),
         "seed": {"value": startup.seed.value, "source": format!("{:?}", startup.seed.source),
             "seed_authority_certifying": startup.seed.seed_authority_certifying},

@@ -371,6 +371,21 @@ class CampaignReceiptTests(unittest.TestCase):
                     self.assertEqual(report["campaign"]["phase"], phase)
                     self.assertEqual(report["parity_certification"], "NONE")
 
+    def test_explicit_campaign_capture_keeps_the_selected_map(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for checkpoint, scenario in diff.EXPLICIT_CAMPAIGN_MAPS.items():
+                receipt = campaign_bundle(Path(temp))
+                receipt.update(checkpoint=checkpoint, checkpoint_phase="explicit-first-live-frame")
+                receipt["startup"]["scenario"] = scenario
+                receipt["selected_map_source"]["logical_name"] = scenario
+                receipt["startup"]["seed"]["value"] = 1
+                receipt["route"][2:4] = [{"frame": 3, "action": "explicit campaign spawn",
+                                         "scenario": scenario, "difficulty": 1, "seed": 1}]
+                diff.validate_campaign_capture(receipt)
+                receipt["startup"]["scenario"] = "SOV01UMD.MAP"
+                with self.assertRaises(diff.InputError):
+                    diff.validate_campaign_capture(receipt)
+
     def test_process_source_filenames_allow_their_physical_case(self):
         with tempfile.TemporaryDirectory() as temp:
             receipt = campaign_bundle(Path(temp))

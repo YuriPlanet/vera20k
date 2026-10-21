@@ -723,10 +723,10 @@ RNG_STREAMS = {'scenario': SCENARIO + 0x218, 'main': 0x886B88, 'mapgen': 0xABE89
 
 
 def secret_assignment(name, seed, lab_count, counts=(4, 0, 0), override=None,
-                      initial_fallback=None):
+                      initial_fallback=None, *, startup_game_mode=None):
     """Whole assignment/getter, original seed/ranged/raw RNG and vector bodies."""
     from unicorn import UC_HOOK_CODE
-    from unicorn.x86_const import UC_X86_REG_ESP
+    from unicorn.x86_const import UC_X86_REG_EIP, UC_X86_REG_ESI, UC_X86_REG_ESP
 
     emu = Emu()
     u = emu.uc
@@ -773,9 +773,30 @@ def secret_assignment(name, seed, lab_count, counts=(4, 0, 0), override=None,
     hook = u.hook_add(UC_HOOK_CODE, observe)
     before = {key: bytes(u.mem_read(pointer, 0x3F4))
               for key, pointer in RNG_STREAMS.items()}
-    emu.invoke(ASSIGN_SECRET_PRODUCTION, ecx=SCENARIO,
-               required=(ASSIGN_SECRET_PRODUCTION,))
-    trace.returned(native.RET_MAGIC, u.reg_read(UC_X86_REG_ESP))
+    startup_gate = None
+    if startup_game_mode is not None:
+        # Full_Init68773D leaves ESI=0. For authored input, the saved incoming
+        # DL byte at this point is [ESP+13]=0. Stop before either downstream
+        # service work or the Official reader; do not supply a Post_Map return.
+        emu.write32(GAME_MODE, startup_game_mode)
+        u.reg_write(UC_X86_REG_ESI, 0)
+        u.mem_write(u.reg_read(UC_X86_REG_ESP) + 0x13, b'\0')
+        native.run_checked(u, 0x687BC8, (0x687BF1, 0x687BD8),
+                           required_addresses=(0x687BC8, 0x687BCE),
+                           context=dict(case=name, game_mode=startup_game_mode,
+                                        input_byte=0))
+        stop = u.reg_read(UC_X86_REG_EIP)
+        unchanged = {key: value == bytes(u.mem_read(RNG_STREAMS[key], 0x3F4))
+                     for key, value in before.items()}
+        if not all(unchanged.values()):
+            raise OracleError('authored Post_Map admission gate changed an RNG buffer')
+        startup_gate = dict(game_mode=startup_game_mode, input_byte=0,
+                            stop_pc=f'0x{stop:08x}', admitted=stop == 0x687BD8,
+                            rng_unchanged=unchanged)
+    if startup_gate is None or startup_gate['admitted']:
+        emu.invoke(ASSIGN_SECRET_PRODUCTION, ecx=SCENARIO,
+                   required=(ASSIGN_SECRET_PRODUCTION,))
+        trace.returned(native.RET_MAGIC, u.reg_read(UC_X86_REG_ESP))
     after = {key: bytes(u.mem_read(pointer, 0x3F4))
              for key, pointer in RNG_STREAMS.items()}
     u.hook_del(hook)
@@ -785,15 +806,18 @@ def secret_assignment(name, seed, lab_count, counts=(4, 0, 0), override=None,
     getters = [names[emu.invoke(GET_SECRET_PRODUCTION, ecx=pointer,
                                required=(GET_SECRET_PRODUCTION,))]
                for pointer in labs]
-    return dict(name=name, seed=seed, lab_count=lab_count, counts=list(counts),
-                override=override, initial_fallback=initial_fallback,
-                assignments=assignments, getters=getters,
-                ranged=[dict(low=call['args'][0], high=call['args'][1],
-                             result=call['return_eax'], caller=call['caller'])
-                        for call in calls], raw_store_count=len(raw_stores),
-                raw_stores=raw_stores,
-                rng_before={key: value.hex() for key, value in before.items()},
-                rng_after={key: value.hex() for key, value in after.items()})
+    result = dict(name=name, seed=seed, lab_count=lab_count, counts=list(counts),
+                  override=override, initial_fallback=initial_fallback,
+                  assignments=assignments, getters=getters,
+                  ranged=[dict(low=call['args'][0], high=call['args'][1],
+                               result=call['return_eax'], caller=call['caller'])
+                          for call in calls], raw_store_count=len(raw_stores),
+                  raw_stores=raw_stores,
+                  rng_before={key: value.hex() for key, value in before.items()},
+                  rng_after={key: value.hex() for key, value in after.items()})
+    if startup_gate is not None:
+        result['startup_gate'] = startup_gate
+    return result
 
 
 def secret_getter(name, overrides, fallback):
@@ -1012,12 +1036,21 @@ def secret_lab_generate():
     ]
     return dict(schema_version=1,
                 assignment=assignments, getter=getters, admission=secret_admission(),
-                readers=secret_readers())
+                readers=secret_readers(),
+                authored_startup=[
+                    secret_assignment(
+                        f'{label}: authored mode {mode}', 1, 1, (4, 3, 1),
+                        override=override, startup_game_mode=mode)
+                    for label, override in (('SOV05 DESO shape', (0, 2)),
+                                            ('SOV07 GTGCAN shape', (2, 0)))
+                    for mode in (0, 3)
+                ])
 
 
 def secret_lab_metadata():
     return provenance(
-        scope='Original SecretLab startup assignment/RNG, grant priority, CanBuild '
+        scope='Original authored Post_Map admission gate and SecretLab startup '
+              'assignment/RNG, grant priority, CanBuild '
               'early grant with build limits, and retained General/BuildingType key blocks',
         assumptions=[
             'Assignment uses declared registered typed lists/counts/total and the global '
@@ -1025,6 +1058,16 @@ def secret_lab_metadata():
             'and65C7E0 execute; all three full0x3F4 RNG states and actual ranged/raw '
             'advance observations are recorded. Initial fallback is declared only in '
             'the skipped-assignment controls. Whole Post_Map_Init is outside this fixture.',
+            'Authored startup rows execute687BC8 to the observed blocked687BF1 or '
+            'admitted687BD8 boundary, with ESI0, supplied GameMode0/3 and saved '
+            'input byte0. The gate preserves all three complete RNG buffers. Only '
+            'admitted rows then invoke the shared original68C050 owner; no Official '
+            'reader, successful Post_Map return, preceding startup or intervening '
+            'Post_Map work is supplied or claimed. Counts4/3/1 and overrides(0,2) '
+            'and(2,0) model the retail SOV05/SOV07 SecretLab shapes. Both maps '
+            'retain their explicit reward despite the mode-dependent fallback/RNG. '
+            'Generated .SED startup reaches Post_Map through a separate caller '
+            'and is outside this authored gate control.',
             'Admission reuses BuildEmu type identities/counters/factories; supplied '
             'House+110 membership and override/fallback pointers model prior lab lifecycle. '
             'Original CanBuild4F7870 and GetSecretProduction459840 execute. This does '
@@ -1051,6 +1094,9 @@ def secret_lab_metadata():
             'return is substituted.',
         ],
         entry_points=dict(assign_secret_production=ASSIGN_SECRET_PRODUCTION,
+                          authored_post_map_gate=0x687BC8,
+                          authored_post_map_blocked=0x687BF1,
+                          authored_post_map_admitted=0x687BD8,
                           get_secret_production=GET_SECRET_PRODUCTION,
                           can_build=CAN_BUILD, check_build_limit=CHECK_BUILD_LIMIT,
                           random_seed=0x65C6D0, random_ranged=0x65C7E0,
