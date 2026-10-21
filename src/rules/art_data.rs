@@ -950,6 +950,8 @@ pub struct ArtRegistry {
     occupy_heights: HashMap<String, i32>,
     /// section ID (uppercase) -> generic AnimType runtime metadata.
     anim_runtime_configs: HashMap<String, AnimTypeRuntimeConfig>,
+    /// Fresh AnimType `(Theater, NewTheater)` after the Image and own ART reads.
+    anim_theater_flags: HashMap<String, (bool, bool)>,
     /// Full deterministic Next/Trailer closure reachable from scheduler-owned roots.
     scheduler_anim_types: BTreeSet<String>,
     damage_fire_offsets_valid: bool,
@@ -1074,6 +1076,7 @@ impl ArtRegistry {
         let mut can_hide_things: HashMap<String, bool> = HashMap::new();
         let mut occupy_heights: HashMap<String, i32> = HashMap::new();
         let mut anim_runtime_configs: HashMap<String, AnimTypeRuntimeConfig> = HashMap::new();
+        let mut anim_theater_flags = HashMap::new();
         let mut damage_fire_offsets_valid = true;
 
         for section_name in ini.section_names() {
@@ -1192,6 +1195,18 @@ impl ArtRegistry {
             let report = section.read_name("Report", 0x80).map(str::to_owned);
             let start_sound = section.read_name("StartSound", 0x80).map(str::to_owned);
             let anim_runtime_config = parse_anim_runtime_config(section);
+            // ObjectType::ReadINI5F92D0 reads these from the one-hop Image25
+            // section. AnimType::ReadINI427D00 then rereads its own section
+            // using those values as defaults. Fresh AnimTypes have no image:
+            // the base reader skips LoadSHP for their RTTI5 (428E50).
+            let image_section = ini.section(&anim_runtime_config.image);
+            let mut anim_theater = image_section.is_some_and(|s| s.read_bool("Theater", false));
+            let mut anim_new_theater =
+                image_section.is_some_and(|s| s.read_bool("NewTheater", false));
+            if !anim_runtime_config.image.is_empty() {
+                anim_theater = section.read_bool("Theater", anim_theater);
+                anim_new_theater = section.read_bool("NewTheater", anim_new_theater);
+            }
             let extra_light: i32 = section.read_int("ExtraLight", 0);
             let queueing_cell = section.read_minmax("QueueingCell", [0, 0]);
             // Multi-pad parser: read DockingOffset0..7 from art.ini.
@@ -1268,6 +1283,7 @@ impl ArtRegistry {
             can_hide_things.insert(section_key.clone(), can_hide);
             occupy_heights.insert(section_key.clone(), occupy_height);
             anim_runtime_configs.insert(section_key.clone(), anim_runtime_config);
+            anim_theater_flags.insert(section_key.clone(), (anim_theater, anim_new_theater));
             entry_names.insert(section_key, section_name.to_owned());
             entries.insert(
                 section_name.to_owned(),
@@ -1355,6 +1371,7 @@ impl ArtRegistry {
             can_hide_things,
             occupy_heights,
             anim_runtime_configs,
+            anim_theater_flags,
             scheduler_anim_types: BTreeSet::new(),
             damage_fire_offsets_valid,
         }
@@ -1368,6 +1385,7 @@ impl ArtRegistry {
             can_hide_things: HashMap::new(),
             occupy_heights: HashMap::new(),
             anim_runtime_configs: HashMap::new(),
+            anim_theater_flags: HashMap::new(),
             scheduler_anim_types: BTreeSet::new(),
             damage_fire_offsets_valid: true,
         }
@@ -1410,6 +1428,7 @@ impl ArtRegistry {
             let mut config = parse_anim_runtime_config(&IniSection::new(name.clone()));
             config.art_body_read = false;
             config.image = name.clone();
+            self.anim_theater_flags.insert(key.clone(), (false, false));
             self.anim_runtime_configs.insert(key, config);
         }
     }
@@ -2041,13 +2060,14 @@ pub fn object_shp_candidates(
 /// `FUN_005F96B0` (which replaces the second letter with the theater's, only
 /// for names matching `[GNCY][AT]`, and does nothing for theater `-1`, the
 /// value `ReadINI` passes), loads it, and on a miss lets `FUN_005F9710` force
-/// the second letter to `G` unconditionally and retries. The two callers that
-/// pass a real theater gate the 96B0 call on the type's own `NewTheater=`
-/// (`AnimType+0x237`): the lazy image fetch for `DemandLoad` types at
-/// `0x00428C30` (gate at `0x00428CD6`) and the save/load tail at `0x00428935`.
-/// So `[GAPOWR_AD] Image=GAPOWR_A`, which authors no `NewTheater=`, still
-/// resolves to `GGPOWR_A.SHP`. UNCHECKED: which routine reloads `NewTheater`
-/// images when a scenario's theater is set; it was not identified.
+/// the second letter to `G` unconditionally and retries. The theater postpass
+/// at `0x00427A80` reloads images with the type's resolved `NewTheater` flag.
+/// Fresh types inherit `Theater`/`NewTheater` from the one-hop Image section
+/// in ObjectType::ReadINI5F92D0, then AnimType::ReadINI427D00 applies recognized
+/// own-section values. Missing, empty or invalid bools preserve the inherited
+/// value. Thus CAMOV02_AD inherits CAMOV02_A's NewTheater flag while retaining
+/// its own animation bounds. Original controls: rules_oracle/anim_theater_flags.
+/// This registry models fresh reads, not rereads with an already resident image.
 ///
 /// The theater-extension and plain-name candidates after those two are VERA
 /// leniency kept for `Theater=yes` rows and loose test assets.
@@ -2060,9 +2080,10 @@ pub fn anim_shp_candidates(
 ) -> Vec<String> {
     let upper_anim: String = anim_type.to_uppercase();
     let upper_image: String = image_id.to_uppercase();
-    let entry: Option<&ArtEntry> = art.and_then(|registry| registry.get(&upper_anim));
-    let uses_new_theater: bool = entry.map(|e| e.new_theater).unwrap_or(false);
-    let uses_theater: bool = entry.map(|e| e.theater).unwrap_or(false);
+    let (uses_theater, uses_new_theater) = art
+        .and_then(|registry| registry.anim_theater_flags.get(&upper_anim))
+        .copied()
+        .unwrap_or_default();
     let mut candidates: Vec<String> = Vec::with_capacity(6);
 
     if !uses_theater {
