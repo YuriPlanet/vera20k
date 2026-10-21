@@ -25,7 +25,8 @@ pub(crate) fn commit_prepared_load(
     // SoundEvents; UI69BB82->7535D0 resets EVA. TechnoLoad70C231..70C240
     // reconstructs each voice handle/latch. Do this only after preparation
     // succeeded; the new FootLoad state starts silent until its next AI visit.
-    // Saved static Voc/EVA queues have separate, currently unported restoration.
+    // Ordinary Vox.Save7533B0 emits tags only, no nodes or selected voice;
+    // incoming announcements start empty. Saved static Voc is a separate path.
     if let Some(sfx) = state.audio.sfx_player.as_mut() {
         sfx.stop_all();
     }
@@ -41,6 +42,7 @@ pub(crate) fn commit_prepared_load(
         &state.frontend.frontend_main_rng,
         &mut state.match_state.sim_runtime,
     );
+    crate::app::audio_runtime::bind_match_eva_context(state);
     // All preparation has succeeded. Surface allocation and saved camera
     // conversion now use the tactical upscaler dimensions on either route.
     state.frontend.screen = crate::ui::game_screen::GameScreen::InGame;

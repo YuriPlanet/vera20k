@@ -104,7 +104,7 @@ fn execute(
             &resolved,
             context,
             &mut effects,
-            Some(rules),
+            rules,
             None,
             FrameEffects::default(),
         )

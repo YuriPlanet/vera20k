@@ -1531,7 +1531,7 @@ SpreadPercentage=.06
             &mut sim.dirty_cells,
             (0, 0),
             4,
-            Some(&rules),
+            &rules,
             Some(&overlay_registry),
         );
         assert!(outcome.fully_removed);
@@ -1566,7 +1566,7 @@ SpreadPercentage=.06
         let deferred = sim
             .advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 None,
                 67,
                 TickLane::Ordinary,
@@ -1590,7 +1590,7 @@ SpreadPercentage=.06
         let first = sim
             .advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 Some(&overlay_registry),
                 67,
                 TickLane::Ordinary,
@@ -1610,7 +1610,7 @@ SpreadPercentage=.06
         let second = sim
             .advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 Some(&overlay_registry),
                 67,
                 TickLane::Ordinary,

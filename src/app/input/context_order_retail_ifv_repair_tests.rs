@@ -11,7 +11,7 @@ use crate::sim::world::{FrameEffects, Simulation};
 
 const OWNER: &str = "Americans";
 
-fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Simulation, u64, u64) {
+pub(in crate::app) fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Simulation, u64, u64) {
     let mut sim = Simulation::new();
     for (name, side) in [(OWNER, 0), ("Russians", 1)] {
         let owner = sim.intern(name);
@@ -72,7 +72,7 @@ fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Simulation, u64, u64) 
     (sim, ifv, tank)
 }
 
-fn repair_ifv(rules: &RuleSet) -> (Simulation, u64, u64) {
+pub(in crate::app) fn repair_ifv(rules: &RuleSet) -> (Simulation, u64, u64) {
     let (sim, ifv, tank) = boarded_ifv(rules, "ENGINEER");
     assert_eq!(sim.entities().get(ifv).unwrap().current_weapon_number(), 1);
     assert_eq!(
@@ -86,6 +86,107 @@ fn repair_ifv(rules: &RuleSet) -> (Simulation, u64, u64) {
         -50
     );
     (sim, ifv, tank)
+}
+
+/// UnitClass::What_Action_OnCell (`0x007404FD..0x00740522`): an IFV carrying
+/// an Engineer heals, so Ctrl on the ground answers AttackSupport (0x3B), not
+/// Attack, and Foot's ClickedAction_Cell (`0x004D7D50`, default case
+/// `0x004D8237`) sends nothing for it. With a GI aboard it fires at the ground.
+#[test]
+fn retail_engineer_ifv_ctrl_on_the_ground_orders_nothing() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &retail.processed_rules,
+        Some(&retail.fixed_art),
+    );
+    let ground = crate::sim::combat::TargetKind::Cell(16, 19);
+    let (sim, ifv, _) = repair_ifv(rules);
+    assert_eq!(
+        attack_action(&sim, rules, ifv, &ground, true, Some(&registry)),
+        AttackAction::AttackSupport
+    );
+    let prior = sim.state_hash();
+    let click = attack_branch_orders(&sim, rules, &[ifv], ground, true, &registry);
+    assert!(click.consumed && !click.select_fallback);
+    assert_eq!(click.receivers, [ifv].into_iter().collect());
+    assert!(click.commands.is_empty(), "{:?}", click.commands);
+    assert_eq!(
+        sim.state_hash(),
+        prior,
+        "input must not mutate gameplay/RNG"
+    );
+
+    let (sim, ifv, _) = boarded_ifv(rules, "E1");
+    assert_eq!(
+        attack_action(&sim, rules, ifv, &ground, true, Some(&registry)),
+        AttackAction::Attack
+    );
+    assert_eq!(
+        attack_branch_orders(&sim, rules, &[ifv], ground, true, &registry).commands,
+        [Command::ForceAttackCell {
+            attacker_id: ifv,
+            target_rx: 16,
+            target_ry: 19,
+        }]
+    );
+}
+
+/// UnitClass::What_Action_OnObject's healer arm (`0x0073FD7C`):
+/// Is_Ally_ByObject (`0x004F9A90`) refuses a tree's null House, so an
+/// Engineer IFV's Ctrl over it answers 0, which the Unit tail makes NoMove
+/// (`0x007403EB`): the click moves it near the tree. A GI's IFV attacks it.
+#[test]
+fn retail_engineer_ifv_ctrl_on_a_tree_moves_near_it() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &retail.processed_rules,
+        Some(&retail.fixed_art),
+    );
+    let with_tree = |(mut sim, ifv, _): (Simulation, u64, u64)| {
+        assert_eq!(
+            crate::sim::terrain_spawn::construct_terrain_objects(
+                &mut sim,
+                &[crate::map::overlay::TerrainObject {
+                    rx: 16,
+                    ry: 20,
+                    name: "TREE01".into(),
+                }],
+                rules,
+                false,
+            ),
+            1
+        );
+        let tree = sim.terrain_objects().id_at((16, 20)).unwrap();
+        (sim, ifv, crate::sim::combat::TargetKind::Entity(tree))
+    };
+    let (sim, ifv, tree) = with_tree(repair_ifv(rules));
+    assert_eq!(
+        attack_action(&sim, rules, ifv, &tree, true, Some(&registry)),
+        AttackAction::NoMove
+    );
+    let click = attack_branch_orders(&sim, rules, &[ifv], tree, true, &registry);
+    assert!(click.consumed);
+    assert!(
+        matches!(
+            click.commands.as_slice(),
+            [Command::Move { entity_id, .. } | Command::MoveToObject { entity_id, .. }]
+                if *entity_id == ifv
+        ),
+        "{:?}",
+        click.commands
+    );
+
+    let (sim, ifv, tree) = with_tree(boarded_ifv(rules, "E1"));
+    assert_eq!(
+        attack_action(&sim, rules, ifv, &tree, true, Some(&registry)),
+        AttackAction::Attack
+    );
 }
 
 fn repair_click(sim: &Simulation, rules: &RuleSet, ifv: u64, tank: u64) -> Command {

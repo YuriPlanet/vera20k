@@ -55,7 +55,7 @@ fn run(
             input: TagEventInput::default(),
         },
         &mut Vec::new(),
-        Some(rules),
+        rules,
         Some(registry),
         FrameEffects::default(),
     )
@@ -155,12 +155,7 @@ fn counted_tag_runs_off_and_on_in_order_without_a_second_state_or_rng_draws() {
     let rng = sim.rng_state();
     sim.sound_events.clear_for_test();
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(
-        houses[0],
-        Some(&rules),
-        Some(&registry),
-        FrameEffects::default(),
-    );
+    sim.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
     assert!(sim.entities().get(load).unwrap().building_online());
     assert!(
         sim.entities()

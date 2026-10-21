@@ -75,7 +75,10 @@ fn fixture_frame_with_sight(
     *world.house_alliances_mut_for_test() = alliances.clone();
     world.resolved_terrain = terrain.cloned();
     world.path_grid = path_grid.cloned().map(std::sync::Arc::new);
-    let context = crate::sim::world::UninitContext::new(rules, None);
+    let context = crate::sim::world::UninitContext::new(
+        rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
+        None,
+    );
     for &event in sight {
         match event {
             FixtureSight::Limbo(id) => world.release_object_sight_with_context(id, context),
@@ -85,7 +88,10 @@ fn fixture_frame_with_sight(
             }
         }
     }
-    world.refresh_sight_sources(config, rules);
+    world.refresh_sight_sources(
+        config,
+        rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
+    );
     *fog = std::mem::take(&mut world.fog);
 }
 

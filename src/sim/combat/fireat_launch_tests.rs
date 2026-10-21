@@ -122,7 +122,7 @@ fn attack_aim_duel(corpus: &serde_json::Value) -> Option<(Duel, u64, u64)> {
         .assign_target_represented(
             source_id,
             Some(super::TargetKind::Entity(target_id)),
-            Some(&duel.rules),
+            &duel.rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -224,7 +224,7 @@ fn original_aim_query_reads_live_motion_rank_and_facing_without_mutation() {
         .assign_target_represented(
             source,
             None,
-            Some(&duel.rules),
+            &duel.rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -319,7 +319,7 @@ fn original_direct_fireat_keeps_argument_speed_separate_from_live_tarcom_aim() {
         .assign_target_represented(
             source,
             None,
-            Some(&duel.rules),
+            &duel.rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -456,7 +456,7 @@ fn target_uninit_clears_tarcom_before_aim_query_and_physical_removal() {
     let expected = attack_aim_row(&corpus, "aim_cases", "expired_target_aim");
     assert_read_only_native_aim(&duel, source, expected);
     duel.sim.process_pending_delete_with(
-        Some(&duel.rules),
+        &duel.rules,
         None,
         crate::sim::world::FrameEffects::default(),
         1,

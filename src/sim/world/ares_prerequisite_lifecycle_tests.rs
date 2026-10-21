@@ -89,7 +89,7 @@ fn reached_alternate_events_match_executed_hook_controls() {
                 ));
             }
             "unit_dtor" | "infantry_dtor" | "aircraft_dtor" => {
-                assert!(sim.discard_constructed_limbo(id, Some(&rules), FrameEffects::default()));
+                assert!(sim.discard_constructed_limbo(id, &rules, FrameEffects::default()));
             }
             "change_owner" => {
                 sim.change_owner_with_rules(id, other, &rules, None, FrameEffects::default());
@@ -130,7 +130,7 @@ fn alternate_dtor_rechecks_with_another_copy_and_obeys_game_state_gate() {
                 FrameEffects::default(),
             )
             .unwrap();
-        assert!(sim.discard_constructed_limbo(first, Some(&rules), FrameEffects::default()));
+        assert!(sim.discard_constructed_limbo(first, &rules, FrameEffects::default()));
         let type_id = sim.interner.get("ALT").unwrap();
         let category = sim.entities().get(second).unwrap().category();
         assert_eq!(

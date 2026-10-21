@@ -171,7 +171,7 @@ fn gsi_04_07_wall_sell_raw_signed_linear_coordinates_use_canonical_cell() {
         sim.apply_command_with_overlays(
             &receiver,
             &envelope.payload,
-            Some(rules),
+            rules,
             Some(overlays),
             crate::sim::world::FrameEffects::default(),
         )
@@ -309,7 +309,7 @@ fn two_instance_multiplayer_checksums_match_every_frame_and_catch_a_desync() {
         let sync = sim
             .advance_app_frame(
                 commands,
-                Some(rules),
+                rules,
                 None,
                 67,
                 TickLane::Ordinary,

@@ -156,7 +156,7 @@ fn snapshot(sim: &mut Simulation, id: u64, rules: &RuleSet, sound: bool) {
     let Some((_, damage)) = weapon(sim, id, rules) else {
         return;
     };
-    sim.refresh_object_sight(id, Some(rules), damage);
+    sim.refresh_object_sight(id, rules, damage);
     if sound
         && let Some(camera) = rules.general.spy_plane_camera.clone()
         && let Some(plane) = sim.substrate.entities.get(id)

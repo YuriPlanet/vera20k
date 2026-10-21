@@ -27,6 +27,7 @@ pub(crate) mod tooltips;
 pub(crate) mod transport_orders;
 
 pub(crate) mod abort;
+pub(crate) mod surrender;
 #[cfg(test)]
 mod bridge_click_tests;
 

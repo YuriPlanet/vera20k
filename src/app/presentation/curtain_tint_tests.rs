@@ -340,7 +340,7 @@ fn ordinary_stock_gas_refresh_and_expiry_reach_the_infantry_shp_material() {
             let output = sim
                 .advance_app_frame(
                     &commands,
-                    Some(&rules),
+                    &rules,
                     None,
                     33,
                     TickLane::Ordinary,

@@ -111,7 +111,7 @@ fn launch_command(sim: &mut Simulation, rules: &RuleSet, name: &str, rx: u16, ry
             target_rx: rx,
             target_ry: ry,
         },
-        Some(rules),
+        rules,
         None,
         crate::sim::world::FrameEffects::default()
     ));
@@ -383,7 +383,7 @@ fn infantry_same_frame_firer_death_keeps_electric_consequences() {
         let frame = sim
             .advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 None,
                 67,
                 crate::sim::world::TickLane::Ordinary,

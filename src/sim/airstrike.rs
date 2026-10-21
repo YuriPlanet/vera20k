@@ -207,7 +207,7 @@ impl Simulation {
                 first,
                 rules.general.airstrike_attack_voice.as_deref(),
                 None,
-                Some(rules),
+                rules,
                 effects,
             );
         }
@@ -253,7 +253,7 @@ impl Simulation {
             .first()
             .is_some_and(|&first| aircraft.iter().any(|&id| ammo(id) != ammo(first)))
         {
-            self.airstrike_clear_target(owner, Some(rules), effects);
+            self.airstrike_clear_target(owner, rules, effects);
             return;
         }
         if let Some(old) = old_target
@@ -277,7 +277,7 @@ impl Simulation {
                 let _ = self.assign_target_represented(
                     aircraft,
                     Some(TargetKind::Entity(target)),
-                    Some(rules),
+                    rules,
                     None,
                     effects,
                 );
@@ -286,7 +286,7 @@ impl Simulation {
                     MissionId::from_known(MissionType::Attack),
                     0,
                     self.session.binary_frame(),
-                    &crate::sim::mission::authority::EntityReadyInputProvider,
+                    &crate::sim::mission::authority::LiveReadyInputProvider { rules },
                 );
                 self.substrate.airstrike_manager_mut(owner).unwrap().active = true;
             }
@@ -297,7 +297,7 @@ impl Simulation {
     pub(crate) fn airstrike_clear_target(
         &mut self,
         owner: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
         let Some(m) = self.substrate.airstrike_manager(owner) else {
@@ -330,7 +330,7 @@ impl Simulation {
                 MissionId::from_known(MissionType::Retreat),
                 0,
                 self.session.binary_frame(),
-                &crate::sim::mission::authority::EntityReadyInputProvider,
+                &crate::sim::mission::authority::LiveReadyInputProvider { rules },
             );
             let _ = self.assign_target_represented(id, None, rules, None, effects);
             let _ = self.assign_destination_represented(id, None, rules, None, effects);
@@ -371,7 +371,7 @@ impl Simulation {
         source: u64,
         sound: Option<&str>,
         audible_to: Option<[crate::sim::intern::InternedId; 2]>,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
         if let (Some(sound), Some(entity)) = (sound, self.substrate.entities.get(source)) {
@@ -414,7 +414,7 @@ impl Simulation {
         &mut self,
         owner: u64,
         expired: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
         let Some(m) = self.substrate.airstrike_manager(owner) else {
@@ -446,7 +446,7 @@ impl Simulation {
                 let house = self.substrate.entities.get(owner).unwrap().owner();
                 self.airstrike_sound(
                     first,
-                    rules.and_then(|r| r.general.airstrike_abort_sound.as_deref()),
+                    rules.general.airstrike_abort_sound.as_deref(),
                     Some([house, house]),
                     rules,
                     effects,

@@ -79,7 +79,7 @@ impl Simulation {
 
     /// Every changed-owner Building path writes HasEngineer (4484AF), including
     /// non-engineer transfers. Same-owner calls return before this entry.
-    pub(crate) fn enable_building_after_owner_change(&mut self, id: u64, rules: Option<&RuleSet>) {
+    pub(crate) fn enable_building_after_owner_change(&mut self, id: u64, rules: &RuleSet) {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
         };
@@ -87,14 +87,47 @@ impl Simulation {
             return;
         }
         entity.building_has_engineer.set = true;
-        if let Some(rules) = rules
-            && self
-                .interner
-                .object_type(entity.type_ref(), rules)
-                .is_some_and(|o| o.needs_engineer)
+        if self
+            .interner
+            .object_type(entity.type_ref(), rules)
+            .is_some_and(|o| o.needs_engineer)
         {
             self.set_building_stuff_enabled(id, true, rules);
         }
+    }
+
+    /// `BuildingClass::UpdateAnimation @ 0x004509D0`, its depot block
+    /// `0x00450A86..0x00450B34`: a non-naval UnitRepair building whose
+    /// Get_Mission (vt+0x184: current, else queued) is not Repair but which
+    /// still holds slot 8 or 11 (ProductionAnim, SpecialAnimTwo) raises its
+    /// arm: SpecialAnimThree, damaged at ConditionYellow, into slot 12, then
+    /// clears 8 and 11. It runs every UpdateAnimation, so it also restores a
+    /// depot whose Repair mission was replaced mid-service; the mission's own
+    /// exits restore through `building_dock`'s idle service art.
+    pub(crate) fn update_depot_raise_anim(&mut self, id: u64, rules: &RuleSet) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        let slots = entity.building_art.anim_slots();
+        if entity.category() != crate::map::entities::EntityCategory::Structure
+            || !object.unit_repair
+            || entity.mission.effective().known() == Some(crate::sim::mission::MissionType::Repair)
+            || (slots[8].is_none() && slots[11].is_none())
+            || object.naval
+        {
+            return;
+        }
+        let damaged = requested_damage_state(
+            entity.health,
+            object.strength,
+            rules.general.condition_yellow,
+        );
+        self.set_building_anim_slot(id, 12, damaged, false, 0, rules);
+        self.clear_building_anim_slot(id, 8);
+        self.clear_building_anim_slot(id, 11);
     }
 
     /// Original450B34..450CB7: absorbed cargo selects Active/ActiveTwo before

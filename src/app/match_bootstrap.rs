@@ -88,6 +88,7 @@ pub struct PreparedNetworkStartup {
     mode: crate::app::match_runtime::session::SessionMode,
     host: bool,
     max_ahead_frames: i32,
+    wol_start: crate::app::match_runtime::session::WolStartTerms,
 }
 
 impl PreparedNetworkStartup {
@@ -97,6 +98,7 @@ impl PreparedNetworkStartup {
         mode: crate::app::match_runtime::session::SessionMode,
         host: bool,
         max_ahead_frames: i32,
+        wol_start: crate::app::match_runtime::session::WolStartTerms,
     ) -> Self {
         Self {
             launch,
@@ -108,11 +110,15 @@ impl PreparedNetworkStartup {
             mode,
             host,
             max_ahead_frames,
+            wol_start,
         }
     }
 
     pub(crate) fn max_ahead_frames(&self) -> i32 {
         self.max_ahead_frames
+    }
+    pub(crate) fn wol_start(&self) -> &crate::app::match_runtime::session::WolStartTerms {
+        &self.wol_start
     }
     pub fn launch_session(&self) -> &SkirmishLaunchSession {
         &self.launch

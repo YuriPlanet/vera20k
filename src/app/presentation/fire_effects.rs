@@ -219,7 +219,7 @@ mod tests {
             sim.assign_target_represented(
                 gun,
                 Some(TargetKind::Entity(target)),
-                Some(rules),
+                rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             )

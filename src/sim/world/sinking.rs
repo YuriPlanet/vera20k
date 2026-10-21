@@ -197,7 +197,7 @@ impl Simulation {
         // Chrono Warp's sink leaves the hull marked, so it takes the marked
         // arm. Both rejoin the changed-coordinate/OpenTopped tail, not a
         // separate raw-Z setter. Native execution: naval_sink_tick.json.
-        self.foot_set_location_marked(id, coord, Some(rules), registry, frame_effects);
+        self.foot_set_location_marked(id, coord, rules, registry, frame_effects);
         if coord.z.wrapping_sub(floor) < -400 {
             // UnitAI736500's terminal RecordKill(NULL) is a second callback,
             // not a second accounting implementation. Native naval_sink_tick
@@ -206,11 +206,11 @@ impl Simulation {
                 id,
                 crate::sim::combat::KillSource::Techno(None),
                 crate::sim::combat::KillCallback::Terminal,
-                UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+                UninitContext::new(rules, registry).with_effects(frame_effects),
             );
             self.uninit_with_context(
                 id,
-                UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+                UninitContext::new(rules, registry).with_effects(frame_effects),
             );
             self.sound_events
                 .emit(SimSoundEvent::ObjectSoundReleased { owner: id });

@@ -459,7 +459,7 @@ fn paradrop(
             placement: PlacementEvidence::MarkSucceeded,
             logic_eligible: true,
         },
-        UninitContext::new(Some(rules), registry)
+        UninitContext::new(rules, registry)
             .with_effects(effects)
             .with_unlimbo_facing(Some(PARADROP_UNLIMBO_FACING)),
     );
@@ -502,7 +502,7 @@ fn land_tail(
     if let Some((team, _)) = sim.team_script_vm.team_for_member(plane) {
         #[cfg(any(test, feature = "test-support"))]
         observe(Observed::RemoveMember(passenger));
-        sim.team_remove_member(team, passenger, false, Some(rules), effects);
+        sim.team_remove_member(team, passenger, false, rules, effects);
     }
     let frame = sim.session.binary_frame() as i32;
     if let Some(plane_entity) = sim.substrate.entities.get_mut(plane) {
@@ -1152,7 +1152,7 @@ mod tests {
 
         let max_fall_rate = rules.general.parachute_max_fall_rate;
         let mut frames = 0;
-        while !sim.advance_fall(passenger, max_fall_rate, Some(&rules), None, effects) {
+        while !sim.advance_fall(passenger, max_fall_rate, &rules, None, effects) {
             frames += 1;
             assert!(frames < 10_000, "the fall ends");
         }

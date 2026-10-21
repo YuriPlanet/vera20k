@@ -144,12 +144,9 @@ impl Simulation {
     fn sensor_reevaluate_residents(
         &mut self,
         cell: (u16, u16),
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) -> Vec<u64> {
-        let Some(rules) = rules else {
-            return Vec::new();
-        };
         // Add/RemoveSensorsAt @ 0x004DE7B0/0x004DE940 and the BuildingClass
         // variants walk CellClass::FirstObject head-to-tail after mutating this
         // exact cell. OccupancyGrid's ground list is that authoritative order.
@@ -167,7 +164,7 @@ impl Simulation {
         owner: InternedId,
         center: (u16, u16),
         radius: u16,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) -> Vec<u64> {
         let mut callbacks = Vec::new();
@@ -183,7 +180,7 @@ impl Simulation {
         owner: InternedId,
         center: (u16, u16),
         radius: u16,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) -> Vec<u64> {
         let mut callbacks = Vec::new();
@@ -205,7 +202,7 @@ impl Simulation {
         owner: InternedId,
         center: (u16, u16),
         radius: u16,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) -> Vec<u64> {
         let mut callbacks = Vec::new();
@@ -235,11 +232,11 @@ impl Simulation {
     /// they diverge permanently, and that asymmetry is native map state:
     /// construction credits the builder, `ChangeOwner` dispatches neither add
     /// nor remove, and Limbo debits the CAPTOR. See the residual on
-    /// `transfer_sensor_before_owner_change_inner`.
+    /// `transfer_sensor_before_owner_change`.
     fn remove_cached_sensor_deposit(
         &mut self,
         stable_id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) -> Option<SensorDeposit> {
         let (deposit, remove_owner) =
@@ -293,8 +290,8 @@ impl Simulation {
         Some(deposit)
     }
 
-    /// `FootClass::Unlimbo` sensor writer. The deposit is absent for a
-    /// rules-less/headless fixture and for non-Foot objects.
+    /// `FootClass::Unlimbo` sensor writer. A non-Foot object or a type without
+    /// a sensor radius makes no deposit.
     /// `FootClass::Unlimbo @ 0x004D7170`'s sensor add (vt+0x4E8 at `0x004D7318`), at
     /// the cell of the object it took out of limbo.
     pub(crate) fn add_unit_sensor_after_unlimbo(
@@ -319,8 +316,8 @@ impl Simulation {
         if in_limbo {
             return;
         }
-        let _ = self.remove_cached_sensor_deposit(stable_id, Some(rules), registry);
-        self.apply_sensor_add(owner, center, radius, Some(rules), registry);
+        let _ = self.remove_cached_sensor_deposit(stable_id, rules, registry);
+        self.apply_sensor_add(owner, center, radius, rules, registry);
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.sensor_deposit = Some(SensorDeposit::unit(owner, center, radius));
         }
@@ -392,9 +389,9 @@ impl Simulation {
         if !powered || in_limbo {
             return;
         }
-        let _ = self.remove_cached_sensor_deposit(stable_id, Some(rules), registry);
+        let _ = self.remove_cached_sensor_deposit(stable_id, rules, registry);
         if sight > 0 {
-            self.apply_sensor_add(owner, center, sight, Some(rules), registry);
+            self.apply_sensor_add(owner, center, sight, rules, registry);
         }
         if detect_radius > 0 {
             // The disguise-detect walk issues no resident `+0x420` callback —
@@ -414,17 +411,13 @@ impl Simulation {
     }
 
     /// Exact cached remove used by Foot/Building Limbo.
-    pub(crate) fn remove_sensor_before_limbo(&mut self, stable_id: u64) {
-        let _ = self.remove_cached_sensor_deposit(stable_id, None, None);
-    }
-
-    pub(crate) fn remove_sensor_before_limbo_with_rules(
+    pub(crate) fn remove_sensor_before_limbo(
         &mut self,
         stable_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
-        let _ = self.remove_cached_sensor_deposit(stable_id, Some(rules), registry);
+        let _ = self.remove_cached_sensor_deposit(stable_id, rules, registry);
     }
 
     /// Foot4D8611/4D8621 executes both receivers for PerCellProcess(2),
@@ -442,7 +435,7 @@ impl Simulation {
             .and_then(|entity| entity.sensor_deposit)
             .is_some_and(|deposit| !deposit.building_array);
         if had_unit_deposit {
-            let _ = self.remove_cached_sensor_deposit(stable_id, Some(rules), registry);
+            let _ = self.remove_cached_sensor_deposit(stable_id, rules, registry);
         }
         self.add_unit_sensor_after_unlimbo(stable_id, rules, registry);
     }
@@ -480,11 +473,11 @@ impl Simulation {
     /// permanent once it happens. *Downstream risk:* none new — the asymmetric
     /// `CloakRadiusInCells=` remove radius already produces negative sensor
     /// fringe counts without a capture, so no reader gains an unseen case.
-    fn transfer_sensor_before_owner_change_inner(
+    pub(crate) fn transfer_sensor_before_owner_change(
         &mut self,
         stable_id: u64,
         new_owner: InternedId,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
         let building_deposit = self
@@ -511,24 +504,6 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.sensor_deposit = Some(deposit);
         }
-    }
-
-    pub(crate) fn transfer_sensor_before_owner_change(
-        &mut self,
-        stable_id: u64,
-        new_owner: InternedId,
-    ) {
-        self.transfer_sensor_before_owner_change_inner(stable_id, new_owner, None, None);
-    }
-
-    pub(crate) fn transfer_sensor_before_owner_change_with_rules(
-        &mut self,
-        stable_id: u64,
-        new_owner: InternedId,
-        rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-    ) {
-        self.transfer_sensor_before_owner_change_inner(stable_id, new_owner, Some(rules), registry);
     }
 }
 
@@ -854,7 +829,7 @@ mod tests {
             cloak.set_state_for_test(0);
         }
 
-        let added = sim.apply_sensor_add(detector, (40, 30), 1, Some(&rules), None);
+        let added = sim.apply_sensor_add(detector, (40, 30), 1, &rules, None);
         assert_eq!(
             added,
             vec![newer, older],
@@ -888,18 +863,18 @@ mod tests {
                 .unwrap();
             cloak.set_state_for_test(0);
         }
-        let removed = sim.apply_unit_sensor_remove(detector, (40, 30), 1, Some(&rules), None);
+        let removed = sim.apply_unit_sensor_remove(detector, (40, 30), 1, &rules, None);
         assert_eq!(removed, vec![newer, older]);
         assert!(sim.sound_events.is_empty());
         assert!(
-            sim.apply_unit_sensor_remove(detector, (40, 30), 1, Some(&rules), None)
+            sim.apply_unit_sensor_remove(detector, (40, 30), 1, &rules, None)
                 .is_empty(),
             "unit RemoveSensorsAt skips decrement and callbacks at nonpositive pre-count"
         );
         assert!(sim.sound_events.is_empty());
 
         let building_removed =
-            sim.apply_building_sensor_remove(detector, (40, 30), 1, Some(&rules), None);
+            sim.apply_building_sensor_remove(detector, (40, 30), 1, &rules, None);
         assert_eq!(building_removed, vec![newer, older]);
         let index = 30 * usize::from(sim.fog.width()) + 40;
         assert_eq!(

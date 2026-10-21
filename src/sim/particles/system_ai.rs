@@ -293,7 +293,9 @@ mod tests {
         let stable_id = sim.substrate.allocate_stable_id();
         system.stable_id = stable_id;
         sim.substrate.particle_systems.insert(system);
-        assert!(sim.reveal_particle_system(stable_id, None));
+        assert!(
+            sim.reveal_particle_system(stable_id, crate::rules::ruleset::RuleSet::empty_for_test())
+        );
         stable_id
     }
 

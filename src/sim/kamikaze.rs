@@ -289,7 +289,7 @@ impl KamikazeHost for WorldHost<'_> {
         let _ = self.sim.assign_target_represented(
             child,
             cell,
-            Some(self.rules),
+            self.rules,
             None,
             FrameEffects::default(),
         );
@@ -302,7 +302,7 @@ impl KamikazeHost for WorldHost<'_> {
             MissionId::from_known(MissionType::Attack),
             0,
             now,
-            &crate::sim::mission::authority::EntityReadyInputProvider,
+            &crate::sim::mission::authority::LiveReadyInputProvider { rules: self.rules },
         );
     }
 }

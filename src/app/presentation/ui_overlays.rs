@@ -53,7 +53,6 @@ fn health_bar_hover_target(
         world_y,
         local_owner,
         state.match_state.sandbox_full_visibility,
-        state.rules(),
     )?;
     match hover.kind {
         HoverTargetKind::FriendlyStructure
@@ -1860,7 +1859,6 @@ mod tests {
             sy,
             &viewer_name,
             false,
-            Some(rules),
         )
         .expect("revealed time-machine hover");
         assert_eq!(hover.stable_id, id);

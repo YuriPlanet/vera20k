@@ -203,6 +203,10 @@ impl Simulation {
                 })
         });
 
+        // ReadScenario684B45..684B53, after 684C30 and before the initial
+        // Techno capture: the WOL clan alliances.
+        self.apply_squad_alliances(input.rules, Some(input.overlay_registry));
+
         // ReadScenario684ACE completes684C30 before684C05..684C1B captures
         // each House's initial Technos. Saved-world restore never enters this
         // fresh-only owner and therefore retains, rather than recaptures, them.
@@ -443,7 +447,7 @@ mod tests {
         crate::sim::scenario_bootstrap::initialize_map_roster_houses(
             &mut sim,
             &roster,
-            Some(&rules),
+            &rules,
             Some(&ini),
         );
         assert!(crate::map::houses::is_allied_with(

@@ -354,6 +354,16 @@ class IdentityAndReferenceTests(unittest.TestCase):
     def sidecar(self, suffix=".meta.json"):
         return json.loads(self.target.with_suffix(suffix).read_text(encoding="utf-8"))
 
+    def configure_executable(self, data=b"any gamemd.exe build"):
+        executable = Path(self.directory.name) / "gamemd.exe"
+        executable.write_bytes(data)
+        environment = patch.dict(os.environ, {"VERA20K_GAMEMD_EXE": str(executable)})
+        environment.start()
+        self.addCleanup(environment.stop)
+        oracle._image.cache_clear()
+        self.addCleanup(oracle._image.cache_clear)
+        return hashlib.sha256(data).hexdigest()
+
     def test_any_executable_loads_without_an_identity_check(self):
         for data in (pe_image(), b"any gamemd.exe build"):
             with self.subTest(size=len(data)):
@@ -374,6 +384,48 @@ class IdentityAndReferenceTests(unittest.TestCase):
         self.assertIn("PASS", self.finish({"value": 42}))
         self.finish({"value": 42}, "--write")
         self.assertNotIn("native_sha256", self.sidecar())
+
+    def test_the_configured_executables_hash_is_never_published(self):
+        digest = self.configure_executable()
+        with self.assertRaisesRegex(oracle.OracleError, r"gamemd\.exe hash at vectors\.json \$\.build\b"):
+            self.finish({"build": digest, "value": 42}, "--write")
+        provenance = dict(self.metadata, gamemd_sha256=digest)
+        with self.assertRaisesRegex(oracle.OracleError, r"vectors\.meta\.json \$\.gamemd_sha256"):
+            self.finish({"value": 42}, "--write", provenance=provenance)
+        self.assertEqual(self.files(), {})
+        # A reference that already holds this build's hash is not grandfathered.
+        self.target.write_text(json.dumps({"build": digest.upper()}))
+        with self.assertRaisesRegex(oracle.OracleError, "Remove these fields from the producer"):
+            self.finish({"build": digest.upper()})
+
+    def test_the_legacy_label_passes_only_where_the_reference_carries_it(self):
+        self.configure_executable()
+        label = oracle.image_sha256()
+        legacy = {"native_sha256": label, "rows": [{"image": label, "value": 1}]}
+        self.target.write_text(json.dumps(legacy, indent=2) + "\n")
+        self.assertIn("PASS", self.finish(legacy))
+        grown = dict(legacy, rows=legacy["rows"] * 2)
+        self.finish(grown, "--write")
+        other = self.target.with_name("elsewhere.json")
+        self.finish(grown, "--write", "--output", str(other))
+        added = dict(grown, rows=[dict(row, build=label) for row in grown["rows"]])
+        with self.assertRaisesRegex(oracle.OracleError, r"vectors\.json \$\.rows\[\*\]\.build\."):
+            self.finish(added, "--write")
+        self.assertEqual(json.loads(self.target.read_text()), grown)
+
+    def test_a_new_corpus_or_another_builds_reference_cannot_carry_the_label(self):
+        self.configure_executable()
+        label = oracle.image_sha256()
+        with self.assertRaisesRegex(oracle.OracleError, r"vectors\.json \$\.native_sha256"):
+            self.finish({"native_sha256": label}, "--write")
+        with self.assertRaisesRegex(oracle.OracleError, r"vectors\.raw\.json\.gz \$\.build"):
+            self.finish({"build": label, "value": 1}, "--write",
+                        projection=lambda raw: {"value": raw["value"]})
+        self.assertEqual(self.files(), {})
+        # Another build recorded its own hash; this run reports the label there.
+        self.target.write_text(json.dumps({"native_sha256": "ab" * 32}))
+        with self.assertRaisesRegex(oracle.OracleError, "Refusing to publish a gamemd.exe hash"):
+            self.finish({"native_sha256": label})
 
     def test_explicit_missing_path_does_not_fall_back(self):
         (self.target.parent / "gamemd.exe").write_bytes(b"fallback must not be selected")

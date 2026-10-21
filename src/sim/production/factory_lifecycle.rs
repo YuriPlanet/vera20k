@@ -274,7 +274,7 @@ pub(super) fn start_active_production(
         .factories_mut()
         .link_active_entity(holder, stable_id);
     if linked != Some(stable_id) {
-        let _ = sim.discard_constructed_limbo(stable_id, Some(rules), effects);
+        let _ = sim.discard_constructed_limbo(stable_id, rules, effects);
         return None;
     }
     let time_to_build = time_to_build(&time_to_build_inputs(sim, rules, owner_id, obj));
@@ -358,7 +358,7 @@ pub(super) fn settle_abandoned(
     // CanBuild/expiry callbacks; no constructor or RNG rewind occurs here.
     sim.with_object_placement_scope(|sim| {
         if let Some(entity_id) = abandoned.entity_id {
-            let discarded = sim.discard_constructed_limbo(entity_id, Some(rules), effects);
+            let discarded = sim.discard_constructed_limbo(entity_id, rules, effects);
             debug_assert!(
                 discarded,
                 "AbandonProduction destroys the held limbo object"
@@ -1020,14 +1020,11 @@ pub(in crate::sim) fn update_factory_queue(
 /// Source: original44EC01..44EF24; consumed factory_loss sale-queue controls.
 pub(in crate::sim) fn detach_building_production(
     sim: &mut Simulation,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     building: u64,
     effects: FrameEffects<'_>,
 ) {
     super::factory_ai::detach_all(sim, rules, building, effects);
-    let Some(rules) = rules else {
-        return;
-    };
     let Some((owner, category)) = sim.substrate.entities.get(building).and_then(|entity| {
         let object = sim.object_type(entity.type_ref(), rules)?;
         Some((entity.owner(), factory_category_for_building(object)?))

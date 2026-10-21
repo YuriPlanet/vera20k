@@ -47,9 +47,6 @@ mod area_guard_tests;
 #[path = "player_scatter_tests.rs"]
 mod player_scatter_tests;
 
-/// Click radius for single-click selection (pixels in world space).
-pub(crate) const CLICK_SELECT_RADIUS: f32 = 30.0;
-
 /// Handle mouse button press/release for selection and move commands.
 ///
 /// The in-game gadget walk runs FIRST (study G22/A8): chrome buttons + cameos
@@ -126,6 +123,12 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
             == crate::ui::pause_menu::InGameMenuState::AbortConfirm
         {
             crate::app::input::abort::mouse(state, button, pressed);
+            return;
+        }
+        if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::Surrender
+        {
+            crate::app::input::surrender::mouse(state, button, pressed);
             return;
         }
         if state.match_state.match_presentation.in_game_menu
@@ -438,9 +441,6 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                                     preferred_local_owner_name(state).as_deref(),
                                     world_x,
                                     world_y,
-                                    CLICK_SELECT_RADIUS,
-                                    state.rules(),
-                                    Some(sim.houses()),
                                     Some(sim.interner()),
                                     sim.resolved_terrain(),
                                 );
@@ -465,10 +465,8 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                                         preferred_local_owner_name(state).as_deref(),
                                         world_x,
                                         world_y,
-                                        CLICK_SELECT_RADIUS,
                                         shift,
                                         state.rules(),
-                                        Some(sim.houses()),
                                         Some(sim.interner()),
                                         sim.playfield_bounds().is_some(),
                                         sim.resolved_terrain(),
@@ -484,10 +482,8 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                                     preferred_local_owner_name(state).as_deref(),
                                     world_x,
                                     world_y,
-                                    CLICK_SELECT_RADIUS,
                                     shift,
                                     state.rules(),
-                                    Some(sim.houses()),
                                     Some(sim.interner()),
                                     sim.playfield_bounds().is_some(),
                                     sim.resolved_terrain(),
@@ -774,6 +770,12 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
             == crate::ui::pause_menu::InGameMenuState::AbortConfirm
         {
             crate::app::input::abort::cursor_moved(state);
+            return;
+        }
+        if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::Surrender
+        {
+            crate::app::input::surrender::cursor_moved(state);
             return;
         }
         if state.match_state.match_presentation.in_game_menu
@@ -2315,7 +2317,10 @@ fn resolve_selection_mutation(
     let mut successful_adds = Vec::new();
     let mut first_select_adds = 0;
     let mut select = |id: u64, ordered: &mut VecDeque<u64>, adds: &mut Vec<u64>| {
-        if placement_armed || members.contains(&id) || !sim.can_select_object(id, rules) {
+        if placement_armed
+            || members.contains(&id)
+            || !rules.is_some_and(|rules| sim.can_select_object(id, rules))
+        {
             return false;
         }
         members.insert(id);
@@ -2588,6 +2593,11 @@ mod item83_selection_order_tests {
     fn a_planning_select_adds_the_tail_node_members_who_speak_with_it() {
         use super::{SelectionMutation, SelectionVoicePolicy, resolve_selection_mutation};
         use crate::sim::command::Command;
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[VehicleTypes]\n0=TESTUNIT\n[TESTUNIT]\n",
+            ))
+            .expect("selection fixture rules");
         let mut sim = Simulation::new();
         let local = sim.intern("Local");
         let kind = sim.intern("TESTUNIT");
@@ -2626,13 +2636,13 @@ mod item83_selection_order_tests {
                 )
                 .unwrap();
             let command = sim.decode_native_command_record(&record, 0).unwrap();
-            assert!(sim.apply_command("Local", &command.payload, None));
+            assert!(sim.apply_command("Local", &command.payload, Some(&rules)));
         }
         assert_eq!(sim.planning_tail_members(42), vec![42, 43]);
         let resolve = |current: Vec<u64>, select: Vec<u64>, planning| {
             resolve_selection_mutation(
                 &sim,
-                None,
+                Some(&rules),
                 current,
                 None,
                 false,

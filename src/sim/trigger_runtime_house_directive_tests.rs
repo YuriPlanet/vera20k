@@ -67,7 +67,7 @@ fn run(
             input: TagEventInput::default(),
         },
         &mut Vec::new(),
-        Some(rules),
+        rules,
         Some(registry),
         FrameEffects::default(),
     )

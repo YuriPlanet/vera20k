@@ -58,7 +58,7 @@ fn a_promoted_grizzly_leaving_the_playfield_uninitializes_and_expires_targets() 
     sim.assign_target_represented(
         observer,
         Some(TargetKind::Entity(id)),
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     )
@@ -94,7 +94,7 @@ fn a_promoted_grizzly_leaving_the_playfield_uninitializes_and_expires_targets() 
     sim.per_cell_process(
         id,
         PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     )
@@ -148,7 +148,7 @@ fn inside_ingress_guard_team_and_turn_completion_do_not_remove_the_grizzly() {
             );
         }
         let rng = sim.rng_state();
-        sim.per_cell_process(id, reason, Some(&rules), None, FrameEffects::default())
+        sim.per_cell_process(id, reason, &rules, None, FrameEffects::default())
             .unwrap();
         let actor = sim.substrate.entities.get(id).unwrap();
         assert!(actor.lifecycle.object_alive(), "{name}");
@@ -177,7 +177,7 @@ fn infantry_uses_the_foot_exit_but_an_ordinary_aircraft_keeps_its_own_gate() {
         sim.per_cell_process(
             id,
             PerCellReason::Arrival,
-            Some(&rules),
+            &rules,
             None,
             FrameEffects::default(),
         )
@@ -208,7 +208,7 @@ fn a_partial_world_without_a_playfield_does_not_admit_exit() {
     sim.per_cell_process(
         id,
         PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     )
@@ -243,7 +243,7 @@ fn a_train_heading_back_to_the_playfield_stays_but_an_exiting_train_leaves() {
         sim.assign_destination_represented(
             id,
             Some(NavTargetRef::cell(destination.0, destination.1)),
-            Some(&rules),
+            &rules,
             None,
             FrameEffects::default(),
         )
@@ -251,7 +251,7 @@ fn a_train_heading_back_to_the_playfield_stays_but_an_exiting_train_leaves() {
         sim.per_cell_process(
             id,
             PerCellReason::Arrival,
-            Some(&rules),
+            &rules,
             None,
             FrameEffects::default(),
         )

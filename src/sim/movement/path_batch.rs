@@ -548,7 +548,7 @@ impl Simulation {
     /// re-paths within [`URGENCY2_STEPS_PER_PASS`].
     pub(crate) fn answer_batched_path_searches(
         &mut self,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
         self.answer_path_searches_within(rules, registry, URGENCY2_STEPS_PER_PASS);
@@ -558,7 +558,7 @@ impl Simulation {
     /// `urgency2_steps` expansions, at least 1, for the urgency-2 re-paths.
     fn answer_path_searches_within(
         &mut self,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         urgency2_steps: u64,
     ) {
@@ -605,10 +605,8 @@ impl Simulation {
         batch.left_out_code2 = left_out;
         turn.extend(others);
         let searched = turn.len();
-        let (turns, expanded, urgency2_made) = match (rules, self.path_grid_snapshot()) {
-            (Some(rules), Some(grid))
-                if self.overlay_grid.is_some() && self.resolved_terrain.is_some() =>
-            {
+        let (turns, expanded, urgency2_made) = match self.path_grid_snapshot() {
+            Some(grid) if self.overlay_grid.is_some() && self.resolved_terrain.is_some() => {
                 self.search_batch(&turn, urgent, urgency2_steps, rules, registry, &grid)
             }
             _ => (Vec::new(), 0, 0),
@@ -682,7 +680,7 @@ impl Simulation {
             self.resolved_terrain.as_ref(),
             self.overlay_grid.as_ref(),
             &self.interner,
-            Some(rules),
+            rules,
         );
         // Every search reads the same world, so a cell's or blocker's entry
         // facts are read once a batch and shared.

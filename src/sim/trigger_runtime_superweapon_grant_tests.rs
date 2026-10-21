@@ -50,13 +50,13 @@ fn scene_with_rules(
         None,
         None,
     );
-    sim.classify_map_triggers(Some(&rules));
+    sim.classify_map_triggers(&rules);
     let id = sim.interner.get(&rules.super_weapon_order[index]).unwrap();
     (sim, rules, map, owner, id)
 }
 
 fn spring(sim: &mut Simulation, rules: &RuleSet) {
-    sim.advance_triggers(Some(rules), None, FrameEffects::default());
+    sim.advance_triggers(rules, None, FrameEffects::default());
 }
 
 #[test]
@@ -174,7 +174,7 @@ fn execute(
             input: TagEventInput::default(),
         },
         &mut Vec::new(),
-        Some(rules),
+        rules,
         None,
         FrameEffects::default(),
     )

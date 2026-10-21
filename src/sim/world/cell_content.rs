@@ -53,6 +53,13 @@ impl Simulation {
         )
     }
 
+    /// The head of a cell's ground list (`CellClass+0xE4`), the object
+    /// `Tactical::PickObjectAtScreenPoint @ 0x006DA380` falls back to when no
+    /// registered object is near the point (`0x006DA4B8..0x006DA4FB`).
+    pub fn first_ground_cell_object(&self, cell: (u16, u16)) -> Option<CellObjectMember> {
+        self.cell_objects(cell, MovementLayer::Ground).next()
+    }
+
     pub(crate) fn cell_object_list_location(
         &self,
         object: CellObjectMember,

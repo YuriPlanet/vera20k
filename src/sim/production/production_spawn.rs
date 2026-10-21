@@ -174,7 +174,7 @@ pub fn mark_war_factory_spawn_contact(
             produced_id,
             message,
             crate::sim::radio::RadioPayload::default(),
-            Some(rules),
+            rules,
             effects,
         );
     }

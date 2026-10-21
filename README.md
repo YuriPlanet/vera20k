@@ -110,6 +110,8 @@ build capability and cannot load in the other mode, even with identical retail I
 This is partial Rust-native compatibility, not Ares DLL loading or general mod support.
 The enabled build also supports [generic production prerequisites](docs/ares-prerequisites.md),
 including alternate owned types and installed-upgrade qualification.
+It also supports [Ares House survival](docs/ares-house-survival.md), including
+`KeepAlive` and the complete `BaseUnit` list for short games.
 
 To launch single-player YR skirmishes or campaigns through a dedicated CnCNet
 client, see the [offline client setup](integrations/cncnet/README.md). This needs
@@ -119,6 +121,9 @@ a VERA build with the `-SPAWN` startup adapter.
 
 Help is welcome. You can write code, refactor the engine, test the game, share ideas, or play
 it next to the original and tell us what feels wrong. Open a PR and we'll take it from there.
+If you add a native comparison under `tools/`, record what `gamemd.exe` computes, never a hash
+of the executable: every build is treated as the same game, and the oracle runner refuses such
+hashes (see [Evidence identity](tools/native_oracle.md#evidence-identity)).
 Discussion is on [Discord](https://discord.gg/kmjRUn5m5F) and in the QQ group (1097193563).
 
 ## Support

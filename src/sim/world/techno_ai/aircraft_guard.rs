@@ -247,7 +247,7 @@ impl GuardHost for WorldGuard<'_> {
             .assign_target_represented(
                 self.id,
                 None,
-                Some(self.rules),
+                self.rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             )
@@ -287,7 +287,7 @@ impl GuardHost for WorldGuard<'_> {
             .assign_target_represented(
                 self.id,
                 Some(TargetKind::Entity(unit)),
-                Some(self.rules),
+                self.rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             )

@@ -895,7 +895,7 @@ impl SuppliedFootFixture {
                 &mut sim.substrate,
                 id,
                 DisplayLayer::GROUND,
-                Some(rules),
+                rules,
             );
         }
         sim.set_logic_order_for_test(logic);

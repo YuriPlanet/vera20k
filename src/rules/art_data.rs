@@ -259,6 +259,13 @@ pub struct ArtEntry {
     /// the building body's own Z term before the height lift is cancelled.
     /// Retail sets it only on GAFSDF (-10); default 0.
     pub normal_z_adjust: i32,
+    /// `DoubleThick=` (`BuildingTypeClass +0x16B1`): the constructor
+    /// (`0x0045E0F0`) writes false and `BuildingTypeClass::ReadINI`
+    /// (`0x0046112F..0x00461146`) reads it with ReadBool from this ART
+    /// section, the current byte as default. The AnimType key of the same
+    /// name is [`AnimTypeRuntimeConfig::double_thick`]. A warping building of
+    /// such a type draws at 75% translucency, not 50%.
+    pub building_double_thick: bool,
 }
 
 impl ArtEntry {
@@ -1336,6 +1343,7 @@ impl ArtRegistry {
                     deployed_fire_frames,
                     z_shape_point_move,
                     normal_z_adjust,
+                    building_double_thick: section.read_bool("DoubleThick", false),
                 },
             );
         }

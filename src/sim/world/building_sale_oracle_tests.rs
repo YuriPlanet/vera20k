@@ -270,7 +270,7 @@ fn replay_crew_row(row: &Value) {
     let before = sim.substrate.entities.keys_sorted();
     production::sell_stage_one(
         sim,
-        Some(rules),
+        rules,
         Some(super::harvest_field_oracle_tests::registry()),
         refinery,
         crate::sim::world::FrameEffects::default(),

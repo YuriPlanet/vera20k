@@ -97,7 +97,7 @@ fn a_stuck_computer_miner_drives_off_its_refinery_pad() {
         refinery,
         RadioMessage::Hello,
         RadioPayload::default(),
-        Some(&rules),
+        &rules,
         FrameEffects::default(),
     );
     assert_eq!(hello, RadioResponse::Roger);
@@ -171,7 +171,7 @@ fn a_moving_miner_on_the_pad_is_left_alone() {
     let _ = sim.assign_destination_represented(
         miner,
         Some(NavTargetRef::cell(30, 20)),
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     );

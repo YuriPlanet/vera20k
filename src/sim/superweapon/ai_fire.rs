@@ -422,7 +422,7 @@ fn rally_entry(
 ) -> RallyEntry {
     let id = entity.stable_id();
     let (candidate, value) = if entity.owner() == enemy {
-        let standing = sim.entity_display_layer(id, Some(rules))
+        let standing = sim.entity_display_layer(id, rules)
             == Some(crate::sim::world::display_layers::DisplayLayer::GROUND)
             && entity.is_object_alive()
             && !entity.lifecycle.in_limbo();

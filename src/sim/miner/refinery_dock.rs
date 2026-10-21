@@ -110,7 +110,7 @@ pub(crate) fn mission_unload(
     };
     // A 0x0073DEE0: without any radio contact the unload is abandoned.
     if entity.radio_contacts.is_empty() {
-        sim.unit_enter_idle_mode(id, Some(rules), false, effects);
+        sim.unit_enter_idle_mode(id, rules, false, effects);
         set_unload_latch(&mut sim.interner, &mut sim.substrate, rules, id, false);
         stop_if_moving(&mut sim.substrate, id);
         commence_if_ready(sim, rules, id);
@@ -161,7 +161,7 @@ fn unload_dumping(
     let now = sim.session.binary_frame();
     let Some(building) = unload_building(sim, id) else {
         // 0x0073E311..0x0073E350: no building → OVER_OUT, Queue(Harvest, 1).
-        radio::transmit_to_contact(sim, id, RadioMessage::Break, Some(rules), effects);
+        radio::transmit_to_contact(sim, id, RadioMessage::Break, rules, effects);
         let _ = sim.mission_queue_exact(
             id,
             MissionId::from_known(MissionType::Harvest),
@@ -258,7 +258,7 @@ fn unload_finishing(
         // Teleport (the Unit setter's Teleporter arm) and warps, and the
         // warp's Per_Cell release drops the contact. Native reading; no row.
         if sim.mission_ready_to_commence(id, rules) {
-            radio::transmit_to_contact(sim, id, RadioMessage::Break, Some(rules), effects);
+            radio::transmit_to_contact(sim, id, RadioMessage::Break, rules, effects);
             let _ = sim.substrate.mission_commence_exact(id, now);
         }
     }
@@ -320,7 +320,7 @@ pub(crate) fn per_cell_release_dock_contact(
                     }
                 });
         if dock {
-            radio::transmit_to_contact(sim, id, RadioMessage::Break, Some(rules), effects);
+            radio::transmit_to_contact(sim, id, RadioMessage::Break, rules, effects);
         }
     }
 }

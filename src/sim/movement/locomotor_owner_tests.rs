@@ -159,9 +159,9 @@ fn foot_ai_restore_retires_same_drive_fields_as_direct_destination() {
     let (mut sim, _) = fixture();
     activate_drive(sim.substrate.entities.get_mut(1).unwrap());
 
-    assert!(sim.try_end_piggyback(1, None));
+    assert!(sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
     assert_retired(sim.substrate.entities.get(1).unwrap());
-    assert!(!sim.try_end_piggyback(1, None));
+    assert!(!sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
 }
 
 /// The arm's can't-end branch (`0x0074258C..0x007425C6`): a Drive still on
@@ -184,14 +184,14 @@ fn refused_restore_keeps_live_head_and_forced_segment() {
                 1,
                 0x47,
                 DriveCoord::cell(9, 8, 731),
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
                 crate::sim::world::FrameEffects::default()
             ));
         }
 
         assert!(destination(&mut sim, &rules, true));
-        assert!(!sim.try_end_piggyback(1, None));
+        assert!(!sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
         let entity = sim.substrate.entities.get(1).unwrap();
         let locomotor = entity.locomotor.as_ref().unwrap();
         assert_eq!(locomotor.active_kind(), LocomotorKind::Drive);
@@ -234,7 +234,7 @@ fn out_of_contact_destination_installs_fresh_drive_without_previous_instance_sta
     let mut track = loco.track_progress(TrackFamily::Drive).unwrap();
     track.set_turn_index(0x47);
     loco.store_track_progress(TrackFamily::Drive, track);
-    assert!(sim.try_end_piggyback(1, None));
+    assert!(sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
 
     assert!(destination(&mut sim, &rules, false));
 
@@ -262,7 +262,7 @@ fn reusing_active_drive_keeps_complete_instance_including_forced_track() {
         1,
         0x47,
         DriveCoord::cell(9, 8, 731),
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default()
     ));
@@ -337,8 +337,8 @@ fn refused_installation_and_absent_stash_preserve_instance_and_foot_state() {
         let before = owned_state(entity);
 
         assert!(!begin_drive_for_teleporter(entity, 37));
-        assert!(!sim.try_end_piggyback(1, None));
-        assert!(!sim.end_admitted_piggyback(1, None));
+        assert!(!sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
+        assert!(!sim.end_admitted_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
         assert_eq!(owned_state(sim.substrate.entities.get(1).unwrap()), before);
     }
 }
@@ -400,7 +400,7 @@ fn refused_miner_order_leaves_teleport_payload_untouched() {
         let (mut sim, rules) = fixture();
         if retired_drive {
             activate_drive(sim.substrate.entities.get_mut(1).unwrap());
-            assert!(sim.try_end_piggyback(1, None));
+            assert!(sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
         }
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         let mut path_runtime = crate::sim::components::FootPathRuntime::at_frame(0);
@@ -447,7 +447,7 @@ fn foot_queue_survives_drive_retirement_construction_and_reuse() {
     ));
     let queue = entity.navigation.path_replay().clone();
     let speed = entity.foot_speed.clone();
-    assert!(sim.try_end_piggyback(1, None));
+    assert!(sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     assert_retired(entity);
     assert_eq!(entity.navigation.path_replay().clone(), queue);
@@ -560,7 +560,9 @@ fn foot_speed_ownership_matches_original_helper_witnesses() {
                     case["output"]["constructor_target"].as_f64().unwrap()
                 ))
             );
-            assert!(sim.end_admitted_piggyback(1, None));
+            assert!(
+                sim.end_admitted_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test())
+            );
             let entity = sim.substrate.entities.get(1).unwrap();
             assert_retired(entity);
             assert_eq!(entity.foot_speed, owner_speed);
@@ -691,7 +693,7 @@ fn foot_queue_operations_match_original_memory_witnesses() {
         } else if operation == "foot_stop" {
             entity.navigation.stop_moving();
         } else if operation == "drive_end" {
-            assert!(sim.try_end_piggyback(1, None));
+            assert!(sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
         } else {
             entity.navigation.path_replay_mut().consume(1);
         }
@@ -738,7 +740,10 @@ fn drive_end_uses_native_gates_and_preserves_owner_state() {
         }
         let before = owned_state(entity);
         let speed = entity.foot_speed.clone();
-        assert_eq!(sim.try_end_piggyback(1, None), denied == 0);
+        assert_eq!(
+            sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()),
+            denied == 0
+        );
         let entity = sim.substrate.entities.get(1).unwrap();
         assert_eq!(entity.foot_speed, speed);
         if denied != 0 {
@@ -768,7 +773,7 @@ fn drive_end_denial_flags_survive_save_and_block_generic_restore() {
         let bytes = GameSnapshot::save(&sim, 0, 0, "drive_end_gate", 0);
         let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
         assert_eq!(loaded.state_hash(), sim.state_hash());
-        assert!(!loaded.try_end_piggyback(1, None));
+        assert!(!loaded.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
         let before = loaded.state_hash();
         let entity = loaded.substrate.entities.get_mut(1).unwrap();
         entity
@@ -778,7 +783,7 @@ fn drive_end_denial_flags_survive_save_and_block_generic_restore() {
             .store_drive_end_permission(true);
         entity.lift.set_swap_active_for_test(false);
         assert_ne!(loaded.state_hash(), before);
-        assert!(loaded.try_end_piggyback(1, None));
+        assert!(loaded.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
     }
 }
 

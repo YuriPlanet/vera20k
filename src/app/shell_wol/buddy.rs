@@ -348,7 +348,14 @@ fn enables(state: &mut AppState) {
     let buddies = &state.frontend.wol_buddies;
     let selected = buddies.selected.as_str();
     let status = buddies.status(selected);
-    let join = join_enabled(selected, status, buddies.channel(selected), games, observer);
+    let join = join_enabled(
+        selected,
+        status,
+        buddies.channel(selected),
+        games,
+        observer,
+        super::lobby::squad_id(state),
+    );
     let page = page_enabled(selected, status);
     let remove = !selected.is_empty();
     if let Some(dialog) = page_mut(state) {

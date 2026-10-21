@@ -14,7 +14,7 @@ use crate::app::input::commands::preferred_local_owner;
 use crate::app::input::dispatch::{
     is_alt_held, is_ctrl_held, is_shift_held, selected_stable_ids_in_order,
 };
-use crate::app::input::entity_pick::{HoverTargetKindWithId, hover_target_at_point};
+use crate::app::input::entity_pick::{HoverObject, HoverTargetKindWithId, hover_object_at_point};
 use crate::app::types::{HoverTargetKind, OrderMode};
 use crate::map::entities::EntityCategory;
 use crate::sim::combat::TargetKind;
@@ -98,6 +98,12 @@ pub(crate) enum AttackAction {
     /// Move (1) over an object: an Aircraft's own Cell action under it
     /// (`0x00417D7C`), which its ClickedAction sends to Foot's Move arm.
     Move,
+    /// AttackSupport (0x3B): a player's healing Unit's Attack on a Cell
+    /// (`0x007404FD..0x00740522`). SetCursorFromAction (`0x004AAE90`) has no
+    /// case for it, so it shows the arrow (row 0), and Foot's ClickedAction_Cell
+    /// (`0x004D7D50`) takes its default case (`0x004D8237`): the click is
+    /// consumed and sends nothing.
+    AttackSupport,
 }
 
 /// The allied-object part of Techno6FFEC0's unforced attack admission,
@@ -167,6 +173,55 @@ fn friendly_attack_is_admitted(
             && target.parasite.is_infested())
 }
 
+/// What_Action_OnObject's attack rung without Ctrl (`0x00700400..0x0070043E`)
+/// needs the object's type (vt+0x88) to be `LegalTarget=` (`+0x231`,
+/// `0x0070042E`) or TechnoClass vt+0x398 (`0x0070EF00`, asked at
+/// `0x007002EE`) to answer yes. For a Terrain object
+/// that is its TerrainType's `LegalTarget=` (retail: only `VEINHOLE`), else
+/// `[CombatDamage] TreeTargeting=` (`Rules+0x17E9`, retail no) or the
+/// `TerrainFire=` (`+0x138`) of the weapon SelectWeapon picks for it
+/// (`0x0070EF0C..0x0070EF4B`). A Techno target passes here (#605).
+fn terrain_target_is_legal(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor_id: u64,
+    target_id: u64,
+) -> bool {
+    use crate::sim::combat::combat_weapon;
+
+    let Some(terrain) = sim.terrain_objects().get(target_id) else {
+        return true;
+    };
+    if rules
+        .terrain_object_type_case_insensitive(sim.interner().resolve(terrain.type_ref()))
+        .is_some_and(|terrain| terrain.legal_target)
+    {
+        return true;
+    }
+    let Some(actor) = sim.entities().get(actor_id) else {
+        return false;
+    };
+    let Some(kind) = sim.interner().object_type(actor.type_ref(), rules) else {
+        return false;
+    };
+    let cells = sim
+        .resolved_terrain()
+        .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+    combat_weapon::select_weapon_against_in_query(
+        rules,
+        actor,
+        kind,
+        &combat_weapon::attacker_facts(actor, kind),
+        Some(&TargetKind::Entity(target_id)),
+        sim,
+        sim.interner(),
+        cells.as_ref(),
+        Some(sim.house_alliances()),
+    )
+    .and_then(|(_, weapon)| weapon)
+    .is_some_and(|weapon| rules.general.tree_targeting || weapon.weapon.terrain_fire)
+}
+
 /// The attack rung of the actor's What_Action and the tail it falls to.
 ///
 /// Object target (`TechnoClass::What_Action_OnObject @ 0x006FFEC0`): the
@@ -186,8 +241,10 @@ fn friendly_attack_is_admitted(
 /// Cell target (`TechnoClass::What_Action_OnCell @ 0x00700600`): the rung is
 /// a human player's too (`0x007008A6..0x007008B3`), and the caller has asked
 /// the weapon ([`armed_action`]); control or range answers Attack
-/// (`0x007009F3..0x00700A44`), else 0. Any other house's object answers 0
-/// there (`0x00700AB7..0x00700AC4`).
+/// (`0x007009F3..0x00700A44`). A rejected rung continues at the Cell
+/// movement tail (`0x00700AB7`), which callers resolve through
+/// `cell_move_action` and `ordinary_cell_move_goal`. Any other house's object
+/// answers 0 there (`0x00700AB7..0x00700AC4`).
 ///
 /// This asks no ROF or reload. The class post-processing follows below. See
 /// the original DetermineAction/Unit/Foot/Techno and Display action corpus
@@ -197,14 +254,16 @@ fn friendly_attack_is_admitted(
 /// [`friendly_attack_is_admitted`]. A different allied House therefore takes
 /// the identity-sensitive tail, then the existing class postprocessing.
 ///
+/// Unforced, a Terrain object must pass [`terrain_target_is_legal`].
+///
 /// RESIDUAL (#605): the rest of admission (`0x00700255..0x0070043E`) is not
 /// ported as one gate. Unforced, native also leaves the rung for:
 /// - an object disguised to the actor's house (vt+0xC8), unless that grant
 ///   holds, `[Rules+0xD6C]` is set, its type is `PermaDisguise=` (`+0xD30`),
 ///   its `+0x1EC`/`+0x1F4` timer runs, or it wears no house (vt+0xD0) and the
 ///   weapon may fire at terrain (vt+0x398, `0x0070EF00`, `TerrainFire=`);
-/// - a type that is not `LegalTarget=` (`+0x231`), unless that terrain test
-///   passes.
+/// - a Techno type that is not `LegalTarget=` (`+0x231`), unless that
+///   terrain test passes. No retail Techno type clears `LegalTarget=`.
 ///
 /// Active YR Battle authors AttackCursorOnDisguise=yes, and SPY also authors
 /// PermaDisguise=yes: an ordinary stock Spy/Mirage is not evidence of a missed
@@ -231,11 +290,44 @@ pub(crate) fn attack_action(
         TargetKind::Entity(target_id) => {
             human
                 && (armed || infiltrator)
-                && (forced || friendly_attack_is_admitted(sim, rules, actor_id, *target_id))
+                && (forced
+                    || (friendly_attack_is_admitted(sim, rules, actor_id, *target_id)
+                        && terrain_target_is_legal(sim, rules, actor_id, *target_id)))
         }
         TargetKind::Cell(..) => human,
     };
-    let mut action = if admitted
+    // TechnoClass::What_Action_OnObject's tail (`0x0070056C..0x007005E6`):
+    // Select over an object the player may select that is not selected,
+    // unless an armed player's object points at another House's, or at its
+    // own loaner. The warp arm (`0x006FFF03..0x006FFF8A`) asks the same
+    // without the target's own warp test (`0x007005CD`).
+    let selects = |target_id: u64, warp_test: bool| {
+        sim.entities().get(target_id).is_some_and(|object| {
+            !(armed && human && object.owner() != actor.owner())
+                && !(actor.is_mission_only() && actor.discovery.owned_by_current_house())
+                && sim.object_is_selectable(target_id, rules)
+                && !object.selection.is_selected()
+                && !(warp_test && object.is_warped_out())
+        })
+    };
+    // An object being warped out (vt+0x1D4) answers before the attack rung:
+    // 0 on a Cell (`0x00700731`; warping in too, `0x00700743`), and over an
+    // object the tail's Select, else 0. A berserk one answers 0 before that
+    // (`0x006FFEC9`). The class tails below still run on the answer; none
+    // turns its 0 into NoMove, as the object is not controllable (vt+0xA0,
+    // `0x00700C40`), but a Building's Cell tail still answers its rally.
+    let warping =
+        actor.is_warped_out() || (actor.is_warping_in() && matches!(target, TargetKind::Cell(..)));
+    let mut action = if warping {
+        match *target {
+            TargetKind::Entity(target_id)
+                if !actor.berserk.is_active() && selects(target_id, false) =>
+            {
+                AttackAction::Select
+            }
+            _ => AttackAction::None,
+        }
+    } else if admitted
         && (sim.techno_player_controllable(actor_id, rules)
             || resolved_unit_in_range(
                 sim,
@@ -247,20 +339,70 @@ pub(crate) fn attack_action(
                 Some(target),
             ))
         && (forced || !shot_is_illegal(sim, rules, actor_id, target, overlay_registry))
+        // Ares3.0 hooks700536/7008D4 ->1004A460/1004A430 leave
+        // this rung for NoManualFire. Keep the original selection/Foot
+        // fallback below; a Unit's rejected object attack becomes NoMove,
+        // whose click still moves near the object. Do not gate CanFire or
+        // received simulation missions: auto-targeting/scripts bypass UI.
+        // RESIDUAL: Infantry's C4 and infiltration arms need this Attack
+        // (`cmp ebp,5` at 0x0051E9F1 and 0x0051EE62), but `infantry_c4_action`
+        // and `infiltrator_capture_orders` decide without it, so a
+        // NoManualFire Tanya or Spy still plants C4 or infiltrates. Only Ares
+        // builds read the key; retail rules never set it.
+        && !kind.no_manual_fire()
     {
         AttackAction::Attack
     } else if let TargetKind::Entity(target_id) = *target
-        && let Some(object) = sim.entities().get(target_id)
-        && !(armed && human && object.owner() != actor.owner())
-        && !(actor.is_mission_only() && actor.discovery.owned_by_current_house())
-        && sim.object_is_selectable(target_id, Some(rules))
-        && !object.selection.is_selected()
-        && !object.is_warped_out()
+        && selects(target_id, true)
     {
         AttackAction::Select
     } else {
         AttackAction::None
     };
+    let healing_unit = actor.category() == EntityCategory::Unit
+        && human
+        && crate::sim::combat::combat_weapon::weapon_damage_value(
+            actor,
+            kind,
+            sim.entities(),
+            rules,
+            sim.interner(),
+        ) < 0;
+    // UnitClass::What_Action_OnCell 0x007404FD..0x00740522: a player's Unit
+    // whose GetWeaponDamageValue(-1) (0x006F3970) is negative, an IFV with an
+    // Engineer, turns Foot's Attack on a Cell into AttackSupport (0x3B), which
+    // every later Unit rung returns unchanged (0x0074072B..0x0074075F).
+    if action == AttackAction::Attack && healing_unit && matches!(target, TargetKind::Cell(..)) {
+        action = AttackAction::AttackSupport;
+    }
+    // UnitClass::What_Action_OnObject's healer arm (0x0073FD7C)
+    // asks Is_Ally_ByObject (0x004F9A90), which refuses a Terrain object's
+    // null House, so the answer is 0 (0x00740115) and the Foot tail below
+    // makes it NoMove. A Techno target's healer arm is
+    // `Simulation::unit_repair_action`.
+    if healing_unit
+        && let TargetKind::Entity(target_id) = *target
+        && sim.terrain_objects().get(target_id).is_some()
+    {
+        action = AttackAction::None;
+    }
+    // UnitClass::What_Action_OnObject 0x0073FE48: a Unit that is not IsActive
+    // (0x007010D0; a Robot Tank without its control) turns Foot's Attack over
+    // an object into Move where it may crush it (a crusher, and
+    // Is_Crushable_By 0x005F6CD0), otherwise Select (0x0073FE3B).
+    if action == AttackAction::Attack
+        && actor.category() == EntityCategory::Unit
+        && let TargetKind::Entity(target_id) = *target
+        && !sim.techno_is_active(actor_id, rules)
+    {
+        action = if crate::sim::combat::veterancy::is_crusher(actor.veterancy.rank_kind(), kind)
+            && sim.object_crushable_by_unit(actor_id, target_id, rules)
+        {
+            AttackAction::Move
+        } else {
+            AttackAction::Select
+        };
+    }
     // Unit74077F..7407E5 /740389..7403E8: the fully deployed
     // SimpleDeployer repeats SelectWeapon(NULL), then range. This returns
     // Action2, unlike the Techno control/range Action0 branch above.
@@ -426,8 +568,9 @@ pub(super) fn object_action_answers_friendly(
     })
 }
 
-/// The target is an object whose type is `Immune=` (`+0x233`), which every
-/// class's object action turns from Attack into NoMove.
+/// The target is an object whose type (vt+0x88) is `Immune=` (`+0x233`),
+/// which every class's object action turns from Attack into NoMove: a
+/// Techno's, or a Terrain object's TerrainType.
 fn target_is_immune(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -436,10 +579,18 @@ fn target_is_immune(
     let TargetKind::Entity(id) = *target else {
         return false;
     };
-    sim.entities()
+    if let Some(target) = sim.entities().get(id) {
+        return sim
+            .interner()
+            .object_type(target.type_ref(), rules)
+            .is_some_and(|target| target.immune);
+    }
+    sim.terrain_objects()
         .get(id)
-        .and_then(|target| sim.interner().object_type(target.type_ref(), rules))
-        .is_some_and(|target| target.immune)
+        .and_then(|terrain| {
+            rules.terrain_object_type_case_insensitive(sim.interner().resolve(terrain.type_ref()))
+        })
+        .is_some_and(|terrain| terrain.immune)
 }
 
 /// [`attack_action`] for an armed actor: the Ctrl branch (`forced`), and a
@@ -666,12 +817,16 @@ fn attack_branch_orders(
     let mut queued = Vec::new();
     let mut attack_receivers = std::collections::BTreeSet::new();
     let mut select_fallback = false;
+    // Over a Terrain object every receiver answers its own What_Action on
+    // the object, armed or not: there is no other object route to take.
+    let terrain =
+        matches!(attack_target, TargetKind::Entity(id) if sim.terrain_objects().get(id).is_some());
     for &id in selected_ids {
         let is_structure = sim
             .entities()
             .get(id)
             .is_some_and(|entity| entity.category() == EntityCategory::Structure);
-        if !(force_fire || is_structure) {
+        if !(force_fire || is_structure || terrain) {
             continue;
         }
         if let TargetKind::Entity(target_id) = attack_target
@@ -681,17 +836,35 @@ fn attack_branch_orders(
             consumed_attack_action = true;
             continue;
         }
-        let Some(action) = armed_action(
-            sim,
-            rules,
-            id,
-            &attack_target,
-            force_fire,
-            Some(overlay_registry),
-        ) else {
+        let action = if terrain {
+            Some(attack_action(
+                sim,
+                rules,
+                id,
+                &attack_target,
+                force_fire,
+                Some(overlay_registry),
+            ))
+        } else {
+            armed_action(
+                sim,
+                rules,
+                id,
+                &attack_target,
+                force_fire,
+                Some(overlay_registry),
+            )
+        };
+        let Some(action) = action else {
             continue;
         };
         if action == AttackAction::Rally {
+            continue;
+        }
+        if action == AttackAction::None && matches!(attack_target, TargetKind::Cell(..)) {
+            // Rejection of the attack rung still reaches Techno's Cell
+            // movement tail700AB7..700C08. Leave this receiver to the
+            // existing cell-move/harvest path below, including under Ctrl.
             continue;
         }
         attack_receivers.insert(id);
@@ -711,9 +884,10 @@ fn attack_branch_orders(
             continue;
         }
         match action {
-            AttackAction::None | AttackAction::NoMove | AttackAction::Move => {
-                consumed_attack_action = true
-            }
+            AttackAction::None
+            | AttackAction::NoMove
+            | AttackAction::Move
+            | AttackAction::AttackSupport => consumed_attack_action = true,
             AttackAction::Rally => unreachable!("rally remains with its existing receiver"),
             AttackAction::Select => select_fallback = true,
             AttackAction::Attack => {
@@ -1128,7 +1302,9 @@ pub(super) fn selection_can_attack_move(
 /// Techno object700191..700217 / Cell700830..700894. The keyboard chord
 /// alone is not a Guard action. Object targets must be allied; bare ground
 /// requires IsActive7010D0. Waypoint/patrol input is not exposed by VERA.
-/// Shared by the hover and click producers; no simulation state is changed.
+/// A berserk object answers 0 before the rung (object `0x006FFEC9`, Cell
+/// `0x00700609`). Shared by the hover and click producers; no simulation
+/// state is changed.
 pub(super) fn guard_area_admitted(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -1138,7 +1314,9 @@ pub(super) fn guard_area_admitted(
     let Some(actor) = sim.entities().get(actor_id) else {
         return false;
     };
-    if !sim.house_is_human_player(actor.owner()) || !sim.techno_player_controllable(actor_id, rules)
+    if actor.berserk.is_active()
+        || !sim.house_is_human_player(actor.owner())
+        || !sim.techno_player_controllable(actor_id, rules)
     {
         return false;
     }
@@ -1156,6 +1334,38 @@ pub(super) fn guard_area_admitted(
         }
         None => sim.techno_is_active(actor_id, rules),
     }
+}
+
+/// Techno What_Action on a Cell's Ctrl+Alt rung (`0x00700815..0x007008A3`):
+/// whether `actor_id` answers GuardArea (0x1A) on `cell`, ahead of the move
+/// rungs, as `viewer` sees it. The class wrappers then keep it, except:
+/// - over a shrouded Cell centre a Foot's wrapper turns it into Move or
+///   NoMove (`0x004DDE64..0x004DDEBE`, the bridge-raised test of
+///   [`Simulation::clicked_cell_is_shrouded`]), as the move rungs answer there;
+/// - a Building with a rally line turns it into Move (`0x0044774B`); any
+///   other Building's wrapper (`0x00447540`) keeps it, shroud or not.
+///
+/// The hover, the Foot click and the Building click all ask this.
+///
+/// [`Simulation::clicked_cell_is_shrouded`]: crate::sim::world::Simulation::clicked_cell_is_shrouded
+pub(super) fn cell_guard_area_action(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor_id: u64,
+    viewer: Option<InternedId>,
+    cell: (u16, u16),
+) -> bool {
+    let Some(actor) = sim.entities().get(actor_id) else {
+        return false;
+    };
+    let rewritten = if actor.category() == EntityCategory::Structure {
+        sim.interner()
+            .object_type(actor.type_ref(), rules)
+            .is_some_and(|object| object.has_rally_line())
+    } else {
+        viewer.is_some_and(|viewer| sim.clicked_cell_is_shrouded(viewer, cell) == Ok(true))
+    };
+    !rewritten && guard_area_admitted(sim, rules, actor_id, None)
 }
 
 /// The order one receiver commits for a Move click's destination.
@@ -1311,7 +1521,10 @@ fn object_attack_click_command(
             return move_near(crate::sim::world::MoveAction::NoMove);
         }
         AttackAction::Move => return move_near(crate::sim::world::MoveAction::Move),
-        AttackAction::Select | AttackAction::None | AttackAction::Rally => return None,
+        AttackAction::Select
+        | AttackAction::None
+        | AttackAction::Rally
+        | AttackAction::AttackSupport => return None,
     }
     match infantry_attack_action(sim, rules, attacker_id, target_id) {
         Some(InfantryAttackAction::NoMove) => {
@@ -1372,7 +1585,8 @@ impl From<AttackAction> for ReleaseAction {
             AttackAction::Attack
             | AttackAction::NoMove
             | AttackAction::Rally
-            | AttackAction::Move => Self::Other,
+            | AttackAction::Move
+            | AttackAction::AttackSupport => Self::Other,
         }
     }
 }
@@ -1392,7 +1606,7 @@ fn left_release(
         ReleaseAction::Other => return LeftRelease::Dispatch,
         ReleaseAction::Select => target.is_some(),
         ReleaseAction::Zero => target.is_some_and(|id| {
-            sim.object_is_selectable(id, Some(rules))
+            sim.object_is_selectable(id, rules)
                 && sim
                     .entities()
                     .get(id)
@@ -1551,7 +1765,7 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 selected_units.push(sid);
             }
         }
-        let hover = hover_target_at_point(
+        let hover_object = hover_object_at_point(
             crate::app::input::entity_pick::PresentedWorld {
                 sim,
                 interpolation: &state.match_state.match_presentation.interpolation,
@@ -1560,8 +1774,8 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             world_y,
             &owner,
             state.match_state.sandbox_full_visibility,
-            Some(&resources.rules),
         );
+        let hover = hover_object.and_then(HoverObject::techno);
         // Techno700082 -> Action8 precedes Infantry/Unit class actions.
         // Let the selection consumer handle Shift over a visible object;
         // bare ground still reaches its immediate Move. Berserk-only groups
@@ -1749,11 +1963,23 @@ pub(crate) fn try_queue_context_order_at_screen_point(
         // Attack-capable Ctrl receivers, including fixed/occupied buildings,
         // resolve the same action as the cursor before the legacy rally/mobile
         // split. Non-attack capabilities keep their existing handlers below.
-        let attack_target = hover
-            .as_ref()
-            .map_or(TargetKind::Cell(target_rx, target_ry), |target| {
-                TargetKind::Entity(target.stable_id)
-            });
+        // A plain or Ctrl click over a Terrain object takes each receiver's
+        // What_Action on the object (`terrain_object_feedback` for the
+        // cursor). Other chords over one answer its Cell (residuals there).
+        let terrain_target = match hover_object {
+            Some(HoverObject::Terrain(id))
+                if force_fire
+                    || (modifier == OrderModifier::Normal && order_mode == OrderMode::Move) =>
+            {
+                Some(id)
+            }
+            _ => None,
+        };
+        let attack_target = match (hover_object, terrain_target) {
+            (Some(HoverObject::Techno(target)), _) => TargetKind::Entity(target.stable_id),
+            (_, Some(id)) => TargetKind::Entity(id),
+            _ => TargetKind::Cell(target_rx, target_ry),
+        };
         let enemy_object = hover.as_ref().is_some_and(|target| {
             matches!(
                 target.kind,
@@ -1762,79 +1988,87 @@ pub(crate) fn try_queue_context_order_at_screen_point(
         });
         let cell_hidden =
             force_fire && matches!(attack_target, TargetKind::Cell(..)) && cell_is_shrouded;
-        let attack_dispatch =
-            if force_fire || (enemy_object && context_actions_enabled) {
-                // Foot's shroud wrapper (0x004DDE64..0x004DDEBE) takes a
-                // Foot's forced shot at a shrouded Cell back; the Building
-                // wrapper keeps it (0x00447540 passes the Attack through).
-                let receivers: Vec<u64> = selected_ids
-                    .iter()
-                    .copied()
-                    .filter(|&id| {
-                        !cell_hidden
-                            || sim.entities().get(id).is_some_and(|entity| {
-                                entity.category() == EntityCategory::Structure
-                            })
-                    })
-                    .collect();
-                attack_branch_orders(
-                    sim,
-                    &resources.rules,
-                    &receivers,
-                    attack_target,
-                    force_fire,
-                    &resources.overlay_registry,
-                )
-            } else if let TargetKind::Cell(rx, ry) = attack_target
-                && !force_fire
-                && modifier != OrderModifier::GuardArea
-            {
-                // Each selected object's What_Action on the Cell reaches its
-                // unforced Attack rung on its own (0x004AE750's object loop);
-                // its tail is the forced shot's, and any other answer keeps
-                // the object on its Move rungs below. Foot's shroud wrapper
-                // (0x004DDE64..0x004DDEBE) takes a Foot's Attack back over a
-                // shrouded Cell; the Building wrapper keeps it.
-                let rung: Vec<u64> = selected_ids
-                    .iter()
-                    .copied()
-                    .filter(|&id| {
-                        (!cell_is_shrouded
-                            || sim.entities().get(id).is_some_and(|entity| {
-                                entity.category() == EntityCategory::Structure
-                            }))
-                            && sim.cell_attack_rung_admits(
-                                id,
-                                (rx, ry),
-                                &resources.rules,
-                                Some(&resources.overlay_registry),
-                            )
-                            && armed_action(
+        let attack_dispatch = if force_fire
+            || terrain_target.is_some()
+            || (enemy_object && context_actions_enabled)
+        {
+            // Foot's shroud wrapper (0x004DDE64..0x004DDEBE) takes a
+            // Foot's forced shot at a shrouded Cell back; the Building
+            // wrapper keeps it (0x00447540 passes the Attack through).
+            let receivers: Vec<u64> = selected_ids
+                .iter()
+                .copied()
+                .filter(|&id| {
+                    !cell_hidden
+                        || sim
+                            .entities()
+                            .get(id)
+                            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+                })
+                .collect();
+            attack_branch_orders(
+                sim,
+                &resources.rules,
+                &receivers,
+                attack_target,
+                force_fire,
+                &resources.overlay_registry,
+            )
+        } else if let TargetKind::Cell(rx, ry) = attack_target
+            && !force_fire
+            && modifier != OrderModifier::GuardArea
+        {
+            // Each selected object's What_Action on the Cell reaches its
+            // unforced Attack rung on its own (0x004AE750's object loop);
+            // its tail is the forced shot's (Attack, or a healing Unit's
+            // AttackSupport), and any other answer keeps the object on its
+            // Move rungs below. Foot's shroud wrapper
+            // (0x004DDE64..0x004DDEBE) takes a Foot's Attack back over a
+            // shrouded Cell; the Building wrapper keeps it.
+            let rung: Vec<u64> = selected_ids
+                .iter()
+                .copied()
+                .filter(|&id| {
+                    (!cell_is_shrouded
+                        || sim
+                            .entities()
+                            .get(id)
+                            .is_some_and(|entity| entity.category() == EntityCategory::Structure))
+                        && sim.cell_attack_rung_admits(
+                            id,
+                            (rx, ry),
+                            &resources.rules,
+                            Some(&resources.overlay_registry),
+                        )
+                        && matches!(
+                            armed_action(
                                 sim,
                                 &resources.rules,
                                 id,
                                 &attack_target,
                                 true,
                                 Some(&resources.overlay_registry),
-                            ) == Some(AttackAction::Attack)
-                    })
-                    .collect();
-                attack_branch_orders(
-                    sim,
-                    &resources.rules,
-                    &rung,
-                    attack_target,
-                    true,
-                    &resources.overlay_registry,
-                )
-            } else {
-                AttackDispatch {
-                    receivers: std::collections::BTreeSet::new(),
-                    commands: Vec::new(),
-                    consumed: false,
-                    select_fallback: false,
-                }
-            };
+                            ),
+                            Some(AttackAction::Attack | AttackAction::AttackSupport)
+                        )
+                })
+                .collect();
+            attack_branch_orders(
+                sim,
+                &resources.rules,
+                &rung,
+                attack_target,
+                true,
+                &resources.overlay_registry,
+            )
+        } else {
+            AttackDispatch {
+                receivers: std::collections::BTreeSet::new(),
+                commands: Vec::new(),
+                consumed: false,
+                select_fallback: false,
+            }
+        };
         consumed_attack_action |= attack_dispatch.consumed;
         queued.extend(
             attack_dispatch
@@ -2154,7 +2388,7 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 })
                 .map(|target| target.stable_id);
             // Foot4DDDE0's hidden-cell wrapper rewrites a nonzero action
-            // except GuardArea0x33 to Move when MoveToShroud and the playfield
+            // except the planning action 0x33 to Move when MoveToShroud and the playfield
             // admit it, otherwise NoMove (4DDE8F..4DDEB0). It does not preserve
             // Attack5. The ordinary MTNK fall-through below takes Move; other
             // class/shroud combinations remain part of the shared-cell audit.
@@ -2205,9 +2439,16 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                     };
                     payload
                 } else if modifier == OrderModifier::GuardArea
-                    && guard_area_admitted(sim, &resources.rules, stable_id, None)
+                    && cell_guard_area_action(
+                        sim,
+                        &resources.rules,
+                        stable_id,
+                        Some(owner_id),
+                        (target_rx, target_ry),
+                    )
                 {
-                    // Ctrl+Alt over bare ground uses the same admission as hover.
+                    // Ctrl+Alt over bare ground uses the same rung as hover;
+                    // a Foot over shroud takes the Move path below.
                     Command::Guard {
                         entity_id: stable_id,
                         target: Some(TargetKind::Cell(target_rx, target_ry)),
@@ -2480,7 +2721,9 @@ pub(super) fn self_click_command(
     planning: bool,
 ) -> Option<Command> {
     let target = hover?;
-    if planning_refuses_self(sim, local_owner, selected_ids, target, planning) {
+    if planning_refuses_self(sim, local_owner, selected_ids, target, planning)
+        || self_is_warped_out(sim, target)
+    {
         return None;
     }
     self_action(sim, rules, local_owner, selected_ids, target)
@@ -2502,25 +2745,36 @@ pub(super) fn self_answers_no_deploy(
     target: &HoverTargetKindWithId,
     planning: bool,
 ) -> bool {
-    self_deploy_is_refused(
-        sim,
-        rules,
-        registry,
-        local_owner,
-        selected_ids,
-        target,
-        planning,
-    ) || (selected_ids == [target.stable_id]
-        && sim.entities().get(target.stable_id).is_some_and(|entity| {
-            entity.owner() == local_owner
-                && sim
-                    .interner()
-                    .object_type(entity.type_ref(), rules)
-                    .is_some_and(|object| {
-                        self_deploy_is_blocked(entity, object)
-                            || is_simple_deploy_unit(entity, object)
-                    })
-        }))
+    !self_is_warped_out(sim, target)
+        && (self_deploy_is_refused(
+            sim,
+            rules,
+            registry,
+            local_owner,
+            selected_ids,
+            target,
+            planning,
+        ) || (selected_ids == [target.stable_id]
+            && sim.entities().get(target.stable_id).is_some_and(|entity| {
+                entity.owner() == local_owner
+                    && sim
+                        .interner()
+                        .object_type(entity.type_ref(), rules)
+                        .is_some_and(|object| {
+                            self_deploy_is_blocked(entity, object)
+                                || is_simple_deploy_unit(entity, object)
+                        })
+            })))
+}
+
+/// Techno's warp arm (`0x006FFF03..0x006FFF8A`) precedes the self rung
+/// (`0x007000B9`): an object being warped out (a Chronosphere's warp-out,
+/// which leaves it selected) answers 0 over itself, as it is selected, so it
+/// neither deploys nor answers NoDeploy.
+fn self_is_warped_out(sim: &crate::sim::world::Simulation, target: &HoverTargetKindWithId) -> bool {
+    sim.entities()
+        .get(target.stable_id)
+        .is_some_and(|entity| entity.is_warped_out())
 }
 
 /// The release of the lone selected Unit or Infantryman `target` clicked by
@@ -2980,20 +3234,27 @@ pub(super) fn infantry_attack_action(
     if object.engineer {
         return Some(InfantryAttackAction::NoMove);
     }
-    let target = sim.entities().get(target_id)?;
-    let hover = HoverTargetKindWithId {
-        stable_id: target_id,
-        kind: if target.category() == EntityCategory::Structure {
-            HoverTargetKind::EnemyStructure
-        } else {
-            HoverTargetKind::EnemyUnit
-        },
-    };
-    if let Some(c4) = infantry_c4_action(sim, rules, actor_id, &hover, true) {
-        return Some(match c4 {
-            InfantryC4Action::Sabotage => InfantryAttackAction::Sabotage,
-            InfantryC4Action::Attack => InfantryAttackAction::Attack,
-        });
+    // The target is a Techno or, under Ctrl, a Terrain object, which the C4
+    // and weapon-cursor arms below read as no building and no Unit.
+    let target = sim.entities().get(target_id);
+    if target.is_none() && sim.terrain_objects().get(target_id).is_none() {
+        return None;
+    }
+    if let Some(target) = target {
+        let hover = HoverTargetKindWithId {
+            stable_id: target_id,
+            kind: if target.category() == EntityCategory::Structure {
+                HoverTargetKind::EnemyStructure
+            } else {
+                HoverTargetKind::EnemyUnit
+            },
+        };
+        if let Some(c4) = infantry_c4_action(sim, rules, actor_id, &hover, true) {
+            return Some(match c4 {
+                InfantryC4Action::Sabotage => InfantryAttackAction::Sabotage,
+                InfantryC4Action::Attack => InfantryAttackAction::Attack,
+            });
+        }
     }
     let cells = sim
         .resolved_terrain()
@@ -3012,9 +3273,10 @@ pub(super) fn infantry_attack_action(
     let weapon = weapon?.weapon;
     if weapon.sabotage_cursor {
         return Some(
-            if target.category() == EntityCategory::Unit
-                && target.bunker.link().installed_in().is_some()
-            {
+            if target.is_some_and(|target| {
+                target.category() == EntityCategory::Unit
+                    && target.bunker.link().installed_in().is_some()
+            }) {
                 InfantryAttackAction::Select
             } else {
                 InfantryAttackAction::WeaponDemolish
@@ -3024,11 +3286,13 @@ pub(super) fn infantry_attack_action(
     // Infantry51EAD2..51EB21: anything but a C4-able building keeps Attack
     // and returns before the tail below.
     if weapon.mig_attack_cursor {
-        let air_strike = target.category() == EntityCategory::Structure
-            && sim
-                .interner()
-                .object_type(target.type_ref(), rules)
-                .is_some_and(|building| building.can_c4 && !building.invisible_in_game);
+        let air_strike = target.is_some_and(|target| {
+            target.category() == EntityCategory::Structure
+                && sim
+                    .interner()
+                    .object_type(target.type_ref(), rules)
+                    .is_some_and(|building| building.can_c4 && !building.invisible_in_game)
+        });
         return Some(if air_strike {
             InfantryAttackAction::AirStrike
         } else {
@@ -3312,9 +3576,11 @@ fn ivan_cannot_bomb(
         .get(actor_id)
         .and_then(|e| sim.interner().object_type(e.type_ref(), rules))
         .is_some_and(|o| o.ivan);
+    // VERA attaches no bomb to a Terrain object: refused, as its cursor is
+    // (residual at `terrain_object_feedback`).
     is_ivan
-        && sim.entities().get(target_id).is_some_and(|target| {
-            ivan_bomb_refused(target, sim.interner().object_type(target.type_ref(), rules))
+        && !sim.entities().get(target_id).is_some_and(|target| {
+            !ivan_bomb_refused(target, sim.interner().object_type(target.type_ref(), rules))
         })
 }
 
@@ -3381,8 +3647,7 @@ fn shot_is_illegal(
 /// has no arm for NoMove or for the Ctrl+Alt guard rung's 0x1A
 /// (`0x0044372F..0x00443737`): a Construction Yard over a Cell it may not
 /// stand on neither archives nor packs up, nor does an active building
-/// without a rally line under `guard_area` ([`guard_area_admitted`],
-/// `0x00700815..0x007008A3`; a rally line turns it into Move, `0x0044774B`).
+/// without a rally line under `guard_area` ([`cell_guard_area_action`]).
 /// A query the sim cannot answer (no map cells) keeps Move: VERA-internal, as
 /// a live gamemd session always has a map.
 #[allow(clippy::too_many_arguments)]
@@ -3411,7 +3676,7 @@ fn building_cell_orders(
         else {
             continue;
         };
-        if guard_area && !object.has_rally_line() && guard_area_admitted(sim, rules, id, None) {
+        if guard_area && cell_guard_area_action(sim, rules, id, Some(owner), cell) {
             continue;
         }
         let action = sim
@@ -3621,20 +3886,14 @@ fn building_object_release(
 }
 
 /// Building ClickedAction_Object (`0x00443410`) for each selected building
-/// whose action over `target` is Move ([`building_moves_over_object`]). An
+/// whose action over `target` is Move: the force-move rung
+/// ([`building_moves_over_object`]) and the building's own factory rungs
+/// ([`Simulation::building_object_move_action`]); a NoMove sends nothing. An
 /// Infantry, Unit or Aircraft factory (Type+0xEB8, `0x0044361B..0x0044363A`)
 /// sets its rally point from the Cell under the object's GetCoords
 /// (`0x0044368D..0x004436D8`, Building443860, [`Simulation::factory_rally_cell_input`]).
 /// Any other building, a Construction Yard among them, archives the object
 /// (event 0x1E, `0x0044363C..0x00443688`) and never packs up.
-///
-/// RESIDUAL: Building What_Action_OnObject's NoMove rungs for a ground
-/// factory (`0x0044748E..0x0044750B`) are not asked: IsInSameZoneAsCoords
-/// (vt+0x2CC, `0x00707F60`) toward the object's Cell, then that Cell's zone
-/// type (`+0x4C`) when it has no high bridge (`+0x140 & 0x100`). Trigger:
-/// Alt+click over an object with a war factory or barracks selected. Effect:
-/// VERA sets a rally native refuses (an object on a building or across
-/// water), and the cursor shows Move for native's NoMove. Rare.
 ///
 /// RESIDUAL: the non-factory's archive of the object (event 0x1E) is not
 /// sent; its ArchiveTarget keeps the earlier value. Trigger: Alt+click over
@@ -3645,6 +3904,7 @@ fn building_object_release(
 /// its MCV to the old point. Rare.
 ///
 /// [`Simulation::factory_rally_cell_input`]: crate::sim::world::Simulation::factory_rally_cell_input
+/// [`Simulation::building_object_move_action`]: crate::sim::world::Simulation::building_object_move_action
 fn building_object_orders(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -3678,6 +3938,14 @@ fn building_object_orders(
             )
         {
             continue;
+        }
+        match sim.building_object_move_action(id, target, rules) {
+            Ok(crate::sim::world::MoveAction::Move) => {}
+            Ok(_) => continue,
+            Err(error) => {
+                log::warn!("building object input: {error}");
+                continue;
+            }
         }
         match sim.factory_rally_cell_input(id, cell, rules) {
             Ok(Some((rx, ry))) => {
@@ -6656,6 +6924,14 @@ mod retail_garrison_tests;
 mod retail_entry_tests;
 
 #[cfg(test)]
+#[path = "context_order_retail_terrain_tests.rs"]
+mod retail_terrain_tests;
+
+#[cfg(test)]
+#[path = "context_order_retail_inactive_unit_tests.rs"]
+mod retail_inactive_unit_tests;
+
+#[cfg(test)]
 #[path = "context_order_retail_self_deploy_tests.rs"]
 mod retail_self_deploy_tests;
 
@@ -6745,7 +7021,20 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         );
         assert!(mixed.consumed);
         assert!(!mixed.select_fallback);
-        assert_eq!(mixed.receivers, [stationary, mobile].into_iter().collect());
+        assert_eq!(mixed.receivers, [mobile].into_iter().collect());
+        assert_eq!(
+            crate::app::input::commands::ordinary_cell_move_goal(
+                &sim,
+                &rules,
+                Some(&registry),
+                house.unwrap(),
+                stationary,
+                (20, 2),
+                false,
+            ),
+            None,
+            "the remaining stationary receiver cannot commit a Cell move"
+        );
         assert_eq!(mixed.commands.len(), 1);
         assert!(
             matches!(mixed.commands[0], Command::ForceAttackCell { attacker_id, .. } if attacker_id==mobile)

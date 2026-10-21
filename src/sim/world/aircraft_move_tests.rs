@@ -597,7 +597,9 @@ fn queue(sim: &mut Simulation, mission: MissionType) {
         MissionId::from_known(mission),
         0,
         0,
-        &crate::sim::mission::authority::EntityReadyInputProvider,
+        &crate::sim::mission::authority::LiveReadyInputProvider {
+            rules: crate::rules::ruleset::RuleSet::empty_for_test(),
+        },
     )
     .unwrap();
 }

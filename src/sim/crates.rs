@@ -439,7 +439,7 @@ fn validate_and_stamp_candidate(
     validate_and_stamp_candidate_inner(
         sim,
         rules,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         overlay_registry,
         cell,
         ParsedLightingProfiles::default().normal,
@@ -476,7 +476,7 @@ fn validate_and_stamp_candidate_with_rules_and_lighting(
     validate_and_stamp_candidate_inner(
         sim,
         &rules.crate_rules,
-        Some(rules),
+        rules,
         overlay_registry,
         cell,
         lighting_profile,
@@ -487,7 +487,7 @@ fn validate_and_stamp_candidate_with_rules_and_lighting(
 fn validate_and_stamp_candidate_inner(
     sim: &mut Simulation,
     rules: &CrateRules,
-    full_rules: Option<&RuleSet>,
+    full_rules: &RuleSet,
     overlay_registry: &OverlayTypeRegistry,
     cell: (u16, u16),
     lighting_profile: LightingProfileUnits,
@@ -528,7 +528,7 @@ fn validate_and_stamp_candidate_inner(
 pub(crate) fn construct_runtime_overlay(
     sim: &mut Simulation,
     rules: &CrateRules,
-    full_rules: Option<&RuleSet>,
+    full_rules: &RuleSet,
     overlay_registry: &OverlayTypeRegistry,
     cell: (u16, u16),
     selected_id: u8,
@@ -587,7 +587,7 @@ pub(crate) fn construct_runtime_overlay(
             0,
         ],
         registry: overlay_registry,
-        tiberium_types: full_rules.map(|rules| &rules.tiberium_types),
+        tiberium_types: Some(&full_rules.tiberium_types),
         crate_images: MarkCrateImages::resolve(rules, overlay_registry),
     };
     let outcome = match mark_overlay(
@@ -1297,7 +1297,7 @@ pub(crate) mod tests {
             let result = construct_runtime_overlay(
                 &mut sim,
                 &rules.crate_rules,
-                Some(&rules),
+                &rules,
                 &registry,
                 cell,
                 ordinary,
@@ -1338,7 +1338,7 @@ pub(crate) mod tests {
                 construct_runtime_overlay(
                     sim,
                     &rules.crate_rules,
-                    Some(&rules),
+                    &rules,
                     &registry,
                     cell,
                     incoming,
@@ -1731,7 +1731,7 @@ pub(crate) mod tests {
         let first = sim
             .advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 Some(&registry),
                 67,
                 TickLane::Ordinary,
@@ -1755,7 +1755,7 @@ pub(crate) mod tests {
         let second = sim
             .advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 Some(&registry),
                 67,
                 TickLane::Ordinary,

@@ -163,12 +163,12 @@ impl TerrainObjectState {
     pub(crate) fn display_layer(
         &self,
         terrain: Option<&ResolvedTerrainGrid>,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) -> crate::sim::world::display_layers::DisplayLayer {
         crate::sim::world::display_layers::DisplayLayer::for_object(
             self.is_in_air(terrain),
             || self.height(terrain),
-            rules.map_or(400, |rules| rules.general.display_cruise_height),
+            rules.general.display_cruise_height,
         )
     }
 

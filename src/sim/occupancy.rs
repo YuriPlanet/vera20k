@@ -30,7 +30,7 @@ pub(crate) const BUILDING_OCCUPATION_BIT: u8 = 0x80;
 /// by ProductionState; this view inserts its member between mobile objects
 /// and the building tail, as the native AddContent registration paths do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CellObjectMember {
+pub enum CellObjectMember {
     Entity(u64),
     Terrain(u64),
 }

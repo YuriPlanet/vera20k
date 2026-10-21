@@ -267,7 +267,7 @@ pub(super) fn send_planes(
         &mut sim.scenario_rng,
     ) else {
         // No MapClass authority (headless fixtures): no edge to pick.
-        let _ = sim.discard_constructed_limbo(plane, Some(rules), frame_effects);
+        let _ = sim.discard_constructed_limbo(plane, rules, frame_effects);
         return false;
     };
     let entity = sim
@@ -296,7 +296,7 @@ pub(super) fn send_planes(
         )
     });
     if placed.is_none() {
-        let _ = sim.discard_constructed_limbo(plane, Some(rules), frame_effects);
+        let _ = sim.discard_constructed_limbo(plane, rules, frame_effects);
         return false;
     }
     if let Some((infantry, count)) = payload.filter(|&(_, count)| count != 0) {

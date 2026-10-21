@@ -220,7 +220,7 @@ impl Simulation {
     pub(crate) fn techno_mark_after_object(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         frame_effects: FrameEffects<'_>,
     ) {
         if self
@@ -245,7 +245,7 @@ impl Simulation {
     pub(crate) fn foot_mark_remove(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
@@ -268,7 +268,7 @@ impl Simulation {
     pub(crate) fn foot_pick_up(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
         let Some((cell, layer)) = self.foot_mark_cell(id) else {
@@ -295,7 +295,7 @@ impl Simulation {
     pub(crate) fn foot_mark_put(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
@@ -308,7 +308,7 @@ impl Simulation {
     pub(super) fn foot_mark_put_observed(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         receive: &mut impl FnMut(&mut Simulation, u64),
         frame_effects: FrameEffects<'_>,
@@ -336,7 +336,7 @@ impl Simulation {
     pub(crate) fn foot_place_down(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         receive: &mut impl FnMut(&mut Simulation, u64),
     ) {

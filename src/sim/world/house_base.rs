@@ -11,7 +11,7 @@ use crate::rules::ruleset::HouseCostFactors;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::houses::Houses;
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::util::native_x87::NativeF32Bits;
 
@@ -480,7 +480,7 @@ impl Simulation {
             let _ = self.assign_destination_represented(
                 id,
                 Some(destination),
-                Some(rules),
+                rules,
                 registry,
                 frame_effects,
             );
@@ -492,7 +492,7 @@ impl Simulation {
                 move_mission,
                 0,
                 self.session.binary_frame(),
-                &EntityReadyInputProvider,
+                &LiveReadyInputProvider { rules },
             );
         }
     }
@@ -902,14 +902,12 @@ impl Simulation {
         id: u64,
         old_owner: InternedId,
         owner: InternedId,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) {
         // Building448C76/448C81: old list already removed and Techno tracking
         // moved, but neither new FactoryPlant nor House+68 append has run.
-        if let Some(rules) = rules {
-            self.recalculate_house_base_geometry(old_owner, rules);
-            self.recalculate_house_base_geometry(owner, rules);
-        }
+        self.recalculate_house_base_geometry(old_owner, rules);
+        self.recalculate_house_base_geometry(owner, rules);
         if let Some(house) = self.houses.get_mut(&owner) {
             house.base_projection_mut().append_membership(id);
         }

@@ -1217,7 +1217,7 @@ fn a_rocketeer_lifting_off_leaves_his_cell_list_at_two_levels() {
             rocketeer,
             sim.resolved_terrain.as_ref(),
         );
-        let layer = sim.entity_display_layer(1, Some(&rules)).unwrap();
+        let layer = sim.entity_display_layer(1, &rules).unwrap();
         let listed = sim
             .substrate
             .occupancy
@@ -1278,7 +1278,7 @@ fn a_ground_route_order_gives_a_rocketeer_his_navcom_and_move_to() {
     sim.assign_destination_represented(
         1,
         Some(crate::sim::components::NavTargetRef::cell(60, 52)),
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -1356,7 +1356,7 @@ fn an_object_order_flies_a_rocketeer_with_the_order() {
     sim.assign_destination_represented(
         1,
         Some(crate::sim::components::NavTargetRef::object(shooter)),
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -1396,7 +1396,7 @@ fn the_mission_destination_setter_flies_a_rocketeer() {
     sim.assign_destination_represented(
         1,
         Some(crate::sim::components::NavTargetRef::cell(60, 52)),
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -1485,7 +1485,7 @@ fn the_mission_destination_setter_reorders_a_moving_rocketeer() {
         sim.assign_destination_represented(
             1,
             Some(crate::sim::components::NavTargetRef::cell(cell.0, cell.1)),
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )

@@ -157,7 +157,7 @@ impl Simulation {
                 cached,
                 crate::sim::radio::RadioMessage::CanEnter,
                 crate::sim::radio::RadioPayload::default(),
-                Some(rules),
+                rules,
                 effects,
             ) == crate::sim::radio::RadioResponse::Roger
             {

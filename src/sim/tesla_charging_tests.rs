@@ -45,7 +45,7 @@ impl Fixture {
             .assign_target_represented(
                 source,
                 target.map(TargetKind::Entity),
-                Some(&self.rules),
+                &self.rules,
                 None,
                 FrameEffects::default(),
             )

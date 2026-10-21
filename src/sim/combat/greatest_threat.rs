@@ -12,7 +12,8 @@
 //!
 //! 1. Radius. `TechnoClass::Threat_Range @ 0x00707E60` (vtable `+0x31C`) turns
 //!    the mission's mask into a lepton radius — that part lives in
-//!    [`super::threat_range`]. A zero radius means "no cutoff of the scan's
+//!    [`super::threat_range`]; a healer on Guard takes 0x200 instead
+//!    (`0x006F9024..0x006F903E`). A zero radius means "no cutoff of the scan's
 //!    own". The walk then uses the current weapon's range for a
 //!    non-Gattling turreted type, GuardRange for an underwater, organic,
 //!    self-healing type, or the wider of weapon slots 0/1 otherwise. It adds
@@ -582,8 +583,8 @@ fn is_early_return_ring(ring: i32, radius: i32) -> bool {
 
 /// Walk bound in cells, `iStack_34` in `Greatest_Threat`.
 ///
-/// A non-zero `Threat_Range` result is itself the bound, truncated to cells
-/// toward zero (`0x006F9042..0x006F904D`). A zero
+/// A non-zero radius (`Threat_Range`'s, or a Guard healer's 0x200) is itself
+/// the bound, truncated to cells toward zero (`0x006F9042..0x006F904D`). A zero
 /// one — plain Guard on a type with no `GuardRange=` — selects a range:
 /// `GetWeaponRange(CurrentWeaponNumber)` for a non-Gattling type with
 /// `TurretCount > 0` (`0x006F9068..0x006F908E`), else `GuardRange` for an
@@ -1303,7 +1304,9 @@ pub(crate) fn greatest_threat(
     } else {
         [0, 0]
     };
-    let range = scan_range(attacker_obj, mask, weapon_ranges);
+    // `0x006F9024..0x006F903E`: a healer on mission Guard (`+0xAC == 5`).
+    let healer_on_guard = healer && scanner.mission.current().known() == Some(MissionType::Guard);
+    let range = scan_range(attacker_obj, mask, weapon_ranges, healer_on_guard);
     let flags = threat_mask::flags_for(mask);
 
     // `TEST AL,0x3 ; JZ 0x006F9B6E @ 0x006F8FE0`: a mask without bit 0 or 1
@@ -3133,3 +3136,7 @@ mod disguise_tests;
 #[cfg(test)]
 #[path = "greatest_threat_unarmed_tests.rs"]
 mod unarmed_tests;
+
+#[cfg(test)]
+#[path = "greatest_threat_healer_guard_tests.rs"]
+mod healer_guard_tests;

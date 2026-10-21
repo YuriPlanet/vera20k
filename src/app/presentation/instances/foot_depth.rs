@@ -264,8 +264,10 @@ fn shp_z_adjust_in_runtime(
 /// Foot 0x4DAFC0 used by VXL body/shadow and OREGATH. `unloading_body` selects
 /// only the proven Unit+6C4 temporary UnloadingClass substitution at 0x73D2C4;
 /// camouflage/NoSpawnAlt art must not replace the depth coefficients.
-/// Aircraft's shadow caller temporarily SetHeights the object; its read-only
-/// adapter supplies that world Z here instead of changing the simulation.
+/// Aircraft keep Foot's vt+0x2EC (vtable `0x7E22A4` slot = 0x4DAFC0), which
+/// Render 0x707206 asks for every class. Aircraft's shadow caller temporarily
+/// SetHeights the object; its read-only adapter supplies that world Z here
+/// instead of changing the simulation.
 pub(crate) fn unit_z_adjust(
     state: &AppState,
     entity: &GameEntity,
@@ -290,7 +292,7 @@ fn unit_z_adjust_in_runtime(
         .unwrap_or_else(|| crate::sim::movement::ground_pose::object_world_z_leptons(entity, None));
     if !matches!(
         entity.category(),
-        EntityCategory::Unit | EntityCategory::Infantry
+        EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
     ) {
         return adjust_for_z_standard(world_z).wrapping_neg();
     }

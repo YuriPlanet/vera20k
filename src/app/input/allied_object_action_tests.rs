@@ -74,21 +74,139 @@ fn object_pair(rules: &RuleSet, actor_kind: &str, relation: &str) -> (Simulation
     (sim, actor, target)
 }
 
-fn picked_target(sim: &Simulation, rules: &RuleSet, target: u64) -> HoverTargetKindWithId {
+fn picked_target(sim: &Simulation, target: u64) -> HoverTargetKindWithId {
     let (x, y) = crate::app::presentation::instances::interpolated_screen_position_entity(
         sim.entities().get(target).unwrap(),
     );
-    let hover = crate::app::input::entity_pick::hover_target_at_point(
-        sim,
-        x,
-        y,
-        "Americans",
-        false,
-        Some(rules),
-    )
-    .expect("revealed ordinary tank is picked");
+    let hover =
+        crate::app::input::entity_pick::hover_target_at_point(sim, x, y, "Americans", false)
+            .expect("revealed ordinary tank is picked");
     assert_eq!(hover.stable_id, target);
     hover
+}
+
+#[test]
+fn ares_no_manual_fire_object_click_keeps_native_movement_fallback() {
+    let corpus = crate::test_fixture::json("tools/spatial_oracle/no_manual_fire.json");
+    let rows = corpus["rows"].as_array().unwrap();
+    for setting in [false, true] {
+        let patch = crate::rules::ini_parser::IniFile::from_str(&format!(
+            "[MTNK]\nNoManualFire={}\n",
+            if setting { "yes" } else { "no" },
+        ));
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "XMP03T4.MAP",
+            &patch,
+        ) else {
+            return;
+        };
+        let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+            &battle.processed_rules,
+            Some(&battle.fixed_art),
+        );
+        for row in rows.iter().filter(|row| {
+            let case = &row["input"];
+            case["route"] == "object"
+                && case["shift"] == false
+                && case["alt"] == false
+                && row["no_manual_fire_native_reader_value"] == u64::from(setting)
+        }) {
+            let expected = if crate::rules::ARES_ENABLED {
+                row
+            } else {
+                rows.iter()
+                    .find(|other| {
+                        other["input"] == row["input"]
+                            && other["no_manual_fire_native_reader_value"] == 0
+                    })
+                    .unwrap()
+            };
+            let (sim, actor, target) = object_pair(&battle.rules, "MTNK", "enemy");
+            let owner = sim.entities().get(actor).unwrap().owner();
+            let ctrl = row["input"]["ctrl"].as_bool().unwrap();
+            assert_eq!(
+                object_click_release(
+                    &sim,
+                    &battle.rules,
+                    &[actor],
+                    &[actor],
+                    target,
+                    &overlays,
+                    ctrl,
+                ),
+                LeftRelease::Dispatch
+            );
+            let command = object_attack_click_command(
+                &sim,
+                &battle.rules,
+                &overlays,
+                owner,
+                OrderMode::Move,
+                resolve_order_modifiers(ctrl, false, false),
+                false,
+                actor,
+                target,
+            );
+            match expected["action"].as_u64().unwrap() {
+                5 => assert!(
+                    matches!(command, Some(Command::Attack { attacker_id, target_id }) if attacker_id == actor && target_id == target)
+                ),
+                // Native UnitClicked reaches Foot's navigation boundary.
+                // The Rust flat arena tests integration, not exact native
+                // destination coordinates or later movement scheduling.
+                2 => assert!(
+                    matches!(command, Some(Command::Move { entity_id, .. } | Command::MoveToObject { entity_id, .. }) if entity_id == actor)
+                ),
+                other => panic!("unexpected native object action {other}"),
+            }
+        }
+        let (sim, actor, _) = object_pair(&battle.rules, "MTNK", "enemy");
+        let effective = setting && crate::rules::ARES_ENABLED;
+        let native_cell = rows
+            .iter()
+            .find(|row| {
+                let case = &row["input"];
+                case["route"] == "cell"
+                    && case["ctrl"] == true
+                    && case["shift"] == false
+                    && case["alt"] == false
+                    && row["no_manual_fire_native_reader_value"] == u64::from(effective)
+            })
+            .unwrap();
+        let dispatch = attack_branch_orders(
+            &sim,
+            &battle.rules,
+            &[actor],
+            TargetKind::Cell(12, 10),
+            true,
+            &overlays,
+        );
+        if native_cell["action"] == 5 {
+            assert!(
+                matches!(dispatch.commands.as_slice(), [Command::ForceAttackCell { attacker_id, .. }] if *attacker_id == actor)
+            );
+        } else {
+            assert!(dispatch.commands.is_empty());
+            assert!(
+                !dispatch.receivers.contains(&actor),
+                "rejected attack keeps the ordinary Cell-move receiver"
+            );
+            let owner = sim.entities().get(actor).unwrap().owner();
+            assert_eq!(
+                crate::app::input::commands::ordinary_cell_move_goal(
+                    &sim,
+                    &battle.rules,
+                    Some(&overlays),
+                    owner,
+                    actor,
+                    (12, 10),
+                    false,
+                ),
+                Some((12, 10)),
+                "the production clicked-Cell resolver supplies the ordinary Move destination"
+            );
+        }
+    }
 }
 
 fn ivan_grant_scene() -> Option<(
@@ -153,7 +271,7 @@ fn allied_object_ivan_cursor_consumes_the_canonical_grant() {
     let Some((battle, sim, actor, target)) = ivan_grant_scene() else {
         return;
     };
-    let hover = picked_target(&sim, &battle.rules, target);
+    let hover = picked_target(&sim, target);
     assert_eq!(hover.kind, HoverTargetKind::FriendlyUnit);
     assert_eq!(
         crate::app::input::cursor::capability_cursor_for_hover(
@@ -362,7 +480,7 @@ fn allied_object_cursor_does_not_offer_selection_for_another_allied_house() {
         Some(&battle.fixed_art),
     );
     let (sim, actor, target) = object_pair(&battle.rules, "MTNK", "ally");
-    let hover = picked_target(&sim, &battle.rules, target);
+    let hover = picked_target(&sim, target);
     assert_eq!(hover.kind, HoverTargetKind::FriendlyUnit);
     let feedback = crate::app::input::cursor::capability_cursor_for_hover(
         &sim,
@@ -463,7 +581,7 @@ fn allied_object_infantry_and_building_owners_answer_their_own_tails() {
     ];
     for (kind, relation, cursor, release) in rows {
         let (sim, actor, target) = object_pair(&battle.rules, kind, relation);
-        let hover = picked_target(&sim, &battle.rules, target);
+        let hover = picked_target(&sim, target);
         assert_eq!(hover.kind, HoverTargetKind::FriendlyUnit);
         assert!(object_action_answers_friendly(
             &sim,
@@ -685,7 +803,7 @@ fn a_ground_owner_moves_onto_an_ally_worn_as_a_tree() {
     );
     for kind in ["E1", "MTNK"] {
         let (mut sim, actor, target) = object_pair(&battle.rules, kind, "ally");
-        let hover = picked_target(&sim, &battle.rules, target);
+        let hover = picked_target(&sim, target);
         let tree = sim.intern("TREE01");
         let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
         disguise.acquire(0, Some(tree), None);

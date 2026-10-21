@@ -890,7 +890,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
         let frame = sim
             .advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 None,
                 67,
                 crate::sim::world::TickLane::Ordinary,

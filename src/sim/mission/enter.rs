@@ -78,7 +78,7 @@ pub(crate) fn mission_enter(
                 target,
                 RadioMessage::CanDock,
                 RadioPayload::default(),
-                Some(rules),
+                rules,
                 effects,
             );
             let tethered = sim
@@ -88,7 +88,7 @@ pub(crate) fn mission_enter(
                 .is_some_and(|entity| entity.tether.partner().is_some());
             if reply != RadioResponse::Roger && !tethered {
                 // 0x004D92CE..0x004D92E8.
-                radio::transmit_to_contact(sim, id, RadioMessage::Break, Some(rules), effects);
+                radio::transmit_to_contact(sim, id, RadioMessage::Break, rules, effects);
                 crate::sim::world::enter_idle_mode(sim, id, rules, registry, effects);
             } else if !pop_nav_queue(sim, rules, registry, id, effects) {
                 teleporter_reassign(sim, rules, registry, id, effects);
@@ -124,13 +124,13 @@ fn pop_nav_queue(
     if entity.navigation.nav_com().is_some() || entity.navigation.nav_queue().is_empty() {
         return false;
     }
-    let _ = sim.try_end_piggyback(id, Some(rules));
+    let _ = sim.try_end_piggyback(id, rules);
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
     };
     let first = entity.navigation.nav_queue()[0];
     // 0x004D939A: vt+0x480(NavQueue[0], 0).
-    let _ = sim.assign_destination_keeping_queue(id, Some(first), Some(rules), registry, effects);
+    let _ = sim.assign_destination_keeping_queue(id, Some(first), rules, registry, effects);
     // The shift deletes the first entry of the queue the setter left; the
     // UnitRepair arm's modified NULL (`0x007423CA`) may have emptied it.
     if let Some(entity) = sim.substrate.entities.get_mut(id)
@@ -166,5 +166,5 @@ fn teleporter_reassign(
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.navigation.stop_moving();
     }
-    let _ = sim.assign_destination_represented(id, nav, Some(rules), registry, effects);
+    let _ = sim.assign_destination_represented(id, nav, rules, registry, effects);
 }

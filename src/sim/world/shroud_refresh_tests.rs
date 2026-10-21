@@ -596,7 +596,7 @@ fn native_trigger_reveal_whole_area_histories_match_original_cache_and_residents
             actors.insert(name, id);
         }
         let config = vision::VisionConfig::new(
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             Some((
                 input["size"][0].as_i64().unwrap() as i32,
                 input["size"][1].as_i64().unwrap() as i32,
@@ -1534,7 +1534,7 @@ fn shroud_selection_fixture(
     sim.fog.ensure_viewer(player);
     // MapClass::RevealArea's final0/final1 pair maps the cells with no
     // sustained sight source.
-    let config = sim.sight_reveal_config(Some(&rules));
+    let config = sim.sight_reveal_config(&rules);
     for final_pass in [false, true] {
         let _ = sim.reveal_area(
             &[player],

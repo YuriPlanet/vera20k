@@ -482,6 +482,7 @@ mod tests {
             deployed_fire_frames: None,
             z_shape_point_move: (0, 0),
             normal_z_adjust: 0,
+            building_double_thick: false,
         }
     }
 

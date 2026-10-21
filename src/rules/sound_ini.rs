@@ -759,11 +759,11 @@ pub enum EvaSide {
 }
 
 impl EvaSide {
-    /// `SetSide(-1)` stores 0 (`0x007534E0`); every other value is stored as
-    /// is and only 0/1 select a named column at play time.
-    pub fn from_side_index(side: i32) -> Self {
-        match side {
-            -1 | 0 => Self::Allied,
+    /// GetFilename753380 and PlayNextQueued7528E8 project the already-bound
+    /// voice index. SetSide's -1 normalization belongs to VoxQueue, not here.
+    pub fn from_voice_index(voice: i32) -> Self {
+        match voice {
+            0 => Self::Allied,
             1 => Self::Russian,
             _ => Self::Yuri,
         }
@@ -1553,16 +1553,15 @@ mod tests {
         assert_eq!(compared, 15);
     }
 
-    /// `VoxClass::SetSide @ 0x007534E0` stores the side as is (`-1` → 0);
     /// `PlayNextQueued 0x007528E8..0x007528FE` selects Allied for 0, Russian
     /// for 1 and the Yuri column for every other value.
     #[test]
     fn eva_side_column_follows_the_native_side_index_select() {
-        assert_eq!(EvaSide::from_side_index(-1), EvaSide::Allied);
-        assert_eq!(EvaSide::from_side_index(0), EvaSide::Allied);
-        assert_eq!(EvaSide::from_side_index(1), EvaSide::Russian);
-        assert_eq!(EvaSide::from_side_index(2), EvaSide::Yuri);
-        assert_eq!(EvaSide::from_side_index(7), EvaSide::Yuri);
+        assert_eq!(EvaSide::from_voice_index(-1), EvaSide::Yuri);
+        assert_eq!(EvaSide::from_voice_index(0), EvaSide::Allied);
+        assert_eq!(EvaSide::from_voice_index(1), EvaSide::Russian);
+        assert_eq!(EvaSide::from_voice_index(2), EvaSide::Yuri);
+        assert_eq!(EvaSide::from_voice_index(7), EvaSide::Yuri);
     }
 
     #[test]

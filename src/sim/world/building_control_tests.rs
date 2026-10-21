@@ -146,7 +146,7 @@ fn building_mission_only_selection_uses_native_virtual_control_admission() {
             }
             let key = if mission_only { "true" } else { "false" };
             assert_eq!(
-                sim.can_select_object(ACTOR, Some(&rules)),
+                sim.can_select_object(ACTOR, &rules),
                 row["expected"]["selection_admission"][key]
                     .as_bool()
                     .unwrap(),

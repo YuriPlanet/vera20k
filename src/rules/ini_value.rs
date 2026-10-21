@@ -333,6 +333,24 @@ impl IniSection {
         self.fold_rules_values(key, default, parse_read_bool)
     }
 
+    /// Ares Valueable<bool>: ReadString(2048), then the same first-byte
+    /// verdict as ReadBool. The string reader trims the copied buffer;
+    /// absent, empty and invalid values retain the current field.
+    /// Ares3.0 1000EBF0 -> 1000FC50 -> 10007860 -> 10076CC0;
+    /// tools/spatial_oracle/no_manual_fire.json records executed controls.
+    pub fn read_ares_bool(&self, key: &str, default: bool) -> bool {
+        self.read_string_with(key, 2048, default, parse_read_bool)
+    }
+
+    /// Ares Nullable<bool>1000E9B0: successful reads set both the value and
+    /// presence; absent, empty and invalid reads retain the previous pair.
+    /// `none` parses as false, whereas `<none>` is invalid, not an unset token.
+    pub fn read_ares_nullable_bool(&self, key: &str, default: Option<bool>) -> Option<bool> {
+        self.read_string_with(key, 2048, default, |current, raw| {
+            read_bool_decision(raw).or(current)
+        })
+    }
+
     /// [`Self::read_bool`] where the caller supplies the default later: `None`
     /// wherever ReadBool would return its default argument (an absent key,
     /// or a first character outside `1TY0FN`).

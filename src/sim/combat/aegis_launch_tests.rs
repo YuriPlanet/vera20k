@@ -54,7 +54,7 @@ impl AegisScene {
                 .assign_target_represented(
                     aegis,
                     Some(TargetKind::Entity(target)),
-                    Some(&rules),
+                    &rules,
                     None,
                     FrameEffects::default(),
                 )
@@ -220,7 +220,7 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
             .assign_target_represented(
                 scene.aegis,
                 Some(TargetKind::Entity(other)),
-                Some(&scene.rules),
+                &scene.rules,
                 None,
                 FrameEffects::default(),
             )
@@ -233,7 +233,7 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
             .assign_target_represented(
                 scene.aegis,
                 None,
-                Some(&scene.rules),
+                &scene.rules,
                 None,
                 FrameEffects::default(),
             )
@@ -246,7 +246,7 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
             .assign_target_represented(
                 scene.aegis,
                 Some(TargetKind::Entity(scene.target)),
-                Some(&scene.rules),
+                &scene.rules,
                 None,
                 FrameEffects::default(),
             )

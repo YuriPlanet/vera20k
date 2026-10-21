@@ -149,7 +149,7 @@ impl ReloadHost for WorldReload<'_> {
             contact,
             message,
             RadioPayload::default(),
-            Some(self.rules),
+            self.rules,
             self.effects,
         ) == RadioResponse::Roger
     }

@@ -2009,9 +2009,9 @@ lifetime, audio playback and raster parity are also unclaimed.
 uses the same stock Russia/Battle/AnyTown launch and first five ordinary deployment
 and production commands as the Attack profile. It issues no combat order and
 advances 7200 steps so the free War Miner can fill, dock, deposit and harvest again.
-The profile requests no terrain rows to stay within the existing retained-sample
-budget. Its numeric command handles belong to that exact launch and must be
-rechecked when launch inputs change.
+The v3 profile names its command types (SMCV, NAPOWR, NAREFN), observes only
+HARV and NAREFN actors and requests no terrain rows, to stay within the
+retained-sample budget. It seals a static cursor at (720, 556), off every object.
 
 Child/run v6 adds actor `miner` and `radio` projections and frame `houses` rows.
 It preserves the existing optional `unit` deployment projection alongside them.

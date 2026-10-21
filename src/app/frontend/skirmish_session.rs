@@ -337,6 +337,7 @@ impl MultiplayerShellRuntime {
         mut options: crate::skirmish_launch::SkirmishLaunchOptions,
         bounds: crate::ui::skirmish_shell::SkirmishTrackbarBounds,
         observe: bool,
+        room: crate::app::match_runtime::session::NetworkRoom,
     ) -> anyhow::Result<(
         SkirmishLaunchSession,
         [crate::app::match_runtime::session::NetworkVacancy; 8],
@@ -347,19 +348,26 @@ impl MultiplayerShellRuntime {
             SkirmishLaunchMode,
         };
         let snapshot = self.network_snapshot(profile);
-        let mode = mode_by_id(modes, snapshot.game_mode)
+        let mut mode = mode_by_id(modes, snapshot.game_mode)
             .or_else(|| modes.first())
             .ok_or_else(|| anyhow::anyhow!("network setup has no game mode"))?;
+        // 0x5ED5E7..0x5ED628: a WOL tournament or clan room refuses a mode
+        // whose vtable+4 holds (Cooperative) for the default mode 5D5E10.
+        let room_only = room.tournament_or_clan();
+        if room_only && mode.class.permits_all_allied() {
+            mode = modes.first().expect("checked above");
+        }
+        // 0x5ED69C..0x5ED6E0: a saved map IsValidMap refuses gives way to
+        // the mode's first valid map (vtable+44, 5D6370).
+        let is_valid = |record: &&crate::map::skirmish_scenarios::SkirmishScenarioRecord| {
+            crate::map::skirmish_scenarios::is_valid_map(record, mode, room_only)
+        };
         let records = catalog.records();
         let preferred = usize::try_from(snapshot.scenario_index).unwrap_or(0);
         let selected = records
             .get(preferred)
-            .filter(|record| crate::map::skirmish_scenarios::record_matches_mode(record, mode))
-            .or_else(|| {
-                records.iter().find(|record| {
-                    crate::map::skirmish_scenarios::record_matches_mode(record, mode)
-                })
-            })
+            .filter(is_valid)
+            .or_else(|| records.iter().find(is_valid))
             .ok_or_else(|| anyhow::anyhow!("network game mode has no eligible map"))?;
         options.game_speed = game_speed_from_visual_position(
             bounds
@@ -1650,6 +1658,8 @@ mod tests {
             random_maps_allowed: true,
             allies_allowed: true,
             must_ally: false,
+            wonline_tournament_allowed: true,
+            wonline_clan_tournament_allowed: true,
         }
     }
 
@@ -1767,6 +1777,63 @@ mod tests {
     }
 
     #[test]
+    fn wol_room_restore_refuses_cooperative_and_unofficial_maps() {
+        use crate::app::match_runtime::session::NetworkRoom;
+        use crate::map::skirmish_scenarios::{SkirmishScenarioRecord, SkirmishScenarioSource};
+        // 5ED5A0's room tests: 0x5ED5E7..0x5ED628 and 0x5ED69C..0x5ED6E0.
+        let mut owner = runtime(
+            MultiplayerSetupSnapshot::from_global_defaults(defaults(), SetupProfile::Skirmish),
+            1,
+        );
+        let concrete = |file_name: &str, official: bool| {
+            let mut record = SkirmishScenarioRecord::concrete_from_ini(
+                0,
+                SkirmishScenarioSource::Synthetic,
+                file_name,
+                &IniFile::from_str("[Basic]\nGameMode=standard\n"),
+            );
+            record.official = official;
+            record
+        };
+        let catalog = crate::app::scenario_catalog::ScenarioCatalog::from_records(vec![
+            concrete("official.mmx", true),
+            concrete("custom.mmx", false),
+        ]);
+        let modes = [
+            mode(),
+            SkirmishGameMode {
+                id: 2,
+                ..cooperative_mode()
+            },
+        ];
+        owner.wol_snapshot.game_mode = 2;
+        owner.wol_snapshot.scenario_index = 1;
+        let restore = |room| {
+            owner
+                .new_network_setup(
+                    SetupProfile::Wol,
+                    &catalog,
+                    &modes,
+                    SkirmishLaunchOptions::default(),
+                    crate::ui::skirmish_shell::SkirmishTrackbarBounds::default(),
+                    false,
+                    room,
+                )
+                .unwrap()
+                .0
+        };
+        let open = restore(NetworkRoom::default());
+        assert_eq!(open.mode.id, 2);
+        assert_eq!(open.selected_map_file.as_deref(), Some("custom.mmx"));
+        let clan = restore(NetworkRoom {
+            tournament: false,
+            clan: true,
+        });
+        assert_eq!(clan.mode.id, 1);
+        assert_eq!(clan.selected_map_file.as_deref(), Some("official.mmx"));
+    }
+
+    #[test]
     fn lan_setup_uses_separate_profile_native_ai_codes_and_resets_start_team() {
         use crate::app::match_runtime::session::NetworkVacancy;
         use crate::map::skirmish_scenarios::{SkirmishScenarioRecord, SkirmishScenarioSource};
@@ -1797,6 +1864,7 @@ mod tests {
                 crate::skirmish_launch::SkirmishLaunchOptions::default(),
                 crate::ui::skirmish_shell::SkirmishTrackbarBounds::default(),
                 false,
+                Default::default(),
             )
             .unwrap();
         assert_eq!(launch.opponents.len(), 1);
@@ -1833,6 +1901,7 @@ mod tests {
                 crate::skirmish_launch::SkirmishLaunchOptions::default(),
                 crate::ui::skirmish_shell::SkirmishTrackbarBounds::default(),
                 false,
+                Default::default(),
             )
             .unwrap();
         assert!(wol.opponents.is_empty());
@@ -1846,6 +1915,7 @@ mod tests {
                 crate::skirmish_launch::SkirmishLaunchOptions::default(),
                 crate::ui::skirmish_shell::SkirmishTrackbarBounds::default(),
                 true,
+                Default::default(),
             )
             .unwrap();
         assert!(observer.local_player().is_observer());

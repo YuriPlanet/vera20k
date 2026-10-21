@@ -18,12 +18,10 @@
 //! calls keep their own.
 
 use crate::map::entities::EntityCategory;
-use crate::rules::object_type::Ability;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::veterancy::has_weapon_ability;
 use crate::sim::components::NavTargetRef;
 use crate::sim::game_entity::GameEntity;
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::bump_crush::{CrushTarget, object_is_crushable_by};
 use crate::sim::radio::{self, RadioMessage, RadioPayload, RadioResponse};
@@ -205,7 +203,7 @@ impl Simulation {
                 MissionId::from_known(MissionType::Move),
                 0,
                 now,
-                &EntityReadyInputProvider,
+                &LiveReadyInputProvider { rules },
             );
             return;
         }
@@ -242,7 +240,7 @@ impl Simulation {
                 dock,
                 RadioMessage::Hello,
                 RadioPayload::default(),
-                Some(rules),
+                rules,
                 effects,
             ) == RadioResponse::Roger
         {
@@ -251,7 +249,7 @@ impl Simulation {
                 MissionId::from_known(MissionType::Enter),
                 0,
                 now,
-                &EntityReadyInputProvider,
+                &LiveReadyInputProvider { rules },
             );
         }
     }
@@ -277,8 +275,7 @@ impl Simulation {
             [coord.x, coord.y, coord.z]
         };
         CrushCharge {
-            crusher: object.crusher
-                || has_weapon_ability(unit.veterancy.rank_kind(), object, Ability::Crusher),
+            crusher: crate::sim::combat::veterancy::is_crusher(unit.veterancy.rank_kind(), object),
             // `0x00743927`: Is_Crushable_By, its ally test included.
             crushable: object_is_crushable_by(
                 object.omni_crusher,

@@ -190,7 +190,7 @@ impl Simulation {
                 self.sound_events.emit(SimSoundEvent::ObjectSoundReleased {
                     owner: turret_rotate_sound_owner(id),
                 });
-                effects.flush_sound(self, Some(rules));
+                effects.flush_sound(self, rules);
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     entity.turret_rotate_latch.arm();
                 }
@@ -220,14 +220,14 @@ impl Simulation {
             stop_sound_id: None,
             world,
         });
-        effects.flush_sound(self, Some(rules));
+        effects.flush_sound(self, rules);
         if let Some(sound_id) = sound_id {
             self.sound_events.emit(SimSoundEvent::AnimationStarted {
                 anim_id: owner,
                 sound_id,
                 world,
             });
-            effects.flush_sound(self, Some(rules));
+            effects.flush_sound(self, rules);
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.turret_rotate_latch.disarm();
@@ -243,7 +243,7 @@ impl Simulation {
         &mut self,
         id: u64,
         effects: FrameEffects<'_>,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) {
         if !Self::turret_rotate_loop_live(&self.substrate, id) {
             return;

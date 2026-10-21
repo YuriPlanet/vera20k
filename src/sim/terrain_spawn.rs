@@ -154,7 +154,7 @@ pub struct TerrainSpawnContext<'a> {
     pub occupancy: Option<&'a OccupancyGrid>,
     /// Live raw occupation planes, which a new ore Overlay's Mark tests.
     pub(crate) raw_occupation: Option<&'a RawCellOccupationGrid>,
-    pub rules: Option<&'a RuleSet>,
+    pub rules: &'a RuleSet,
     pub interner: Option<&'a StringInterner>,
     /// Terrain objects (trees, rocks) indexed by cell — the non-Techno half of the
     /// native `Cell+0xE4` FirstObject list that `CanSpreadTiberium` reads.
@@ -163,7 +163,11 @@ pub struct TerrainSpawnContext<'a> {
 }
 
 impl<'a> TerrainSpawnContext<'a> {
-    pub fn new(overlay_grid: Option<&'a mut OverlayGrid>, rng: &'a mut SimRng) -> Self {
+    pub fn new(
+        overlay_grid: Option<&'a mut OverlayGrid>,
+        rules: &'a RuleSet,
+        rng: &'a mut SimRng,
+    ) -> Self {
         Self {
             overlay_grid,
             resolved_terrain: None,
@@ -177,7 +181,7 @@ impl<'a> TerrainSpawnContext<'a> {
             entities: None,
             occupancy: None,
             raw_occupation: None,
-            rules: None,
+            rules,
             interner: None,
             terrain_object_cells: None,
             rng,
@@ -226,14 +230,12 @@ impl<'a> TerrainSpawnContext<'a> {
         entities: &'a EntityStore,
         occupancy: &'a OccupancyGrid,
         raw_occupation: &'a RawCellOccupationGrid,
-        rules: &'a RuleSet,
         interner: &'a StringInterner,
         terrain_object_cells: &'a BTreeMap<(u16, u16), u64>,
     ) -> Self {
         self.entities = Some(entities);
         self.occupancy = Some(occupancy);
         self.raw_occupation = Some(raw_occupation);
-        self.rules = Some(rules);
         self.interner = Some(interner);
         self.terrain_object_cells = Some(terrain_object_cells);
         self
@@ -277,10 +279,10 @@ fn tick_terrain_spawner_one_inner(
 ) -> Option<TiberiumPlacement> {
     let source_cells = ctx.spawning_terrain_cells.unwrap_or(spawner_cells);
     let is_animated = ctx
-        .rules
-        .zip(ctx.interner)
-        .and_then(|(rules, interner)| {
-            rules.terrain_object_type_case_insensitive(interner.resolve(spawner.type_ref))
+        .interner
+        .and_then(|interner| {
+            ctx.rules
+                .terrain_object_type_case_insensitive(interner.resolve(spawner.type_ref))
         })
         .is_none_or(|ty| ty.is_animated);
     if !spawner.tick(
@@ -291,11 +293,11 @@ fn tick_terrain_spawner_one_inner(
     ) {
         return None;
     }
-    let (Some(grid), Some(registry), Some(state), Some(rules), Some(terrain), Some(objects)) = (
+    let rules = ctx.rules;
+    let (Some(grid), Some(registry), Some(state), Some(terrain), Some(objects)) = (
         ctx.overlay_grid.as_deref_mut(),
         ctx.overlay_registry,
         ctx.ore_growth_state.as_deref_mut(),
-        ctx.rules,
         ctx.resolved_terrain,
         live_object_context(
             ctx.entities,
@@ -330,7 +332,7 @@ fn tick_terrain_spawner_one_inner(
 pub(crate) fn tick_terrain_object_ai(
     sim: &mut crate::sim::world::Simulation,
     stable_id: u64,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     spawner_cells: Option<&BTreeSet<(u16, u16)>>,
 ) {
@@ -346,9 +348,6 @@ pub(crate) fn tick_terrain_object_ai(
     if !sim.terrain_objects.animations().contains_key(&cell) {
         return;
     }
-    let Some(rules) = rules else {
-        return;
-    };
 
     let fallback_spawner_cells;
     let spawner_cells = if let Some(spawner_cells) = spawner_cells {
@@ -371,7 +370,7 @@ pub(crate) fn tick_terrain_object_ai(
         spawner,
         cell,
         spawner_cells,
-        TerrainSpawnContext::new(sim.overlay_grid.as_mut(), &mut sim.scenario_rng)
+        TerrainSpawnContext::new(sim.overlay_grid.as_mut(), rules, &mut sim.scenario_rng)
             .with_growth_queue(
                 &mut sim.ore_growth_state,
                 sim.session.binary_frame(),
@@ -384,7 +383,6 @@ pub(crate) fn tick_terrain_object_ai(
                 &sim.substrate.entities,
                 &sim.substrate.occupancy,
                 &sim.substrate.raw_cell_occupation,
-                rules,
                 &sim.interner,
                 cell_index,
             )
@@ -408,7 +406,7 @@ fn live_object_context<'a>(
     entities: Option<&'a EntityStore>,
     occupancy: Option<&'a OccupancyGrid>,
     raw_occupation: Option<&'a RawCellOccupationGrid>,
-    rules: Option<&'a RuleSet>,
+    rules: &'a RuleSet,
     interner: Option<&'a StringInterner>,
     terrain_object_cells: Option<&'a BTreeMap<(u16, u16), u64>>,
 ) -> Option<TiberiumPlacementObjectContext<'a>> {
@@ -416,7 +414,7 @@ fn live_object_context<'a>(
         entities?,
         occupancy?,
         raw_occupation?,
-        rules?,
+        rules,
         interner?,
         terrain_object_cells?,
     ))
@@ -553,7 +551,7 @@ fn construct_terrain_objects_inner(
         let occupation_bits = terrain_state.occupation_bits();
         sim.terrain_objects
             .insert_constructed(terrain_state, t.spawns_tiberium);
-        let registered = sim.register_terrain_object(stable_id, Some(rules));
+        let registered = sim.register_terrain_object(stable_id, rules);
         debug_assert!(registered);
         mark_terrain_raw_occupation(
             &mut sim.substrate.raw_cell_occupation,
@@ -813,13 +811,12 @@ mod tests {
         ) {
             tick_terrain_animations_stateful(
                 spawners,
-                TerrainSpawnContext::new(Some(&mut self.overlay_grid), rng)
+                TerrainSpawnContext::new(Some(&mut self.overlay_grid), &self.rules, rng)
                     .with_growth_queue(&mut self.growth_state, self.binary_frame, true, true)
                     .with_live_object_context(
                         &self.entities,
                         &self.occupancy,
                         &self.raw_occupation,
-                        &self.rules,
                         &self.interner,
                         &self.terrain_object_cells,
                     )

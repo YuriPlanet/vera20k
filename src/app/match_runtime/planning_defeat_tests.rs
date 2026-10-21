@@ -126,10 +126,7 @@ fn retail_local_defeat_leaves_planning_in_the_same_house_frame() {
     // pending destructor drain and the next House gate decide the loss.
     rt.simulation.uninit_with_context(
         yards[0],
-        UninitContext::new(
-            Some(&rt.resources.rules),
-            Some(&rt.resources.overlay_registry),
-        ),
+        UninitContext::new(&rt.resources.rules, Some(&rt.resources.overlay_registry)),
     );
     let mut commits = Vec::new();
     let mut defeat_tick = None;
@@ -227,7 +224,7 @@ fn retail_local_defeat_leaves_planning_in_the_same_house_frame() {
     replay.simulation.uninit_with_context(
         replay_yards[0],
         UninitContext::new(
-            Some(&replay.resources.rules),
+            &replay.resources.rules,
             Some(&replay.resources.overlay_registry),
         ),
     );
@@ -260,10 +257,7 @@ fn retail_inactive_and_nonlocal_defeat_do_not_leave_the_local_planner() {
         let mut sounds = SoundEventQueue::new();
         rt.simulation.uninit_with_context(
             yards[losing_house],
-            UninitContext::new(
-                Some(&rt.resources.rules),
-                Some(&rt.resources.overlay_registry),
-            ),
+            UninitContext::new(&rt.resources.rules, Some(&rt.resources.overlay_registry)),
         );
         let mut admitted = Vec::new();
         for _ in 0..5 {

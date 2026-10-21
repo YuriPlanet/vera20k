@@ -1079,7 +1079,7 @@ impl Simulation {
         &mut self,
         owner_name: &str,
         record: &CommandRecord,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
     ) -> bool {
         let Some(owner) = self.interner.get(owner_name) else {
             return false;
@@ -1099,7 +1099,7 @@ impl Simulation {
                     let before = !path.nodes.is_empty() && (path.pending == -1 || path.pending > 0);
                     path.commit();
                     if !before && self.planning_commit_starts(actor) {
-                        self.planning_start_actor(actor);
+                        self.planning_start_actor(actor, rules);
                     }
                 }
                 true
@@ -1300,7 +1300,7 @@ impl Simulation {
         &mut self,
         owner: InternedId,
         record: &CommandRecord,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
     ) -> bool {
         let Some(MegaMissionTarget::Object { id }) = read_target(record, 0) else {
             return false;
@@ -1325,9 +1325,7 @@ impl Simulation {
         {
             path.loop_start = Some(index);
             path.loop_changed = true;
-            if let Some(rules) = rules {
-                self.planning_promote_patrol(actor, rules);
-            }
+            self.planning_promote_patrol(actor, rules);
             return true;
         }
         let node = &self.planning.nodes[&node_id];
@@ -1448,7 +1446,11 @@ impl Simulation {
 
     /// Techno709A40 ->705D50 (!warp-in) ->6385C0. Called only after the
     /// existing RefreshMegaMission owner declined to resume attack-move.
-    pub(crate) fn planning_enter_idle(&mut self, actor: u64) -> bool {
+    pub(crate) fn planning_enter_idle(
+        &mut self,
+        actor: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> bool {
         if self
             .substrate
             .entities
@@ -1457,10 +1459,14 @@ impl Simulation {
         {
             return false;
         }
-        self.planning_start_actor(actor)
+        self.planning_start_actor(actor, rules)
     }
 
-    pub(crate) fn planning_start_actor(&mut self, actor: u64) -> bool {
+    pub(crate) fn planning_start_actor(
+        &mut self,
+        actor: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> bool {
         let Some(path) = self.planning.paths.get(&actor) else {
             return false;
         };
@@ -1508,7 +1514,7 @@ impl Simulation {
             ),
             0,
             self.session.binary_frame(),
-            &crate::sim::mission::authority::EntityReadyInputProvider,
+            &crate::sim::mission::authority::LiveReadyInputProvider { rules },
         );
         // 637550 ->652230: deferred publication stamps frame+1. Reverse
         // pending traversal plus ring prepend restores generation order.

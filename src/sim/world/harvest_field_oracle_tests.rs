@@ -397,7 +397,7 @@ fn reduce_tiberium_matches_the_original_cell_reduction() {
             &mut s.sim.dirty_cells,
             at,
             input["amount"].as_i64().unwrap() as i32,
-            Some(&s.rules),
+            &s.rules,
             Some(registry()),
         );
         assert_eq!(
@@ -502,14 +502,12 @@ fn mission_harvest_states_zero_and_one_match_the_original_dispatch() {
         let input = &row["input"];
         let mut s = row_scene(input);
         compare_reach(&s, row, &context);
-        let config = crate::sim::miner::MinerConfig::from_rules(&s.rules);
         let frame = s.sim.session.binary_frame();
         crate::sim::world::dispatch_foot_mission(
             &mut s.sim,
             s.miner,
             &s.rules,
             crate::sim::world::ObjectAiCtx {
-                miner_config: Some(&config),
                 overlay_registry: Some(registry()),
                 ..Default::default()
             },

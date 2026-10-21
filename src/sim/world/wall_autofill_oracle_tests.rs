@@ -171,7 +171,7 @@ impl Scene {
 
     fn drain(&mut self) {
         self.sim.process_pending_delete_with(
-            Some(&self.rules),
+            &self.rules,
             Some(&self.registry),
             FrameEffects::default(),
             1,

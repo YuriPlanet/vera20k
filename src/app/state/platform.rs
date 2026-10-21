@@ -35,6 +35,12 @@ pub(crate) struct PlatformState {
     /// the OS drops the clip on alt-tab. Presentation-only — never serialized or
     /// read by the deterministic simulation.
     pub(crate) cursor_confined: bool,
+    /// Whether the last confinement call actually holds the OS pointer in the
+    /// client area: `ClipCursor` on Windows, an accepted Confined grab
+    /// elsewhere. winit 0.30.12 refuses Confined on macOS and pure Wayland, so
+    /// there the pointer stays free while `cursor_confined` is on. Only
+    /// `input::cursor`'s confinement calls write it. Presentation-only.
+    pub(crate) pointer_held: std::cell::Cell<bool>,
     /// Whether the OS pointer is inside the window's client area, from winit's
     /// enter/leave edges. Outside it the system owns the pointer — the title bar
     /// and resize border need the system arrow, which `DefWindowProc` installs
@@ -102,6 +108,7 @@ impl PlatformState {
         Self {
             window,
             cursor_confined: true,
+            pointer_held: std::cell::Cell::new(false),
             pointer_in_client: true,
             os_cursor_visible: None,
             live_modifiers: winit::keyboard::ModifiersState::empty(),

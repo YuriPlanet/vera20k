@@ -13,6 +13,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::InternedId;
+use crate::sim::occupancy::CellObjectMember;
 use crate::sim::vision::FogState;
 
 /// Selection uses the last prepared presentation sample, not a temporary
@@ -21,6 +22,11 @@ pub(crate) trait PickSource: Copy {
     fn entities(&self) -> &EntityStore;
     fn screen_position(&self, entity: &crate::sim::game_entity::GameEntity) -> (f32, f32) {
         crate::render::locomotor_visual::screen_position(entity)
+    }
+    /// The cell's ground-list head the point picker falls back to. A bare
+    /// EntityStore has no cell lists.
+    fn first_ground_cell_object(&self, _cell: (u16, u16)) -> Option<CellObjectMember> {
+        None
     }
 }
 impl PickSource for &EntityStore {
@@ -35,6 +41,9 @@ pub(crate) trait PickWorld: PickSource {
 impl PickSource for &crate::sim::world::Simulation {
     fn entities(&self) -> &EntityStore {
         crate::sim::world::Simulation::entities(self)
+    }
+    fn first_ground_cell_object(&self, cell: (u16, u16)) -> Option<CellObjectMember> {
+        crate::sim::world::Simulation::first_ground_cell_object(self, cell)
     }
 }
 impl PickWorld for &crate::sim::world::Simulation {
@@ -57,6 +66,9 @@ impl PickSource for PresentedWorld<'_> {
             .interpolation
             .sample_entity(entity, self.sim.session().binary_frame());
         (pose.screen[0], pose.screen[1] - pose.visual_lift)
+    }
+    fn first_ground_cell_object(&self, cell: (u16, u16)) -> Option<CellObjectMember> {
+        self.sim.first_ground_cell_object(cell)
     }
 }
 impl PickWorld for PresentedWorld<'_> {
@@ -116,118 +128,92 @@ fn pick_distance_sq(dx: f32, dy: f32) -> f32 {
 }
 
 /// The object under the cursor that DetermineAction sees, for the cursor and
-/// the click, among those [`pick_admits_object`] admits.
+/// the click. ProcessClickCoords692515 calls TacticalPick6DA380 once before
+/// passing that same identity to DetermineAction and LeftUp693271/69328B:
+/// a Techno classified for the local player, or a Terrain object.
+pub(crate) fn hover_object_at_point(
+    source: impl PickWorld,
+    world_x: f32,
+    world_y: f32,
+    local_owner: &str,
+    ignore_visibility: bool,
+) -> Option<HoverObject> {
+    let sim = source.simulation();
+    let fog = (!ignore_visibility).then_some(sim.fog());
+    let stable_id = match pick_object_at_point(
+        source,
+        sim.display_layers().ordered_ids(),
+        fog,
+        sim.interner().get(local_owner),
+        world_x,
+        world_y,
+        sim.resolved_terrain(),
+    )? {
+        CellObjectMember::Entity(id) => id,
+        CellObjectMember::Terrain(id) => return Some(HoverObject::Terrain(id)),
+    };
+    let entity = sim.entities().get(stable_id)?;
+    let is_structure = entity.category() == EntityCategory::Structure;
+    // What_Action asks the actor's house, here the local player's
+    // (HouseClass::Is_Ally_ByObject4F9A90 at 7003C4).
+    let is_friendly = crate::map::houses::is_allied_with(
+        sim.house_alliances(),
+        local_owner,
+        sim.interner().resolve(entity.owner()),
+    );
+    let kind = match (is_friendly, is_structure) {
+        (true, true) => HoverTargetKind::FriendlyStructure,
+        (true, false) => HoverTargetKind::FriendlyUnit,
+        (false, true) => HoverTargetKind::EnemyStructure,
+        (false, false) => HoverTargetKind::EnemyUnit,
+    };
+    Some(HoverObject::Techno(HoverTargetKindWithId {
+        kind,
+        stable_id,
+    }))
+}
+
+/// The Techno [`hover_object_at_point`] finds, for consumers that answer a
+/// Terrain object under the cursor as its cell.
 pub(crate) fn hover_target_at_point(
     source: impl PickWorld,
     world_x: f32,
     world_y: f32,
     local_owner: &str,
     ignore_visibility: bool,
-    rules: Option<&RuleSet>,
 ) -> Option<HoverTargetKindWithId> {
-    let sim = source.simulation();
-    let cells = crate::app::match_runtime::sim_tick::tactical_cells(sim);
-    let player = sim.interner().get(local_owner);
-    let fog = (!ignore_visibility).then_some(sim.fog());
-    let (rx, ry) =
-        crate::app::match_runtime::sim_tick::world_point_to_cell(world_x, world_y, cells);
-    if crate::app::presentation::instances::cell_visibility_for_local_owner(
-        player,
-        fog,
-        rx,
-        ry,
-        ignore_visibility,
-        sim.resolved_terrain(),
-    ) == crate::app::presentation::instances::CellVisibilityState::Shrouded
-    {
-        return None;
-    }
-    let mut best: Option<(u64, f32)> = None;
-    for entity in sim.entities().values() {
-        if !pick_admits_object(entity, fog, player) {
-            continue;
-        }
-        let is_structure = entity.category() == EntityCategory::Structure;
-        let type_str = sim.interner().resolve(entity.type_ref());
-        let owner_str = sim.interner().resolve(entity.owner());
-        let (sx, sy) = source.screen_position(entity);
-        // Hit test: structures use foundation cells, mobile units use elliptical distance.
-        if is_structure {
-            let foundation = rules
-                .and_then(|r| r.object(type_str))
-                .map(|o| o.foundation.as_str())
-                .unwrap_or("1x1");
-            if !click_hits_foundation(
-                (rx, ry),
-                entity.position.rx(),
-                entity.position.ry(),
-                foundation,
-            ) {
-                continue;
-            }
-        } else {
-            let dx = sx - world_x;
-            let dy = sy - world_y;
-            if pick_distance_sq(dx, dy) >= PICK_DISTANCE_THRESHOLD {
-                continue;
-            }
-        }
-        // Distance for tie-breaking (prefer closest to anchor point).
-        let dx = sx - world_x;
-        let dy = sy - world_y;
-        let dist_sq = dx * dx + dy * dy;
-        // What_Action over an object asks the actor's house, here the local
-        // player's (`HouseClass::Is_Ally_ByObject @ 0x004F9A90` at `0x007003C4`).
-        let is_friendly =
-            crate::map::houses::is_allied_with(sim.house_alliances(), local_owner, owner_str);
-        let kind = if is_friendly {
-            if is_structure {
-                HoverTargetKind::FriendlyStructure
-            } else {
-                HoverTargetKind::FriendlyUnit
-            }
-        } else if is_structure {
-            HoverTargetKind::EnemyStructure
-        } else {
-            HoverTargetKind::EnemyUnit
-        };
-        match best {
-            Some((_, best_dist_sq)) if dist_sq >= best_dist_sq => {}
-            _ => best = Some((encode_hover_kind_with_id(kind, entity.stable_id()), dist_sq)),
+    hover_object_at_point(source, world_x, world_y, local_owner, ignore_visibility)?.techno()
+}
+
+/// What [`hover_object_at_point`] found under the cursor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HoverObject {
+    Techno(HoverTargetKindWithId),
+    /// A Terrain object, reached only through the clicked cell's list.
+    Terrain(u64),
+}
+
+impl HoverObject {
+    pub(crate) fn techno(self) -> Option<HoverTargetKindWithId> {
+        match self {
+            Self::Techno(target) => Some(target),
+            Self::Terrain(_) => None,
         }
     }
-    best.map(|(encoded, _)| decode_hover_kind_with_id(encoded))
+
+    /// The object's id in the shared runtime-object namespace.
+    pub(crate) fn id(self) -> u64 {
+        match self {
+            Self::Techno(target) => target.stable_id,
+            Self::Terrain(id) => id,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct HoverTargetKindWithId {
     pub(crate) kind: HoverTargetKind,
     pub(crate) stable_id: u64,
-}
-
-fn encode_hover_kind_with_id(kind: HoverTargetKind, stable_id: u64) -> u64 {
-    let kind_bits = match kind {
-        HoverTargetKind::FriendlyUnit => 1u64,
-        HoverTargetKind::FriendlyStructure => 2,
-        HoverTargetKind::EnemyUnit => 3,
-        HoverTargetKind::EnemyStructure => 4,
-        HoverTargetKind::HiddenEnemy => 5,
-    };
-    (stable_id << 3) | kind_bits
-}
-
-fn decode_hover_kind_with_id(encoded: u64) -> HoverTargetKindWithId {
-    let kind = match encoded & 0b111 {
-        1 => HoverTargetKind::FriendlyUnit,
-        2 => HoverTargetKind::FriendlyStructure,
-        3 => HoverTargetKind::EnemyUnit,
-        4 => HoverTargetKind::EnemyStructure,
-        _ => HoverTargetKind::HiddenEnemy,
-    };
-    HoverTargetKindWithId {
-        kind,
-        stable_id: encoded >> 3,
-    }
 }
 
 #[cfg(test)]
@@ -239,10 +225,8 @@ pub(crate) fn compute_click_selection_snapshot(
     local_owner: Option<&str>,
     world_x: f32,
     world_y: f32,
-    click_radius: f32,
     additive: bool,
     rules: Option<&RuleSet>,
-    houses: Option<&HouseStates>,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> Option<SelectionMutation> {
     compute_click_selection_snapshot_with_playfield(
@@ -253,10 +237,8 @@ pub(crate) fn compute_click_selection_snapshot(
         local_owner,
         world_x,
         world_y,
-        click_radius,
         additive,
         rules,
-        houses,
         interner,
         false,
         None,
@@ -271,10 +253,8 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
     local_owner: Option<&str>,
     world_x: f32,
     world_y: f32,
-    click_radius: f32,
     additive: bool,
     rules: Option<&RuleSet>,
-    houses: Option<&HouseStates>,
     interner: Option<&crate::sim::intern::StringInterner>,
     require_playfield_membership: bool,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
@@ -287,9 +267,6 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
         local_owner,
         world_x,
         world_y,
-        click_radius,
-        rules,
-        houses,
         interner,
         terrain,
     ) else {
@@ -1094,52 +1071,64 @@ fn building_covers_cell(
     })
 }
 
-/// Check if a world-space click point falls on a building's foundation cells.
-/// The building occupies cells `(rx..rx+fw, ry..ry+fh)`. We convert the click
-/// to cell coords and check containment. This matches the original engine which
-/// uses the foundation footprint, not the visual sprite bounds.
-/// Whether `click_cell`, the clicked point's cell (`world_point_to_cell`),
-/// lies in the foundation at `entity_rx`/`entity_ry`. Callers resolve the
-/// point once for every structure they test.
-fn click_hits_foundation(
-    (click_rx, click_ry): (u16, u16),
-    entity_rx: u16,
-    entity_ry: u16,
-    foundation: &str,
-) -> bool {
-    let (fw, fh) = crate::rules::foundation::foundation_dimensions(foundation);
-    let crx = click_rx as i32;
-    let cry = click_ry as i32;
-    let brx = entity_rx as i32;
-    let bry = entity_ry as i32;
-    crx >= brx && crx < brx + fw as i32 && cry >= bry && cry < bry + fh as i32
-}
-
-pub(crate) fn pick_entity_at_point(
+/// The entity [`pick_object_at_point`] finds; a Terrain object counts as no
+/// entity.
+pub(crate) fn pick_entity_at_point<'a>(
     source: impl PickSource,
-    encounter_order: &[u64],
+    encounter_order: impl IntoIterator<Item = &'a u64>,
     fog: Option<&FogState>,
     local_owner: Option<&str>,
     world_x: f32,
     world_y: f32,
-    click_radius: f32,
-    rules: Option<&RuleSet>,
-    _houses: Option<&HouseStates>,
     interner: Option<&crate::sim::intern::StringInterner>,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> Option<u64> {
+    let player = local_owner.and_then(|o| interner.and_then(|i| i.get(o)));
+    match pick_object_at_point(
+        source,
+        encounter_order,
+        fog,
+        player,
+        world_x,
+        world_y,
+        terrain,
+    )? {
+        CellObjectMember::Entity(id) => Some(id),
+        CellObjectMember::Terrain(_) => None,
+    }
+}
+
+/// `Tactical::PickObjectAtScreenPoint @ 0x006DA380`, with the cloak test
+/// ProcessClickCoords repeats on its result (`0x00692529..0x0069257F`).
+///
+/// A shrouded clicked cell picks nothing. Otherwise the nearest admitted
+/// registered object wins on `ftol(dx² + 0.5·dy²) < 200`, the first in
+/// `encounter_order` on a tie. With none, the pick is the head of the clicked
+/// cell's ground list (`CellClass+0xE4`, `0x006DA4B8..0x006DA4FB`): a
+/// building over its whole foundation, a unit standing beyond the ellipse, or
+/// a Terrain object. The bridge-deck list (`+0xE8`) is never read. An
+/// unadmitted head picks nothing; the pick never looks behind it.
+///
+/// Residual: the anchor pass scores only entities. Native also scores a
+/// registered Terrain object whose type has `IsVeinhole=` (`+0x2B4`);
+/// VERA reaches one only through its cell.
+pub(crate) fn pick_object_at_point<'a>(
+    source: impl PickSource,
+    encounter_order: impl IntoIterator<Item = &'a u64>,
+    fog: Option<&FogState>,
+    player: Option<InternedId>,
+    world_x: f32,
+    world_y: f32,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+) -> Option<CellObjectMember> {
     let entities = source.entities();
     let cells = terrain.map(|terrain| terrain as &dyn crate::map::terrain::TacticalCellLookup);
-    // Elliptical pick distance: dx² + 0.5*dy² < 200, with the 0.5 Y-weight
-    // compensating for isometric projection.
-    // The click_radius parameter is kept for API compatibility but not used.
-    let _ = click_radius;
-    let local_owner_id = local_owner.and_then(|o| interner.and_then(|i| i.get(o)));
-    if let (Some(fog), Some(owner_id)) = (fog, local_owner_id) {
-        let (rx, ry) =
-            crate::app::match_runtime::sim_tick::world_point_to_cell(world_x, world_y, cells);
+    let click_cell =
+        crate::app::match_runtime::sim_tick::world_point_to_cell(world_x, world_y, cells);
+    if let (Some(fog), Some(player)) = (fog, player) {
+        let (rx, ry) = click_cell;
         if crate::app::presentation::instances::cell_visibility_for_local_owner(
-            Some(owner_id),
+            Some(player),
             Some(fog),
             rx,
             ry,
@@ -1156,7 +1145,7 @@ pub(crate) fn pick_entity_at_point(
         let Some(entity) = entities.get(stable_id) else {
             continue;
         };
-        if !pick_admits_object(entity, fog, local_owner_id) {
+        if !pick_admits_object(entity, fog, player) {
             continue;
         }
         // Native6DA380 tests lifecycle/cloak after the clicked Cell gate;
@@ -1171,33 +1160,15 @@ pub(crate) fn pick_entity_at_point(
     }
 
     if let Some((stable_id, _)) = best {
-        return Some(stable_id);
+        return Some(CellObjectMember::Entity(stable_id));
     }
-
-    // Cell/foundation occupancy is consulted only when the tracked-anchor pass
-    // found nothing. Preserve encounter order when a malformed overlap exists.
-    let click_cell =
-        crate::app::match_runtime::sim_tick::world_point_to_cell(world_x, world_y, cells);
-    entities.values().find_map(|entity| {
-        if entity.category() != EntityCategory::Structure
-            || !entity.lifecycle.object_alive()
-            || entity.lifecycle.in_limbo()
-        {
-            return None;
-        }
-        let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
-        let foundation = rules
-            .and_then(|r| r.object(type_str))
-            .map(|o| o.foundation.as_str())
-            .unwrap_or("1x1");
-        click_hits_foundation(
-            click_cell,
-            entity.position.rx(),
-            entity.position.ry(),
-            foundation,
-        )
-        .then_some(entity.stable_id())
-    })
+    match source.first_ground_cell_object(click_cell)? {
+        CellObjectMember::Entity(id) => entities
+            .get(id)
+            .filter(|entity| pick_admits_object(entity, fog, player))
+            .map(|_| CellObjectMember::Entity(id)),
+        terrain => Some(terrain),
+    }
 }
 
 /// Final object admission shared by selection callers. Ownership and the
@@ -1282,6 +1253,225 @@ mod tests {
     }
 
     #[test]
+    fn hover_and_click_match_original_weighted_pick_and_encounter_ties() {
+        use crate::sim::world::Simulation;
+
+        // These points are declared native registration inputs, not a second
+        // projection implementation. The ordinary retail scene is exercised
+        // separately by the bunker entry regression.
+        #[derive(Clone, Copy)]
+        struct Registrations<'a> {
+            sim: &'a Simulation,
+            points: [(f32, f32); 2],
+        }
+        impl PickSource for Registrations<'_> {
+            fn entities(&self) -> &EntityStore {
+                self.sim.entities()
+            }
+            fn screen_position(&self, entity: &GameEntity) -> (f32, f32) {
+                self.points[entity.stable_id() as usize - 1]
+            }
+        }
+        impl PickWorld for Registrations<'_> {
+            fn simulation(&self) -> &Simulation {
+                self.sim
+            }
+        }
+
+        let corpus = crate::test_fixture::json("tools/spatial_oracle/pointer_pick.json");
+        for row in corpus["controls"].as_array().unwrap() {
+            let mut sim = Simulation::new();
+            let viewer = sim.intern("viewer");
+            let typ = sim.intern("INIT");
+            for id in [1, 2] {
+                sim.entities_mut_for_test().insert(item83_entity(
+                    id,
+                    10,
+                    10,
+                    viewer,
+                    typ,
+                    EntityCategory::Infantry,
+                    false,
+                ));
+            }
+            let order: Vec<_> = row["registration_order"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_u64().unwrap() + 1)
+                .collect();
+            for &id in &order {
+                sim.resubmit_entity_display_for_test(id);
+            }
+            let point = |value: &serde_json::Value| {
+                (
+                    value[0].as_f64().unwrap() as f32,
+                    value[1].as_f64().unwrap() as f32,
+                )
+            };
+            let source = Registrations {
+                sim: &sim,
+                points: [point(&row["positions"][0]), point(&row["positions"][1])],
+            };
+            let (x, y) = point(&row["cursor"]);
+            let expected = Some(row["picked"].as_u64().unwrap() + 1);
+            assert_eq!(
+                pick_entity_at_point(
+                    source,
+                    &order,
+                    None,
+                    Some("viewer"),
+                    x,
+                    y,
+                    Some(sim.interner()),
+                    None,
+                ),
+                expected,
+                "click: {}",
+                row["name"]
+            );
+            assert_eq!(
+                hover_target_at_point(source, x, y, "viewer", true).map(|hover| hover.stable_id),
+                expected,
+                "hover: {}",
+                row["name"]
+            );
+        }
+    }
+
+    #[test]
+    fn cell_fallback_keeps_the_post_pick_cloak_gate() {
+        use crate::sim::cloak_disguise::CloakRuntime;
+        use crate::sim::world::Simulation;
+
+        let mut sim = Simulation::new();
+        let viewer = sim.intern("viewer");
+        let other = sim.intern("other");
+        let typ = sim.intern("GAPOWR");
+        *sim.fog_mut_for_test() = FogState::new(32, 32);
+        sim.fog_mut_for_test().reveal_all_for_owner(viewer);
+        let mut building = item83_entity(1, 10, 10, other, typ, EntityCategory::Structure, false);
+        building.cloak = Some(CloakRuntime::new(0));
+        let (x, y) = crate::render::locomotor_visual::screen_position(&building);
+        sim.entities_mut_for_test().insert(building);
+        sim.occupancy_mut().add(
+            10,
+            10,
+            1,
+            crate::sim::movement::locomotor::MovementLayer::Ground,
+            None,
+            crate::sim::occupancy::CellListInsertion::AppendBuilding,
+        );
+        sim.resubmit_entity_display_for_test(1);
+        // Outside the tracked-anchor ellipse but inside this foundation.
+        // ProcessClickCoords692529..69257F repeats the cloak gate after the
+        // chosen fallback; sharing the picker must preserve hover's refusal.
+        for (cloak_state, expected) in [(0, Some(1)), (2, None)] {
+            sim.entities_mut_for_test()
+                .get_mut(1)
+                .unwrap()
+                .cloak
+                .as_mut()
+                .unwrap()
+                .set_state_for_test(cloak_state);
+            assert_eq!(
+                pick_entity_at_point(
+                    &sim,
+                    &[1],
+                    Some(sim.fog()),
+                    Some("viewer"),
+                    x + 20.,
+                    y,
+                    Some(sim.interner()),
+                    None,
+                ),
+                expected
+            );
+            assert_eq!(
+                hover_target_at_point(&sim, x + 20., y, "viewer", false)
+                    .map(|hover| hover.stable_id),
+                expected
+            );
+        }
+    }
+
+    /// With no registered object near the point, the pick is the head of the
+    /// clicked cell's ground list (`0x006DA4B8..0x006DA4FB`): a unit standing
+    /// beyond the ellipse, ahead of the building whose foundation it stands
+    /// on (AddContent `0x0047E8A0` prepends it), or a Terrain object, which
+    /// only the object pick returns.
+    #[test]
+    fn the_point_pick_falls_back_to_the_clicked_cells_ground_list_head() {
+        use crate::sim::movement::locomotor::MovementLayer;
+        use crate::sim::occupancy::CellListInsertion;
+        use crate::sim::terrain_object::TerrainObjectState;
+        use crate::sim::world::Simulation;
+
+        let mut sim = Simulation::new();
+        let viewer = sim.intern("viewer");
+        let typ = sim.intern("HTNK");
+        let building_type = sim.intern("GAPOWR");
+        let unit = item83_entity(1, 10, 10, viewer, typ, EntityCategory::Unit, false);
+        let (x, y) = crate::render::locomotor_visual::screen_position(&unit);
+        sim.entities_mut_for_test().insert(unit);
+        sim.entities_mut_for_test().insert(item83_entity(
+            2,
+            9,
+            9,
+            viewer,
+            building_type,
+            EntityCategory::Structure,
+            false,
+        ));
+        for (id, insertion) in [
+            (2, CellListInsertion::AppendBuilding),
+            (1, CellListInsertion::PrependNonBuilding),
+        ] {
+            sim.occupancy_mut()
+                .add(10, 10, id, MovementLayer::Ground, None, insertion);
+        }
+        sim.resubmit_entity_display_for_test(1);
+        // dx = 20 scores 400, outside the anchor ellipse's 200.
+        let (x, y) = (x + 20., y);
+        assert_eq!(
+            crate::app::match_runtime::sim_tick::world_point_to_cell(x, y, None),
+            (10, 10)
+        );
+        let pick = |sim: &Simulation, x, y| {
+            pick_entity_at_point(
+                sim,
+                &[2, 1],
+                None,
+                Some("viewer"),
+                x,
+                y,
+                Some(sim.interner()),
+                None,
+            )
+        };
+        assert_eq!(pick(&sim, x, y), Some(1));
+        assert_eq!(
+            hover_target_at_point(&sim, x, y, "viewer", true).map(|hover| hover.stable_id),
+            Some(1)
+        );
+
+        let tree_type = sim.intern("TREE01");
+        let terrain = sim.terrain_objects_mut_for_test();
+        terrain.cell_index_mut_for_test().insert((12, 12), 50);
+        terrain
+            .objects_mut_for_test()
+            .insert(50, TerrainObjectState::for_test(50, tree_type, 12, 12));
+        let half = crate::util::fixed_math::SimFixed::from_num(128);
+        let (x, y) = crate::util::lepton::lepton_to_screen(12, 12, half, half, 0);
+        assert_eq!(
+            hover_object_at_point(&sim, x, y, "viewer", true),
+            Some(HoverObject::Terrain(50))
+        );
+        assert_eq!(hover_target_at_point(&sim, x, y, "viewer", true), None);
+        assert_eq!(pick(&sim, x, y), None);
+    }
+
+    #[test]
     fn both_pointer_queries_use_retained_local_ownership_for_cloak_admission() {
         use crate::sim::cloak_disguise::CloakRuntime;
         use crate::sim::world::Simulation;
@@ -1331,9 +1521,6 @@ mod tests {
                     Some("viewer"),
                     world.0,
                     world.1,
-                    0.0,
-                    None,
-                    None,
                     Some(sim.interner()),
                     None,
                 ),
@@ -1341,7 +1528,7 @@ mod tests {
                 "pointer: owner equality{same_owner}, retained{retained_owned}, sensor{sensed}, cloak{cloak_state}"
             );
             assert_eq!(
-                hover_target_at_point(&sim, world.0, world.1, "viewer", false, None,)
+                hover_target_at_point(&sim, world.0, world.1, "viewer", false)
                     .map(|target| target.stable_id),
                 expected,
                 "hover: owner equality{same_owner}, retained{retained_owned}, sensor{sensed}, cloak{cloak_state}"
@@ -1375,9 +1562,7 @@ mod tests {
                 Some("Americans"),
                 x,
                 y,
-                30.0,
                 false,
-                None,
                 None,
                 Some(&interner),
             )
@@ -1468,9 +1653,6 @@ mod tests {
                 Some("Americans"),
                 point.0,
                 point.1,
-                30.0,
-                Some(&retail.rules),
-                None,
                 Some(sim.interner()),
                 sim.resolved_terrain(),
             )
@@ -1501,10 +1683,8 @@ mod tests {
             Some("Americans"),
             point.0,
             point.1,
-            30.0,
             false,
             Some(&retail.rules),
-            None,
             Some(sim.interner()),
             true,
             sim.resolved_terrain(),

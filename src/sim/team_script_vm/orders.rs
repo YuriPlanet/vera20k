@@ -52,8 +52,7 @@ impl Simulation {
     /// `vt+0x3C8` `Assign_Target(NULL)`: `TechnoClass::Assign_Target @
     /// 0x006FCDB0`, Infantry's `0x0051B1F0`.
     pub(super) fn team_member_clear_target(&mut self, id: u64, rules: &RuleSet) {
-        let _ =
-            self.assign_target_represented(id, None, Some(rules), None, FrameEffects::default());
+        let _ = self.assign_target_represented(id, None, rules, None, FrameEffects::default());
     }
 
     /// `vt+0x3C8` `Assign_Target(target)`.
@@ -68,7 +67,7 @@ impl Simulation {
         let _ = self.assign_target_represented(
             id,
             Some(target.target_kind()),
-            Some(rules),
+            rules,
             registry,
             frame_effects,
         );
@@ -90,13 +89,7 @@ impl Simulation {
             }
             TeamTarget::Object(id) => crate::sim::components::NavTargetRef::object(id),
         });
-        let _ = self.assign_destination_represented(
-            id,
-            requested,
-            Some(rules),
-            registry,
-            frame_effects,
-        );
+        let _ = self.assign_destination_represented(id, requested, rules, registry, frame_effects);
     }
 }
 

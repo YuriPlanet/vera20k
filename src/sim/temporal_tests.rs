@@ -728,6 +728,37 @@ fn erase_awards_price_each_cost_by_its_house() {
     assert_eq!(sim.houses[&russians].economy().score(), 450);
 }
 
+/// An erased building of the current player names the Cell of its
+/// foundation centre for the Spacebar ring (`BuildingClass::
+/// Death_Announcement @ 0x0044D760`, called at `0x0071AA3A`): GAPOWR's 2x2
+/// at (12, 10) centres on (13, 11) (`0x00447AC0`). Another house's erased
+/// building names none.
+#[test]
+fn an_erased_player_building_is_remembered_for_spacebar() {
+    let rules = rules();
+    let mut sim = sim(9);
+    let own = spawn(&mut sim, &rules, "GAPOWR", "Americans", 12, 10);
+    let rival = spawn(&mut sim, &rules, "GAPOWR", "Allies2", 20, 10);
+    let red = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    let blue = spawn(&mut sim, &rules, "CLEG", "Russians", 18, 10);
+    chain(&mut sim, own, &[red], 1);
+    chain(&mut sim, rival, &[blue], 1);
+    let _ = sim.drain_trigger_effects();
+    for head in [red, blue] {
+        sim.temporal_update_head(
+            head,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+    }
+    assert!(erased(&sim, own) && erased(&sim, rival));
+    assert_eq!(
+        sim.drain_trigger_effects(),
+        [crate::sim::trigger_runtime::TriggerEffect::RecentEventCell { cell: (13, 11) }]
+    );
+}
+
 /// A warp's start makes a victim that was itself warping let go
 /// (`0x0071B162`), and retargeting drops the previous victim with its
 /// progress: nothing heals and the next warp restarts at Strength * 10.
@@ -1919,7 +1950,7 @@ fn stop_retains_the_legionnaires_victim_until_attack_dispatch() {
     assert!(sim.apply_command_with_overlays(
         "Russians",
         &Command::Stop { entity_id: cleg },
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     ));
@@ -2167,7 +2198,7 @@ fn a_warped_building_cannot_be_captured() {
         sim.run_walk_boundary(
             engineer,
             head,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         );
@@ -2183,7 +2214,7 @@ fn a_warped_building_cannot_be_captured() {
             !sim.run_completed_walk_step(
                 engineer,
                 head,
-                Some(&rules),
+                &rules,
                 None,
                 crate::sim::world::FrameEffects::default()
             )

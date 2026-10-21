@@ -70,7 +70,7 @@ fn send(sim: &mut Simulation, rules: &RuleSet, from: u64, to: u64, message: Radi
             to,
             message,
             RadioPayload::default(),
-            Some(rules),
+            rules,
             FrameEffects::default(),
         ),
         RadioResponse::Roger
@@ -81,7 +81,7 @@ fn arrive(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     sim.per_cell_process(
         id,
         PerCellReason::Arrival,
-        Some(rules),
+        rules,
         None,
         FrameEffects::default(),
     )

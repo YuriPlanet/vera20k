@@ -31,8 +31,8 @@ from unicorn.x86_const import (
 from tools import oracle_sources
 
 # A fixed label, not an identity check: payload schemas written before the
-# hash checks were removed carry it, so their producers keep reporting it until
-# each corpus is next regenerated. Any gamemd.exe build is accepted.
+# hash checks were removed carry it, and finish_vectors accepts it only where
+# the existing reference already does. Any gamemd.exe build is accepted.
 NATIVE_SHA256 = "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
 IMAGE_BASE = 0x00400000
 # Preserve the original fixture mapping, including runtime globals in BSS.
@@ -237,7 +237,10 @@ def image_bytes() -> bytes:
 
 
 def image_sha256() -> str:
-    """The [`NATIVE_SHA256`] label older payload schemas carry; not a file hash."""
+    """The [`NATIVE_SHA256`] label older payload schemas carry; not a file hash.
+
+    New corpora must not record it: finish_vectors refuses it outside those schemas.
+    """
     return NATIVE_SHA256
 
 
@@ -522,6 +525,65 @@ def first_difference(expected, actual, path="$", limit=180) -> str | None:
     return None
 
 
+def _hash_paths(value, digests, path="$", found=None) -> set[tuple[str, str]]:
+    """(JSON path, digest) for each key or string containing a digest.
+
+    List indices read [*], so a field counts once however many rows repeat it.
+    """
+    found = set() if found is None else found
+    if isinstance(value, dict):
+        for key, item in value.items():
+            child = f"{path}.{key}"
+            found.update((child, digest) for digest in digests if digest in key.lower())
+            _hash_paths(item, digests, child, found)
+    elif isinstance(value, list):
+        for item in value:
+            _hash_paths(item, digests, f"{path}[*]", found)
+    elif isinstance(value, str):
+        found.update((path, digest) for digest in digests if digest in value.lower())
+    return found
+
+
+def _refuse_executable_hashes(target: Path, default_path: Path, documents) -> None:
+    """Refuse output that would publish a gamemd.exe hash (AGENTS.md).
+
+    Every gamemd.exe build is the same game, so a corpus records what the
+    executable computes, never which build ran it. The configured executable's
+    SHA-256 is refused anywhere. The NATIVE_SHA256 label is refused except at a
+    JSON path where an existing reference already carries it, so older schemas
+    stay checkable until their producers drop the field. Each document is
+    (reference suffix, or None for the payload; document; its serialized text).
+    """
+    digests = {NATIVE_SHA256}
+    try:
+        digests.add(hashlib.sha256(image_bytes()).hexdigest())
+    except (OracleError, OSError):
+        pass  # Nothing here can have hashed an executable that is not readable.
+    refused = set()
+    for suffix, document, text in documents:
+        lowered = text.lower()
+        if not any(digest in lowered for digest in digests):
+            continue
+        legacy = set()
+        for base in dict.fromkeys((target, default_path)):
+            reference = base if suffix is None else base.with_suffix(suffix)
+            if reference.is_file():
+                raw = reference.read_bytes()
+                existing = json.loads(gzip.decompress(raw) if reference.suffix == ".gz" else raw)
+                legacy.update(path for path, _ in _hash_paths(existing, {NATIVE_SHA256}))
+        name = (target if suffix is None else target.with_suffix(suffix)).name
+        refused.update(f"{name} {path}" for path, digest in _hash_paths(document, digests)
+                       if digest != NATIVE_SHA256 or path not in legacy)
+    if refused:
+        locations = sorted(refused)
+        more = f" and {len(locations) - 4} more" if len(locations) > 4 else ""
+        raise OracleError(
+            f"Refusing to publish a gamemd.exe hash at {', '.join(locations[:4])}{more}. "
+            "Every gamemd.exe build is the same game: oracle outputs record what the "
+            "executable computes, not which build ran it. Remove these fields from the "
+            "producer (tools/native_oracle.md, Evidence identity).")
+
+
 def finish_vectors(data, default_path: Path, *, provenance: dict, argv=None,
                    source_paths: dict[str, Path] | None = None,
                    projection=None, raw_archive_sha256: str | None = None) -> None:
@@ -540,7 +602,8 @@ def finish_vectors(data, default_path: Path, *, provenance: dict, argv=None,
 
     Sidecars pin no repository source hashes (AGENTS.md): an edit to a shared
     helper must not fail a check whose native output is unchanged. The recorded
-    replay command says how the payload was made; it is not evidence.
+    replay command says how the payload was made; it is not evidence. Neither
+    workflow proceeds with output that would publish a gamemd.exe hash.
     """
     parser = argparse.ArgumentParser(description="Compare native outputs with recorded reference data")
     mode = parser.add_mutually_exclusive_group()
@@ -566,8 +629,9 @@ def finish_vectors(data, default_path: Path, *, provenance: dict, argv=None,
     sidecar = target.with_suffix(".meta.json")
     archive_path = target.with_suffix(".raw.json.gz")
     archive_sidecar = target.with_suffix(".raw.meta.json")
-    archive_record = archive_bytes = raw_archive = None
+    archive_record = archive_bytes = raw_archive = raw_document = None
     if projection is not None:
+        raw_document = normalized
         raw_archive = (json.dumps(normalized, indent=2, allow_nan=False) + "\n").encode("utf-8")
         digest = hashlib.sha256(raw_archive).hexdigest()
         if raw_archive_sha256 is not None and digest != raw_archive_sha256:
@@ -595,6 +659,11 @@ def finish_vectors(data, default_path: Path, *, provenance: dict, argv=None,
     metadata_text = json.dumps(metadata, indent=2, allow_nan=False) + "\n"
     if difference := first_difference(sources, source_identity()):
         raise OracleError(f"Source changed during native generation: {difference}")
+    documents = [(None, normalized, payload_text), (".meta.json", metadata, metadata_text)]
+    if archive_record is not None:
+        documents += [(".raw.json.gz", raw_document, raw_archive.decode("utf-8")),
+                      (".raw.meta.json", archive_metadata, archive_metadata_text)]
+    _refuse_executable_hashes(target, default_path, documents)
     if args.write:
         target.parent.mkdir(parents=True, exist_ok=True)
         if archive_record is not None:

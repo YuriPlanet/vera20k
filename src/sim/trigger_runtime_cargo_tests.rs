@@ -58,7 +58,7 @@ fn action(sim: &mut Simulation, kind: i32, value: i32) {
             input: TagEventInput::default(),
         },
         &mut Vec::new(),
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         FrameEffects::default(),
     ));
@@ -218,12 +218,7 @@ fn live_house_trigger_enables_train_cargo_before_fatal_receiver_and_pickup() {
     let owner = sim.interner.get("Americans").unwrap();
     sim.session.set_binary_frame_for_test(16);
     let previous_rng = rng(&sim);
-    sim.raise_house_tags(
-        owner,
-        Some(&rules),
-        Some(&registry),
-        FrameEffects::default(),
-    );
+    sim.raise_house_tags(owner, &rules, Some(&registry), FrameEffects::default());
     assert!(sim.session.train_crate());
     assert!(sim.trigger_runtime.locals_set.contains(&9));
     assert_eq!(rng(&sim), previous_rng);
@@ -258,7 +253,7 @@ fn live_house_trigger_enables_train_cargo_before_fatal_receiver_and_pickup() {
     assert!(sim.pickup_crate_at(
         collector,
         (slot.cell_x, slot.cell_y),
-        Some(&rules),
+        &rules,
         Some(&registry),
         FrameEffects::default()
     ));

@@ -402,7 +402,11 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
         if plane.body_frame_counter.get() == 0
             || !crate::sim::movement::motion_query::is_moving_now(
                 plane,
-                None,
+                crate::sim::movement::SpeedRules::new(
+                    &scene.runtime.resources.rules,
+                    sim.interner(),
+                    sim.houses(),
+                ),
                 sim.session().binary_frame(),
             )
         {

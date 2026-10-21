@@ -165,6 +165,10 @@ pub(crate) struct MatchPresentationState {
     pub(crate) sound_dialog: Option<crate::ui::shell::sound::SoundState>,
     pub(crate) abort_buttons:
         crate::ui::shell::button::ShellButtonInteraction<crate::ui::shell::abort::AbortButton>,
+    /// The WOL tournament Surrender box's buttons (state 2).
+    pub(crate) surrender_buttons: crate::ui::shell::button::ShellButtonInteraction<
+        crate::app::input::surrender::SurrenderButton,
+    >,
     pub(crate) diplomacy: crate::ui::shell::diplomacy::DiplomacyInteraction,
     /// Restate 0x10C's pointer state.
     pub(crate) restate: crate::ui::shell::restate::RestateInteraction,

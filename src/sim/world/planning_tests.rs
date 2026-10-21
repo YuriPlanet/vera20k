@@ -249,7 +249,7 @@ fn special_ordinary_retask_cancels_shared_route(kind: &str) {
         sim.apply_command_with_overlays(
             "Americans",
             &command,
-            Some(&rules),
+            &rules,
             Some(&registry),
             crate::sim::world::FrameEffects::default()
         ),
@@ -268,7 +268,7 @@ fn special_ordinary_retask_cancels_shared_route(kind: &str) {
         );
     }
     assert!(
-        !sim.planning_enter_idle(actor),
+        !sim.planning_enter_idle(actor, crate::rules::ruleset::RuleSet::empty_for_test()),
         "{kind} must not restart an old leg"
     );
     assert!(sim.pending_command_snapshot().is_empty());
@@ -474,7 +474,7 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
     assert_eq!(due, generated);
     sim.apply_due_commands(
         &due,
-        Some(&rules),
+        &rules,
         sim.session.tick() + 1,
         None,
         crate::sim::world::FrameEffects::default(),
@@ -515,7 +515,7 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     let batch = [edit, commit]
         .map(|record| CommandEnvelope::new(owner, 1, Command::PlanningRecord { record }));
-    sim.apply_due_commands(&batch, Some(&rules), 1, None, FrameEffects::default());
+    sim.apply_due_commands(&batch, &rules, 1, None, FrameEffects::default());
     assert_eq!(
         sim.planning.paths[&1].pending, 0,
         "commit runs before staged flag1 even when flag1 was inserted first"
@@ -529,7 +529,7 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
         Command::PlanningRecord { record: commit },
     )];
     sim.session.set_tick_for_test(1);
-    sim.apply_due_commands(&batch, Some(&rules), 2, None, FrameEffects::default());
+    sim.apply_due_commands(&batch, &rules, 2, None, FrameEffects::default());
     assert_eq!(sim.planning.paths[&1].pending, -1);
     assert!(sim.planning.paths[&1].executing);
     assert!(sim.take_due_commands().is_empty());
@@ -833,7 +833,11 @@ fn planning_append_rejects_exact_sixteen_and_any_loop() {
             },
         )
         .unwrap();
-    assert!(!sim.apply_planning_record("Americans", &record, None));
+    assert!(!sim.apply_planning_record(
+        "Americans",
+        &record,
+        crate::rules::ruleset::RuleSet::empty_for_test()
+    ));
     assert_eq!(sim.planning.paths[&1].nodes.len(), 16);
     append(&mut sim, &rules, owner, 2, (20, 15));
     let record = sim.encode_plan_connect_record(owner, 2, (20, 15)).unwrap();
@@ -848,7 +852,11 @@ fn planning_append_rejects_exact_sixteen_and_any_loop() {
             },
         )
         .unwrap();
-    assert!(!sim.apply_planning_record("Americans", &record, None));
+    assert!(!sim.apply_planning_record(
+        "Americans",
+        &record,
+        crate::rules::ruleset::RuleSet::empty_for_test()
+    ));
 }
 
 #[test]
@@ -957,7 +965,11 @@ fn cell_attack_and_area_guard_tails_are_terminal_for_append() {
                 },
             )
             .unwrap();
-        assert!(!sim.apply_planning_record("Americans", &record, None));
+        assert!(!sim.apply_planning_record(
+            "Americans",
+            &record,
+            crate::rules::ruleset::RuleSet::empty_for_test()
+        ));
         assert_eq!(sim.planning.paths[&1].nodes.len(), 1);
     }
 }
@@ -1163,7 +1175,7 @@ fn overlapping_connect_consumption_preserves_occurrences_and_loop_first_record()
             .into_iter()
             .enumerate()
         {
-            assert!(sim.planning_start_actor(1));
+            assert!(sim.planning_start_actor(1, crate::rules::ruleset::RuleSet::empty_for_test()));
             assert_eq!(
                 sim.planning.paths[&1].current.as_ref().unwrap().payload()[5],
                 mission,

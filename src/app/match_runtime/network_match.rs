@@ -123,7 +123,12 @@ pub(crate) fn destroy_connection(
             }
         }
     }
-    // Error 0 outside WOL changes nothing more (0x005DA8F7).
+    // 0x005DA8F7..0x005DA90F: a WOL tournament game kills the House of a
+    // player who left (error 0). RESIDUAL: mode 4's ladder-stats call
+    // (0x005DA921..) is backend.
+    if error == ConnectionError::Left && sim.session().wol_tournament_game() {
+        sim.flag_house_to_die(owner);
+    }
     Some(ConnectionDestroyed {
         owner,
         key: error.csf_key(),
@@ -632,6 +637,10 @@ fn tally_kicks(
 
 /// One pass of `Wait_For_Players` for the in-match stall, before the
 /// runtime decides whether a frame may run.
+/// RESIDUAL: `0xEA`'s WM_TIMER 1 in a WOL tournament game
+/// (`0x0064AFDD..0x0064B0AA`) quits after repeated 5 s/10 s stalls without a
+/// WOL ping reply (`[0xB77CE0]`, NetUtil `0x007A411D`); the ping service is
+/// backend, so VERA keeps waiting.
 pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
     let now = now_ms >> 4;
     if state.match_state.sim_runtime.is_none() || !state.match_state.session_mode().is_network() {
@@ -743,8 +752,10 @@ pub(crate) fn request_leave(state: &mut AppState) {
     }
 }
 
-/// A row button (`0x0064AAE0`): the local row explains itself; another row
-/// sends the proposal to every other node and counts the local vote.
+/// A row button (`0x0064AAE0`): the local row explains itself; in a WOL
+/// tournament game another row is refused with `TXT_CANT_KICK`
+/// (`0x0064AB6A..0x0064AB98`); otherwise it sends the proposal to every
+/// other node and counts the local vote.
 pub(crate) fn propose_kick(state: &mut AppState, row: usize) {
     let nodes = nodes(&state.match_state.session);
     if row >= nodes.len() {
@@ -755,8 +766,16 @@ pub(crate) fn propose_kick(state: &mut AppState, row: usize) {
         append_line_and_show_last(state, &line);
         return;
     }
-    // RESIDUAL: WOL tournament games answer TXT_CANT_KICK; VERA has no
-    // tournament flag.
+    if state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .is_some_and(|runtime| runtime.simulation.session().wol_tournament_game())
+    {
+        let line = csf(state, "TXT_CANT_KICK");
+        append_line_and_show_last(state, &line);
+        return;
+    }
     state.match_state.session.request_kick_proposal(nodes[row]);
     add_vote(state, nodes[0], nodes[row]);
 }

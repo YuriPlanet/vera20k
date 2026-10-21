@@ -355,7 +355,7 @@ impl Simulation {
             "shared object id {stable_id} collided before particle-system insertion"
         );
         self.substrate.particle_systems.insert(sys);
-        self.reveal_particle_system(stable_id, Some(rules));
+        self.reveal_particle_system(stable_id, rules);
         Some(stable_id)
     }
 

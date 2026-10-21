@@ -1072,7 +1072,7 @@ impl Simulation {
         //519B3E..519B53 raises the BUILDING attachment with this Infantry
         //as actor, before the Engineer type gate. Synchronous actions may
         //change either object; reload the Infantry after returning.
-        let context = super::UninitContext::new(Some(rules), registry).with_effects(frame_effects);
+        let context = super::UninitContext::new(rules, registry).with_effects(frame_effects);
         self.dispatch_object_tag_event(building_id, 1, Some(engineer_id), None, context);
         let Some(engineer) = self.substrate.entities.get(engineer_id) else {
             return Ok(BuildingEntryResult::default());
@@ -1155,7 +1155,7 @@ impl Simulation {
                 self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
                 self.uninit_with_context(
                     engineer_id,
-                    super::UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+                    super::UninitContext::new(rules, registry).with_effects(frame_effects),
                 );
                 return Ok(BuildingEntryResult {
                     bridge_state_changed: receipt.bridge_state_changed,
@@ -1212,7 +1212,7 @@ impl Simulation {
             self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
             self.uninit_with_context(
                 engineer_id,
-                super::UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+                super::UninitContext::new(rules, registry).with_effects(frame_effects),
             );
             return Ok(BuildingEntryResult {
                 bridge_state_changed: changed,
@@ -1246,7 +1246,7 @@ impl Simulation {
         self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
         self.uninit_with_context(
             engineer_id,
-            super::UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+            super::UninitContext::new(rules, registry).with_effects(frame_effects),
         );
         Ok(BuildingEntryResult {
             bridge_state_changed: changed,
@@ -1294,11 +1294,11 @@ impl Simulation {
                 48,
                 Some(infantry_id),
                 None,
-                super::UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+                super::UninitContext::new(rules, registry).with_effects(frame_effects),
             );
             self.uninit_with_context(
                 infantry_id,
-                super::UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+                super::UninitContext::new(rules, registry).with_effects(frame_effects),
             );
             return Ok(entered);
         }
@@ -1319,7 +1319,7 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), super::FrameAdvanceError> {
-        self.assign_null_destination(infantry_id, Some(rules), registry, frame_effects);
+        self.assign_null_destination(infantry_id, rules, registry, frame_effects);
         self.scatter_from_building(infantry_id, building_id, rules, registry, frame_effects)
     }
 

@@ -258,7 +258,7 @@ impl ResponseSelection {
                 .assign_target_represented(
                     responder.entity_id,
                     Some(TargetKind::Entity(attacker_id)),
-                    Some(rules),
+                    rules,
                     None,
                     FrameEffects::default(),
                 )

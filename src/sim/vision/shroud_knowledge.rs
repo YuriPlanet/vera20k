@@ -350,8 +350,8 @@ impl Hash for SightAdmission {
 
 /// One retained native Type Sight integer, initialized by the existing
 /// production type reader. Exact zero and effective/clamped range are queries
-/// of this authority, never independently stored facts. Rules-less re-entry
-/// and snapshots retain the raw value (`InfantryUnlimbo51E0EF`,70AF87).
+/// of this authority, never independently stored facts. Re-entry and
+/// snapshots retain the raw value (`InfantryUnlimbo51E0EF`,70AF87).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct SightFacts {
     range: i32,
