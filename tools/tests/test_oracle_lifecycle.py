@@ -23,6 +23,7 @@ PRODUCERS = tuple('tools.projectile_oracle.' + name for name in (
      'tools.spatial_oracle.magnetron_aircraft_lift',
      'tools.spatial_oracle.foot_path_window',
      'tools.spatial_oracle.captured_building_sale',
+     'tools.spatial_oracle.anim_translucency',
      'tools.procedural_drawing_oracle.airstrike_beam')
 HELPERS = ('tools.native_slope', 'tools.projectile_oracle.collision_fixture',
            'tools.palette_oracle.check')
@@ -120,6 +121,13 @@ class OracleLifecycleTests(unittest.TestCase):
             for module in PRODUCERS:
                 with self.subTest(module=module, optimized=optimized):
                     self.check_lifecycle('help', module, optimized)
+
+    def test_anim_translucency_import_and_help_are_inert(self):
+        for operation in ('import', 'help'):
+            for optimized in (False, True):
+                with self.subTest(operation=operation, optimized=optimized):
+                    self.check_lifecycle(operation, 'tools.spatial_oracle.anim_translucency',
+                                         optimized)
 
     def test_explosion_rejects_retired_cache_before_inputs_deserialization_or_publication(self):
         module = 'tools.spatial_oracle.trigger_action_values'

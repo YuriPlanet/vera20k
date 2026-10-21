@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Physical FlakWH selection and SMKPUFF reader/constructor/AI/DrawIt/raster, three supplied color/A surfaces at four actual animation stages.",
+  "assumptions": [
+    "Each case uses a fresh shared TMP/palette VM. Original physical palette startup, Rules665650, Warhead75CEC0 and layered75D3A0, AnimType427530/427D00/427B50, SelectAnim48A4F0, Anim421EA0/424CE0/423AC0, DrawIt422CA0 and its selected 4AED70/Convert/raster bodies execute unchanged.",
+    "The shared palette owner explicitly opts into original RGB565 mask startup 4BAA73..4BAB06 with EDX3/EAX0/ESI2 before full palette/Convert construction. Global8A0DE8/EA, Convert+180/+184 and actual selected blitter+C are observed; no constructed mask field is patched. Other existing fixture callers retain their historical default setup. Original text is checked across startup.",
+    "Selected retail bytes come from the configured executable directory. MIX lookup and physical strings are transported through existing cached INI/asset owners; the original archive/physical INI parser is not executed. RULESMD, optional loose LANGRULE, and MPBattleMD supply the FlakWH read sequence. There is no scenario rules layer.",
+    "Inputs supply damage40, land-1, XYZ2688/5248/0, flags0x600, loop1, delay0, clock1000, game speed4, detail2, flat sparse cells7..15/17..25 and daylight intensity1000. Original discovery geometry startup establishes its projection divisors. Screen point80/70 and clip160x160 are supplied DrawIt inputs; no fired shot, whole map, Display traversal or building-slot/temporal composition runs.",
+    "Every draw starts from uniform RGB565/A/Z input. Complete final RGB565 words are losslessly run-length encoded; exact Z/A equality and zero stores are checked. Z65535 does not establish occluded-depth behavior. Draws must consume no RNG. Original text401000..7E0FFF and the listed original Anim/AnimType/Warhead/surface and observed raster-vtable ranges remain byte-for-byte unchanged."
+  ],
+  "substitutions": [
+    "Shared PaletteReader heap/delete/TLS/platform and immutable named-file transports; the existing TMP startup also supplies its sparse registration/map state. RGB565 surface/format inputs and spare-capacity registry storage are supplied; original mask startup, palette expansion and full Convert constructors compute the masks and tables.",
+    "Object Mark5F5850 returns1 and Display registration4A9720 returns1, as in AnimationFixture; both entries are recorded. No type/frame/selector/palette/decoder or pixel result is supplied."
+  ],
+  "entry_points": {
+    "warhead_factory": "0x0075E3B0",
+    "warhead_reader": "0x0075D3A0",
+    "select_anim": "0x0048A4F0",
+    "anim_type_factory": "0x00428B80",
+    "anim_type_reader": "0x00427D00",
+    "image_load": "0x00427B50",
+    "constructor": "0x00421EA0",
+    "start": "0x00424CE0",
+    "ai": "0x00423AC0",
+    "draw": "0x00422CA0",
+    "shape": "0x004AED70",
+    "plain_selector": "0x00490B90",
+    "rle_selector": "0x00490E50",
+    "format_masks_begin": "0x004BAA73",
+    "format_masks_end": "0x004BAB06"
+  },
+  "replay_command": "python -m tools.spatial_oracle.anim_translucency",
+  "payload_sha256": "0a5d8debb20a2d597ce86473a16fbcea9f8bb929e63619a90c7ca8e9fa23e13b"
+}

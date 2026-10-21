@@ -21,6 +21,8 @@
 //! - Part of the app layer — may depend on everything.
 
 #[cfg(test)]
+mod anim_translucency_gpu_tests;
+#[cfg(test)]
 mod bridge_shadow_gpu_tests;
 mod build_instances;
 #[cfg(test)]

@@ -416,7 +416,7 @@ pub(crate) fn build_display_effect_instances(
         let Some(entry) = atlas.get(&key) else {
             continue;
         };
-        let Some(alpha) = anim_instance_alpha_with_flags(
+        let Some(flags) = anim_instance_flags(
             config,
             anim.draw_flags(),
             anim.runtime().current_frame,
@@ -428,6 +428,21 @@ pub(crate) fn build_display_effect_instances(
             anim.draw_runtime(),
         ) else {
             continue;
+        };
+        // Ordinary DrawIt422CA0 -> 4AED70 carries Convert's selector into
+        // the packed RGB565 blitter, rather than alpha-blending the source.
+        // Original full draw controls: spatial_oracle/anim_translucency.
+        let (alpha, draw_state) = if remap_color.is_none()
+            && super::anim_draw::ordinary_anim_type(type_name, config)
+        {
+            (
+                1.0,
+                crate::render::draw_state::DrawState::from_native_selector(0, (flags & 6) as u8),
+            )
+        } else {
+            // Separate native draw arms and remapped compatibility sources
+            // without native palette metadata retain their existing material.
+            (anim_translucency_source_alpha(flags), Default::default())
         };
         let (origin_y, world_height) = (input.axis.origin_y, input.axis.world_height);
         let fire_depth = super::helpers::compute_sprite_depth_params_lifted(
@@ -455,6 +470,7 @@ pub(crate) fn build_display_effect_instances(
             tint,
             palette_light,
             alpha,
+            draw_state,
             // YDrawOffset is baked into the atlas offset, so it must also
             // ride the Z term to keep Z on the un-offset row, as natively.
             z_adjust: super::helpers::lifted_z_adjust(
@@ -522,6 +538,26 @@ pub(super) fn anim_instance_alpha_with_flags(
     game_detail_level: i32,
     draw_runtime: crate::sim::anim_class::AnimDrawRuntime,
 ) -> Option<f32> {
+    anim_instance_flags(
+        config,
+        base_flags,
+        current_frame,
+        shp_frame_count,
+        game_detail_level,
+        draw_runtime,
+    )
+    .map(anim_translucency_source_alpha)
+}
+
+/// Preserve the shared DrawIt admission and selected flags for material owners.
+pub(super) fn anim_instance_flags(
+    config: Option<&AnimTypeRuntimeConfig>,
+    base_flags: u32,
+    current_frame: i32,
+    shp_frame_count: i32,
+    game_detail_level: i32,
+    draw_runtime: crate::sim::anim_class::AnimDrawRuntime,
+) -> Option<u32> {
     let result = crate::sim::anim_class::anim_translucency_selection(
         crate::sim::anim_class::AnimTranslucencyInput {
             base_flags,
@@ -537,9 +573,7 @@ pub(super) fn anim_instance_alpha_with_flags(
             instance_ramp: i32::from(draw_runtime.translucency_ramp),
         },
     );
-    result
-        .draw
-        .then(|| anim_translucency_source_alpha(result.flags))
+    result.draw.then_some(result.flags)
 }
 
 pub(super) fn presentation_anim_frame_count(

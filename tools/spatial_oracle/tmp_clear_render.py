@@ -166,8 +166,8 @@ def theater_tile_files(m, raw, selected_tile, extension):
     return tiles, mapping
 
 
-def prepare(*, tmp_names=(), hills=False, prepared_files=None):
-    m, _types, inputs = prepare_shared(body=True)
+def prepare(*, tmp_names=(), hills=False, prepared_files=None, native_format_masks=False):
+    m, _types, inputs = prepare_shared(body=True, native_format_masks=native_format_masks)
     u = m.u
     # Actual WinMain6BDF5F ->5355D0 ->4E6190 calls both original CPU probes.
     # Their MMX/CMOV bytes govern7DE200 palette construction, independently

@@ -1,5 +1,15 @@
 # Native comparison workflow
 
+### Ordinary animation translucency
+
+`python -m tools.spatial_oracle.anim_translucency --check` runs physical FlakWH
+selection and SMKPUFF's original reader, constructor, AI, DrawIt and RGB565 raster.
+Three supplied background/A surfaces at four actual stages retain full color
+outputs and checked unchanged Z/A planes. The actual Display-effect emitter,
+lowering and GPU consumer is `anim_translucency_gpu_tests`; building-slot
+temporal state and complete battles are outside the comparison.
+See [inputs and boundaries](spatial_oracle/anim_translucency.md).
+
 ### Computer sale of captured buildings
 
 `python -m tools.spatial_oracle.captured_building_sale --check` executes the
