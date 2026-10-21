@@ -1249,7 +1249,8 @@ use crate::util::save_codec;
 // type lists in processed Rules records.
 // 469 -> 470: ScenarioSession retains the WOL tournament value, the clan
 // lists and FixedAlliance.
-const SNAPSHOT_VERSION: u32 = 470;
+// 470 -> 471: retained Type.Nominal and Infantry+6D9 building-survivor flag.
+const SNAPSHOT_VERSION: u32 = 471;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -10250,6 +10251,7 @@ mod tests {
         // 467 -> 468: retained Country ParentCountry+98.
         // 468 -> 469: retained Country starting-veterancy lists.
         // 469 -> 470: WOL tournament value, clan lists and FixedAlliance.
-        assert_eq!(super::SNAPSHOT_VERSION, 470);
+        // 470 -> 471: retained Type.Nominal and Infantry survivor marker.
+        assert_eq!(super::SNAPSHOT_VERSION, 471);
     }
 }

@@ -108,20 +108,20 @@
 //! Whole Added_To_Game and Removed_From_Game are read, not executed; only
 //! their capacity/amount transfer slices have executable controls here.
 //!
-//! RESIDUAL: the survivor flag `+0x6D9` is not written. SpawnSurvivors sets it
+//! The retained survivor flag `+0x6D9` is written by SpawnSurvivors
 //! (`0x00443111..0x00443127`), before the survivor's Unlimbo, on a `Nominal=`
 //! survivor (the Technician) of a building with Buildup art (Init_Managers sets
 //! `+0x6E9` when the type has a Buildup shape, `0x00442CAA..0x00442CCF`); the
-//! sale crew sets it after a successful Unlimbo (`0x0044A733..0x0044A747`;
-//! VERA has no sale crew). Nothing clears it. Added_To_Game skips a flagged
+//! sale crew sets it after a successful Unlimbo (`0x0044A733..0x0044A747`).
+//! Nothing clears it. Added_To_Game skips a flagged
 //! infantry on every Unlimbo while Removed_From_Game still decrements it on
 //! every Limbo, so each time a flagged Technician leaves the map (dies,
 //! garrisons, boards) native `+0x5578` drops by one for good. Trigger: a
 //! Technician survivor of an armed building (the 15% crew roll) leaving the
 //! map in a normal (non-short) game. Effect: native's sum can reach zero while
 //! objects stand (the house is defeated and they are blown up) or stay
-//! negative when nothing is left (the house is never defeated); VERA does
-//! neither.
+//! negative when nothing is left (the house is never defeated). Retain this
+//! native asymmetry instead of rebuilding counts from current objects.
 //!
 //! RESIDUAL: while the game-active byte `[0x00A8E9A0]` is clear, Limbo skips
 //! everything after `0x00445AC6`, Recount and TechnoClass::Limbo included;
@@ -773,7 +773,11 @@ impl HouseTracking {
             EntityCategory::Unit => &mut self.active_unit_types,
             EntityCategory::Aircraft if !dont_score => &mut self.active_aircraft_types,
             EntityCategory::Structure if !dont_score => &mut self.active_building_types,
-            EntityCategory::Infantry if !dont_score => &mut self.active_infantry_types,
+            //502C3C..502C7A: force value above still changes. Removed does
+            //not test6D9, so repeated placement can retain negative counts.
+            EntityCategory::Infantry if !dont_score && !entity.is_nominal_survivor() => {
+                &mut self.active_infantry_types
+            }
             _ => return,
         };
         let count = counts.entry(entity.type_ref()).or_default();

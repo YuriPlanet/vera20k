@@ -5974,6 +5974,16 @@ impl RuleSet {
             }
         }
         self.general.infantry_blink_disguise_time.hash(&mut hasher);
+        let nominal_types = self
+            .object_list
+            .iter()
+            .filter(|object| object.nominal())
+            .map(|object| ((object.category, object.id.to_ascii_uppercase()), true))
+            .collect::<BTreeMap<_, _>>();
+        if !nominal_types.is_empty() {
+            b"retained-type-nominal-v1".hash(&mut hasher);
+            nominal_types.hash(&mut hasher);
+        }
         // The native type reader retains these flags through missing keys
         // and later process passes. Equal current source text can therefore
         // yield different disguise admission, reveal and observer behavior.
