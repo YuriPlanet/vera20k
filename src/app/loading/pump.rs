@@ -415,7 +415,7 @@ impl LoadingRequest {
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<PreparedScenarioLoad> {
         let mut initial = self.load_initial_with_assets(ra2_dir, assets, native_rules, progress)?;
-        initial.retain_process_mapgen(mapgen_retention, resident);
+        initial.retain_process_state(mapgen_retention, resident);
         self.prepare_initial(initial)
     }
 

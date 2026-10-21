@@ -1669,6 +1669,8 @@ pub(crate) struct MapLoadInitial {
     retained_process_mapgen: Option<crate::rng_continuation::MapGenRngContinuation>,
     /// Inactive current-bit defaults from the outgoing Scenario's owners.
     retained_campaign_special_flags: Option<crate::map::basic::SpecialFlagsSection>,
+    /// ClearScene retains local values across fresh Scenario reads.
+    retained_local_variables: Option<crate::sim::trigger_runtime::RetainedLocalVariables>,
     /// Ordered launch-generation Building constructor effects. Preview traces
     /// never reach this owner; fixed maps carry none.
     generated_construction_trace: Option<crate::map::rmg::RmgConstructionTrace>,
@@ -1679,7 +1681,9 @@ impl MapLoadInitial {
     /// the one process owner for this inactive attempt. Authored loading does
     /// not reset or advance MapGen before installation (ReadScenario684620 ->
     /// Full_Init/Fill); failures can discard this snapshot without losing it.
-    pub(super) fn retain_process_mapgen(
+    /// The same inactive transfer retains current SpecialFlags and local values;
+    /// ClearScene clears global variables, but leaves ReadLocal's prior values.
+    pub(super) fn retain_process_state(
         &mut self,
         retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
         mut resident: Option<&mut crate::sim::world::Simulation>,
@@ -1687,6 +1691,9 @@ impl MapLoadInitial {
         self.retained_campaign_special_flags = resident
             .as_deref()
             .map(crate::sim::world::Simulation::retained_campaign_special_flags);
+        self.retained_local_variables = resident
+            .as_deref()
+            .map(crate::sim::world::Simulation::retain_local_variables_for_fresh_load);
         if let Some(generated) = self.mapgen_rng_continuation.take() {
             retention.publish_mapgen_continuation(resident.as_deref_mut(), generated);
             self.mapgen_rng_continuation =
@@ -1717,6 +1724,7 @@ impl MapLoadInitial {
             mapgen_rng_continuation: None,
             retained_process_mapgen: None,
             retained_campaign_special_flags: None,
+            retained_local_variables: None,
             generated_construction_trace: None,
         }
     }
@@ -1768,6 +1776,54 @@ fn construction_trace_after_fill(
 #[cfg(test)]
 mod fresh_transport_tests {
     use super::*;
+
+    #[test]
+    fn fresh_load_retains_local_values_without_mutating_the_outgoing_world() {
+        let map = |variables: &str| {
+            let mut map = crate::map::rmg::emit::empty_map_file(
+                &crate::map::rmg::RmgOptions::default(),
+                16,
+                16,
+            );
+            map.local_variables = crate::map::variable_names::parse_local_variables(
+                &IniFile::from_str(&format!("[VariableNames]\n{variables}")),
+            );
+            map
+        };
+        let mut resident = Simulation::new();
+        resident.initialize_trigger_definitions(
+            &map("7=Prior,1\n8=ClearLater,1\n"),
+            &Default::default(),
+            None,
+            None,
+        );
+        let resident_hash = resident.state_hash();
+        let mut initial = MapLoadInitial::from_test_map_source(
+            map("7=Renamed\n8=Explicit,0\n"),
+            LoadedMapSource::Loose {
+                path: PathBuf::from("LOCAL.MAP"),
+                payload_len: 1,
+                source_sha256: crate::util::sha256::sha256_hex(b"local retention control"),
+            },
+        );
+        initial.retain_process_state(&mut Default::default(), Some(&mut resident));
+        // A failed attempt may discard this initial state; the resident is
+        // unchanged until a successful load installs the replacement.
+        assert_eq!(resident.state_hash(), resident_hash);
+        let mut staged = Simulation::new();
+        staged.inherit_local_variables_for_fresh_load(
+            initial.retained_local_variables.take().unwrap(),
+        );
+        staged.initialize_trigger_definitions(&initial.map_data, &Default::default(), None, None);
+        let mut cold = Simulation::new();
+        cold.initialize_trigger_definitions(&initial.map_data, &Default::default(), None, None);
+        assert_ne!(
+            staged.state_hash(),
+            cold.state_hash(),
+            "retained local state is installed"
+        );
+        assert_eq!(resident.state_hash(), resident_hash);
+    }
 
     #[test]
     fn generated_missing_journal_stays_generated_until_its_post_fill_error() {
@@ -1935,6 +1991,7 @@ impl MapLoadInitial {
             mapgen_rng_continuation,
             retained_process_mapgen: _,
             retained_campaign_special_flags: _,
+            retained_local_variables: _,
             generated_construction_trace,
         } = self;
         assert_eq!(fresh_scenario_context.physical_source(), &map_source);
@@ -2498,6 +2555,7 @@ pub(crate) fn load_map_initial_with_assets(
             mapgen_rng_continuation: Some(mapgen_rng_continuation),
             retained_process_mapgen: None,
             retained_campaign_special_flags: None,
+            retained_local_variables: None,
             generated_construction_trace: Some(generated_construction_trace),
         });
     }
@@ -2560,6 +2618,7 @@ pub(crate) fn load_map_initial_with_assets(
         mapgen_rng_continuation: None,
         retained_process_mapgen: None,
         retained_campaign_special_flags: None,
+        retained_local_variables: None,
         generated_construction_trace: None,
     })
 }
@@ -2686,6 +2745,7 @@ pub(crate) fn load_map_from_initial(
         mapgen_rng_continuation,
         retained_process_mapgen,
         retained_campaign_special_flags,
+        retained_local_variables,
         generated_construction_trace,
     } = initial;
     let signed_new_ini_format = map_data.basic.new_ini_format.unwrap_or(0);
@@ -2979,6 +3039,9 @@ pub(crate) fn load_map_from_initial(
     install_startup_session_mode(&mut staged_simulation, &startup);
     staged_simulation.bind_shared_cell_dummy(shared_cell_dummy.clone());
     staged_simulation.install_waypoints(&map_data.waypoints);
+    if let Some(prior) = retained_local_variables {
+        staged_simulation.inherit_local_variables_for_fresh_load(prior);
+    }
     staged_simulation.initialize_trigger_definitions(
         &map_data,
         &team_ai_registry,

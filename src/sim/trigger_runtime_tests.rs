@@ -12,6 +12,115 @@ use crate::sim::replay::{ReplayHeader, ReplayLog, ReplayRunner};
 use crate::sim::snapshot::GameSnapshot;
 use crate::sim::world::{FrameEffects, MasterFrameTestRung, Simulation, TickLane};
 
+#[test]
+fn local_reload_preserves_unnamed_and_unassigned_values() {
+    // ReadLocal689B2E clears names only;689C14 skips a missing second token.
+    let map = |variables: &str| {
+        crate::map::map_file::MapFile::from_bytes(
+            format!("{READER_MAP_PREFIX}[VariableNames]\n{variables}").as_bytes(),
+        )
+        .unwrap()
+    };
+    let mut sim = Simulation::new();
+    sim.initialize_trigger_definitions(
+        &map("7=Kept,1\n8=AlsoKept,1\n9=Cleared,1\n"),
+        &Default::default(),
+        None,
+        None,
+    );
+    sim.initialize_trigger_definitions(
+        &map("8=Renamed\n9=ExplicitClear,0\n"),
+        &Default::default(),
+        None,
+        None,
+    );
+    assert!(sim.trigger_local_is_set_for_test(7), "unnamed slot");
+    assert!(sim.trigger_local_is_set_for_test(8), "no assignment token");
+    assert!(!sim.trigger_local_is_set_for_test(9), "explicit assignment");
+}
+
+#[test]
+fn local_reload_matches_original_reader_histories() {
+    let native = crate::test_fixture::json("tools/input_oracle/campaign_start.json");
+    for history in native["local_variable_controls"].as_array().unwrap() {
+        let mut outgoing = Simulation::with_seed(31);
+        outgoing.trigger_runtime.locals_set = history["initial_set"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_u64().unwrap() as u32)
+            .collect();
+        for pass in history["passes"].as_array().unwrap() {
+            let mut source = READER_MAP_PREFIX.to_owned();
+            for section in pass["ordered_sections"].as_array().unwrap() {
+                source.push_str(&format!("[{}]\n", section["name"].as_str().unwrap()));
+                for pair in section["entries"].as_array().unwrap() {
+                    source.push_str(&format!(
+                        "{}={}\n",
+                        pair[0].as_str().unwrap(),
+                        pair[1].as_str().unwrap()
+                    ));
+                }
+            }
+            let map = crate::map::map_file::MapFile::from_bytes(source.as_bytes()).unwrap();
+            let mut incoming = Simulation::with_seed(31);
+            let rng = incoming.rng_state();
+            incoming.inherit_local_variables_for_fresh_load(
+                outgoing.retain_local_variables_for_fresh_load(),
+            );
+            install_map_triggers(&mut incoming, &map);
+            let expected: BTreeSet<u32> = pass["set_slots"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_u64().unwrap() as u32)
+                .collect();
+            assert_eq!(incoming.trigger_runtime.locals_set, expected, "{history}");
+            let names: std::collections::BTreeMap<_, _> = map
+                .local_variables
+                .values()
+                .map(|variable| (variable.index.to_string(), variable.name.clone()))
+                .collect();
+            assert_eq!(serde_json::to_value(names).unwrap(), pass["names"]);
+            assert_eq!(incoming.trigger_runtime.dirty, [false; 4]);
+            assert_eq!(incoming.rng_state(), rng);
+            outgoing = incoming;
+        }
+    }
+}
+
+#[test]
+fn local_retention_reaches_incoming_trigger_and_saved_world() {
+    let mut outgoing = Simulation::new();
+    install_map_triggers(
+        &mut outgoing,
+        &trigger_fixture_map("[VariableNames]\n7=MissionFlag,1\n"),
+    );
+    let mut incoming = Simulation::new();
+    incoming
+        .inherit_local_variables_for_fresh_load(outgoing.retain_local_variables_for_fresh_load());
+    install_map_triggers(
+        &mut incoming,
+        &trigger_fixture_map(
+            "[VariableNames]\n7=Renamed\n\
+             [Triggers]\nT=<none>,<none>,Retained,0,1,1,1,0\n\
+             [Events]\nT=2,13,0,0,36,0,7\n\
+             [Actions]\nT=1,28,0,12,0,0,0,0,A\n\
+             [Tags]\nTAG=0,Retained,T\n",
+        ),
+    );
+    incoming.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
+    ordinary_master_frame(&mut incoming, None, None, true);
+    assert!(
+        incoming.global_variables()[12],
+        "retained local admits the incoming trigger"
+    );
+    let bytes = GameSnapshot::save_validated(&incoming, 0, 0, "local retention", 0);
+    let saved = GameSnapshot::load(&bytes).unwrap();
+    assert!(saved.sim.trigger_local_is_set_for_test(7));
+    assert!(saved.sim.global_variables()[12]);
+}
+
 #[path = "trigger_runtime_mind_control_callback_tests.rs"]
 mod mind_control_callbacks;
 #[path = "trigger_runtime_mind_control_tests.rs"]

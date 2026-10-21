@@ -13,7 +13,8 @@ use crate::rules::ini_value::{crt_atoi, strtok};
 pub struct LocalVariable {
     pub index: u32,
     pub name: String,
-    pub initially_set: bool,
+    /// No second token leaves the Scenario's prior value unchanged.
+    pub initially_set: Option<bool>,
 }
 
 pub type LocalVariableMap = HashMap<u32, LocalVariable>;
@@ -36,15 +37,18 @@ pub fn parse_local_variables(ini: &IniFile) -> LocalVariableMap {
         };
         let mut tokens = strtok(section.read_name(key, 0x80).unwrap_or(""), &[',']);
         let name = tokens.next().unwrap_or("").to_string();
-        let initially_set = tokens.next().is_some_and(|value| crt_atoi(value) != 0);
-        locals.insert(
+        let initially_set = tokens.next().map(|value| crt_atoi(value) != 0);
+        // ReadLocal689C14 skips the value write when the token is absent.
+        // Different INI keys can alias one atoi slot within this same pass.
+        let variable = locals.entry(index).or_insert(LocalVariable {
             index,
-            LocalVariable {
-                index,
-                name,
-                initially_set,
-            },
-        );
+            name: String::new(),
+            initially_set: None,
+        });
+        variable.name = name;
+        if initially_set.is_some() {
+            variable.initially_set = initially_set;
+        }
     }
 
     if !locals.is_empty() {
@@ -70,7 +74,7 @@ mod tests {
             Some(&LocalVariable {
                 index: 0,
                 name: "BridgeFixed".to_string(),
-                initially_set: true,
+                initially_set: Some(true),
             })
         );
         assert_eq!(
@@ -78,7 +82,7 @@ mod tests {
             Some(&LocalVariable {
                 index: 7,
                 name: "SpyEntered".to_string(),
-                initially_set: false,
+                initially_set: Some(false),
             })
         );
     }
@@ -90,6 +94,6 @@ mod tests {
         let vars = parse_local_variables(&ini);
         assert_eq!(vars.len(), 1);
         assert_eq!(vars[&0].name, "Replaced");
-        assert!(vars[&0].initially_set);
+        assert_eq!(vars[&0].initially_set, Some(true));
     }
 }

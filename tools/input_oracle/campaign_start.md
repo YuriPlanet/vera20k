@@ -44,6 +44,7 @@ in scratch, not this directory.
 | `difficulty_cases` | Full_Init686B6A..686C48 for Options0..4; only0..2 are ordinary campaign-selector inputs |
 | `basic_start` | Selected Basic.Action/Home/Alt readers, SpecialFlags6B8CA0, selected Waypoint ReadInt/divide/remainder and opening-view cell-center kernel before world ground-height/Radar calls |
 | `special_controls`, `reset_control` | Native SpecialFlags read and SetDefaults683610; current-bit defaults, exact case, four distinct bit3/bit15 DestroyableBridges controls, and repeated selection's Home/Alt reset |
+| `local_variable_controls` | Whole ReadLocal689B20 across seven reads in three retained histories; absent slots/tokens, exact section case, numeric values and source-ordered atoi aliases. All three complete RNG buffers and original code remain unchanged. Names are fresh each read; values retain their prior unless explicitly assigned. |
 | `campaign_start_houses.json` / `stock_rows` | ALL/SOV×Options0..2: selected native Rules prerequisites, Country/Side/SuperWeaponType registration, full5009B0/500B40 House creation/read/SetDifficulty, then current-house68ACAA..68AD2F |
 | `controls`, `edge_controls`, `allies_reader_controls` | Eleven credits/TechLevel/no-Houses/Allies histories,20 original ReadEdge475980 controls and27 original ReadHousesList475260 controls |
 | `color_controls` | 22 full ReadColor474A90 calls and24 full Country511850 reads; current0/3, whole-section admission, missing/stored-empty/physical-empty, case, unknown/numeric and31/32-byte boundaries |

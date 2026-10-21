@@ -658,6 +658,14 @@ pub struct TriggerRuntime {
     stop_before_action: Option<i32>,
 }
 
+/// Draw-free transfer of the outgoing Scenario's local values into a fresh
+/// Scenario. TriggerRuntime remains authoritative; saved restoration does not
+/// use this transfer. ClearScene6851F0 clears globals, but retains these slots.
+#[derive(Debug)]
+pub struct RetainedLocalVariables {
+    set: BTreeSet<u32>,
+}
+
 impl PartialEq for TriggerRuntime {
     fn eq(&self, other: &Self) -> bool {
         self.globals_set == other.globals_set
@@ -1068,6 +1076,21 @@ impl Simulation {
     pub(crate) fn trigger_definitions_prepared(&self) -> bool {
         self.trigger_runtime.definitions_prepared
     }
+
+    /// Snapshot the values that SetDefaults683610 and ClearScene6851F0 leave
+    /// intact. Names come from the incoming map; no live Tag state transfers.
+    pub fn retain_local_variables_for_fresh_load(&self) -> RetainedLocalVariables {
+        RetainedLocalVariables {
+            set: self.trigger_runtime.locals_set.clone(),
+        }
+    }
+
+    /// Install the outgoing values before ReadLocal689B20 and before any new
+    /// Tag exists. This is a fresh-load handoff, never a saved-world overlay.
+    pub fn inherit_local_variables_for_fresh_load(&mut self, prior: RetainedLocalVariables) {
+        assert!(!self.trigger_runtime.definitions_prepared);
+        self.trigger_runtime.locals_set = prior.set;
+    }
     /// Full_Init687984..6879CB registry ingress. No live instance is created
     /// until a Cell/Object attachment or Fill classification requires it.
     pub fn initialize_trigger_definitions(
@@ -1077,15 +1100,25 @@ impl Simulation {
         eva: Option<&crate::rules::sound_ini::EvaRegistry>,
         sounds: Option<&crate::rules::sound_ini::SoundRegistry>,
     ) {
+        // ReadLocal689B2E clears names only. Missing second tokens and slots
+        // absent from the map keep their current value;689C24 writes explicit
+        // assignments directly without setter notifications or RNG draws.
+        let mut locals_set = std::mem::take(&mut self.trigger_runtime.locals_set);
+        for variable in map.local_variables.values() {
+            match variable.initially_set {
+                Some(true) => {
+                    locals_set.insert(variable.index);
+                }
+                Some(false) => {
+                    locals_set.remove(&variable.index);
+                }
+                None => {}
+            }
+        }
         self.trigger_runtime = TriggerRuntime {
             definitions: RuntimeDefinitions::read_map(map, teams, eva, sounds),
             definitions_prepared: true,
-            locals_set: map
-                .local_variables
-                .values()
-                .filter(|v| v.initially_set)
-                .map(|v| v.index)
-                .collect(),
+            locals_set,
             ..TriggerRuntime::default()
         };
     }
