@@ -201,7 +201,9 @@ pub(super) fn request_ladder(state: &mut AppState) {
 pub(super) fn restart(state: &mut AppState) {
     mirror(state).clear();
     service::request(state, WolServiceRequest::ListBuddies);
-    refresh(state);
+    if !super::quick_match::mode_active(state) {
+        refresh(state);
+    }
     let buddies = mirror(state);
     buddies.ladder_queue = buddies.names.iter().cloned().collect();
     request_ladder(state);

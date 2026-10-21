@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Physical GAPOWR_A attached-Anim whole DrawIfVisible admission, original sampled Logic FPS and retained minimum-rate hysteresis, three Options detail priors and an offscreen control.",
+  "assumptions": [
+    "One actual451890 slot at constructor-selected frame0 is retained across16 draws. Physical GAPOWR and GAPOWR_A readers and real Country/House/Building/Anim constructors run. Stock DetailLevel2, noShadow, image, frame, coordinates and light are not changed for the performance controls.",
+    "Supplied component priors are the admitted alive/placed/Guard Building, default Country, human/current-player/LightGold House, sparse flat/revealed Cells, ordinary camera(-384,380), clock1000 and game speed4. Complete Scenario/Options UI/Unlimbo/GrandOpening/Display traversal is excluded.",
+    "Empty performance counters/timer/latch are installed once. Original55AF40/55AF50 set minimum15/buffer5. Each published FPS bucket runs original55AFB0..55AFD9 counter prefixes and55E33B Throttle tail at960ms steps. No FPS or latch writes follow startup and no extra55AF60 query precedes DrawIt. Options0/1/2 are explicitly supplied process priors, not ART changes.",
+    "Whole422C70 calls original Object5F4B10 and DrawIt422CA0. Actual55AF60 return/latch, ordered gate PCs, Surface calls and before/after lifecycle/identity/RNG are retained. Offscreen/restored cameras are declared earlier-projection controls, including a fresh low-FPS bucket before either draw queries its retained latch. One original423AC0 AI visit follows the draw sequence.",
+    "The existing base TMP/palette setup and its supplied RGB565 format priors are retained unchanged. Full original opaque/noShadow Surface/selector/raster calls may execute, but color words, blend formulas and Convert-mask parity are not assertions of this corpus. No dependency on the separate translucency-mask helper changes is needed.",
+    "Only pristine missing listener-vector headers execute their original CRT prefixes before Anim construction. Established live headers remain unchanged. Original text and listed class/observed pixel vtable ranges are checked unchanged; this is not an assertion about all global data."
+  ],
+  "substitutions": [
+    "Cached lexical INI and immutable named-file transports supply physical strings/bytes. Original INI parsing and native archive search are outside the boundary. Existing heap/delete/TLS/GUID/Interlocked/platform transports and spare registry storage are reused.",
+    "During performance steps only timeGetTime supplies declared milliseconds; first-timer CRT atexit7C978A receives platform success only from caller55E36F. Original6C8C40 shift, timer/counter/Throttle and55AF60 policy execute. Process-exit callback and full Logic/Main_Tick are excluded.",
+    "Mark5F5850 and Display registration4A9720 return1 as recorded presentation sinks. No native FPS query, hidden/detail/image gate, coordinate/frame, lifecycle, Surface or pixel return is substituted."
+  ],
+  "entry_points": {
+    "building_type": "0x0045DD90",
+    "building_reader": "0x0045FE50",
+    "country": "0x005113F0",
+    "house": "0x004F54A0",
+    "building": "0x0043B740",
+    "anim_type_reader": "0x00427D00",
+    "slot": "0x00451890",
+    "anim": "0x00421EA0",
+    "ai": "0x00423AC0",
+    "draw_if_visible": "0x00422C70",
+    "object_draw": "0x005F4B10",
+    "tactical_projection": "0x006D2140",
+    "draw_it": "0x00422CA0",
+    "logic_counter": "0x0055AFB0",
+    "throttle_tail": "0x0055E33B",
+    "minimum_query": "0x0055AF60",
+    "shape": "0x004AED70"
+  },
+  "replay_command": "python -m tools.spatial_oracle.building_anim_detail",
+  "payload_sha256": "f2fae9472438b53d62e5d78fa385593f83656c0e9f713f2137c54110f8df8069"
+}

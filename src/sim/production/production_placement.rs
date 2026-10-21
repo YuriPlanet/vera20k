@@ -294,6 +294,7 @@ pub(crate) fn place_production_with_overlays(
                 rules,
                 producer,
                 entity_id,
+                (0, 0),
                 overlay_registry,
                 effects,
             );

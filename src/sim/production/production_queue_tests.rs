@@ -162,6 +162,7 @@ fn busy_factory_exit_attempt(
         rules,
         1,
         product,
+        (0, 0),
         None,
         crate::sim::world::FrameEffects::default(),
     ) == crate::sim::ai_base_building::BuildingExit::Placed)
@@ -2513,6 +2514,7 @@ fn a_producer_without_weapons_factory_takes_the_generic_exit_arm() {
                 &rules,
                 1,
                 product,
+                (0, 0),
                 None,
                 crate::sim::world::FrameEffects::default(),
             ),
@@ -2616,6 +2618,7 @@ fn a_computer_barracks_sends_its_infantry_to_a_listed_post() {
                 &rules,
                 1,
                 product,
+                (0, 0),
                 None,
                 crate::sim::world::FrameEffects::default(),
             ),

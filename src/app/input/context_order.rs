@@ -1299,9 +1299,88 @@ pub(super) fn selection_can_attack_move(
         .all(|&sid| entity_can_attack_move(sim, rules, sid))
 }
 
+/// What Techno What_Action_OnObject's key rungs answer
+/// (`0x00700006..0x00700217`), for the cursor and the click alike.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ObjectKeyAction {
+    /// Shift's ToggleSelect (8, `0x00700107`). Over a Terrain object, which
+    /// cannot be selected, the release selects nothing and keeps the
+    /// selection.
+    ToggleSelect,
+    /// Ctrl+Alt's GuardArea (0x1A, `0x007001DD`, [`guard_area_admitted`]).
+    GuardArea,
+    /// Alt's Move (`0x007001E9..0x00700217`), in any chord. Foot
+    /// `0x004D74E0` moves the receiver to the object or near it.
+    Move,
+}
+
+/// The key rungs of `actor_id`'s What_Action over an object: `target` is a
+/// Techno, or None for a Terrain object, which is no ally for the guard rung
+/// (`0x004F9A90` reads its vt+0x3C, TerrainClass's null house). They follow
+/// the berserk exit and warp arm (`0x006FFEC9`, `0x006FFF03`). Shift without
+/// Ctrl answers ToggleSelect for a player's object that is not mission-only
+/// (`0x007000EB..0x00700107`); Alt, Ctrl+Alt and Ctrl+Shift+Alt answer Move
+/// for a player's controllable object (vt+0xA0) once the guard rung refused.
+/// None leaves the later rungs (for a Terrain object, plain, Ctrl and
+/// Ctrl+Shift: [`crate::app::input::cursor::terrain_object_feedback`]).
+///
+/// RESIDUALS:
+/// - Over a Terrain object Ctrl+Shift answers the Cell in the cursor and the
+///   click. Native takes the plain answer (NoMove for a player's Unit or
+///   Infantryman), moves near the object and the attack-move chord remaps
+///   the Move (`0x006FFBEC`); VERA attack-moves to a Cell near the tree.
+///   Only the destination differs. Rare.
+/// - A selected building's Alt or Ctrl+Alt over a Terrain object keeps its
+///   Cell answer (its factory rungs, `0x0044744E..0x0044750B`, are not asked
+///   with a Terrain object). Rare.
+pub(super) fn object_key_action(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor_id: u64,
+    target: Option<u64>,
+    modifier: OrderModifier,
+    force_move_key: bool,
+) -> Option<ObjectKeyAction> {
+    let actor = sim.entities().get(actor_id)?;
+    if actor.berserk.is_active() || actor.is_warped_out() {
+        return None;
+    }
+    let human = sim.house_is_human_player(actor.owner());
+    if modifier == OrderModifier::Shift {
+        return (human && !actor.is_mission_only()).then_some(ObjectKeyAction::ToggleSelect);
+    }
+    if modifier == OrderModifier::GuardArea
+        && target.is_some()
+        && guard_area_admitted(sim, rules, actor_id, target)
+    {
+        return Some(ObjectKeyAction::GuardArea);
+    }
+    let alt = matches!(
+        modifier,
+        OrderModifier::ForceMove | OrderModifier::GuardArea
+    ) || (modifier == OrderModifier::AttackMove && force_move_key);
+    (alt && human && sim.techno_player_controllable(actor_id, rules))
+        .then_some(ObjectKeyAction::Move)
+}
+
+/// The object under the click as [`object_key_action`] takes it: a Techno
+/// the player may see (`hover`; an enemy the player cannot see is no object
+/// to click) or a Terrain object, with the Techno's id as its target.
+fn object_key_target(
+    object: HoverObject,
+    hover: Option<&HoverTargetKindWithId>,
+) -> Option<(u64, Option<u64>)> {
+    match object {
+        HoverObject::Terrain(id) => Some((id, None)),
+        HoverObject::Techno(_) => hover
+            .filter(|target| target.kind != HoverTargetKind::HiddenEnemy)
+            .map(|target| (target.stable_id, Some(target.stable_id))),
+    }
+}
+
 /// Techno object700191..700217 / Cell700830..700894. The keyboard chord
-/// alone is not a Guard action. Object targets must be allied; bare ground
-/// requires IsActive7010D0. Waypoint/patrol input is not exposed by VERA.
+/// alone is not a Guard action. Object targets must be allied and the actor
+/// no Aircraft (RTTI 2, 7001B4..7001BA); bare ground requires IsActive7010D0. Waypoint/patrol input is not exposed by VERA.
 /// A berserk object answers 0 before the rung (object `0x006FFEC9`, Cell
 /// `0x00700609`). Shared by the hover and click producers; no simulation
 /// state is changed.
@@ -1782,9 +1861,22 @@ pub(crate) fn try_queue_context_order_at_screen_point(
         // keep their native base-action-zero route below.
         if modifier == OrderModifier::Shift
             && !selected_ids.is_empty()
-            && hover
-                .as_ref()
-                .is_some_and(|target| target.kind != HoverTargetKind::HiddenEnemy)
+            && hover_object
+                .and_then(|object| object_key_target(object, hover.as_ref()))
+                .is_some_and(|(object, target)| {
+                    cursor_owner(sim, &resources.rules, &current_objects, object).is_some_and(
+                        |owner| {
+                            object_key_action(
+                                sim,
+                                &resources.rules,
+                                owner,
+                                target,
+                                modifier,
+                                force_move_key,
+                            ) == Some(ObjectKeyAction::ToggleSelect)
+                        },
+                    )
+                })
         {
             return false;
         }
@@ -2078,9 +2170,28 @@ pub(crate) fn try_queue_context_order_at_screen_point(
         );
         let attack_receivers = attack_dispatch.receivers;
         let select_fallback = attack_dispatch.select_fallback;
+        if terrain_target.is_none()
+            && let TargetKind::Entity(target_id) = attack_target
+        {
+            let receivers: Vec<u64> = attack_receivers.iter().copied().collect();
+            match object_click_release(
+                sim,
+                &resources.rules,
+                &current_objects,
+                &receivers,
+                target_id,
+                &resources.overlay_registry,
+                force_fire,
+            ) {
+                LeftRelease::Select => return false,
+                LeftRelease::Nothing => return true,
+                LeftRelease::Dispatch => {}
+            }
+        }
         // A blocked stationary actor cannot suppress another selected actor's
-        // accepted attack. If only Action7 remains, allow click-selection;
-        // Action0 instead consumes the click without issuing a move/attack.
+        // accepted attack. An owner this branch took has decided the release
+        // above; otherwise, with every receiver taken, Action7 alone allows
+        // click-selection and Action0 consumes the click.
         let selected_ids: Vec<_> = selected_ids
             .into_iter()
             .filter(|id| !attack_receivers.contains(id))
@@ -2361,10 +2472,24 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             // (`0x004DDF45..0x004DDF82`), which only GameMode 0 reaches. An
             // enemy the player cannot see is no object to click, as for the
             // cursor: the Cell under it takes the click.
-            let force_move_target = hover
-                .as_ref()
-                .filter(|target| force_move && target.kind != HoverTargetKind::HiddenEnemy)
-                .map(|target| target.stable_id);
+            let force_move_target = hover_object
+                .and_then(|object| object_key_target(object, hover.as_ref()))
+                .filter(|&(object, target)| {
+                    // A Techno's Ctrl+Alt Move goes through its guard click.
+                    (force_move || target.is_none())
+                        && cursor_owner(sim, &resources.rules, &current_objects, object)
+                            .is_some_and(|owner| {
+                                object_key_action(
+                                    sim,
+                                    &resources.rules,
+                                    owner,
+                                    target,
+                                    modifier,
+                                    force_move_key,
+                                ) == Some(ObjectKeyAction::Move)
+                            })
+                })
+                .map(|(object, _)| object);
 
             // Scroll693271..69328B gives the same picked object to action
             // and release. Re-picking with an empty viewer for Ctrl lost the
@@ -2439,6 +2564,7 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                     };
                     payload
                 } else if modifier == OrderModifier::GuardArea
+                    && force_move_target.is_none()
                     && cell_guard_area_action(
                         sim,
                         &resources.rules,
@@ -3451,15 +3577,19 @@ fn cursor_owner(
 
 /// The left release over another house's object: [`left_release`] of the
 /// [`attack_action`] of the object that owns the cursor ([`cursor_owner`]),
-/// when it is one of the `receivers` the capability arms left. An owner
-/// those arms took answered there, receiver by receiver, so the release
-/// dispatches.
+/// when it is one of the `receivers`; any other owner answered in an earlier
+/// arm, whose release dispatches. The click asks it twice: for the attack
+/// branch's receivers right after that branch, where an armed owner's 0 over
+/// another house's object out of its range (Techno `0x0070056C..0x007005E6`,
+/// kept by Building `0x0044750D`) selects the object and sends nothing, the
+/// other receivers' orders included (`0x004ABE18`, `0x004ABE88`); then for
+/// the receivers left.
 ///
-/// RESIDUAL (#605): `attack_branch_orders` decides each receiver's release
-/// itself, and consumes a 0 where native selects an object the player may
-/// select and has not. Trigger: a selected armed building alone, over
-/// another house's object out of its range. Effect: VERA does nothing where
-/// native selects the object. Rare.
+/// RESIDUAL: over a Terrain object the attack branch's receivers keep their
+/// own answers. Native decides that release from the owner too (a 0 over a
+/// tree the player may not select does nothing, `0x004AC294`). Trigger: an
+/// armed building with another object selected, clicking a tree. Effect:
+/// the other object's order is sent. Rare.
 ///
 /// RESIDUAL: a release that selects hands the click to the selection
 /// picker, which picks again. Both pickers admit what

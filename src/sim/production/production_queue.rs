@@ -199,6 +199,7 @@ pub(in crate::sim) fn exit_produced_object(
     rules: &RuleSet,
     producer_id: u64,
     stable_id: u64,
+    exit_cell: (i16, i16),
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) -> crate::sim::ai_base_building::BuildingExit {
@@ -209,7 +210,6 @@ pub(in crate::sim) fn exit_produced_object(
     };
     // Exit443C81 sets Techno+3D5 before RTTI, admission or Unlimbo.
     entity.in_playfield.enter();
-    let owner_id = entity.owner();
     let product_type_id = entity.type_ref();
     let Some(product_type) = sim.object_type(product_type_id, rules) else {
         return BuildingExit::Failed;
@@ -230,11 +230,14 @@ pub(in crate::sim) fn exit_produced_object(
     let Some(kind) = UnitChoiceKind::of(product_type.category) else {
         return BuildingExit::Failed;
     };
-    let Some(producer_type) = sim
-        .substrate
-        .entities
-        .get(producer_id)
-        .and_then(|producer| sim.object_type(producer.type_ref(), rules))
+    let Some((owner_id, producer_type)) =
+        sim.substrate
+            .entities
+            .get(producer_id)
+            .and_then(|producer| {
+                sim.object_type(producer.type_ref(), rules)
+                    .map(|object| (producer.owner(), object))
+            })
     else {
         return BuildingExit::Failed;
     };
@@ -254,18 +257,23 @@ pub(in crate::sim) fn exit_produced_object(
     {
         return BuildingExit::TryLater;
     }
-    ai_base_building::economy_state_machine(
-        &sim.interner,
-        &sim.session,
-        &mut sim.scenario_rng,
-        &mut sim.houses,
-        &sim.power_states,
-        rules,
-        owner_id,
-        false,
-    );
-    if let Some(house) = sim.houses.get_mut(&owner_id) {
-        house.ai_unit_choices_mut().clear(kind);
+    //443CBC/4440FB use the producer's House, even when a reinforcement
+    //belongs to another House. Hospital/Armory skip this Unit/Infantry
+    //prelude (4440DD..444137); the earlier Aircraft arm always runs it.
+    if kind == UnitChoiceKind::Aircraft || !producer_type.hospital && !producer_type.armory() {
+        ai_base_building::economy_state_machine(
+            &sim.interner,
+            &sim.session,
+            &mut sim.scenario_rng,
+            &mut sim.houses,
+            &sim.power_states,
+            rules,
+            owner_id,
+            false,
+        );
+        if let Some(house) = sim.houses.get_mut(&owner_id) {
+            house.ai_unit_choices_mut().clear(kind);
+        }
     }
     if kind == UnitChoiceKind::Aircraft {
         let airport_bound = product_type.airport_bound;
@@ -280,19 +288,30 @@ pub(in crate::sim) fn exit_produced_object(
         );
     }
     match exit_arm(producer_type) {
-        // RESIDUAL (#2387): the refinery arm (`0x00444DE4..0x00444F16`) is
-        // not ported. It places a Unit facing 0xA0 one Cell south-west and
-        // one south of the producer's GetCoords Cell (`0x0089F69C`,
-        // `0x0089F698`) inside its own `0x00A8E7AC` bracket, so Object's
-        // class query is skipped; placed, it snaps the facing and queues
-        // Harvest. Anything else it scatters (`0x00444F04`). It answers 0
-        // either way. VERA answers 0 without placing the object. Trigger: a
-        // Refinery= or Weeder= producer, which no retail type is
-        // (`retail_producers_take_the_land_naval_and_infantry_arms`). In
-        // retail only SpawnReinforcements' building exit (`0x0065DAB6`)
-        // reaches the arm, with Infantry, and VERA does not port that exit.
-        // Effect: the object is abandoned unplaced.
-        ExitArm::Refinery => BuildingExit::Failed,
+        ExitArm::Refinery => {
+            if kind == UnitChoiceKind::Infantry {
+                //444EF8..444F16: a non-Unit scatters with the empty
+                //coordinate, forced=1/noKidding=0, then returns0. Its caller
+                //owns deletion; constructor and Scatter RNG stay spent.
+                if let Err(error) = sim.scatter(
+                    stable_id,
+                    None,
+                    crate::sim::movement::ScatterFlags::new(true, false),
+                    rules,
+                    overlay_registry,
+                    effects,
+                ) {
+                    log::warn!("refinery exit Scatter for {stable_id}: {error}");
+                }
+            }
+            //RESIDUAL: the Unit arm444DF4..444EF5 places at GetCoords Cell
+            //plus the native SW/S offsets, facing0xA0, then queues Harvest;
+            //it also returns0. Ordinary retail producing factories have no
+            //Refinery/Weeder flag. The reinforcement route admits Infantry
+            //only, so it uses the complete non-Unit arm above. GAREFN/NAREFN
+            //themselves do have retail Refinery=yes.
+            BuildingExit::Failed
+        }
         ExitArm::Naval => exit_naval(
             sim,
             rules,
@@ -316,6 +335,7 @@ pub(in crate::sim) fn exit_produced_object(
             arm,
             producer_id,
             stable_id,
+            exit_cell,
             product_type,
             overlay_registry,
             effects,
@@ -486,6 +506,8 @@ fn exit_land(
             rules,
             alternate_id,
             stable_id,
+            //444535 offers the native empty Cell to the alternate.
+            (0, 0),
             overlay_registry,
             effects,
         );
@@ -569,6 +591,7 @@ fn exit_at_dock(
     arm: ExitArm,
     producer_id: u64,
     stable_id: u64,
+    exit_cell: (i16, i16),
     product_type: &crate::rules::object_type::ObjectType,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
@@ -585,7 +608,19 @@ fn exit_at_dock(
             entity.set_archive_target(archive);
         }
     }
-    let Some(exit) = dock_exit(sim, rules, producer_id, stable_id, overlay_registry) else {
+    let offered = if arm == ExitArm::Generic {
+        exit_cell
+    } else {
+        (0, 0)
+    };
+    let Some(exit) = dock_exit(
+        sim,
+        rules,
+        producer_id,
+        stable_id,
+        offered,
+        overlay_registry,
+    ) else {
         return BuildingExit::Failed;
     };
     if arm == ExitArm::Infantry {
@@ -709,7 +744,15 @@ fn exit_cloning_vat_copies(
         ) else {
             continue;
         };
-        let _ = exit_produced_object(sim, rules, vat_id, clone_id, overlay_registry, effects);
+        let _ = exit_produced_object(
+            sim,
+            rules,
+            vat_id,
+            clone_id,
+            (0, 0),
+            overlay_registry,
+            effects,
+        );
     }
 }
 

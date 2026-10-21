@@ -1427,6 +1427,7 @@ fn a_chrono_miner_leaves_the_war_factory_on_the_bay_track() {
             &rules,
             factory,
             miner,
+            (0, 0),
             None,
             crate::sim::world::FrameEffects::default(),
         ),

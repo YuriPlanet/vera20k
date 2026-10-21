@@ -268,22 +268,15 @@ jobs:
           prev_tag="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts \
             --limit 1 --json tagName --jq '.[0].tagName // empty' 2>/dev/null || true)"
 
-          # Compare by commit, not by tag object: checkout does not fetch tags,
-          # and a scope that names a missing tag fails with "unknown revision".
+          # The base is the commit the previous release's tag names. Not its
+          # targetCommitish: releases made here record the dispatched branch
+          # (`main`), which now names the commit being built, so the range
+          # would come out empty. Fetch that one tag rather than rely on what
+          # checkout fetched; `^{commit}` peels an annotated tag.
           base=""
-          if [ -n "$prev_tag" ]; then
-            base="$(gh release view "$prev_tag" --repo "$GITHUB_REPOSITORY" \
-              --json targetCommitish --jq '.targetCommitish // empty' 2>/dev/null || true)"
-            # targetCommitish may name a branch; resolve it to a commit.
-            if [ -n "$base" ] && git cat-file -e "${base}^{commit}" 2>/dev/null; then
-              : # already a commit in this history
-            else
-              base="$(git rev-parse --verify --quiet "refs/tags/$prev_tag^{commit}" \
-                || git rev-parse --verify --quiet "$prev_tag^{commit}" || true)"
-            fi
-            if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
-              base=""
-            fi
+          if [ -n "$prev_tag" ] \
+            && git fetch --quiet --no-tags origin "+refs/tags/$prev_tag:refs/tags/$prev_tag"; then
+            base="$(git rev-parse --verify --quiet "refs/tags/$prev_tag^{commit}" || true)"
           fi
           if [ -n "$base" ]; then
             base_label="$prev_tag"
@@ -399,9 +392,18 @@ jobs:
               echo "Tag $TAG already exists; choose another tag with the 'tag' input." >&2
               exit 1
             fi
+            # An annotated tag names its tagger. A lightweight one names nobody,
+            # and GitHub then shows the tagged commit's author as having tagged
+            # the release. The API leaves an omitted tagger undocumented.
+            tag_object="$(jq -n --arg tag "$TAG" --arg sha "$GITHUB_SHA" '{
+                tag: $tag, object: $sha, type: "commit", message: "VERA20k \($tag)",
+                tagger: {name: "github-actions[bot]",
+                         email: "41898282+github-actions[bot]@users.noreply.github.com",
+                         date: (now | todate)}}' \
+              | gh api -X POST "repos/$GITHUB_REPOSITORY/git/tags" --input - --jq .sha)"
             gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
-              -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" > /dev/null
-            echo "Created tag $TAG at $GITHUB_SHA"
+              -f ref="refs/tags/$TAG" -f sha="$tag_object" > /dev/null
+            echo "Created annotated tag $TAG at $GITHUB_SHA"
           fi
 
           args=(--repo "$GITHUB_REPOSITORY" --verify-tag --title "VERA20k $TAG" --notes-file notes.md)

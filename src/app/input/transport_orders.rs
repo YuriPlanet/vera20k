@@ -1,9 +1,9 @@
-//! Deploy-key / self-click resolution for unloadable passenger containers.
+//! Self-click/cursor unload admission and structure/aircraft deploy-key routes.
 //!
 //! Mobile transports use `Type+0x5E0 Passengers > 0` and the aircraft unload
 //! slot `0x004151E0`; garrisons use `CanBeOccupied`; InfantryAbsorb buildings
-//! use their native absorber flag. Every input site routes through this one
-//! resolver so the gates agree.
+//! use their native absorber flag. These sites share the cargo-count gate;
+//! Unit transport D instead sends Event9, including with an empty hold.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
@@ -11,7 +11,8 @@ use crate::sim::command::Command;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 
-/// One resolver for self-click, deploy-key and cursor unload admission.
+/// Resolve self-click/cursor unload and the structure/aircraft deploy key.
+/// Unit transport D is handled by dispatch's separate Event9 route.
 /// Structures unload only when they are InfantryAbsorb buildings or
 /// occupiable garrisons; mobile transports retain their passenger-count gate.
 /// Production callers provide the local owner so an enemy building cannot

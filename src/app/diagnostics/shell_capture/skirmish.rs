@@ -29,6 +29,8 @@ pub(crate) enum PresentedShell {
     WolLocale,
     WolMyInformation,
     WolBuddyList,
+    WolQuickMatch,
+    WolAddBuddyQuery,
     Score,
 }
 

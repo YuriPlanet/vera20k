@@ -220,3 +220,76 @@ fn an_unarmed_engineer_under_ctrl_moves_near_a_tree() {
     );
     assert_moves_near(&dispatch.commands, &[engineer]);
 }
+
+/// Techno What_Action's key rungs over a tree: Shift answers ToggleSelect
+/// (`0x00700107`), which selects nothing; Alt and Ctrl+Alt answer Move
+/// (`0x007001E9..0x00700217`; a tree is no ally for the guard rung,
+/// `0x007001A7`), which Foot `0x004D74E0` sends as a move near the tree.
+/// Plain, Ctrl and Ctrl+Shift keep the object's own answer. Over a Techno
+/// ally Ctrl+Alt's guard rung answers first (`0x007001DD`). A berserk
+/// receiver answers before the key reads (`0x006FFEC9`).
+#[test]
+fn shift_alt_and_ctrl_alt_over_a_tree_take_the_key_rungs() {
+    let Some((retail, _)) = retail() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, tank, gi, tree) = scene(rules, "TREE01");
+    for actor in [tank, gi] {
+        for (modifier, alt, action) in [
+            (
+                OrderModifier::Shift,
+                false,
+                Some(ObjectKeyAction::ToggleSelect),
+            ),
+            (OrderModifier::ForceMove, true, Some(ObjectKeyAction::Move)),
+            (OrderModifier::GuardArea, true, Some(ObjectKeyAction::Move)),
+            (OrderModifier::AttackMove, true, Some(ObjectKeyAction::Move)),
+            (OrderModifier::AttackMove, false, None),
+            (OrderModifier::Normal, false, None),
+            (OrderModifier::ForceFire, false, None),
+        ] {
+            assert_eq!(
+                object_key_action(&sim, rules, actor, None, modifier, alt),
+                action,
+                "{modifier:?} alt {alt}"
+            );
+        }
+        let owner = sim.entities().get(actor).unwrap().owner();
+        assert!(
+            crate::app::input::commands::object_move_destination(
+                &sim,
+                rules,
+                owner,
+                actor,
+                tree,
+                crate::sim::world::MoveAction::Move,
+                true,
+            )
+            .is_some(),
+            "a move near the tree"
+        );
+    }
+    // Over the player's own GI, a Techno ally, Ctrl+Alt's guard rung admits
+    // the tank first; Alt alone still moves.
+    for (modifier, action) in [
+        (OrderModifier::Shift, ObjectKeyAction::ToggleSelect),
+        (OrderModifier::GuardArea, ObjectKeyAction::GuardArea),
+        (OrderModifier::ForceMove, ObjectKeyAction::Move),
+    ] {
+        assert_eq!(
+            object_key_action(&sim, rules, tank, Some(gi), modifier, true),
+            Some(action),
+            "{modifier:?} over the GI"
+        );
+    }
+    sim.entities_mut_for_test()
+        .get_mut(tank)
+        .unwrap()
+        .berserk
+        .set_active_for_test(true);
+    assert_eq!(
+        object_key_action(&sim, rules, tank, None, OrderModifier::Shift, false),
+        None
+    );
+}

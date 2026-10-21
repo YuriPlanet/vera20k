@@ -91,8 +91,9 @@ impl RubbleAssetCatalog {
             let image = rules
                 .art()
                 .resolve_effective_image_id(&object.id, &object.image);
-            let Some((shp, data)) = crate::rules::art_data::object_shp_candidates(
+            let Some((shp, data)) = crate::rules::art_data::building_body_shp_candidates(
                 Some(rules.art()),
+                &object.image,
                 &image,
                 theater_ext,
                 theater_name,

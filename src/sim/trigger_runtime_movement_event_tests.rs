@@ -481,3 +481,156 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
         Some(reactor)
     );
 }
+
+/// Puts `infantry` on `mission`, heading for `building`, standing on the
+/// building's cell through the shared Foot writer, then runs its arrival.
+fn arrive_at_building(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+    infantry: u64,
+    building: u64,
+    mission: crate::sim::mission::MissionType,
+) {
+    let (rx, ry) = {
+        let building = sim.substrate.entities.get(building).unwrap();
+        (building.position.rx(), building.position.ry())
+    };
+    sim.substrate
+        .mission_assign_exact(
+            infantry,
+            crate::sim::mission::MissionId::from_known(mission),
+            0,
+        )
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(infantry)
+        .unwrap()
+        .navigation
+        .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::object(building)));
+    sim.foot_set_location_marked(
+        infantry,
+        DriveCoord {
+            x: i32::from(rx) * 256 + 128,
+            y: i32::from(ry) * 256 + 128,
+            z: 0,
+        },
+        rules,
+        Some(registry),
+        FrameEffects::default(),
+    );
+    sim.per_cell_process(
+        infantry,
+        crate::sim::movement::PerCellReason::Arrival,
+        rules,
+        Some(registry),
+        FrameEffects::default(),
+    )
+    .unwrap();
+}
+
+/// Infantry PerCellProcess's occupier arm raises event 1 (Entered by) on the
+/// Tag of the building it garrisons, with the infantryman as the actor
+/// (`0x00519710..0x00519725`), before AddGarrisonOccupant (`0x0051972D`).
+/// XArena's CATECH01 crates hang on this event.
+#[test]
+fn an_occupier_garrisoning_a_building_raises_its_entered_by_event() {
+    let (mut sim, rules, registry, houses) = super::tests::event_ingress_fixture_with_rules(
+        "[InfantryTypes]\n0=TAGOCC\n[TAGOCC]\nStrength=100\nSpeed=4\nSpeedType=Foot\n\
+         Occupier=yes\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+         [BuildingTypes]\n0=TAGCIV\n[TAGCIV]\nStrength=500\nCanBeOccupied=yes\n\
+         MaxNumberOccupants=5\n",
+    );
+    let owner = sim.interner.resolve(houses[0]).to_owned();
+    let building = sim
+        .spawn_object("TAGCIV", &owner, 16, 16, 0, &rules)
+        .unwrap();
+    let infantry = sim
+        .spawn_object("TAGOCC", &owner, 17, 16, 0, &rules)
+        .unwrap();
+    install(&mut sim, &rules, "1,0,-1");
+    sim.attach_object_trigger_tag(building, Some("MOVETAG"));
+
+    arrive_at_building(
+        &mut sim,
+        &rules,
+        &registry,
+        infantry,
+        building,
+        crate::sim::mission::MissionType::Capture,
+    );
+
+    assert!(sim.trigger_runtime.globals_set.contains(&7));
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(building)
+            .unwrap()
+            .passenger_role
+            .cargo()
+            .unwrap()
+            .count(),
+        1
+    );
+}
+
+/// Infantry PerCellProcess's C4 arm raises event 1 (Entered by) on the Tag
+/// of its NavCom building on every arrival, with the planter as the actor
+/// (`0x0051A507..0x0051A51C`), before the Selling and invulnerability
+/// refusals (`0x0051A525..`). XBermuda's CAAIRP ends its storms this way.
+#[test]
+fn a_c4_planter_arriving_at_a_building_raises_its_entered_by_event() {
+    for selling in [false, true] {
+        let (mut sim, rules, registry, houses) = super::tests::event_ingress_fixture_with_rules(
+            "[InfantryTypes]\n0=TAGC4\n[TAGC4]\nStrength=100\nSpeed=4\nSpeedType=Foot\n\
+             C4=yes\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+             [BuildingTypes]\n0=TAGAIR\n[TAGAIR]\nStrength=500\n",
+        );
+        let (ours, theirs) = (
+            sim.interner.resolve(houses[0]).to_owned(),
+            sim.interner.resolve(houses[1]).to_owned(),
+        );
+        let building = sim
+            .spawn_object("TAGAIR", &theirs, 16, 16, 0, &rules)
+            .unwrap();
+        let infantry = sim.spawn_object("TAGC4", &ours, 17, 16, 0, &rules).unwrap();
+        install(&mut sim, &rules, "1,0,-1");
+        sim.attach_object_trigger_tag(building, Some("MOVETAG"));
+        if selling {
+            sim.substrate
+                .mission_assign_exact(
+                    building,
+                    crate::sim::mission::MissionId::from_known(
+                        crate::sim::mission::MissionType::Selling,
+                    ),
+                    0,
+                )
+                .unwrap();
+        }
+
+        arrive_at_building(
+            &mut sim,
+            &rules,
+            &registry,
+            infantry,
+            building,
+            crate::sim::mission::MissionType::Sabotage,
+        );
+
+        assert!(
+            sim.trigger_runtime.globals_set.contains(&7),
+            "selling {selling}"
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(building)
+                .unwrap()
+                .pending_c4_detonation
+                .pending()
+                .is_some(),
+            !selling
+        );
+    }
+}

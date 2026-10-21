@@ -110,6 +110,8 @@ build capability and cannot load in the other mode, even with identical retail I
 This is partial Rust-native compatibility, not Ares DLL loading or general mod support.
 The enabled build also supports [generic production prerequisites](docs/ares-prerequisites.md),
 including alternate owned types and installed-upgrade qualification.
+It also supports [Ares House survival](docs/ares-house-survival.md), including
+`KeepAlive` and the complete `BaseUnit` list for short games.
 
 To launch single-player YR skirmishes or campaigns through a dedicated CnCNet
 client, see the [offline client setup](integrations/cncnet/README.md). This needs

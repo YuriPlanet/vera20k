@@ -67,9 +67,9 @@ use crate::app::loading::init::MapMenuEntry;
 use crate::map::preview::PreviewSourceBounds;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
-use crate::render::shell_text::ShellTextDraw;
 #[cfg(test)]
 use crate::render::shell_text::ShellAlign;
+use crate::render::shell_text::ShellTextDraw;
 use crate::render::shell_transition_pass::ShellRenderTarget;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::rules::color_scheme::ColorSchemeEntry;
@@ -2009,6 +2009,7 @@ mod wol_my_info;
 mod wol_options;
 mod wol_page;
 mod wol_persona;
+mod wol_quick_match;
 pub(crate) use lan_lobby::render_lan_lobby;
 pub(crate) use wol_buddy::paint_wol_buddy_children;
 pub(crate) use wol_lobby::{WolLobbyPaint, paint_wol_lobby_children, paint_wol_lobby_popup};
@@ -2020,6 +2021,7 @@ pub(crate) use wol_page::{
     paint_wol_verify,
 };
 pub(crate) use wol_persona::{paint_wol_auto_login_children, paint_wol_locale_children};
+pub(crate) use wol_quick_match::paint_wol_quick_match_children;
 mod multiplayer_setup;
 pub(crate) use keyboard::render_keyboard_shell;
 pub(crate) use multiplayer_setup::render_multiplayer_setup;

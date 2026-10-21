@@ -804,6 +804,7 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
                 &rules,
                 1,
                 produced,
+                (0, 0),
                 None,
                 crate::sim::world::FrameEffects::default()
             ),

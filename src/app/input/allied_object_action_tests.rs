@@ -841,3 +841,70 @@ fn a_ground_owner_moves_onto_an_ally_worn_as_a_tree() {
         );
     }
 }
+
+/// A Pillbox over an enemy tank: in range it answers Attack and the release
+/// dispatches; out of range Techno's tail answers 0 (`0x0070056C..0x007005E6`),
+/// which Building What_Action keeps (`0x0044750D`), and the release of that 0
+/// selects the tank, which the player may select and has not (`0x004ABE18`).
+/// The attack branch takes the Pillbox; the release is asked for its
+/// receivers. Beside an MCV the Pillbox still owns the cursor (armed ranks
+/// above unarmed), so the MCV is not sent either.
+#[test]
+fn a_pillbox_clicking_an_enemy_out_of_range_selects_it() {
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &battle.processed_rules,
+        Some(&battle.fixed_art),
+    );
+    let (mut sim, pillbox, near) = object_pair(&battle.rules, "GAPILL", "enemy");
+    let far = sim
+        .spawn_object("MTNK", "Russians", 28, 10, 0, &battle.rules)
+        .unwrap();
+    let mcv = sim
+        .spawn_object("AMCV", "Americans", 10, 14, 0, &battle.rules)
+        .unwrap();
+    for (target, action, release) in [
+        (near, AttackAction::Attack, LeftRelease::Dispatch),
+        (far, AttackAction::None, LeftRelease::Select),
+    ] {
+        assert_eq!(
+            attack_action(
+                &sim,
+                &battle.rules,
+                pillbox,
+                &TargetKind::Entity(target),
+                false,
+                Some(&overlays)
+            ),
+            action
+        );
+        for selection in [vec![pillbox], vec![pillbox, mcv]] {
+            let dispatch = attack_branch_orders(
+                &sim,
+                &battle.rules,
+                &selection,
+                TargetKind::Entity(target),
+                false,
+                &overlays,
+            );
+            let receivers: Vec<u64> = dispatch.receivers.iter().copied().collect();
+            assert_eq!(receivers, [pillbox]);
+            assert_eq!(
+                object_click_release(
+                    &sim,
+                    &battle.rules,
+                    &selection,
+                    &receivers,
+                    target,
+                    &overlays,
+                    false,
+                ),
+                release,
+                "{action:?} {selection:?}"
+            );
+        }
+    }
+}

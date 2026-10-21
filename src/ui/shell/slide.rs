@@ -315,6 +315,23 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         top_panel: false,
         campaign_score: false,
     },
+    // 0x117: Cancel only; 0x122: Yes, then No (executed slide records).
+    SlideDialogSpec {
+        dialog_id: 0x0117,
+        top_buttons: 0,
+        bottom_button: true,
+        map_button: false,
+        top_panel: false,
+        campaign_score: false,
+    },
+    SlideDialogSpec {
+        dialog_id: 0x0122,
+        top_buttons: 1,
+        bottom_button: true,
+        map_button: false,
+        top_panel: false,
+        campaign_score: false,
+    },
     // 0x116: Create, Join, Add, Page and Remove, then Back: the executed
     // slide record.
     SlideDialogSpec {

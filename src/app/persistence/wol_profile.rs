@@ -23,6 +23,7 @@ pub(crate) const WOLINFO_INI: &str = "wolinfoMD.ini";
 const DEFAULT_PERSONA: &str = "DefaultPersona";
 const ASK: &str = "Ask";
 const AUTO_LOGIN: &str = "AutoLogin";
+const ADD_MATCH_BUDDIES: &str = "AddMatchBuddies";
 const LAST_VALID: &str = "LastValid";
 /// `[0xB73590]`, set from `"_Default_"` by `0x007786E0`.
 const DEFAULT_RECORD: &str = "_Default_";
@@ -359,6 +360,18 @@ impl WolInfoFile {
         self.update(|bytes| put_string(bytes, ASK, AUTO_LOGIN, yes_no(ask)));
     }
 
+    /// `WOLSettings__GetAddMatchBuddies` `0x00779940`: false without the
+    /// file, else ReadBool with default true.
+    pub(crate) fn ask_add_match_buddies(&self) -> bool {
+        self.read()
+            .is_some_and(|ini| ini.section_or_empty(ASK).read_bool(ADD_MATCH_BUDDIES, true))
+    }
+
+    /// `WOLSettings__SetAddMatchBuddies` `0x00779A40`.
+    pub(crate) fn set_ask_add_match_buddies(&self, ask: bool) {
+        self.update(|bytes| put_string(bytes, ASK, ADD_MATCH_BUDDIES, yes_no(ask)));
+    }
+
     /// `WOLPlayerInfo__LoadRecord` `0x00778A20`: the file is created when
     /// missing; a missing section is the default record `0x00778710`.
     pub(crate) fn load_persona(&self, name: &str, csf: &dyn Fn(&str) -> String) -> WolPersona {
@@ -507,10 +520,12 @@ mod tests {
         assert_eq!(file.auto_login(), "");
         assert_eq!(file.last_valid(), "");
         assert!(!file.ask_auto_login());
+        assert!(!file.ask_add_match_buddies());
         assert!(!directory.path().join(WOLINFO_INI).exists());
-        // Once the file exists, [Ask] AutoLogin defaults to yes.
+        // Once the file exists, both [Ask] keys default to yes.
         file.set_auto_login("");
         assert!(file.ask_auto_login());
+        assert!(file.ask_add_match_buddies());
         assert_eq!(
             std::fs::read(directory.path().join(WOLINFO_INI)).unwrap(),
             b"[DefaultPersona]\r\n"
@@ -528,9 +543,11 @@ mod tests {
         assert_eq!(file.last_valid(), "Echo");
         file.set_ask_auto_login(false);
         assert!(!file.ask_auto_login());
+        file.set_ask_add_match_buddies(false);
+        assert!(!file.ask_add_match_buddies());
         assert_eq!(
             std::fs::read_to_string(directory.path().join(WOLINFO_INI)).unwrap(),
-            "[DefaultPersona]\r\nLastValid=Echo\r\n[Ask]\r\nAutoLogin=no\r\n"
+            "[DefaultPersona]\r\nLastValid=Echo\r\n[Ask]\r\nAutoLogin=no\r\nAddMatchBuddies=no\r\n"
         );
     }
 

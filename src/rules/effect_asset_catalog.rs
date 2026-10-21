@@ -278,6 +278,13 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     // `[General] WarpOut=`: the teleport locomotor constructs it at both ends
     // of a relocation (`sim::movement::teleport_movement`).
     insert(&rules.general.warp_out.name);
+    // TemporalClass::Update71A8FA..71A909 constructs WarpAway at the erased
+    // target's Location. The frozen leaf AI constructs ChronoSparkle1 every
+    // 24 frames (Unit73622F, Infantry51BAF6..51BB69, Building4403D4).
+    // Both need physical frame bounds before sim::temporal can spawn them;
+    // the bound scheduler set also supplies the atlas's anim.pal effect roots.
+    insert(&rules.general.warp_away.name);
+    insert(&rules.general.chrono_sparkle1.name);
     // `[General] MoveFlash=`: the marker a Move click on a Cell constructs
     // there (`FootClass::ClickedAction_Cell`, `0x004D7F8A`;
     // `Simulation::spawn_move_flash`).

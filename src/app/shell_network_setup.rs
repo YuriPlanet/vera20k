@@ -6,7 +6,7 @@
 
 mod actions;
 mod service;
-pub(crate) use service::{NetworkSetupEvent, poll, service_event};
+pub(crate) use service::{HostOptions, NetworkSetupEvent, poll, service_event};
 mod view;
 mod wol;
 pub(crate) use actions::{apply_action, commit_map_selection, commit_start, open_choose_map};
@@ -99,6 +99,10 @@ pub(crate) enum NetworkSetupRequest {
 
 pub(crate) struct NetworkSetupProtocol {
     locked: bool,
+    /// WOL Quick Match (`[0xA8B244]` 1): the game channel's nodes and start
+    /// run without C2/C9 (`0x007A6208..0x007A6229`, `0x0078A36C..0x0078A386`)
+    /// under the runner's `0x117`.
+    quick_match: bool,
     /// WOL `00B77DEC`/`00B77E28` after the host's StartGame request, until
     /// the server's OnGameStart rejects it; a matching OnGameStart holds it
     /// (`[0xB77E28] = 2`) until the abort or the match.
@@ -155,11 +159,14 @@ struct PreviewOffer {
 }
 
 impl NetworkSetupProtocol {
-    fn new(dialog: SetupDialog) -> Self {
+    fn new(dialog: SetupDialog, quick_match: bool) -> Self {
         let host = dialog.host;
-        let wol_host = dialog.wol() && host;
+        // C2's 0x497 (the advertisement, the pings and their timer) never
+        // runs without C2.
+        let wol_host = dialog.wol() && host && !quick_match;
         Self {
             locked: false,
+            quick_match,
             wol_start_pending: false,
             ping_deadline: wol_host.then(|| Instant::now() + wol::PING_PERIOD),
             pings: Vec::new(),
@@ -187,7 +194,7 @@ impl NetworkSetupProtocol {
                     NetworkSetupRequest::Advertise,
                     NetworkSetupRequest::RequestPings,
                 ]
-            } else if host {
+            } else if host && !quick_match {
                 vec![NetworkSetupRequest::PublishOptions]
             } else {
                 Vec::new()
@@ -234,6 +241,15 @@ impl NetworkSetupProtocol {
     fn drop_preview_offer(&mut self) {
         self.preview_offer = None;
     }
+}
+
+/// The admitted setup is a WOL Quick Match game channel's, with no dialog.
+pub(crate) fn quick_match(state: &AppState) -> bool {
+    state
+        .frontend
+        .network_setup_protocol
+        .as_ref()
+        .is_some_and(|protocol| protocol.quick_match)
 }
 
 /// The setup dialog the admitted session shows: GameMode4 is WOL C2/C9.
@@ -420,13 +436,14 @@ fn install_setup(
         .match_state
         .session
         .accept_network_setup(launch, host, observer_row)?;
+    let quick_match = dialog.wol() && crate::app::shell_wol::quick_match::mode_active(state);
     if dialog.wol() {
         let room = crate::app::shell_wol::lobby::room(state);
         state.match_state.session.set_network_room(room);
         // C2's lockout in a tournament or clan room, after the profile
         // restore (0x79132A..0x7913D1): Short Game and Bases on; the AI
         // count is already 0 on WOL.
-        if host && room.tournament_or_clan() {
+        if host && room.tournament_or_clan() && !quick_match {
             let mut options = state
                 .match_state
                 .session
@@ -494,7 +511,12 @@ fn install_setup(
     }
     state.frontend.lan = None;
     state.frontend.multiplayer_setup = Some(MultiplayerSetupState::default());
-    state.frontend.network_setup_protocol = Some(NetworkSetupProtocol::new(dialog));
+    state.frontend.network_setup_protocol = Some(NetworkSetupProtocol::new(dialog, quick_match));
+    if quick_match {
+        // 0x117 stays up and takes the lines; no dialog opens.
+        state.platform.window.request_redraw();
+        return Ok(());
+    }
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::NetworkSetup;
     state
         .frontend
@@ -632,7 +654,10 @@ fn leave_setup(state: &mut AppState) -> SetupDialog {
         .network_setup_protocol
         .as_ref()
         .is_some_and(|p| !p.locked);
-    if unlocked && dialog.wol() && !dialog.host {
+    if dialog.wol() && crate::app::shell_wol::quick_match::mode_active(state) {
+        // C2/C9's teardowns write the settings (0x6990A0, 0x5ED400); the
+        // Quick Match path has neither and writes none.
+    } else if unlocked && dialog.wol() && !dialog.host {
         // C9 (0x791B10) and the local-leave tail 0x785740 write no
         // settings: no 0x6990A0 or 0x5ED400 on Back, a kick or the host
         // leaving.

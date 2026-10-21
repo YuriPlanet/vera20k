@@ -309,7 +309,11 @@ fn accept(state: &mut AppState) -> anyhow::Result<()> {
 }
 
 pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
-    super::persist_setup_preferences(state);
+    let quick_match = super::quick_match(state);
+    // Quick Match has no setup dialog whose teardown writes settings.
+    if !quick_match {
+        super::persist_setup_preferences(state);
+    }
     if let Some(launch) = state.match_state.session.network_setup()
         && let Err(error) = state
             .frontend
@@ -319,7 +323,11 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
         // The dialog has already slid out; a refused start returns to a
         // fresh BB like the failed network StartScenario retry (52E75F).
         log::error!("Cannot admit network country identity: {error}");
-        super::commit_back(state);
+        if quick_match {
+            crate::app::shell_wol::start_aborted(state);
+        } else {
+            super::commit_back(state);
+        }
         return;
     }
     // The host's random map keeps the start staging its generator wrote
@@ -374,7 +382,11 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
         }
         Err(error) => {
             log::error!("Could not freeze accepted LAN start: {error:#}");
-            super::commit_back(state);
+            if quick_match {
+                crate::app::shell_wol::start_aborted(state);
+            } else {
+                super::commit_back(state);
+            }
         }
     }
 }

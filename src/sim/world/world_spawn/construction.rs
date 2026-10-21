@@ -108,6 +108,16 @@ impl Simulation {
         ge.discovery
             .classify_owner(session.current_house() == Some(ge.owner()));
 
+        // Building InitManagers442C48..442C5C records the owner's Country
+        // array index (+0xB8), not its House registration index. Capture and
+        // snapshot restoration retain this value; only construction runs here.
+        if category == EntityCategory::Structure
+            && let Some(country) = houses.get(&ge.owner()).and_then(|house| house.country())
+            && let Some(index) = rules.country_index(interner.resolve(country))
+        {
+            ge.initialize_building_loss_index(i32::from(index.0));
+        }
+
         stamp_scoring_flags(ge, obj, rules);
         if let Some(object) = obj {
             ge.sight.stamp_type_sight(object.sight);

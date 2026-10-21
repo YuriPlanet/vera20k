@@ -347,6 +347,11 @@ impl Simulation {
     ///   both ([`Self::engineer_building_action`]); its other building rows
     ///   have their own owners.
     /// - The passenger rows: [`Self::passenger_click_action`].
+    /// - An Aircraft's depot row (`0x00417DF6..0x00417E78`) runs for a human
+    ///   player's (House `0x0050B6F0`) base action Select over a `UnitRepair=`
+    ///   building (`+0x16A9`) and answers NoEnter; Aircraft ClickedAction
+    ///   (`0x00417BD0`) orders nothing for it. Its other rows have their own
+    ///   owners.
     ///
     /// Foot ClickedAction (`0x004D74E0`) turns Enter into mission Enter and
     /// Grind into mission Eaten, each with the object as Destination, for a
@@ -358,6 +363,13 @@ impl Simulation {
     /// whose CAN_LOAD admits the Unit when it is not in radio contact. They
     /// matter only where the building arm's own gates refused (an unallied or
     /// warped-out building, a computer's Unit), whose CAN_LOAD refuses too.
+    ///
+    /// RESIDUAL: the depot row first scans the Aircraft type's `Dock=` list
+    /// (`+0x3E8`) for the building's type; one listed asks for a free radio
+    /// contact (`0x0065ADF0`), an empty building `+0x118` and CAN_LOAD (0xF)
+    /// and answers Enter on ROGER. Retail lists only GAAIRC and AMRADR, which
+    /// are not `UnitRepair=`, so every retail aircraft answers NoEnter here,
+    /// as this row does for a listed type too.
     pub fn entry_click_action(
         &self,
         actor_id: u64,
@@ -398,6 +410,14 @@ impl Simulation {
                         EntryClickAction::NoEnter
                     }
                 })
+            }
+            EntityCategory::Aircraft => {
+                let target_obj = self.object_type(target.type_ref(), rules)?;
+                (select
+                    && self.house_is_human_player(actor.owner())
+                    && target.category() == EntityCategory::Structure
+                    && target_obj.unit_repair)
+                    .then_some(EntryClickAction::NoEnter)
             }
             _ => None,
         }

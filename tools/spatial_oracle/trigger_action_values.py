@@ -7902,6 +7902,215 @@ def nuke_strike_metadata():
             impact_entry=0x467E53))
 
 
+def eva_selection_generate():
+    """Stock selection state and event identity, independent of earlier modes."""
+    from tools.spatial_oracle.native_id_snapshot import ScenarioFixture, SCENARIO as saved_scenario
+
+    physical = {'DialogList': {'0': 'EVA_Test'}, 'EVA_Test': {
+        'Allied': 'ALLY_A', 'Russian': 'SOV_B', 'Yuri': 'YURI_C',
+        'Type': 'QUEUE', 'Priority': 'NORMAL'}}
+    f = ActionFixture()
+    initialize_eva(f, physical)
+    u = f.u
+    for address in (SCENARIO+0x218, 0x886B88, 0xABE890):
+        f.call(0x65C6D0, [31], ecx=address)
+    entry = f.read32(f.read32(0xB1D4A4))
+    default_store = bytes(u.mem_read(0x68389F, 6))
+    rng_entries = []
+
+    def observe(_u, pc, _size, _data):
+        if pc in (0x65C780, 0x65C7E0):
+            rng_entries.append(f'0x{pc:08X}')
+    hook = u.hook_add(UC_HOOK_CODE, observe)
+
+    def snapshot():
+        state = eva_snapshot(f)
+        # Keep semantic node identity and ordering; guest pointers and raw
+        # platform clocks are not Rust inputs or canonical golden fields.
+        def node(value):
+            return None if value is None else dict(event=value['entry']['name'],
+                priority=value['priority'], type=value['type'], sequence=value['sequence'])
+        return dict(scenario_side=f.integer(SCENARIO+0x34B8),
+            selected_voice=state['side'],
+            lookup_filename=f.string(f.call(0x753380, [], ecx=entry)),
+            entry_state=f.integer(entry+0x50),
+            pending=node(state['pending']),
+            interrupts=[node(v) for v in state['interrupts']],
+            critical=[node(v) for v in state['critical']],
+            queues={key:[node(v) for v in values] for key, values in state['queues'].items()},
+            sequence=state['sequence'], pause_depth=f.integer(0xB1D428),
+            suspend_depth=state['suspend'])
+
+    history = []
+    def step(label, operation, execute):
+        before, rng_before = snapshot(), f.rng_hashes()
+        start = len(rng_entries)
+        result = execute()
+        row = dict(label=label, operation=operation, before=before, after=snapshot(),
+            rng_entries=rng_entries[start:], rng_unchanged=rng_before==f.rng_hashes())
+        if operation['kind'] == 'dequeue_admitted':
+            row['dequeue_filename'] = result
+        history.append(row)
+        assert row['rng_unchanged'] and not row['rng_entries']
+        f.check_code()
+        assert bytes(u.mem_read(0x68389F, 6)) == default_store
+
+    def bind(side):
+        f.call(0x7534E0, [], ecx=side & 0xFFFFFFFF)
+
+    def enqueue():
+        u.reg_write(UC_X86_REG_EDX, 0xFFFFFFFF)
+        f.call(0x752480, [0xFFFFFFFF], ecx=0)
+
+    def dequeue():
+        # Same existing VM and real FIFO/identity/filename body. Device,
+        # clock and pause admission are explicit priors, not supplied results.
+        u.mem_write(SP, dwords(RET_MAGIC))
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_EBX, 0)
+        run_checked(u, 0x7527F8, 0x75295C, count=1_000_000,
+                    required_addresses=(0x7528AF, 0x7528E8, 0x752901))
+        return f.string(u.reg_read(UC_X86_REG_EDX))
+
+    def scenario_default_store():
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_EBP, SCENARIO)
+        u.reg_write(UC_X86_REG_EBX, 0)
+        run_checked(u, 0x68389F, 0x6838A5)
+
+    cold = snapshot()
+    step('bind_allied', dict(kind='bind', side=0), lambda: bind(0))
+    step('queue_under_allied', dict(kind='queue', event='EVA_Test'), enqueue)
+    step('rebind_soviet_after_queue', dict(kind='bind', side=1), lambda: bind(1))
+    step('dequeue_uses_later_cache', dict(kind='dequeue_admitted'), dequeue)
+    step('reset_preserves_soviet', dict(kind='reset'), lambda: f.call(0x7535D0, []))
+    step('queue_soviet_then_change_only_scenario_field',
+         dict(kind='queue', event='EVA_Test'), enqueue)
+    step('change_only_scenario_side_to_yuri', dict(kind='scenario_side_input', side=2),
+         lambda: u.mem_write(SCENARIO+0x34B8, dwords(2)))
+    step('dequeue_without_bind_still_soviet', dict(kind='dequeue_admitted'), dequeue)
+    step('original_minus_one_binds_allied', dict(kind='bind', side=-1), lambda: bind(-1))
+    step('bind_yuri', dict(kind='bind', side=2), lambda: bind(2))
+    step('reset_preserves_yuri', dict(kind='reset'), lambda: f.call(0x7535D0, []))
+    step('scenario_defaults_side_store_preserves_voice_cache',
+         dict(kind='scenario_default_store'), scenario_default_store)
+
+    round_trips = []
+    for side in (-1, 0, 1, 2):
+        saved = ScenarioFixture()
+        saved.u.mem_write(saved_scenario+0x34B8, dwords(side))
+        calls = []
+        def observe_saved(_u, pc, _size, _data):
+            if pc in (0x65C780, 0x65C7E0):
+                calls.append(f'0x{pc:08X}')
+        saved.u.hook_add(UC_HOOK_CODE, observe_saved)
+        saved.round_trip(overwrite_before_load={saved_scenario+0x34B8: dwords(99)})
+        restored = struct.unpack('<i', saved.u.mem_read(saved_scenario+0x34B8, 4))[0]
+        round_trips.append(dict(input_side=side, overwritten_before_load=99,
+            saved_side=struct.unpack_from('<i', saved.data, 0x34B8)[0],
+            restored_side=restored, rng_entries=calls))
+        assert not calls
+        step('bind_from_actual_restored_scenario_side_'+str(side),
+             dict(kind='bind_restored', round_trip_index=len(round_trips)-1),
+             lambda side=restored: bind(side))
+    u.hook_del(hook)
+
+    eviction_controls = []
+    for label, operation, names in (
+        ('interrupt_dequeue', 'dequeue_admitted', ('Pending', 'Interrupt')),
+        ('critical_dequeue', 'dequeue_admitted', ('Pending', 'Critical')),
+        ('clear_all_queues', 'clear_all_queues', ('Pending', 'Interrupt', 'Critical', 'Queued')),
+        ('reset_all', 'reset', ('Pending', 'Interrupt', 'Critical', 'Queued')),
+    ):
+        definitions = {
+            'Pending': dict(Allied='PENDA', Russian='PENDS', Yuri='PENDY', Priority='NORMAL'),
+            'Interrupt': dict(Allied='INTA', Russian='INTS', Yuri='INTY',
+                              Type='QUEUED_INTERRUPT', Priority='NORMAL'),
+            'Critical': dict(Allied='CRITA', Russian='CRITS', Yuri='CRITY', Priority='CRITICAL'),
+            'Queued': dict(Allied='QUEA', Russian='QUES', Yuri='QUEY', Type='QUEUE', Priority='LOW'),
+        }
+        values = dict(DialogList={str(i):'EVA_'+name for i, name in enumerate(names)},
+                      **{'EVA_'+name:definitions[name] for name in names})
+        control = ActionFixture()
+        initialize_eva(control, values)
+        guest = control.u
+        for address in (SCENARIO+0x218, 0x886B88, 0xABE890):
+            control.call(0x65C6D0, [31], ecx=address)
+        control.call(0x7534E0, [], ecx=1)
+        entries = [control.read32(control.read32(0xB1D4A4)+i*4) for i in range(len(names))]
+
+        def control_snapshot():
+            state = eva_snapshot(control)
+            def node(value):
+                return None if value is None else dict(event=value['entry']['name'],
+                    priority=value['priority'], type=value['type'], sequence=value['sequence'])
+            return dict(entries={control.string(p):dict(type=control.integer(p+0x4C),
+                    priority=control.integer(p+0x48), state=control.integer(p+0x50)) for p in entries},
+                selected_voice=state['side'], pending=node(state['pending']),
+                interrupts=[node(v) for v in state['interrupts']],
+                critical=[node(v) for v in state['critical']],
+                queues={key:[node(v) for v in nodes] for key, nodes in state['queues'].items()},
+                sequence=state['sequence'], pause_depth=control.integer(0xB1D428),
+                suspend_depth=state['suspend'])
+
+        draws = []
+        def control_observe(_u, pc, _size, _data):
+            if pc in (0x65C780, 0x65C7E0):
+                draws.append(f'0x{pc:08X}')
+        code_hook = guest.hook_add(UC_HOOK_CODE, control_observe)
+        rng_before = control.rng_hashes()
+        for i in range(len(names)):
+            guest.reg_write(UC_X86_REG_EDX, 0xFFFFFFFF)
+            control.call(0x752480, [0xFFFFFFFF], ecx=i)
+        row = dict(label=label, operation=operation, synthetic_ini=values,
+            queue_inputs=[dict(event='EVA_'+name, type_override=-1, priority_override=-1) for name in names],
+            before=control_snapshot())
+        if operation == 'dequeue_admitted':
+            guest.mem_write(SP, dwords(RET_MAGIC))
+            guest.reg_write(UC_X86_REG_ESP, SP)
+            guest.reg_write(UC_X86_REG_EBX, 0)
+            run_checked(guest, 0x7527F8, 0x75295C, count=1_000_000,
+                        required_addresses=(0x7528AF, 0x7528E1, 0x752901))
+            row.update(selected_event=control.string(guest.reg_read(UC_X86_REG_EBP)),
+                       dequeue_filename=control.string(guest.reg_read(UC_X86_REG_EDX)))
+        else:
+            control.call(0x752370 if operation=='clear_all_queues' else 0x7535D0, [])
+        row.update(after=control_snapshot(), rng_entries=draws,
+                   rng_unchanged=rng_before==control.rng_hashes())
+        assert row['rng_unchanged'] and not draws
+        guest.hook_del(code_hook)
+        control.check_code()
+        eviction_controls.append(row)
+    return dict(schema_version=1, synthetic_ini=physical, cold=cold,
+                history=history, scenario_round_trips=round_trips,
+                pending_eviction_controls=eviction_controls)
+
+
+def eva_selection_metadata():
+    return provenance(
+        scope='Original stock Scenario.Side retention, SetSide/cache and queued event-identity filename selection; bounded component histories, no device or whole savefile parity claim.',
+        assumptions=[
+            'Existing ActionFixture, initialize_eva and ordered INI transport execute original753000 over one declared synthetic DialogList event and three distinct stock columns. The registry constructor and voice-list initialization prefix execute; a zeroed initialized stream shell and paused queue prior exclude backend/file/channel setup. Cold selected voice is the mapped PE zero-fill value0, not a captured complete startup.',
+            'The16 ordered EVA steps use original SetSide7534E0, GetFilename753380, QueueVoice752480 and ResetAll7535D0. Scenario-side-only mutation is explicitly supplied input, not an executed fresh scenario reader. Selection and direct lookup are distinct from queued event identity and later dequeue.',
+            'Two dequeue controls execute7527F8..75295C with EBX0 and existing fixture stack. They run FIFO removal, node event-pointer load, cached voice selection and filename copy/extension append. Prior OS availability, current-stream, end-time/gap and pause admission are supplied; execution stops before StreamPlayer::PlayFile407B60. Playback return, successful500ms write75296D and physical output are excluded.',
+            'Constructor6833DB calls SetDefaults683610, whose EBX0 at68365A feeds Scenario+34B8 store68389F. This mode executes only68389F..6838A5 with that explicit receiver/zero-register prior. Other constructor/reset fields, timer writes and complete fresh startup are not executed.',
+            'Existing native_id_snapshot.ScenarioFixture executes raw Scenario.Save689310/Load689470/post-read683560 with its stopped timer/empty-array and clock transport priors. Four signed Side inputs-1/0/1/2 are saved, overwritten99 and loaded. Actual restored values are passed to original SetSide in the EVA VM; full savefile, resource adoption, pointer swizzling and InitSideMixFiles534FA0 are not executed.',
+            'Original LoadContent67E745 loads Scenario before67E75B reads its saved+34B8 and67E761 binds through534FA0/7534E0. CurrentHouse is loaded by the later globals67F9C0. Vox.Load67F781/7533F0 later clears queues and preserves selection; ordinary Vox.Save67E410/7533B0 emits only its two tags. This caller/ordering boundary is instruction-level evidence, not a whole-load replay.',
+            'Three EVA-VM RNG streams are seeded31 by original65C6D0 before histories. Each step compares full existing state hashes and observes65C780/65C7E0 entries. Raw Scenario controls observe the same draw entries separately; their post-read initialization may reseed state and is not claimed unchanged. No detach call occurs in selected EVA bodies.',
+            'Four independent pending controls use the same original reader/VM/QueueVoice owner with no current event. Missing Type retains original constructor0; QUEUED_INTERRUPT reads3, QUEUE1, and priorities come from their declared INI strings. Interrupt and critical admitted dequeues discard a distinct pending node but leave its event state1; selected event becomes2 at7528E1. Direct ClearAllQueues752370 and ResetAll7535D0 controls include pending, interrupt, critical and regular nodes: explicit stores752391/7523C8/7523FE/752436 mark all their entries2. This differs from the pending raw-free branches752824/752855 in dequeue. No queued state or node is supplied by the host.',
+        ], substitutions=[
+            'Reuse existing ActionFixture VM, heap/CRT/TLS/INI/cache and native_id_snapshot.ScenarioFixture IStream/clock transport. No second EVA VM implementation, parser, queue decision or supplied native selection/result.',
+            'Guest frame and admission boundary are supplied only where declared; no original reader, FIFO, selector, setter, reset or raw stream instruction is patched.',
+        ], entry_points=dict(eva_registry=0x753000, set_side=0x7534E0,
+            filename=0x753380, queue_voice=0x752480, reset=0x7535D0,
+            dequeue_admitted=0x7527F8, dequeue_stop=0x75295C,
+            scenario_default_store=0x68389F, scenario_default_stop=0x6838A5,
+            scenario_save=0x689310, scenario_load=0x689470,
+            scenario_post_read=0x683560, load_content_bind=0x67E761,
+            clear_queues=0x752370, selected_entry_done=0x7528E1,
+            discarded_pending_interrupt=0x752824, discarded_pending_critical=0x752855))
+
+
 if __name__=='__main__':
     import argparse
     import os
@@ -7931,9 +8140,18 @@ if __name__=='__main__':
     selected_modes.add_argument('--do-explosion', action='store_true')
     selected_modes.add_argument('--map-lighting', action='store_true')
     selected_modes.add_argument('--nuke-strike', action='store_true')
+    selected_modes.add_argument('--eva-selection', action='store_true')
     selector.add_argument('--inputs', type=Path)
     selected, remaining = selector.parse_known_args()
-    if selected.map_lighting:
+    if selected.eva_selection:
+        if selected.inputs is not None:
+            selector.error('--eva-selection uses declared synthetic inputs, not --inputs')
+        finish_vectors(eva_selection_generate,
+            Path(__file__).with_name('eva_selection.json'),
+            provenance=eva_selection_metadata, argv=remaining,
+            source_paths=dict(SOURCE_PATHS,
+                scenario_stream_owner=Path(__file__).with_name('native_id_snapshot.py')))
+    elif selected.map_lighting:
         if selected.inputs is not None:
             selector.error('--map-lighting reads configured physical retail assets, not --inputs')
         finish_vectors(map_lighting_generate,

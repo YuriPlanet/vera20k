@@ -86,6 +86,76 @@ pub fn foundation_exit_list(foundation: &str) -> Vec<(i32, i32)> {
         .collect()
 }
 
+/// Building459CA0: any in-Size exit-list cell with no ground-list object
+/// and admitted by Cell4834A0(Foot,0,0,-1,Normal,-1,1). This is the
+/// reinforcement receiver's preflight, not the mover-specific dock query.
+pub(crate) fn building_has_clear_foundation_exit(
+    sim: &Simulation,
+    building_id: u64,
+    rules: &RuleSet,
+) -> bool {
+    use crate::map::resolved_terrain::NativeCellQuery;
+    use crate::rules::locomotor_type::{MovementZone, SpeedType};
+    use crate::sim::cell_rect::{
+        CellPassabilityArgs, CellPassabilityMap, check_cell_passability, native_cell_ref,
+    };
+    use crate::sim::movement::locomotor::MovementLayer;
+    use crate::util::lepton::lepton_to_cell_packed;
+
+    let Some(building) = sim.substrate.entities.get(building_id) else {
+        return false;
+    };
+    let Some(object) = sim.object_type(building.type_ref(), rules) else {
+        return false;
+    };
+    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+        return false;
+    };
+    // Virtual+1B8 samples Location, not the building's approach coordinate.
+    let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&building.position);
+    let origin = (lepton_to_cell_packed(x), lepton_to_cell_packed(y));
+    let cells = NativeCellQuery::canonical(terrain);
+    let map = CellPassabilityMap {
+        native_cells: Some(&cells),
+        ..sim.cell_passability_map()
+    };
+    foundation_exit_list(&object.foundation)
+        .into_iter()
+        .any(|(dx, dy)| {
+            let at = (
+                origin.0.wrapping_add(dx as i16),
+                origin.1.wrapping_add(dy as i16),
+            );
+            if !sim.map_cell_in_bounds(at) {
+                return false;
+            }
+            let cell = cells.lookup(at);
+            let at_cell = cells.coord(cell);
+            if sim
+                .cell_objects((at_cell.0 as u16, at_cell.1 as u16), MovementLayer::Ground)
+                .next()
+                .is_some()
+            {
+                return false;
+            }
+            //459D4D repeats the lookup before the passability receiver.
+            check_cell_passability(
+                &native_cell_ref(&cells, cells.lookup(at)),
+                CellPassabilityArgs {
+                    speed_type: SpeedType::Foot,
+                    ignore_infantry: false,
+                    ignore_vehicles: false,
+                    zone: None,
+                    movement_zone: MovementZone::Normal,
+                    level: None,
+                    is_bridge: true,
+                },
+                &map,
+            )
+            .admits()
+        })
+}
+
 ///Read an actual retained pair, including sentinel/padding. Factory Unload
 ///reads element10 directly rather than walking the terminated exit list.
 pub(crate) fn foundation_exit_pair(foundation: &str, index: usize) -> Option<(i32, i32)> {

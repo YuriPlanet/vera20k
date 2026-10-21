@@ -18,7 +18,10 @@
 //! the same Create (`0x00789B60`) and Join (`0x00789960`) over the empty
 //! backdrop with `0x116` ended, so a [`WolLobby`] with [`Runner::Buddy`]
 //! carries its records and its Create/Join steps; `0x113` never shows then,
-//! and where that runner's tails differ the buddy owner continues.
+//! and where that runner's tails differ the buddy owner continues. The
+//! Quick Match runner `0x0079FC40` ([`super::quick_match`],
+//! [`Runner::QuickMatch`]) likewise keeps its lobby, game channel and users
+//! here, with the native mode 1-3 branches of the shared sinks.
 
 use std::time::{Duration, Instant};
 
@@ -117,6 +120,9 @@ enum AfterLeave {
         key: String,
         observe: bool,
     },
+    /// The Quick Match runner's exit (`0x007A03A0..0x007A0410`): it
+    /// returns 0 whether or not the leave finished.
+    Return,
 }
 
 /// What closing a lobby box continues with.
@@ -132,6 +138,20 @@ enum BoxThen {
     Close,
     /// `0x007AB670`'s box for this user's kick out of a chat lobby.
     Kicked,
+    /// A box of the Quick Match runner.
+    QuickMatch(QuickMatchBoxThen),
+}
+
+/// What closing a Quick Match runner's box continues with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum QuickMatchBoxThen {
+    /// The runner returns 0 at once (the lobby-list boxes,
+    /// `0x0079FD37..0x0079FE44`).
+    Return,
+    /// The runner's exit tail, then 0 (`0x007A0282`).
+    Exit,
+    /// Create's boxes: `0x00789B60` returned 0.
+    CreateFailed,
 }
 
 /// Which runner owns the records and the Create/Join steps.
@@ -141,6 +161,8 @@ pub(crate) enum Runner {
     Lobby,
     /// The Buddy List runner `0x0079F140`: `0x113` never exists.
     Buddy,
+    /// The Quick Match runner `0x0079FC40` with `0x117`.
+    QuickMatch,
 }
 
 /// One runner of the custom lobby.
@@ -206,6 +228,36 @@ fn buddy_runner(state: &AppState) -> bool {
     lobby(state).is_some_and(|lobby| lobby.runner == Runner::Buddy)
 }
 
+/// The Quick Match runner holds the records.
+pub(super) fn quick_match_runner(state: &AppState) -> bool {
+    lobby(state).is_some_and(|lobby| lobby.runner == Runner::QuickMatch)
+}
+
+/// The current channel's users `[0xB77908]`, in list order.
+pub(super) fn members(state: &AppState) -> Vec<WolMember> {
+    lobby(state).map_or_else(Vec::new, |lobby| lobby.members.clone())
+}
+
+/// The current channel's user names, in list order (`[0xB77900]` of them).
+pub(crate) fn member_names(state: &AppState) -> Vec<String> {
+    lobby(state).map_or_else(Vec::new, |lobby| {
+        lobby
+            .members
+            .iter()
+            .map(|member| member.name.clone())
+            .collect()
+    })
+}
+
+/// The dialog a runner's closed box or wait returns the input to.
+fn runner_dialog(state: &AppState) -> crate::ui::shell::descriptor::DialogId {
+    if super::quick_match::page_open(state) {
+        crate::ui::wol_quick_match::DIALOG
+    } else {
+        super::WOL_LOBBY_DIALOG
+    }
+}
+
 /// The game list `[0xB76AE8]` of the running runner.
 pub(super) fn games(state: &AppState) -> &[WolChannel] {
     lobby(state).map_or(&[], |lobby| &lobby.games)
@@ -263,8 +315,7 @@ fn nickname(state: &AppState) -> String {
 
 fn admission_context(state: &AppState) -> AdmissionContext {
     AdmissionContext {
-        // Custom Match is mode 4, never 1/2/3.
-        quick_match: false,
+        quick_match: super::quick_match::mode_active(state),
         clan_id: squad_id(state),
         local_hash: None,
     }
@@ -445,7 +496,7 @@ fn request_listed_squads(state: &mut AppState) {
 
 /// `[0xA8EB84]`: Options' ScreenWidth, the running shell width while the
 /// profile holds none.
-fn options_screen(state: &AppState) -> (i32, i32) {
+pub(super) fn options_screen(state: &AppState) -> (i32, i32) {
     let profile = &state.persistence.options_profile;
     if profile.screen_width > 0 && profile.screen_height > 0 {
         (profile.screen_width, profile.screen_height)
@@ -489,10 +540,8 @@ fn close_wait(state: &mut AppState) {
     if let Some(lobby) = lobby_mut(state) {
         lobby.wait = None;
     }
-    state
-        .frontend
-        .shell_controller
-        .reset_to(super::WOL_LOBBY_DIALOG, false);
+    let dialog = runner_dialog(state);
+    state.frontend.shell_controller.reset_to(dialog, false);
 }
 
 fn show_box(state: &mut AppState, key: &str, yes_no: bool, then: BoxThen) {
@@ -646,6 +695,95 @@ pub(super) fn open_buddy_runner(state: &mut AppState) {
     show_wait(state, "TXT_REQ_CHANLIST");
     request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
     state.platform.window.request_redraw();
+}
+
+/// The Quick Match runner's lobby list (`0x0079FCF0..0x0079FD35`): a
+/// runner with no `0x113` and the chat-lobby list behind
+/// `TXT_REQ_CHANLIST` (`0x0077EF90(0, 0)`, the 30 s wait `0x0077F120`).
+pub(super) fn open_quick_match_runner(state: &mut AppState) {
+    let Some(visit) = state.frontend.wol.as_mut() else {
+        return;
+    };
+    visit.page = WolPage::Lobby;
+    visit.lobby = Some(new_runner(Runner::QuickMatch, false, false, Instant::now()));
+    if state.match_state.session.network_return_context().is_none() {
+        state
+            .match_state
+            .session
+            .enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
+    }
+    state.frontend.wol_login_art = None;
+    state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
+    let _ = App::ensure_skirmish_shell_chrome(state);
+    show_wait(state, "TXT_REQ_CHANLIST");
+    request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
+    state.platform.window.request_redraw();
+}
+
+/// `0x00788800` for the Quick Match lobby (stage 2): a lobby already
+/// joined or pending answers 0 without a request.
+pub(super) fn quick_match_join(state: &mut AppState, channel: WolChannel, key: &str) {
+    join_channel(state, channel, key, false, false);
+}
+
+/// `0x00789960(record, DL=0)` for the host's game the guest found: the
+/// admission `0x0079BA60` with Quick Match's ranked test, then the join.
+/// RESIDUAL: `DL=0`'s internals are not traced; the Quick Match game has
+/// no key and no resolution bits, so neither popup can follow.
+pub(super) fn quick_match_join_game(state: &mut AppState, channel: WolChannel) {
+    if admit(&channel, false, admission_context(state)).is_err() {
+        super::quick_match::game_joined(state, false);
+        return;
+    }
+    join_channel(state, channel, "", true, false);
+}
+
+/// `0x00789B60`'s Quick Match branch (`0x00789BA8..0x00789D60`,
+/// `0x00789EC4..0x00789EEE`): no `0xC3`, two users, no key,
+/// `"%s's_game"`, tournament 1, game flags `0x800` plus `[0xB77DD4]` and no
+/// resolution bits; the leave and the create then run as for Create.
+pub(super) fn quick_match_create(state: &mut AppState) {
+    let nickname = nickname(state);
+    let (width, _) = options_screen(state);
+    let globals = &mut state.frontend.wol_lobby_globals;
+    if width >= 1024 {
+        globals.limit_resolution = false;
+    }
+    let channel = WolChannel {
+        kind: GAME_CHANNEL,
+        max_users: 2,
+        tournament: 1,
+        name: format!("{nickname}'s_game"),
+        game_flags: GAME_QUICK_MATCH.wrapping_add(globals.lobby_number as u32),
+        ..Default::default()
+    };
+    leave_then_create(state, channel, String::new(), false);
+}
+
+/// A box of the Quick Match runner over `0x117` or the backdrop.
+pub(super) fn quick_match_box(state: &mut AppState, key: &str, then: QuickMatchBoxThen) {
+    show_box(state, key, false, BoxThen::QuickMatch(then));
+}
+
+/// The runner's exit leave (`0x007A03A0..0x007A0410`): a channel this user
+/// is in is left behind `WOL:LeavingChannel` (at most 150 x 100 ms);
+/// then the runner returns 0.
+pub(super) fn quick_match_leave_and_return(state: &mut AppState) {
+    let Some(lobby) = lobby_mut(state) else {
+        close_runner(state);
+        return;
+    };
+    lobby.pending = None;
+    if lobby.current.is_none() {
+        close_runner(state);
+        return;
+    }
+    lobby.step = Step::Leaving {
+        deadline: Instant::now() + LEAVE_WAIT,
+        then: AfterLeave::Return,
+    };
+    request(state, WolServiceRequest::LeaveChannel);
+    show_wait(state, "WOL:LeavingChannel");
 }
 
 /// The Buddy List runner's dialog loop takes over: its records stay, the
@@ -901,7 +1039,7 @@ fn send_join(state: &mut AppState, channel: WolChannel, key: String, game: bool,
     };
     show_wait(state, "TXT_JOINLOB");
     request(state, WolServiceRequest::JoinChannel { channel, key });
-    if game && !buddy_runner(state) {
+    if game && lobby_dialog(state).is_some() {
         // 0x00789960 returned true: 0x0078C281 slides the dialog out
         // (0x006071E0), draws the empty backdrop and hides it; C9 comes from
         // the join sink afterwards.
@@ -924,6 +1062,9 @@ fn left_channel(state: &mut AppState) {
     // 0x785764..0x785788: PlayerLeft in a channel of a nonzero type.
     if current.kind != 0 {
         setup::play_player_left(state);
+    }
+    if super::quick_match::mode_active(state) {
+        return;
     }
     let room = match current.lobby_number() {
         Some(number) => WolLobbyRow::joined_name(number, &base_names(state)),
@@ -990,6 +1131,10 @@ fn leave_finished(state: &mut AppState, left: bool) {
             close_wait(state);
             send_create(state, channel, key, observe);
         }
+        AfterLeave::Return => {
+            close_wait(state);
+            close_runner(state);
+        }
     }
 }
 
@@ -998,6 +1143,17 @@ fn leave_finished(state: &mut AppState, left: bool) {
 fn join_failed_locally(state: &mut AppState, game: bool) {
     if buddy_runner(state) {
         super::buddy::stopped(state);
+        return;
+    }
+    if quick_match_runner(state) {
+        if let Some(lobby) = lobby_mut(state) {
+            lobby.step = Step::Ready;
+        }
+        if game {
+            super::quick_match::game_joined(state, false);
+        } else {
+            super::quick_match::lobby_join_failed(state);
+        }
         return;
     }
     let Some(lobby) = lobby_mut(state) else {
@@ -1015,6 +1171,9 @@ fn join_failed_locally(state: &mut AppState, game: bool) {
 /// The runner returns 0 (`LAB_00787F98`): the dialog closes without a
 /// slide and `WOL_Main` shows the welcome (mode 0).
 fn close_runner(state: &mut AppState) {
+    if quick_match_runner(state) {
+        super::quick_match::runner_closed(state);
+    }
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.lobby = None;
     }
@@ -1027,6 +1186,11 @@ fn close_runner(state: &mut AppState) {
 /// (`0x00787F95`), and the runner returns 0.
 pub(super) fn start_aborted(state: &mut AppState) {
     request(state, WolServiceRequest::LeaveChannel);
+    if quick_match_runner(state) {
+        // Event 6 ends the Quick Match runner through its exit tail.
+        super::quick_match::start_aborted(state);
+        return;
+    }
     request(state, WolServiceRequest::LeaveChannel);
     close_runner(state);
 }
@@ -1159,8 +1323,16 @@ fn create_confirmed(
     };
     lobby.ui.popup = None;
     lobby.ui.observer = observe;
-    // API+0x24 runs unconditionally, and once more with the wait (a
-    // `0x792BE0(0)` retext: no box is created) while still joined.
+    leave_then_create(state, channel, key, observe);
+}
+
+/// `0x00789B60`'s leave and create: API+0x24 runs unconditionally, and
+/// once more with the wait (a `0x792BE0(0)` retext: no box is created)
+/// while still joined.
+fn leave_then_create(state: &mut AppState, channel: WolChannel, key: String, observe: bool) {
+    let Some(lobby) = lobby_mut(state) else {
+        return;
+    };
     let joined = lobby.current.is_some();
     if joined {
         lobby.step = Step::Leaving {
@@ -1575,11 +1747,10 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
         .message
         .take_if(|_| matches!(control, BOX_OK | BOX_YES | BOX_NO))
     {
-        state
-            .frontend
-            .shell_controller
-            .reset_to(super::WOL_LOBBY_DIALOG, false);
+        let dialog = runner_dialog(state);
+        state.frontend.shell_controller.reset_to(dialog, false);
         match then {
+            BoxThen::QuickMatch(then) => super::quick_match::box_closed(state, then),
             BoxThen::JoinFailed { close } => join_failed_tail(state, close),
             BoxThen::CreateFailed => create_ended(state),
             BoxThen::Resolution { channel } => {
@@ -1611,6 +1782,14 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
             request(state, WolServiceRequest::CancelWait);
             super::buddy::stopped(state);
         }
+        WAIT_DISCONNECT
+            if lobby.wait.as_ref().is_some_and(|wait| wait.shown)
+                && lobby.runner == Runner::QuickMatch =>
+        {
+            // Event 0: the runner's exit.
+            request(state, WolServiceRequest::CancelWait);
+            super::quick_match::exit(state);
+        }
         WAIT_DISCONNECT if lobby.wait.as_ref().is_some_and(|wait| wait.shown) => {
             request(state, WolServiceRequest::CancelWait);
             close_runner(state);
@@ -1626,6 +1805,22 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
 /// pending and current channels cleared, the wait closed, the lists
 /// refilled and `0x113` shown; event 5 then ends the runner.
 fn join_failed_tail(state: &mut AppState, close: bool) {
+    if quick_match_runner(state) {
+        // Event 5 acts only at stage 0, so `close` is the stage timeout's
+        // business; a failed game join returns 0 from 0x00789960.
+        let game = lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::JoiningGame));
+        if let Some(lobby) = lobby_mut(state) {
+            lobby.pending = None;
+            lobby.current = None;
+            lobby.members.clear();
+            lobby.step = Step::Ready;
+        }
+        close_wait(state);
+        if game {
+            super::quick_match::game_joined(state, false);
+        }
+        return;
+    }
     if buddy_runner(state) {
         // The Join wait takes event 5 or 0xA as a stop: back to 0x116.
         if let Some(lobby) = lobby_mut(state) {
@@ -1743,18 +1938,27 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
                 .multiplayer_shell_runtime
                 .set_side_and_color(persona.country, persona.color);
             setup::send_first_choices(state);
+            if quick_match_runner(state) {
+                super::quick_match::game_joined(state, true);
+            }
         } else {
             // 0x7A782A..0x7A788D: no operator, the local tail 0x785740.
             setup_channel_left(state);
         }
         return;
     }
-    // A chat lobby: its number, the TXT_JOINED_S line, the controls back
-    // with Join as the selected game admits for either role.
-    let number = joined.channel.lobby_number();
-    if let Some(number) = number {
-        state.frontend.wol_lobby_globals.lobby_number = number;
+    // A chat lobby: its number (0x7A5EFD, any type-0 name), the
+    // TXT_JOINED_S line, the controls back with Join as the selected game
+    // admits for either role.
+    state.frontend.wol_lobby_globals.lobby_number = joined.channel.joined_lobby_number();
+    if quick_match_runner(state) {
+        // 0x7A5E86..0x7A5EC8: no TXT_JOINED_S in modes 1-3; the wait closes
+        // and the lobby's user list sends the request (0x7A7B0D..0x7A7B3B).
+        close_wait(state);
+        super::quick_match::lobby_users_listed(state);
+        return;
     }
+    let number = joined.channel.lobby_number();
     let name = match number {
         Some(number) => WolLobbyRow::joined_name(number, &base_names(state)),
         None => joined.channel.name.clone(),
@@ -1819,7 +2023,21 @@ fn join_error_reply(code: u32, pending: bool) -> JoinErrorReply {
 
 fn join_error(state: &mut AppState, code: u32) {
     let pending = lobby(state).is_some_and(|lobby| lobby.pending.is_some());
-    match join_error_reply(code, pending) {
+    let reply = join_error_reply(code, pending);
+    if quick_match_runner(state)
+        && let JoinErrorReply::Box {
+            key: key @ ("TXT_GAME_CLOSED" | "TXT_BADPASS" | "TXT_CHANNEL_FULL"),
+            ..
+        } = reply
+    {
+        // 0x7A5961..0x7A5D2A: modes 1-3 print these as lines (colour -1)
+        // instead of the boxes; every failure sets event 5.
+        let text = csf(state, key);
+        message_line(state, text);
+        join_failed_tail(state, true);
+        return;
+    }
+    match reply {
         JoinErrorReply::Ignore => {}
         JoinErrorReply::Box {
             key,
@@ -1856,6 +2074,7 @@ fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>) {
         log::debug!("stale WOL create result");
         return;
     };
+    let quick_match = lobby.runner == Runner::QuickMatch;
     match result {
         Err(code) => {
             close_wait(state);
@@ -1864,7 +2083,12 @@ fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>) {
             } else {
                 "TXT_CANTCREATE_CHAN"
             };
-            show_box(state, key, false, BoxThen::CreateFailed);
+            let then = if quick_match {
+                BoxThen::QuickMatch(QuickMatchBoxThen::CreateFailed)
+            } else {
+                BoxThen::CreateFailed
+            };
+            show_box(state, key, false, then);
         }
         Ok(members) => {
             close_wait(state);
@@ -1874,7 +2098,14 @@ fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>) {
             });
             if !found {
                 // Not among the users: 0x00789B60 returns 0 silently.
-                create_ended(state);
+                if quick_match {
+                    if let Some(lobby) = lobby_mut(state) {
+                        lobby.step = Step::Ready;
+                    }
+                    super::quick_match::created(state, false);
+                } else {
+                    create_ended(state);
+                }
                 return;
             }
             let lobby = lobby_mut(state).expect("checked");
@@ -1885,7 +2116,12 @@ fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>) {
             lobby.step = Step::Ready;
             let buddy = lobby.runner == Runner::Buddy;
             request_listed_squads(state);
-            if buddy {
+            if quick_match {
+                // 0x0078A36C..0x0078A386: modes 1-3 skip C2; the game
+                // channel's nodes run without a dialog.
+                App::open_host_setup(state, false);
+                super::quick_match::created(state, true);
+            } else if buddy {
                 // 0x116 has ended: C2 opens over the empty backdrop.
                 commit_create(state, observe);
             } else {
@@ -1907,6 +2143,12 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
     match event {
         WolServiceEvent::Channels { kind, channels } => {
             let lobby = lobby_mut(state).expect("checked");
+            if kind == GAME_CHANNEL && lobby.runner == Runner::QuickMatch {
+                lobby.games = channels.clone();
+                super::quick_match::games_listed(state, &channels);
+                state.platform.window.request_redraw();
+                return;
+            }
             if kind == GAME_CHANNEL {
                 lobby.games = channels;
                 refill_games(state);
@@ -1925,7 +2167,13 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             lobby.lobbies = channels;
             refill_lobbies(state);
             let lobby = lobby_mut(state).expect("checked");
-            if let (Step::ListingLobbies { .. }, Runner::Buddy) = (&lobby.step, lobby.runner) {
+            if let (Step::ListingLobbies { .. }, Runner::QuickMatch) = (&lobby.step, lobby.runner) {
+                lobby.step = Step::Ready;
+                let lobbies = lobby.lobbies.clone();
+                close_wait(state);
+                super::quick_match::lobbies_listed(state, &lobbies);
+            } else if let (Step::ListingLobbies { .. }, Runner::Buddy) = (&lobby.step, lobby.runner)
+            {
                 lobby.step = Step::Ready;
                 close_wait(state);
                 super::buddy::lobbies_listed(state);
@@ -2036,9 +2284,10 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
     state.platform.window.request_redraw();
 }
 
-/// The runner is in a game channel with C2/C9 open over the hidden `0x113`.
+/// The runner is in a game channel with C2/C9 open over the hidden `0x113`,
+/// or with Quick Match's setup under `0x117`.
 fn in_setup_channel(state: &AppState) -> bool {
-    state.frontend.shell_route.network_setup()
+    (state.frontend.shell_route.network_setup() || setup::quick_match(state))
         && lobby(state)
             .and_then(|lobby| lobby.current.as_ref())
             .is_some_and(|current| current.kind == GAME_CHANNEL)
@@ -2097,18 +2346,43 @@ fn sender_passes(state: &AppState, from: &WolMember, text: &[u16]) -> bool {
         )
 }
 
+/// One chat or action line of [`WolServiceEvent::Message`].
+pub(super) struct ReceivedMessage {
+    pub(super) from: WolMember,
+    pub(super) text: Vec<u16>,
+    pub(super) private: bool,
+    pub(super) action: bool,
+    pub(super) ansi: bool,
+    pub(super) options: Option<Box<setup::HostOptions>>,
+}
+
 /// The chat sinks (`0x007A8DA0`, `0x007A8FC0`, `0x007AB170`, `0x007AAFB0`
 /// and their UTF-16 forms): nothing while a match runs (`[0xB77DC1]`);
 /// then the gates; a line under this user's own name (`strcmpi` with
 /// `[0xA8B380]`) is not shown, the send already echoed it. The line goes to
-/// the current dialog's transcript (`0x005E2700`), the lobby's or C2/C9's.
-pub(super) fn message_received(
-    state: &mut AppState,
-    from: WolMember,
-    text: Vec<u16>,
-    private: bool,
-    action: bool,
-) {
+/// the current dialog's transcript (`0x005E2700`), the lobby's, C2/C9's or
+/// `0x117`'s. In modes 1-3 the two ANSI message sinks route to the Quick
+/// Match runner instead (`0x007A8DBB..0x007A8DEB`, `0x007A8FDB..0x007A9024`);
+/// the UTF-16 and action sinks have no mode test.
+pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
+    let ReceivedMessage {
+        from,
+        text,
+        private,
+        action,
+        ansi,
+        options,
+    } = message;
+    let in_game = state
+        .frontend
+        .wol
+        .as_ref()
+        .is_none_or(|visit| visit.in_game);
+    if ansi && !action && !in_game && super::quick_match::mode_active(state) {
+        let text = String::from_utf16_lossy(&text);
+        super::quick_match::ansi_message(state, &from, &text, private, options);
+        return;
+    }
     if state
         .frontend
         .wol
@@ -2247,10 +2521,19 @@ pub(super) fn net_status(state: &mut AppState, status: u32) {
     lobby.current = None;
     lobby.pending = None;
     lobby.members.clear();
-    if let (Runner::Buddy, Step::ListingLobbies { .. }) = (lobby.runner, &lobby.step) {
+    if let (Runner::Buddy | Runner::QuickMatch, Step::ListingLobbies { .. }) =
+        (lobby.runner, &lobby.step)
+    {
         // The entry's list wait 0x0077F120 fails without a box: mode 0,
         // the welcome.
         close_runner(state);
+        return;
+    }
+    if lobby.runner == Runner::QuickMatch {
+        // 0x7AA7E3: TXT_YOURE_DISCON needs 0x113 open; the Quick Match
+        // runner only takes event 0, and its exit has no channel to leave.
+        super::quick_match::exit(state);
+        state.platform.window.request_redraw();
         return;
     }
     if lobby.runner == Runner::Buddy {
@@ -2440,13 +2723,18 @@ pub(super) fn page_received(state: &mut AppState, from: WolMember, text: Vec<u16
         // (also while Options `0x2BC` hides it), C2/C9's, or `0x11E`'s.
         let route = state.frontend.shell_route;
         let transcript = super::page::page_received(state).is_none()
-            && (route.network_setup() || lobby_dialog(state).is_some());
+            && (route.network_setup()
+                || lobby_dialog(state).is_some()
+                || super::quick_match::page_open(state));
         if transcript {
             crate::app::shell_lan::append_chat(state, line);
         } else {
             super::page::page_received_line(state, line);
         }
     }
+    // 0x7A94ED..0x7A9510: with [0xB77E40] the pager gets the Quick Match
+    // away text (API+0xEC).
+    super::quick_match::page_reply(state, &from.name);
     let sound = state
         .rules()
         .and_then(|rules| rules.general.incoming_message_sound())
@@ -2822,7 +3110,9 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             // 0x0077F120 gave up: the runner's box, then the welcome. The
             // Buddy List runner returns 0 with return mode 0 and no box.
             lobby.step = Step::Ready;
-            let buddy = lobby.runner == Runner::Buddy;
+            // The Quick Match runner clears its away text and returns 0
+            // without a box too (0x0079FD5C..0x0079FD75).
+            let buddy = matches!(lobby.runner, Runner::Buddy | Runner::QuickMatch);
             close_wait(state);
             if buddy {
                 close_runner(state);

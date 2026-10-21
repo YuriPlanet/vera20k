@@ -107,7 +107,13 @@ pub(super) fn mission_repair(
                 DepartureRoute::Hospital,
                 |sim, patient| {
                     let _ = crate::sim::production::exit_produced_object(
-                        sim, rules, hospital, patient, registry, effects,
+                        sim,
+                        rules,
+                        hospital,
+                        patient,
+                        (0, 0),
+                        registry,
+                        effects,
                     );
                     Ok(())
                 },

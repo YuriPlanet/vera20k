@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Nominal building survivor flag producers and active-infantry count slices",
+  "assumptions": [
+    "Infantry constructor byte517A98=false; Type Nominal constructor7113F0=false and current-default physical ReadBool713F2C..713F44. Synthetic file sequence is explicit; no whole startup/language digest/registry allocation replay.",
+    "Death443111..44312E marks before declared Unlimbo admission; sale44A72D..44A74E executes the actual virtual call then marks only after an admitted return. Same VM composes active addition at that boundary. Full placement, whole death/selling, Scatter, force-value arithmetic and constructor tracking are excluded.",
+    "Actual CounterClass49FA00/49FA70 execute for valid existing ArrayIndex7/capacity16. Both slot and native total+10 are retained; signed edges, repeated reveal/limbo and explicit receiving-House capture phases are inputs. Force-value sentinel region is unchanged because slices start after its update.",
+    "Three native65C6D0 seed31 RandomClass states are initialized before cases. Complete-state hashes and observed Random entry list bound unchanged RNG; selected bodies contain no timer or detach work."
+  ],
+  "substitutions": [
+    "Inherited Fixture supplies Techno GetType and Type ArrayIndex virtual answers. Unlimbo0/1 is an explicitly supplied external admission at original51DFF0 entry; its internals do not run. Capture executes original limbo guards70158A/701757 and owner store701735, composing reached callbacks with the same count slices; intervening tracking/kill/sight work, lifecycle scheduling and native streams do not run.",
+    "Physical INI loading uses existing rules_oracle.weapon_speed_order.retail_history; no second parser/VM/CounterClass implementation."
+  ],
+  "entry_points": {
+    "type_nominal_default": "0x007113F0",
+    "type_nominal_reader": "0x00713F2C",
+    "infantry_default": "0x00517A98",
+    "death_mark": "0x00443111",
+    "sale_mark": "0x0044A72D",
+    "added_infantry": "0x00502C3C",
+    "removed_infantry": "0x0050297D",
+    "increment": "0x0049FA00",
+    "decrement": "0x0049FA70",
+    "owner_store": "0x00701735",
+    "capture_removed_guard": "0x0070158A",
+    "capture_added_guard": "0x00701757"
+  },
+  "replay_command": "python -m tools.spatial_oracle.house_tracking --nominal-survivor",
+  "payload_sha256": "2f6ca8a3b1dbc5f6d5a87d62fdbdc21b7263a306edeadcf51a92a73d35b148d5"
+}

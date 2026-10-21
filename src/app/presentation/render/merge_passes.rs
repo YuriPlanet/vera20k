@@ -78,6 +78,15 @@ pub(super) fn draw_native_object_pass<'a>(
         ObjectTexture::ShpPage(page) => sprite_atlas
             .and_then(|atlas| atlas.page(page))
             .map(|page| (&page.texture.bind_group, zshape, PackedSpriteKind::Shp)),
+        ObjectTexture::SpriteAtlasEdit(page, crate::render::terrain_draw::TerrainPiece::Shadow) => {
+            sprite_atlas.and_then(|atlas| atlas.page(page)).map(|page| {
+                (
+                    &page.texture.bind_group,
+                    zshape,
+                    PackedSpriteKind::IndexMask,
+                )
+            })
+        }
         ObjectTexture::TerrainShp(crate::render::terrain_draw::TerrainPiece::Body) => {
             overlay_atlas.map(|atlas| (&atlas.texture.bind_group, zshape, PackedSpriteKind::Shp))
         }
@@ -589,6 +598,38 @@ mod tests {
         assert_eq!(packed_span_end(&pass.runs, 2), 3);
         assert_eq!(destination_span_end(&pass.runs, 3), pass.runs.len());
     }
+
+    #[test]
+    fn no_z_anim_shadow_fences_depth_edits_in_retained_parent_order() {
+        use crate::render::terrain_draw::TerrainPiece;
+        let order = NativeDisplayOrder::new(&[9, 3]);
+        let piece = |page, render_z| ObjectPieceInstance {
+            target: ObjectTexture::SpriteAtlasEdit(page, TerrainPiece::Shadow),
+            render_z,
+            instance: SpriteInstance {
+                draw_state: DrawState::from_native_selector(0, 1),
+                ..Default::default()
+            },
+        };
+        let pass = lower_ground_object_instances(vec![
+            PlannedObjectInstance::object(
+                order.object_draw(3, SpriteEncoding::Plain).unwrap(),
+                vec![piece(0, RenderZPolicy::ReadOnly)],
+            ),
+            PlannedObjectInstance::object(
+                order.object_draw(9, SpriteEncoding::Plain).unwrap(),
+                vec![
+                    piece(1, RenderZPolicy::ReadOnly),
+                    piece(0, RenderZPolicy::None),
+                ],
+            ),
+        ]);
+        assert_eq!(pass.owners, [9, 9, 3]);
+        assert_eq!(destination_span_end(&pass.runs, 0), 1);
+        assert_eq!(pass.runs[1].packed_parent, Some(9));
+        assert_eq!(packed_span_end(&pass.runs, 1), 2);
+        assert_eq!(destination_span_end(&pass.runs, 2), 3);
+    }
 }
 
 #[cfg(test)]
@@ -622,3 +663,7 @@ mod projectile_voxel_gpu_tests;
 #[cfg(test)]
 #[path = "welding_gpu_tests.rs"]
 mod welding_gpu_tests;
+
+#[cfg(test)]
+#[path = "anim_shadow_gpu_tests.rs"]
+mod anim_shadow_gpu_tests;

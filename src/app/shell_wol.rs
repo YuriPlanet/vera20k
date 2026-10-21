@@ -2,7 +2,9 @@
 //! (`0x0077B2A0`) from the welcome `0x10E` until WOL is left. Custom Match
 //! runs the login flow `WOL__RunLoginFlow` (`0x00787010`): the WOLAPI
 //! object, the server list behind the wait box `0xC4`, the login `0x10F`,
-//! the connect and then the custom lobby runner (`0x00787770`, [`open_lobby`]).
+//! the connect and then the custom lobby runner (`0x00787770`, [`open_lobby`]);
+//! Quick Match runs the same login and then its own runner
+//! (`0x0079FC40`, [`quick_match`]).
 //!
 //! The WOLAPI COM object, its servers and its credential store are outside
 //! the shell: they meet it only through [`WolServiceRequest`] /
@@ -20,6 +22,7 @@ pub(crate) mod my_info;
 pub(crate) mod options;
 pub(crate) mod page;
 pub(crate) mod persona;
+pub(crate) mod quick_match;
 mod service;
 mod test_service;
 
@@ -28,7 +31,10 @@ pub(crate) use service::{
     NET_STATUS_LOST, WolApiStatus, WolLadderRecord, WolLoginAccepted, WolProvider, WolServer,
     WolServerList, WolServiceEvent, WolServiceRequest, service_event,
 };
-pub(crate) use test_service::{WolTestGuest, default_buddies as test_service_buddies};
+pub(crate) use test_service::{
+    WolTestGuest, default_buddies as test_service_buddies,
+    matchbot_options as test_service_matchbot_options,
+};
 
 /// The wait box's reveal timer and the login drop list's scroll repeats;
 /// the caller schedules the earliest deadline with the other shell timers.
@@ -41,6 +47,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<std::time::Instant> {
         buddy::poll(state),
         page::poll_scroll_repeat(state),
         lobby::poll(state),
+        quick_match::poll(state),
         test_service::poll(state),
     ]
     .into_iter()
@@ -133,6 +140,11 @@ pub(crate) enum WolPage {
     /// The Buddy List `0x116` (mode 5); its runner's records stay in the
     /// visit's [`lobby::WolLobby`].
     Buddy(Box<buddy::BuddyDialog>),
+    /// Quick Match's `0x117` (mode 1); its runner's records stay in the
+    /// visit's [`lobby::WolLobby`].
+    QuickMatch(Box<quick_match::QuickMatchDialog>),
+    /// Quick Match's postmatch add-buddy query `0x122`.
+    AddBuddyQuery(Box<persona::AddBuddyQuery>),
 }
 
 /// What follows a WOL message box.
@@ -224,6 +236,8 @@ pub(crate) struct WolVisit {
     page_dialog: Option<Box<crate::ui::wol_page::WolPageDialog>>,
     /// The modeless page-received dialog `0x11E`.
     page_received: Option<Box<crate::ui::wol_page::WolPageReceived>>,
+    /// The Quick Match runner's globals; the opponent outlives the runner.
+    quick_match: quick_match::QuickMatchGlobals,
 }
 
 impl WolVisit {
@@ -262,6 +276,7 @@ impl WolVisit {
             squad_requests: 0,
             page_dialog: None,
             page_received: None,
+            quick_match: Default::default(),
         }
     }
 
@@ -295,7 +310,7 @@ impl WolVisit {
     pub(crate) fn wait_box(&self) -> Option<&WolWaitBox> {
         match &self.page {
             WolPage::Backdrop { wait } => wait.as_ref(),
-            WolPage::Lobby => self.lobby.as_ref()?.wait.as_ref(),
+            WolPage::Lobby | WolPage::QuickMatch(_) => self.lobby.as_ref()?.wait.as_ref(),
             _ => None,
         }
     }
@@ -303,7 +318,7 @@ impl WolVisit {
     pub(crate) fn message(&self) -> Option<&WolMessageBox> {
         match &self.page {
             WolPage::Message { message, .. } => Some(message),
-            WolPage::Lobby => self.lobby.as_ref()?.message(),
+            WolPage::Lobby | WolPage::QuickMatch(_) => self.lobby.as_ref()?.message(),
             _ => None,
         }
     }
@@ -322,7 +337,7 @@ impl WolVisit {
     fn waiting(&self) -> bool {
         match &self.page {
             WolPage::Backdrop { .. } => true,
-            WolPage::Lobby => self.wait_box().is_some(),
+            WolPage::Lobby | WolPage::QuickMatch(_) => self.wait_box().is_some(),
             _ => false,
         }
     }
@@ -352,7 +367,11 @@ pub(crate) fn chat_sent(state: &mut AppState, line: &crate::ui::wol_chat::WolCha
 
 /// `[0xB77DC1]`: a WOL match runs.
 pub(crate) fn in_match(state: &AppState) -> bool {
-    state.frontend.wol.as_ref().is_some_and(|visit| visit.in_game)
+    state
+        .frontend
+        .wol
+        .as_ref()
+        .is_some_and(|visit| visit.in_game)
 }
 
 /// A WOL box (`0x005E2CD0` style 0) with a CSF body.
@@ -389,6 +408,7 @@ fn logout(visit: &mut WolVisit) {
 
 /// The runner handed over to a WOL match (`[0xB77DC1]` set).
 pub(crate) fn match_started(state: &mut AppState) {
+    quick_match::match_starts(state);
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.in_game = true;
     }
@@ -397,12 +417,21 @@ pub(crate) fn match_started(state: &mut AppState) {
 /// The runner of the visit's mode after a successful login or setup Back
 /// (`postmatch` false) or after a match (`postmatch` true, the state 0x11
 /// flag `WOL_Main` passes on): the custom lobby runner `0x00787770`, or for
-/// mode 5 the Buddy List runner `0x0079F140`. Setup Back under the Buddy
-/// List runner is its stop path back to `0x116`.
+/// mode 5 the Buddy List runner `0x0079F140`, for mode 1 the Quick Match
+/// runner `0x0079FC40`, or after its match `0x007A2970` (`0x0077B439`).
+/// Setup Back under the Buddy List runner is its stop path back to `0x116`.
 pub(crate) fn open_lobby(state: &mut AppState, postmatch: bool) {
     let Some(visit) = state.frontend.wol.as_ref() else {
         return;
     };
+    if visit.mode == Some(WolMode::QuickMatch) {
+        if postmatch {
+            quick_match::postmatch(state);
+        } else {
+            quick_match::run(state);
+        }
+        return;
+    }
     let buddy_mode = visit.mode == Some(WolMode::PlayBuddy);
     let buddy_runner = visit
         .lobby()
@@ -584,7 +613,17 @@ impl App {
             .is_some_and(|visit| matches!(visit.page, WolPage::Lobby))
     }
 
+    /// Start Game Now's `0x130` over Quick Match's backdrop takes the input.
+    fn wol_quick_match_verify(state: &AppState) -> bool {
+        crate::app::shell_network_setup::quick_match(state)
+            && crate::app::shell_network_setup::verify(state).is_some()
+    }
+
     pub(super) fn handle_wol_mouse_move(state: &mut AppState) {
+        if Self::wol_quick_match_verify(state) {
+            crate::app::shell_network_setup::verify_cursor_moved(state);
+            return;
+        }
         if page::open(state) {
             page::cursor_moved(state);
             return;
@@ -603,6 +642,10 @@ impl App {
         }
         if buddy::page_open(state) {
             buddy::cursor_moved(state);
+            return;
+        }
+        if quick_match::page_open(state) && Self::wol_box_feed(state).is_none() {
+            quick_match::cursor_moved(state);
             return;
         }
         if Self::wol_page_is_lobby(state) && Self::wol_box_feed(state).is_none() {
@@ -636,6 +679,10 @@ impl App {
     }
 
     pub(super) fn handle_wol_mouse_down(state: &mut AppState) {
+        if Self::wol_quick_match_verify(state) {
+            crate::app::shell_network_setup::verify_mouse(state, true);
+            return;
+        }
         if page::open(state) {
             page::mouse(state, true);
             return;
@@ -654,6 +701,10 @@ impl App {
         }
         if buddy::page_open(state) {
             buddy::mouse(state, true);
+            return;
+        }
+        if quick_match::page_open(state) && Self::wol_box_feed(state).is_none() {
+            quick_match::mouse(state, true);
             return;
         }
         if Self::wol_page_is_lobby(state) && Self::wol_box_feed(state).is_none() {
@@ -684,6 +735,10 @@ impl App {
     }
 
     pub(super) fn handle_wol_mouse_up(state: &mut AppState) {
+        if Self::wol_quick_match_verify(state) {
+            crate::app::shell_network_setup::verify_mouse(state, false);
+            return;
+        }
         if page::open(state) {
             page::mouse(state, false);
             return;
@@ -702,6 +757,10 @@ impl App {
         }
         if buddy::page_open(state) {
             buddy::mouse(state, false);
+            return;
+        }
+        if quick_match::page_open(state) && Self::wol_box_feed(state).is_none() {
+            quick_match::mouse(state, false);
             return;
         }
         if Self::wol_page_is_lobby(state) && Self::wol_box_feed(state).is_none() {
@@ -736,11 +795,13 @@ impl App {
                 if controlled
                     && !matches!(
                         mode,
-                        WolMode::CustomMatch | WolMode::MyInformation | WolMode::PlayBuddy
+                        WolMode::CustomMatch
+                            | WolMode::MyInformation
+                            | WolMode::PlayBuddy
+                            | WolMode::QuickMatch
                     )
                 {
-                    // Quick Match and Quick Co-op behind a working WOLAPI
-                    // are later chains.
+                    // Quick Co-op behind a working WOLAPI is a later chain.
                     log::warn!(
                         "WOL mode {} with a controlled service is not implemented; \
                          0x10E stays",
@@ -764,6 +825,10 @@ impl App {
         pressed: bool,
         text: Option<&str>,
     ) {
+        // 0x130 has no key handling.
+        if Self::wol_quick_match_verify(state) {
+            return;
+        }
         if pressed && page::open(state) {
             page::key_press(state, code, text);
         } else if pressed && Self::wol_page_is_login(state) {
@@ -843,6 +908,7 @@ impl App {
         state.frontend.wol_auto_login_art = None;
         state.frontend.wol_my_info_art = None;
         state.frontend.wol_buddy_art = None;
+        state.frontend.wol_quick_match_art = None;
         state.frontend.shell_route = ShellRoute::MainMenu;
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);

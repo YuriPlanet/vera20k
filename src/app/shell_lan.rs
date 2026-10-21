@@ -263,6 +263,11 @@ fn show_modal(state: &mut AppState, key: &'static str) {
 /// all wrapping, row retention and scroll behavior for BB, BC and BD.
 pub(crate) fn append_chat(state: &mut AppState, line: LanChatLine) {
     let route = state.frontend.shell_route;
+    // WOL Quick Match's 0x117 is the top dialog with a 0x53F.
+    if route.wol() && crate::app::shell_wol::quick_match::page_open(state) {
+        crate::app::shell_wol::quick_match::append_line(state, line);
+        return;
+    }
     let setup = route == crate::app::shell_route::ShellRoute::NetworkSetup;
     append_chat_to(state, setup, !setup && route.wol_lobby(), line);
 }

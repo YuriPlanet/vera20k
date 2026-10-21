@@ -67,26 +67,28 @@ pub(super) struct DockExit {
 }
 
 /// The placement of the Infantry and generic arms: the producer's
-/// GetDockCellForObject (vt+0x4D4, `0x0044EFB0`) for `mover`, offered the
-/// zero Cell, then [`dock_exit_coordinate_and_facing`] for that Cell. The
+/// GetDockCellForObject (vt+0x4D4, `0x0044EFB0`) for `mover` and `offered`,
+/// then [`dock_exit_coordinate_and_facing`] for the selected Cell. The
 /// Infantry arm's call (`0x004449AF`) offers the empty Cell (`0x0089C818`,
 /// zeroed by `0x0043B0E0`); the generic arm's (`0x0044464D`) offers
-/// ExitObject's own Cell argument, which its callers pass zero (Factory_AI
-/// `0x00450155`, Place_Production `0x004FB563`, the Cloning Vat loop
-/// `0x00444A3E`). `None` is the empty dock Cell, on which both arms answer 0
+/// ExitObject's own Cell argument: zero from Factory_AI `0x00450155`,
+/// Place_Production `0x004FB563` and Cloning Vat `0x00444A3E`, but the
+/// requested origin from reinforcement `0x0065DAB6`.
+/// `None` is the empty dock Cell, on which both arms answer 0
 /// (`0x00445696`).
 pub(super) fn dock_exit(
     sim: &Simulation,
     rules: &RuleSet,
     producer_id: u64,
     mover: u64,
+    offered: (i16, i16),
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> Option<DockExit> {
     let cell = crate::sim::docking::building_dock::building_dock_cell(
         sim,
         producer_id,
         mover,
-        (0, 0),
+        offered,
         rules,
         overlay_registry,
     )?;

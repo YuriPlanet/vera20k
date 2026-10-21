@@ -41,14 +41,11 @@
 //! walks in and plants nothing, natively as here. No retail type lists the
 //! ability.
 //!
+//! Every arrival at the NavCom building first tells the building's Tag it
+//! was entered (event 1, `0x0051A507..0x0051A51C`), before the refusal
+//! tests, as the Engineer and spy arms do.
+//!
 //! RESIDUAL:
-//! - The arm's Tag event 1 ("entered by", `0x0051A507..0x0051A51C`) is not
-//!   raised; the Engineer and spy arms leave the same event unraised. It
-//!   fires on every arrival at the NavCom building, before the refusal
-//!   tests, when the building holds a map Tag (`world_spawn` attaches them).
-//!   Trigger: a C4 infantryman reaching a tagged map building; how often
-//!   retail skirmish maps tag buildings is not measured. Effect: a trigger
-//!   waiting on that event never springs.
 //! - The cell arm that follows (`0x0051A667..0x0051A7F2`): a C4 infantryman
 //!   on Sabotage standing in its NavCom cell damages the area around it
 //!   with `C4Warhead=`, scatters and queues mission 2. Its producer, a
@@ -68,7 +65,7 @@ use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::ObjectSubstrate;
-use crate::sim::world::{FrameAdvanceError, FrameEffects, Simulation};
+use crate::sim::world::{FrameAdvanceError, FrameEffects, Simulation, UninitContext};
 
 /// Shared per-building C4 / PostMortem detonation timer.
 ///
@@ -261,6 +258,11 @@ impl Simulation {
         else {
             return Ok(false);
         };
+        // 0x0051A507..0x0051A51C: the building's Tag hears event 1 with the
+        // planter as actor on every arrival, before the refusals below.
+        // Synchronous actions may change either object; both are reloaded.
+        let context = UninitContext::new(rules, registry).with_effects(effects);
+        self.dispatch_object_tag_event(building, 1, Some(id), None, context);
         let frame = self.session.binary_frame();
         let Some(target) = self.substrate.entities.get(building) else {
             return Ok(false);

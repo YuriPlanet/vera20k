@@ -20,7 +20,8 @@
 //!   and the build-up starts playing in reverse;
 //! - stage 2 ([`sell_complete`]), on the animation's last frame: an
 //!   `UndeploysInto=` building converts (`Simulation::finish_undeploy`);
-//!   any other is refunded and removed.
+//!   any other suppresses its building loss, runs RecordKill's live Tag
+//!   callbacks, then refunds its current owner and is removed.
 //!
 //! Evidence: `tools/spatial_oracle/building_sale.json` (Sell_Back and the
 //! visits' timing in `route` rows, stage 1 in `crew` rows, the refund in
@@ -29,14 +30,11 @@
 //! The capture tail's gates and immediate upgrade refunds are covered by
 //! `tools/spatial_oracle/captured_building_sale.json` and
 //! `captured_building_sale_tests`.
+//! `tools/spatial_oracle/building_sale_triggers.json` covers completion's
+//! live Tag callbacks, loss suppression and post-callback refund ownership.
 //!
 //! RESIDUALS:
-//! - `RegisterDestruction(null)` at the sale (`vt+0xE0`, `0x0044A1F9`, after
-//!   `+0x53C = -1` keeps the house's buildings-lost count unchanged): a
-//!   tagged building's "destroyed" trigger events 48 and 29 and a radar
-//!   refresh. TriggerRuntime owns object tags, but this sale path does not
-//!   dispatch those events. Trigger: selling a map-tagged building. Effect:
-//!   its sale destruction events do not fire.
+//! - RecordKill's radar refresh remains a presentation residual.
 //! - Presentation: stage 1 re-selects a building selected at its entry
 //!   (`vt+0x14C`, `0x0044A8C9`; VERA's selection never lapses, and this path
 //!   does not dispatch tag event 0x21), the `PackupSound=` handle (`+0x6A0`, stopped
@@ -62,6 +60,7 @@
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::{KillCallback, KillSource};
 use crate::sim::components::BuildingDown;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::FrameEffects;
@@ -80,6 +79,10 @@ mod building_upgrade_sale_tests;
 #[cfg(test)]
 #[path = "captured_building_sale_tests.rs"]
 mod captured_building_sale_tests;
+
+#[cfg(test)]
+#[path = "building_sale_trigger_tests.rs"]
+mod building_sale_trigger_tests;
 
 /// `TechnoTypeClass::GetRefund @ 0x00711F60` (type vtable `+0xB8`) for a live
 /// house (`RET 8`), in its x87 order under the chop control word:
@@ -683,8 +686,9 @@ fn sale_sounds(sim: &mut Simulation, rules: &RuleSet, id: u64) {
 /// target cleared (`vt+0x3C8(0)`, `0x00443B90` on Selling), `EVA_StructureSold`
 /// for the owner's player unless it undeploys (`+0x41A`, `0x00449CE5`), then
 /// the conversion into its `UndeploysInto=` unit
-/// ([`Simulation::finish_undeploy`]) or the sale (`0x0044A1E8`): light off
-/// (`+0x614`), the refund credited ([`type_refund`], `full` clear,
+/// ([`Simulation::finish_undeploy`]) or the sale (`0x0044A1E8`): suppress the
+/// building loss and call RecordKill(NULL), then light off (`+0x614`), the
+/// refund credited to the post-callback owner ([`type_refund`], `full` clear,
 /// before Limbo), then Limbo and UnInit. Returns whether a unit entered the
 /// map.
 pub(crate) fn sell_complete(
@@ -711,13 +715,30 @@ pub(crate) fn sell_complete(
         sim.finish_undeploy(id, rules, registry, frame_effects);
         return true;
     }
-    let refund = techno_refund(sim, rules, id);
+    let context = UninitContext::new(rules, registry).with_effects(frame_effects);
+    let Some(building) = sim.substrate.entities.get_mut(id) else {
+        return false;
+    };
+    //44A1EF precedes virtual E0(NULL) at44A1F9. Synchronous Tag callbacks
+    // may change the owner, detach the Tag or remove the receiver. The
+    // retained sentinel also applies to their nested accounting callbacks.
+    building.suppress_building_sale_loss();
+    sim.record_the_kill(
+        id,
+        KillSource::Techno(None),
+        KillCallback::Terminal,
+        context,
+    );
     sim.lighting_sources.set_building_light_active(id, false);
-    if let Some(refund) = refund {
+    //44A215 queries the live receiver's refund;44A21B re-reads its owner.
+    // Pending removal is not an Alive/health gate: the retained receiver's
+    // current payload remains readable until its store removal commits.
+    if let Some(refund) = techno_refund(sim, rules, id)
+        && let Some(owner) = sim.substrate.entities.get(id).map(|entity| entity.owner())
+    {
         // Add_Credits (`0x0044A222`).
         crate::sim::credit_income::add_credits(&mut sim.houses, owner, refund);
     }
-    let context = UninitContext::new(rules, registry).with_effects(frame_effects);
     //44A22C explicitly enters BuildingLimbo before44A28C UnInit. Its
     // Detach/HouseAbandon and post-Limbo queue callback must observe this
     // phase, before UnInit's earlier PointerExpired/Alive cleanup.

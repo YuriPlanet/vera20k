@@ -3041,11 +3041,12 @@ fn deployer_is_deployed(
     }
 }
 
-/// The deploy key's per-object order for an object it admits: each
-/// class's Unload mission (vt+0x374(9), `0x00730D15`). The command's
-/// historical `DeployMcv` wire name also carries a SimpleDeployer toggle
-/// and a tank bunker's occupant's deploy out. The walk admits a bunkered unit
-/// only through IsActive (vt+0x9C): vt+0xA0 refuses a bunker link, and a box
+/// The deploy key's per-object event for an object it admits: DEPLOY event
+/// opcode9 (vt+0x374(9), `0x00730D15`), whose receiver queues Mission Unload16.
+/// The historical `DeployMcv` wire name also carries a SimpleDeployer toggle,
+/// a transport's empty or loaded order and a tank bunker's deploy out.
+/// The walk admits a bunkered unit only through IsActive (vt+0x9C):
+/// vt+0xA0 refuses a bunker link, and a box
 /// never selects one, but a click does.
 fn deploy_key_command(
     sim: &crate::sim::world::Simulation,
@@ -3066,8 +3067,14 @@ fn deploy_key_command(
         EntityCategory::Unit if entity.bunker.link().installed_in().is_some() => {
             Some(Command::DeployMcv { entity_id })
         }
+        // Unit D emits Event9 without a cargo-count test (`0x00730D15` →
+        // `0x006FFE00`); self-click keeps its separate loaded-only admission.
+        // Native controls: tools/spatial_oracle/ground_transport_deploy.json.
+        EntityCategory::Unit if obj.is_some_and(|object| object.passengers > 0) => {
+            Some(Command::DeployMcv { entity_id })
+        }
         _ => {
-            // A loaded transport (including aircraft) keeps the unload action.
+            // Aircraft and other deployers retain their existing routing.
             super::transport_orders::unload_command(entity, obj, local_owner).or_else(|| {
                 let object = obj?;
                 (super::context_order::is_simple_deploy_unit(entity, object)
@@ -3470,7 +3477,7 @@ mod deploy_key_tests {
     }
 
     #[test]
-    fn simple_deployer_key_preserves_infantry_and_loaded_transport_actions() {
+    fn simple_deployer_key_preserves_infantry_and_transport_routes() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[VehicleTypes]\n0=HELI\n1=TRANSPORT\n2=PLAIN\n3=FIRER\n\
              [AircraftTypes]\n0=AIRCRAFT\n[InfantryTypes]\n0=GI\n\
@@ -3505,8 +3512,8 @@ mod deploy_key_tests {
         );
         assert_eq!(
             deploy_key_command(&sim, Some(&rules), transport, sim.session().current_house()),
-            Some(Command::UnloadPassengers {
-                transport_id: transport
+            Some(Command::DeployMcv {
+                entity_id: transport
             })
         );
         assert_eq!(
@@ -3546,6 +3553,81 @@ mod deploy_key_tests {
         );
     }
 
+    #[test]
+    fn ground_transport_deploy_key_matches_native_producer_and_keeps_self_click_separate() {
+        use crate::app::input::context_order::{self_answers_no_deploy, self_click_command};
+        use crate::app::input::entity_pick::HoverTargetKindWithId;
+        use crate::app::types::HoverTargetKind;
+
+        let native = crate::test_fixture::json("tools/spatial_oracle/ground_transport_deploy.json");
+        let capacity = native["fixture"]["passengers"]
+            .as_u64()
+            .expect("native transport capacity") as u32;
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=TRANSPORT\n[TRANSPORT]\nStrength=200\nPassengers={capacity}\n"
+        )))
+        .expect("transport D input rules");
+        let producers = native["deploy_key"].as_array().expect("native D producers");
+        assert_eq!(producers.len(), 2, "empty and loaded native D controls");
+        for row in producers {
+            let count = row["cargo"].as_u64().expect("native cargo count") as usize;
+            let mut sim = player_sim();
+            let transport = sim
+                .spawn_object_limbo_at_height("TRANSPORT", "Americans", 10, 10, 0, 0, &rules)
+                .expect("transport input fixture builds");
+            let mut cargo = PassengerCargo::new(capacity, 0.0);
+            let head: Vec<_> = (0..count).map(|index| (999 + index as u64, 1.0)).collect();
+            cargo.board_forced_chain(&head);
+            sim.entities_mut_for_test()
+                .get_mut(transport)
+                .unwrap()
+                .passenger_role = PassengerRole::transport(cargo);
+            let owner = sim
+                .session()
+                .current_house()
+                .expect("local transport owner");
+            // Opcode9 is the native event, not a Mission number. Both native
+            // cargo rows send it; the shared receiver owns Mission Unload16.
+            let event = match row["event_opcode"].as_u64().expect("native event opcode") {
+                9 => Command::DeployMcv {
+                    entity_id: transport,
+                },
+                opcode => panic!("unexpected native transport D event {opcode}"),
+            };
+            assert_eq!(
+                deploy_key_commands(&sim, Some(&rules), &[transport], Some(owner)),
+                [event],
+                "native cargo count {count} still sends the D event"
+            );
+            let hover = HoverTargetKindWithId {
+                kind: HoverTargetKind::FriendlyUnit,
+                stable_id: transport,
+            };
+            let clicked =
+                self_click_command(&sim, &rules, None, owner, &[transport], Some(&hover), false);
+            if count == 0 {
+                assert_eq!(clicked, None, "empty self-click does not send the D event");
+                assert!(self_answers_no_deploy(
+                    &sim,
+                    &rules,
+                    None,
+                    owner,
+                    &[transport],
+                    &hover,
+                    false
+                ));
+            } else {
+                assert_eq!(
+                    clicked,
+                    Some(Command::UnloadPassengers {
+                        transport_id: transport
+                    }),
+                    "loaded self-click retains its separate mission command"
+                );
+            }
+        }
+    }
+
     /// A unit in a tank bunker passes CanDeploySlashUnload and deploys out of
     /// it, a loaded transport too: its Unload's bunker arm (`0x0073D63B`)
     /// precedes the transport arm. Outside a bunker a plain tank is refused.
@@ -3579,8 +3661,8 @@ mod deploy_key_tests {
         assert!(deploy_key_commands(&sim, Some(&rules), &[tank], owner).is_empty());
         assert_eq!(
             deploy_key_command(&sim, Some(&rules), transport, owner),
-            Some(Command::UnloadPassengers {
-                transport_id: transport
+            Some(Command::DeployMcv {
+                entity_id: transport
             })
         );
         for id in [tank, transport] {

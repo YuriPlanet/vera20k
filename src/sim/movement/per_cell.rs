@@ -1263,16 +1263,11 @@ impl Simulation {
     /// first ground building of the cell it reached (`0x0047C520`) asks
     /// that building `CanBeOccupiedBy`. Refused, it drops its destination
     /// (vt+0x480(0, 1)) and scatters from the building's coordinate
-    /// (vt+0x174(coord, 1, 1)); admitted, it goes in
-    /// ([`crate::sim::passenger::add_garrison_occupant`]). Either way the
-    /// call returns before the Foot body. Answers whether the arm ran.
-    ///
-    /// RESIDUAL: the building's attached Tag is told it was entered
-    /// (`TagClass::Raise_Event(1, ...)`, `0x00519710..0x00519725`) before
-    /// the infantryman goes in; this garrison ingress does not raise event 1 yet.
-    /// Trigger: a
-    /// map building with a Tag garrisoned this way. Effect: its "entered by"
-    /// trigger does not spring. A building a house builds has no Tag.
+    /// (vt+0x174(coord, 1, 1)); admitted, the building's Tag hears event 1
+    /// ("entered by", `0x00519710..0x00519725`) with him as the actor, and
+    /// he goes in ([`crate::sim::passenger::add_garrison_occupant`],
+    /// `0x0051972D`) with no recheck. Either way the call returns before the
+    /// Foot body. Answers whether the arm ran.
     fn infantry_per_cell_occupy(
         &mut self,
         id: u64,
@@ -1313,6 +1308,8 @@ impl Simulation {
             return Ok(false);
         }
         if crate::sim::passenger::building_can_be_occupied_by(self, rules, building, id) {
+            let context = UninitContext::new(rules, registry).with_effects(effects);
+            self.dispatch_object_tag_event(building, 1, Some(id), None, context);
             crate::sim::passenger::add_garrison_occupant(
                 self, rules, id, building, registry, effects,
             );

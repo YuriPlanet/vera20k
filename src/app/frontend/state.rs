@@ -140,6 +140,8 @@ pub(crate) struct FrontendState {
     pub(crate) wol_auto_login_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// The Buddy List `0x116`'s art (`0x0072C060`).
     pub(crate) wol_buddy_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    /// `0x117`'s quickmatch.shp/.PAL (`0x0072BE80`).
+    pub(crate) wol_quick_match_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// The buddy mirror and its queues (process globals `0xB73AA8`..).
     pub(crate) wol_buddies: crate::app::shell_wol::buddies::WolBuddies,
     /// The offline WOL test service's buddy list, standing in for the

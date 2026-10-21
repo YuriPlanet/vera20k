@@ -1,5 +1,52 @@
 # Native comparison workflow
 
+### Ordinary animation translucency
+
+`python -m tools.spatial_oracle.anim_translucency --check` runs physical FlakWH
+selection and SMKPUFF's original reader, constructor, AI, DrawIt and RGB565 raster.
+Three supplied background/A surfaces at four actual stages retain full color
+outputs and checked unchanged Z/A planes. The actual Display-effect emitter,
+lowering and GPU consumer is `anim_translucency_gpu_tests`; building-slot
+temporal state and complete battles are outside the comparison.
+See [inputs and boundaries](spatial_oracle/anim_translucency.md).
+
+### Building-slot animation translucency
+
+`python -m tools.spatial_oracle.building_anim_translucency --check` runs
+physical GAPOWR/GAPOWR_A readers and slot construction, a populated temporal
+notice, whole LetGo, AI and complete no-shadow animation draws. Three supplied
+surfaces cover all eight loop frames and replacement during erasure: 78 full
+color/Z/A outputs. Compact lossless planes accompany a complete raw archive.
+The ordinary CLEG Attack/Stop lifecycle and actual slot-emitter GPU comparison
+are separate tests. See [inputs and boundaries](spatial_oracle/building_anim_translucency.md).
+
+### Mind-control attacked-object events
+
+`python -m tools.spatial_oracle.mind_control_tags --check` runs eleven original
+`BulletClass::DetonateAtCoord` controls through attached-object events 6 and 44.
+The ordinary rows stop before CaptureUnit; two rejection controls execute its
+refusal. The fixture inputs, callback state and excluded world lifecycles are
+documented in [`mind_control_tags.md`](spatial_oracle/mind_control_tags.md).
+
+The Rust regression
+`retail_all02_mind_control_attack_starts_the_authored_stallone_script` uses the
+physical Allied mission 2 map's Lasher/Stallone actors and unchanged trigger
+definitions. A stock YURI attack must start the authored ChangeHouse, CreateTeam
+and Voice chain without damaging the tank. It supplies a flat arena and an
+already-acquired YURI; it does not replay the Engineer/base-building opening or
+compare a complete original campaign. Set `RA2_DIR` to the retail install and
+`VERA20K_REQUIRE_RETAIL_ASSETS=1` so absent archives fail instead of skipping.
+
+### Attached animation detail admission
+
+`python -m tools.spatial_oracle.building_anim_detail --check` keeps one physical
+GAPOWR/GAPOWR_A slot and runs 16 whole DrawIfVisible controls. Original Logic
+counters and Throttle supply sampled rates; options, hysteresis and offscreen
+controls retain actual FPS-query counts, thresholds, latch changes and Surface
+admission. The retail CPU test consumes those observations through the actual
+slot emitter and shared Display traversal. See
+[inputs and boundaries](spatial_oracle/building_anim_detail.md).
+
 ### Computer sale of captured buildings
 
 `python -m tools.spatial_oracle.captured_building_sale --check` executes the
@@ -308,6 +355,7 @@ covered. The metadata records the executed binary, command and supplied type get
 | `tools.spatial_oracle.radiation_damage_boundary` | Six original percentage/Radiation reader, flat-site spread, Foot admission and Object receiver rows explaining the shared Verses regression | `combat_tests::rad_damage_fires_on_application_delay_boundary_only`; final health/admission only, with native base59 versus Rust60 explicitly unresolved. [Bounds and required radiation follow-up](spatial_oracle/radiation_damage_boundary.md) |
 | `tools.rules_oracle.bridge_child_sound` | Original selected SOUNDMD registry/Voc readers and three ART Report bindings; native Release versus hard-stop on two playing one-shot events | `sound_dispatch::bridge_child_sound_tests` exercises the existing Anim event/audio owner; device channels, waveform equivalence and whole child AI order remain outside native execution. [Sound evidence](rules_oracle/bridge_child_sound.md) |
 | `tools.rules_oracle.anim_image` | 11 original Image25 reads and loader fallback selections; exact section and current-ID default supplied from the caller | `art_data_tests.rs`, asset catalog and both atlas consumers preserve literal animation type identity |
+| `tools.rules_oracle.anim_theater_flags` | 26 original fresh AnimType reader/theater-postpass controls: Image-section flag defaults, own overrides, invalid/missing values, one-hop aliases and literal-file availability; declared header-only SHPs | `art_data_tests.rs::animation_theater_flags_match_original_fresh_read_and_postpass`; [scope and reproduction](rules_oracle/anim_theater_flags.md). Retained INI rereads, instance lifetime and the complete Theater filename policy are excluded |
 | `tools.spatial_oracle.bridge_debris_producer` | 266 original Cell47DD70 producer/Anim constructors plus 12 shared death-debris loops; production-exported 15/4 animation pools and SHP frame counts | `world/bridge_debris_tests.rs` and combat death-debris tests; synchronous constructor/RNG order, excluding later AI |
 | `tools.spatial_oracle.bridge_debris_flight` | 32 joined original producer/primary AnimAI/Bounce histories across dry, water, deck and discontinuous ground; per-visit RNG and child constructors; duplicate pending-delete queue drain executes once | `world/bridge_debris_flight_tests.rs`; only primary AI scheduled, empty contact/observer lists, supplied audio boundaries and false bridge drivers. See chain evidence |
 | `tools.spatial_oracle.terrain_debris_receiver` | 24 original Bouncer contact/Terrain ReceiveDamage/unlink/Logic/retirement rows; actual retail TREE01 occupation bits | `anim_debris_tests.rs` compares 19 single-tree receiver cases. Synthetic multi-tree, custom successful death-animation and populated observer chains are excluded |
@@ -359,6 +407,7 @@ covered. The metadata records the executed binary, command and supplied type get
 | `tools.spatial_oracle.trigger_action_values` | 61 original TAction constructor/read/global-local dispatch cases: parameter type versus operand, token8 overrides, empty tokens, signed overflow and variable bounds | `sim/trigger_runtime_tests.rs::parsed_variable_actions_match_native_reader_dispatch_and_restore` compares parsed actions through production frames and save/restore. Excludes named sound/theme/speech lookup and live timer-reset fanout |
 | `tools.spatial_oracle.trigger_event_records` | 54 original counted reader cases: variable record widths, numeric/type-name materialization, reversed event list, timer/elapsed/global/local predicate samples | `sim/trigger_runtime_tests.rs::parsed_event_records_match_native_list_and_production_predicates` compares parsed records and supported predicates through production frames. Excludes resolved Team references, nonempty TechnoType scans and live Trigger completion/timers |
 | `tools.spatial_oracle.tag_lifecycle` | 49 original histories: shared/fresh Tags, reversed linked execution, repeat modes/refcounts, Object/cell attachment and detach, completion bits, timer/RNG/reset fanout, force/enable/disable, deferred destructors and Logic polling/list mutation | Evidence for the pending live-instance migration. Supplies allocation/free storage, OS pointer probing and initialized registries; no gameplay calls replaced. Excludes scenario registration classification/countdown expiry, Team/physical Object destruction and gated House-win/cursor updates; no Rust live-instance parity claim |
+| `tools.spatial_oracle.building_sale_triggers` | Original sale-completion sentinel, live destruction callbacks and post-callback refund on a physically constructed Building | [Boundaries and reproduction](spatial_oracle/building_sale_triggers.md). Rust compares the shared callback and accounting owners; a separate physical ALL01 regression drives ordinary SELL through build-down and the authored SpySat_Boom map actions. Full native campaign execution and rendered parity are excluded. |
 | `tools.spatial_oracle.techno_rearm` | 267 original GetROF numeric/RNG cases with explicit virtual query substitutions; original RTTI leaves separately establish Unit1, Aircraft2, Building6, Infantry15 | Evidence for rearm migration; Unit delay and Building one-frame shortcut identities corrected; no complete production rearm parity claim |
 | `tools.spatial_oracle.building_fire_turn` | 140 original voxel-building facing retry decisions using raw Type ROT; stops before Snap/GetFireError | `combat/combat_turret_facing_tests.rs` drives the production fire receiver against every decision |
 | `tools.spatial_oracle.building_voxel_flh` | 13 original `BuildingClass::GetFLH 0x00453840` coordinate cases covering its `+0x16C5` arm and disabled/primary-pixel precedence controls: the type's TurretAnimIsVoxel/X/Y, PrimaryFirePixelOffset/DualOffset and merged FLH, the `+0x388` heading snapped by `0x004C9300`, burst parities, the stock GTGCAN 3/28 and YAGGUN 0/15 inputs, and the `+0x16C6`-clear prefix; each row records GetFLH's coordinate, the building's own `GetCoords 0x00459EF0` and the reached addresses (the disabled control never reaches `IsometricPixelToWorld 0x006D2070`) | `combat/fire_coord_building_tests.rs::building_voxel_turret_shot_origin_matches_the_original_flh` replays every row through the production rules/ART readers; `retail_voxel_turret_inputs_match_the_native_rows` checks the stock inputs against the retail layers and `app/presentation/fire_effects.rs::stock_voxel_turret_shot_positions_bullet_flash_and_report_together` drives a real Grand Cannon shot through `advance_tick` and checks its bullet, bound muzzle AnimClass and positioned report sound |

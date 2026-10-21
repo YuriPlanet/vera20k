@@ -342,6 +342,15 @@ impl IniSection {
         self.read_string_with(key, 2048, default, parse_read_bool)
     }
 
+    /// Ares Nullable<bool>1000E9B0: successful reads set both the value and
+    /// presence; absent, empty and invalid reads retain the previous pair.
+    /// `none` parses as false, whereas `<none>` is invalid, not an unset token.
+    pub fn read_ares_nullable_bool(&self, key: &str, default: Option<bool>) -> Option<bool> {
+        self.read_string_with(key, 2048, default, |current, raw| {
+            read_bool_decision(raw).or(current)
+        })
+    }
+
     /// [`Self::read_bool`] where the caller supplies the default later: `None`
     /// wherever ReadBool would return its default argument (an absent key,
     /// or a first character outside `1TY0FN`).
