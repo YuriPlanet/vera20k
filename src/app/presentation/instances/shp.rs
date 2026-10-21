@@ -713,10 +713,15 @@ pub(crate) fn build_shp_instances(
                 instance,
             });
             // Unit73CE5E/73CEAD -> Foot41C090 -> Techno705E00 draws
-            // the embedded stencil after the body. Infantry's separate
-            // INFSHDW draw above remains before its body.
-            if entity.category() == EntityCategory::Unit
-                && let Some(body_entry) = entry
+            // the embedded stencil after the body. Infantry51958A also calls
+            // this shared Techno draw. Its separate airborne INFSHDW draw
+            // above remains before its body.
+            // Native positive/NoShadow controls:
+            // tools/procedural_drawing_oracle/infantry_embedded_shadow.json.
+            if matches!(
+                entity.category(),
+                EntityCategory::Unit | EntityCategory::Infantry
+            ) && let Some(body_entry) = entry
                 && let Some(shadow) = embedded_shp_shadow_piece(
                     atlas,
                     state
@@ -848,7 +853,8 @@ pub(crate) fn build_shp_instances(
 }
 
 /// Techno705E00's embedded-shadow admission, also used when a Unit draws
-/// a TerrainType image. Unit GetHeight5F5F40 must be zero (70600C..70603F);
+/// a TerrainType image. Unit/Infantry GetHeight5F5F40 must be zero
+/// (Infantry class15 dispatch705FA6..705FB2, shared70600C..70603F);
 /// the existing isolated query includes live ramp and OnBridge height.
 fn embedded_shp_shadow_admitted(
     object: Option<&crate::rules::object_type::ObjectType>,
@@ -858,11 +864,13 @@ fn embedded_shp_shadow_admitted(
 ) -> bool {
     matches!(decision.native_visual_state, 0 | 1)
         && !object.is_some_and(|object| object.no_shadow)
-        && (entity.category() != EntityCategory::Unit
-            || crate::sim::movement::air_movement::queried_flight_height(entity, cells) == 0)
+        && (!matches!(
+            entity.category(),
+            EntityCategory::Unit | EntityCategory::Infantry
+        ) || crate::sim::movement::air_movement::queried_flight_height(entity, cells) == 0)
 }
 
-/// The common embedded second-half shadow owner used by Building and Unit
+/// The common embedded second-half shadow owner used by Building, Unit and Infantry
 /// `TechnoClass_DrawSHP @ 0x00705E00` paths. Its caller passes the actual body
 /// frame key/entry/instance and the same admitted native visual-state result;
 /// this function does not infer a second frame, anchor, or visibility decision.
