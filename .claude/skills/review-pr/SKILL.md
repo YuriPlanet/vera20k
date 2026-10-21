@@ -53,19 +53,35 @@ oracles, scripts) until steps 1 and 2 are clean.
    Report each claim as native-established, Rust-tested or unverified, with the
    addresses you read.
 4. **Integrate, but only with the user's merge authority for this author.**
-   - Fixing conflicts and API skew is our job. Merge fetched `origin/main` into a
-     detached worktree of the PR head.
+   - Steps 2 and 3 are the review; integration only proves the merge compiles.
+     Run no tests. `main` has no automatic CI, so a merge that breaks the build
+     reaches every session.
+     - Read only, no build: PRs that change no Rust (docs, Python, skills, data)
+       and tiny Rust changes (a few lines inside function bodies, no signature,
+       type or module change).
+     - Other Rust changes: compile the merge with `origin/main`,
+       `python -m tools.cargo_run -- check --workspace --lib --tests`.
+   - A PR GitHub reports as mergeable that needs no build merges without a
+     checkout. Fixing conflicts and API skew is our job, and any checkout goes in
+     a reused slot, never a new worktree: each checkout path gets its own Cargo
+     cache, so a worktree per PR rebuilds every dependency and leaves 2–14 GB
+     behind. `python <this skill>/scripts/integration_slot.py claim pr<N>` prints
+     the slot's path (`<main checkout>-wt/integration-<n>`, created on first
+     use). When every slot is held it exits 1 and names the holders; rerun it with
+     `--wait 3600` in the background rather than creating a worktree.
+   - In the slot, `git fetch origin main pull/<N>/head`,
+     `git checkout --detach <PR head SHA>`, then merge `origin/main`.
    - On a snapshot clash, keep both changelog lines and take the next free
      `SNAPSHOT_VERSION`.
-   - Check that both crates compile with `--lib --tests`, then run focused tests
-     for the touched modules.
-   - Push to the contributor's branch, and confirm the PR head equals the SHA you
-     pushed.
+   - Push a slot merge to the contributor's branch, and confirm the PR head
+     equals the SHA you pushed.
    - Apply [Contributor attribution](#contributor-attribution) before choosing the
      merge method. Use an explicit `--subject`, `--body-file` and
      `--match-head-commit <actual head SHA>`. Write "Part of #N" unless the PR
      really closes N.
-   - Remove the worktree and fast-forward the main checkout.
+   - Release a claimed slot with `integration_slot.py release pr<N>` once its work is
+     pushed or abandoned (`git merge --abort`); it refuses uncommitted work. Keep
+     the slot's worktree. Fast-forward the main checkout.
 5. **Report** briefly:
    - the malware verdict;
    - any protected-file findings;

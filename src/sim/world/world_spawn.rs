@@ -1293,6 +1293,7 @@ impl Simulation {
     /// Ares 4f1d9299, UnitDeliveryStateMachine::PlaceUnits uses Track/Normal
     /// for this search, then the usual class admission at Put. Final Unlimbo
     /// still performs fresh admission.
+    #[cfg(feature = "ares")]
     pub(crate) fn constructed_object_can_enter_at(
         &self,
         stable_id: u64,
@@ -1351,6 +1352,7 @@ impl Simulation {
     /// construction and must not leave a building waiting on a buildup.
     /// Ares PlaceUnits supplies GetCoordsWithBridge and explicitly sets
     /// OnBridge before Put; the class query's local plane is not that store.
+    #[cfg(feature = "ares")]
     pub(crate) fn reveal_finished_object_at_coord(
         &mut self,
         stable_id: u64,

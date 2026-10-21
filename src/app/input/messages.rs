@@ -433,19 +433,35 @@ pub(crate) fn post_chat_line(state: &mut AppState, name: &str, text: &str, rgb: 
 /// scheme (`0x004E12D0` with `0x00822728`), flags 0x16, MessageDelay*900
 /// (`0x0055EED0..0x0055EF2C`).
 pub(crate) fn post_observer_refusal(state: &mut AppState) {
-    post_grey_row(state, "TXT_OBSERVER_CANT_SEND", true);
+    post_grey_row(state, "TXT_OBSERVER_CANT_SEND", true, true);
+}
+
+/// The WOL page sinks in a match (`0x007A92F9..0x007A93B4`): the page line
+/// and, from the ANSI sink, `TXT_HOW_TO_REPLY` under it, each a Grey row
+/// with flags 0x16, `MessageDelay * 900` and silent 0.
+pub(crate) fn post_wol_page_rows(state: &mut AppState, line: &str, reply_hint: bool) {
+    post_grey_row(state, line, false, false);
+    if reply_hint {
+        post_grey_row(state, "TXT_HOW_TO_REPLY", true, false);
+    }
+}
+
+/// A WOL find or page-result row in a match with no window to take it
+/// (`0x007AA5D5..`, `0x007A9800`): the same Grey row, silent 0.
+pub(crate) fn post_wol_result_row(state: &mut AppState, text: &str) {
+    post_grey_row(state, text, false, false);
 }
 
 /// The WOL NetStatus sink's lost connection in a match (`0x007AA7C0..`):
 /// one `TXT_WOL_CONNLOST` row in the same scheme, flags and timeout, with
 /// its sound.
 pub(crate) fn post_wol_connection_lost(state: &mut AppState) {
-    post_grey_row(state, "TXT_WOL_CONNLOST", false);
+    post_grey_row(state, "TXT_WOL_CONNLOST", true, false);
 }
 
-/// A CSF row in `GadgetClass::GetColorScheme` (`0x004E12D0`, "Grey"),
-/// flags 0x16, `MessageDelay * 900`.
-fn post_grey_row(state: &mut AppState, key: &str, silent: bool) {
+/// A row in `GadgetClass::GetColorScheme` (`0x004E12D0`, "Grey"), flags
+/// 0x16, `MessageDelay * 900`; `text` is a CSF key when `localize`.
+fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool) {
     let Some(rules) = state.rules() else {
         return;
     };
@@ -459,15 +475,16 @@ fn post_grey_row(state: &mut AppState, key: &str, silent: bool) {
             )
             .map(|channel| f32::from(channel) / 255.0)
         });
-    post_localized_message(
+    post_message(
         state,
         &crate::ui::messages::MessagePost {
             prefix: None,
-            text: key,
+            text,
             rgb,
             timeout_ms,
             silent,
         },
+        localize,
     );
 }
 
@@ -540,22 +557,24 @@ fn house_message_rgb(
         .map(|channel| f32::from(channel) / 255.0)
 }
 
-/// Per-frame: feed the pause edge into the clock, then (unpaused, in-game)
-/// re-anchor to the live viewport and expire rows against the FROZEN clock.
-/// While paused the clock accumulates the span and `manage` is skipped — both
-/// halves are required: skipping alone would let wall-time deadlines expire
-/// the instant the game unpauses.
+/// Per-frame: feed the pause edge into the clock, then (Main_Tick running,
+/// in-game) re-anchor to the live viewport and expire rows against the
+/// FROZEN clock. While Main_Tick is frozen the clock accumulates the span and
+/// `manage` is skipped — both halves are required: skipping alone would let
+/// wall-time deadlines expire the instant the game unpauses. Under a LAN/WOL
+/// modal Main_Tick runs on, and so do the rows.
 pub(crate) fn update(state: &mut AppState) -> Option<u64> {
     if state.frontend.screen != GameScreen::InGame {
         return None;
     }
     let wall = crate::app::input::tooltips::now_ms(state);
+    let frozen = state.match_state.main_tick_frozen();
     state
         .match_state
         .match_presentation
         .message_clock
-        .set_paused(state.match_state.paused(), wall);
-    if state.match_state.paused() {
+        .set_paused(frozen, wall);
+    if frozen {
         return None;
     }
     sync_view(state);

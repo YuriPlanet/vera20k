@@ -120,15 +120,27 @@ impl Simulation {
 }
 
 impl crate::sim::world::ObjectSubstrate {
-    /// The latch stores of ForceOffline4521C0/ForceOnline452210. Temporal
-    /// must not call the normal toggles: these force stores have no factory,
-    /// light, Stuff or EVA callbacks. Their Anim119 translucency/fade tail
-    /// remains the existing Temporal presentation residual.
+    /// `BuildingClass` `0x004521C0` (`online == false`, a Temporal erase
+    /// starting) and `0x00452210` (its release): the online latch (`+0x660`),
+    /// then each of the 21 animation slots (`+0x55C`) frozen and drawn
+    /// translucent, or released ([`AnimObject::set_temporal_erase`]).
+    /// Temporal must not call the normal toggles: these force stores have no
+    /// factory, light, Stuff or EVA callbacks.
+    ///
+    /// [`AnimObject::set_temporal_erase`]: crate::sim::anim_class::AnimObject::set_temporal_erase
     pub(crate) fn set_building_online_for_temporal(&mut self, id: u64, online: bool) {
-        if let Some(entity) = self.entities.get_mut(id)
-            && entity.category() == EntityCategory::Structure
-        {
-            entity.building_online.online = online;
+        let Some(entity) = self.entities.get_mut(id) else {
+            return;
+        };
+        if entity.category() != EntityCategory::Structure {
+            return;
+        }
+        entity.building_online.online = online;
+        let slots = *entity.building_art.anim_slots();
+        for slot in slots.into_iter().flatten() {
+            if let Some(anim) = self.anims.get_mut(slot) {
+                anim.set_temporal_erase(!online);
+            }
         }
     }
 }

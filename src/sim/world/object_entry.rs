@@ -341,7 +341,8 @@ fn infantry_target_admission(
     if blocker.warped_out {
         return Ok(InfantryTargetAdmission::Ordinary);
     }
-    let eligible = match mover.mission.current().known() {
+    // Get_Mission (vt+0x184, 0x005B3040): current, else the queued mission.
+    let eligible = match mover.mission.effective().known() {
         Some(MissionType::Enter | MissionType::Capture | MissionType::Eaten) => true,
         Some(MissionType::Sabotage) => obj.c4,
         Some(MissionType::AreaGuard | MissionType::Patrol | MissionType::Guard) => obj.engineer,
@@ -1204,11 +1205,9 @@ fn full_foot_entry<'a>(
             }
         }
         let allied = mover.allied_with(live, b.owner);
-        let mission = if infantry {
-            e.mission.current().known()
-        } else {
-            e.mission.effective().known()
-        };
+        // Both classes ask Get_Mission (vt+0x184, 0x005B3040): current, else
+        // the queued mission.
+        let mission = e.mission.effective().known();
         if infantry {
             match infantry_target_admission(live, e, obj, blocker_id, &b, cell)? {
                 InfantryTargetAdmission::Ordinary => {}
@@ -1228,6 +1227,14 @@ fn full_foot_entry<'a>(
                         },
                     );
                 }
+            }
+            //51C41C..51C43E: an AreaGuard escort refuses the cell of the
+            //Unit its ArchiveTarget (+0x218) names, before any alliance arm.
+            if mission == Some(MissionType::AreaGuard)
+                && b.category() == EntityCategory::Unit
+                && e.archive_target() == Some(crate::sim::combat::TargetKind::Entity(blocker_id))
+            {
+                return Ok(7);
             }
         }
         if b.category() == EntityCategory::Structure {
@@ -1342,6 +1349,14 @@ fn full_foot_entry<'a>(
             && object_target_is(e, blocker_id)
         {
             return Ok(0);
+        }
+        //73F84A..73F85F: a Unit escort refuses the cell of whatever its
+        //ArchiveTarget names, with no class test (Infantry's arm is above).
+        if !infantry
+            && mission == Some(MissionType::AreaGuard)
+            && e.archive_target() == Some(crate::sim::combat::TargetKind::Entity(blocker_id))
+        {
+            return Ok(7);
         }
         //Infantry51C579..58D's occupant-list alliance override is local to
         //this gate. Earlier Building/wall checks and the later raw-owner
@@ -2109,5 +2124,122 @@ mod tests {
             probe(&mut sim),
             "true6B0880 continues into the later hard blocker"
         );
+    }
+
+    /// The escort arms of Can_Enter_Cell: Infantry `0x0051C41C..0x0051C43E`
+    /// refuses (7) the cell of the Unit its AreaGuard ArchiveTarget names,
+    /// where the allied-Unit arm waits (6); Unit `0x0073F84A..0x0073F85F`
+    /// refuses an ArchiveTarget of any class. Get_Mission (vt+0x184,
+    /// `0x005B3040`) answers the queued mission while none is current.
+    #[test]
+    fn an_escort_refuses_the_cell_of_what_it_guards() {
+        use crate::sim::combat::TargetKind;
+        use crate::sim::mission::MissionId;
+        use crate::sim::mission::state::MissionTestFixture;
+        const RULES: &str = "[InfantryTypes]\n2=ESCORT\n\
+             [ESCORT]\nSpeedType=Foot\nStrength=100\n\
+             Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+             [VehicleTypes]\n0=TRUCK\n\
+             [TRUCK]\nSpeedType=Wheel\nStrength=100\n\
+             Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n";
+        let (mut sim, rules, registry) =
+            crate::sim::world::entry_test_fixture::fixture_with_rules(RULES);
+        let spawn = |sim: &mut Simulation, name: &str, at: (u16, u16)| {
+            sim.spawn_object(name, "Americans", at.0, at.1, 0, &rules)
+                .unwrap()
+        };
+        let truck = spawn(&mut sim, "TRUCK", (16, 15));
+        let walker = spawn(&mut sim, "ENGINEER", (17, 15));
+        let escort = spawn(&mut sim, "ESCORT", (15, 15));
+        let engineer = spawn(&mut sim, "ENGINEER", (17, 14));
+        let convoy = spawn(&mut sim, "TRUCK", (17, 16));
+        let frame = sim.session.binary_frame();
+        let probe = |sim: &Simulation, mover: u64, at: (i16, i16)| {
+            let cell = sim
+                .resolved_terrain
+                .as_ref()
+                .unwrap()
+                .native_cell_identity(at);
+            sim.foot_can_enter(
+                mover,
+                cell,
+                crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
+                &rules,
+                Some(&registry),
+            )
+            .unwrap()
+        };
+        // As the guard order leaves it: mission, ArchiveTarget and NavCom.
+        let order = |sim: &mut Simulation,
+                     mover: u64,
+                     current: MissionType,
+                     queued: Option<MissionType>,
+                     target: Option<u64>| {
+            let entity = sim.substrate.entities.get_mut(mover).unwrap();
+            entity.mission.apply_test_fixture(MissionTestFixture {
+                current: queued.map_or(MissionId::from_known(current), |_| MissionId::NONE),
+                suspended: MissionId::NONE,
+                queued: queued.map_or(MissionId::NONE, MissionId::from_known),
+                movement_bypass_latch: 0,
+                handler_state: 0,
+                mission_start_frame: frame,
+                ai_counter: 0,
+                dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(frame),
+            });
+            entity.set_archive_target(target.map(TargetKind::Entity));
+            entity
+                .navigation
+                .set_nav_com_for_test(target.map(|id| NavTargetRef::Object { id }));
+        };
+
+        // Infantry: the allied stationary Unit waits; the escort refuses it.
+        order(&mut sim, escort, MissionType::Guard, None, Some(truck));
+        assert_eq!(probe(&sim, escort, (16, 15)), 6, "Guard does not escort");
+        order(&mut sim, escort, MissionType::AreaGuard, None, None);
+        assert_eq!(probe(&sim, escort, (16, 15)), 6, "no ArchiveTarget");
+        order(&mut sim, escort, MissionType::AreaGuard, None, Some(truck));
+        assert_eq!(probe(&sim, escort, (16, 15)), 7);
+        order(
+            &mut sim,
+            escort,
+            MissionType::Guard,
+            Some(MissionType::AreaGuard),
+            Some(truck),
+        );
+        assert_eq!(probe(&sim, escort, (16, 15)), 7, "the queued AreaGuard");
+        // Only a Unit: guarding an infantryman leaves his cell's answer.
+        order(&mut sim, escort, MissionType::AreaGuard, None, None);
+        let beside = probe(&sim, escort, (17, 15));
+        order(&mut sim, escort, MissionType::AreaGuard, None, Some(walker));
+        assert_eq!(probe(&sim, escort, (17, 15)), beside);
+
+        // An Engineer's NavCom target is admitted earlier (0x0051C37D), and
+        // target admission reads the queue too (0x0051C2E6).
+        order(
+            &mut sim,
+            engineer,
+            MissionType::AreaGuard,
+            None,
+            Some(truck),
+        );
+        assert_eq!(probe(&sim, engineer, (16, 15)), 0);
+        order(
+            &mut sim,
+            engineer,
+            MissionType::Guard,
+            Some(MissionType::Enter),
+            Some(truck),
+        );
+        assert_eq!(probe(&sim, engineer, (16, 15)), 0, "the queued Enter");
+
+        // Unit: any class.
+        order(&mut sim, convoy, MissionType::Guard, None, Some(truck));
+        assert_eq!(probe(&sim, convoy, (16, 15)), 6, "Guard does not escort");
+        order(&mut sim, convoy, MissionType::AreaGuard, None, Some(truck));
+        assert_eq!(probe(&sim, convoy, (16, 15)), 7);
+        order(&mut sim, convoy, MissionType::Guard, None, Some(walker));
+        assert_ne!(probe(&sim, convoy, (17, 15)), 7);
+        order(&mut sim, convoy, MissionType::AreaGuard, None, Some(walker));
+        assert_eq!(probe(&sim, convoy, (17, 15)), 7);
     }
 }

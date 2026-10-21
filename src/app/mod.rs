@@ -107,12 +107,24 @@ pub(crate) mod telemetry_server;
 pub(crate) mod types;
 mod window_icon;
 
+/// Main window title. The single-instance gate finds a running copy's window by
+/// this exact title, so `main` hands the same constant to
+/// `util::single_instance::acquire`.
+pub const WINDOW_TITLE: &str = if crate::rules::ARES_ENABLED {
+    "VERA20K [Ares]"
+} else {
+    "VERA20K"
+};
+
 pub(crate) use shell_random_map::RandomMapGenerationRetention;
 pub(crate) use state::{AppState, PlatformState, reset_scenario_exit_runtime};
 
 /// Top-level application. Implements winit's ApplicationHandler.
 pub struct App {
-    state: Option<AppState>,
+    // UIKit's main thread has about 1 MiB of stack. Keep the large state and
+    // its transfer through initialize/resumed on the heap; storing it inline
+    // exhausted that stack before the first menu could finish loading.
+    state: Option<Box<AppState>>,
     shell_capture: Option<crate::app::diagnostics::shell_capture::ShellCaptureSession>,
     tactical_capture:
         Option<crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession>,
@@ -238,6 +250,31 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_event_loop_owner_fits_mobile_stack_budget() {
+        assert!(
+            std::mem::size_of::<App>() < 16 * 1024,
+            "the event-loop owner must leave UIKit's main-thread stack for loading"
+        );
+    }
+
+    #[test]
+    fn app_constructs_on_a_half_megabyte_stack() {
+        let startup = crate::app::frontend::startup_options::RetailStartupOptions::default();
+        std::thread::Builder::new()
+            .name("app-small-stack".into())
+            .stack_size(512 * 1024)
+            .spawn(move || {
+                let app = std::hint::black_box(App::new(startup));
+                assert_eq!(app.startup_options, startup);
+                assert!(app.state.is_none());
+                drop(app);
+            })
+            .expect("create small-stack construction thread")
+            .join()
+            .expect("construct app without overflowing the mobile stack");
+    }
 
     #[test]
     fn gsi_01_01_noaudio_suppresses_music_and_sfx_output() {

@@ -38,6 +38,10 @@ pub struct SavedScenarioResourcesRef<'a> {
 }
 
 impl<'a> SavedScenarioResourcesRef<'a> {
+    pub(crate) fn compatibility(&self) -> crate::rules::compatibility::RulesCompatibility {
+        self.processed_rules.compatibility()
+    }
+
     pub fn capture(
         resources: &'a SimResources,
         processed_rules: &'a ProcessedRulesLayers,

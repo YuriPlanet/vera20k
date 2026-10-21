@@ -74,6 +74,9 @@ impl App {
         state.match_state.debug_pause = false;
         state.match_state.match_presentation.in_game_menu =
             crate::ui::pause_menu::InGameMenuState::Closed;
+        // A match's 0xCF ends with the game: its pump 0x00623120 stops the
+        // loop once Main_Tick reports the game over (0x0062314E..0x00623157).
+        crate::app::shell_wol::page::close_page_dialog(state);
         state.match_state.match_presentation.in_game_options_anchor = None;
         state.match_state.match_presentation.pause_menu_interaction = Default::default();
         state.match_state.match_presentation.abort_buttons = Default::default();
@@ -224,23 +227,24 @@ impl App {
         crate::app::input::planning_mode::release_on_focus_change(state);
         // gamemd-derived: the `WM_ACTIVATEAPP` changed edge at 0x007778AC
         // stops/restores the primary DirectSound output through 0x00407020 /
-        // 0x00407040 while secondary playback cursors continue. Keep this on
-        // the same edge as the main-loop gate rather than pausing each stream.
-        // Without the configured freeze the world keeps running, so its audio
-        // keeps playing and the pacer never has a deactivated span to forget.
-        if state.platform.pause_on_focus_loss {
-            if let Some(player) = state.audio.music_player.as_mut() {
-                player.set_focus_output_active(active);
-            }
-            if let Some(player) = state.audio.sfx_player.as_mut() {
-                player.set_focus_output_active(active);
-            }
-            if active {
-                // The deactivated span must not buy a catch-up frame: forget
-                // the pacing window so exactly one frame runs immediately,
-                // then normal pacing resumes.
-                state.platform.frame_pacer.reset_for_immediate_frame();
-            }
+        // 0x00407040 while secondary playback cursors continue. Native guards
+        // that only with the window-identity check and the stored
+        // `g_ApplicationActive` (0x00A8ED80) edge — never with a setting — so
+        // the audio gate rides on every activation edge, and a window the
+        // player minimises goes silent.
+        if let Some(player) = state.audio.music_player.as_mut() {
+            player.set_focus_output_active(active);
+        }
+        if let Some(player) = state.audio.sfx_player.as_mut() {
+            player.set_focus_output_active(active);
+        }
+        if state.platform.pause_on_focus_loss && active {
+            // Only the configured freeze leaves a deactivated span to forget:
+            // without it the match keeps pacing in the background. Forget the
+            // pacing window so exactly one frame runs immediately on return,
+            // then normal pacing resumes; the span must not buy a catch-up
+            // frame.
+            state.platform.frame_pacer.reset_for_immediate_frame();
         }
         if active {
             state.platform.window.request_redraw();

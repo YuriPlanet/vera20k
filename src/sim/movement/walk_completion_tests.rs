@@ -404,9 +404,11 @@ fn paid_walk_world_scold_tails_match_original_boundaries() {
         ) {
             continue;
         }
+        let mut actor = GameEntity::test_default(1, "E1", "Americans", 9, 10);
+        // After the actor interns its owner, whom the arrival's sight
+        // border resolves.
         let mut sim = Simulation::new();
         sim.interner = crate::sim::intern::test_interner();
-        let mut actor = GameEntity::test_default(1, "E1", "Americans", 9, 10);
         actor.set_category_for_test(EntityCategory::Infantry);
         actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
         actor

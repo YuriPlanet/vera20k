@@ -192,10 +192,13 @@ const fn text(
     }
 }
 
-/// The ladder statistics and the icon glossary. With no nickname the stats
-/// fill (`0x007989AA`) is skipped, so the values keep `GUI:UnknownStats`;
-/// `0x6EF` and `0x797` stay empty.
-pub const WOL_TEXT_STATICS: [WolTextStatic; 19] = [
+/// The ladder statistics and the icon glossary at their template captions.
+/// With a nickname, init fills the heading `0x6EF`, the five values and
+/// `0x797` from the persona (`0x007989AA` -> `0x0077A9F0`); without one the
+/// values keep `GUI:UnknownStats` and `0x6EF` and `0x797` stay empty.
+pub const WOL_TEXT_STATICS: [WolTextStatic; 20] = [
+    // The persona heading: centred (`0x50020001`), empty caption.
+    text(Some(0x06EF), "", (86, 41, 254, 12), StaticAlign::Center),
     text(
         None,
         "GUI:IconGlossary",

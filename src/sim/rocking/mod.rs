@@ -41,6 +41,16 @@ impl Default for RockingState {
     }
 }
 
+impl crate::sim::game_entity::GameEntity {
+    /// The body-rocking state, materialized at its native zero on the first
+    /// producer's write. Native keeps these Techno fields inline from
+    /// construction; sparse Rust storage creates them only when a producer
+    /// first needs them.
+    pub(crate) fn rocking_mut(&mut self) -> &mut RockingState {
+        self.rocking.get_or_insert_with(RockingState::default)
+    }
+}
+
 impl RockingState {
     /// Compatibility boundary only; simulation and pose consumers retain the
     /// native words. A value outside I16F16 saturates at this read boundary.

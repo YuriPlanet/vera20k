@@ -392,7 +392,7 @@ pub struct GameEntity {
     /// [`FacingClass`] that moves only through its own methods. VERA keeps
     /// one for a `Turret=yes` unit and every aircraft: construction installs
     /// it (`world_spawn::construction`) and a Fly order installs it on an
-    /// aircraft built without one (`air_movement::ensure_fly_secondary_facing`).
+    /// aircraft built without one ([`Self::ensure_fly_secondary_facing`]).
     /// A building aims its [`Self::body_facing`] instead.
     ///
     /// [`FacingClass`]: crate::sim::movement::FacingClass
@@ -821,13 +821,51 @@ mod gunner;
 mod simple_deploy;
 mod voxel_recoil;
 
+#[cfg(all(test, not(feature = "ares")))]
+#[test]
+fn default_build_rejects_saved_delivery_base_override_and_keeps_base_space() {
+    let mut entity = GameEntity::test_default_of_category(
+        1,
+        "YARD",
+        "Americans",
+        20,
+        20,
+        EntityCategory::Structure,
+    );
+    assert!(entity.validate_ares_build_compatibility().is_ok());
+    entity.unit_delivery_no_base = true;
+    assert_eq!(
+        entity.validate_ares_build_compatibility(),
+        Err("delivery base overrides require a build with the ares feature")
+    );
+    assert!(entity.unit_delivery_provides_base_space());
+}
+
 impl GameEntity {
+    #[cfg(feature = "ares")]
     pub(crate) fn set_unit_delivery_base_normal(&mut self, base_normal: bool) {
         self.unit_delivery_no_base = self.category() == EntityCategory::Structure && !base_normal;
     }
 
+    /// Saved extension effects must be admitted by the build that resumes them.
+    /// Keep the raw delivery override private to its entity owner.
+    pub(crate) fn validate_ares_build_compatibility(&self) -> Result<(), &'static str> {
+        #[cfg(not(feature = "ares"))]
+        if self.unit_delivery_no_base {
+            return Err("delivery base overrides require a build with the ares feature");
+        }
+        Ok(())
+    }
+
     pub(crate) fn unit_delivery_provides_base_space(&self) -> bool {
-        !self.unit_delivery_no_base
+        #[cfg(feature = "ares")]
+        {
+            !self.unit_delivery_no_base
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            true
+        }
     }
 
     /// Infantry519524/51958A and Unit73CEF3 subtract Foot+6B4 in DrawIt.
@@ -1342,10 +1380,9 @@ impl GameEntity {
     /// disguise flag (`+0x1D8`) and GetDisguiseHouse (vt+0xD0, `0x0041BE70`)
     /// none, whoever asks. `TechnoClass::Flash @ 0x006F9DD0` then starts the
     /// flash countdown (`+0xF0`) unless that flag is up. A building's
-    /// `0x00456E00` adds the redraw flag (`+0x80`) and relit slot anims,
-    /// presentation the draws derive from the countdown
-    /// (`app::presentation::lighting`). Foot objects go through
-    /// [`crate::sim::world::Simulation::flash_object`].
+    /// `0x00456E00` adds the redraw flag (`+0x80`) and relights its slot
+    /// anims ([`crate::sim::world::ObjectSubstrate::flash_building`]). Foot
+    /// objects go through [`crate::sim::world::Simulation::flash_object`].
     pub(crate) fn flash_base(&mut self, frames: i32) {
         if !self
             .disguise
@@ -1367,6 +1404,18 @@ impl GameEntity {
             } else {
                 type_rot
             });
+    }
+
+    /// Spawn owns Aircraft initialization. Legacy/headless movers may lack the
+    /// Secondary controller; initialize it once from the body's heading without
+    /// replacing an existing live turn. The body's rate stands in for `ROT=`:
+    /// the Aircraft constructor (`0x00413FD2..0x00414015`) gives both
+    /// controllers that one value.
+    pub fn ensure_fly_secondary_facing(&mut self) {
+        let initial = self.body_facing.destination();
+        let body = &self.body_facing;
+        self.barrel_facing
+            .get_or_insert_with(|| crate::sim::movement::FacingClass::with_rate_of(initial, body));
     }
 
     pub(crate) fn set_owner_from_store(

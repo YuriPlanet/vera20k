@@ -1921,6 +1921,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                 // same instance range used by the app's later Extras sweep.
                 super::merge_passes::draw_native_object_pass(
                     &mut encoder,
+                    crate::app::render::merge_passes::ObjectDrawPhase::Display,
                     &cv,
                     &dv,
                     &mut terrain,

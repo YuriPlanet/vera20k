@@ -56,17 +56,22 @@ VERA20K делают игроки для игроков, и последнее �
 
 ![Приложение передаёт команды симуляции и получает состояние мира; данные отрисовки передаются рендерингу.](docs/images/architecture.ru.png)
 
+## Системные требования
+
+- **Игра:** Red Alert 2: Yuri's Revenge 1.001.
+- **ОС:** Windows 10+, Linux (glibc 2.35+, например Ubuntu 22.04 или Steam Deck) или macOS 11+
+  на Apple Silicon.
+- **Графика:** Vulkan, DirectX 12 или Metal.
+
 ## Сборка и запуск
 
 Понадобится:
 
-- **Игра:** Red Alert 2: Yuri's Revenge.
-- **Rust и Git:** актуальная стабильная версия [Rust](https://rustup.rs/), установленная через
-  rustup, и [Git](https://git-scm.com/).
+- **Rust и Git:** [Rust](https://rustup.rs/) 1.88 или новее, установленный через rustup, и
+  [Git](https://git-scm.com/).
 - **Инструменты сборки:** на Windows — C++ Build Tools из Visual Studio, которые предложит
   установить установщик Rust; на macOS — `xcode-select --install`; в Debian и Ubuntu —
   `sudo apt install build-essential libasound2-dev pkg-config`.
-- **Графика:** видеокарта с поддержкой Vulkan, DirectX 12 или Metal.
 
 В VERA20K уже играли на Windows, Linux и macOS.
 
@@ -77,6 +82,8 @@ cp config.toml.example config.toml
 # Перед запуском отредактируй config.toml и укажи папку с игрой в ra2_dir:
 cargo run --release --bin vera20k
 ```
+
+Сборка занимает несколько ГБ в `target/`.
 
 ## Как мы работаем
 

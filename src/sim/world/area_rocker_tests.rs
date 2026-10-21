@@ -720,13 +720,21 @@ fn real_nested_death_weapon_area_rocks_after_its_nonrocking_parent_receivers() {
         };
         let trigger = scene.rules.warhead("AreaRockerTrigger").unwrap();
         assert_eq!(
-            trigger.verses_f64
-                [crate::sim::combat::armor_index(&scene.rules.object("DRON").unwrap().armor)],
+            f64::from_bits(
+                trigger
+                    .interaction(scene.rules.object("DRON").unwrap().armor_id())
+                    .multiplier()
+                    .bits()
+            ),
             1.0
         );
         assert_eq!(
-            trigger.verses_f64
-                [crate::sim::combat::armor_index(&scene.rules.object("MTNK").unwrap().armor)],
+            f64::from_bits(
+                trigger
+                    .interaction(scene.rules.object("MTNK").unwrap().armor_id())
+                    .multiplier()
+                    .bits()
+            ),
             0.0
         );
         assert!(!scene.rules.warhead("AreaRockerTrigger").unwrap().rocker);

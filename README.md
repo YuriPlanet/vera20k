@@ -56,17 +56,22 @@ Arrows show data flow:
 
 ![Application sends commands to simulation, which returns world state; application sends draw data to rendering.](docs/images/architecture.png)
 
+## System requirements
+
+- **Game:** Red Alert 2: Yuri's Revenge 1.001.
+- **OS:** Windows 10+, Linux (glibc 2.35+, e.g. Ubuntu 22.04 or Steam Deck), or macOS 11+ on
+  Apple Silicon.
+- **Graphics:** Vulkan, DirectX 12 or Metal.
+
 ## Build and run
 
 You need:
 
-- **The game:** Red Alert 2: Yuri's Revenge.
-- **Rust and Git:** current stable [Rust](https://rustup.rs/), installed with rustup, and
+- **Rust and Git:** [Rust](https://rustup.rs/) 1.88 or later, installed with rustup, and
   [Git](https://git-scm.com/).
 - **Build tools:** on Windows, the Visual Studio C++ build tools, which the Rust installer offers
   to install; on macOS, `xcode-select --install`; on Debian and Ubuntu,
   `sudo apt install build-essential libasound2-dev pkg-config`.
-- **Graphics:** a GPU with Vulkan, DirectX 12 or Metal.
 
 VERA20K has been played on Windows, Linux and macOS.
 
@@ -78,6 +83,8 @@ cp config.toml.example config.toml
 cargo run --release --bin vera20k
 ```
 
+The build writes several GB into `target/`.
+
 ## How we work
 
 Most of the code is written by AI coding agents. They use Ghidra to study the original
@@ -86,8 +93,23 @@ and playtesting. Agents follow [AGENTS.md](AGENTS.md).
 
 ## Customization
 
-Optional features (e.g. Ares) should be configurable through INI files, with client toggles
-where appropriate.
+Ares compatibility is an optional build capability. Default builds use the retail
+readers and dispatch; an INI or client setting cannot enable omitted extensions.
+Build the supported extensions explicitly:
+
+```sh
+python -m tools.cargo_run -- build -p vera20k --profile fast --bin vera20k --features ares
+```
+
+Omit `--features ares` for a build without the extensions. Ares builds identify
+themselves in the window title and startup log. Supported INI keys configure
+existing GenericWarhead, UnitDelivery, superweapon building gates and money behavior;
+Include/inheritance expansion is also active only in Ares gameplay builds. The explicit
+read-only `asset ini-expand` probe remains available independently. Saves retain the
+build capability and cannot load in the other mode, even with identical retail INIs.
+This is partial Rust-native compatibility, not Ares DLL loading or general mod support.
+The enabled build also supports [generic production prerequisites](docs/ares-prerequisites.md),
+including alternate owned types and installed-upgrade qualification.
 
 To launch single-player YR skirmishes or campaigns through a dedicated CnCNet
 client, see the [offline client setup](integrations/cncnet/README.md). This needs

@@ -194,7 +194,7 @@ impl<'a> FireSubject<'a> {
             .projectile
             .as_deref()
             .and_then(|id| self.rules.projectile(id));
-        let armor = target_obj.map(|target| super::armor_index(&target.armor));
+        let armor = target_obj.map(ObjectType::armor_id);
         WeaponFacts {
             damage: weapon.damage,
             ambient_damage: weapon.ambient_damage,
@@ -220,11 +220,11 @@ impl<'a> FireSubject<'a> {
                 is_locomotor: warhead.is_locomotor,
                 psychedelic: warhead.psychedelic,
                 bomb_disarm: warhead.bomb_disarm,
-                verses_zero: armor.is_some_and(|armor| {
-                    warhead
-                        .verses_f64
-                        .get(armor)
-                        .is_some_and(|verses| *verses == 0.0 || verses.is_nan())
+                armor_rejects_fire: armor.is_some_and(|armor| {
+                    // Ares 3.0 hook100542A0 admits ForceFire OR nonzero
+                    // multiplier; this is the shared GetFireError gate, not
+                    // a new Ctrl-only input rule.
+                    !warhead.interaction(armor).can_fire()
                 }),
             }),
             // A weapon naming no projectile section reads the reader's
@@ -455,9 +455,7 @@ impl<'a> FireSubject<'a> {
                         organic: target_obj.organic,
                         is_simple_deployer: target_obj.is_simple_deployer,
                         non_vehicle: target_obj.non_vehicle,
-                        // Building vt+80:457620 ->465D40, shared ART/undeploy
-                        // predicate also used by the Unit repair action.
-                        building_vehicle: target_obj.is_1x1_with_undeploy(),
+                        is_1x1_with_undeploy: target_obj.is_1x1_with_undeploy(),
                     },
                 ),
                 // GetFireError6FC177 preserves the original Object receiver
@@ -570,9 +568,9 @@ impl FireQuery for WorldQuery<'_, '_> {
         let Some(weapon) = subject.weapon_at(subject.weapon_index) else {
             return false;
         };
-        let Some((rx, ry, sub_x, sub_y)) = subject.target_point() else {
+        if subject.target_point().is_none() {
             return false;
-        };
+        }
         let firer = subject.firer;
         match subject.terrain() {
             // GetFireError6FCCEE calls InRange with its original target. A Cell
@@ -622,19 +620,26 @@ impl FireQuery for WorldQuery<'_, '_> {
                     },
                 )
             }),
-            None => super::is_within_range_leptons(
-                super::lepton_distance_sq_raw(
-                    firer.position.rx(),
-                    firer.position.ry(),
-                    firer.position.sub_x(),
-                    firer.position.sub_y(),
-                    rx,
-                    ry,
-                    sub_x,
-                    sub_y,
-                ),
-                weapon.range_leptons,
-            ),
+            None => {
+                let target = match self.target.entity {
+                    Some(entity) => in_range::MaplessTarget::Techno(entity),
+                    None => match crate::sim::movement::ground_pose::target_get_coords(
+                        target,
+                        subject.world,
+                        None,
+                    ) {
+                        Some(point) => in_range::MaplessTarget::Point(point),
+                        None => return false,
+                    },
+                };
+                in_range::mapless_in_range(
+                    firer,
+                    target,
+                    weapon,
+                    subject.rules,
+                    &subject.world.interner,
+                )
+            }
         }
     }
 

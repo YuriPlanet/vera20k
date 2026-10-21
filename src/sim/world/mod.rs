@@ -270,7 +270,6 @@ use crate::sim::native_identity::NativeUniqueIdCursor;
 use crate::sim::ore_growth::OreGrowthConfig;
 use crate::sim::ore_growth::OreGrowthState;
 use crate::sim::terrain_object::TerrainObjectStore;
-use crate::sim::wave::WaveStore;
 
 /// Test fixtures' seed. Real launches negotiate a per-match seed through
 /// `ScenarioDescriptor`, and only test builds can construct with this value.
@@ -923,6 +922,24 @@ impl SimSoundEvent {
 
     pub(crate) fn voc_at(sound_id: String, position: &Position) -> Self {
         Self::voc_at_for(sound_id, None, position)
+    }
+
+    /// `VocClass::PlayAt @ 0x007509E0` at an object's Location (`+0x9C`),
+    /// context 0.
+    pub(crate) fn voc_at_location(
+        sound_id: String,
+        entity: &crate::sim::game_entity::GameEntity,
+        terrain: Option<&ResolvedTerrainGrid>,
+    ) -> Self {
+        Self::VocAt {
+            sound_id,
+            audible_to: None,
+            rx: entity.position.rx(),
+            ry: entity.position.ry(),
+            sub_x: entity.position.sub_x(),
+            sub_y: entity.position.sub_y(),
+            world_z_leptons: crate::sim::movement::ground_pose::object_location(entity, terrain).z,
+        }
     }
 
     /// `VocClass::PlayAt @ 0x007509E0` for a source whose authoritative
@@ -3384,21 +3401,36 @@ impl Simulation {
         self.overlay_grid = Some(grid);
     }
 
+    /// The authored loader runs the final InitCellAttributes sweep on the live
+    /// map grid outside the simulation, then installs it again through
+    /// [`Self::install_resolved_terrain_for_new_map`].
+    pub(crate) fn take_resolved_terrain_for_load(&mut self) -> Option<ResolvedTerrainGrid> {
+        self.resolved_terrain.take()
+    }
+
+    /// Install the bridge record vector a load builds from the map grid's
+    /// CellClass state, or its rebuild after a crate `OverlayClass::Mark` batch.
+    pub(crate) fn install_bridge_runtime(&mut self, bridges: BridgeRuntimeState) {
+        self.bridge_state = Some(bridges);
+    }
+
+    /// Install the map's `[Smudge]` grid and mark the cells it seeded dirty.
+    pub(crate) fn install_smudge_grid(&mut self, smudges: SmudgeGrid) {
+        self.smudge_grid = Some(smudges);
+        Self::flush_smudge_dirty(&mut self.smudge_grid, &mut self.dirty_cells);
+    }
+
+    /// Install the native unique-id cursor a scenario prefix plan staged,
+    /// before terrain Fill constructs the first map object.
+    pub(crate) fn install_native_unique_id_cursor(&mut self, cursor: NativeUniqueIdCursor) {
+        self.native_unique_ids = Some(cursor);
+    }
+
     // Client-crate fixtures for operations that take their owners.
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn bomb_defuse_for_test(&mut self, carrier: u64) {
         Self::bomb_defuse(&mut self.substrate, &mut self.bombs, carrier);
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn rebuild_logic_membership_for_test(&mut self) {
-        Self::rebuild_logic_membership(
-            &mut self.terrain_objects,
-            &mut self.substrate,
-            &mut self.projectiles,
-            &mut self.waves,
-        );
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -3559,6 +3591,28 @@ impl Simulation {
         self.overlay_grid
             .get_or_insert_with(|| OverlayGrid::new(width, height))
             .cell_mut_for_test(rx, ry)
+    }
+
+    /// One overlay placed for a fixture with the Land, blocking and Zone it
+    /// projects onto the Cell ([`recalc_overlay_passability`]), over an empty
+    /// grid sized to the terrain when none is installed yet.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn place_overlay_for_test(
+        &mut self,
+        cell: (u16, u16),
+        overlay_id: u8,
+        data: u8,
+        registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+    ) {
+        let terrain = self
+            .resolved_terrain
+            .as_mut()
+            .expect("an overlay fixture needs terrain");
+        let grid = self
+            .overlay_grid
+            .get_or_insert_with(|| OverlayGrid::new(terrain.width(), terrain.height()));
+        grid.place_overlay(cell.0, cell.1, overlay_id, data);
+        recalc_overlay_passability(grid, terrain, registry, cell.0, cell.1);
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -5027,100 +5081,63 @@ impl Simulation {
             let first_occurrence = seen.insert(id);
             debug_assert!(first_occurrence, "logic order has duplicate id {id}");
             debug_assert!(
-                self.substrate
-                    .entities
-                    .get(id)
-                    .is_some_and(|entity| entity.in_logic_vector.is_member())
-                    || self
-                        .substrate
-                        .anims
-                        .get(id)
-                        .is_some_and(|anim| anim.in_logic_vector())
-                    || self
-                        .substrate
-                        .voxel_anims
-                        .get(id)
-                        .is_some_and(|debris| debris.in_logic_vector())
-                    || self
-                        .substrate
-                        .particle_systems
-                        .get(id)
-                        .is_some_and(|system| system.in_logic_vector())
-                    || self
-                        .terrain_objects
-                        .objects()
-                        .get(&id)
-                        .is_some_and(|terrain| terrain.in_logic_vector())
-                    || self
-                        .projectiles
-                        .get(id)
-                        .is_some_and(|projectile| projectile.in_logic_vector())
-                    || self
-                        .waves
-                        .get(id)
-                        .is_some_and(|wave| wave.in_logic_vector())
-                    || self
-                        .substrate
-                        .spotlights
-                        .get(id)
-                        .is_some_and(|light| light.in_logic_vector()),
+                self.classify_object(id)
+                    .is_some_and(|kind| self.logic_membership_flag(id, kind)),
                 "logic order id {id} is missing or not membership-flagged",
             );
         }
-        let flagged_entities = self
-            .substrate
-            .entities
-            .values()
-            .filter(|e| e.in_logic_vector.is_member())
-            .count();
-        let flagged_anims = self
-            .substrate
-            .anims
-            .iter()
-            .filter(|(_, anim)| anim.in_logic_vector())
-            .count();
-        let flagged_voxel_anims = self
-            .substrate
-            .voxel_anims
-            .iter()
-            .filter(|(_, debris)| debris.in_logic_vector())
-            .count();
-        let flagged_particle_systems = self
-            .substrate
-            .particle_systems
-            .iter()
-            .filter(|(_, system)| system.in_logic_vector())
-            .count();
-        let flagged_terrain = self
-            .terrain_objects
-            .objects()
-            .values()
-            .filter(|terrain| terrain.in_logic_vector())
-            .count();
-        let flagged_projectiles = self
-            .projectiles
-            .iter()
-            .filter(|(_, projectile)| projectile.in_logic_vector())
-            .count();
-        let flagged_waves = self
-            .waves
-            .iter()
-            .filter(|(_, wave)| wave.in_logic_vector())
-            .count();
-        let flagged_spotlights = self
-            .substrate
-            .spotlights
-            .iter()
-            .filter(|(_, l)| l.in_logic_vector())
-            .count();
-        let flagged = flagged_spotlights
-            + flagged_entities
-            + flagged_anims
-            + flagged_voxel_anims
-            + flagged_particle_systems
-            + flagged_terrain
-            + flagged_projectiles
-            + flagged_waves;
+        let mut flagged = 0;
+        for kind in ObjectKind::ALL {
+            flagged += match kind {
+                ObjectKind::Entity => self
+                    .substrate
+                    .entities
+                    .values()
+                    .filter(|entity| entity.in_logic_vector.is_member())
+                    .count(),
+                ObjectKind::Anim => self
+                    .substrate
+                    .anims
+                    .iter()
+                    .filter(|(_, anim)| anim.in_logic_vector())
+                    .count(),
+                ObjectKind::VoxelAnim => self
+                    .substrate
+                    .voxel_anims
+                    .iter()
+                    .filter(|(_, debris)| debris.in_logic_vector())
+                    .count(),
+                ObjectKind::Spotlight => self
+                    .substrate
+                    .spotlights
+                    .iter()
+                    .filter(|(_, light)| light.in_logic_vector())
+                    .count(),
+                ObjectKind::ParticleSystem => self
+                    .substrate
+                    .particle_systems
+                    .iter()
+                    .filter(|(_, system)| system.in_logic_vector())
+                    .count(),
+                ObjectKind::Terrain => self
+                    .terrain_objects
+                    .objects()
+                    .values()
+                    .filter(|terrain| terrain.in_logic_vector())
+                    .count(),
+                ObjectKind::Projectile => self
+                    .projectiles
+                    .iter()
+                    .filter(|(_, projectile)| projectile.in_logic_vector())
+                    .count(),
+                ObjectKind::Wave => self
+                    .waves
+                    .iter()
+                    .filter(|(_, wave)| wave.in_logic_vector())
+                    .count(),
+                ObjectKind::Smudge | ObjectKind::Particle => 0,
+            };
+        }
         debug_assert_eq!(
             order.len(),
             flagged,
@@ -5325,12 +5342,7 @@ impl Simulation {
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_logic_order_for_test(&mut self, order: Vec<u64>) {
         self.substrate.logic.set_order_for_test(order);
-        Self::rebuild_logic_membership(
-            &mut self.terrain_objects,
-            &mut self.substrate,
-            &mut self.projectiles,
-            &mut self.waves,
-        );
+        self.rebuild_logic_membership();
     }
 
     /// Common VoxelAnim7493B0 constructor/admission for typed Techno and
@@ -5950,6 +5962,30 @@ impl Simulation {
             && let Some(house) = self.houses.get_mut(&new_owner)
         {
             house.tracking_mut().add_tracking(entity);
+        }
+        // Ares3.0 ChangeOwner7015EB ->1004E7F0 follows the two tracking
+        // calls and precedes both the capture stats and owner pointer store.
+        // Buildings retain their own existing44936E/449379 recheck tail.
+        if crate::rules::ARES_ENABLED
+            && category != EntityCategory::Structure
+            && let Some(rules) = rules
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| {
+                    rules.is_ares_prerequisite_alternate(
+                        entity.category().into(),
+                        self.interner.resolve(entity.type_ref()),
+                    )
+                })
+        {
+            self.houses.request_house_tech_tree_recheck(old_owner);
+            self.houses.request_house_tech_tree_recheck(new_owner);
+        }
+        if let Some(entity) = self.substrate.entities.get(stable_id)
+            && let Some(house) = self.houses.get_mut(&new_owner)
+        {
             //701607..70164D: DontScore suppresses this captured-object
             //count, not the preceding old-House price addition.
             if !entity.tracking_facts.dont_score() {
@@ -6499,52 +6535,60 @@ impl Simulation {
     /// is authoritative: RegisterObject sets it after its insert (`0x0055BAC6`)
     /// and UnregisterObject clears it after its removal (`0x0055BB27`), so the
     /// saved order determines it. Idempotent — safe to call after any load.
-    /// Standalone (no heavy load-arg dependency) so save/load membership is
-    /// unit-testable.
-    pub fn rebuild_logic_membership(
-        terrain_objects: &mut TerrainObjectStore,
-        substrate: &mut ObjectSubstrate,
-        projectiles: &mut ProjectileStore,
-        waves: &mut WaveStore,
-    ) {
-        for entity in substrate.entities.values_mut() {
-            entity.in_logic_vector.mark(false);
+    /// It takes no load arguments, so save/load membership is unit-testable.
+    pub fn rebuild_logic_membership(&mut self) {
+        for kind in ObjectKind::ALL {
+            match kind {
+                ObjectKind::Entity => {
+                    for entity in self.substrate.entities.values_mut() {
+                        entity.in_logic_vector.mark(false);
+                    }
+                }
+                ObjectKind::Anim => {
+                    for anim in self.substrate.anims.values_mut() {
+                        anim.mark_logic_membership(false);
+                    }
+                }
+                ObjectKind::VoxelAnim => {
+                    for debris in self.substrate.voxel_anims.values_mut() {
+                        debris.mark_logic_membership(false);
+                    }
+                }
+                ObjectKind::Spotlight => {
+                    for light in self.substrate.spotlights.values_mut() {
+                        light.mark_logic_membership(false);
+                    }
+                }
+                ObjectKind::ParticleSystem => {
+                    for (_, system) in self.substrate.particle_systems.iter_mut() {
+                        system.mark_logic_membership(false);
+                    }
+                }
+                ObjectKind::Terrain => self.terrain_objects.clear_logic_memberships(),
+                ObjectKind::Projectile => {
+                    for (_, projectile) in self.projectiles.iter_mut() {
+                        projectile.mark_logic_membership(false);
+                    }
+                }
+                ObjectKind::Wave => {
+                    for (_, wave) in self.waves.iter_mut() {
+                        wave.mark_logic_membership(false);
+                    }
+                }
+                ObjectKind::Smudge | ObjectKind::Particle => {}
+            }
         }
-        for anim in substrate.anims.values_mut() {
-            anim.mark_logic_membership(false);
-        }
-        for light in substrate.spotlights.values_mut() {
-            light.mark_logic_membership(false);
-        }
-        for debris in substrate.voxel_anims.values_mut() {
-            debris.mark_logic_membership(false);
-        }
-        for (_, system) in substrate.particle_systems.iter_mut() {
-            system.mark_logic_membership(false);
-        }
-        terrain_objects.clear_logic_memberships();
-        for (_, projectile) in projectiles.iter_mut() {
-            projectile.mark_logic_membership(false);
-        }
-        for (_, wave) in waves.iter_mut() {
-            wave.mark_logic_membership(false);
-        }
-        for &id in &substrate.logic.snapshot() {
-            if let Some(entity) = substrate.entities.get_mut(id) {
-                entity.in_logic_vector.mark(true);
-            } else if let Some(anim) = substrate.anims.get_mut(id) {
-                anim.mark_logic_membership(true);
-            } else if let Some(light) = substrate.spotlights.get_mut(id) {
-                light.mark_logic_membership(true);
-            } else if let Some(debris) = substrate.voxel_anims.get_mut(id) {
-                debris.mark_logic_membership(true);
-            } else if let Some(system) = substrate.particle_systems.get_mut(id) {
-                system.mark_logic_membership(true);
-            } else if terrain_objects.set_logic_membership(id, true) {
-            } else if let Some(projectile) = projectiles.get_mut(id) {
-                projectile.mark_logic_membership(true);
-            } else if let Some(wave) = waves.get_mut(id) {
-                wave.mark_logic_membership(true);
+        for id in self.substrate.logic.snapshot() {
+            if let Some(kind) = self.classify_object(id).filter(|kind| kind.joins_logic()) {
+                Self::set_logic_membership_flag(
+                    &mut self.terrain_objects,
+                    &mut self.substrate,
+                    &mut self.projectiles,
+                    &mut self.waves,
+                    id,
+                    kind,
+                    true,
+                );
             }
         }
         // Alive, limbo, cell Mark, and death-sequence state are independent
@@ -8030,6 +8074,10 @@ mod cmin_dock_cycle_tests;
 #[cfg(test)]
 #[path = "passenger_escape_oracle_tests.rs"]
 mod passenger_escape_oracle_tests;
+
+#[cfg(test)]
+#[path = "vehicle_passenger_escape_oracle_tests.rs"]
+mod vehicle_passenger_escape_oracle_tests;
 
 #[cfg(test)]
 #[path = "world_orders_bridge_repair_tests.rs"]

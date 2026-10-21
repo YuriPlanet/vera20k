@@ -83,6 +83,12 @@ impl CursorVisibility {
 }
 
 pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFeedbackKind> {
+    // State_Machine entry (`StateMachine__EnterPause` 0x00683EB0) sets the
+    // normal arrow (`SetCursor(0)`) for the whole modal; the in-match 0xCF
+    // shows it over the battlefield.
+    if state.match_state.match_presentation.in_game_menu.is_open() {
+        return None;
+    }
     // A right-drag pan owns the cursor for as long as it owns the camera, and it
     // is tested first because native gates the cursor write and the edge-scroll
     // block inside the same `capture == 0` else-arm of
@@ -429,7 +435,7 @@ fn unforced_cell_attack_feedback(
 }
 
 /// The cursor over a Cell with no object offered: the resolved object's
-/// What_Action on the Cell, then the harvest substitution for its Move.
+/// What_Action on the Cell, a Unit's harvest rungs included.
 fn empty_cell_feedback(
     state: &AppState,
     sim: &crate::sim::world::Simulation,
@@ -461,10 +467,11 @@ fn empty_cell_cursor(
     order_mode: crate::app::presentation::render::OrderMode,
 ) -> CursorFeedbackKind {
     use crate::sim::world::MoveAction;
-    match what_action_on_cell(sim, viewer, best_id, cell, modifier, rules, registry) {
+    let action = what_action_on_cell(sim, viewer, best_id, cell, modifier, rules, registry);
+    match action {
         MoveAction::None => return CursorFeedbackKind::Default,
         MoveAction::NoMove => return CursorFeedbackKind::Invalid,
-        MoveAction::Move => {}
+        MoveAction::Move | MoveAction::Harvest => {}
     }
 
     if modifier == super::context_order::OrderModifier::GuardArea
@@ -473,10 +480,10 @@ fn empty_cell_cursor(
     {
         return CursorFeedbackKind::GuardArea;
     }
-    // Ore/gem harvest hangs off the cell action: UnitClass only substitutes the
-    // harvest action when the base action came back Move over a Cell the
-    // viewer has mapped (`0x007405DB..0x007405E6`), and it tests the one
-    // resolved object's harvester flags, not the whole selection.
+    // The one resolved object's harvest rungs, not the whole selection's.
+    if action == MoveAction::Harvest {
+        return CursorFeedbackKind::Harvest;
+    }
     let shrouded =
         viewer.is_some_and(|viewer| sim.clicked_cell_is_shrouded(viewer, cell) == Ok(true));
     // Building447563..4475EE: an UndeploysInto resource gatherer/destination
@@ -500,24 +507,6 @@ fn empty_cell_cursor(
             })
         });
     if refinery_harvest {
-        return CursorFeedbackKind::Harvest;
-    }
-    let has_ore = !shrouded
-        && match (sim.overlay_grid(), registry, rules) {
-            (Some(grid), Some(registry), Some(rules)) if !rules.tiberium_types.is_empty() => {
-                crate::sim::tiberium::tiberium_cell_view(
-                    grid,
-                    registry,
-                    &rules.tiberium_types,
-                    cell,
-                )
-                .is_some()
-            }
-            _ => false,
-        };
-    if has_ore
-        && best_id.is_some_and(|id| sim.entities().get(id).is_some_and(|e| e.miner.is_some()))
-    {
         return CursorFeedbackKind::Harvest;
     }
     match order_mode {
@@ -1621,60 +1610,67 @@ pub(crate) fn apply_cursor_confinement(state: &AppState) {
     apply_cursor_confinement_impl(state, true);
 }
 
-/// Force the OS arrow invisible, in addition to `set_cursor_visible(false)`.
-///
-/// `set_cursor_visible(false)` asks winit to hide the cursor, but winit restores
-/// the window's *class* cursor on every `WM_SETCURSOR` — most visibly when the
-/// pointer slams the `ClipCursor` edge, where Windows re-asserts the arrow for a
-/// frame and it flickers on top of the game's own software cursor. Calling
-/// `SetCursor(NULL)` every frame (what gamemd's `WWMouse` does with
-/// `ShowCursor(FALSE)`) keeps the OS arrow gone whenever VERA has decided the
-/// game should own the pointer. No-op off Windows.
-pub(crate) fn suppress_os_cursor(state: &AppState) {
-    #[cfg(target_os = "windows")]
-    {
-        use windows_sys::Win32::UI::WindowsAndMessaging::SetCursor;
-        // NULL handle = no cursor for this window. Safe: it only changes the
-        // current thread's cursor image, never the clip or pointer position.
-        unsafe {
-            SetCursor(std::ptr::null_mut());
-        }
-    }
-    let _ = state;
-}
-
 /// Keep the player's cursor-lock choice alive every frame clips
 /// continuously). `ClipCursor` is a *system-wide* setting the OS drops on
 /// focus loss or the Windows key, so a one-shot apply silently stops working
-/// mid-session. While the window is focused we re-assert the clip each frame;
-/// while it is in the background we leave the pointer alone so we never trap
-/// it inside another application. Silent (no per-frame log spam).
+/// mid-session. While the lock is on and the window is focused we re-assert the
+/// clip each frame; while it is in the background we leave the pointer alone so
+/// we never trap it inside another application. A cleared lock always releases.
+/// Silent (no per-frame log spam), and a no-op once the OS clip already matches
+/// what the player chose, so re-asserting per frame issues no `ClipCursor` call.
 pub(crate) fn reassert_cursor_confinement(state: &AppState) {
-    if !state.platform.cursor_confined {
-        // Choice is "free": make sure the pointer is released (idempotent).
-        release_cursor_confinement(state);
-        return;
-    }
-    if !state.platform.window_active {
+    if !state.platform.window_active && state.platform.cursor_confined {
         // Backgrounded: don't fight other apps; Focused(false) already released.
         return;
     }
     apply_cursor_confinement_impl(state, false);
-    // Re-assert the OS-arrow suppression every frame, not just in the render
-    // pass: the pointer now rides the exact client edge to keep edge-scroll
-    // alive, so we must kill the border arrow at the earliest point each frame.
-    suppress_os_cursor(state);
+}
+
+/// The OS pointer clip this thread currently holds, as `(left, top, right,
+/// bottom)` in screen pixels, or `None` when the pointer is free.
+/// `ClipCursor(NULL)` does not clear the clip to nothing: it resets it to the
+/// window station's desktop, which is the virtual-screen union, so that value
+/// reads back as "free".
+#[cfg(target_os = "windows")]
+fn current_cursor_clip() -> Option<(i32, i32, i32, i32)> {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetClipCursor, GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+        SM_YVIRTUALSCREEN,
+    };
+    let mut rect = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    unsafe {
+        if GetClipCursor(&mut rect) == 0 {
+            return None;
+        }
+        let left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        let top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        let right = left + GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        let bottom = top + GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        if (rect.left, rect.top, rect.right, rect.bottom) == (left, top, right, bottom) {
+            None
+        } else {
+            Some((rect.left, rect.top, rect.right, rect.bottom))
+        }
+    }
 }
 
 fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
     #[cfg(target_os = "macos")]
     macos::apply(state, verbose);
 
-    // Windows: clip to the client rectangle with the Win32 ClipCursor API
-    // (what the clipping approach actually does). winit's CursorGrabMode::Confined derives
-    // the clip rect from the *outer* window rect, which is wrong for frameless
-    // windows and pins the pointer in place — so we call ClipCursor directly on
-    // the client rect, which is reliable.
+    // Windows: clip to the client rectangle with the Win32 ClipCursor API.
+    // winit's own grab path is deliberately not used here: `refresh_os_cursor`
+    // clips a hidden cursor to a one-pixel box at the client centre
+    // (winit window_state.rs, to keep the pointer off the taskbar), and VERA
+    // hides the OS arrow whenever it draws mouse.shp, so `CursorGrabMode::Confined`
+    // pins the pointer in place instead. Clipping the client rect directly is the
+    // reliable form of the same thing.
     #[cfg(target_os = "windows")]
     {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -1725,10 +1721,13 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
             // so the pointer must be able to reach the outer pixel
             // (x=0 / x=view_w-1). Insetting even 1px pins the pointer at
             // [1, view_w-2] and silently kills edge scrolling on all four sides.
-            // The border-arrow flicker that an exact clip can cause is handled by
-            // `SetCursor(NULL)` every frame (see `suppress_os_cursor`, called from
-            // both `reassert` and the render pass), not by shrinking the rect. The
-            // validity check below still guards tiny windows from an inverted rect.
+            // The system arrow the clip edge used to expose is not suppressed
+            // here. The OS arrow image has one owner,
+            // `show_os_cursor_only_without_game_cursor`, and nothing re-asserts an
+            // arrow inside the client area: Winit registers the window class with
+            // a null cursor, so `DefWindowProc` has no arrow to restore for a
+            // client hit. The validity check below still guards tiny windows from
+            // an inverted rect.
             let clip = RECT {
                 left: tl.x,
                 top: tl.y,
@@ -1749,6 +1748,19 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
                         clip.bottom
                     );
                 }
+                return;
+            }
+            // Only issue a call when the clip actually changes. Re-issuing
+            // `ClipCursor` on a steady frame floods the queue with
+            // `WM_MOUSEMOVE` (winit guards the same way in `refresh_os_cursor`),
+            // and each spurious move re-runs the enter/leave bookkeeping that
+            // decides who owns the pointer image.
+            let wanted = if state.platform.cursor_confined {
+                Some((clip.left, clip.top, clip.right, clip.bottom))
+            } else {
+                None
+            };
+            if current_cursor_clip() == wanted {
                 return;
             }
             if verbose {
@@ -1834,9 +1846,11 @@ pub(crate) fn toggle_cursor_confinement(state: &mut AppState) {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "ares")]
+    use super::super_weapon_cursor_id;
     use super::{
         ActionDistanceTarget, capability_cursor_for_hover, empty_cell_cursor, force_fire_feedback,
-        select_best_for_action, super_weapon_cursor_id, what_action_on_cell,
+        select_best_for_action, what_action_on_cell,
     };
     use crate::app::input::entity_pick::HoverTargetKindWithId;
     use crate::app::types::{CursorFeedbackKind, CursorId, HoverTargetKind};
@@ -1996,6 +2010,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "ares")]
     #[test]
     fn unit_delivery_superweapon_custom_action_uses_existing_paradrop_cursor() {
         let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
@@ -2911,14 +2926,10 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         let owner = sim.interner().get("Local").unwrap();
         let miner = sim.spawn_object("HARV", "Local", 6, 4, 0, &rules).unwrap();
         sim.resolve_type_handles(&rules);
-        assert!(sim.entities().get(miner).unwrap().miner.is_some());
         let ore = registry.id_for_name("TIB01").unwrap();
         let (seen, hidden) = ((11, 5), (12, 5));
-        let grid = sim
-            .overlay_grid_mut_for_test()
-            .get_or_insert_with(|| crate::sim::overlay_grid::OverlayGrid::new(16, 16));
-        for (x, y) in [seen, hidden] {
-            grid.place_overlay(x, y, ore, 6);
+        for cell in [seen, hidden] {
+            sim.place_overlay_for_test(cell, ore, 6, &registry);
         }
         *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(16, 16);
         sim.fog_mut_for_test().reveal_cells_for_owner(

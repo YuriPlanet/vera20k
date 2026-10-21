@@ -15,9 +15,9 @@
 //! families that can reach this gate, derived per gate evaluation by
 //! [`crate::sim::movement::ready_producer`] — native makes a fresh locomotor
 //! call at each of its own gate sites rather than caching one per frame. The
-//! signed object height still has no live producer; the host promotion maps that
-//! unavailability to a permissive moving-defer gate (recorded residual) rather
-//! than stalling queued missions forever.
+//! signed object height (`Get_Height`) is read from the object's position on
+//! the moving path. A rules-free provider cannot make the factory and contact
+//! lookups, so it answers a Unit that reaches them not ready.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -189,7 +189,18 @@ pub(crate) struct LiveReadyInputProvider<'r> {
     pub(crate) rules: &'r RuleSet,
 }
 
-struct UnavailableUnitWorld;
+/// Rules-free Unit-readiness world: the height reads the object, the
+/// factory and contact lookups are unavailable.
+struct RulesFreeUnitWorld<'a> {
+    sim: &'a Simulation,
+    entity: &'a crate::sim::game_entity::GameEntity,
+}
+
+/// `Get_Height` (vt+0x1C8, `ObjectClass::GetHeight @ 0x005F5F40`): the
+/// object's height above the ground or bridge deck under it.
+fn unit_signed_height(sim: &Simulation, entity: &crate::sim::game_entity::GameEntity) -> i32 {
+    crate::sim::movement::air_movement::current_fly_height(entity, sim.resolved_terrain.as_ref())
+}
 
 /// Live Unit-readiness world: Radio contact slot 0 identity and the
 /// building-under lookup in the existing per-cell stored list order.
@@ -258,12 +269,16 @@ impl UnitReadyWorld for LiveUnitWorld<'_> {
             anchor,
         )))
     }
+
+    fn signed_height(&self) -> i32 {
+        unit_signed_height(self.sim, self.entity)
+    }
 }
 
 impl ready_private::Sealed for EntityReadyInputProvider {}
 impl ready_private::Sealed for LiveReadyInputProvider<'_> {}
 
-impl UnitReadyWorld for UnavailableUnitWorld {
+impl UnitReadyWorld for RulesFreeUnitWorld<'_> {
     fn contact_slot_zero(&self) -> Result<Option<UnitReadyContact>, ReadyUnavailable> {
         Err(ReadyUnavailable::WorldLookup)
     }
@@ -273,6 +288,10 @@ impl UnitReadyWorld for UnavailableUnitWorld {
         _unit_position: ReadyLeptonPoint,
     ) -> Result<Option<UnitReadyBuilding>, ReadyUnavailable> {
         Err(ReadyUnavailable::WorldLookup)
+    }
+
+    fn signed_height(&self) -> i32 {
+        unit_signed_height(self.sim, self.entity)
     }
 }
 
@@ -293,9 +312,6 @@ impl UnitReadyWorld for UnavailableUnitWorld {
 /// and answering "not moving" is also the safe direction if that ever changes.
 /// It is not their native answer: Fly and Rocket have real `Is_Moving_Now`
 /// bodies, which `motion_query::is_moving_now` answers.
-///
-/// This constant and the `degraded_moving_gate` parameter can retire together
-/// once `evaluate_ready` no longer needs a `None` fallback at all.
 const DEGRADED_NOT_MOVING: crate::sim::movement::locomotor_ready::LocomotorReadyState =
     crate::sim::movement::locomotor_ready::LocomotorReadyState::Drive {
         turning_active: false,
@@ -309,7 +325,6 @@ fn evaluate_ready(
     receiver: u64,
     mission: &MissionCom,
     rules: Option<&RuleSet>,
-    degraded_moving_gate: bool,
 ) -> ReadyResult {
     {
         let entity = sim
@@ -329,11 +344,7 @@ fn evaluate_ready(
             }),
             sim.session.binary_frame(),
         )
-        .or(if degraded_moving_gate {
-            Some(DEGRADED_NOT_MOVING)
-        } else {
-            None
-        });
+        .or(Some(DEGRADED_NOT_MOVING));
         let attack_target_present = entity.attack_target.target().is_some();
 
         match entity.category() {
@@ -354,55 +365,6 @@ fn evaluate_ready(
                         leaf,
                         unload_active,
                         locomotor,
-                        // Deliberately absent, and NOT for want of a producer.
-                        //
-                        // Native's input is `Get_Height`: the object's Z minus
-                        // the ground height at its cell, minus the bridge deck
-                        // when on a bridge — so ground and bridge both read 0,
-                        // airborne reads positive, only below-ground reads
-                        // negative. GetHeight's port, `current_fly_height`, is
-                        // exactly that quantity, so the producer is a one-liner.
-                        //
-                        // It is not wired up because turning it on stalls
-                        // vehicles. Supplying it makes this branch's
-                        // `signed_height >= 0` true, which arms the moving-defer
-                        // — and measured over the global harness that took gate
-                        // evaluations from 28 (all ready) to 8045, of which 8021
-                        // were deferrals. The count explodes precisely because a
-                        // deferral leaves the mission queued, so the same unit
-                        // re-defers every tick and the queue never drains.
-                        //
-                        // Root cause is upstream of here: the dominant deferral
-                        // reads `effective=Move, current=NONE, queued=Move,
-                        // bypass_latch=0, moving=true` — a unit already moving
-                        // with no commenced mission at all. The order's class
-                        // destination setter starts the locomotor in the same
-                        // MEGAMISSION call that queues the mission, natively
-                        // too (`0x004C747C`), so movement precedes
-                        // commencement there as well; what lets native
-                        // commence such a unit is not established.
-                        // `set_movement_bypass_after_verified_queue` — native's
-                        // escape hatch for exactly this — is called only by the
-                        // refinery and jumpjet completion paths here, never by
-                        // the general queue an ordinary Move uses.
-                        //
-                        // So this stays `None` until that is established. Until
-                        // then `ready_to_commence_answer` maps the resulting
-                        // error to ready and the Unit moving-defer branch is
-                        // inert — which is why none of the Drive/Ship readiness
-                        // mapping can affect vehicle behaviour yet.
-                        // MCV Event9 stops before queuing Unload, so this route
-                        // can supply native GetHeight without a Move's
-                        // start-before-Commence cycle.
-                        signed_height: (mission.queued()
-                            == MissionId::from_known(super::MissionType::Unload)
-                            && crate::sim::mcv_deploy::is_mcv(sim, entity, rules))
-                        .then(|| {
-                            crate::sim::movement::air_movement::current_fly_height(
-                                entity,
-                                sim.resolved_terrain.as_ref(),
-                            )
-                        }),
                         attack_target_present,
                         position,
                         world: &LiveUnitWorld { sim, rules, entity },
@@ -412,10 +374,9 @@ fn evaluate_ready(
                         leaf,
                         unload_active,
                         locomotor,
-                        signed_height: None,
                         attack_target_present,
                         position,
-                        world: &UnavailableUnitWorld,
+                        world: &RulesFreeUnitWorld { sim, entity },
                     }),
                 }
             }
@@ -466,30 +427,16 @@ impl ReadyInputProvider for LiveReadyInputProvider<'_> {
 /// call and the per-tick promotion alike. Absent locomotor producers read as
 /// "not moving now", so every later exact gate still evaluates.
 ///
-/// RESIDUAL: a Locomotor or SignedHeight input the evaluation cannot read
-/// answers ready, the moving-defer branch's pass outcome. Unit readiness has
-/// no `Get_Height` (vt+0x1C8) producer outside an MCV's Unload (see
-/// `evaluate_ready`), so a moving Unit skips the defer at `0x007442E9..
-/// 0x00744327`. Trigger: a Unit queues a mission while it moves on a mission
-/// other than Guard, or Attack with no target, without the `+0xB8` bypass.
-/// Effect: VERA commences the queued mission at once; native keeps it queued
-/// until the Unit stops moving. Frequency: every such queue, e.g. an
-/// attack-mover's scan hit while it drives. Risk: missions start earlier,
-/// so a driving Unit stops to attack where native drives on.
-///
-/// Rules-free callers answer not ready on a Unit's factory and contact
-/// lookups, so the next per-tick promotion decides.
+/// A lookup the evaluation cannot make answers not ready: rules-free callers
+/// do so on a Unit's factory and contact lookups, so the next per-tick
+/// promotion decides.
 fn ready_to_commence_answer(
     sim: &Simulation,
     receiver: u64,
     mission: &MissionCom,
     rules: Option<&RuleSet>,
 ) -> bool {
-    match evaluate_ready(sim, receiver, mission, rules, true) {
-        Ok(ready) => ready,
-        Err(ReadyUnavailable::Locomotor | ReadyUnavailable::SignedHeight) => true,
-        Err(_) => false,
-    }
+    evaluate_ready(sim, receiver, mission, rules).unwrap_or(false)
 }
 
 /// The five-mission filter `AircraftClass::Queue_Mission @ 0x0041BA90` and
@@ -569,7 +516,7 @@ impl Simulation {
     /// `decompile_function 0x007360c0` / `0x0051bab0` and the Queue/Commence
     /// active-caller census. Commence is a fieldwise no-op on an empty queue,
     /// so the Ready read is skipped there (pure, result unused). Readiness is
-    /// [`ready_to_commence_answer`], with its moving-defer residual.
+    /// [`ready_to_commence_answer`].
     pub(crate) fn mission_host_promote(&mut self, receiver: u64, now: u32, rules: &RuleSet) {
         let queued = self
             .substrate

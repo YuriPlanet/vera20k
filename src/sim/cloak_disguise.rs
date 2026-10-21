@@ -685,6 +685,16 @@ impl Default for DisguiseRuntime {
     }
 }
 
+impl crate::sim::game_entity::GameEntity {
+    /// The disguise runtime, created at `frame` when the object has none yet.
+    /// Native keeps the disguise fields inline; sparse Rust storage creates
+    /// them on the first disguise write, stamped with that frame.
+    pub(crate) fn disguise_mut(&mut self, frame: u32) -> &mut DisguiseRuntime {
+        self.disguise
+            .get_or_insert_with(|| DisguiseRuntime::new(frame))
+    }
+}
+
 impl DisguiseRuntime {
     pub const fn new(construction_frame: u32) -> Self {
         Self {
@@ -924,8 +934,7 @@ impl crate::sim::world::Simulation {
             .entities
             .get_mut(firer)
             .expect("present firer")
-            .disguise
-            .get_or_insert_with(|| DisguiseRuntime::new(frame));
+            .disguise_mut(frame);
         match worn {
             Some((kind, house)) => disguise.acquire(frame, kind, house),
             None => disguise.raise(frame),
@@ -1037,8 +1046,7 @@ impl crate::sim::world::Simulation {
                     .entities
                     .get_mut(id)
                     .expect("live disguise owner")
-                    .disguise
-                    .get_or_insert_with(|| DisguiseRuntime::new(frame));
+                    .disguise_mut(frame);
                 state.block_reacquisition(frame, rules.general.infantry_blink_disguise_time);
                 state.clear_unit();
             } else if acquire
@@ -1066,8 +1074,7 @@ impl crate::sim::world::Simulation {
                     .entities
                     .get_mut(id)
                     .expect("live disguise owner")
-                    .disguise
-                    .get_or_insert_with(|| DisguiseRuntime::new(frame))
+                    .disguise_mut(frame)
                     .acquire(frame, Some(disguise_type), None);
             }
         }

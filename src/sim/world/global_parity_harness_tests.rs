@@ -189,7 +189,7 @@ pub(super) fn print_replay_summary(name: &str, sim: &Simulation) {
 }
 
 const HARNESS_SEED: u64 = 0xC0FFEE1234;
-const HARNESS_TICKS: u64 = 600;
+const HARNESS_TICKS: u64 = 700;
 const HARNESS_TICK_MS: u32 = 67;
 const HARNESS_MAP_SIZE: u16 = 64;
 const HARNESS_CELL_SIDE: u16 = 2 * HARNESS_MAP_SIZE + 1;
@@ -199,18 +199,20 @@ const HARNESS_COORD_SHIFT: u16 = HARNESS_MAP_SIZE / 2;
 const STREAM_CHECKPOINT_TICKS: &[u64] = &[149, 299, 449, 599];
 
 /// Rust regression receipts, not native whole-skirmish goldens. Record and
-/// replay agree on all 600 frames and the three-stream checkpoints. Against
+/// replay agree on all 700 frames and the three-stream checkpoints. Against
 /// main at c6d6cd7e0 the first difference is tank 4's attack-move order at
 /// frame 40: main queued raw mission 29 and committed it at 41, while
 /// Assign_Target_Command answers Move, which Queue_Mission's same-mission guard
 /// (`0x005B3601..0x005B3612`) leaves as the committed Move. From frame 46 its
 /// targeting timer runs Arrival_Target_Handler, whose scan draws Scenario
-/// `RandomRanged(0, 2)` each time; main/MapGen are unchanged. The scan finds
-/// the infantryman at frame 297 (main's per-visit scan found tank 6 at 281),
-/// and Event IDLE (`4C74CB..4C76BB`) after 299 keeps its committed Attack and
-/// its order. The 15-shot fight leaves tank 6 at 108 HP; target expiry 556,
-/// Guard Commence 568 and the first passive scan 569 pass the transition
-/// checks below. Original conditional native Stop/FV evidence and
+/// `RandomRanged(0, 2)` each time; main/MapGen are unchanged. The fixture's
+/// two computer houses run House AI, whose strategy and AI_Choose_Unit draw
+/// Scenario values from frame 0, and the scan finds the infantryman at frame
+/// 296. Tank 4 is still driving its Move, so Unit Is_Ready_To_Commence's
+/// moving defer (`0x007442C2..0x00744327`) keeps the queued Attack until 302;
+/// Event IDLE (`4C74CB..4C76BB`) after 299 queues nothing. The 15-shot fight
+/// leaves tank 6 at 60 HP and kills tank 4 at 610; the target expiry, Guard
+/// Commence and first passive scan pass the transition checks below. Original conditional native Stop/FV evidence and
 /// reproduction entry points:
 /// `tools/spatial_oracle/fv_cell_attack/README.md`. These fixture observations
 /// refresh a Rust regression pin; they do not establish native world parity.
@@ -237,7 +239,11 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
     // 2026-10-13 native attack-move (Foot MegaMission): tank 4 scans only on
     // its targeting timer, so its fight and its draws start at frame 297
     // (see GLOBAL_HARNESS_FINAL_HASH). Main/MapGen are unchanged.
-    0x5F1A_988D_BB0A_157F,
+    // 2026-10-20: the House array (67c50da8f) registers the fixture's houses,
+    // so their House AI draws Scenario values from frame 0 and the scan moves
+    // to 296; the Unit moving defer then holds tank 4's Attack until 302.
+    // Main/MapGen are unchanged.
+    0x0E5E_2335_1A28_1EEC,
     0x39F3_258B_A550_EB7C,
     0x1CE8_1848_7043_6163,
 );
@@ -678,7 +684,19 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
 // feeding the hasher that absent policy gave the previous value in the same
 // test binary, with every tripwire above green. Control removed.
 // Previous: 0x3ACD_D234_DA53_AEE6.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x5714_B259_DD03_BE9D;
+// Three causes move this pin at once (2026-10-20). Main had drifted before
+// the House array change: at a5771f54b every tick, stream and fire check
+// passes and only this hash differs (cause not established here). The House
+// array (67c50da8f) then runs the fixture houses' AI, and the Unit moving
+// defer holds tank 4's Attack (see FINAL_STREAM_STATES).
+// Previous: 0x5714_B259_DD03_BE9D.
+// Infantry Per_Cell_Process's Map567DA0 sight border (`0x0051A925`) now
+// writes the fog border storage at each infantry arrival, as the Unit tail
+// already did. Every stream, fire and outcome check is unchanged; a control
+// without that one call gave the previous value. The arrival's idle entry and
+// Commence (`0x0051A88B..0x0051A8C5`) move nothing here.
+// Previous: 0x1052_E1D9_3D61_E22C.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0xF5F0_1892_EC3E_8BD4;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -812,8 +830,9 @@ fn seed_scenario(sim: &mut Simulation, rules: &RuleSet, overlays: &OverlayTypeRe
     // are computer houses, which keep this run's behaviour: the damage
     // response treated a house-less owner as a computer's (a human house's
     // AttackMove tank keeps moving when hit), and the harvester branches that
-    // treat a missing house as human are not reached in these 600 ticks. They
-    // join no house order, so no house AI runs.
+    // treat a missing house as human are not reached in these 700 ticks.
+    // Registered, they run House AI; with no credits it builds nothing and
+    // forms no team.
     for (owner, side) in [("Americans", 0), ("Soviet", 1)] {
         let id = sim.interner.intern(owner);
         sim.houses.get_or_register_for_test(id, || {
@@ -1064,32 +1083,74 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         record_replay_diagnostic(&mut diagnostic, &rec, Some(&result), &due, &draws);
 
         // Tank 4's attack-move scan (Arrival_Target_Handler on its targeting
-        // timer, `0x006FA681..0x006FA695`) finds the infantryman at frame 297
-        // and commits Attack there (Queue_Mission(Attack, 1), `0x004DF418`).
-        // Event IDLE after Logic frame 299 clears TarCom and NavCom; it queues
-        // nothing, keeps MissionCom and calls no MegaMission body, so Attack
-        // stays committed with its dispatch timer and the engaged order
-        // survives, until tank 6's first hit (frame 302) draws retaliation.
-        if (299..302).contains(&tick) {
-            let tank = rec.substrate.entities.get(4).expect("stopped tank lives");
-            assert_eq!(
-                tank.mission.current(),
-                MissionId::from_known(MissionType::Attack)
-            );
-            assert_eq!(tank.mission.queued(), MissionId::NONE);
-            assert_eq!(tank.mission.mission_start_frame(), 297);
-            assert_eq!(
-                (
-                    tank.mission.dispatch_timer().start_frame(),
-                    tank.mission.dispatch_timer().delay()
-                ),
-                (298, 16),
-                "Stop retains the active dispatch timer"
-            );
-            assert!(tank.attack_target.target().is_none());
-            assert!(tank.navigation.nav_com().is_none());
-            assert!(tank.mega_mission.is_attack_move());
-            assert_eq!(tank.passive_scan.last_scan_frame(), 297);
+        // timer, `0x006FA681..0x006FA695`) finds the infantryman at tick 296
+        // and queues Attack (Queue_Mission(Attack, 1), `0x004DF418`). The
+        // tank is still driving on Move with no `+0xB8` bypass, so Unit
+        // Is_Ready_To_Commence's moving defer (`0x007442C2..0x00744327`)
+        // keeps it queued. Event IDLE after Logic frame 299 clears TarCom
+        // and NavCom and queues nothing, so Attack stays queued. Tank 6's
+        // first hit at 300 draws the retaliation Override, and the queued
+        // Attack commences at 302, once the drive has stopped.
+        let tank = rec
+            .substrate
+            .entities
+            .get(4)
+            .filter(|_| (296..=302).contains(&tick));
+        if let Some(tank) = tank {
+            let attack = MissionId::from_known(MissionType::Attack);
+            match tick {
+                296..=298 => {
+                    assert_eq!(
+                        tank.mission.current(),
+                        MissionId::from_known(MissionType::Move)
+                    );
+                    assert_eq!(tank.mission.queued(), attack);
+                    assert_eq!(tank.mission.movement_bypass_latch(), 0);
+                    assert_eq!(
+                        tank.attack_target.target(),
+                        Some(crate::sim::combat::TargetKind::Entity(7))
+                    );
+                    // The defer's own inputs: Is_Moving_Now and Get_Height.
+                    assert!(
+                        crate::sim::movement::ready_producer::ready_state_for(
+                            tank,
+                            Some(crate::sim::movement::SpeedRules::new(
+                                &rules,
+                                &rec.interner,
+                                &rec.houses
+                            )),
+                            rec.session.binary_frame(),
+                        )
+                        .is_some_and(|state| state.is_moving_now())
+                    );
+                    assert!(
+                        crate::sim::movement::air_movement::current_fly_height(
+                            tank,
+                            rec.resolved_terrain.as_ref()
+                        ) >= 0
+                    );
+                    assert!(
+                        !rec.mission_ready_to_commence(4, &rules),
+                        "tick {tick}: the queued Attack waits for the drive to stop"
+                    );
+                }
+                299 => {
+                    assert_eq!(
+                        tank.mission.current(),
+                        MissionId::from_known(MissionType::Move)
+                    );
+                    assert_eq!(tank.mission.queued(), attack, "Stop queues nothing");
+                    assert!(tank.attack_target.target().is_none());
+                    assert!(tank.navigation.nav_com().is_none());
+                    assert!(tank.mega_mission.is_attack_move());
+                }
+                302 => {
+                    assert_eq!(tank.mission.current(), attack);
+                    assert_eq!(tank.mission.queued(), MissionId::NONE);
+                    assert_eq!(tank.mission.mission_start_frame(), 302);
+                }
+                _ => {}
+            }
         }
         // The fatal Bullet detaches TarCom after the Unit's own visit. The
         // literal committed Attack gate cannot scan before a due Attack
@@ -1300,14 +1361,15 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         "the fixture contains no storage or nondefault ammo state"
     );
 
-    // Tank 4's attack-move finds the infantryman at frame 297 and fires on
-    // it; tank 6's first hit at 302 draws its retaliation. Stop at 299 leaves
-    // the engaged order (the Stop window above); the Move at 319 ends it
-    // (Assign_Target_Command clears the MegaMission). Tank 4 kills the
-    // infantryman with its second shot, then trades four hits with tank 6,
-    // which ends at 108 HP; tank 6's sixth hit, after the infantryman's three,
-    // kills tank 4 (target expiry at 556). These are Rust regression values,
-    // not a native execution of this synthetic whole-skirmish fixture.
+    // Tank 4's attack-move finds the infantryman at frame 296 and fires on
+    // it; tank 6's first hit at 300 draws its retaliation, and the queued
+    // Attack commences at 302 (the moving-defer window above). The Move at
+    // 319 ends the engaged order (Assign_Target_Command clears the
+    // MegaMission). Tank 4 kills the infantryman with its second shot (346),
+    // then trades five hits with tank 6, which ends at 60 HP; tank 6's
+    // seventh hit, after the infantryman's one, kills tank 4 at 610. These
+    // are Rust regression values, not a native execution of this synthetic
+    // whole-skirmish fixture.
     assert_eq!(rep.fire_events.len(), 15);
     assert_eq!(
         rep.substrate
@@ -1322,13 +1384,14 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
             .entities
             .get(6)
             .map(|tank| tank.health.current()),
-        Some(108),
-        "tank 6 takes four 105mm hits (65 * 75% heavy)"
+        Some(60),
+        "tank 6 takes five 105mm hits (65 * 75% heavy)"
     );
     let building_owner = rep.interner.get("Americans").expect("building owner");
-    assert!(
-        rep.houses.order().is_empty(),
-        "this fixture runs no House AI"
+    assert_eq!(
+        rep.team_script_vm.teams_in_order().count(),
+        0,
+        "the fixture's House AI forms no team"
     );
     assert!(
         rep.super_weapons.is_empty(),

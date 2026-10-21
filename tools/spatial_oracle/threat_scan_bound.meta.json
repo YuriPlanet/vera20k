@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Greatest_Threat weapon-derived scan bound 0x6F9042..0x6F9148: nonzero Threat_Range bypass; current weapon for HasTurrets and non-gattling types; underwater organic self-healing GuardRange; fallback max slots 0/1; signed cell truncation and AirRangeBonus. Includes slot 2, elite fallback and open-topped cargo limits. Not full Greatest_Threat or target-acquisition parity.",
+  "assumptions": [
+    "The preceding Threat_Range result is supplied in EDI; ESI is a supplied Unit with original vtable 0x007F5C70. Its GetType and original HasTurrets/GetWeaponRange/GetWeapon bodies execute; no caller, constructor, INI reader or weapon-selection writer is exercised.",
+    "Reuse threat_range_cargo.Fixture for object/type/weapon storage, veterancy and cargo traversal. Slot 2 and elite slot 2 extend its original 0x1C-stride arrays. The current slot is supplied at Unit+0x138; TurretCount at type+0x808.",
+    "Type IsGattling+0xCD5, Underwater+0xD69, Organic+0xD97, SelfHealing+0xD14, GuardRange+0x5B8 and AirRangeBonus+0x68C are supplied. WeaponType Range+0xB4 uses signed integer leptons, including fractional-cell boundaries.",
+    "One emulator; scratch and stack are reset per case. General registers, EFLAGS, FPCW 0x0E7F and empty x87 stack are supplied before each run. Checked completion requires the selected branch and both applicable bound stores. Non-stack native writes are rejected; final ESP and all supplied scratch bytes must be unchanged.",
+    "ring_bound_cells is read from ESP+0x38 at the original stop. weapon_range_slots and reached_addresses are passive instruction observations, not substituted results. The stop precedes Building-specific adjustments, air pre-pass, cell traversal, candidate eligibility/scoring, RNG and full scenario scheduling."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "scan_bound": "0x006F9042",
+    "scan_bound_stop": "0x006F9148",
+    "has_turrets": "0x00717880",
+    "get_weapon_range": "0x007012C0",
+    "get_weapon": "0x0070E140",
+    "get_current_weapon": "0x0070E1A0",
+    "is_elite": "0x00750010"
+  },
+  "replay_command": "python -m tools.spatial_oracle.threat_scan_bound",
+  "payload_sha256": "505c662ef6b9e653dbd212e8604c9b1be01f18246db1fa7f1f53131592a7dd07"
+}

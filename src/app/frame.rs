@@ -159,47 +159,51 @@ impl App {
     /// player points: over a status screen; over the battlefield where
     /// `use_software_cursor` turns mouse.shp off (the debug pause, whose
     /// developer overlay takes the pointer, or a missing mouse.sha) while
-    /// WWMouse's depth is visible; and elsewhere only without mouse.sha, which
-    /// the shell pages draw whenever it loaded.
+    /// WWMouse's depth is visible; wherever the pointer left the client area,
+    /// because `DefWindowProc` answers a non-client `WM_SETCURSOR` with the
+    /// system arrow and mouse.shp has no title-bar art; and elsewhere only
+    /// without mouse.sha, which the shell pages draw whenever it loaded.
     fn show_os_cursor_only_without_game_cursor(state: &mut AppState, battlefield_drawn: bool) {
         let status_screen_drawn = std::mem::take(&mut state.frontend.status_screen_drawn);
-        if state.touch_input_mode() {
-            state.platform.window.set_cursor_visible(false);
+        let visible = !state.touch_input_mode()
+            && (!state.platform.pointer_in_client
+                || if state.platform.cursor_confined {
+                    // Confined: the game owns the pointer through its
+                    // software cursor, so keep the OS cursor hidden everywhere the game
+                    // draws one of its own — that leaves a single (software) cursor and
+                    // avoids the OS arrow + game arrow flicker at the clip edge. Where
+                    // the game draws *no* software cursor (the status screen, and any
+                    // debug pause, since the sim is paused and `use_software_cursor`
+                    // is false there), surface the OS cursor so a pointer stays
+                    // visible. Do NOT gate on `battlefield_drawn`: the sim stops
+                    // redrawing while paused, so the battlefield is not "drawn" yet the
+                    // debug pause still needs a visible pointer.
+                    status_screen_drawn || !state.use_software_cursor()
+                } else {
+                    status_screen_drawn
+                        || if battlefield_drawn {
+                            !state.use_software_cursor()
+                                && state.match_state.input.cursor_visibility.is_visible()
+                        } else {
+                            state
+                                .match_state
+                                .match_presentation
+                                .software_cursor
+                                .is_none()
+                        }
+                });
+        // Asking winit is not free on Windows: `set_cursor_visible` runs
+        // `refresh_os_cursor`, which clears any OS cursor clip winit does not own
+        // itself, so repeating the same answer every frame would tear
+        // `cursor_confined` down once per frame and let the pointer slip out of
+        // the window between two re-asserts. Hand over only a transition, then put
+        // the clip straight back.
+        if state.platform.os_cursor_visible == Some(visible) {
             return;
         }
-        let visible = if state.platform.cursor_confined {
-            // Confined: the game owns the pointer through its
-            // software cursor, so keep the OS cursor hidden everywhere the game
-            // draws one of its own — that leaves a single (software) cursor and
-            // avoids the OS arrow + game arrow flicker at the clip edge. Where
-            // the game draws *no* software cursor (the status screen, and any
-            // debug pause, since the sim is paused and `use_software_cursor`
-            // is false there), surface the OS cursor so a pointer stays
-            // visible. Do NOT gate on `battlefield_drawn`: the sim stops
-            // redrawing while paused, so the battlefield is not "drawn" yet the
-            // debug pause still needs a visible pointer.
-            status_screen_drawn || !state.use_software_cursor()
-        } else {
-            status_screen_drawn
-                || if battlefield_drawn {
-                    !state.use_software_cursor()
-                        && state.match_state.input.cursor_visibility.is_visible()
-                } else {
-                    state
-                        .match_state
-                        .match_presentation
-                        .software_cursor
-                        .is_none()
-                }
-        };
+        state.platform.os_cursor_visible = Some(visible);
         state.platform.window.set_cursor_visible(visible);
-        if !visible {
-            // The pointer is ours this frame, but winit re-shows the class cursor
-            // on WM_SETCURSOR (notably when the mouse hits the ClipCursor edge),
-            // flickering a system arrow over the game's software cursor. Force it
-            // null so the OS arrow never appears while confined.
-            crate::app::input::cursor::suppress_os_cursor(state);
-        }
+        crate::app::input::cursor::reassert_cursor_confinement(state);
     }
 
     /// Dispatch rendering based on current GameScreen state.
@@ -254,7 +258,7 @@ impl App {
                 .startup_splash
                 .as_ref()
                 .expect("active startup splash exists");
-            startup_splash::render_and_present(
+            let presented = startup_splash::render_and_present(
                 &state.renderer.gpu,
                 &state.renderer.batch_renderer,
                 &state.renderer.shell_surface_presenter,
@@ -262,12 +266,16 @@ impl App {
                 &state.renderer.fps_overlay,
                 splash,
             )?;
-            state
-                .frontend
-                .startup_splash
-                .as_mut()
-                .expect("active startup splash exists")
-                .mark_presented(Instant::now());
+            if presented {
+                state
+                    .frontend
+                    .startup_splash
+                    .as_mut()
+                    .expect("active startup splash exists")
+                    .mark_presented(Instant::now());
+            } else {
+                Self::follow_window_size(state);
+            }
             return Ok(());
         }
         state.frontend.startup_splash = None;
@@ -317,11 +325,15 @@ impl App {
             crate::app::frontend::shell_transition::MainMenuFirstPaintPoll::Acquire => {}
         }
 
-        let output: wgpu::SurfaceTexture = state
+        let Some(output) = state
             .renderer
             .gpu
             .acquire_frame()
-            .map_err(|e| anyhow::anyhow!("Surface texture: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Surface texture: {}", e))?
+        else {
+            Self::follow_window_size(state);
+            return Ok(());
+        };
         let view: wgpu::TextureView = output.texture.create_view(&Default::default());
         let mut encoder: wgpu::CommandEncoder =
             state
@@ -587,7 +599,10 @@ impl App {
                     )?;
                 }
             }
-            GameScreen::InGame if state.match_state.match_presentation.in_game_menu.is_open() => {
+            GameScreen::InGame
+                if state.match_state.match_presentation.in_game_menu.is_open()
+                    && !state.match_state.match_presentation.in_game_menu.draws_over_battlefield() =>
+            {
                 let abort = state.match_state.match_presentation.in_game_menu
                     == crate::ui::pause_menu::InGameMenuState::AbortConfirm;
                 crate::app::frontend::status_screen::render(

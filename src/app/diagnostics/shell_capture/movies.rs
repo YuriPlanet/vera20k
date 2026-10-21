@@ -92,6 +92,9 @@ pub(super) enum MoviesTarget {
         entry_tick: Option<u32>,
         /// Rest the pointer here instead of at the neutral point.
         hover: Option<(i32, i32)>,
+        /// The page captured: VERA's is reached by pressing VERA20K Options on
+        /// the settled main page.
+        page: crate::ui::main_menu_dialogs::options::OptionsPage,
     },
     /// Network on `0xE2`: its teardown slide, then a new `0xE2` with its
     /// own entry slide, captured once settled.
@@ -631,9 +634,20 @@ impl MoviesCapture {
                 }
             }
             (Phase::Options, PresentedShell::Other | PresentedShell::Options) => {
-                let MoviesTarget::Options0xD5 { entry_tick, hover } = self.target else {
+                use crate::ui::main_menu_dialogs::options::{LauncherButton, OptionsPage};
+                let MoviesTarget::Options0xD5 {
+                    entry_tick,
+                    hover,
+                    page,
+                } = self.target
+                else {
                     bail!("options phase without an options target");
                 };
+                let showing = state
+                    .frontend
+                    .options_dialog
+                    .as_ref()
+                    .map(|dialog| dialog.page());
                 if let Some(target) = entry_tick {
                     let tick = state
                         .frontend
@@ -655,7 +669,36 @@ impl MoviesCapture {
                         }
                     }
                 } else if rendered == PresentedShell::Options
+                    && page == OptionsPage::Vera
+                    && showing == Some(OptionsPage::Main)
+                    && state.frontend.shell_exit.is_none()
                     && Self::slide_settled(state, ShellSlideKind::Options)
+                {
+                    let layout = crate::app::frontend::shell_layout::launcher_options_layout(
+                        state,
+                        OptionsPage::Main,
+                    );
+                    let rect = layout
+                        .buttons
+                        .iter()
+                        .find(|(button, _)| *button == LauncherButton::Page(OptionsPage::Vera))
+                        .map(|(_, rect)| *rect)
+                        .context("D5 VERA20K Options button")?;
+                    state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
+                    state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;
+                    App::handle_launcher_options_mouse(state, None);
+                    App::handle_launcher_options_mouse(state, Some(true));
+                    App::handle_launcher_options_mouse(state, Some(false));
+                    ensure!(
+                        state.frontend.shell_exit.is_some(),
+                        "VERA20K Options must run the main page's teardown slide"
+                    );
+                    self.route.push(json!({"dialog": 0xd5, "frame": frame,
+                        "action": "VERA20K Options through ordinary pointer handler"}));
+                } else if rendered == PresentedShell::Options
+                    && showing == Some(page)
+                    && state.frontend.shell_exit.is_none()
+                    && Self::slide_settled(state, ShellSlideKind::options_page(page))
                 {
                     Self::restore_neutral_pointer(state);
                     if let Some((x, y)) = hover {
@@ -1328,8 +1371,14 @@ impl MoviesCapture {
             MoviesTarget::Lan(_) => unreachable!("LAN driver handled above"),
             MoviesTarget::Wol(_) => unreachable!("WOL driver handled above"),
             MoviesTarget::NetworkOptions(target) => self.network_options_ready(state, target)?,
-            MoviesTarget::Options0xD5 { entry_tick, .. } => {
-                state.frontend.options_dialog.is_some()
+            MoviesTarget::Options0xD5 {
+                entry_tick, page, ..
+            } => {
+                state
+                    .frontend
+                    .options_dialog
+                    .as_ref()
+                    .is_some_and(|dialog| dialog.page() == page)
                     && entry_tick.is_none_or(|target| {
                         state
                             .frontend

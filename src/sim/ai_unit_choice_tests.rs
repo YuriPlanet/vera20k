@@ -81,6 +81,39 @@ fn the_choosers_match_the_original() {
     }
 }
 
+/// The executed gate (`0x004FEE59..0x004FEE89`) at the boundary draws of
+/// each `FillEarliestTeamProbability`, the stock 100 among them: the earliest
+/// team's type exactly when the native compare falls through.
+#[test]
+fn the_fill_earliest_gate_takes_the_native_draws() {
+    let corpus = crate::test_fixture::json("tools/unit_draw_oracle.json");
+    // The earliest team needs type 4; type 7 has the greater need.
+    let candidates = [
+        Candidate {
+            index: 4,
+            need: 1,
+            earliest: 10,
+        },
+        Candidate {
+            index: 7,
+            need: 2,
+            earliest: 20,
+        },
+    ];
+    for row in corpus["fill_earliest"].as_array().unwrap() {
+        let fill = dword(&row["fill_percent"]);
+        let roll = dword(&row["draw"]);
+        let mut draws = [roll, 0].into_iter();
+        let choice = pick(&candidates, fill, |_, _| draws.next().unwrap());
+        let earliest = row["earliest"].as_bool().unwrap();
+        assert_eq!(
+            choice,
+            Some(if earliest { 4 } else { 7 }),
+            "{fill}%, draw {roll:#x}"
+        );
+    }
+}
+
 #[test]
 fn the_harvester_branch_matches_the_original() {
     let mut sim = Simulation::new();

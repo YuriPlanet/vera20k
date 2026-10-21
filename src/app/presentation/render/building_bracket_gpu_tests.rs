@@ -135,6 +135,7 @@ fn native_bracket_pixels_reach_display_replay_without_writing_z() {
             seed_depth_grid(&gpu, &mut encoder, &dv, &z, size[0]);
             draw_native_object_pass(
                 &mut encoder,
+                crate::app::render::merge_passes::ObjectDrawPhase::Display,
                 &cv,
                 &dv,
                 &mut terrain,

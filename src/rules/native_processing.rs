@@ -5,7 +5,13 @@
 //! ruleset converts this processed output into gameplay definitions. Failed passes
 //! preserve already-constructed registry state rather than rolling back.
 
+use crate::rules::ares_armor::{AresWarheadVerses, ArmorCatalog};
+use crate::rules::ares_prerequisites::GenericPrerequisites;
+use crate::rules::armor::ArmorId;
+#[cfg(not(feature = "ares"))]
+use crate::rules::armor::armor_index;
 use crate::rules::color_add::{ColorAddSelectors, ColorAddTable};
+use crate::rules::compatibility::RulesCompatibility;
 use crate::rules::crate_rules::CrateRules;
 use crate::rules::error::RulesError;
 use crate::rules::gunner_turrets::GunnerTurrets;
@@ -22,7 +28,9 @@ use crate::rules::projectile_type::ProjectileArtState;
 use crate::rules::rules_type_references::{DEFAULT_PARTICLE_SYSTEMS, RulesTypeReferences};
 use crate::rules::ruleset::{DetailRules, GeneralBuildingTypes, PrismSupportRules};
 use crate::rules::superweapon_type::SuperWeaponBuildingRequirements;
-use crate::rules::superweapon_type::{DeliveryOwner, DeliveryType, UnitDeliveryRules};
+use crate::rules::superweapon_type::UnitDeliveryRules;
+#[cfg(feature = "ares")]
+use crate::rules::superweapon_type::{DeliveryOwner, DeliveryType};
 use crate::util::native_x87::NativeF64Bits;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -478,6 +486,28 @@ pub struct ProcessedRulesLayers {
 }
 
 impl ProcessedRulesLayers {
+    /// Ares definitions have the same retained process lifetime as Types.
+    pub(crate) fn ares_prerequisites(&self) -> Option<&GenericPrerequisites> {
+        self.native_type_construction_trace
+            .registry_state
+            .ares_prerequisites
+            .as_ref()
+    }
+
+    pub(crate) fn ares_armors(&self) -> Option<&ArmorCatalog> {
+        self.native_type_construction_trace
+            .registry_state
+            .ares_armors
+            .as_ref()
+    }
+
+    /// Read-only projection of the retained registry's build capability.
+    pub(crate) fn compatibility(&self) -> RulesCompatibility {
+        self.native_type_construction_trace
+            .registry_state
+            .compatibility
+    }
+
     pub(crate) fn native_registry_state(&self) -> &NativeRulesRegistryState {
         self.native_type_construction_trace.registry_state()
     }
@@ -502,7 +532,59 @@ impl ProcessedRulesLayers {
     /// Reject indexes before any projection can dereference a saved type slot.
     pub(crate) fn validate_saved_state(&self) -> Result<(), RulesError> {
         let registry = &self.native_type_construction_trace.registry_state;
+        if !registry.compatibility.matches_build() {
+            return Err(RulesError::InvalidSavedState(
+                "saved Rules require a different compiled Ares capability",
+            ));
+        }
+        #[cfg(not(feature = "ares"))]
+        if registry.families.values().flatten().any(|member| {
+            member.super_weapon_building_requirements.is_some()
+                || member.generic_super_weapon_warhead.is_some()
+                || member.unit_delivery.is_some()
+        }) {
+            return Err(RulesError::InvalidSavedState(
+                "saved Rules contain disabled Ares extension state",
+            ));
+        }
+        let families = &registry.families;
+        if registry.ares_armors.is_some() != crate::rules::ARES_ENABLED {
+            return Err(RulesError::InvalidSavedState(
+                "saved armor capability differs from build",
+            ));
+        }
+        if let Some(armors) = &registry.ares_armors {
+            if !armors.valid_saved_state()
+                || families
+                    .values()
+                    .flatten()
+                    .any(|member| !armors.contains(member.armor_id))
+                || families.iter().any(|(&family, members)| {
+                    members.iter().any(|member| {
+                        if family == RulesTypeFamily::Warhead {
+                            member
+                                .ares_verses
+                                .as_ref()
+                                .is_none_or(|verses| !verses.valid_saved_state(armors))
+                        } else {
+                            member.ares_verses.is_some()
+                        }
+                    })
+                })
+            {
+                return Err(RulesError::InvalidSavedState("invalid Ares armor registry"));
+            }
+        } else if families
+            .values()
+            .flatten()
+            .any(|member| member.armor_id.index() >= 11 || member.ares_verses.is_some())
+        {
+            return Err(RulesError::InvalidSavedState(
+                "Ares armor state in retail rules",
+            ));
+        }
         registry.validate_techno_type_order()?;
+        registry.validate_prerequisites()?;
         let families = &registry.families;
         let projectile_count = families
             .get(&RulesTypeFamily::Projectile)
@@ -719,6 +801,25 @@ impl ProcessedRulesLayers {
             .into_iter()
             .flatten()
             .map(|member| (member.native_stored_id.as_str(), member.infantry_pips))
+    }
+
+    /// Each InfantryType's sequence sound pairs from every reached pass, in
+    /// read order ([`crate::rules::infantry_sequence::read_sequence_sounds`]).
+    pub(crate) fn infantry_sequence_sound_reads(
+        &self,
+    ) -> impl Iterator<Item = (&str, &[crate::rules::infantry_sequence::SequenceSoundRead])> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Infantry)
+            .into_iter()
+            .flatten()
+            .map(|member| {
+                (
+                    member.native_stored_id.as_str(),
+                    member.infantry_sequence_sound_reads.as_slice(),
+                )
+            })
     }
 
     /// Infantry52466E's postprocessed flags, including a prior role's latch
@@ -1068,7 +1169,17 @@ impl ProcessedRulesLayers {
     /// table's literal per-pass default.
     pub(crate) fn warhead_read_states(
         &self,
-    ) -> impl Iterator<Item = (&str, bool, bool, &[String], &[String], &[NativeF64Bits; 11])> {
+    ) -> impl Iterator<
+        Item = (
+            &str,
+            bool,
+            bool,
+            &[String],
+            &[String],
+            &[NativeF64Bits; 11],
+            Option<&AresWarheadVerses>,
+        ),
+    > {
         self.native_type_construction_trace
             .registry_state()
             .families
@@ -1083,7 +1194,29 @@ impl ProcessedRulesLayers {
                     member.warhead_anim.anim_list.as_slice(),
                     member.warhead_anim.debris_types.as_slice(),
                     &member.warhead_verses,
+                    member.ares_verses.as_ref(),
                 )
+            })
+    }
+
+    pub(crate) fn object_armor_states(
+        &self,
+    ) -> impl Iterator<Item = (Option<ObjectCategory>, &str, ArmorId)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter(|(family, _)| {
+                family.object_category().is_some() || **family == RulesTypeFamily::Terrain
+            })
+            .flat_map(|(&family, members)| {
+                members.iter().map(move |member| {
+                    (
+                        family.object_category(),
+                        member.native_stored_id.as_str(),
+                        member.armor_id,
+                    )
+                })
             })
     }
 
@@ -1570,6 +1703,13 @@ impl NativeTypeConstructionTrace {
 /// RulesClass scalars share this process lifetime and survive Type resets.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct NativeRulesRegistryState {
+    /// Build capability is retained with the Rules owner, never selected by INI.
+    compatibility: RulesCompatibility,
+    /// Ares Clear/AddDefaults rebuilds these at a destructive scenario reset;
+    /// ordinary Process passes and saves retain the reached list reads.
+    ares_prerequisites: Option<GenericPrerequisites>,
+    /// Ordered Ares armor registry; Process retains it, destructive reset rebuilds it.
+    ares_armors: Option<ArmorCatalog>,
     families: HashMap<RulesTypeFamily, Vec<ProcessedType>>,
     /// TechnoTypeClass::Array A8EB04/countA8EB10. Each pair points to the
     /// existing family member; names alone cannot distinguish repeated native
@@ -1640,6 +1780,9 @@ impl Default for NativeRulesRegistryState {
         // RulesClass constructor values; `GeneralRules::default` owns them.
         let general = crate::rules::ruleset::GeneralRules::default();
         Self {
+            compatibility: RulesCompatibility::default(),
+            ares_prerequisites: crate::rules::ARES_ENABLED.then(GenericPrerequisites::default),
+            ares_armors: crate::rules::ARES_ENABLED.then(ArmorCatalog::default),
             families: HashMap::new(),
             techno_type_order: Vec::new(),
             tiberiums: Vec::new(),
@@ -1739,6 +1882,61 @@ impl NativeRulesRegistryState {
             return Err(RulesError::InvalidSavedState(
                 "global TechnoType order does not identify each live type exactly once",
             ));
+        }
+        Ok(())
+    }
+
+    fn validate_prerequisites(&self) -> Result<(), RulesError> {
+        if self.ares_prerequisites.is_some() != crate::rules::ARES_ENABLED {
+            return Err(RulesError::InvalidSavedState(
+                "saved prerequisite catalog does not match the compiled capability",
+            ));
+        }
+        let building_count = self
+            .families
+            .get(&RulesTypeFamily::Building)
+            .map_or(0, Vec::len);
+        let valid_entry = |entry: &Prerequisite| match *entry {
+            Prerequisite::Building(index) => {
+                usize::try_from(index).is_ok_and(|index| index < building_count)
+            }
+            Prerequisite::Group(_) => true,
+            Prerequisite::GenericGroup(index) => {
+                index >= 6
+                    && self
+                        .ares_prerequisites
+                        .as_ref()
+                        .is_some_and(|catalog| (index as usize) < catalog.groups().len())
+            }
+        };
+        if self.families.values().flatten().any(|member| {
+            member
+                .prerequisite
+                .iter()
+                .chain(&member.prerequisite_override)
+                .any(|entry| !valid_entry(entry))
+        }) {
+            return Err(RulesError::InvalidSavedState(
+                "prerequisite reference is outside its registry",
+            ));
+        }
+        if let Some(catalog) = &self.ares_prerequisites {
+            if PrerequisiteGroup::ALL.into_iter().any(|group| {
+                catalog
+                    .group(group.index())
+                    .is_none_or(|entry| entry.name() != group.token())
+            }) || catalog.groups().iter().any(|group| {
+                group.members().iter().any(|entry| !valid_entry(entry))
+                    || group.alternates().iter().any(|alternate| {
+                        !self.techno_type_states().any(|(category, id, _)| {
+                            category == alternate.category() && id == alternate.id()
+                        })
+                    })
+            }) {
+                return Err(RulesError::InvalidSavedState(
+                    "invalid retained generic prerequisite catalog",
+                ));
+            }
         }
         Ok(())
     }
@@ -2117,6 +2315,10 @@ struct ProcessedType {
     infantry_pips: InfantryPips,
     #[serde(default)]
     infantry_infiltration: InfantryInfiltration,
+    /// Every reached InfantryType ReadINI pass ends in ReadSequenceData
+    /// (`0x0052473A`), whose sound pairs append without a reset.
+    #[serde(default)]
+    infantry_sequence_sound_reads: Vec<crate::rules::infantry_sequence::SequenceSoundRead>,
     recoil: crate::rules::recoil::RecoilConfig,
     airstrike: crate::rules::airstrike::AirstrikeSettings,
     /// TechnoType constructor711134 and current-default ReadInt7147B4.
@@ -2138,6 +2340,10 @@ struct ProcessedType {
     /// these bits; RuleSet only projects them. Native execution:
     /// tools/rules_oracle/bridge_landing_inputs.{py,json,meta.json}.
     warhead_verses: [NativeF64Bits; 11],
+    /// Independent Ares10051D80 constructor/10006460 read vector.
+    ares_verses: Option<AresWarheadVerses>,
+    /// ObjectType4753F0 -> Ares10006E10 binds at each reached body read.
+    armor_id: ArmorId,
     /// ParticleSystemType+294, the bound ParticleType's index: constructor -1
     /// (`0x006440B3`), rebound by every reached ReadINI (`0x0064430F..0x00644323`).
     holds_what: Option<usize>,
@@ -2498,6 +2704,7 @@ impl ProcessedType {
             gunner_turrets: GunnerTurrets::default(),
             infantry_pips: InfantryPips::default(),
             infantry_infiltration: InfantryInfiltration::default(),
+            infantry_sequence_sound_reads: Vec::new(),
             recoil: crate::rules::recoil::RecoilConfig::default(),
             airstrike: crate::rules::airstrike::AirstrikeSettings::default(),
             radial_fire_segments: 0,
@@ -2509,6 +2716,8 @@ impl ProcessedType {
             weapon: WeaponReadState::default(),
             warhead_anim: WarheadAnimReadState::default(),
             warhead_verses: [NativeF64Bits::ONE; 11],
+            ares_verses: None,
+            armor_id: ArmorId::NONE,
             holds_what: None,
             super_weapon_weapon: None,
             super_weapon_aux_building: None,
@@ -2525,6 +2734,10 @@ impl ProcessedType {
 
 #[derive(Debug)]
 struct RulesPassProcessor {
+    compatibility: RulesCompatibility,
+    ares_prerequisites: Option<GenericPrerequisites>,
+    /// Ordered Ares armor registry; Process retains it, destructive reset rebuilds it.
+    ares_armors: Option<ArmorCatalog>,
     ordinary: Option<IniFile>,
     crate_rules: CrateRules,
     powerups: PowerupsAccumulator,
@@ -2587,6 +2800,9 @@ impl Default for RulesPassProcessor {
 impl RulesPassProcessor {
     fn with_registry_state(registry_state: NativeRulesRegistryState) -> Self {
         Self {
+            compatibility: registry_state.compatibility,
+            ares_prerequisites: registry_state.ares_prerequisites,
+            ares_armors: registry_state.ares_armors,
             families: registry_state.families,
             techno_type_order: registry_state.techno_type_order,
             tiberiums: registry_state.tiberiums,
@@ -2868,6 +3084,12 @@ impl RulesPassProcessor {
         let native_stored_id = abstract_type_stored_id(incoming);
         let index = members.len();
         members.push(ProcessedType::new(native_stored_id.clone()));
+        if family == RulesTypeFamily::Terrain {
+            members[index].armor_id = ArmorId::WOOD;
+        }
+        if crate::rules::ARES_ENABLED && family == RulesTypeFamily::Warhead {
+            members[index].ares_verses = Some(AresWarheadVerses::default());
+        }
         if family.object_category().is_some() {
             // TechnoType constructors71181D..711832 /711ABD..711ACB append
             // to the shared vector at allocation time, including lazy Types.
@@ -2934,6 +3156,7 @@ impl RulesPassProcessor {
     /// (for example `,,,` or only exact `none` sentinels).
     /// Ares pointer vectors look up existing types at this exact read point.
     /// ReadString/strtok retain the native 2048-byte, comma-only list policy.
+    #[cfg(feature = "ares")]
     fn resolve_existing_list_from(
         &self,
         section: &IniSection,
@@ -3305,6 +3528,9 @@ impl RulesPassProcessor {
     /// lists (`0x0066E78C..0x0066EA6E`) before any of its own BuildingType
     /// allocations, each with its current list as the default.
     fn read_prerequisite_lists(&mut self, pass: &IniFile) {
+        // Ares leaves the native66E78C..66EA6E reads reached. Its later
+        // BeforeTypeData hook reads the separate generic catalog; do not
+        // replace these retained retail lists or their128-byte parser.
         let Some(general) = pass.section("General") else {
             return;
         };
@@ -3313,6 +3539,7 @@ impl RulesPassProcessor {
                 general.read_list(group.general_key(), 0x80),
                 &self.rules_prerequisite_lists[group.index()],
                 |name| self.building_index(name),
+                None,
             );
             self.rules_prerequisite_lists[group.index()] = parsed;
         }
@@ -3345,12 +3572,60 @@ impl RulesPassProcessor {
             .native_stored_id
             .clone();
         let raw = pass.section(&native_stored_id)?.clone();
+        let current_armor = self.families.get(&family)?.get(index)?.armor_id;
+        let armor = if family.object_category().is_some() || family == RulesTypeFamily::Terrain {
+            #[cfg(feature = "ares")]
+            {
+                self.ares_armors
+                    .as_ref()
+                    .expect("Ares body reads require the retained armor catalog")
+                    .read_binding(&raw, current_armor)
+            }
+            #[cfg(not(feature = "ares"))]
+            {
+                raw.read_name("Armor", 0x80)
+                    .map_or(current_armor, armor_index)
+            }
+        } else {
+            current_armor
+        };
         let member = self.families.get_mut(&family)?.get_mut(index)?;
+        member.armor_id = armor;
         member.body.overlay_rules_pass(&raw);
         Some((native_stored_id, raw, member.body.clone()))
     }
 
     fn process_type_data(&mut self, pass: &IniFile, fixed_art: &IniFile) {
+        // Installed BeforeTypeData679A15 reads ArmorTypes/defaults before
+        // any ordinary ObjectType/Warhead body in this Process pass.
+        #[cfg(feature = "ares")]
+        self.ares_armors
+            .as_mut()
+            .expect("Ares Rules own armor catalog")
+            .read_pass(pass);
+        // Ares RulesClass_BeforeTypeData679A15 -> 1002AEF0. This is after
+        // registry allocation but before any TechnoType body in this pass.
+        // Move out and back while reading the existing registries; this is
+        // still the one retained catalog, not a merged-INI reconstruction.
+        #[cfg(feature = "ares")]
+        if let Some(mut catalog) = self.ares_prerequisites.take() {
+            catalog.apply_pass(
+                pass,
+                |name| self.building_index(name),
+                |name| {
+                    self.techno_type_order.iter().find_map(|&(family, index)| {
+                        let member = &self.families[&family][index];
+                        member.native_stored_id.eq_ignore_ascii_case(name).then(|| {
+                            (
+                                family.object_category().expect("live TechnoType"),
+                                member.native_stored_id.clone(),
+                            )
+                        })
+                    })
+                },
+            );
+            self.ares_prerequisites = Some(catalog);
+        }
         self.process_house_family(pass);
         self.process_super_weapon_family(pass);
         self.process_anim_family(fixed_art);
@@ -3456,95 +3731,109 @@ impl RulesPassProcessor {
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_aux_building = building;
                 }
-                // Ares ValueableVector<BuildingTypeClass*> uses Find, not
-                // FindOrAllocate (Utilities/TemplateDef.h::parse_values and
-                // Utilities/Parser.h::Parser<T,1>, Ares 4f1d9299). Unknown
-                // tokens are skipped; each nonempty read replaces the list.
-                let auxiliary = self.resolve_existing_list_from(
-                    &raw,
-                    "SW.AuxBuildings",
-                    RulesTypeFamily::Building,
-                    0x800,
-                );
-                let negative = self.resolve_existing_list_from(
-                    &raw,
-                    "SW.NegBuildings",
-                    RulesTypeFamily::Building,
-                    0x800,
-                );
-                if auxiliary.is_some() || negative.is_some() {
-                    let requirements = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
-                        .super_weapon_building_requirements
-                        .get_or_insert_default();
-                    if let Some(auxiliary) = auxiliary {
-                        requirements.auxiliary = auxiliary;
-                    }
-                    if let Some(negative) = negative {
-                        requirements.negative = negative;
-                    }
-                }
-                if effective
-                    .read_name("Type", 0x28)
-                    .is_some_and(|kind| kind.eq_ignore_ascii_case("GenericWarhead"))
-                    && let Some(warhead) =
-                        self.resolve_scalar_from(&raw, "SW.Warhead", RulesTypeFamily::Warhead, 0x80)
+                #[cfg(feature = "ares")]
                 {
-                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
-                        .generic_super_weapon_warhead = warhead;
-                }
-                if raw
-                    .read_name("Type", 0x28)
-                    .is_some_and(|kind| kind.eq_ignore_ascii_case("UnitDelivery"))
-                    || self.families[&RulesTypeFamily::SuperWeapon][index]
-                        .unit_delivery
-                        .is_some()
-                {
-                    let types = raw.read_list("Deliver.Types", 2048).map(|tokens| {
-                        tokens
-                            .into_iter()
-                            .filter_map(|token| {
-                                let matches: Vec<_> = [
-                                    (RulesTypeFamily::Infantry, ObjectCategory::Infantry),
-                                    (RulesTypeFamily::Vehicle, ObjectCategory::Vehicle),
-                                    (RulesTypeFamily::Aircraft, ObjectCategory::Aircraft),
-                                    (RulesTypeFamily::Building, ObjectCategory::Building),
-                                ]
+                    // Ares ValueableVector<BuildingTypeClass*> uses Find, not
+                    // FindOrAllocate (Utilities/TemplateDef.h::parse_values and
+                    // Utilities/Parser.h::Parser<T,1>, Ares 4f1d9299). Unknown
+                    // tokens are skipped; each nonempty read replaces the list.
+                    let auxiliary = self.resolve_existing_list_from(
+                        &raw,
+                        "SW.AuxBuildings",
+                        RulesTypeFamily::Building,
+                        0x800,
+                    );
+                    let negative = self.resolve_existing_list_from(
+                        &raw,
+                        "SW.NegBuildings",
+                        RulesTypeFamily::Building,
+                        0x800,
+                    );
+                    if auxiliary.is_some() || negative.is_some() {
+                        let requirements = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                            .super_weapon_building_requirements
+                            .get_or_insert_default();
+                        if let Some(auxiliary) = auxiliary {
+                            requirements.auxiliary = auxiliary;
+                        }
+                        if let Some(negative) = negative {
+                            requirements.negative = negative;
+                        }
+                    }
+                    if effective
+                        .read_name("Type", 0x28)
+                        .is_some_and(|kind| kind.eq_ignore_ascii_case("GenericWarhead"))
+                        && let Some(warhead) = self.resolve_scalar_from(
+                            &raw,
+                            "SW.Warhead",
+                            RulesTypeFamily::Warhead,
+                            0x80,
+                        )
+                    {
+                        self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                            .generic_super_weapon_warhead = warhead;
+                    }
+                    if raw
+                        .read_name("Type", 0x28)
+                        .is_some_and(|kind| kind.eq_ignore_ascii_case("UnitDelivery"))
+                        || self.families[&RulesTypeFamily::SuperWeapon][index]
+                            .unit_delivery
+                            .is_some()
+                    {
+                        let types = raw.read_list("Deliver.Types", 2048).map(|tokens| {
+                            tokens
                                 .into_iter()
-                                .filter_map(|(family, category)| {
-                                    self.find_existing(family, token).map(|index| DeliveryType {
-                                        category,
-                                        id: self.families[&family][index].native_stored_id.clone(),
+                                .filter_map(|token| {
+                                    let matches: Vec<_> = [
+                                        (RulesTypeFamily::Infantry, ObjectCategory::Infantry),
+                                        (RulesTypeFamily::Vehicle, ObjectCategory::Vehicle),
+                                        (RulesTypeFamily::Aircraft, ObjectCategory::Aircraft),
+                                        (RulesTypeFamily::Building, ObjectCategory::Building),
+                                    ]
+                                    .into_iter()
+                                    .filter_map(|(family, category)| {
+                                        self.find_existing(family, token).map(|index| {
+                                            DeliveryType {
+                                                category,
+                                                id: self.families[&family][index]
+                                                    .native_stored_id
+                                                    .clone(),
+                                            }
+                                        })
                                     })
+                                    .collect();
+                                    // Do not silently bind an ambiguous cross-category ID
+                                    // to an unrelated type. Unknown/none tokens add none.
+                                    (matches.len() == 1)
+                                        .then(|| matches.into_iter().next().unwrap())
                                 })
-                                .collect();
-                                // Do not silently bind an ambiguous cross-category ID
-                                // to an unrelated type. Unknown/none tokens add none.
-                                (matches.len() == 1).then(|| matches.into_iter().next().unwrap())
-                            })
-                            .collect()
-                    });
-                    let state = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
-                        .unit_delivery
-                        .get_or_insert_default();
-                    if let Some(types) = types {
-                        state.types = types;
+                                .collect()
+                        });
+                        let state = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                            .unit_delivery
+                            .get_or_insert_default();
+                        if let Some(types) = types {
+                            state.types = types;
+                        }
+                        let delay = raw.read_int("SW.Deferment", state.deferment);
+                        state.deferment = if delay < 0 { 20 } else { delay };
+                        state.base_normal = raw.read_bool("Deliver.BaseNormal", state.base_normal);
+                        if let Some(owner) = raw.read_name("Deliver.Owner", 2048) {
+                            state.owner = match owner.to_ascii_lowercase().as_str() {
+                                "invoker" => DeliveryOwner::Invoker,
+                                "neutral" => DeliveryOwner::Neutral,
+                                "special" => DeliveryOwner::Special,
+                                "civilian" => DeliveryOwner::Civilian,
+                                _ => state.owner,
+                            };
+                        }
+                        // Activation sound resolves against the fixed SOUNDMD catalog
+                        // in RuleSet::bind_type_sound_references, using this type's
+                        // retained INI read history rather than an unresolved name.
                     }
-                    let delay = raw.read_int("SW.Deferment", state.deferment);
-                    state.deferment = if delay < 0 { 20 } else { delay };
-                    state.base_normal = raw.read_bool("Deliver.BaseNormal", state.base_normal);
-                    if let Some(owner) = raw.read_name("Deliver.Owner", 2048) {
-                        state.owner = match owner.to_ascii_lowercase().as_str() {
-                            "invoker" => DeliveryOwner::Invoker,
-                            "neutral" => DeliveryOwner::Neutral,
-                            "special" => DeliveryOwner::Special,
-                            "civilian" => DeliveryOwner::Civilian,
-                            _ => state.owner,
-                        };
-                    }
-                    // Activation sound resolves against the fixed SOUNDMD catalog
-                    // in RuleSet::bind_type_sound_references, using this type's
-                    // retained INI read history rather than an unresolved name.
                 }
+                #[cfg(not(feature = "ares"))]
+                let _ = effective;
             }
             index += 1;
         }
@@ -3637,15 +3926,22 @@ impl RulesPassProcessor {
                 // that can allocate a BuildingType, each with its current list
                 // as the default.
                 let member = &self.families[&family][index];
+                let prerequisite_capacity = if crate::rules::ARES_ENABLED {
+                    0x800
+                } else {
+                    0x80
+                };
                 let prerequisite = parse_prerequisites(
-                    raw.read_list("Prerequisite", 0x80),
+                    raw.read_list("Prerequisite", prerequisite_capacity),
                     &member.prerequisite,
                     |name| self.building_index(name),
+                    self.ares_prerequisites.as_ref(),
                 );
                 let prerequisite_override = parse_prerequisites(
-                    raw.read_list("PrerequisiteOverride", 0x80),
+                    raw.read_list("PrerequisiteOverride", prerequisite_capacity),
                     &member.prerequisite_override,
                     |name| self.building_index(name),
+                    self.ares_prerequisites.as_ref(),
                 );
                 let member = &mut self.families.get_mut(&family).unwrap()[index];
                 member.prerequisite = prerequisite;
@@ -3799,6 +4095,12 @@ impl RulesPassProcessor {
                             RulesTypeFamily::Animation,
                             0x80,
                         );
+                        let reads = crate::rules::infantry_sequence::read_sequence_sounds(
+                            fixed_art, &image,
+                        );
+                        self.family_mut(family)[index]
+                            .infantry_sequence_sound_reads
+                            .extend(reads);
                     }
                     _ => unreachable!("only Techno families enter the Techno reader"),
                 }
@@ -4203,12 +4505,37 @@ impl RulesPassProcessor {
                         .warhead_anim
                         .debris_types = types;
                 }
-                let current = &mut self.family_mut(RulesTypeFamily::Warhead)[index].warhead_verses;
-                *current = crate::rules::warhead_type::read_verses(
-                    &raw,
-                    current.map(|value| f64::from_bits(value.bits())),
-                )
-                .map(|value| NativeF64Bits::from_bits(value.to_bits()));
+                // Installed Ares75DDCC->10054410 skips the entire original
+                // raw11 read and its+149 derivation. Its independent vector
+                // is read below even when the original section was absent.
+                #[cfg(not(feature = "ares"))]
+                {
+                    let current =
+                        &mut self.family_mut(RulesTypeFamily::Warhead)[index].warhead_verses;
+                    *current = crate::rules::warhead_type::read_verses(
+                        &raw,
+                        current.map(|value| f64::from_bits(value.bits())),
+                    )
+                    .map(|value| NativeF64Bits::from_bits(value.to_bits()));
+                }
+            }
+            #[cfg(feature = "ares")]
+            {
+                let member = &mut self
+                    .families
+                    .get_mut(&RulesTypeFamily::Warhead)
+                    .expect("Warhead family exists during its reader")[index];
+                let section = pass.section(&member.native_stored_id);
+                member
+                    .ares_verses
+                    .as_mut()
+                    .expect("Ares Warhead constructor installs its extension")
+                    .read_pass(
+                        section,
+                        self.ares_armors
+                            .as_ref()
+                            .expect("Ares reader requires its armor catalog"),
+                    );
             }
             index += 1;
         }
@@ -4554,6 +4881,9 @@ impl RulesPassProcessor {
                 events: self.native_type_construction_events,
                 allocated_super_weapon_type_count,
                 registry_state: NativeRulesRegistryState {
+                    compatibility: self.compatibility,
+                    ares_prerequisites: self.ares_prerequisites,
+                    ares_armors: self.ares_armors,
                     families: self.families,
                     techno_type_order: self.techno_type_order,
                     tiberiums: self.tiberiums,

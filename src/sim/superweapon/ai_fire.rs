@@ -86,6 +86,7 @@ pub(crate) enum AiFireArm {
     /// `0x00509A3E`: [`force_shield_target`].
     ForceShield,
     /// Ares default `SW.AITargeting=Offensive` (or disabled with `None`).
+    #[cfg(feature = "ares")]
     GenericWarhead,
     /// `0x00509AD2`: Iron Curtain and the Chronosphere pair are left to team
     /// scripts.
@@ -100,11 +101,15 @@ impl AiFireArm {
             SuperWeaponKind::ParaDrop
             | SuperWeaponKind::AmerParaDrop
             | SuperWeaponKind::SpyPlane
-            | SuperWeaponKind::UnitDelivery
             | SuperWeaponKind::PsychicReveal => Self::GroundRallyPoint,
+            #[cfg(feature = "ares")]
+            SuperWeaponKind::UnitDelivery => Self::GroundRallyPoint,
+            #[cfg(not(feature = "ares"))]
+            SuperWeaponKind::UnitDelivery | SuperWeaponKind::GenericWarhead => Self::None,
             SuperWeaponKind::PsychicDominator => Self::PsychicDominator,
             SuperWeaponKind::GeneticConverter => Self::GeneticMutator,
             SuperWeaponKind::ForceShield => Self::ForceShield,
+            #[cfg(feature = "ares")]
             SuperWeaponKind::GenericWarhead => Self::GenericWarhead,
             SuperWeaponKind::IronCurtain
             | SuperWeaponKind::ChronoSphere
@@ -175,11 +180,13 @@ pub(crate) fn try_fire(
             continue;
         }
         // Reject extension-gated types before target search can consume RNG.
+        #[cfg(feature = "ares")]
         if sw.building_requirements.is_some()
             && !super::building_requirements_met(sim, rules, owner, sw)
         {
             continue;
         }
+        #[cfg(feature = "ares")]
         if sw.kind == SuperWeaponKind::UnitDelivery
             && !super::unit_delivery::configured(sim, rules, owner, sw)
         {
@@ -187,6 +194,7 @@ pub(crate) fn try_fire(
         }
         // Do not spend targeting RNG or attempt an unaffordable paid launch.
         // The Fire_SW transaction checks the current wallet again.
+        #[cfg(feature = "ares")]
         if !super::money::configuration_supported(sw)
             || !super::money::can_afford(&sim.houses, owner, sw)
         {
@@ -208,6 +216,7 @@ pub(crate) fn try_fire(
             AiFireArm::GroundRallyPoint => ground_rally_point(sim, rules, owner, registry),
             AiFireArm::PsychicDominator => psychic_dominator_target(sim, rules, owner),
             AiFireArm::GeneticMutator => genetic_mutator_target(sim, rules, owner),
+            #[cfg(feature = "ares")]
             AiFireArm::GenericWarhead => {
                 use crate::rules::superweapon_type::GenericWarheadAiTargeting;
                 sw.generic_warhead
@@ -340,6 +349,7 @@ fn find_best_rally_target(
 /// Ares Hooks.Targeting.cpp: OffensiveTargetSelector/ PickIonCannonTarget.
 /// Shares native eligibility and values, but ignores cloaked objects and
 /// scripted target preferences. Only a final tie selection draws Scenario RNG.
+#[cfg(feature = "ares")]
 fn offensive_target(
     sim: &mut Simulation,
     rules: &RuleSet,

@@ -231,13 +231,13 @@ impl Simulation {
         ) {
             return Some(UnitRepairAction::Move);
         }
-        // Target vt+80: Unit746400, Building457620 ->465D40, and
-        // Aircraft41B910 -> Object's grounded predicate. Every GameEntity is
-        // a Techno (vt+7C); Infantry's vt+80 answers false.
-        let vehicle = match target.category() {
-            EntityCategory::Unit => !target_type.non_vehicle,
-            EntityCategory::Structure => target_type.is_1x1_with_undeploy(),
-            EntityCategory::Aircraft => {
+        // The target's vt+80 (`0x0073FDBD`); every GameEntity is a Techno
+        // (vt+7C).
+        let vehicle = crate::sim::combat::vehicle_like(
+            target.category(),
+            target_type.non_vehicle,
+            target_type.is_1x1_with_undeploy(),
+            || {
                 if let Some(terrain) = self.resolved_terrain.as_ref() {
                     let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
                     crate::sim::movement::air_movement::is_low_flying_in_query(
@@ -252,9 +252,8 @@ impl Simulation {
                         Some((rules, &self.interner)),
                     )
                 }
-            }
-            EntityCategory::Infantry => false,
-        };
+            },
+        );
         if !vehicle || target_id == actor_id {
             //73FE2F..73FE43 preserves the base action for a Building.
             return (target.category() != EntityCategory::Structure)
@@ -976,10 +975,72 @@ impl Simulation {
         }
     }
 
+    /// `0x0051A071..0x0051A0CE`, where the building receiver finds no
+    /// building of his (none in his cell, or one that is neither his NavCom
+    /// nor his Target): on Capture, Area Guard or Patrol (Get_Mission) with
+    /// no NavCom, he enters idle mode (`Enter_Idle_Mode(0, 1)`, `0x0051A08C`,
+    /// [`Self::infantry_enter_idle_mode`]) unless his current mission
+    /// (`+0xAC`) is Area Guard; then, standing in a building's cell (the
+    /// first Building `0x0047C520` of Map[Location]), he takes
+    /// `Scatter(null, 1, 0)` (`0x0051A0CE`). The visit carries on to the
+    /// Enter arm. An Engineer whose hut target a repair cancelled reaches
+    /// this in the hut.
+    fn infantry_per_cell_no_destination(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> Result<BuildingEntryResult, super::FrameAdvanceError> {
+        let Some(infantry) = self.substrate.entities.get(id) else {
+            return Ok(BuildingEntryResult::default());
+        };
+        if infantry.navigation.nav_com().is_some() {
+            return Ok(BuildingEntryResult::default());
+        }
+        if infantry.mission.current().known() != Some(MissionType::AreaGuard) {
+            self.infantry_enter_idle_mode(id, rules, registry, frame_effects);
+        }
+        let Some(infantry) = self.substrate.entities.get(id) else {
+            return Ok(BuildingEntryResult::default());
+        };
+        let at = crate::sim::movement::ground_pose::position_world_coord(&infantry.position);
+        let cell = ((at.x / 256) as i16 as u16, (at.y / 256) as i16 as u16);
+        if self
+            .substrate
+            .occupancy
+            .first_building_on_layer(cell.0, cell.1, MovementLayer::Ground)
+            .is_none()
+        {
+            return Ok(BuildingEntryResult::default());
+        }
+        let bridge_state_changed = self
+            .scatter(
+                id,
+                None,
+                crate::sim::movement::ScatterFlags::new(true, false),
+                rules,
+                registry,
+                frame_effects,
+            )
+            .map_err(|cause| super::FrameAdvanceError {
+                tick: self.session.tick(),
+                binary_frame: self.session.binary_frame(),
+                entity_id: id,
+                cause,
+            })?;
+        Ok(BuildingEntryResult {
+            bridge_state_changed,
+            return_before_foot: false,
+        })
+    }
+
     /// Ordinary Infantry PerCell2 building receiver (`0x00519B17..0x0051A06E`):
     /// an Engineer's capture, repair or bridge repair, or
     /// [`Self::infantry_per_cell_infiltrator_entry`]. The active object cursor
     /// owns removal/next-object cadence; there is no second sorted repair pass.
+    /// Finding no building of his, he falls through to
+    /// [`Self::infantry_per_cell_no_destination`].
     pub(crate) fn infantry_per_cell_building_entry(
         &mut self,
         engineer_id: u64,
@@ -993,10 +1054,20 @@ impl Simulation {
         if engineer.category() != EntityCategory::Infantry {
             return Ok(BuildingEntryResult::default());
         }
-        let InfantryPerCellBuildingAdmission::GroundBuilding(building_id) =
-            self.infantry_per_cell_building_admission(engineer, rules)
-        else {
-            return Ok(BuildingEntryResult::default());
+        let building_id = match self.infantry_per_cell_building_admission(engineer, rules) {
+            InfantryPerCellBuildingAdmission::GroundBuilding(building_id) => building_id,
+            InfantryPerCellBuildingAdmission::NoMatchingGroundBuilding => {
+                return self.infantry_per_cell_no_destination(
+                    engineer_id,
+                    rules,
+                    registry,
+                    frame_effects,
+                );
+            }
+            InfantryPerCellBuildingAdmission::MissionNotAdmitted
+            | InfantryPerCellBuildingAdmission::UndeployBuilding => {
+                return Ok(BuildingEntryResult::default());
+            }
         };
         //519B3E..519B53 raises the BUILDING attachment with this Infantry
         //as actor, before the Engineer type gate. Synchronous actions may

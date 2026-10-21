@@ -2,20 +2,26 @@
 //! gameplay state is duplicated here: occupancy, power, alliances and fog
 //! stay with their existing VERA owners.
 
+#[cfg(feature = "ares")]
 use crate::map::entities::EntityCategory;
+#[cfg(feature = "ares")]
 use crate::map::houses::is_allied_with;
+#[cfg(feature = "ares")]
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::ruleset::RuleSet;
+use crate::rules::superweapon_targeting::TargetReject;
+#[cfg(feature = "ares")]
 use crate::rules::superweapon_targeting::{
-    HouseMask, LaunchSite, TargetContent, TargetMask, TargetPreflightInput, TargetReject,
-    evaluate_target,
+    HouseMask, LaunchSite, TargetContent, TargetMask, TargetPreflightInput, evaluate_target,
 };
 use crate::rules::superweapon_type::SuperWeaponType;
 use crate::sim::intern::InternedId;
+#[cfg(feature = "ares")]
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::world::Simulation;
 
 /// Shared optional-SW target/placement bound, using the terrain owner.
+#[cfg(feature = "ares")]
 pub(super) fn on_map(sim: &Simulation, cell: (u16, u16)) -> bool {
     sim.resolved_terrain
         .as_ref()
@@ -57,18 +63,35 @@ pub(super) fn check(
     cell: (u16, u16),
     automatic: bool,
 ) -> Result<(), TargetReject> {
-    if sw.generic_warhead.is_none() {
-        return Ok(());
+    #[cfg(not(feature = "ares"))]
+    {
+        let _ = (sim, rules, owner, cell, automatic);
+        if matches!(
+            sw.kind,
+            crate::rules::superweapon_type::SuperWeaponKind::GenericWarhead
+                | crate::rules::superweapon_type::SuperWeaponKind::UnitDelivery
+        ) {
+            Err(TargetReject::InvalidPayload)
+        } else {
+            Ok(())
+        }
     }
-    let sites: Vec<_> = launch_sites(sim, rules, owner, sw)
-        .into_iter()
-        .map(|(_, site)| site)
-        .collect();
-    check_with_sites(sim, rules, owner, sw, cell, automatic, &sites)
+    #[cfg(feature = "ares")]
+    {
+        if sw.generic_warhead.is_none() {
+            return Ok(());
+        }
+        let sites: Vec<_> = launch_sites(sim, rules, owner, sw)
+            .into_iter()
+            .map(|(_, site)| site)
+            .collect();
+        check_with_sites(sim, rules, owner, sw, cell, automatic, &sites)
+    }
 }
 
 /// AI prepares the launcher observation once per SW, not once per candidate.
 /// This is a borrowed query input, never a persistent cache or new authority.
+#[cfg(feature = "ares")]
 pub(super) fn check_with_sites(
     sim: &Simulation,
     rules: &RuleSet,
@@ -161,6 +184,7 @@ pub(super) fn check_with_sites(
 
 /// ra2-mono ResolveSuperweaponLaunchSites adaptation: VERA's retained House
 /// building order and operational-state owner replace OOP/ECS bridge lookups.
+#[cfg(feature = "ares")]
 pub(super) fn launch_sites(
     sim: &Simulation,
     rules: &RuleSet,

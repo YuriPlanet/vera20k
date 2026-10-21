@@ -1064,6 +1064,10 @@ pub(crate) struct UnitModel {
     /// One pair per native turret index; the body is parsed and stored once.
     guns: Vec<GunParts>,
     shadow: Option<ShadowModel>,
+    /// The type's `UseBuffer=`: 706ED0 sets 0xB43180 from
+    /// `GetTechnoType()+0xDAC` for its body, turret and barrel draws alike.
+    /// The shadow raster ignores it.
+    use_buffer: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -1118,6 +1122,11 @@ impl UnitModel {
         type_id: &str,
         rules: Option<&RuleSet>,
     ) -> Option<Self> {
+        // ReadINI reads it for TechnoTypes only; bullets and voxel anims
+        // share this model but draw outside 706ED0.
+        let use_buffer = rules.is_some_and(|rules| {
+            rules.object(type_id).is_some() && rules.art().use_buffer(type_id)
+        });
         if let Some((turret, barrel)) = building_voxel_names(type_id, rules) {
             // BuildingType45FA90 independently admits B8/C0 on each VXL's
             // availability. In particular SAM lives in C0 alone; GTGCAN
@@ -1135,6 +1144,7 @@ impl UnitModel {
                 body: None,
                 guns: vec![guns],
                 shadow: None,
+                use_buffer,
             });
         }
         let (body, guns) =
@@ -1150,6 +1160,7 @@ impl UnitModel {
             shadow: rules
                 .and_then(|r| r.object(type_id))
                 .and_then(ShadowModel::for_object),
+            use_buffer,
         })
     }
 
@@ -1190,6 +1201,7 @@ impl UnitModel {
             facing: key.facing, // already quantized by atlas key generation
             slope_type: key.slope_type,
             slope_blend,
+            use_buffer: self.use_buffer,
             ..VxlRenderParams::default()
         };
         // Aircraft templates are unmasked: the original4148A0->4DB0D0->
@@ -1341,6 +1353,7 @@ impl UnitModel {
             let params = VxlRenderParams {
                 frame: key.frame,
                 body_tilt: Some(vxl_raster::BodyTilt::Matrix(matrix)),
+                use_buffer: self.use_buffer,
                 ..VxlRenderParams::default()
             };
             return Some((
@@ -1363,6 +1376,7 @@ impl UnitModel {
             facing: key.facing,
             slope_type: key.slope_type,
             body_tilt: Some(body_tilt),
+            use_buffer: self.use_buffer,
             ..VxlRenderParams::default()
         };
         let (turret, barrel) = self.gun_parts(key.turret_index);

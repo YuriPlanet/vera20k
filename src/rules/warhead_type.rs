@@ -18,6 +18,8 @@
 //! ## Dependency rules
 //! - Part of rules/ — no dependencies on sim/, render/, ui/, etc.
 
+use crate::rules::ares_armor::AresWarheadVerses;
+use crate::rules::armor::{ArmorId, ArmorInteraction};
 use crate::rules::ini_parser::IniSection;
 use crate::rules::ini_value::{PERCENT_SCALE, crt_atoi, parse_leading_f64};
 use crate::util::native_x87::X87Chop53;
@@ -38,6 +40,8 @@ pub struct WarheadType {
     /// on each admitted rules layer without `Verses=`. The process registry
     /// retains the result when that layer has no section for this warhead.
     pub verses_f64: [f64; 11],
+    /// Immutable view of the separately retained Ares WH extension.
+    ares_verses: Option<AresWarheadVerses>,
     /// Splash radius in cells (0 = direct hit only). Native `CellSpread=` is a
     /// **float** at `WarheadTypeClass+0x124` (ReadDouble `0x005283d0` called at
     /// `0x0075d3e6`, `FSTP float ptr` at `0x0075d3eb`, key string
@@ -290,6 +294,44 @@ pub struct WarheadType {
 }
 
 impl WarheadType {
+    pub fn interaction(&self, armor: ArmorId) -> ArmorInteraction {
+        #[cfg(feature = "ares")]
+        {
+            self.ares_verses
+                .as_ref()
+                .expect("Ares build requires its retained warhead extension")
+                .interaction(armor)
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            ArmorInteraction::retail(crate::util::native_x87::NativeF64Bits::from_bits(
+                self.verses_f64[armor.index()].to_bits(),
+            ))
+        }
+    }
+
+    /// WH+149 controls an Infantry passive-target class shortcut. The
+    /// installed Ares75DDCC hook skips its native derivation and clears it;
+    /// effective extension entries must never reintroduce that shortcut.
+    pub fn uses_medium_wood_target_mask(&self) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            false
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            self.verses_f64[4] == 0.0 && self.verses_f64[6] == 0.0
+        }
+    }
+
+    pub(crate) fn install_ares_verses(&mut self, state: Option<&AresWarheadVerses>) {
+        self.ares_verses = state.cloned();
+    }
+
+    pub(crate) fn ares_verses_hash_state(&self) -> Option<&AresWarheadVerses> {
+        self.ares_verses.as_ref()
+    }
+
     /// Parse a WarheadType from a rules.ini section.
     pub fn from_ini_section(id: &str, section: &IniSection) -> Self {
         let verses_f64 = read_verses(section, [1.0; 11]);
@@ -324,6 +366,7 @@ impl WarheadType {
         Self {
             id: id.to_string(),
             verses_f64,
+            ares_verses: cfg!(feature = "ares").then(AresWarheadVerses::default),
             cell_spread_f64,
             percent_at_max_f64,
             causes_delay_kill: section.read_bool("CausesDelayKill", false),
@@ -408,23 +451,28 @@ pub(crate) fn read_verses(section: &IniSection, current: [f64; 11]) -> [f64; 11]
 /// unconditionally performs eleven strchr calls and faults on a null strtok
 /// result; this recovery is deliberately not described as native equivalence.
 fn verses_from_tokens(tokens: &[&str]) -> [f64; 11] {
-    // Nearest-rounded host multiplication by the original 0.01 changes retail
-    // HE's integer damage by one for several armor classes.
-    let scale = X87Chop53::load_f64(PERCENT_SCALE).expect("finite original constant");
     let mut out = [1.0_f64; 11];
     for (i, token) in tokens.iter().take(11).enumerate() {
-        out[i] = if token.contains('%') {
-            let scaled = X87Chop53::mul(X87Chop53::load_i32(crt_atoi(token)), scale);
-            f64::from_bits(
-                X87Chop53::store_f64(scaled)
-                    .expect("signed32 percentage is finite")
-                    .bits(),
-            )
-        } else {
-            parse_leading_f64(token)
-        };
+        out[i] = verses_value(token);
     }
     out
+}
+
+/// Numeric token read shared by native Verses75DDCC and Ares100523E0.
+/// A percentage uses signed32 atoi and PC53/chop multiplication, not a
+/// nearest-rounded host product; nonpercent input uses the CRT prefix reader.
+pub(crate) fn verses_value(token: &str) -> f64 {
+    if token.contains('%') {
+        let scale = X87Chop53::load_f64(PERCENT_SCALE).expect("finite original constant");
+        let scaled = X87Chop53::mul(X87Chop53::load_i32(crt_atoi(token)), scale);
+        f64::from_bits(
+            X87Chop53::store_f64(scaled)
+                .expect("signed32 percentage is finite")
+                .bits(),
+        )
+    } else {
+        parse_leading_f64(token)
+    }
 }
 
 #[cfg(test)]

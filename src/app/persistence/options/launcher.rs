@@ -37,6 +37,7 @@ pub(crate) fn launcher_values_from_profile(
         render_interpolation: profile.render_interpolation,
         shift_queue: profile.shift_queue,
         wol_test_service: profile.wol_test_service,
+        fps_counter: false,
         sidebar: profile.sidebar,
         score_position: admitted_volume_position(profile.score_volume),
         sound_position: admitted_volume_position(profile.sound_volume),
@@ -47,15 +48,19 @@ pub(crate) fn launcher_values_from_profile(
 /// Build one fresh primary snapshot from already-owned platform and text facts.
 /// Child return and initial open both use this same constructor path.
 /// The Full Screen box shows `full_screen`, the window's own state: the
-/// player can also change it with the window's title-bar button.
+/// player can also change it with the window's title-bar button. The FPS
+/// Counter box shows `fps_counter`, the readout's live state, which no profile
+/// stores.
 pub(crate) fn launcher_dialog_from_profile(
     profile: &RetailOptionsProfile,
     labels: LauncherOptionsLabels,
     full_screen: bool,
+    fps_counter: bool,
     launcher_audio_available: bool,
 ) -> OptionsDialogState {
     let values = LauncherOptionsValues {
         full_screen,
+        fps_counter,
         ..launcher_values_from_profile(profile)
     };
     OptionsDialogState::new(labels, values, profile.zoom, launcher_audio_available)
@@ -75,6 +80,7 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_render_interpolation(&mut self, enabled: bool);
     fn store_shift_queue(&mut self, shift_queue: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
+    fn set_fps_counter(&mut self, shown: bool);
 }
 
 /// Dispatch one already-ordered UI event without an INI write. The three audio
@@ -106,6 +112,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::WolTestServiceChanged(wol_test_service) => {
             operations.store_wol_test_service(wol_test_service);
         }
+        LauncherOptionsEvent::FpsCounterChanged(shown) => operations.set_fps_counter(shown),
         LauncherOptionsEvent::ScorePreview(volume) => {
             apply_volume(operations, AudioVolume::Score, volume, true)
         }

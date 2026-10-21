@@ -104,6 +104,21 @@ pub(crate) struct WolAccountGlobals {
     pub(crate) password: String,
     pub(crate) remember: bool,
     pub(crate) changed: bool,
+    /// `[0xB73E40]`'s buffer exists. It starts null; `WOL_Main` entry
+    /// assigns it from `GetAutoLogin` (`0x0077B33F`), whose result is always
+    /// allocated (`0x007B4630` allocates even for null), and the string
+    /// clear `0x007B5340` frees it again. The compare `0x007B4780` tells an
+    /// empty allocated nickname from a null one.
+    pub(crate) nickname_allocated: bool,
+}
+
+impl WolAccountGlobals {
+    /// `0x007B4780(GetAutoLogin(), [0xB73E40])`: the AutoLogin string is
+    /// always allocated, so it equals a null nickname never and an
+    /// allocated one by `strcmp`.
+    pub(crate) fn auto_login_names(&self, auto_login: &str) -> bool {
+        (self.nickname_allocated || !self.nickname.is_empty()) && auto_login == self.nickname
+    }
 }
 
 impl Default for WolAccountGlobals {
@@ -113,12 +128,16 @@ impl Default for WolAccountGlobals {
             password: String::new(),
             remember: false,
             changed: true,
+            nickname_allocated: false,
         }
     }
 }
 
 /// `strcmpi` over the stored slots 1..32: the first nonempty match.
-fn lookup<'a>(credentials: &'a [WolCredential], nickname: &str) -> Option<&'a WolCredential> {
+pub(crate) fn lookup<'a>(
+    credentials: &'a [WolCredential],
+    nickname: &str,
+) -> Option<&'a WolCredential> {
     credentials.iter().find(|credential| {
         LOOKUP_SLOTS.contains(&credential.slot)
             && !credential.nickname.is_empty()
@@ -757,6 +776,21 @@ mod tests {
         assert_eq!(login.nickname.display_text(), "Alpha");
         assert_eq!(globals.password, "12345678");
         assert!(!globals.changed && login.login_enabled && login.forget_enabled);
+    }
+
+    #[test]
+    fn the_auto_login_compare_tells_a_null_nickname_from_an_empty_one() {
+        let mut globals = WolAccountGlobals::default();
+        assert!(!globals.auto_login_names(""), "a null buffer is unequal");
+        globals.nickname_allocated = true;
+        assert!(globals.auto_login_names(""), "two empty strings are equal");
+        assert!(!globals.auto_login_names("Alpha"));
+        globals.nickname = "Alpha".into();
+        assert!(globals.auto_login_names("Alpha"));
+        assert!(
+            !globals.auto_login_names("alpha"),
+            "strcmp is case-sensitive"
+        );
     }
 
     #[test]

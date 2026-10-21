@@ -316,3 +316,224 @@ fn the_launch_alert_matches_native() {
         }
     }
 }
+
+#[cfg(not(feature = "ares"))]
+fn default_build_scene(
+    kind: crate::rules::superweapon_type::SuperWeaponKind,
+) -> (
+    Simulation,
+    RuleSet,
+    crate::sim::intern::InternedId,
+    crate::sim::intern::InternedId,
+) {
+    use crate::rules::superweapon_targeting::{
+        HouseMask, SuperWeaponTargeting, TargetMask, TargetRequirements,
+    };
+    use crate::rules::superweapon_type::{
+        DeliveryType, GenericWarheadAiTargeting, GenericWarheadSettings, SuperWeaponKind,
+        UnitDeliveryRules,
+    };
+    use crate::util::native_x87::NativeF64Bits;
+    let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+        "{RULES}\n[Warheads]\n0=Payload\n[Payload]\nCellSpread=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+    ));
+    let mut rules =
+        RuleSet::from_ini_with_fixed_art_for_test(&ini, &IniFile::from_str(ART)).unwrap();
+    let sw = rules.super_weapons.get_mut("SpyPlaneSpecial").unwrap();
+    sw.kind = kind;
+    match kind {
+        SuperWeaponKind::GenericWarhead => {
+            let unrestricted = TargetRequirements {
+                target: Ok(TargetMask::ALL),
+                house: Ok(HouseMask::NONE),
+            };
+            sw.generic_warhead = Some(GenericWarheadSettings {
+                warhead: Some("Payload".into()),
+                damage: 75,
+                ai_targeting: GenericWarheadAiTargeting::Offensive,
+                targeting: SuperWeaponTargeting {
+                    manual: unrestricted.clone(),
+                    automatic: unrestricted,
+                    fire_into_shroud: true,
+                    range_minimum: NativeF64Bits::from_bits((-1.0f64).to_bits()),
+                    range_maximum: NativeF64Bits::from_bits((-1.0f64).to_bits()),
+                },
+            });
+        }
+        SuperWeaponKind::UnitDelivery => {
+            sw.unit_delivery = Some(UnitDeliveryRules {
+                types: vec![DeliveryType {
+                    category: crate::rules::object_type::ObjectCategory::Building,
+                    id: "YARD".into(),
+                }],
+                deferment: 0,
+                ..UnitDeliveryRules::default()
+            })
+        }
+        _ => {}
+    }
+    let mut sim = sim(&rules, true, &[]);
+    sim.session.set_binary_frame_for_test(100);
+    let owner = sim.interner.get(OWNER).unwrap();
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_preferred_super_weapon_target((20, 20));
+    let sw_type = sim.interner.get("SpyPlaneSpecial").unwrap();
+    let mut instance = SuperWeaponInstance::new(sw_type, owner, 0);
+    instance.is_active = true;
+    instance.is_ready = true;
+    sim.super_weapons
+        .map_mut_for_test()
+        .entry(owner)
+        .or_default()
+        .insert(sw_type, instance);
+    (sim, rules, owner, sw_type)
+}
+
+#[cfg(not(feature = "ares"))]
+#[test]
+fn default_build_refuses_forged_extension_launches_before_mutation_or_ai_rng() {
+    use crate::rules::superweapon_targeting::TargetReject;
+    use crate::rules::superweapon_type::SuperWeaponKind;
+    for kind in [
+        SuperWeaponKind::GenericWarhead,
+        SuperWeaponKind::UnitDelivery,
+    ] {
+        let (mut sim, rules, owner, sw_type) = default_build_scene(kind);
+        let before = sim.state_hash();
+        assert_eq!(
+            sim.super_weapon_target_check(&rules, owner, sw_type, (20, 20), false),
+            Err(TargetReject::InvalidPayload)
+        );
+        assert!(!sim.fire_super_weapon(
+            &rules,
+            owner,
+            sw_type,
+            (20, 20),
+            None,
+            crate::sim::world::FrameEffects::default(),
+            false,
+        ));
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_is_human_for_test(false);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_player_control_for_test(false);
+        let before_ai = sim.state_hash();
+        crate::sim::superweapon::ai_fire::try_fire(
+            &mut sim,
+            &rules,
+            owner,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        assert_eq!(before_ai, sim.state_hash(), "{kind:?}");
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_is_human_for_test(true);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_player_control_for_test(true);
+        assert_eq!(before, sim.state_hash(), "{kind:?}");
+        assert!(sim.sound_events.is_empty());
+    }
+}
+
+#[cfg(not(feature = "ares"))]
+#[test]
+fn default_build_stock_launch_ignores_extension_money_and_building_tags() {
+    use crate::rules::superweapon_type::{SuperWeaponBuildingRequirements, SuperWeaponKind};
+    let (mut sim, mut rules, owner, sw_type) = default_build_scene(SuperWeaponKind::PsychicReveal);
+    let sw = rules.super_weapons.get_mut("SpyPlaneSpecial").unwrap();
+    sw.money_amount = -5000;
+    sw.building_requirements = Some(SuperWeaponBuildingRequirements {
+        auxiliary: vec!["YARD".into()],
+        negative: Vec::new(),
+    });
+    assert!(crate::sim::superweapon::building_requirements_met(
+        &sim,
+        &rules,
+        owner,
+        rules.super_weapon("SpyPlaneSpecial").unwrap()
+    ));
+    let wallet = sim.houses[&owner].economy().available_money();
+    assert!(
+        crate::sim::superweapon::superweapon_views_for_owner(&sim, &rules, &owner)[0].can_afford
+    );
+    assert!(sim.fire_super_weapon(
+        &rules,
+        owner,
+        sw_type,
+        (20, 20),
+        None,
+        crate::sim::world::FrameEffects::default(),
+        false,
+    ));
+    assert_eq!(wallet, sim.houses[&owner].economy().available_money());
+    assert!(!sim.super_weapons[&owner][&sw_type].is_ready);
+    assert!(sim.sound_events.iter().any(|event| matches!(
+        event,
+        SimSoundEvent::SuperWeaponLaunched { sw_type: fired, .. } if *fired == sw_type
+    )));
+    rules
+        .super_weapons
+        .get_mut("SpyPlaneSpecial")
+        .unwrap()
+        .aux_building = Some("YARD".into());
+    assert!(!crate::sim::superweapon::building_requirements_met(
+        &sim,
+        &rules,
+        owner,
+        rules.super_weapon("SpyPlaneSpecial").unwrap()
+    ));
+}
+
+#[cfg(not(feature = "ares"))]
+#[test]
+fn default_build_refuses_forged_paid_commands_and_saved_selection_state() {
+    use crate::rules::superweapon_type::SuperWeaponKind;
+    use crate::sim::superweapon::PaidSuperWeaponSelection;
+    let (mut sim, rules, owner, sw_type) = default_build_scene(SuperWeaponKind::PsychicReveal);
+    let selection = PaidSuperWeaponSelection {
+        source: sw_type,
+        destination: sim.interner.get("NukeSpecial").unwrap(),
+        sequence: 7,
+    };
+    let instance = sim.super_weapons.instance_mut(&owner, &sw_type).unwrap();
+    instance.is_ready = false;
+    instance.paid_sequence = selection.sequence;
+    instance.paid_selection = Some(selection);
+    let before = sim.state_hash();
+    assert!(sim.validate_paid_super_weapon_selections().is_err());
+    assert_eq!(sim.paid_super_weapon_selection(owner), None);
+    assert_eq!(
+        sim.next_paid_super_weapon_selection(&rules, owner, sw_type),
+        None
+    );
+    assert!(!sim.fire_super_weapon_selected(
+        &rules,
+        owner,
+        sw_type,
+        (20, 20),
+        None,
+        crate::sim::world::FrameEffects::default(),
+        false,
+        Some(selection),
+    ));
+    assert!(!Simulation::cancel_paid_super_weapon_selection(
+        &mut sim.substrate,
+        &mut sim.sound_events,
+        &mut sim.super_weapons,
+        &rules,
+        owner,
+        selection,
+    ));
+    assert_eq!(before, sim.state_hash());
+    assert!(sim.sound_events.is_empty());
+}

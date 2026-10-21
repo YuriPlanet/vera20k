@@ -435,6 +435,127 @@ pub fn wol_channel_password_layout(screen_w: i32, screen_h: i32) -> WolChannelPa
     }
 }
 
+/// The WOL page dialog `0xCF` (proc `0x0078D120`), the same 451x326
+/// centred box: executed client rects (tools/storage_oracle/wol_shell.json).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WolPageLayout {
+    pub dialog: RectPx,
+    /// Static `GUI:PageBuddy`, right aligned.
+    pub name_label: RectPx,
+    /// Edit `0x5C1` after its NewEdit inset.
+    pub name: RectPx,
+    /// Static `GUI:TextToSend`.
+    pub text_label: RectPx,
+    /// Edit `0x540` after its NewEdit inset.
+    pub text: RectPx,
+    /// Owner-draw list `0x5B5` (`LBS_NOSEL`).
+    pub transcript: RectPx,
+    /// Static `GUI:FindStatus` and the status `0x5C8`.
+    pub status_label: RectPx,
+    pub status: RectPx,
+    /// `0x5C2` (`GUI:Page`) and Cancel.
+    pub send: RectPx,
+    pub cancel: RectPx,
+}
+
+pub fn wol_page_layout(screen_w: i32, screen_h: i32) -> WolPageLayout {
+    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
+    WolPageLayout {
+        dialog,
+        name_label: child(20, 9, 54, 11),
+        name: new_edit_window(child(79, 9, 80, 12)),
+        text_label: child(20, 26, 137, 11),
+        text: new_edit_window(child(16, 39, 268, 12)),
+        transcript: child(16, 63, 268, 78),
+        status_label: child(183, 9, 49, 10),
+        status: child(183, 22, 98, 10),
+        send: child(45, 164, 83, 15),
+        cancel: child(163, 163, 83, 15),
+    }
+}
+
+/// The page-received dialog `0x11E` (proc `0x0079DB50`), the same box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WolPageReceivedLayout {
+    pub dialog: RectPx,
+    /// Static `GUI:PageReceived`, centred.
+    pub title: RectPx,
+    /// List `0x53F` (selectable).
+    pub transcript: RectPx,
+    /// Multiline edit `0x540` after its NewEdit inset.
+    pub reply: RectPx,
+    /// Static `GUI:ReplyTo`, right aligned, and the name `0x718`.
+    pub reply_to_label: RectPx,
+    pub reply_to: RectPx,
+    /// `0x5C2` (`GUI:ReplyPage`) and `0x686` (`GUI:Back`).
+    pub send: RectPx,
+    pub back: RectPx,
+}
+
+pub fn wol_page_received_layout(screen_w: i32, screen_h: i32) -> WolPageReceivedLayout {
+    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
+    WolPageReceivedLayout {
+        dialog,
+        title: child(7, 4, 277, 11),
+        transcript: child(8, 22, 281, 79),
+        reply: new_edit_window(child(8, 118, 283, 14)),
+        reply_to_label: child(25, 146, 105, 11),
+        reply_to: child(142, 147, 139, 8),
+        send: child(42, 166, 83, 15),
+        back: child(164, 166, 83, 15),
+    }
+}
+
+/// Add Buddy `0x115` (proc `0x0079DFE0`), the same 451x326 centred box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WolAddBuddyLayout {
+    pub dialog: RectPx,
+    /// Static `GUI:BuddyNickname`, centred.
+    pub label: RectPx,
+    /// Edit `0x540` after its NewEdit inset.
+    pub name: RectPx,
+    /// `0x702` (`GUI:AddBuddy`, created disabled) and `0x686` (`GUI:Back`).
+    pub add: RectPx,
+    pub back: RectPx,
+    /// The status line `0x695` along the box's foot.
+    pub status: RectPx,
+}
+
+pub fn wol_add_buddy_layout(screen_w: i32, screen_h: i32) -> WolAddBuddyLayout {
+    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
+    WolAddBuddyLayout {
+        dialog,
+        label: child(57, 61, 193, 15),
+        name: new_edit_window(child(77, 85, 152, 14)),
+        add: child(65, 118, 83, 15),
+        back: child(159, 118, 83, 15),
+        status: child(0, 186, 273, 12),
+    }
+}
+
+/// The connection verify `0x130` (`0x00794C5B`), the same 451x326 centred
+/// box: the title `0x5B2` and node `i`'s checkbox 14 DLU below node `i-1`'s
+/// ([`crate::ui::wol_verify::BOXES`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WolVerifyLayout {
+    pub dialog: RectPx,
+    pub title: RectPx,
+    pub boxes: [RectPx; 8],
+}
+
+pub fn wol_verify_layout(screen_w: i32, screen_h: i32) -> WolVerifyLayout {
+    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
+    WolVerifyLayout {
+        dialog,
+        title: child(59, 10, 180, 35),
+        boxes: std::array::from_fn(|node| child(33, 56 + 14 * node as i32, 234, 14)),
+    }
+}
+
 /// Center a modal panel of `(w, h)` on the live screen. Byte-identical to the
 /// skirmish validation-modal centering (`((screen - size) + 1) / 2`, clamped >= 0).
 fn centered_modal_dialog(screen_w: i32, screen_h: i32, w: i32, h: i32) -> RectPx {
@@ -747,5 +868,120 @@ mod tests {
             }
         }
         assert_eq!(checked, 36);
+    }
+
+    #[test]
+    fn wol_page_dialogs_follow_the_executed_0xcf_0x11e_tables() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/wol_shell.json",
+        ))
+        .unwrap();
+        let rect = |value: &serde_json::Value| {
+            let a: Vec<i32> = serde_json::from_value(value.clone()).unwrap();
+            RectPx::new(a[0], a[1], a[2], a[3])
+        };
+        let mut checked = 0;
+        for key in ["0xCF", "0x11E"] {
+            for (size, case) in corpus["layouts"][key]["sizes"].as_object().unwrap() {
+                let (w, h) = size.split_once('x').unwrap();
+                let (w, h): (i32, i32) = (w.parse().unwrap(), h.parse().unwrap());
+                let page = wol_page_layout(w, h);
+                let received = wol_page_received_layout(w, h);
+                assert_eq!(page.dialog, rect(&case["dialog"]), "{key} {size}");
+                assert_eq!(received.dialog, page.dialog);
+                for (id, child) in case["controls"].as_object().unwrap() {
+                    let mut native = rect(&child["screen_rect"]);
+                    let actual = match (key, id.as_str()) {
+                        ("0xCF", "0x540") => page.text,
+                        ("0xCF", "0x5C1") => page.name,
+                        ("0xCF", "0x5B5") => page.transcript,
+                        ("0xCF", "0x5C2") => page.send,
+                        ("0xCF", "0x2") => page.cancel,
+                        ("0xCF", "0x5C8") => page.status,
+                        ("0xCF", "0xFFFF") => page.text_label,
+                        ("0xCF", "0xFFFF#1") => page.name_label,
+                        ("0xCF", "0xFFFF#2") => page.status_label,
+                        (_, "0x53F") => received.transcript,
+                        (_, "0x540") => received.reply,
+                        (_, "0x5C2") => received.send,
+                        (_, "0x686") => received.back,
+                        (_, "0x718") => received.reply_to,
+                        (_, "0xFFFF") => received.title,
+                        (_, "0xFFFF#1") => received.reply_to_label,
+                        other => panic!("{other:?}"),
+                    };
+                    if child["class"] == "Edit" {
+                        native = new_edit_window(native);
+                    }
+                    assert_eq!(actual, native, "{key} {size} {id}");
+                    checked += 1;
+                }
+            }
+        }
+        assert_eq!(checked, 48);
+    }
+
+    #[test]
+    fn wol_add_buddy_follows_the_executed_0x115_table() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/wol_shell.json",
+        ))
+        .unwrap();
+        let rect = |value: &serde_json::Value| {
+            let a: Vec<i32> = serde_json::from_value(value.clone()).unwrap();
+            RectPx::new(a[0], a[1], a[2], a[3])
+        };
+        let mut checked = 0;
+        for (size, case) in corpus["layouts"]["0x115"]["sizes"].as_object().unwrap() {
+            let (w, h) = size.split_once('x').unwrap();
+            let layout = wol_add_buddy_layout(w.parse().unwrap(), h.parse().unwrap());
+            assert_eq!(layout.dialog, rect(&case["dialog"]), "{size}");
+            for (id, child) in case["controls"].as_object().unwrap() {
+                let mut native = rect(&child["screen_rect"]);
+                let actual = match id.as_str() {
+                    "0x540" => layout.name,
+                    "0x686" => layout.back,
+                    "0x695" => layout.status,
+                    "0x702" => layout.add,
+                    "0xFFFF" => layout.label,
+                    other => panic!("{other}"),
+                };
+                if child["class"] == "Edit" {
+                    native = new_edit_window(native);
+                }
+                assert_eq!(actual, native, "{size} {id}");
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, 15);
+    }
+
+    #[test]
+    fn wol_verify_follows_the_executed_0x130_table() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/wol_shell.json",
+        ))
+        .unwrap();
+        let rect = |value: &serde_json::Value| {
+            let a: Vec<i32> = serde_json::from_value(value.clone()).unwrap();
+            RectPx::new(a[0], a[1], a[2], a[3])
+        };
+        let mut checked = 0;
+        for (size, case) in corpus["layouts"]["0x130"]["sizes"].as_object().unwrap() {
+            let (w, h) = size.split_once('x').unwrap();
+            let layout = wol_verify_layout(w.parse().unwrap(), h.parse().unwrap());
+            assert_eq!(layout.dialog, rect(&case["dialog"]), "{size}");
+            for (id, child) in case["controls"].as_object().unwrap() {
+                let id = u16::from_str_radix(id.trim_start_matches("0x"), 16).unwrap();
+                let actual = match crate::ui::wol_verify::BOXES.iter().position(|b| *b == id) {
+                    Some(node) => layout.boxes[node],
+                    None if id == 0x5B2 => layout.title,
+                    None => panic!("{id:#x}"),
+                };
+                assert_eq!(actual, rect(&child["screen_rect"]), "{size} {id:#x}");
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, 27);
     }
 }

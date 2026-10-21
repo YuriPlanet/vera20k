@@ -1,0 +1,1416 @@
+{
+  "schema_version": 1,
+  "ares_sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83",
+  "controls": [
+    {
+      "name": "missing_retains",
+      "supplied_read_result": null,
+      "initial": [
+        1
+      ],
+      "result": [
+        1
+      ],
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "Unit",
+          "key": "Prerequisite",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "empty_retains",
+      "supplied_read_result": "",
+      "initial": [
+        1
+      ],
+      "result": [
+        1
+      ],
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "Unit",
+          "key": "Prerequisite",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "comma_only_clears",
+      "supplied_read_result": ",,,",
+      "initial": [
+        1
+      ],
+      "result": [],
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "Unit",
+          "key": "Prerequisite",
+          "value": ",,,"
+        }
+      ]
+    },
+    {
+      "name": "unknown_clears",
+      "supplied_read_result": "NOTFOUND",
+      "initial": [
+        1
+      ],
+      "result": [],
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "Unit",
+          "key": "Prerequisite",
+          "value": "NOTFOUND"
+        },
+        {
+          "service": "suppressed_DebugINIParseFailed",
+          "section": "Unit",
+          "key": "Prerequisite",
+          "token": "NOTFOUND"
+        }
+      ]
+    },
+    {
+      "name": "building_before_group_name",
+      "supplied_read_result": "COLLIDE",
+      "initial": [],
+      "result": [
+        2
+      ],
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "Unit",
+          "key": "Prerequisite",
+          "value": "COLLIDE"
+        }
+      ]
+    },
+    {
+      "name": "group_lookup_case_insensitive",
+      "supplied_read_result": "cUsToM",
+      "initial": [],
+      "result": [
+        -7
+      ],
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "Unit",
+          "key": "Prerequisite",
+          "value": "cUsToM"
+        }
+      ]
+    },
+    {
+      "name": "groups_can_forward_reference",
+      "supplied_read_result": "future",
+      "initial": [],
+      "result": [
+        -8
+      ],
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "Unit",
+          "key": "Prerequisite",
+          "value": "future"
+        }
+      ]
+    },
+    {
+      "name": "duplicates_retained",
+      "supplied_read_result": "A,A",
+      "initial": [],
+      "result": [
+        0,
+        0
+      ],
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "Unit",
+          "key": "Prerequisite",
+          "value": "A,A"
+        }
+      ]
+    },
+    {
+      "name": "internal_space_is_not_comma_delimiter",
+      "supplied_read_result": "A, B",
+      "initial": [],
+      "result": [
+        0
+      ],
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "Unit",
+          "key": "Prerequisite",
+          "value": "A, B"
+        },
+        {
+          "service": "suppressed_DebugINIParseFailed",
+          "section": "Unit",
+          "key": "Prerequisite",
+          "token": " B"
+        }
+      ]
+    },
+    {
+      "name": "general_then_generic_override",
+      "group": "custom",
+      "reads": {
+        "General/PrerequisiteCustom": "A",
+        "GenericPrerequisites/custom": "B"
+      },
+      "initial": [
+        2
+      ],
+      "initial_alternate_names": [],
+      "result": [
+        1
+      ],
+      "alternate_names": [],
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "General",
+          "key": "PrerequisiteCustom",
+          "value": "A"
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "GenericPrerequisites",
+          "key": "custom",
+          "value": "B"
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "General",
+          "key": "PrerequisiteCustomAlternate",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "empty_generic_retains_general",
+      "group": "custom",
+      "reads": {
+        "General/PrerequisiteCustom": "A",
+        "GenericPrerequisites/custom": ""
+      },
+      "initial": [
+        2
+      ],
+      "initial_alternate_names": [],
+      "result": [
+        0
+      ],
+      "alternate_names": [],
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "General",
+          "key": "PrerequisiteCustom",
+          "value": "A"
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "GenericPrerequisites",
+          "key": "custom",
+          "value": ""
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "General",
+          "key": "PrerequisiteCustomAlternate",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "stock_POWER_uses_same_reader",
+      "group": "POWER",
+      "reads": {
+        "General/PrerequisitePower": "A",
+        "GenericPrerequisites/POWER": "B"
+      },
+      "initial": [
+        2
+      ],
+      "initial_alternate_names": [],
+      "result": [
+        1
+      ],
+      "alternate_names": [],
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "General",
+          "key": "PrerequisitePower",
+          "value": "A"
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "GenericPrerequisites",
+          "key": "POWER",
+          "value": "B"
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "General",
+          "key": "PrerequisitePowerAlternate",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "alternate_techno_allows_units",
+      "group": "custom",
+      "reads": {
+        "General/PrerequisiteCustomAlternate": "TANK,INF,NOTFOUND"
+      },
+      "initial": [
+        0
+      ],
+      "initial_alternate_names": [],
+      "result": [
+        0
+      ],
+      "alternate_names": [
+        "TANK",
+        "INF"
+      ],
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "General",
+          "key": "PrerequisiteCustom",
+          "value": ""
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "GenericPrerequisites",
+          "key": "custom",
+          "value": ""
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "General",
+          "key": "PrerequisiteCustomAlternate",
+          "value": "TANK,INF,NOTFOUND"
+        },
+        {
+          "service": "suppressed_DebugINIParseFailed",
+          "section": "General",
+          "key": "PrerequisiteCustomAlternate",
+          "token": "NOTFOUND"
+        }
+      ]
+    },
+    {
+      "name": "alternate_empty_retains",
+      "group": "custom",
+      "reads": {
+        "General/PrerequisiteCustomAlternate": ""
+      },
+      "initial": [
+        0
+      ],
+      "initial_alternate_names": [
+        "TANK"
+      ],
+      "result": [
+        0
+      ],
+      "alternate_names": [
+        "TANK"
+      ],
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "General",
+          "key": "PrerequisiteCustom",
+          "value": ""
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "GenericPrerequisites",
+          "key": "custom",
+          "value": ""
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "General",
+          "key": "PrerequisiteCustomAlternate",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "non_letter_group_prefix_is_preserved",
+      "group": "1custom",
+      "reads": {
+        "General/Prerequisite1custom": "A"
+      },
+      "initial": [
+        2
+      ],
+      "initial_alternate_names": [],
+      "result": [
+        0
+      ],
+      "alternate_names": [],
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "General",
+          "key": "Prerequisite1custom",
+          "value": "A"
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "GenericPrerequisites",
+          "key": "1custom",
+          "value": ""
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "General",
+          "key": "Prerequisite1customAlternate",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "generic_OR_member_owned",
+      "requirements": [
+        -7
+      ],
+      "generic_custom_members": [
+        0,
+        1
+      ],
+      "building_counts": [
+        0,
+        1,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": true,
+      "events": []
+    },
+    {
+      "name": "generic_none_owned",
+      "requirements": [
+        -7
+      ],
+      "generic_custom_members": [
+        0,
+        1
+      ],
+      "building_counts": [
+        0,
+        0,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": false,
+      "events": []
+    },
+    {
+      "name": "generic_unit_alternate_owned",
+      "requirements": [
+        -7
+      ],
+      "generic_custom_members": [
+        0,
+        1
+      ],
+      "building_counts": [
+        0,
+        0,
+        0
+      ],
+      "alternate_names": [
+        "TANK"
+      ],
+      "alternate_counts": {
+        "TANK": 1
+      },
+      "result": true,
+      "events": []
+    },
+    {
+      "name": "generic_unit_alternate_owned_while_off_map",
+      "requirements": [
+        -7
+      ],
+      "generic_custom_members": [
+        0,
+        1
+      ],
+      "building_counts": [
+        0,
+        0,
+        0
+      ],
+      "alternate_names": [
+        "TANK"
+      ],
+      "alternate_counts": {
+        "TANK": 1
+      },
+      "result": true,
+      "events": [],
+      "alternate_active_counts": {
+        "TANK": 0
+      }
+    },
+    {
+      "name": "generic_unit_alternate_active_does_not_substitute_tracking",
+      "requirements": [
+        -7
+      ],
+      "generic_custom_members": [
+        0,
+        1
+      ],
+      "building_counts": [
+        0,
+        0,
+        0
+      ],
+      "alternate_names": [
+        "TANK"
+      ],
+      "alternate_counts": {
+        "TANK": 0
+      },
+      "result": false,
+      "events": [],
+      "alternate_active_counts": {
+        "TANK": 1
+      }
+    },
+    {
+      "name": "generic_unit_alternate_negative_count_is_nonzero",
+      "requirements": [
+        -7
+      ],
+      "generic_custom_members": [
+        0,
+        1
+      ],
+      "building_counts": [
+        0,
+        0,
+        0
+      ],
+      "alternate_names": [
+        "TANK"
+      ],
+      "alternate_counts": {
+        "TANK": -1
+      },
+      "result": true,
+      "events": []
+    },
+    {
+      "name": "all_generic_and_specific",
+      "requirements": [
+        -7,
+        2
+      ],
+      "generic_custom_members": [
+        0,
+        1
+      ],
+      "building_counts": [
+        1,
+        0,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": false,
+      "events": []
+    },
+    {
+      "name": "all_empty_true",
+      "requirements": [],
+      "generic_custom_members": [],
+      "building_counts": [
+        0,
+        0,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": true,
+      "events": []
+    },
+    {
+      "name": "any_empty_false",
+      "requirements": [],
+      "generic_custom_members": [],
+      "building_counts": [
+        0,
+        0,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": false,
+      "events": []
+    },
+    {
+      "name": "invalid_group_false",
+      "requirements": [
+        -100
+      ],
+      "generic_custom_members": [],
+      "building_counts": [
+        0,
+        0,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": false,
+      "events": []
+    },
+    {
+      "name": "planned_generic_OR_building",
+      "requirements": [
+        -7
+      ],
+      "generic_custom_members": [
+        0,
+        1
+      ],
+      "planned_building_indices": [
+        1
+      ],
+      "alternate_names": [],
+      "result": true,
+      "events": []
+    },
+    {
+      "name": "planned_generic_missing",
+      "requirements": [
+        -7
+      ],
+      "generic_custom_members": [
+        0,
+        1
+      ],
+      "planned_building_indices": [
+        2
+      ],
+      "alternate_names": [],
+      "result": false,
+      "events": []
+    },
+    {
+      "name": "planned_generic_does_not_use_alternates",
+      "requirements": [
+        -7
+      ],
+      "generic_custom_members": [],
+      "planned_building_indices": [
+        0
+      ],
+      "alternate_names": [
+        "A"
+      ],
+      "result": false,
+      "events": []
+    },
+    {
+      "name": "planned_All_requires_specific_and_generic",
+      "requirements": [
+        -7,
+        2
+      ],
+      "generic_custom_members": [
+        0,
+        1
+      ],
+      "planned_building_indices": [
+        1,
+        2
+      ],
+      "alternate_names": [],
+      "result": true,
+      "events": []
+    },
+    {
+      "name": "clear_discards_custom_and_defaults_rebuilt",
+      "initial_names": [
+        "POWER",
+        "FACTORY",
+        "BARRACKS",
+        "RADAR",
+        "TECH",
+        "PROC",
+        "custom",
+        "future",
+        "COLLIDE"
+      ],
+      "post_clear_count": 0,
+      "result": [
+        "POWER",
+        "FACTORY",
+        "BARRACKS",
+        "RADAR",
+        "TECH",
+        "PROC"
+      ],
+      "rebuilt_counts": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "events": [
+        {
+          "service": "supplied_operator_delete",
+          "bytes": 80
+        },
+        {
+          "service": "supplied_operator_delete",
+          "bytes": 80
+        },
+        {
+          "service": "supplied_operator_delete",
+          "bytes": 80
+        },
+        {
+          "service": "supplied_operator_delete",
+          "bytes": 80
+        },
+        {
+          "service": "supplied_operator_delete",
+          "bytes": 80
+        },
+        {
+          "service": "supplied_operator_delete",
+          "bytes": 80
+        },
+        {
+          "service": "supplied_operator_delete",
+          "bytes": 80
+        },
+        {
+          "service": "supplied_operator_delete",
+          "bytes": 80
+        },
+        {
+          "service": "supplied_operator_delete",
+          "bytes": 80
+        },
+        {
+          "service": "supplied_operator_new",
+          "bytes": 80
+        },
+        {
+          "service": "supplied_operator_new",
+          "bytes": 80
+        },
+        {
+          "service": "supplied_operator_new",
+          "bytes": 80
+        },
+        {
+          "service": "supplied_operator_new",
+          "bytes": 80
+        },
+        {
+          "service": "supplied_operator_new",
+          "bytes": 80
+        },
+        {
+          "service": "supplied_operator_new",
+          "bytes": 80
+        }
+      ]
+    },
+    {
+      "name": "direct_negative_building_count_false",
+      "requirements": [
+        1
+      ],
+      "generic_custom_members": [],
+      "building_counts": [
+        0,
+        -1,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": false,
+      "events": []
+    },
+    {
+      "name": "group_negative_building_count_false",
+      "requirements": [
+        -7
+      ],
+      "generic_custom_members": [
+        1
+      ],
+      "building_counts": [
+        0,
+        -1,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": false,
+      "events": []
+    },
+    {
+      "name": "direct_positive_count_precedes_upgrade_host",
+      "requirements": [
+        1
+      ],
+      "generic_custom_members": [],
+      "building_counts": [
+        0,
+        1,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": true,
+      "events": [],
+      "powers_up_host": "MISSING",
+      "installed_buildings": [],
+      "native_specific_visits": [
+        "0x100082b0"
+      ]
+    },
+    {
+      "name": "upgrade_direct_installed",
+      "requirements": [
+        1
+      ],
+      "generic_custom_members": [],
+      "building_counts": [
+        1,
+        0,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": true,
+      "events": [],
+      "powers_up_host": "A",
+      "installed_buildings": [
+        {
+          "type_index": 0,
+          "upgrade_slots": [
+            1,
+            null,
+            null
+          ],
+          "upgrade_count": 1
+        }
+      ],
+      "native_specific_visits": [
+        "0x100082b0",
+        "0x100082d3",
+        "0x100082ea",
+        "0x1000830f",
+        "0x10008320",
+        "0x10008340"
+      ]
+    },
+    {
+      "name": "upgrade_group_installed_third_slot_ignores_count",
+      "requirements": [
+        -7
+      ],
+      "generic_custom_members": [
+        1
+      ],
+      "building_counts": [
+        1,
+        0,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": true,
+      "events": [],
+      "powers_up_host": "A",
+      "installed_buildings": [
+        {
+          "type_index": 0,
+          "upgrade_slots": [
+            null,
+            null,
+            1
+          ],
+          "upgrade_count": 0
+        }
+      ],
+      "native_specific_visits": [
+        "0x100082b0",
+        "0x100082d3",
+        "0x100082ea",
+        "0x1000830f",
+        "0x10008320",
+        "0x10008340"
+      ]
+    },
+    {
+      "name": "upgrade_any_direct_installed",
+      "requirements": [
+        1
+      ],
+      "generic_custom_members": [],
+      "building_counts": [
+        1,
+        0,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": true,
+      "events": [],
+      "powers_up_host": "A",
+      "installed_buildings": [
+        {
+          "type_index": 0,
+          "upgrade_slots": [
+            1,
+            null,
+            null
+          ],
+          "upgrade_count": 1
+        }
+      ],
+      "native_specific_visits": [
+        "0x100082b0",
+        "0x100082d3",
+        "0x100082ea",
+        "0x1000830f",
+        "0x10008320",
+        "0x10008340"
+      ]
+    },
+    {
+      "name": "upgrade_any_group_installed",
+      "requirements": [
+        -7
+      ],
+      "generic_custom_members": [
+        1
+      ],
+      "building_counts": [
+        1,
+        0,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": true,
+      "events": [],
+      "powers_up_host": "A",
+      "installed_buildings": [
+        {
+          "type_index": 0,
+          "upgrade_slots": [
+            1,
+            null,
+            null
+          ],
+          "upgrade_count": 1
+        }
+      ],
+      "native_specific_visits": [
+        "0x100082b0",
+        "0x100082d3",
+        "0x100082ea",
+        "0x1000830f",
+        "0x10008320",
+        "0x10008340"
+      ]
+    },
+    {
+      "name": "upgrade_older_host_match_survives_newer_empty",
+      "requirements": [
+        1
+      ],
+      "generic_custom_members": [],
+      "building_counts": [
+        2,
+        0,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": true,
+      "events": [],
+      "powers_up_host": "A",
+      "installed_buildings": [
+        {
+          "type_index": 0,
+          "upgrade_slots": [
+            1,
+            null,
+            null
+          ],
+          "upgrade_count": 1
+        },
+        {
+          "type_index": 0,
+          "upgrade_slots": [
+            null,
+            null,
+            null
+          ],
+          "upgrade_count": 0
+        }
+      ],
+      "native_specific_visits": [
+        "0x100082b0",
+        "0x100082d3",
+        "0x100082ea",
+        "0x1000830f",
+        "0x10008320",
+        "0x10008340"
+      ]
+    },
+    {
+      "name": "upgrade_wrong_host_type_refused",
+      "requirements": [
+        1
+      ],
+      "generic_custom_members": [],
+      "building_counts": [
+        1,
+        0,
+        1
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": false,
+      "events": [],
+      "powers_up_host": "A",
+      "installed_buildings": [
+        {
+          "type_index": 2,
+          "upgrade_slots": [
+            1,
+            null,
+            null
+          ],
+          "upgrade_count": 1
+        }
+      ],
+      "native_specific_visits": [
+        "0x100082b0",
+        "0x100082d3",
+        "0x100082ea",
+        "0x1000830f",
+        "0x10008320"
+      ]
+    },
+    {
+      "name": "upgrade_unknown_host_refused",
+      "requirements": [
+        1
+      ],
+      "generic_custom_members": [],
+      "building_counts": [
+        1,
+        0,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": false,
+      "events": [],
+      "powers_up_host": "MISSING",
+      "installed_buildings": [
+        {
+          "type_index": 0,
+          "upgrade_slots": [
+            1,
+            null,
+            null
+          ],
+          "upgrade_count": 1
+        }
+      ],
+      "native_specific_visits": [
+        "0x100082b0",
+        "0x100082d3",
+        "0x100082ea"
+      ]
+    },
+    {
+      "name": "upgrade_zero_active_host_refused",
+      "requirements": [
+        1
+      ],
+      "generic_custom_members": [],
+      "building_counts": [
+        0,
+        0,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": false,
+      "events": [],
+      "powers_up_host": "A",
+      "installed_buildings": [
+        {
+          "type_index": 0,
+          "upgrade_slots": [
+            1,
+            null,
+            null
+          ],
+          "upgrade_count": 1
+        }
+      ],
+      "native_specific_visits": [
+        "0x100082b0",
+        "0x100082d3",
+        "0x100082ea"
+      ]
+    },
+    {
+      "name": "upgrade_negative_active_host_refused",
+      "requirements": [
+        1
+      ],
+      "generic_custom_members": [],
+      "building_counts": [
+        -1,
+        0,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": false,
+      "events": [],
+      "powers_up_host": "A",
+      "installed_buildings": [
+        {
+          "type_index": 0,
+          "upgrade_slots": [
+            1,
+            null,
+            null
+          ],
+          "upgrade_count": 1
+        }
+      ],
+      "native_specific_visits": [
+        "0x100082b0",
+        "0x100082d3",
+        "0x100082ea"
+      ]
+    },
+    {
+      "name": "upgrade_empty_slots_refused",
+      "requirements": [
+        1
+      ],
+      "generic_custom_members": [],
+      "building_counts": [
+        1,
+        0,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": false,
+      "events": [],
+      "powers_up_host": "A",
+      "installed_buildings": [
+        {
+          "type_index": 0,
+          "upgrade_slots": [
+            null,
+            null,
+            null
+          ],
+          "upgrade_count": 0
+        }
+      ],
+      "native_specific_visits": [
+        "0x100082b0",
+        "0x100082d3",
+        "0x100082ea",
+        "0x1000830f",
+        "0x10008320",
+        "0x10008340"
+      ]
+    },
+    {
+      "name": "upgrade_other_slot_type_refused",
+      "requirements": [
+        1
+      ],
+      "generic_custom_members": [],
+      "building_counts": [
+        1,
+        0,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": false,
+      "events": [],
+      "powers_up_host": "A",
+      "installed_buildings": [
+        {
+          "type_index": 0,
+          "upgrade_slots": [
+            2,
+            null,
+            null
+          ],
+          "upgrade_count": 1
+        }
+      ],
+      "native_specific_visits": [
+        "0x100082b0",
+        "0x100082d3",
+        "0x100082ea",
+        "0x1000830f",
+        "0x10008320",
+        "0x10008340"
+      ]
+    },
+    {
+      "name": "upgrade_host_lookup_case_insensitive",
+      "requirements": [
+        1
+      ],
+      "generic_custom_members": [],
+      "building_counts": [
+        1,
+        0,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": true,
+      "events": [],
+      "powers_up_host": "a",
+      "installed_buildings": [
+        {
+          "type_index": 0,
+          "upgrade_slots": [
+            1,
+            null,
+            null
+          ],
+          "upgrade_count": 1
+        }
+      ],
+      "native_specific_visits": [
+        "0x100082b0",
+        "0x100082d3",
+        "0x100082ea",
+        "0x1000830f",
+        "0x10008320",
+        "0x10008340"
+      ]
+    },
+    {
+      "name": "upgrade_negative_required_count_still_checks_install",
+      "requirements": [
+        1
+      ],
+      "generic_custom_members": [],
+      "building_counts": [
+        1,
+        -1,
+        0
+      ],
+      "alternate_names": [],
+      "alternate_counts": {},
+      "result": true,
+      "events": [],
+      "powers_up_host": "A",
+      "installed_buildings": [
+        {
+          "type_index": 0,
+          "upgrade_slots": [
+            1,
+            null,
+            null
+          ],
+          "upgrade_count": 1
+        }
+      ],
+      "native_specific_visits": [
+        "0x100082b0",
+        "0x100082d3",
+        "0x100082ea",
+        "0x1000830f",
+        "0x10008320",
+        "0x10008340"
+      ]
+    },
+    {
+      "name": "alternate_foot_put_rechecks",
+      "refresh_hook": "put",
+      "object_category": "unit",
+      "registered_alternate": true,
+      "old_house_recheck": true,
+      "new_house_recheck": false,
+      "membership_cache": true,
+      "membership_cache_initialized": true,
+      "events": []
+    },
+    {
+      "name": "unrelated_foot_put_does_not_recheck",
+      "refresh_hook": "put",
+      "object_category": "unit",
+      "registered_alternate": false,
+      "old_house_recheck": false,
+      "new_house_recheck": false,
+      "membership_cache": false,
+      "membership_cache_initialized": true,
+      "events": []
+    },
+    {
+      "name": "alternate_aircraft_dtor_rechecks",
+      "refresh_hook": "aircraft_dtor",
+      "object_category": "aircraft",
+      "registered_alternate": true,
+      "old_house_recheck": true,
+      "new_house_recheck": false,
+      "membership_cache": true,
+      "membership_cache_initialized": true,
+      "events": []
+    },
+    {
+      "name": "alternate_infantry_dtor_rechecks",
+      "refresh_hook": "infantry_dtor",
+      "object_category": "infantry",
+      "registered_alternate": true,
+      "old_house_recheck": true,
+      "new_house_recheck": false,
+      "membership_cache": true,
+      "membership_cache_initialized": true,
+      "events": []
+    },
+    {
+      "name": "alternate_unit_dtor_rechecks",
+      "refresh_hook": "unit_dtor",
+      "object_category": "unit",
+      "registered_alternate": true,
+      "old_house_recheck": true,
+      "new_house_recheck": false,
+      "membership_cache": true,
+      "membership_cache_initialized": true,
+      "events": []
+    },
+    {
+      "name": "alternate_change_owner_rechecks_both",
+      "refresh_hook": "change_owner",
+      "object_category": "unit",
+      "registered_alternate": true,
+      "old_house_recheck": true,
+      "new_house_recheck": true,
+      "membership_cache": true,
+      "membership_cache_initialized": true,
+      "events": []
+    },
+    {
+      "name": "unrelated_change_owner_does_not_recheck",
+      "refresh_hook": "change_owner",
+      "object_category": "unit",
+      "registered_alternate": false,
+      "old_house_recheck": false,
+      "new_house_recheck": false,
+      "membership_cache": false,
+      "membership_cache_initialized": true,
+      "events": []
+    },
+    {
+      "name": "building_change_owner_excluded",
+      "refresh_hook": "change_owner",
+      "object_category": "building",
+      "registered_alternate": true,
+      "old_house_recheck": false,
+      "new_house_recheck": false,
+      "membership_cache": false,
+      "membership_cache_initialized": false,
+      "events": []
+    },
+    {
+      "name": "alternate_discovery_rechecks",
+      "refresh_hook": "discovered",
+      "object_category": "unit",
+      "registered_alternate": true,
+      "old_house_recheck": true,
+      "new_house_recheck": false,
+      "membership_cache": true,
+      "membership_cache_initialized": true,
+      "events": []
+    },
+    {
+      "name": "unrelated_discovery_does_not_recheck",
+      "refresh_hook": "discovered",
+      "object_category": "unit",
+      "registered_alternate": false,
+      "old_house_recheck": false,
+      "new_house_recheck": false,
+      "membership_cache": false,
+      "membership_cache_initialized": true,
+      "events": []
+    },
+    {
+      "name": "building_discovery_excluded",
+      "refresh_hook": "discovered",
+      "object_category": "building",
+      "registered_alternate": true,
+      "old_house_recheck": false,
+      "new_house_recheck": false,
+      "membership_cache": false,
+      "membership_cache_initialized": false,
+      "events": []
+    }
+  ]
+}

@@ -348,7 +348,14 @@ mod tests {
                 .map(|stashed| stashed.runtime_payload()),
             Some(LocomotorRuntimePayload::Drive(_))
         ));
-        assert!(stashed_drive.locomotor.as_mut().unwrap().end_piggyback());
+        assert!(
+            stashed_drive
+                .locomotor
+                .as_mut()
+                .unwrap()
+                .end_piggyback()
+                .is_some()
+        );
         assert_eq!(
             super::state_for_entity(&stashed_drive)
                 .unwrap()

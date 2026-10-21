@@ -713,7 +713,7 @@ fn an_armed_warp_waits_while_a_drive_piggyback_is_active() {
 
     let locomotor = mover.locomotor.as_mut().unwrap();
     if locomotor.active_kind() == LocomotorKind::Drive {
-        assert!(locomotor.end_piggyback());
+        assert!(locomotor.end_piggyback().is_some());
     }
     sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
         .unwrap();

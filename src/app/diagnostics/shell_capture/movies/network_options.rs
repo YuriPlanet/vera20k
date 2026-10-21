@@ -7,6 +7,7 @@
 
 use super::*;
 use crate::app::input::network_options as input;
+use crate::ui::main_menu_dialogs::options::{LauncherButton, LauncherParentResult, OptionsPage};
 use crate::ui::network_options::{CANCEL, NetworkOptionsMessage, OK, PORT, SOCKET};
 use crate::ui::shell::geom::RectPx;
 use winit::event::MouseButton;
@@ -73,7 +74,7 @@ fn persisted_state(state: &AppState) -> Result<Value> {
         .as_ref()
         .context("D7 capture game config")?
         .paths
-        .ra2_dir
+        .settings_dir()
         .join("RA2MD.INI");
     let bytes =
         std::fs::read(&path).with_context(|| format!("read saved settings {}", path.display()))?;
@@ -165,10 +166,17 @@ impl MoviesCapture {
                 if rendered == PresentedShell::Options
                     && Self::slide_settled(state, ShellSlideKind::Options)
                 {
-                    let layout = crate::app::frontend::shell_layout::launcher_options_layout(state);
-                    let rect = layout.buttons.iter()
-                        .find(|(action, _)| *action == crate::ui::main_menu_dialogs::options::LauncherParentResult::Network)
-                        .map(|(_, rect)| *rect).context("D5 Network button")?;
+                    let layout = crate::app::frontend::shell_layout::launcher_options_layout(
+                        state,
+                        OptionsPage::Main,
+                    );
+                    let network = LauncherButton::Exit(LauncherParentResult::Network);
+                    let rect = layout
+                        .buttons
+                        .iter()
+                        .find(|(action, _)| *action == network)
+                        .map(|(_, rect)| *rect)
+                        .context("D5 Network button")?;
                     state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
                     state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;
                     App::handle_launcher_options_mouse(state, None);
@@ -217,7 +225,7 @@ impl MoviesCapture {
                     self.route.push(json!({"dialog": 0xd7, "frame": frame,
                         "action": "controlled service and prior-settings inputs",
                         "native_case": target.native_case(), "initial": initial,
-                        "cards": cards, "profile_directory": state.platform.game_config.as_ref().map(|config| &config.paths.ra2_dir)}));
+                        "cards": cards, "profile_directory": state.platform.game_config.as_ref().map(|config| config.paths.settings_dir())}));
                     self.phase = Phase::NetworkOptionsInput;
                 }
             }
@@ -478,11 +486,17 @@ impl MoviesCapture {
                             profile_state(state) == case["state"],
                             "D7 return lost accepted profile values"
                         );
-                        let layout =
-                            crate::app::frontend::shell_layout::launcher_options_layout(state);
-                        let rect = layout.buttons.iter()
-                            .find(|(action, _)| *action == crate::ui::main_menu_dialogs::options::LauncherParentResult::Back)
-                            .map(|(_, rect)| *rect).context("D5 Main Menu button")?;
+                        let layout = crate::app::frontend::shell_layout::launcher_options_layout(
+                            state,
+                            OptionsPage::Main,
+                        );
+                        let main_menu = LauncherButton::Exit(LauncherParentResult::Back);
+                        let rect = layout
+                            .buttons
+                            .iter()
+                            .find(|(action, _)| *action == main_menu)
+                            .map(|(_, rect)| *rect)
+                            .context("D5 Main Menu button")?;
                         state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
                         state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;
                         App::handle_launcher_options_mouse(state, None);

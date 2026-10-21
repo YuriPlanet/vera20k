@@ -1491,7 +1491,13 @@ fn fresh_line_marker_writer_and_arrival_consumers_match_original_sparse_cells() 
             ),
         );
         let mut terrain = sim.resolved_terrain.take().unwrap();
-        sim.initialize_cell_trigger_lines(&mut terrain, cells.iter().copied());
+        let bounds =
+            crate::sim::scenario_bootstrap::NativeStartBounds::from_session(&sim, &terrain);
+        sim.trigger_runtime.initialize_cell_trigger_lines(
+            bounds,
+            &mut terrain,
+            cells.iter().copied(),
+        );
         let flags: Vec<_> = cells
             .iter()
             .map(|&(x, y)| {

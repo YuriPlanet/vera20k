@@ -4,7 +4,7 @@
 //! repair tick, and producer cycling.
 
 use crate::map::entities::EntityCategory;
-use crate::map::houses::are_houses_friendly;
+use crate::map::houses::is_allied_with;
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -733,7 +733,8 @@ pub fn is_within_build_area(
             }
         } else if !(sim.session.game_options().build_off_ally
             && existing.eligibile_for_ally_building
-            && are_houses_friendly(sim.house_alliances.as_map(), provider_owner, owner))
+            // The provider's house asks about the placer's (`0x004A900E`).
+            && is_allied_with(sim.house_alliances.as_map(), provider_owner, owner))
         {
             continue;
         }

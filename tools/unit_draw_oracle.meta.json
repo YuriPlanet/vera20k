@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "RandomRanged(0, 0x7FFFFFFE) draws scaled by [0x007E3570]: five FCOMP probability gates and the AI unit chooser's FCOMPP gate at straddling draws, and the start frame, upper-bound high dword and duration a placed crate slot stores from CrateRegen=.",
+  "assumptions": [
+    "Control word 0x0E7F (53-bit precision, chop), as Math::ftol leaves it.",
+    "The fixture Rules block is reached through 0x008871E0 and carries only the field each row reads: CrewEscape at +0x5C0, the FillEarliestTeamProbability pointer at +0x13F4, CrateRegen at +0x1678."
+  ],
+  "substitutions": [
+    "No RandomRanged call is executed: each row supplies the draw as its return value in EAX; the crate timer pops its two arguments.",
+    "The Spark band is written to [ESP+0x1C] where TechnoClass::AI keeps the Rules double it selected.",
+    "The chooser's house is scratch memory with difficulty 0 at +0x184; the crate slot and cell pointer are scratch memory."
+  ],
+  "entry_points": {
+    "bridge_outer": "0x0047DE59",
+    "bridge_metallic": "0x0047DF48",
+    "scorch": "0x00425092",
+    "spark": "0x006FAE29",
+    "crew": "0x0073820E",
+    "fill_earliest": "0x004FEE59",
+    "crate_timer_bounds": "0x004A1854",
+    "crate_timer_duration_and_slot_writes": "0x004A1893"
+  },
+  "replay_command": "python -m tools.unit_draw_oracle",
+  "payload_sha256": "67b0f57fcac079a2b36897a8363330c9238b0aa1c3c1561cea4a0f8ac8079893"
+}

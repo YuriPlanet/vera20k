@@ -38,7 +38,7 @@ fn the_held_child_gives_way_to_an_equal_open_root() {
         height: 0,
         on_bridge: false,
     };
-    let mut open = OpenList::default();
+    let mut open = OpenList::new(OPEN_LIST_SIZE);
     let mut held = None;
     for (x, f_cost) in [(1, 5.0), (2, 3.0), (3, 3.0)] {
         offer_child(&mut held, &mut open, node(f_cost, x));

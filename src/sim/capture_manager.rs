@@ -1228,8 +1228,7 @@ impl Simulation {
                 .entities
                 .get_mut(controller_id)
                 .expect("live overload controller remains represented")
-                .rocking
-                .get_or_insert_with(Default::default)
+                .rocking_mut()
                 .set_vel_sideways_native(velocity);
         }
     }

@@ -23,6 +23,16 @@ pub fn rounded_pip_quantity(amount: i32, denominator: i32, maximum: i32) -> i32 
 }
 
 impl GameEntity {
+    /// The whole bales in this object's Storage (Techno `+0x33C`): the
+    /// Miner's hold, or, without one, the SlaveLink's. Native keeps one
+    /// Storage per Techno, which both the Harvest missions fill (Unit and
+    /// Infantry `Mission_Harvest`) and the pips read.
+    pub fn storage_bales(&self) -> &[crate::sim::miner::CargoBale] {
+        self.miner
+            .as_ref()
+            .map_or_else(|| self.slave.cargo(), |miner| miner.cargo())
+    }
+
     /// Base GetPipFillLevel708C30, virtual+2B8. This reads the existing
     /// ammo, Cargo count, capture-manager and miner authorities; it creates
     /// no derived status state. The result is signed and is not capped at
@@ -52,13 +62,7 @@ impl GameEntity {
                 // or negative slots and Weeder cargo production remain
                 // unavailable state. Custom simultaneous Miner/SlaveLink
                 // storage is not represented as one native hold.
-                (
-                    self.miner.as_ref().map_or_else(
-                        || self.slave.cargo().len() as i32,
-                        |miner| miner.cargo().len() as i32,
-                    ),
-                    object.storage,
-                )
+                (self.storage_bales().len() as i32, object.storage)
             }
             PipScale::None | PipScale::Power => return 0,
         };

@@ -55,7 +55,9 @@ fn live_shot<'r>(
                     terrain.type_ref(),
                 ))
             }),
-        Some(TargetKind::Cell(rx, ry)) => Some((cell_center_coords(rx, ry), entity.type_ref())),
+        Some(target @ TargetKind::Cell(..)) => {
+            resolve_target_coords(&target, world).map(|coords| (coords, entity.type_ref()))
+        }
         None => None,
     };
     let shot = coordinates.map(|(target_coords, target_type_ref)| AdmittedFire {
@@ -471,14 +473,13 @@ impl StrikeHost for CombatStrike<'_, '_, '_> {
         }) else {
             return;
         };
-        let (frame, rot) = (self.binary_frame, self.obj.turret_rot);
+        let frame = self.binary_frame;
         if let Some(entity) = world.substrate.entities.get_mut(id) {
-            let initial = entity.body_facing.current(frame);
+            entity.ensure_fly_secondary_facing();
             entity.body_facing.set(desired, frame);
-            entity
-                .barrel_facing
-                .get_or_insert_with(|| crate::sim::movement::FacingClass::new(initial, rot))
-                .set(desired, frame);
+            if let Some(secondary) = entity.barrel_facing.as_mut() {
+                secondary.set(desired, frame);
+            }
         }
     }
 

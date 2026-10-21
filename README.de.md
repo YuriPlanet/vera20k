@@ -56,17 +56,22 @@ Die Pfeile zeigen den Datenfluss:
 
 ![Die Anwendung sendet Befehle an die Simulation, die den Weltzustand zurückgibt; die Anwendung sendet Zeichendaten an das Rendering.](docs/images/architecture.de.png)
 
+## Systemanforderungen
+
+- **Spiel:** Red Alert 2: Yuri's Revenge 1.001.
+- **Betriebssystem:** Windows 10+, Linux (glibc 2.35+, z. B. Ubuntu 22.04 oder Steam Deck) oder
+  macOS 11+ auf Apple Silicon.
+- **Grafik:** Vulkan, DirectX 12 oder Metal.
+
 ## Kompilieren und starten
 
 Du brauchst:
 
-- **Das Spiel:** Red Alert 2: Yuri's Revenge.
-- **Rust und Git:** die aktuelle stabile Version von [Rust](https://rustup.rs/), installiert mit
-  rustup, und [Git](https://git-scm.com/).
+- **Rust und Git:** [Rust](https://rustup.rs/) 1.88 oder neuer, installiert mit rustup, und
+  [Git](https://git-scm.com/).
 - **Build-Werkzeuge:** unter Windows die C++-Build-Tools von Visual Studio, deren Installation
   der Rust-Installer anbietet; unter macOS `xcode-select --install`; unter Debian und Ubuntu
   `sudo apt install build-essential libasound2-dev pkg-config`.
-- **Grafik:** eine Grafikkarte mit Vulkan, DirectX 12 oder Metal.
 
 VERA20K wurde bereits unter Windows, Linux und macOS gespielt.
 
@@ -77,6 +82,8 @@ cp config.toml.example config.toml
 # Bearbeite config.toml und setze ra2_dir auf deinen Spielordner, bevor du das Spiel startest:
 cargo run --release --bin vera20k
 ```
+
+Der Build belegt mehrere GB in `target/`.
 
 ## So arbeiten wir
 

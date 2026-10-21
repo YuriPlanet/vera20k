@@ -12,7 +12,7 @@ use crate::sim::world::{FrameEffects, Simulation};
 /// The rival arena on retail rules: `Russians` a computer house, made
 /// passive so its Strategy does not send a base-less house hunting, and
 /// `Americans` a human one.
-fn scene() -> Option<(Simulation, RuleSet, PathGrid)> {
+pub(super) fn scene() -> Option<(Simulation, RuleSet, PathGrid)> {
     let rules = crate::rules::retail_ini_fixture::retail_battle_rules()?.rules;
     let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 0x0073_681D, 40);
     sim.intern_rule_type_ids(&rules);
@@ -34,7 +34,14 @@ fn scene() -> Option<(Simulation, RuleSet, PathGrid)> {
     Some((sim, rules, grid))
 }
 
-fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, owner: &str, x: u16, y: u16) -> u64 {
+pub(super) fn spawn(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    kind: &str,
+    owner: &str,
+    x: u16,
+    y: u16,
+) -> u64 {
     sim.spawn_object_at_height(kind, owner, x, y, 0, 0, rules)
         .unwrap_or_else(|| panic!("{kind} spawns at ({x}, {y})"))
 }

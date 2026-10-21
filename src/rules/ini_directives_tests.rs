@@ -493,9 +493,47 @@ fn ini_directives_raw_parse_and_restore_never_open_files_or_expand_again() {
 }
 
 #[test]
-fn ini_directives_production_vfs_sources_and_immutable_consumed_snapshots() {
+fn ini_directives_production_selection_obeys_build_capability() {
     use crate::map::source::test_support::TestDirectory;
     use crate::rules::retail_sources::select_ini;
+
+    for directive in ["#include", "$Include"] {
+        let dir = TestDirectory::new("ini-directives-capability");
+        let root = format!(
+            "[{directive}]\n0=child.ini\n[Child]\n$Inherits=Base\nOwn=root\n[Base]\nInherited=parent\n"
+        );
+        dir.write("root.ini", root.as_bytes());
+        dir.write("child.ini", b"[Included]\nValue=child\n");
+        let assets =
+            crate::assets::asset_manager::AssetManager::from_loose_root_for_test(dir.path());
+        let selected = select_ini(&assets, "root.ini").unwrap();
+        assert!(selected.directive_diagnostics.is_empty());
+        assert_eq!(
+            selected.included_sources.len(),
+            usize::from(crate::rules::ARES_ENABLED)
+        );
+        assert_eq!(
+            text(&selected.ini, "Included", "Value").as_deref(),
+            crate::rules::ARES_ENABLED.then_some("child")
+        );
+        assert_eq!(
+            text(&selected.ini, "Child", "Inherited").as_deref(),
+            crate::rules::ARES_ENABLED.then_some("parent")
+        );
+        assert_eq!(text(&selected.ini, "Child", "Own").as_deref(), Some("root"));
+        if !crate::rules::ARES_ENABLED {
+            assert_eq!(
+                selected.ini.content_hash(),
+                IniFile::from_str(&root).content_hash()
+            );
+        }
+    }
+}
+
+#[test]
+fn ini_directives_probe_vfs_sources_and_immutable_consumed_snapshots() {
+    use crate::map::source::test_support::TestDirectory;
+    use crate::rules::retail_sources::select_ini_with_options;
     let dir = TestDirectory::new("ini-directives-source");
     dir.write(
         "root.ini",
@@ -503,7 +541,7 @@ fn ini_directives_production_vfs_sources_and_immutable_consumed_snapshots() {
     );
     dir.write("child.ini", b"[Base]\nOwn=base\nOther=child\n");
     let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(dir.path());
-    let selected = select_ini(&assets, "root.ini").unwrap();
+    let selected = select_ini_with_options(&assets, "root.ini", Default::default()).unwrap();
     assert!(selected.directive_diagnostics.is_empty());
     assert_eq!(selected.included_sources.len(), 1);
     assert!(
@@ -524,9 +562,9 @@ fn ini_directives_production_vfs_sources_and_immutable_consumed_snapshots() {
 }
 
 #[test]
-fn ini_directives_production_missing_empty_and_strict_policy() {
+fn ini_directives_probe_missing_empty_and_strict_policy() {
     use crate::map::source::test_support::TestDirectory;
-    use crate::rules::retail_sources::{select_ini, select_ini_with_options};
+    use crate::rules::retail_sources::select_ini_with_options;
     let dir = TestDirectory::new("ini-directives-missing");
     dir.write(
         "root.ini",
@@ -535,7 +573,7 @@ fn ini_directives_production_missing_empty_and_strict_policy() {
     dir.write("empty.ini", b"");
     dir.write("good.ini", b"[Unit]\nValue=good\n");
     let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(dir.path());
-    let selected = select_ini(&assets, "root.ini").unwrap();
+    let selected = select_ini_with_options(&assets, "root.ini", Default::default()).unwrap();
     assert_eq!(selected.directive_diagnostics.len(), 2);
     assert_eq!(selected.included_sources.len(), 1);
     assert_eq!(
@@ -556,16 +594,16 @@ fn ini_directives_production_missing_empty_and_strict_policy() {
 }
 
 #[test]
-fn ini_directives_production_loose_child_wins_over_mounted_mix() {
+fn ini_directives_probe_loose_child_wins_over_mounted_mix() {
     use crate::assets::asset_manager::{
         AssetManager, MediaArchiveMode, test_support::audio_test_install,
     };
-    use crate::rules::retail_sources::select_ini;
+    use crate::rules::retail_sources::select_ini_with_options;
     let dir = audio_test_install("ini-directives-mix");
     dir.write_mix("expandmd01.mix", "root.ini", b"[#include]\n0=child.ini\n");
     dir.write_mix("expandmd00.mix", "child.ini", b"[Unit]\nValue=mix\n");
     let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
-    let selected = select_ini(&assets, "root.ini").unwrap();
+    let selected = select_ini_with_options(&assets, "root.ini", Default::default()).unwrap();
     assert_eq!(
         selected.included_sources[0].source_archive,
         "expandmd00.mix"
@@ -573,7 +611,7 @@ fn ini_directives_production_loose_child_wins_over_mounted_mix() {
     assert_eq!(text(&selected.ini, "Unit", "Value").as_deref(), Some("mix"));
     std::fs::write(dir.path().join("child.ini"), b"[Unit]\nValue=loose\n").unwrap();
     let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
-    let selected = select_ini(&assets, "root.ini").unwrap();
+    let selected = select_ini_with_options(&assets, "root.ini", Default::default()).unwrap();
     assert!(
         selected.included_sources[0]
             .source_archive
@@ -659,10 +697,22 @@ fn ini_directives_reach_the_existing_ordered_type_processor_and_fixed_art() {
         )
         .unwrap();
     let (rules, _, art, _) = loaded.into_parts();
-    assert_eq!(rules.object("TEST").unwrap().strength, 100);
+    if crate::rules::ARES_ENABLED {
+        assert_eq!(rules.object("TEST").unwrap().strength, 100);
+    } else {
+        assert!(rules.object("TEST").is_none());
+    }
     assert_eq!(
         rules.production.build_speed.bits(),
-        f64::from(0.9_f32).to_bits()
+        f64::from(if crate::rules::ARES_ENABLED {
+            0.9_f32
+        } else {
+            0.7_f32
+        })
+        .to_bits()
     );
-    assert!(art.section_or_empty("TEST").read_bool("Voxel", false));
+    assert_eq!(
+        art.section_or_empty("TEST").read_bool("Voxel", false),
+        crate::rules::ARES_ENABLED
+    );
 }

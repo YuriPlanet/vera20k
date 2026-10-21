@@ -281,11 +281,6 @@ pub(super) fn resolve_receive_damage(
 
     let target_is_building = target.category() == EntityCategory::Structure;
     let target_view = damage::TargetDamageView {
-        armor: damage::ArmorClass(
-            target_type
-                .map(|object| armor_index(&object.armor))
-                .unwrap_or(0) as u8,
-        ),
         current_hp: target.health.current(),
         object_immune: target_type.is_some_and(|object| object.immune),
     };
@@ -366,7 +361,13 @@ pub(super) fn resolve_receive_damage(
         receiver_input,
         warhead.cell_spread_f64,
         warhead.percent_at_max_f64,
-        &warhead.verses_f64,
+        warhead
+            .interaction(
+                target_type.map_or(crate::rules::armor::ArmorId::NONE, |object| {
+                    object.armor_id()
+                }),
+            )
+            .multiplier(),
         &target_view,
         &divisors,
         &gates,

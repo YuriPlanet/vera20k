@@ -306,9 +306,13 @@
       "issue_after_step": 5230,
       "owner": "VERA-OBSERVER",
       "payload": {
-        "RepairAtDepot": {
+        "MegaMission": {
           "entity_id": 1375,
-          "depot_id": 1811
+          "mission": "Enter",
+          "target": null,
+          "destination": {
+            "Entity": 1811
+          }
         }
       }
     },

@@ -2123,11 +2123,14 @@ pub(crate) fn present_saved_game_loading(state: &mut AppState) {
         return;
     }
     let result = (|| -> anyhow::Result<()> {
-        let output = state
+        let Some(output) = state
             .renderer
             .gpu
             .acquire_frame()
-            .map_err(|error| anyhow::anyhow!("saved-game loading surface: {error}"))?;
+            .map_err(|error| anyhow::anyhow!("saved-game loading surface: {error}"))?
+        else {
+            return Ok(());
+        };
         let mut encoder =
             state
                 .renderer

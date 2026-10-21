@@ -1,6 +1,6 @@
 //! Land-blob flood fill: carves one land blob out of the all-water map.
 //!
-//! A 1-indexed binary min-heap on float32 keys grows the blob from a seed,
+//! A binary min-heap on float32 keys grows the blob from a seed,
 //! with a Gaussian-drifting center, an ellipse constraint, and either a
 //! jittered-distance key (undirected) or a target-directed key. The shore
 //! tiler then validates the shoreline; on failure the whole blob rolls back
@@ -13,6 +13,7 @@ use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
 use crate::map::rmg::x87::{self, Gaussian, TruncF64, approx_sqrt};
+use crate::util::native_heap::NativeHeap;
 use crate::util::native_x87::X87Chop53;
 
 use super::shore::{self, ShoreCtx, TileBlocks};
@@ -64,76 +65,14 @@ fn water_family(ids: &TileIds, tile: i32) -> bool {
         || (ids.water_base != -1 && tile >= ids.water_base && tile < ids.water_base + 0x0E)
 }
 
-/// 1-indexed binary min-heap on f32 keys with the original's tie rules.
-///
-/// Shared with the starts phase: the per-start clearing flood uses the same
-/// native heap helpers (including the silent skip-when-full insert).
-pub(crate) struct MinHeap {
-    /// Slot 0 unused.
-    nodes: Vec<(f32, (i32, i32))>,
-    cap: usize,
-}
+/// A flood's heap: f32 keys over cell coordinates. The starts phase's
+/// per-start clearing flood, the lakes, Tiberium, trees and patches share it.
+pub(crate) type CellHeap = NativeHeap<(f32, (i32, i32))>;
 
-impl MinHeap {
-    pub(crate) fn new(cap: usize) -> Self {
-        Self {
-            nodes: vec![(0.0, (0, 0))],
-            cap,
-        }
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        self.nodes.len() - 1
-    }
-
-    /// Insert unless full (`count + 1 >= cap` skips silently).
-    pub(crate) fn push(&mut self, key: f32, coord: (i32, i32)) {
-        if self.len() + 1 >= self.cap {
-            return;
-        }
-        self.nodes.push((key, coord));
-        // Sift up: the parent moves down only while strictly greater.
-        let mut i = self.len();
-        while i > 1 {
-            let parent = i / 2;
-            if self.nodes[parent].0 > key {
-                self.nodes[i] = self.nodes[parent];
-                i = parent;
-            } else {
-                break;
-            }
-        }
-        self.nodes[i] = (key, coord);
-    }
-
-    pub(crate) fn pop(&mut self) -> Option<(f32, (i32, i32))> {
-        if self.len() == 0 {
-            return None;
-        }
-        let top = self.nodes[1];
-        let last = self.nodes.pop().expect("non-empty");
-        if self.len() > 0 {
-            self.nodes[1] = last;
-            // Sift down: a child is chosen only on strict <, left first.
-            let mut i = 1;
-            loop {
-                let (l, r) = (2 * i, 2 * i + 1);
-                let mut best = i;
-                if l <= self.len() && self.nodes[l].0 < self.nodes[best].0 {
-                    best = l;
-                }
-                if r <= self.len() && self.nodes[r].0 < self.nodes[best].0 {
-                    best = r;
-                }
-                if best == i {
-                    break;
-                }
-                self.nodes.swap(i, best);
-                i = best;
-            }
-        }
-        Some(top)
-    }
+/// The floods' order: the f32 key alone, compared as native's `FCOMP` does
+/// for finite floats.
+pub(crate) fn by_key(a: &(f32, (i32, i32)), b: &(f32, (i32, i32))) -> bool {
+    a.0 < b.0
 }
 
 /// Draw an index in `[0, dim)` with the seed-selection chain.
@@ -258,13 +197,13 @@ pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams)
     let mut cy = TruncF64::from_f64(f64::from(seed.1));
     let drift = TruncF64::from_f64(params.drift_scale);
     ctx.scratch.get_mut(seed.0, seed.1).stamp = blob_id;
-    let mut heap = MinHeap::new(cap);
+    let mut heap = CellHeap::new(cap);
     let mut nodes_used = 1usize; // the seed node
-    heap.push(0.0, seed);
+    heap.push((0.0, seed), by_key);
 
     let mut pops = 0i32;
     while pops < max_cells {
-        let Some((_, coord)) = heap.pop() else {
+        let Some((_, coord)) = heap.pop(by_key) else {
             break;
         };
         pops += 1;
@@ -310,7 +249,7 @@ pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams)
             };
             ctx.scratch.get_mut(nx, ny).stamp = blob_id;
             nodes_used += 1;
-            heap.push(key, (nx, ny));
+            heap.push((key, (nx, ny)), by_key);
         }
 
         // Center drift: two Gaussian values per pop.
@@ -321,7 +260,7 @@ pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams)
     }
 
     // Drain: remaining nodes still count as pops; late commits are gated.
-    while let Some((_, coord)) = heap.pop() {
+    while let Some((_, coord)) = heap.pop(by_key) {
         pops += 1;
         let free = ctx.scratch.get(coord.0, coord.1).region == 0;
         let watery = ctx

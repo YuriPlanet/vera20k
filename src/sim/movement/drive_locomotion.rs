@@ -748,8 +748,6 @@ mod tests {
 
     #[test]
     fn complete_track_payload_survives_suspension_serialization_and_end() {
-        use super::super::locomotion::piggyback::{self, BeginOutcome};
-
         for (family, kind) in [
             (TrackFamily::Drive, LocomotorKind::Drive),
             (TrackFamily::Ship, LocomotorKind::Ship),
@@ -790,10 +788,7 @@ mod tests {
                 assert_ne!(payload_hash(&state), payload_hash(&unlatched));
             }
             let before = state.clone();
-            assert_eq!(
-                piggyback::begin(&mut state, LocomotorKind::Teleport, 999),
-                BeginOutcome::Installed
-            );
+            assert!(state.begin_piggyback(LocomotorKind::Teleport, 999));
             assert_eq!(state.track_destination(family), destination);
             assert_eq!(state.track_head(family), head);
             assert_eq!(state.track_progress(family), Some(progress));
@@ -805,7 +800,7 @@ mod tests {
             let bytes = serde_json::to_vec(&state).unwrap();
             let mut loaded: LocomotorState = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(loaded, state);
-            let released = piggyback::end(&mut loaded).unwrap();
+            let released = loaded.end_piggyback().unwrap();
             assert_eq!(released.active_kind(), LocomotorKind::Teleport);
             assert_eq!(loaded, before);
             if family == TrackFamily::Drive {
@@ -824,17 +819,12 @@ mod tests {
 
     #[test]
     fn matching_installed_absence_masks_saved_retained_state() {
-        use super::super::locomotion::piggyback::{self, BeginOutcome};
-
         let mut state = LocomotorState::for_test_kind(LocomotorKind::Drive);
         assert!(state.ensure_installed_track_state());
         let destination = Some(DriveCoord::cell(5, 6, 0));
         assert!(state.store_track_destination(TrackFamily::Drive, destination));
         let before = state.clone();
-        assert_eq!(
-            piggyback::begin(&mut state, LocomotorKind::Drive, 200),
-            BeginOutcome::Installed
-        );
+        assert!(state.begin_piggyback(LocomotorKind::Drive, 200));
         assert!(!state.has_track_state(TrackFamily::Drive));
         assert_eq!(state.track_destination(TrackFamily::Drive), None);
         assert!(!state.store_track_destination(TrackFamily::Drive, None));
@@ -842,7 +832,7 @@ mod tests {
         assert!(state.drive_end_permitted());
         assert!(state.ensure_installed_track_state());
         assert_eq!(state.track_destination(TrackFamily::Drive), None);
-        piggyback::end(&mut state).unwrap();
+        state.end_piggyback().unwrap();
         assert_eq!(state, before);
         assert_eq!(state.track_destination(TrackFamily::Drive), destination);
     }

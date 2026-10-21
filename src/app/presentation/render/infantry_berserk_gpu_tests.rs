@@ -430,6 +430,7 @@ fn compare_original_body_pixels(join_viewport: bool) {
             };
             draw_native_object_pass(
                 &mut encoder,
+                crate::app::render::merge_passes::ObjectDrawPhase::Display,
                 &cv,
                 &dv,
                 &mut terrain,

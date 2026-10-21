@@ -67,6 +67,7 @@ fn world(rules: &RuleSet, factories: &[&str]) -> (Simulation, InternedId) {
     (sim, owner)
 }
 
+#[cfg(feature = "ares")]
 #[test]
 fn superweapon_money_cameo_refresh_tracks_wallet_without_membership_rebuild() {
     let rules = RuleSet::from_ini_with_fixed_art_for_test(

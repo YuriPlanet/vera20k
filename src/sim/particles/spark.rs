@@ -8,6 +8,7 @@ use thiserror::Error;
 
 use super::{Particle, SparkRuntimeState};
 use crate::sim::rng::SimRng;
+use crate::util::native_random::RANDOM_RANGED_UNIT_SCALE;
 use crate::util::native_x87::{
     NativeF32Bits, NativeF64Bits, NativeX87Error, X87Chop53, X87Ordering, X87Value,
 };
@@ -16,7 +17,6 @@ const ASCENDING_BRIDGE_DELETE_OFFSET: i32 = 20;
 const GROUND_CLAMP_DEPTH: i32 = 100;
 const BUILDING_CONTACT_HEIGHT_F32: NativeF32Bits = NativeF32Bits::from_bits(0x4316_0000);
 const MAX_COLOR_RNG_SAMPLE: u32 = 0x7fff_fffe;
-const COLOR_RNG_RECIPROCAL: NativeF64Bits = NativeF64Bits::from_bits(0x3e00_0000_0040_0000);
 const COLOR_JITTER_SCALE: NativeF64Bits = NativeF64Bits::from_bits(0x3fa9_9999_9999_999a);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -475,7 +475,7 @@ pub fn advance_color(
 
     let scaled_rng = X87Chop53::mul(
         X87Chop53::load_i32(color_rng_sample as i32),
-        X87Chop53::load_f64(COLOR_RNG_RECIPROCAL)?,
+        X87Chop53::load_f64(RANDOM_RANGED_UNIT_SCALE)?,
     );
     let jitter = X87Chop53::mul(scaled_rng, X87Chop53::load_f64(COLOR_JITTER_SCALE)?);
     let with_speed = X87Chop53::add(jitter, X87Chop53::load_f64(color_speed)?);

@@ -19,6 +19,7 @@ use crate::app::frontend::main_menu_shell_render::Ra2tsDialogOwner;
 use crate::app::frontend::shell_transition::{MainMenuEntryPresentToken, ShellSlideKind};
 use crate::render::frame_readback::PendingBgra8Readback;
 use crate::ui::game_screen::GameScreen;
+use crate::ui::main_menu_dialogs::options::OptionsPage;
 use crate::ui::main_menu_shell::MainMenuMovieBase;
 use crate::ui::shell::static_reveal::Kind1PaintWindow;
 
@@ -70,6 +71,8 @@ const CHECKPOINT_CAMPAIGN_BACK_RETURN: &str = "campaign-back-return";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-steady";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
 const CHECKPOINT_OPTIONS_0XD5_STEADY: &str = "options-0xd5-steady";
+/// VERA20K Options pressed on the settled `0xD5`: VERA's page settled.
+const CHECKPOINT_OPTIONS_VERA_STEADY: &str = "options-vera-steady";
 const NETWORK_OPTIONS_CHECKPOINTS: [(&str, movies::NetworkOptionsTarget); 7] = [
     (
         "network-options-0xd7-steady",
@@ -252,6 +255,8 @@ pub enum ShellCaptureCheckpoint {
     LoadSavedGame0xB7Entry(u32),
     /// Main Menu -> Options: `0xD5` settled.
     Options0xD5Steady,
+    /// Then VERA20K Options: VERA's page settled.
+    OptionsVeraSteady,
     /// Ordinary D5 -> D7 with explicit service/settings inputs.
     NetworkOptions(movies::NetworkOptionsTarget),
     Lan(movies::LanTarget),
@@ -586,6 +591,7 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_BACK_RETURN => Ok(Self::CampaignBackReturn),
             CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY => Ok(Self::LoadSavedGame0xB7Steady),
             CHECKPOINT_OPTIONS_0XD5_STEADY => Ok(Self::Options0xD5Steady),
+            CHECKPOINT_OPTIONS_VERA_STEADY => Ok(Self::OptionsVeraSteady),
             CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE => Ok(Self::MainMenu0xE2NetworkBounce),
             CHECKPOINT_WOL_0X10E_STEADY => Ok(Self::Wol0x10ESteady),
             CHECKPOINT_WOL_0X10E_HOVER_QUICK_MATCH => Ok(Self::Wol0x10EHoverQuickMatch),
@@ -699,6 +705,7 @@ impl ShellCaptureCheckpoint {
             Self::LoadSavedGame0xB7Steady => CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY,
             Self::LoadSavedGame0xB7Entry(_) => "load-saved-game-0xb7-entry",
             Self::Options0xD5Steady => CHECKPOINT_OPTIONS_0XD5_STEADY,
+            Self::OptionsVeraSteady => CHECKPOINT_OPTIONS_VERA_STEADY,
             Self::Lan(target) => {
                 movies::LAN_CHECKPOINTS
                     .iter()
@@ -865,14 +872,22 @@ impl ShellCaptureCheckpoint {
             Self::Options0xD5Steady => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
                 hover: None,
+                page: OptionsPage::Main,
+            },
+            Self::OptionsVeraSteady => movies::MoviesTarget::Options0xD5 {
+                entry_tick: None,
+                hover: None,
+                page: OptionsPage::Vera,
             },
             Self::Options0xD5Entry(tick) => movies::MoviesTarget::Options0xD5 {
                 entry_tick: Some(tick),
                 hover: None,
+                page: OptionsPage::Main,
             },
             Self::Options0xD5Hover(index) => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
                 hover: Some(OPTIONS_0XD5_HOVER_CHECKPOINTS[index].1),
+                page: OptionsPage::Main,
             },
             Self::CreditsRollFrame(frame) => movies::MoviesTarget::Credits { frame },
             Self::SneakPeekFrame(frame) => movies::MoviesTarget::SneakPeek { frame },
@@ -2269,6 +2284,10 @@ mod tests {
             assert_eq!(checkpoint.as_str(), name);
         }
         assert!(ShellCaptureCheckpoint::parse("options-0xd5-hover-nothing").is_err());
+        let vera =
+            ShellCaptureCheckpoint::parse(CHECKPOINT_OPTIONS_VERA_STEADY).expect("VERA page");
+        assert_eq!(vera, ShellCaptureCheckpoint::OptionsVeraSteady);
+        assert_eq!(vera.as_str(), CHECKPOINT_OPTIONS_VERA_STEADY);
     }
 
     #[test]

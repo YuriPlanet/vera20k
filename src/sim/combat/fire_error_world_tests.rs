@@ -88,3 +88,60 @@ fn bridge_scene(firer: &str) -> crate::sim::world::Simulation {
 
 #[path = "fire_error_cell_tests.rs"]
 mod cell_queries;
+
+/// A world without resolved terrain asks the shared mapless range
+/// (`in_range::mapless_in_range`): `Range=-2` is always in range, where the
+/// flat fallback read -512 leptons as a two-cell reach, and MinimumRange
+/// refuses a target inside it.
+#[test]
+fn a_mapless_fire_gate_takes_the_shared_range_answer() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=ASW\n1=ART\n2=TANK\n\
+         [InfantryTypes]\n[BuildingTypes]\n[AircraftTypes]\n\
+         [ASW]\nStrength=300\nArmor=heavy\nPrimary=Depth\n\
+         [ART]\nStrength=300\nArmor=heavy\nPrimary=Shell\n\
+         [TANK]\nStrength=300\nArmor=heavy\n\
+         [Depth]\nDamage=50\nROF=30\nRange=-2\nWarhead=AP\nOmniFire=yes\n\
+         [Shell]\nDamage=50\nROF=30\nRange=8\nMinimumRange=3\nWarhead=AP\nOmniFire=yes\n\
+         [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .expect("mapless fire fixture rules");
+    let mut sim = crate::sim::world::Simulation::new();
+    for (id, kind, owner, at) in [
+        (1, "ASW", "Soviet", (5, 5)),
+        (2, "ART", "Soviet", (5, 7)),
+        (3, "TANK", "Americans", (6, 7)),
+        (4, "TANK", "Americans", (10, 7)),
+        (5, "TANK", "Americans", (40, 5)),
+    ] {
+        spawn(
+            &mut sim.substrate.entities,
+            id,
+            kind,
+            EntityCategory::Unit,
+            owner,
+            at,
+        );
+    }
+    // After the spawns: `test_default` interns their names.
+    sim.interner = test_interner();
+    assert!(sim.resolved_terrain.is_none());
+    let error = |firer: u64, kind: &str, target: u64| {
+        crate::sim::combat::fire_error_world::FireSubject {
+            world: &sim,
+            rules: &rules,
+            overlay_registry: None,
+            fog: None,
+            firer: sim.substrate.entities.get(firer).unwrap(),
+            obj: rules.object(kind).unwrap(),
+            target: Some(crate::sim::combat::TargetKind::Entity(target)),
+            weapon_index: 0,
+        }
+        .fire_error(true)
+    };
+    use crate::sim::combat::fire_error::FireError;
+    assert_ne!(error(1, "ASW", 5), FireError::Range, "35 cells away");
+    assert_eq!(error(2, "ART", 3), FireError::Range, "inside MinimumRange");
+    assert_ne!(error(2, "ART", 4), FireError::Range, "5 cells away");
+    assert_eq!(error(2, "ART", 5), FireError::Range, "beyond Range");
+}

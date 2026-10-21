@@ -1,4 +1,5 @@
-//! Final-window FPS readout, hidden until Ctrl+Alt+F shows it on any screen.
+//! Final-window FPS readout, hidden at every launch until Ctrl+Alt+F or the
+//! Options page's FPS Counter box shows it.
 //! Independent of tactical cameras, optional dev overlays, retail fonts, and
 //! shell/offscreen composition.
 
@@ -57,7 +58,16 @@ impl FpsOverlay {
             .simulation = simulation;
     }
 
-    /// Show or hide the readout; returns whether it is now shown.
+    pub(crate) fn is_visible(&self) -> bool {
+        self.visible
+    }
+
+    /// The Options page's FPS Counter box.
+    pub(crate) fn set_visible(&mut self, visible: bool) {
+        self.visible = visible;
+    }
+
+    /// Ctrl+Alt+F: show or hide the readout; returns whether it is now shown.
     pub(crate) fn toggle(&mut self) -> bool {
         self.visible = !self.visible;
         self.visible

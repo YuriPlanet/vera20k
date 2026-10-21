@@ -928,6 +928,85 @@ fn gap_marks_friendly_viewer_as_fog_not_covered() {
     assert!(fog.is_cell_visible(gapper, 30, 35)); // own vision NOT suppressed
 }
 
+/// A Building's gap event asks from the generator's house whether the viewer
+/// is its ally (`0x006FB2CF`, `HouseClass::IsAlliedWith @ 0x004F9A50`): the
+/// viewer's own one-way alliance with it leaves the viewer under the gap.
+#[test]
+fn a_gap_event_asks_the_generators_house_about_the_viewer() {
+    let viewer = intern::test_intern("Soviet");
+    let gapper = intern::test_intern("Americans");
+    let interner = ti();
+    let source = GapGeneratorSource {
+        stable_id: 1,
+        owner: gapper,
+        rx: 30,
+        ry: 30,
+        radius: 10,
+    };
+    let covered = |asker: &str, other: &str| {
+        let mut fog = FogState {
+            width: 64,
+            height: 64,
+            ..Default::default()
+        };
+        fog.mark_visible_for_owner(viewer, 30, 35);
+        let alliances = HouseAllianceMap::from([(
+            asker.to_ascii_uppercase(),
+            [other.to_ascii_uppercase()].into(),
+        )]);
+        publish_gap_generator_event(
+            &mut fog,
+            &alliances,
+            viewer,
+            source,
+            true,
+            &interner,
+            &std::collections::BTreeSet::new(),
+        );
+        fog.is_cell_gap_covered(viewer, 30, 35)
+    };
+    assert!(covered("Soviet", "Americans"));
+    assert!(!covered("Americans", "Soviet"));
+}
+
+/// Materializing a viewer's retained deposits asks from each generator's house
+/// as the event did: only the generator's alliance with the viewer projects
+/// the friendly gap fog.
+#[test]
+fn materialized_gap_fog_asks_the_generators_house_about_the_viewer() {
+    let viewer = intern::test_intern("Soviet");
+    let gapper = intern::test_intern("Americans");
+    let interner = ti();
+    let source = GapGeneratorSource {
+        stable_id: 1,
+        owner: gapper,
+        rx: 30,
+        ry: 30,
+        radius: 10,
+    };
+    let fogged = |asker: &str, other: &str| {
+        let mut fog = FogState {
+            width: 64,
+            height: 64,
+            ..Default::default()
+        };
+        fog.mark_visible_for_owner(viewer, 30, 35);
+        let alliances = HouseAllianceMap::from([(
+            asker.to_ascii_uppercase(),
+            [other.to_ascii_uppercase()].into(),
+        )]);
+        materialize_gap_generator_sources(
+            &mut fog,
+            &alliances,
+            &BTreeMap::from([(viewer, vec![source])]),
+            &interner,
+        );
+        fog.is_cell_gap_fog(viewer, 30, 35)
+    };
+    assert!(fogged("Americans", "Soviet"));
+    assert!(!fogged("Soviet", "Americans"));
+}
+
 /// With height-LOS enabled but perfectly flat terrain, reveal must be identical to
 /// reveal with LOS disabled.
 ///

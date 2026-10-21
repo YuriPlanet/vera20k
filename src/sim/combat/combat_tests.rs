@@ -6081,6 +6081,58 @@ fn gsi_08_01_a_shared_cell_offers_only_its_list_head() {
     );
 }
 
+/// A terrain-free Guard scan's pick between an enemy one cell away and one
+/// five cells away, for an `ART` armed with `shell` (`Range=8`).
+fn mapless_guard_pick(shell: &str) -> Option<u64> {
+    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[InfantryTypes]\n[VehicleTypes]\n0=ART\n1=MTNK\n[AircraftTypes]\n[BuildingTypes]\n\
+         [ART]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=Shell\n\
+         [MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\n\
+         [Shell]\nDamage=65\nROF=50\nRange=8\nWarhead=AP\n{shell}\n\
+         [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+    )))
+    .expect("mapless scan rules");
+    let mut store = EntityStore::new();
+    store.insert(make_entity_owned(10, "ART", 5, 5, 300, "Americans"));
+    store.insert(make_entity_owned(20, "MTNK", 6, 5, 300, "Soviet"));
+    store.insert(make_entity_owned(30, "MTNK", 10, 5, 300, "Soviet"));
+    let interner = test_interner();
+    let mut fog = FogState::default();
+    for x in [6, 10] {
+        fog.mark_visible_for_owner(test_intern("Americans"), x, 5);
+    }
+    let occupancy = mark_fixture_entities(&mut store);
+    crate::sim::combat::combat_targeting::greatest_threat_for_entity(
+        &store,
+        &occupancy,
+        &rules,
+        &interner,
+        10,
+        Some(&fog),
+        None,
+        false,
+        crate::sim::combat::ScanMission::Guard,
+        None,
+        crate::sim::combat::line_of_fire::LineOfFireInputs {
+            overlay_grid: None,
+            overlay_registry: None,
+            alliances: Some(&HouseAllianceMap::new()),
+        },
+        None,
+        None,
+    )
+    .target()
+}
+
+/// Without resolved terrain the Guard scan's CanFireAt arm asks the shared
+/// mapless range (`in_range::mapless_in_range`), MinimumRange included: the
+/// nearer enemy is refused inside it, and the scan takes the other.
+#[test]
+fn a_mapless_guard_scan_refuses_an_enemy_inside_minimum_range() {
+    assert_eq!(mapless_guard_pick(""), Some(20), "the nearer enemy");
+    assert_eq!(mapless_guard_pick("MinimumRange=3"), Some(30));
+}
+
 #[test]
 fn gsi_08_01_unarmed_building_loses_to_a_tank_at_equal_distance() {
     let rules: RuleSet = test_rules();
@@ -7835,13 +7887,15 @@ fn rad_damage_fires_on_application_delay_boundary_only() {
             .unwrap()
     };
     let rules = radiation_rules();
-    for (index, verse) in rules
-        .warhead("RadSite")
-        .unwrap()
-        .verses_f64
-        .iter()
-        .enumerate()
-    {
+    for index in 0..11 {
+        let verse = f64::from_bits(
+            rules
+                .warhead("RadSite")
+                .unwrap()
+                .interaction(crate::rules::armor::ArmorId::from_index(index))
+                .multiplier()
+                .bits(),
+        );
         assert_eq!(
             format!("{:016x}", verse.to_bits()),
             native_row(16, 5)["verses_bits"][index],

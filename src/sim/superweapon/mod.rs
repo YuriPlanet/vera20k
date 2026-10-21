@@ -16,7 +16,7 @@ pub mod chrono_screen;
 mod chronosphere;
 pub use chronosphere::CHRONO_WARP_SELECTION_INDEX;
 pub mod airstrike_tint;
-#[cfg(test)]
+#[cfg(all(test, feature = "ares"))]
 mod building_requirements_tests;
 #[cfg(test)]
 mod can_fire_tests;
@@ -30,6 +30,7 @@ mod chronosphere_lunar_retail_tests;
 pub mod chronosphere_tests;
 mod fire;
 pub mod force_shield;
+#[cfg(feature = "ares")]
 mod generic_warhead;
 pub mod genetic_converter;
 pub mod invulnerability;
@@ -37,6 +38,7 @@ pub mod iron_curtain;
 pub mod lightning_storm;
 #[cfg(test)]
 pub(crate) mod lightning_storm_tests;
+#[cfg(feature = "ares")]
 mod money;
 pub(crate) mod nuke;
 #[cfg(test)]
@@ -89,10 +91,19 @@ pub fn paid_pair_source<'r>(
     rules: &'r RuleSet,
     sw: &SuperWeaponType,
 ) -> Option<(&'r str, &'r SuperWeaponType)> {
-    if !sw.post_click {
-        return None;
+    #[cfg(not(feature = "ares"))]
+    {
+        let _ = (rules, sw);
+        None
     }
-    pre_dependent(rules, sw).filter(|(_, source)| source.money_amount != 0 || sw.money_amount != 0)
+    #[cfg(feature = "ares")]
+    {
+        if !sw.post_click {
+            return None;
+        }
+        pre_dependent(rules, sw)
+            .filter(|(_, source)| source.money_amount != 0 || sw.money_amount != 0)
+    }
 }
 
 /// The type whose money/refusal settings final activation uses. PostClick
@@ -1140,6 +1151,7 @@ pub fn superweapon_views_for_owner(
             continue;
         };
         let paid_source = paid_pair_source(rules, sw_type);
+        #[cfg(feature = "ares")]
         let money_type = financial_type(rules, sw_type);
         views.push(SuperWeaponView {
             type_id: inst.type_id,
@@ -1153,7 +1165,16 @@ pub fn superweapon_views_for_owner(
             } else {
                 inst.can_fire(sw_type)
             },
-            can_afford: money::can_afford(&sim.houses, *owner, money_type),
+            can_afford: {
+                #[cfg(feature = "ares")]
+                {
+                    money::can_afford(&sim.houses, *owner, money_type)
+                }
+                #[cfg(not(feature = "ares"))]
+                {
+                    true
+                }
+            },
             sidebar_image: sw_type.sidebar_image.clone(),
         });
     }
@@ -1280,6 +1301,7 @@ pub(crate) fn tick_active_superweapon_effects(
     let chrono = sim.session.process_chrono_screen_effect();
     sim.publish_trigger_effects(chrono);
     let storm = lightning_storm::process(sim, rules, overlay_registry, frame_effects);
+    #[cfg(feature = "ares")]
     unit_delivery::tick(sim, rules, overlay_registry, frame_effects);
     dominator || storm
 }
@@ -1347,13 +1369,21 @@ pub fn building_requirements_met(
     owner: InternedId,
     sw: &SuperWeaponType,
 ) -> bool {
-    aux_building_present(sim, rules, owner, sw)
-        && sw
-            .building_requirements
-            .as_ref()
-            .is_none_or(|requirements| {
-                requirements.allows(|id| owned_building_present(sim, rules, owner, id))
-            })
+    let native = aux_building_present(sim, rules, owner, sw);
+    #[cfg(feature = "ares")]
+    {
+        native
+            && sw
+                .building_requirements
+                .as_ref()
+                .is_none_or(|requirements| {
+                    requirements.allows(|id| owned_building_present(sim, rules, owner, id))
+                })
+    }
+    #[cfg(not(feature = "ares"))]
+    {
+        native
+    }
 }
 
 /// The Supers `building` provides: its type's `SuperWeapon=` and

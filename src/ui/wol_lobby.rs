@@ -361,8 +361,10 @@ pub(crate) enum WolLobbyAction {
     ObserverChanged(bool),
     /// `0x61F`: WOL Options `0x2BC`.
     Options,
-    /// Buddy List, Clan, Tournament, News and Page run dialogs or web pages
-    /// that are later chains.
+    /// `0x5C2`: the page dialog `0xCF` (`0x0078BA3E`).
+    Page,
+    /// Buddy List, Clan, Tournament and News run dialogs or web pages that
+    /// are later chains.
     Unported(u16),
     Popup(WolPopupAction),
 }
@@ -634,7 +636,8 @@ impl WolLobbyState {
                 WolLobbyAction::ObserverChanged(self.observer)
             }
             OPTIONS => WolLobbyAction::Options,
-            BUDDY | CLAN | TOURNAMENT | NEWS | PAGE_BUTTON => WolLobbyAction::Unported(control),
+            PAGE_BUTTON => WolLobbyAction::Page,
+            BUDDY | CLAN | TOURNAMENT | NEWS => WolLobbyAction::Unported(control),
             _ => return None,
         })
     }

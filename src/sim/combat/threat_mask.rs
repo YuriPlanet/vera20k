@@ -186,11 +186,15 @@ fn class_bit(category: EntityCategory) -> u32 {
 }
 
 /// `Evaluate_Candidate`'s class gate, `0x006F821A..0x006F824A`: the
-/// candidate's class bit, or the Unit bit and `vt+0x80` — a 1x1 building
-/// with `UndeploysInto=` (`0x00465D40`) or an aircraft on the floor
-/// (`0x0041B910` → `IsOnFloor`); false for infantry (`0x004263B0`).
-pub(super) fn admits_class(flags: u32, category: EntityCategory, vehicle_like: bool) -> bool {
-    flags & class_bit(category) != 0 || (flags & 2 != 0 && vehicle_like)
+/// candidate's class bit, or the Unit bit and the candidate's `vt+0x80`
+/// ([`super::vehicle_like`]), which runs only when the class bit is clear and
+/// the Unit bit set (`0x006F8242`).
+pub(super) fn admits_class(
+    flags: u32,
+    category: EntityCategory,
+    vehicle_like: impl FnOnce() -> bool,
+) -> bool {
+    flags & class_bit(category) != 0 || (flags & 2 != 0 && vehicle_like())
 }
 
 #[cfg(test)]
@@ -331,12 +335,13 @@ mod tests {
     #[test]
     fn the_class_gate_admits_vehicle_like_candidates_under_the_unit_bit() {
         use EntityCategory::*;
-        assert!(admits_class(0x8042, Structure, false));
-        assert!(!admits_class(0x8042, Aircraft, false));
-        assert!(admits_class(0x8042, Aircraft, true));
-        assert!(!admits_class(0x40, Aircraft, true));
-        assert!(admits_class(0x4, Aircraft, false));
-        assert!(!admits_class(0x8000, Unit, false));
-        assert!(!admits_class(0, Infantry, false));
+        let unasked = || -> bool { panic!("vt+0x80 runs only past a clear class bit") };
+        assert!(admits_class(0x8042, Structure, unasked));
+        assert!(!admits_class(0x8042, Aircraft, || false));
+        assert!(admits_class(0x8042, Aircraft, || true));
+        assert!(!admits_class(0x40, Aircraft, unasked));
+        assert!(admits_class(0x4, Aircraft, unasked));
+        assert!(!admits_class(0x8000, Unit, unasked));
+        assert!(!admits_class(0, Infantry, unasked));
     }
 }

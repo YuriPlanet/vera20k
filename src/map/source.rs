@@ -149,6 +149,9 @@ fn expand_map_ini(
     source: &LoadedMapSource,
     assets: &AssetManager,
 ) -> Result<IniFile> {
+    if !crate::rules::ARES_ENABLED {
+        return Ok(ini);
+    }
     let name = match source {
         LoadedMapSource::Loose { path, .. } => path.to_string_lossy().into_owned(),
         LoadedMapSource::Mix { logical_name, .. } => logical_name.clone(),
@@ -392,7 +395,7 @@ mod tests {
         "889a91e6c8652968c930f40cfe998f2c0f4152d3f4b10b6af1a8c8e9a7c6e814";
 
     #[test]
-    fn ini_directives_map_gameplay_and_metadata_share_expanded_rules() {
+    fn ini_directives_map_gameplay_and_metadata_follow_build_capability() {
         let dir = TestDirectory::new("map-ini-directives");
         let root = [
             SOURCE_TEST_MAP,
@@ -416,7 +419,7 @@ mod tests {
                 .ini
                 .section_or_empty("Unit")
                 .read_int("Strength", 0),
-            250
+            if crate::rules::ARES_ENABLED { 250 } else { 0 }
         );
         assert_eq!(
             loaded
@@ -432,7 +435,7 @@ mod tests {
                 .ini
                 .section_or_empty("Basic")
                 .read_name("Name", 128),
-            Some("Included name")
+            crate::rules::ARES_ENABLED.then_some("Included name")
         );
         assert_eq!(
             serde_json::to_value(&loaded.source).unwrap(),

@@ -535,11 +535,11 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
         .overlay_data;
     assert!(s.sim.apply_command_with_overlays(
         "Americans",
-        &Command::HarvestCell {
-            entity_id: s.miner,
-            target_rx: at.0,
-            target_ry: at.1
-        },
+        &Command::clicked_mission(
+            s.miner,
+            crate::sim::mission::MissionType::Harvest,
+            crate::sim::combat::TargetKind::Cell(at.0, at.1)
+        ),
         Some(&s.rules),
         Some(registry()),
         crate::sim::world::FrameEffects::default()
@@ -587,10 +587,11 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
     let balance = s.sim.houses[&owner].economy().credits();
     assert!(s.sim.apply_command_with_overlays(
         "Americans",
-        &Command::MinerReturn {
-            entity_id: s.miner,
-            target_refinery_id: Some(s.refinery)
-        },
+        &Command::clicked_mission(
+            s.miner,
+            crate::sim::mission::MissionType::Enter,
+            crate::sim::combat::TargetKind::Entity(s.refinery)
+        ),
         Some(&s.rules),
         Some(registry()),
         crate::sim::world::FrameEffects::default()
@@ -695,7 +696,7 @@ fn forced_terrain_enqueue_rebuild_uses_live_scenario_flags_through_advance_tick(
         (capacity - 9)
             as usize
     ]);
-    saved["native_tiberium"]["classes"][0]["growth"]["heap"] = json!([0]);
+    saved["native_tiberium"]["classes"][0]["growth"]["heap"]["slots"] = json!([]);
     saved["native_tiberium"]["classes"][0]["growth_bitmap"] = json!([[10, 10]]);
     s.sim.ore_growth_state = serde_json::from_value(saved).unwrap();
     let path = s.sim.path_grid_snapshot();

@@ -736,7 +736,6 @@ fn fly_retained_destination_drives_subcell_arrival_after_save_and_restore() {
 #[test]
 fn fly_destination_is_hashed_and_persisted_in_active_and_stashed_runtime() {
     use crate::rules::locomotor_type::LocomotorKind;
-    use crate::sim::movement::locomotion::piggyback;
     let row = destination_vectors().remove(0);
     for stashed in [false, true] {
         let (mut sim, rules) = destination_fixture(&row);
@@ -757,10 +756,7 @@ fn fly_destination_is_hashed_and_persisted_in_active_and_stashed_runtime() {
                 .locomotor
                 .as_mut()
                 .unwrap();
-            assert_eq!(
-                piggyback::begin(loco, LocomotorKind::Drive, 0),
-                piggyback::BeginOutcome::Installed
-            );
+            assert!(loco.begin_piggyback(LocomotorKind::Drive, 0));
         }
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = GameSnapshot::save(&sim, 0, 0, "Fly active/stashed destination", 0);
@@ -778,7 +774,7 @@ fn fly_destination_is_hashed_and_persisted_in_active_and_stashed_runtime() {
             .as_mut()
             .unwrap();
         if stashed {
-            assert!(piggyback::end(loco).is_some());
+            assert!(loco.end_piggyback().is_some());
         }
         let destination = loco.fly_runtime().unwrap().destination();
         assert_eq!(
@@ -1164,7 +1160,6 @@ fn fly_phase_outer_health_power_and_life_gates_precede_nonlandable_override() {
 #[test]
 fn fly_landing_state_hashes_and_restores_active_and_stashed_instances() {
     use crate::rules::locomotor_type::LocomotorKind;
-    use crate::sim::movement::locomotion::piggyback;
     for stashed in [false, true] {
         for field in ["moving", "landing_effect_latched", "airport_bound", "pitch"] {
             let row = destination_vectors().remove(0);
@@ -1192,10 +1187,7 @@ fn fly_landing_state_hashes_and_restores_active_and_stashed_instances() {
                         .locomotor
                         .as_mut()
                         .unwrap();
-                    assert_eq!(
-                        piggyback::begin(loco, LocomotorKind::Drive, 0),
-                        piggyback::BeginOutcome::Installed
-                    );
+                    assert!(loco.begin_piggyback(LocomotorKind::Drive, 0));
                 }
                 instance.scenario_rng = crate::sim::rng::SimRng::new(0);
             }
@@ -1219,17 +1211,16 @@ fn fly_landing_state_hashes_and_restores_active_and_stashed_instances() {
             for instance in [&mut changed, &mut restored] {
                 if stashed {
                     assert!(
-                        piggyback::end(
-                            instance
-                                .substrate
-                                .entities
-                                .get_mut(1)
-                                .unwrap()
-                                .locomotor
-                                .as_mut()
-                                .unwrap()
-                        )
-                        .is_some()
+                        instance
+                            .substrate
+                            .entities
+                            .get_mut(1)
+                            .unwrap()
+                            .locomotor
+                            .as_mut()
+                            .unwrap()
+                            .end_piggyback()
+                            .is_some()
                     );
                 }
             }

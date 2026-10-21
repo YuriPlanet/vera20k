@@ -24,6 +24,10 @@ mod outbound_drive_tests;
 #[path = "pad_nudge_tests.rs"]
 mod pad_nudge_tests;
 
+#[cfg(test)]
+#[path = "no_ore_park_tests.rs"]
+mod no_ore_park_tests;
+
 pub(crate) use self::harvest_mission::mission_harvest;
 pub(crate) use self::miner_system::extract_bale;
 pub(crate) use self::refinery_dock::{
@@ -71,12 +75,8 @@ pub enum MinerKind {
 /// handler never writes a cursor above `4`. Cursors `5..=7`, retired VERA
 /// states (drive-to-ore, legacy unload, the old player return), decode as none.
 ///
-/// Residual: gamemd reaches cursor `4` from exactly one place, the bounded
-/// scan's miss. VERA also parks there when the miner can reach no refinery at
-/// all, so the cursor is *entered* more often than native's even though it is
-/// never mis-numbered. Both entries take the same re-search exit; what gamemd
-/// does with its own entry, and why VERA does not, is recorded on
-/// `miner_system::handle_going_to_idle`.
+/// Cursor `4` has one entry, as in gamemd: the bounded scan's miss with no
+/// destination and no archive (`0x0073E8EA..0x0073E924`).
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum MinerState {
@@ -91,8 +91,8 @@ pub enum MinerState {
     /// Unload missions (`refinery_dock`).
     Dock = 3,
     /// Parked because the bounded ore scan found nothing — gamemd's only
-    /// entry into this cursor. VERA also parks here when the miner can reach
-    /// no refinery (VERA-internal, gamemd equivalent UNCHECKED).
+    /// entry into this cursor. Its dispatch queues Guard
+    /// (`miner_system::handle_going_to_idle`).
     WaitNoOre = 4,
 }
 

@@ -286,6 +286,76 @@ fn shroud_bars_a_type_without_move_to_shroud() {
     );
 }
 
+/// UnitClass's harvest rungs (`0x007405DB..0x007406C3`) turn a Move over a
+/// mapped Cell of Tiberium land into Harvest: the retail War and Chrono Miners
+/// by `Harvester=`, the Slave Miner by `ResourceGatherer=` and
+/// `ResourceDestination=`. A Grizzly keeps Move. Where a tank holds the ore
+/// the click's Can_Enter_Cell answers NoMove, which stands, while the
+/// cursor's query answers Move before it and so harvests. Harvest sends no
+/// Move and no MoveFlash (case 6, `0x004D7E8E`). Under shroud the Foot answer
+/// stands.
+#[test]
+fn harvesters_answer_harvest_over_mapped_tiberium() {
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &battle.processed_rules,
+        Some(&battle.fixed_art),
+    );
+    let (mut sim, rules, _) = Simulation::walk_cell_input_test_scene_with(battle.rules, false);
+    let owner = sim.interner.get("Local").unwrap();
+    let (open, taken) = ((11, 5), (12, 5));
+    let ore = registry.id_for_name("TIB01").unwrap();
+    for cell in [open, taken] {
+        sim.place_overlay_for_test(cell, ore, 6, &registry);
+    }
+    let mut spawn = |name: &str, cell: (u16, u16)| {
+        sim.spawn_object_with_overlay_registry(name, "Local", cell.0, cell.1, 0, &rules, &registry)
+            .unwrap_or_else(|| panic!("retail {name} spawns"))
+    };
+    let war = spawn("HARV", (6, 4));
+    let chrono = spawn("CMIN", (6, 6));
+    let slave = spawn("SMIN", (4, 4));
+    let tank = spawn("MTNK", taken);
+    sim.resolve_type_handles(&rules);
+    let all = || (0..16).flat_map(|y| (0..16).map(move |x| (x, y)));
+    sim.fog = crate::sim::vision::FogState::new(16, 16);
+    sim.fog.reveal_cells_for_owner(owner, all());
+    let ask = |sim: &Simulation, id, cell, mouse_over| {
+        sim.cell_move_action(
+            owner,
+            id,
+            cell,
+            query(mouse_over, false),
+            &rules,
+            Some(&registry),
+        )
+        .unwrap()
+    };
+    for id in [war, chrono, slave] {
+        assert_eq!(ask(&sim, id, open, false), MoveAction::Harvest);
+        assert_eq!(ask(&sim, id, open, true), MoveAction::Harvest);
+    }
+    assert_eq!(ask(&sim, tank, open, false), MoveAction::Move);
+    assert_eq!(ask(&sim, war, taken, false), MoveAction::NoMove);
+    assert_eq!(ask(&sim, war, taken, true), MoveAction::Harvest);
+    assert_eq!(
+        sim.cell_click_destination(owner, war, open, false, &rules, Some(&registry)),
+        Ok(None)
+    );
+    assert_eq!(
+        sim.cell_click_flashes_move(owner, war, open, false, &rules, Some(&registry)),
+        Ok(false)
+    );
+
+    assert!(rules.object("HARV").unwrap().move_to_shroud);
+    sim.fog = crate::sim::vision::FogState::new(16, 16);
+    sim.fog
+        .reveal_cells_for_owner(owner, all().filter(|&cell| cell != open));
+    assert_eq!(ask(&sim, war, open, false), MoveAction::Move);
+}
+
 /// Foot `0x004D74E0`'s Move arm over an object the retail GI's zone reaches
 /// (a retail Grizzly beside it): Move keeps the object; NoMove, and an
 /// Infantry under the force-move key (`0x004D7B0F..0x004D7B1D`), search near

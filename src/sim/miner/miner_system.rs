@@ -345,11 +345,10 @@ pub(super) fn process_miner(
         }
         MinerState::Dock => handle_handoff(sim, snap),
         MinerState::WaitNoOre => {
-            if handle_going_to_idle(sim, rules, overlay_registry, snap, frame_effects) {
-                // Native state 4 has no `return 1` exit: every dispatch falls
-                // into the default Rate epilogue (`0x0073EF97`).
-                arm_rate_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, snap);
-            }
+            handle_going_to_idle(sim, rules, overlay_registry, snap, frame_effects);
+            // Native state 4 has no `return 1` exit: every dispatch falls
+            // into the default Rate epilogue (`0x0073EF97`).
+            arm_rate_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, snap);
         }
     }
     let state_after = format!("{:?}", snap.state);
@@ -869,46 +868,29 @@ fn handle_handoff(sim: &mut Simulation, snap: &MinerSnapshot) {
 /// idempotent). Once on Guard the Harvest handler is no longer dispatched;
 /// what brings a miner back is `UnitClass::Mission_Guard @ 0x00740810` (the
 /// chrono arms in `techno_ai/mission_handlers.rs`) or a player order
-/// (`Command::HarvestCell` / MEGAMISSION Enter, EventClass MEGAMISSION →
+/// (MEGAMISSION Harvest or Enter, EventClass MEGAMISSION →
 /// `Queue_Mission(mission, 0)` at `0x004C73B9`). A human war miner therefore
-/// parks on Guard until re-ordered — native behaviour.
+/// parks on Guard until re-ordered. State 4 tests no owner, so a computer
+/// house's miner parks too. Mission_Guard's AI arm (`0x00740881..
+/// 0x00740942`) re-queues Harvest only while `House+0x242` is clear
+/// (`0x00740922`), and the miss that led here has just set it, with no
+/// clearing writer (`HouseState::harvester_no_ore`). What still moves a
+/// parked computer miner back to Harvest is an arm without that test:
+/// Enter_Idle_Mode's harvester arm (`0x00738BD8`) after a later stop,
+/// AreaGuard (`0x004D6D26`) or RUN_AWAY (`0x00737A98`).
 ///
 /// Step 2 calls the existing `Simulation::techno_nearby_location` owner
 /// (703590), including its movement-zone/GetZone/FNPC arguments. Pending
 /// entry controls execute that original helper against supplied uniform
 /// zones; they do not establish arbitrary map-zone construction. The
 /// destination goes through the Unit setter, so a Chrono Miner drives it.
-///
-/// **Non-human houses take a VERA-internal bridge instead, gamemd equivalent
-/// = AI lane (`AI_Choose_Unit` 0x004FEB7B / `Mission_Guard` arm ii)
-/// UNCHECKED.** Natively an AI miner parked on Guard is brought back by
-/// `UnitClass::Mission_Guard` arm (ii), which re-queues Harvest only while
-/// `House+0x242` is clear — and the scan miss that led here has just set it,
-/// with no clearing writer. What keeps a native AI economy alive after that
-/// is house/team logic (`AI_Choose_Unit` reading `+0x242`, team recruitment),
-/// none of which VERA runs yet (`sim/ai.rs` never issues `HarvestCell` or a
-/// refinery Enter and skips harvesters). Until that lane lands, an AI-house
-/// miner does not park: state 4 drops straight back into the state-0 scan,
-/// which on a miss re-arms the same fixed 105-frame wait (the pre-Guard-park
-/// perpetual re-scan cadence, `House+0x242` still written native-true on
-/// every miss). Returns whether the caller must run the Rate epilogue —
-/// false on the bridge, whose exit is the scan's own.
 fn handle_going_to_idle(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
     frame_effects: FrameEffects<'_>,
-) -> bool {
-    let human = sim
-        .houses
-        .get(&snap.owner)
-        .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
-    if !human {
-        snap.state = MinerState::SearchOre;
-        harvest_looking(sim, rules, overlay_registry, snap, frame_effects);
-        return false;
-    }
+) {
     // 73EF1F selects the first ground Building before its type flags; no
     // dying filter or later matching refinery can replace that identity.
     if let Some(refinery_sid) = sim
@@ -932,7 +914,6 @@ fn handle_going_to_idle(
         );
     }
     queue_guard_from_harvest(sim, snap);
-    true
 }
 
 /// vt+0x480(cell, 1) to the Cell NearbyLocation finds near `refinery`

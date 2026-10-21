@@ -357,6 +357,87 @@ pub(crate) fn read_sequence(
     })
 }
 
+/// One `<DoType>Sounds` frame/name pair as ReadSequenceData reads it, before
+/// VocClass::FindByName (`0x007514D0`) resolves the name.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct SequenceSoundRead {
+    /// The DoType (index into [`NATIVE_SEQUENCE_NAMES`]).
+    pub action: u8,
+    /// The stage frame the sound plays on.
+    pub frame: i32,
+    pub name: String,
+}
+
+/// One bound sequence sound: record `+0x14 + 8k` (frame) and `+0x18 + 8k`
+/// (Voc index, here its canonical ID) of the DoType's record.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SequenceSound {
+    pub action: u8,
+    pub frame: i32,
+    pub sound_id: String,
+}
+
+/// ReadSequenceData's sound half (`0x00523FB9..0x00524079`), run at the end
+/// of every reached InfantryType ReadINI pass (`0x0052473A`). `Sequence=` is
+/// ReadString capacity 0x20 from the ImageFile's ART section
+/// (`0x00523D0D..0x00523D2D`);
+/// without one nothing is read. For each of the 42 DoTypes in table order,
+/// `<DoType>Sounds` (ReadString capacity 0x20) splits with strtok(" ,\t")
+/// into atoi frame / name pairs; a frame with no name ends the list. Every
+/// pair is returned: the name lookup and the two-per-record limit apply
+/// when the names are bound ([`bind_sequence_sounds`]).
+pub(crate) fn read_sequence_sounds(art: &IniFile, image: &str) -> Vec<SequenceSoundRead> {
+    let sequence = art
+        .section_or_empty(image)
+        .read_string("Sequence", "", 0x20);
+    if sequence.is_empty() {
+        return Vec::new();
+    }
+    let section = art.section_or_empty(&sequence);
+    let mut reads = Vec::new();
+    for (action, name) in NATIVE_SEQUENCE_NAMES.iter().enumerate() {
+        let value = section.read_string(&format!("{name}Sounds"), "", 0x20);
+        let mut tokens = crate::rules::ini_value::strtok(&value, &[' ', ',', '\t']);
+        while let Some(frame) = tokens.next() {
+            let Some(name) = tokens.next() else {
+                break;
+            };
+            reads.push(SequenceSoundRead {
+                action: action as u8,
+                frame: crate::rules::ini_value::crt_atoi(frame),
+                name: name.to_owned(),
+            });
+        }
+    }
+    reads
+}
+
+/// The record sounds those reads leave (`0x0052403F..0x0052406C`): in read
+/// order, a pair whose name `find` resolves fills the record's next slot
+/// while it holds fewer than 2; an unknown name skips only its pair.
+pub(crate) fn bind_sequence_sounds(
+    reads: &[SequenceSoundRead],
+    mut find: impl FnMut(&str) -> Option<String>,
+) -> Vec<SequenceSound> {
+    let mut counts = [0u8; NATIVE_SEQUENCE_NAMES.len()];
+    let mut sounds = Vec::new();
+    for read in reads {
+        let Some(sound_id) = find(&read.name) else {
+            continue;
+        };
+        let count = &mut counts[usize::from(read.action)];
+        if *count < 2 {
+            *count += 1;
+            sounds.push(SequenceSound {
+                action: read.action,
+                frame: read.frame,
+                sound_id,
+            });
+        }
+    }
+    sounds
+}
+
 /// Parse a facing direction hint string (e.g., "S", "NE", "W").
 fn parse_facing_hint(s: &str) -> Option<FacingHint> {
     match s {

@@ -92,10 +92,11 @@ fn stock_passenger_pips_follow_real_boarding_departure_and_selection() {
         assert_eq!(frames(&sim, rules, transport, None), empty);
         assert!(sim.apply_command(
             OWNER,
-            &Command::EnterTransport {
-                passenger_id: passenger,
-                transport_id: transport,
-            },
+            &Command::clicked_mission(
+                passenger,
+                crate::sim::mission::MissionType::Enter,
+                crate::sim::combat::TargetKind::Entity(transport)
+            ),
             Some(rules)
         ));
         let grid = sim.path_grid_snapshot().unwrap();
@@ -249,6 +250,62 @@ fn fractional_passenger_pips_match_original_cargo_and_draw_controls() {
             .map(|draw| draw["frame"].as_u64().unwrap() as usize)
             .collect();
         assert_eq!(frames(&sim, &rules, carrier, None), expected, "{control}");
+    }
+}
+
+/// A Yuri Slave has no Miner; its Storage is its SlaveLink's hold. The
+/// storage arm (`0x0070A1E9..0x0070A340`) reads it as it reads a War
+/// Miner's: retail SLAV is `PipScale=Tiberium` with `Storage=4`, three pips
+/// for an infantryman (`0x007162BD`). Expected frames come from the shared
+/// rounding kernel the HARV rows above pin, not from a native SLAV run.
+#[test]
+fn a_slave_shows_the_load_it_carries() {
+    use crate::sim::miner::{CargoBale, ResourceType};
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let rules = &retail.rules;
+    let slave_type = rules.object("SLAV").unwrap();
+    assert_eq!(
+        (slave_type.pip_scale, slave_type.storage),
+        (crate::rules::object_type::PipScale::Tiberium, 4)
+    );
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_arena(&mut sim, rules);
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    let slave = sim.spawn_object("SLAV", OWNER, 16, 16, 64, rules).unwrap();
+    assert!(sim.entities().get(slave).unwrap().miner.is_none());
+    assert!(sim.apply_command(
+        OWNER,
+        &Command::Select {
+            entity_ids: vec![slave],
+            additive: false,
+        },
+        Some(rules)
+    ));
+    for (ore, gems, expected) in [
+        (0, 0, [0, 0, 0]),
+        (1, 0, [2, 0, 0]),
+        (3, 0, [2, 2, 0]),
+        (4, 0, [2, 2, 2]),
+        (2, 2, [5, 5, 2]),
+    ] {
+        let bale = |resource_type| CargoBale {
+            resource_type,
+            value: 0,
+        };
+        let cargo = std::iter::repeat_n(bale(ResourceType::Ore), ore)
+            .chain(std::iter::repeat_n(bale(ResourceType::Gem), gems))
+            .collect();
+        sim.entities_mut_for_test().get_mut(slave).unwrap().slave =
+            crate::sim::slave_manager::SlaveLink::for_test(None, cargo);
+        assert_eq!(
+            frames(&sim, rules, slave, None),
+            expected,
+            "{ore} ore, {gems} gems"
+        );
     }
 }
 

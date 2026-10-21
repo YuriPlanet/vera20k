@@ -174,7 +174,7 @@ pub(crate) fn update(
     //70B5AE's sinking branch writes forwards from that zero state; sparse
     // Rust storage must materialize it on this first native producer.
     if entity.sinking.is_active() {
-        entity.rocking.get_or_insert_with(RockingState::default);
+        entity.rocking_mut();
     }
     let inputs = RockingUpdateInputs {
         direct_rocker_linked: false,

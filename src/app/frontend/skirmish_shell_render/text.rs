@@ -420,40 +420,6 @@ pub(super) fn push_label_draw(
     );
 }
 
-/// A caption whose glyphs stay laid out on `rect` but which is visible only in
-/// `visible` pieces. The open dropdown's panel is blitted before the text pass,
-/// so a covered caption must not paint under it.
-fn push_clipped_label_draw(
-    out: &mut Vec<ShellTextDraw>,
-    state: &AppState,
-    label: &str,
-    rect: RectPx,
-    visible: &[RectPx],
-    depth: f32,
-    scale: f32,
-) {
-    let text = rect_to_text_rect(rect);
-    for piece in visible {
-        let mut draw = shell_text::draw_in_rect_scaled(
-            &state.renderer.bit_font,
-            label,
-            text,
-            SHELL_LABEL_TEXT_RGB,
-            ShellAlign::V_CENTER,
-            [0.0, 0.0],
-            depth,
-            scale,
-        );
-        draw.scissor = shell_text::ScissorRect {
-            x: piece.x.max(0) as u32,
-            y: piece.y.max(0) as u32,
-            w: piece.w.max(0) as u32,
-            h: piece.h.max(0) as u32,
-        };
-        out.push(draw);
-    }
-}
-
 fn rects_intersect(a: RectPx, b: RectPx) -> bool {
     a.w > 0
         && a.h > 0
@@ -476,18 +442,9 @@ fn push_combo_face_label_draw(
     state: &AppState,
     label: &str,
     rect: RectPx,
-    covering_overlays: &[RectPx],
     scale: ShellScale,
 ) {
-    push_combo_face_label_draw_with_color(
-        out,
-        state,
-        label,
-        rect,
-        SHELL_LABEL_TEXT_RGB,
-        covering_overlays,
-        scale,
-    );
+    push_combo_face_label_draw_with_color(out, state, label, rect, SHELL_LABEL_TEXT_RGB, scale);
 }
 
 fn push_combo_face_label_draw_with_color(
@@ -496,13 +453,9 @@ fn push_combo_face_label_draw_with_color(
     label: &str,
     rect: RectPx,
     color: [f32; 3],
-    covering_overlays: &[RectPx],
     scale: ShellScale,
 ) {
     let text_rect = combo_face_text_draw_rect(rect, scale);
-    if text_covered_by_overlay(text_rect, covering_overlays) {
-        return;
-    }
     let fit_width = combo_face_text_fit_width(rect, scale);
     let label = truncate_owner_draw_label(&state.renderer.bit_font, label, fit_width);
     push_text_draw(
@@ -671,14 +624,6 @@ pub(super) fn build_shell_text_draws(
     let mut shell_draws: Vec<ShellTextDraw> = Vec::new();
     let bare_instances: Vec<SpriteInstance> = Vec::new();
     let scale = layout.scale;
-    let mut covering_overlays = Vec::new();
-    if let Some(dropdown) = shell
-        .open_combo_dropdown
-        .and_then(|open| combo_dropdown_rect(shell, layout, maps, open.id))
-    {
-        covering_overlays.push(dropdown);
-    }
-
     if !sliding {
         push_right_panel_text_draws(&mut shell_draws, state, layout, shell);
     }
@@ -712,16 +657,11 @@ pub(super) fn build_shell_text_draws(
     for checkbox in layout.checkboxes {
         let (key, fallback) = checkbox_label(checkbox.id);
         let label = localized_label(state, key, fallback);
-        let text_rect = checkbox_text_rect(checkbox.rect, scale);
-        // The dropdown panel is blitted in the sprite pass, before every
-        // caption, so trim each caption to the parts the open popup leaves
-        // visible. Its glyphs stay laid out on the whole row.
-        push_clipped_label_draw(
+        push_label_draw(
             &mut shell_draws,
             state,
             &label,
-            text_rect,
-            &text_rect.outside(&covering_overlays),
+            checkbox_text_rect(checkbox.rect, scale),
             SHELL_CONTROL_TEXT_DEPTH,
             scale.factor(),
         );
@@ -760,7 +700,6 @@ pub(super) fn build_shell_text_draws(
         state,
         &country_choice_label(state, shell.player_country_random, shell.player_country),
         layout.rows.side_combos[0],
-        &covering_overlays,
         scale,
     );
     if !shell.player_color_claimed {
@@ -770,7 +709,6 @@ pub(super) fn build_shell_text_draws(
             state,
             &random_color,
             layout.color_combos[0],
-            &covering_overlays,
             scale,
         );
     }
@@ -779,7 +717,6 @@ pub(super) fn build_shell_text_draws(
         state,
         &combo_item_label(state, SkirmishComboItem::Start(shell.player_start_position)),
         layout.rows.start_combos[0],
-        &covering_overlays,
         scale,
     );
     push_combo_face_label_draw_with_color(
@@ -790,7 +727,6 @@ pub(super) fn build_shell_text_draws(
         // The local Team combo greys with the mode's AlliesAllowed gate; every
         // other local-row face is unconditionally live.
         combo_face_text_color(!combo_enabled(shell, maps, SkirmishComboId::Team(0))),
-        &covering_overlays,
         scale,
     );
 
@@ -809,7 +745,6 @@ pub(super) fn build_shell_text_draws(
             state,
             &row_type,
             layout.rows.ai_type_combos[idx],
-            &covering_overlays,
             scale,
         );
         let sibling_text_color = opponent_sibling_combo_text_color(opponent);
@@ -819,7 +754,6 @@ pub(super) fn build_shell_text_draws(
             &country_choice_label(state, opponent.country_random, opponent.country),
             layout.rows.side_combos[row],
             sibling_text_color,
-            &covering_overlays,
             scale,
         );
         if !opponent.color_claimed {
@@ -830,7 +764,6 @@ pub(super) fn build_shell_text_draws(
                 &random_color,
                 layout.color_combos[row],
                 sibling_text_color,
-                &covering_overlays,
                 scale,
             );
         }
@@ -840,7 +773,6 @@ pub(super) fn build_shell_text_draws(
             &combo_item_label(state, SkirmishComboItem::Start(opponent.start_position)),
             layout.rows.start_combos[row],
             sibling_text_color,
-            &covering_overlays,
             scale,
         );
         push_combo_face_label_draw_with_color(
@@ -851,11 +783,22 @@ pub(super) fn build_shell_text_draws(
             // Row-active alone does not decide the Team face: the mode's
             // AlliesAllowed gate greys it as well.
             combo_face_text_color(!combo_enabled(shell, maps, SkirmishComboId::Team(row))),
-            &covering_overlays,
             scale,
         );
     }
 
+    (shell_draws, bare_instances)
+}
+
+/// The open ComboDropWin's row captions, painted after every dialog text and
+/// the popup's own frame.
+pub(super) fn build_dropdown_text_draws(
+    state: &AppState,
+    layout: &SkirmishShellLayout,
+    shell: &SkirmishShellState,
+    maps: &[MapMenuEntry],
+) -> Vec<ShellTextDraw> {
+    let mut shell_draws = Vec::new();
     if let Some(open) = shell
         .open_combo_dropdown
         .filter(|open| combo_enabled(shell, maps, open.id))
@@ -889,8 +832,7 @@ pub(super) fn build_shell_text_draws(
             );
         }
     }
-
-    (shell_draws, bare_instances)
+    shell_draws
 }
 
 /// The right panel's button captions.
@@ -1646,17 +1588,6 @@ mod tests {
     use super::*;
     use crate::ui::skirmish_shell::COMBO_DROPDOWN_ROW_H;
 
-    #[test]
-    fn combo_face_text_under_open_dropdown_is_suppressed() {
-        let dropdown = RectPx::new(23, 96, 149, 92);
-        let covered_combo_text = RectPx::new(25, 123, 129, 24);
-        let clear_combo_text = RectPx::new(25, 71, 129, 24);
-
-        assert!(text_covered_by_overlay(covered_combo_text, &[dropdown]));
-        assert!(!text_covered_by_overlay(clear_combo_text, &[dropdown]));
-        assert!(!text_covered_by_overlay(covered_combo_text, &[]));
-    }
-
     /// `0x105` hides a text an open list touches; that is exact only while
     /// every list ends in the gap between rows.
     #[test]
@@ -1691,40 +1622,6 @@ mod tests {
                 }
             }
         }
-    }
-
-    /// A list hinged at the fifth player row reaches the checkbox column; the
-    /// caption under it must keep only the strip the popup leaves outside.
-    #[test]
-    fn checkbox_caption_under_an_ai_type_list_keeps_only_the_uncovered_strip() {
-        use crate::ui::shell::combobox::ComboPopup;
-        use crate::ui::skirmish_shell::{
-            SkirmishComboId, SkirmishShellState, combo_face_rect, combo_items, compute_layout,
-        };
-
-        let maps: &[crate::map::scenario_menu::MapMenuEntry] = &[];
-        let shell = SkirmishShellState::default();
-        let layout = compute_layout(640, 480);
-        let item_count = combo_items(&shell, maps, SkirmishComboId::AiType(4)).len();
-        let list = ComboPopup::new(
-            combo_face_rect(layout.rows.ai_type_combos[4], layout.scale),
-            layout.scale,
-            item_count,
-            0,
-            0,
-        )
-        .rect;
-        let short_game = layout.checkboxes[0];
-        let text = checkbox_text_rect(short_game.rect, layout.scale);
-
-        assert_eq!(list, RectPx::new(59, 214, 150, 92));
-        assert_eq!(text, RectPx::new(97, 286, 124, 16));
-        assert_eq!(
-            text.outside(&[list]),
-            vec![RectPx::new(209, 286, 12, 16)],
-            "the caption's tail is the only part left beside the popup"
-        );
-        assert!(text.outside(&[]).contains(&text));
     }
 
     #[test]

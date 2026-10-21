@@ -1783,3 +1783,38 @@ fn a_tank_promoted_into_the_playfield_reveals_at_its_next_arrival() {
     assert_eq!(promoted_at, Some((11, 10)), "promoted at its first arrival");
     assert_eq!(sight_at, Some((12, 10)), "its sight opens at the next one");
 }
+
+/// Infantry Per_Cell_Process ends its reveal with the Map567DA0 border
+/// (`0x0051A8F1..0x0051A925`): around his current XYZ, out to his cached
+/// radius (`+0x260`) + 3, as the Unit tail's (`0x0073AC7A..0x0073ACAE`).
+#[test]
+fn an_infantry_arrival_refreshes_its_sight_border() {
+    let Some((mut sim, rules, grid)) = retail_arena() else {
+        return;
+    };
+    let man = sim
+        .spawn_object("E1", "Americans", 12, 12, 0, &rules)
+        .unwrap();
+    let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
+    let ((), trace) = trace_reveal_calls(|| {
+        sim.per_cell_process(
+            man,
+            crate::sim::movement::PerCellReason::Arrival,
+            Some(&rules),
+            None,
+            FrameEffects::default(),
+        )
+        .unwrap();
+    });
+
+    let owner = sim.substrate.entities.get(man).unwrap().owner();
+    let radius = sim.fog.sight_admission(man, owner).unwrap().radius;
+    assert!(radius > 0);
+    let z = crate::sim::movement::ground_pose::object_world_z_leptons(
+        sim.substrate.entities.get(man).unwrap(),
+        sim.resolved_terrain.as_ref(),
+    );
+    let border = vision::sight_border_cells((12, 12, z), radius + 3, 0);
+    assert!(!border.is_empty());
+    assert_eq!(trace.border_receivers, border);
+}

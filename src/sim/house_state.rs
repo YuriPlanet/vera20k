@@ -803,12 +803,11 @@ pub struct HouseState {
     ///   production bias).
     ///
     /// No clearing writer exists anywhere: once set it stays set for the rest
-    /// of the match (save/load carries the raw House block). The
-    /// `Mission_Guard` arm (ii) reader is implemented
-    /// (`techno_ai/mission_handlers.rs`, AI houses only); the
-    /// `AI_Choose_Unit` reader belongs to the deferred AI lane, which is why
-    /// AI-house miners take a VERA-internal re-scan bridge instead of the
-    /// native Guard park (`miner_system::handle_going_to_idle`).
+    /// of the match (save/load carries the raw House block). Both readers are
+    /// ported: `Mission_Guard` arm (ii) in `techno_ai/mission_handlers.rs`,
+    /// which keeps an AI-house miner parked on Guard
+    /// (`miner_system::handle_going_to_idle`), and `AI_Choose_Unit` in
+    /// `ai_unit_choice`.
     /// Persisted and hashed (schema v132).
     #[serde(default)]
     harvester_no_ore: bool,

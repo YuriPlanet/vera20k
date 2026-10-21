@@ -108,8 +108,10 @@ pub struct GameplayConfig {
     pub input_delay_ticks: u32,
     /// Freeze a running match while the window is not the foreground, as
     /// gamemd does when `WM_ACTIVATEAPP` clears. Off by default: the match
-    /// keeps simulating and playing audio behind other windows, and only
-    /// input stops. Local pacing policy; never read by the simulation.
+    /// keeps simulating behind other windows, and only input stops. Audio is
+    /// silenced on a deactivated window either way, because gamemd stops its
+    /// primary output on that same edge with nothing configured behind it.
+    /// Local pacing policy; never read by the simulation.
     pub pause_on_focus_loss: bool,
 }
 

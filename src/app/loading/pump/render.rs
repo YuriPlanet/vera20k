@@ -89,9 +89,12 @@ pub(super) fn present_blank(
     batch: &BatchRenderer,
     fps_overlay: &crate::app::diagnostics::fps_overlay::FpsOverlay,
 ) -> anyhow::Result<()> {
-    let output = gpu
+    let Some(output) = gpu
         .acquire_frame()
-        .map_err(|e| anyhow::anyhow!("blank frame surface texture: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("blank frame surface texture: {e}"))?
+    else {
+        return Ok(());
+    };
     let mut encoder = gpu
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -833,7 +836,8 @@ fn build_native_loading_frame_plan(
 ///
 /// Used by the synchronous-repaint sink to mirror gamemd's per-milestone
 /// `WM_PAINT`. All wgpu ops take `&self`, so only shared references are needed.
-/// Returns an error on acquire/upload failure; the caller treats it as non-fatal.
+/// A surface with no frame to give skips the repaint. Returns an error on
+/// acquire/upload failure; the caller treats it as non-fatal.
 pub(super) fn present_native_loading(
     gpu: &GpuContext,
     presenter: &ShellSurfacePresenter,
@@ -851,9 +855,12 @@ pub(super) fn present_native_loading(
     render_size: [u32; 2],
     scale: ShellScale,
 ) -> anyhow::Result<()> {
-    let output = gpu
+    let Some(output) = gpu
         .acquire_frame()
-        .map_err(|e| anyhow::anyhow!("loading repaint surface texture: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("loading repaint surface texture: {e}"))?
+    else {
+        return Ok(());
+    };
     let mut encoder = gpu
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {

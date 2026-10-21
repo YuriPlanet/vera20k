@@ -911,6 +911,7 @@ impl EvaRegistry {
     /// against the fixed catalog. Unknown names retain the prior index;
     /// explicit none clears it. Source: Ares 4f1d9299,
     /// Utilities/TemplateDef.h:444 and Ext/SWType/Body.cpp:78,132.
+    #[cfg(feature = "ares")]
     pub(crate) fn read_rules_reference(
         &self,
         section: Option<&IniSection>,

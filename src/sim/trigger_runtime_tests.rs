@@ -1784,7 +1784,9 @@ fn line_arrival_rereads_later_cell_attachments_after_real_tag_cleanup() {
          [CellTags]\n2003=TAG\n3003=TAG\n",
     );
     let mut terrain = sim.resolved_terrain.take().unwrap();
-    sim.initialize_cell_trigger_lines(
+    let bounds = crate::sim::scenario_bootstrap::NativeStartBounds::from_session(&sim, &terrain);
+    sim.trigger_runtime.initialize_cell_trigger_lines(
+        bounds,
         &mut terrain,
         (1..5).flat_map(|y| (1..5).map(move |x| (x, y))),
     );

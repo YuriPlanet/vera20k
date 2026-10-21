@@ -140,6 +140,14 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
             crate::app::input::restate::mouse(state, button, pressed);
             return;
         }
+        if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::Page
+        {
+            if button == MouseButton::Left {
+                crate::app::shell_wol::page::mouse(state, pressed);
+            }
+            return;
+        }
         if matches!(
             state.match_state.match_presentation.in_game_menu,
             crate::ui::pause_menu::InGameMenuState::SavedGame(_)
@@ -778,6 +786,12 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
             == crate::ui::pause_menu::InGameMenuState::MissionBriefing
         {
             crate::app::input::restate::cursor_moved(state);
+            return;
+        }
+        if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::Page
+        {
+            crate::app::shell_wol::page::cursor_moved(state);
             return;
         }
         if matches!(
@@ -1780,14 +1794,15 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             n as u8 + 1,
             crate::app::match_runtime::frame_pacer::wall_clock_ms(),
         ),
-        // UNCHECKED residual, still no-ops. `PlaceBeacon` should place the
+        HotkeyCommand::PageUser => crate::app::input::page_user::execute(state),
+        // UNCHECKED residual, still a no-op. `PlaceBeacon` should place the
         // beacon and play `[AudioVisual] PlaceBeaconSound` (`Rules+0x1CC`,
-        // stock `BeaconPlaced`). Neither native command handler was read,
+        // stock `BeaconPlaced`). Its native command handler was not read,
         // so no mapping is asserted and nothing is wired. Trigger: pressing
         // the bound key. Player effect: the key does nothing. Frequency:
-        // rare — both are multiplayer social commands. Downstream risk:
-        // beacons are network messages.
-        HotkeyCommand::PlaceBeacon | HotkeyCommand::PageUser => {}
+        // rare — a multiplayer social command. Downstream risk: beacons are
+        // network messages.
+        HotkeyCommand::PlaceBeacon => {}
     }
 }
 

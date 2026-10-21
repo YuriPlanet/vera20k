@@ -216,6 +216,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "ares")]
     #[test]
     fn superweapon_money_eva_reads_retain_catalog_matches_through_layers_and_save() {
         use crate::rules::native_processing::ProcessedRulesLayers;
@@ -305,6 +306,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "ares")]
     #[test]
     fn superweapon_money_eva_keeps_startup_catalog_after_files_change() {
         use crate::rules::process_owner::NativeScenarioRulesPrefix;

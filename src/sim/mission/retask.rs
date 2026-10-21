@@ -154,7 +154,7 @@ impl Simulation {
     /// store to `+0x2B8` or `+0x5A8`. Clearing there would leave a unit parked
     /// after a Stop where retail resumes its archived move on the next Restore.
     ///
-    /// HarvestCell also uses this funnel, retaining its unload-latch reset
+    /// A Harvest order also uses this funnel, retaining its unload-latch reset
     /// after radio Break. EjectBunker and dormant aircraft passenger Unload
     /// still bypass the prefix. These
     /// pre-existing command routes can Restore a cancelled archive; their

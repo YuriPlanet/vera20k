@@ -14,7 +14,7 @@ use crate::map::rmg::tiles::TileIds;
 use crate::map::rmg::x87::{Gaussian, TruncF64, approx_sqrt};
 use crate::util::native_x87::X87Chop53;
 
-use super::blob::MinHeap;
+use super::blob::{CellHeap, by_key};
 
 /// Vegetation percent scale and the per-type base probabilities.
 const VEG_SCALE: f64 = 0.01;
@@ -222,13 +222,13 @@ fn place_patch(ctx: &mut PatchCtx<'_>, origin: (i32, i32), tile: i32, size: i32,
         return;
     }
     let cap = size as usize + HEAP_HEADROOM;
-    let mut heap = MinHeap::new(cap);
+    let mut heap = CellHeap::new(cap);
     ctx.scratch.get_mut(origin.0, origin.1).stamp = patch_id;
-    heap.push(0.0, origin);
+    heap.push((0.0, origin), by_key);
 
     let mut placed = 0;
     while placed < size {
-        let Some((_, (x, y))) = heap.pop() else {
+        let Some((_, (x, y))) = heap.pop(by_key) else {
             break;
         };
         if let Some(cell) = ctx.grid.get_mut(x, y) {
@@ -258,7 +258,7 @@ fn place_patch(ctx: &mut PatchCtx<'_>, origin: (i32, i32), tile: i32, size: i32,
                 .add(jitter)
                 .to_f64() as f32;
             ctx.scratch.get_mut(nx, ny).stamp = patch_id;
-            heap.push(priority, (nx, ny));
+            heap.push((priority, (nx, ny)), by_key);
         }
     }
 }

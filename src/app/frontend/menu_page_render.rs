@@ -222,6 +222,10 @@ pub(crate) fn active_page_title_text(
         ShellSlideKind::WolLobby => crate::ui::wol_shell::WOL_LOBBY_TITLE_KEY,
         ShellSlideKind::WolOptions => crate::ui::wol_options::PAGE.title_key,
         ShellSlideKind::WolSoundOptions => crate::ui::shell::sound::SHELL_SOUND_PAGE.title_key,
+        ShellSlideKind::WolAutoLoginQuery => crate::ui::wol_persona::AUTO_LOGIN_PAGE.title_key,
+        ShellSlideKind::WolLocale => crate::ui::wol_persona::LOCALE_PAGE.title_key,
+        ShellSlideKind::WolMyInformation => crate::ui::wol_my_info::PAGE.title_key,
+        ShellSlideKind::WolBuddyList => crate::ui::wol_buddy::PAGE.title_key,
         ShellSlideKind::Keyboard => crate::ui::shell::keyboard::KEYBOARD_PAGE.title_key,
         ShellSlideKind::NetworkOptions => crate::ui::network_options::PAGE.title_key,
         ShellSlideKind::LanLobby => crate::ui::lan_shell::PAGE.title_key,
@@ -229,12 +233,20 @@ pub(crate) fn active_page_title_text(
         ShellSlideKind::ChooseMap => crate::ui::skirmish_shell::CHOOSE_MAP_TITLE_KEY,
         ShellSlideKind::RandomMap => crate::ui::skirmish_shell::RANDOM_MAP_TITLE_KEY,
         // The Options heading is the dialog's own resolved label.
-        ShellSlideKind::Options => {
+        ShellSlideKind::Options | ShellSlideKind::VeraOptions => {
             return state
                 .frontend
                 .options_dialog
                 .as_ref()
-                .map(|dialog| dialog.shell_title_text().to_owned())
+                .map(|dialog| {
+                    crate::app::chinese_ui::custom_text(
+                        dialog.shell_title_text(),
+                        crate::app::chinese_ui::enabled(
+                            state.platform.capture_client_size.is_some(),
+                        ),
+                    )
+                    .into_owned()
+                })
                 .unwrap_or_default();
         }
         // These dialogs set their headings themselves.

@@ -90,11 +90,27 @@ impl Simulation {
         if super_instance(self, owner, sw_type_id).is_none() {
             return false;
         }
+        // Refuse extension identities before any paired-state, charge, wallet,
+        // RNG or presentation writes, including manually forged rule records.
+        #[cfg(not(feature = "ares"))]
+        {
+            let _ = automatic;
+            if selection.is_some()
+                || matches!(
+                    sw.kind,
+                    SuperWeaponKind::GenericWarhead | SuperWeaponKind::UnitDelivery
+                )
+            {
+                return false;
+            }
+        }
         // Burn a well-formed explicit source request's ID even if admission
         // later refuses (e.g. funds changed while queued). Otherwise an old
         // cancel/final for that refused request could match a future retry.
         // This is sequence metadata only: no wallet, charge or pair is touched.
+        #[cfg(feature = "ares")]
         let requested_source = selection.filter(|_| sw.pre_click && !sw.post_click);
+        #[cfg(feature = "ares")]
         if let Some(request) = requested_source {
             let Some(next) = self.next_paid_super_weapon_selection(rules, owner, sw_type_id) else {
                 return false;
@@ -112,14 +128,17 @@ impl Simulation {
         // Optional extension preflight precedes paired-Super writes, effects,
         // defense alerts and charge consumption. Stock-only commands retain
         // their native behavior, including native refused-click side effects.
+        #[cfg(feature = "ares")]
         if sw.building_requirements.is_some()
             && !super::building_requirements_met(self, rules, owner, sw)
         {
             return false;
         }
+        #[cfg(feature = "ares")]
         if super::targeting::check(self, rules, owner, sw, cell, automatic).is_err() {
             return false;
         }
+        #[cfg(feature = "ares")]
         if sw.kind == SuperWeaponKind::UnitDelivery
             && !super::unit_delivery::admits(self, rules, owner, sw, cell)
         {
@@ -130,14 +149,18 @@ impl Simulation {
             .then(|| super::pre_dependent(rules, sw))
             .flatten()
             .and_then(|(name, pre)| Some((self.interner.get(name)?, pre)));
+        #[cfg(feature = "ares")]
         let paid_source = super::two_stage::destination_for_source(self, rules, sw_type_id, sw);
+        #[cfg(feature = "ares")]
         let paid_final = paired.filter(|_| super::paid_pair_source(rules, sw).is_some());
+        #[cfg(feature = "ares")]
         if paid_source.is_none()
             && paid_final.is_none()
             && !super::money::configuration_supported(sw)
         {
             return false;
         }
+        #[cfg(feature = "ares")]
         if let Some((source, source_sw)) = paid_final {
             let Some(ticket) = selection else {
                 return false;
@@ -164,6 +187,7 @@ impl Simulation {
         } else if selection.is_some() && paid_source.is_none() {
             return false;
         }
+        #[cfg(feature = "ares")]
         let source_ticket = if paid_source.is_some() {
             if !super::two_stage::source_available(self, rules, owner, sw_type_id, sw) {
                 return false;
@@ -179,10 +203,13 @@ impl Simulation {
         };
         // PostClick takes SOURCE settings (Ares SWTypeExt::Launch), even when
         // the destination has a different fee or grant. No second wallet exists.
+        #[cfg(feature = "ares")]
         let payment = paid_final.unwrap_or((sw_type_id, sw));
+        #[cfg(feature = "ares")]
         let guarded = paid_source.is_some() || paid_final.is_some() || sw.money_amount != 0;
         // Explicit extension only: all admission precedes paired-Super writes.
         // Stock zero-cost Fire_SW retains its native refused-click tail.
+        #[cfg(feature = "ares")]
         if guarded
             && (!(if paid_source.is_some() || paid_final.is_some() {
                 super::targeting::on_map(self, cell)
@@ -199,6 +226,7 @@ impl Simulation {
         {
             return false;
         }
+        #[cfg(feature = "ares")]
         if paid_source.is_some() {
             Self::retire_paid_selections(
                 &mut self.substrate,
@@ -217,6 +245,12 @@ impl Simulation {
                 .expect("retained fired Super")
                 .chrono_cell = cell;
         }
+        #[cfg(feature = "ares")]
+        let click_payment = paid_source.is_none().then_some(payment);
+        #[cfg(feature = "ares")]
+        let selecting_paid_source = paid_source.is_some();
+        #[cfg(not(feature = "ares"))]
+        let (click_payment, selecting_paid_source) = (None, false);
         let called_launch = click_fire(
             self,
             rules,
@@ -226,22 +260,21 @@ impl Simulation {
             cell,
             overlay_registry,
             frame_effects,
-            if paid_source.is_some() {
-                None
-            } else {
-                Some(payment)
-            },
-            paid_source.is_some(),
+            click_payment,
+            selecting_paid_source,
         );
+        #[cfg(feature = "ares")]
         if !called_launch && guarded {
             return false;
         }
+        #[cfg(feature = "ares")]
         if let Some(ticket) = source_ticket {
             let instance = super_instance(self, owner, sw_type_id).expect("retained source");
             instance.paid_sequence = ticket.sequence;
             instance.paid_selection = Some(ticket);
         }
         if let Some((pre_type, pre_sw)) = paired {
+            #[cfg(feature = "ares")]
             if paid_final.is_some() {
                 let frame = self.session.binary_frame();
                 let source = super_instance(self, owner, pre_type).expect("retained paired source");
@@ -263,6 +296,7 @@ impl Simulation {
                 .expect("retained paired Super")
                 .stop_preclick(pre_sw, frame);
         }
+        #[cfg(feature = "ares")]
         if called_launch && paid_source.is_none() && paid_final.is_none() {
             Self::retire_paid_selections(
                 &mut self.substrate,
@@ -313,14 +347,22 @@ fn click_fire(
     selecting_paid_source: bool,
 ) -> bool {
     // Paid launches passed this same owner before the outer transaction writes.
-    if sw.money_amount == 0 && !click_fire_admission(sim, owner, sw_type_id, sw) {
+    #[cfg(feature = "ares")]
+    let needs_native_admission = sw.money_amount == 0;
+    #[cfg(not(feature = "ares"))]
+    let needs_native_admission = true;
+    #[cfg(not(feature = "ares"))]
+    let _ = (payment, selecting_paid_source);
+    if needs_native_admission && !click_fire_admission(sim, owner, sw_type_id, sw) {
         return false;
     }
+    #[cfg(feature = "ares")]
     if sw.kind == SuperWeaponKind::GenericWarhead
         && !super::generic_warhead::can_launch(sim, rules, sw, cell)
     {
         return false;
     }
+    #[cfg(feature = "ares")]
     if let Some((money_type, money_sw)) = payment
         && money_sw.money_amount != 0
         && !super::money::transact(
@@ -356,12 +398,13 @@ fn click_fire(
     }
     let frame = sim.session.binary_frame();
     if let Some(instance) = sim.super_weapons.instance_mut(&owner, &sw_type_id) {
+        #[cfg(feature = "ares")]
         if selecting_paid_source {
             // Selection neither consumes a one-time grant nor starts recharge.
             instance.is_ready = false;
-        } else {
-            instance.finish_click_fire(sw, frame);
+            return true;
         }
+        instance.finish_click_fire(sw, frame);
     }
     true
 }
@@ -411,6 +454,7 @@ fn launch(
 ) {
     use super::paradrop::ParaDropKind;
     match sw.kind {
+        #[cfg(feature = "ares")]
         SuperWeaponKind::UnitDelivery => {
             super::unit_delivery::launch(
                 sim,
@@ -423,6 +467,8 @@ fn launch(
                 frame_effects,
             );
         }
+        #[cfg(not(feature = "ares"))]
+        SuperWeaponKind::GenericWarhead | SuperWeaponKind::UnitDelivery => {}
         SuperWeaponKind::MultiMissile => {
             super::nuke::launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
         }
@@ -503,6 +549,7 @@ fn launch(
         SuperWeaponKind::SpyPlane => {
             super::spy_plane::launch(sim, rules, owner, sw_type_id, (rx, ry), frame_effects);
         }
+        #[cfg(feature = "ares")]
         SuperWeaponKind::GenericWarhead => {
             super::generic_warhead::launch(
                 sim,

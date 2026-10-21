@@ -149,7 +149,7 @@ fn weapon(slot: &Value, input: &Value) -> Option<WeaponFacts> {
             psychedelic: flag(&warhead["psychedelic"]),
             bomb_disarm: flag(&warhead["bomb_disarm"]),
             // `FCOMP` then `TEST AH,0x40`: C3 is set for equal and unordered.
-            verses_zero: verses == 0.0 || verses.is_nan(),
+            armor_rejects_fire: verses == 0.0 || verses.is_nan(),
         }),
         projectile: ProjectileFacts {
             aa: flag(&projectile["aa"]),
@@ -338,7 +338,7 @@ fn facts(input: &Value) -> FireFacts {
             is_simple_deployer: flag(&tt["is_simple_deployer"]),
             non_vehicle: flag(&tt["non_vehicle"]),
             // The fixture's BuildingType is not a 1x1 undeployer.
-            building_vehicle: false,
+            is_1x1_with_undeploy: false,
         },
     }
 }

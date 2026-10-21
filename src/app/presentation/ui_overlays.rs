@@ -1418,15 +1418,15 @@ pub(crate) fn scale_pip_draws(
     if object.pip_scale != crate::rules::object_type::PipScale::Tiberium {
         return pips;
     }
-    let Some(miner) = &entity.miner else {
-        return pips;
-    };
-    let gems = miner
-        .cargo()
+    //70A1E9..70A340 reads the Techno's Storage (+0x33C) for every
+    //PipScale=Tiberium type, with no harvester or slave test: a Yuri Slave
+    //shows the load it digs as a War Miner does.
+    let bales = entity.storage_bales();
+    let gems = bales
         .iter()
         .filter(|bale| bale.resource_type == crate::sim::miner::ResourceType::Gem)
         .count();
-    let ore = miner.cargo().len() - gems;
+    let ore = bales.len() - gems;
     let maximum = object.pip_max(rules);
     let slots = usize::try_from(maximum).unwrap_or(0);
     //70A230..29C independently rounds Storage slot1 (gems) and (slot3+2)+0

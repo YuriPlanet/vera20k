@@ -70,7 +70,7 @@ pub(crate) struct LocomotorHashFields<'a> {
 /// active mechanism it holds. It is one complete locomotor object: a
 /// piggyback suspends the whole object in the new active object's `piggyback`
 /// slot and restores it, keeping only the Foot's layer (see
-/// [`piggyback::end`]).
+/// [`Self::end_piggyback`]).
 ///
 /// `balloon_hover`, `speed_type` and `movement_zone` cache the
 /// Foot's type: set at construction, copied into a BEGIN's temporary and never
@@ -563,10 +563,13 @@ impl LocomotorState {
     }
 
     /// Begin a piggyback: a fresh `kind` object suspends the active one, with
-    /// any stash of its own, and becomes active. Native BEGIN refuses only
-    /// when the fresh object's own slot is occupied, which it never is.
+    /// any stash of its own, and becomes active. Every native BEGIN site
+    /// installs a freshly constructed object ([`Self::fresh_linked`]), and
+    /// BEGIN refuses only when that object's own slot is occupied, which it
+    /// never is.
     pub fn begin_piggyback(&mut self, kind: LocomotorKind, binary_frame: u32) -> bool {
-        piggyback::begin(self, kind, binary_frame) == piggyback::BeginOutcome::Installed
+        let incoming = self.fresh_linked(kind, binary_frame);
+        piggyback::begin_with(self, Some(incoming)) == piggyback::BeginOutcome::Installed
     }
 
     /// [`Self::begin_piggyback`] with the fresh object linked to the Foot's
@@ -586,11 +589,22 @@ impl LocomotorState {
         installed
     }
 
-    /// End the active piggyback, restoring the stashed locomotor.
+    /// `End_Piggyback` (`0x004AF930`) and the install its callers make: make
+    /// the suspended object active again. Answers the displaced temporary,
+    /// which the caller then releases; `None` is native `S_FALSE` (no
+    /// suspended object). Native's `E_POINTER` arm (a null out-pointer) has no
+    /// Rust caller.
     ///
-    /// Returns whether anything was stashed.
-    pub fn end_piggyback(&mut self) -> bool {
-        piggyback::end(self).is_some()
+    /// The restored object keeps everything from its BEGIN except the layer,
+    /// which is the Foot's: END (`0x004AF930`) does not move the Foot, and
+    /// Drive and Teleport both answer Ground from `In_Which_Layer`
+    /// (`0x004B4820`, `0x00719E20`), so a Foot that drove onto or off a bridge
+    /// deck stays there.
+    pub fn end_piggyback(&mut self) -> Option<LocomotorState> {
+        let stashed = self.piggyback.take()?;
+        let released = std::mem::replace(self, stashed.into_active());
+        self.layer = released.layer;
+        Some(released)
     }
 
     /// Power this locomotor back on.
@@ -649,20 +663,17 @@ impl LocomotorState {
         self.piggyback.as_mut()
     }
 
-    /// BEGIN keeps the displaced object beneath the incoming one.
-    pub(crate) fn stash(&mut self, displaced: StashedLocomotor) {
-        self.piggyback = Some(displaced);
+    /// BEGIN's install: `incoming` becomes the active object, with this one
+    /// and any stash of its own suspended whole beneath it.
+    pub(in crate::sim::movement) fn suspend_beneath(&mut self, incoming: LocomotorState) {
+        let displaced = std::mem::replace(self, incoming);
+        self.piggyback = Some(StashedLocomotor::new(displaced));
     }
 
     /// A fixture's suspended object.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_piggyback_for_test(&mut self, piggyback: Option<StashedLocomotor>) {
         self.piggyback = piggyback;
-    }
-
-    /// Take the suspended object out (END).
-    pub(crate) fn take_piggyback(&mut self) -> Option<StashedLocomotor> {
-        self.piggyback.take()
     }
 
     /// Class-local state of this locomotor object.
@@ -705,12 +716,6 @@ impl LocomotorState {
     /// The Foot's layer, cached on the active object.
     pub(crate) fn layer(&self) -> MovementLayer {
         self.layer
-    }
-
-    /// END (`0x004AF930`) keeps the Foot's layer: the restored object takes
-    /// the released temporary's, since END does not move the Foot.
-    pub(crate) fn inherit_layer(&mut self, released: &LocomotorState) {
-        self.layer = released.layer;
     }
 
     /// A fixture's layer.

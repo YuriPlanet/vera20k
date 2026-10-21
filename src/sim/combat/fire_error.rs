@@ -36,13 +36,15 @@
 //! - B7: the upgrade turret (`0x004527D0`'s upgrade walk; `turret_upgrade`).
 //! - A1: a paradrop plane's payload (`+0x6C9`, `paradrop_payload`).
 //!
-//! U6's Building vehicle predicate is supplied by the production query:
-//! undeploys into a unit and stands on one cell (`0x00457620` -> `0x00465D40`).
+//! U6 asks the target's vt+0x80 through [`super::vehicle_like`]. A Building's
+//! answer is a fact the production query supplies: it undeploys into a unit
+//! and stands on one cell (`0x00457620` -> `0x00465D40`).
 //! No retail building qualifies (the Construction Yards are 4x4).
 //!
 //! T19 (ObjectClass `+0x8D`, `GameEntity::is_falling_down`) fires during a
 //! paradrop's descent, its one VERA producer; no other fall is represented.
 
+use crate::map::entities::EntityCategory;
 use crate::sim::combat::Health;
 
 /// The codes, as every producer returns them (`MOV EAX, imm32`).
@@ -113,6 +115,17 @@ impl FireTargetKind {
     /// `AbstractFlags & 2`.
     fn is_object(self) -> bool {
         self.is_techno() || self == Self::Object
+    }
+
+    /// A Techno target's class.
+    fn techno_class(self) -> Option<EntityCategory> {
+        match self {
+            Self::Unit => Some(EntityCategory::Unit),
+            Self::Infantry => Some(EntityCategory::Infantry),
+            Self::Aircraft => Some(EntityCategory::Aircraft),
+            Self::Building => Some(EntityCategory::Structure),
+            Self::None | Self::Cell | Self::Object => None,
+        }
     }
 }
 
@@ -209,9 +222,9 @@ pub(crate) struct WarheadFacts {
     pub is_locomotor: bool, // +0x15B
     pub psychedelic: bool,  // +0x16D
     pub bomb_disarm: bool,  // +0x16E
-    /// `Verses[target Armor]` compares equal to 0.0 (T54: `TEST AH,0x40`
-    /// after `FCOMP`, so -0.0 and NaN count too).
-    pub verses_zero: bool,
+    /// Rule-owned armor interaction refuses this target. Vanilla T54 uses
+    /// `FCOMP` zero/unordered; Ares100542A0 uses its independent fire flag.
+    pub armor_rejects_fire: bool,
 }
 
 /// A BulletTypeClass.
@@ -468,8 +481,8 @@ pub(crate) struct TargetTypeFacts {
     /// UnitType `+0xE13` and `+0xE1B`.
     pub is_simple_deployer: bool,
     pub non_vehicle: bool,
-    /// A Building target counts as a vehicle for U6 (vt+0x80, `0x00457620`).
-    pub building_vehicle: bool,
+    /// [`ObjectType::is_1x1_with_undeploy`], a Building's vt+0x80 answer.
+    pub is_1x1_with_undeploy: bool,
 }
 
 impl Default for TargetTypeFacts {
@@ -486,7 +499,7 @@ impl Default for TargetTypeFacts {
             organic: false,
             is_simple_deployer: false,
             non_vehicle: false,
-            building_vehicle: false,
+            is_1x1_with_undeploy: false,
         }
     }
 }
@@ -617,16 +630,17 @@ fn unit(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> Fir
         return FireError::Cant;
     };
     // U6 `0x007410F9..0x00741138`: a healing weapon fires only at a damaged
-    // vehicle.
+    // vehicle, the vt+0x80 of a Techno target (AsTechno `0x0040DD20`).
     if weapon_value(facts, query) < 0 {
         let target = &facts.target;
-        let vehicle = match target.kind {
-            FireTargetKind::Unit => !facts.target_type.non_vehicle,
-            // Aircraft vt+0x80 `0x0041B910` jumps to vt+0x50.
-            FireTargetKind::Aircraft => query.low_flying(),
-            FireTargetKind::Building => facts.target_type.building_vehicle,
-            _ => false,
-        };
+        let vehicle = target.kind.techno_class().is_some_and(|class| {
+            super::vehicle_like(
+                class,
+                facts.target_type.non_vehicle,
+                facts.target_type.is_1x1_with_undeploy,
+                || query.low_flying(),
+            )
+        });
         if !vehicle || target.health.is_full(facts.target_type.strength) {
             return FireError::Illegal;
         }
@@ -1071,7 +1085,7 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     if kind.is_techno() {
         if (warhead.parasite && target.iron_curtained)
             || (warhead.mind_control && !query.can_capture())
-            || warhead.verses_zero
+            || warhead.armor_rejects_fire
             || (warhead.bomb_disarm && !target.bomb)
             || (warhead.ivan_bomb && target.bomb)
             || target.sinking

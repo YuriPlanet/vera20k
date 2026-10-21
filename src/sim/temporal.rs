@@ -73,10 +73,9 @@
 //!   its Chronosphere warp-out (60 frames). Effect: VERA keeps the object
 //!   frozen until the chain lets go; native thaws it once its warp-in ends,
 //!   or when the chain lets go before the warp.
-//! - `Mark(2)` at warp start and release (vtable `+0x124`) and the building's
-//!   animation-slot translucency/fades (`0x004521C0`/`0x00452210`, Anim+119,
-//!   distinct from the power pause at+19E) are presentation; their independent online latch is
-//!   [`GameEntity::building_online`].
+//! - `Mark(2)` at warp start and release (vtable `+0x124`) is presentation.
+//!   A building's online latch and slot-anim freeze (`0x004521C0`/`0x00452210`)
+//!   are `ObjectSubstrate::set_building_online_for_temporal`.
 //! - House `+0x1FC`, set at a building's warp start (`0x0071B13A`), release
 //!   (`0x0071AC49`, `0x0071AD17`) and erase (`0x0071AA60`), asks the House
 //!   update for the Super passes (`0x004F92F6`, `0x004F92FD`). VERA tests a
@@ -471,10 +470,7 @@ impl Simulation {
                 }
             }
         }
-        // 0x0071B0EA sets `+0x270`, which the head above stands for; a
-        // building's independent online latch is forced off (`0x004521C0`).
-        self.substrate
-            .set_building_online_for_temporal(target, false);
+        // 0x0071B0EA sets `+0x270`, which the head above stands for.
         // 0x0071B0FC..0x0071B10B: a gattling victim winds down one tick.
         if self
             .substrate
@@ -485,13 +481,18 @@ impl Simulation {
         {
             self.gattling_update(target, rules, 1, effects);
         }
-        // 0x0071B14E..0x0071B162: a victim that was itself warping lets go.
+        // 0x0071B110..0x0071B13A: a building marks its House's power, then
+        // forces its independent online latch off and freezes its slot anims
+        // (`0x004521C0`), then marks the House's Super passes.
         if let Some(owner) = self.substrate.entities.get(target).and_then(|entity| {
             (entity.category() == EntityCategory::Structure).then_some(entity.owner())
         }) {
             Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false); //71B126, before release
+            self.substrate
+                .set_building_online_for_temporal(target, false); //71B12F
             self.houses.request_house_tech_tree_recheck(owner); //71B13A
         }
+        // 0x0071B14E..0x0071B162: a victim that was itself warping lets go.
         Self::temporal_release_if_warping(
             &mut self.substrate,
             &mut self.houses,

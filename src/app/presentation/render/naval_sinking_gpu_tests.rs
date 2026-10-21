@@ -81,6 +81,7 @@ fn native_sinking_clip_survives_camera_scissor_and_ground_upload() {
                 std::array::from_fn(|i| input["caller_rect"][i].as_u64().unwrap() as u32);
             draw_native_object_pass(
                 &mut encoder,
+                crate::app::render::merge_passes::ObjectDrawPhase::Display,
                 &cv,
                 &dv,
                 &mut terrain,
@@ -304,6 +305,7 @@ fn assert_ground_pose_upload_and_replay(
                     );
                     let stats = draw_native_object_pass(
                         &mut encoder,
+                        crate::app::render::merge_passes::ObjectDrawPhase::Display,
                         &cv,
                         &dv,
                         &mut terrain,

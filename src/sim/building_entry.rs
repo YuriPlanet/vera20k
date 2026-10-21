@@ -65,7 +65,7 @@
 //!   [`Simulation::clear_human_absorber_seek_on_unload`].
 //! - A tank bunker entry runs through VERA's bunker adapter
 //!   ([`crate::sim::docking::bunker_link::begin_entry`]), as a player's
-//!   EnterBunker order does. In place of the destination (vt+0x480(bunker,
+//!   Enter click on it does. In place of the destination (vt+0x480(bunker,
 //!   1)), whose setter sends the bunker DOCKING (for a unit
 //!   `0x00741DCC..0x00741DDA`), the HELLO that makes the Foot the bunker's
 //!   first radio contact, and the receiver's DOCKING arm with its bunker

@@ -196,12 +196,24 @@ pub struct ArtEntry {
     /// Animation `StartSound=` sound ID. Takes priority over `Report=`.
     pub start_sound: Option<String>,
     /// Signed building brightness addition (ExtraLight= in art.ini).
-    /// DrawBody 0043D824 adds signed BuildingType+1548 to top-cell brightness;
-    /// buildup 0043D644 omits it. It is separate from NormalZAdjust.
+    /// DrawBody 0043D824 adds signed BuildingType+1548 to top-cell brightness
+    /// for the body and Buildup alike; the gate branch 0043D644 omits it. It
+    /// is separate from NormalZAdjust.
     /// Retail values: GADPSA=350, GAICBM=-100.
     pub extra_light: i32,
     /// BuildingType +0x1702, art parser 004612B4: use the cell ISO Convert.
     pub terrain_palette: bool,
+    /// `UseBuffer=` (TechnoType `+0xDAC`): constructor `0x00710AF0` writes
+    /// false; `TechnoTypeClass::ReadINI` (`0x0071576F..0x0071578D`) reads it
+    /// with ReadBool (`0x005295F0`) from the ART INI under the type's own ID,
+    /// not its `Image=`, the current byte as default. Read through
+    /// [`ArtRegistry::use_buffer`]; it selects the depth-tested voxel raster.
+    pub use_buffer: bool,
+    /// `CanBeHidden=` (TechnoType `+0x724`): constructor `0x00711229` writes
+    /// true; ReadINI (`0x007121EB..0x00712202`) reads it the same way as
+    /// `UseBuffer=`, with ReadBool from the ART INI under the type's own ID.
+    /// Projected onto `ObjectType::can_be_hidden`.
+    pub can_be_hidden: bool,
     /// `QueueingCell=` (BuildingType+0x1618/+0x161C): `ReadMinMax @ 0x00529880`
     /// on the ARTMD section at `0x00461506`, default `(0, 0)`. Mission_Harvest
     /// adds the low words to the dock's NW cell for the waiting miner's staging
@@ -1310,6 +1322,8 @@ impl ArtRegistry {
                     start_sound,
                     extra_light,
                     terrain_palette: section.read_bool("TerrainPalette", false),
+                    use_buffer: section.read_bool("UseBuffer", false),
+                    can_be_hidden: section.read_bool("CanBeHidden", true),
                     queueing_cell,
                     pads,
                     damage_fire_offsets,
@@ -1616,6 +1630,34 @@ impl ArtRegistry {
             .get(&type_id.to_uppercase())
             .copied()
             .unwrap_or(true)
+    }
+
+    /// A TechnoType's `UseBuffer=`, from the ART section named by its exact
+    /// type ID ([`ArtEntry::use_buffer`]); false without that section.
+    pub fn use_buffer(&self, type_id: &str) -> bool {
+        self.entries
+            .get(type_id)
+            .is_some_and(|entry| entry.use_buffer)
+    }
+
+    /// A TechnoType's `CanBeHidden=`, from the ART section named by its exact
+    /// type ID ([`ArtEntry::can_be_hidden`]); the constructor's true without
+    /// that section.
+    pub fn can_be_hidden(&self, type_id: &str) -> bool {
+        self.entries
+            .get(type_id)
+            .is_none_or(|entry| entry.can_be_hidden)
+    }
+
+    /// A TechnoType's custom palette name (`Palette=`, `+0xDD0`) from the ART
+    /// section its ImageFile names (`+0x1F8`: the rules `Image=`, else the type
+    /// ID). `TechnoTypeClass::ReadINI` reads it with ReadString, capacity
+    /// 0x20, on `0x00887180` under `ESI = this+0x1F8` (`0x007157B5`,
+    /// `0x0071582B..0x0071584B`); the constructor clears it (`0x007116A7`).
+    pub fn techno_palette(&self, image: &str) -> Option<&str> {
+        self.entries
+            .get(image)
+            .and_then(|entry| entry.palette.as_deref())
     }
 
     /// Hidden-occupancy height from art.ini `OccupyHeight=`.
@@ -1981,33 +2023,6 @@ pub fn object_shp_candidates(
     }
 
     push_shp_pair(&mut candidates, &upper, theater_ext);
-    candidates
-}
-
-/// Generate filename candidates for building make/build-up art.
-pub fn make_shp_candidates(
-    art: Option<&ArtRegistry>,
-    image_id: &str,
-    theater_ext: &str,
-    theater_name: &str,
-) -> Vec<String> {
-    let upper: String = image_id.to_uppercase();
-    let mut candidates: Vec<String> = Vec::with_capacity(6);
-    let use_new_theater: bool = art
-        .map(|registry| registry.should_use_new_theater(&upper))
-        .unwrap_or_else(|| has_hardcoded_new_theater_prefix(&upper));
-
-    if use_new_theater {
-        let subbed: String = apply_theater_letter(&upper, theater_name);
-        push_shp_pair(&mut candidates, &format!("{}MK", subbed), theater_ext);
-
-        let generic: String = apply_generic_letter(&upper);
-        if generic != subbed && generic != upper {
-            push_shp_pair(&mut candidates, &format!("{}MK", generic), theater_ext);
-        }
-    }
-
-    push_shp_pair(&mut candidates, &format!("{}MK", upper), theater_ext);
     candidates
 }
 

@@ -9,6 +9,7 @@ pub(crate) mod commands;
 pub(crate) mod options;
 pub(crate) mod options_profile;
 mod resource_load;
+pub(crate) mod wol_profile;
 pub(crate) use resource_load::{PreparedSavedGame, SavedGamePreparationView};
 
 use std::path::{Path, PathBuf};
@@ -501,7 +502,7 @@ impl SaveRepository {
     /// `LoadOptionsClass__HasLoadableSave` `0x00559C20`.
     pub(crate) fn has_browser_entry(&self) -> bool {
         self.readable_entries()
-            .any(|(entry, _)| entry.header.is_current_version())
+            .any(|(entry, _)| entry.header.is_compatible())
     }
 
     /// Saves whose header reads, with their file time, in directory order.

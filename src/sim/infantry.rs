@@ -396,10 +396,6 @@ impl crate::sim::world::Simulation {
 // Idle actions
 // ---------------------------------------------------------------------------
 
-/// Lower end of the idle wait, in frames per unit of `IdleActionFrequency`.
-const IDLE_WAIT_FLOOR_FRAMES: i32 = 450;
-/// Upper end of the idle wait, in frames per unit of `IdleActionFrequency`.
-const IDLE_WAIT_CEILING_FRAMES: i32 = 1800;
 /// Inclusive top of the draw gamemd uses as the idle wait's random fraction,
 /// scaled by the recorded native reciprocal at `0x007E3570`.
 const IDLE_WAIT_FRACTION_MAX: u32 = 0x7fff_fffe;
@@ -434,35 +430,6 @@ enum IdleAction {
     Fidget2,
     /// Rolls 6, 8, 9, 10 — turn to a random facing.
     TurnInPlace,
-}
-
-/// The frames an infantryman waits before his next idle turn.
-///
-/// Infantry51CDD9..51CE26 stores the two products as doubles, reloads their
-/// difference, scales the signed draw by native7E3570, then consumes ftol's low
-/// DWORD. The timer controls subsequent Scenario draws: the old milliunit
-/// ratio changed this outcome for reader-admitted frequencies. Reuse the
-/// existing deterministic arithmetic owner instead of quantizing or clamping.
-/// Native execution: `anytown_damage/foot_missions` idle controls.
-fn idle_wait_frames(frequency: f64, fraction: u32) -> u32 {
-    use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
-    let frequency = X87::load_f64(NativeF64Bits::from_bits(frequency.to_bits()));
-    let ceiling = X87::load_f64(X87::store_f64_masked_chop(X87::mul(
-        frequency,
-        X87::load_i32(IDLE_WAIT_CEILING_FRAMES),
-    )));
-    let floor = X87::load_f64(X87::store_f64_masked_chop(X87::mul(
-        frequency,
-        X87::load_i32(IDLE_WAIT_FLOOR_FRAMES),
-    )));
-    let fraction = X87::mul(
-        X87::load_i32(fraction as i32),
-        X87::load_f64(crate::sim::rng::RANDOM_RANGED_UNIT_SCALE),
-    );
-    X87::ftol_i32_low_masked(X87::add(
-        X87::mul(X87::sub(ceiling, floor), fraction),
-        floor,
-    )) as u32
 }
 
 /// Turn one idle roll into the action it selects.
@@ -534,12 +501,15 @@ fn select_idle_action(
     if !idle_action_ready(entity, frame)? {
         return Ok(IdleTurn::Refused);
     }
-    let wait = idle_wait_frames(
-        frequency,
+    // 51CDD9..51CE26: the timer controls subsequent Scenario draws, so its
+    // frames take the native arithmetic, unquantized and unclamped.
+    // Native execution: `anytown_damage/foot_missions` idle controls.
+    let (wait, _) = crate::util::native_random::minutes_timer_frames(
+        crate::util::native_x87::NativeF64Bits::from_bits(frequency.to_bits()),
         rng.next_range_u32_inclusive(0, IDLE_WAIT_FRACTION_MAX),
     );
     let infantry = entity.infantry.as_mut().expect("admitted Infantry");
-    infantry.idle_action_timer.defer(frame, wait);
+    infantry.idle_action_timer.defer(frame, wait as u32);
     //51CE35..3E precede both the panic gate and every action/facing draw.
     if object.fraidycat && !controlled_by_human && infantry.fear_level > IDLE_PANIC_FEAR {
         return Ok(IdleTurn::NullSourceScatter);
@@ -1496,7 +1466,12 @@ mod tests {
                 .iter()
                 .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
                 .collect();
-            f64::from_le_bytes(bytes.try_into().unwrap())
+            crate::util::native_x87::NativeF64Bits::from_bits(u64::from_le_bytes(
+                bytes.try_into().unwrap(),
+            ))
+        };
+        let wait = |frequency, draw| {
+            crate::util::native_random::minutes_timer_frames(frequency, draw).0 as u32
         };
         let original = native["rows"]
             .as_array()
@@ -1525,11 +1500,11 @@ mod tests {
             .as_str()
             .unwrap();
         assert_eq!(
-            idle_wait_frames(bits(constructor_frequency), draw(original)),
+            wait(bits(constructor_frequency), draw(original)),
             original["after"]["idle_timer"][2].as_u64().unwrap() as u32,
         );
         assert_eq!(
-            idle_wait_frames(
+            wait(
                 bits(
                     retail["input"]["idle_control"]["idle_action_frequency_bits"]
                         .as_str()

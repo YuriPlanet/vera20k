@@ -57,7 +57,7 @@ const SPIN_TENTH: NativeF64Bits = NativeF64Bits::from_bits(0x3fb9_9999_9999_999a
 fn spin_rate(draw: i32, spread: NativeF64Bits, floor: Option<NativeF64Bits>) -> SimFixed {
     let unit = X87Chop53::mul(
         X87Chop53::load_i32(draw),
-        X87Chop53::load_f64(crate::sim::rng::RANDOM_RANGED_UNIT_SCALE)
+        X87Chop53::load_f64(crate::util::native_random::RANDOM_RANGED_UNIT_SCALE)
             .expect("the RandomRanged unit scale is a finite constant"),
     );
     let mut value = X87Chop53::mul(

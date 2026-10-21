@@ -668,6 +668,9 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
+            #[cfg(not(feature = "ares"))]
+            SimSoundEvent::SuperWeaponInsufficientFunds { .. } => continue,
+            #[cfg(feature = "ares")]
             SimSoundEvent::SuperWeaponInsufficientFunds { owner, sw_type } => {
                 if !owner_is_local(sim.interner(), owner, local_owner_name) {
                     continue;
@@ -1231,6 +1234,7 @@ mod tests {
         .unwrap()
     }
 
+    #[cfg(feature = "ares")]
     #[test]
     fn superweapon_money_refusal_eva_is_owner_local_configurable_and_silenceable() {
         for (setting, expected) in [
@@ -2342,6 +2346,7 @@ mod tests {
         assert_eq!(evas, ["EVA_PlayerDefeated", "EVA_YouHaveLost"]);
     }
 
+    #[cfg(feature = "ares")]
     #[test]
     fn construction_detection_uses_the_shared_extension_building_gate() {
         use crate::rules::ini_parser::IniFile;

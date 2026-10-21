@@ -41,7 +41,7 @@ impl MindScene {
         assert_eq!(rules.bridge_warheads.c4_name, "Super");
         let super_wh = rules.warhead(&rules.bridge_warheads.c4_name).unwrap();
         assert_eq!(
-            super_wh.verses_f64[crate::sim::combat::armor_index(&object.armor)],
+            f64::from_bits(super_wh.interaction(object.armor_id()).multiplier().bits()),
             1.0
         );
         let spark = rules.combat_damage.default_spark_system.as_deref().unwrap();

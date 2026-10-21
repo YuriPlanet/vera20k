@@ -10,12 +10,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use super::native_heap::NativeHeap;
 use super::passability;
 use super::search_table::SearchTable;
 use super::zone_map::{ZONE_INVALID, ZoneId};
 use crate::rules::locomotor_type::MovementZone;
 use crate::util::lookup_hash::LookupMap;
+use crate::util::native_heap::NativeHeap;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53};
 
 /// Retained House+57E4 reader. No Map/GetCell lookup belongs to585F40.
@@ -837,17 +837,28 @@ type ActiveZoneThreat<'a> = (
     &'a dyn Fn(i32) -> Result<i32, String>,
 );
 
+/// The size the PathfinderClass constructor gives the precheck's heap
+/// (`0x2710` at `0x0042A7B2`). A full heap drops the insert, but the record
+/// and the zone's best cost are kept.
+const PRECHECK_HEAP_SIZE: usize = 0x2710;
+
 /// Reusable scratch for `search_precheck_level`: pure scratch, nothing in it
 /// outlives one level search.
-#[derive(Default)]
 struct PrecheckScratch {
     /// The best cost each zone has been reached with in the running search.
     best: SearchTable<NativeF32Bits>,
     nodes: Vec<PrecheckNode>,
-    /// The size the PathfinderClass constructor gives this heap (`0x2710` at
-    /// `0x0042A7B2`). A full heap drops the insert, but the record and the
-    /// zone's best cost are kept.
-    heap: NativeHeap<usize, 0x2710>,
+    heap: NativeHeap<usize>,
+}
+
+impl Default for PrecheckScratch {
+    fn default() -> Self {
+        Self {
+            best: SearchTable::default(),
+            nodes: Vec::new(),
+            heap: NativeHeap::new(PRECHECK_HEAP_SIZE),
+        }
+    }
 }
 
 thread_local! {

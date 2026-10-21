@@ -192,26 +192,49 @@ impl From<&AttackerSnapshot> for FireSource {
     }
 }
 
-/// The turret pivot (`TechnoClass` virtual +300, `0x006F3D60`), before any
-/// weapon FLH. Foot's selected Attack line reads this coordinate. Native
-/// translates the locomotor basis by ART `TurretOffset`, rotates the basis
-/// about the turret, then transforms the zero vector; that final rotation
-/// cannot move the pivot. Reuse the existing GetFLH transform with zero FLH
-/// instead of creating another facing/truncation implementation.
+/// The turret pivot, virtual +300 with a weapon index. Foot's selected
+/// Attack line (`0x004DC0C6`) and the Unit target laser (`0x006FF983`) read it
+/// with index 0.
 ///
-/// A source without a locomotor starts from the identity, so its offset is
-/// along world X. The result adds to the same virtual +AC base as GetFLH.
-/// Executed source/ART controls: tools/procedural_drawing_oracle/action_lines.
+/// InfantryClass's override (`0x00521D30`) is GetFLH(index) with a zero base
+/// ([`fire_coordinate`]): an infantryman's line starts at its gun.
 ///
-/// Drive/Ship use the same physical-model and locomotor matrix inputs as
-/// GetFLH, including the translation of a rocking hull.
+/// The TechnoClass body (`0x006F3D60`, Unit and Aircraft) ignores the index:
+/// before any weapon FLH, native translates the locomotor basis by ART
+/// `TurretOffset`, rotates the basis about the turret, then transforms the
+/// zero vector; that final rotation cannot move the pivot. Reuse the existing
+/// GetFLH transform with zero FLH instead of creating another
+/// facing/truncation implementation. A source without a locomotor starts
+/// from the identity, so its offset is along world X. The result adds to the
+/// same virtual +AC base as GetFLH. Executed source/ART controls:
+/// tools/procedural_drawing_oracle/action_lines. Drive/Ship use the same
+/// physical-model and locomotor matrix inputs as GetFLH, including the
+/// translation of a rocking hull.
+///
+/// BuildingClass's override (`0x00453A70`) has no port: neither caller
+/// reaches a building.
 pub fn turret_pivot_coordinate(
     world: &Simulation,
     rules: &RuleSet,
     entity: &GameEntity,
+    weapon_index: i32,
 ) -> Option<ProjectileCoord> {
     let obj = world.interner.object_type(entity.type_ref(), rules)?;
     let source = FireSource::of_entity(entity);
+    if entity.category() == EntityCategory::Infantry {
+        return Some(
+            fire_coordinate(
+                world,
+                rules,
+                &source,
+                obj,
+                weapon_index,
+                entity.weapon_burst.index() as u8,
+                Flh::default(),
+            )
+            .coord,
+        );
+    }
     let base = fire_coordinate_base(world, rules, &source, obj);
     let offset = base.art.map_or(0, |art| art.turret_offset);
     let delta = if entity.locomotor.is_some() {

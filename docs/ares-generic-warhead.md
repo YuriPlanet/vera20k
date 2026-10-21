@@ -1,5 +1,8 @@
 # Ares GenericWarhead
 
+Requires an explicit `--features ares` build. Default builds do not read or execute
+these extensions; see [build capability](../README.md#customization).
+
 VERA supports an initial, INI-selected `Type=GenericWarhead` implementation.
 It detonates an existing warhead at the selected cell without creating a
 projectile. Stock superweapon types keep their existing behavior.

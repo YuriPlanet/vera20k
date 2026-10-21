@@ -40,7 +40,7 @@ mod status_gpu_tests;
 #[cfg(test)]
 mod target_laser_gpu_tests;
 #[cfg(test)]
-pub(crate) use draw_passes::{draw_bridge_shadows, draw_pooled_overlay_bodies};
+pub(crate) use draw_passes::{draw_bridge_shadows, draw_pooled_cell_bodies};
 pub(crate) mod draw_plan_lowering;
 mod merge_passes;
 pub(crate) mod minimap_transaction;
@@ -296,7 +296,7 @@ pub(crate) fn render_game(
     state
         .match_state
         .match_presentation
-        .cached_overlay_instances = world.overlay;
+        .cached_cell_body_instances = world.cell_bodies;
 
     // A single immutable upload serves System body slots and the distinct
     // late5FFFA0 vector. Neither phase can rewrite another light's slot.
@@ -597,7 +597,7 @@ pub(crate) fn render_game(
         encoder,
         &composition_view,
         &draw_passes::DrawPassData {
-            overlay_render_z: &world.overlay_render_z,
+            cell_body_draws: &world.cell_body_draws,
             bridge_shadows: &world.bridge_body_shadow,
             object_layers: &world.object_layers,
             building_status_text: &world.building_status_text,
@@ -695,7 +695,7 @@ fn upload_to_gpu(
 
     // Terrain + overlays
     pool.upload(&state.renderer.gpu, "terrain", &world.terrain.normal);
-    pool.upload(&state.renderer.gpu, "overlay", &world.overlay);
+    pool.upload(&state.renderer.gpu, "cell_body", &world.cell_bodies);
     pool.upload(
         &state.renderer.gpu,
         "building_status_text",
@@ -717,16 +717,11 @@ fn upload_to_gpu(
     }
     pool.upload(
         &state.renderer.gpu,
-        "overlay_bridge_body",
-        &world.bridge_body,
-    );
-    pool.upload(
-        &state.renderer.gpu,
         "overlay_bridge_body_shadow",
         &world.bridge_body_shadow,
     );
-    // Smudges: drawn inside the terrain layer, before the bridge body and
-    // before overlays, matching the native per-cell tile-then-smudge dispatch.
+    // Smudges: drawn inside the terrain layer, before the cell bodies,
+    // matching the native per-cell tile-then-smudge dispatch.
     pool.upload(&state.renderer.gpu, "smudge", &world.smudge);
 
     // Residual effects keep their existing uploads and pass ownership.

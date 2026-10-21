@@ -56,17 +56,22 @@ Oklar veri akışını gösterir:
 
 ![Uygulama simülasyona komut gönderir ve dünya durumunu alır; görüntülemeye çizim verilerini gönderir.](docs/images/architecture.tr.png)
 
+## Sistem gereksinimleri
+
+- **Oyun:** Red Alert 2: Yuri's Revenge 1.001.
+- **İşletim sistemi:** Windows 10+, Linux (glibc 2.35+, ör. Ubuntu 22.04 veya Steam Deck) ya da
+  Apple Silicon üzerinde macOS 11+.
+- **Grafik:** Vulkan, DirectX 12 ya da Metal.
+
 ## Derleme ve çalıştırma
 
 Gerekenler:
 
-- **Oyun:** Red Alert 2: Yuri's Revenge.
-- **Rust ve Git:** rustup ile kurulmuş güncel kararlı [Rust](https://rustup.rs/) sürümü ve
+- **Rust ve Git:** rustup ile kurulmuş [Rust](https://rustup.rs/) 1.88 veya üzeri ve
   [Git](https://git-scm.com/).
 - **Derleme araçları:** Windows'ta, Rust kurulum programının kurmayı önerdiği Visual Studio C++
   derleme araçları; macOS'te `xcode-select --install`; Debian ve Ubuntu'da
   `sudo apt install build-essential libasound2-dev pkg-config`.
-- **Grafik:** Vulkan, DirectX 12 ya da Metal destekleyen bir GPU.
 
 VERA20K, Windows, Linux ve macOS üzerinde oynandı.
 
@@ -77,6 +82,8 @@ cp config.toml.example config.toml
 # Çalıştırmadan önce config.toml dosyasını düzenleyip ra2_dir değerini oyun klasörünüz olarak ayarlayın:
 cargo run --release --bin vera20k
 ```
+
+Derleme `target/` içinde birkaç GB yer kaplar.
 
 ## Nasıl çalışıyoruz
 

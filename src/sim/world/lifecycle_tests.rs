@@ -2409,6 +2409,7 @@ fn insert_anim(sim: &mut Simulation, stable_id: u64, inactive: bool) {
             constructor_reverse: false,
             inactive,
             paused: false,
+            temporal_paused: false,
         },
     );
     assert!(sim.substrate.anims.insert(anim).is_none());
@@ -2716,12 +2717,7 @@ fn particle_logic_membership_uses_the_object_local_guard_and_rebuilds_it() {
         .get_mut(7)
         .unwrap()
         .set_in_logic_vector_for_test(false);
-    Simulation::rebuild_logic_membership(
-        &mut sim.terrain_objects,
-        &mut sim.substrate,
-        &mut sim.projectiles,
-        &mut sim.waves,
-    );
+    sim.rebuild_logic_membership();
     assert!(
         sim.substrate
             .particle_systems

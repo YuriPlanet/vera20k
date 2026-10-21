@@ -1247,6 +1247,7 @@ mod tests {
     use super::{crt_atoi, parse_leading_f32, strtok, truncate_native_bytes};
     use crate::rules::ini_parser::{IniFile, IniSection};
 
+    #[cfg(feature = "ares")]
     #[test]
     fn ares_integer_reader_retains_failed_values_and_uses_ares_dollar_decimal() {
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};

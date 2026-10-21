@@ -12,7 +12,6 @@ use crate::sim::combat::TargetKind;
 use crate::sim::combat::{combat_weapon, fire_coord};
 use crate::sim::components::NavTargetRef;
 use crate::sim::mission::{MissionId, MissionType};
-use crate::sim::movement::air_movement;
 use crate::sim::world::edge_cell::Edge;
 
 impl Simulation {
@@ -171,7 +170,7 @@ impl Simulation {
             )
         };
         let entity = self.substrate.entities.get_mut(id).unwrap();
-        air_movement::ensure_fly_secondary_facing(entity);
+        entity.ensure_fly_secondary_facing();
         entity
             .barrel_facing
             .as_mut()

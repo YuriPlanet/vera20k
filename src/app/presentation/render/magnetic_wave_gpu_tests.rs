@@ -475,6 +475,7 @@ fn wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_and_a() {
                 seed_depth_grid(&gpu, &mut encoder, &dv, &z, size[0]);
                 draw_native_object_pass(
                     &mut encoder,
+                    crate::app::render::merge_passes::ObjectDrawPhase::Display,
                     &cv,
                     &dv,
                     &mut terrain,

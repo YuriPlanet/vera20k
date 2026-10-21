@@ -40,7 +40,8 @@ pub(crate) fn software_cursor(
     state: &AppState,
     depth: f32,
 ) -> Option<(&BatchTexture, SpriteInstance)> {
-    if state.touch_input_mode() {
+    // Touch never paints a mouse; outside the client the system owns it.
+    if state.touch_input_mode() || !state.platform.pointer_in_client {
         return None;
     }
     let cursor = state

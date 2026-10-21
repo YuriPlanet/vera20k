@@ -20,6 +20,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
+use crate::rules::ares_prerequisites::{GenericPrerequisite, GenericPrerequisites};
 use crate::rules::combat_damage::CombatDamageDefaults;
 use crate::rules::crate_rules::CrateRules;
 use crate::rules::error::RulesError;
@@ -44,6 +45,7 @@ use crate::rules::warhead_type::WarheadType;
 use crate::rules::weapon_type::WeaponType;
 use crate::util::fixed_math::{SIM_ONE, SimFixed};
 use crate::util::lookup_hash::LookupMap;
+use crate::util::native_random::unit_draw_threshold;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 
 #[cfg(test)]
@@ -978,7 +980,7 @@ pub struct GeneralRules {
     /// from `condition_red_sparking_probability` at parse time: the per-tick test
     /// becomes the pure-integer `roll < threshold` (no float in the sim hot path).
     /// `roll = scenario_rng.next_range_u32_inclusive(0, 0x7ffffffe)`. See
-    /// [`damage_spark_spawn_threshold`]. Default 42_949_673 (band 0.02).
+    /// [`unit_draw_threshold`]. Default 42_949_673 (band 0.02).
     pub condition_red_spark_threshold: u32,
     /// Integer roll threshold for the yellow-band damage-Spark prob-roll.
     /// Default 21_474_837 (band 0.01).
@@ -1966,57 +1968,6 @@ pub struct GeneralRules {
     pub weather_con_bolts: Vec<String>,
 }
 
-/// Count of representable `roll` values for the damage-Spark prob-roll, i.e.
-/// `RandomRanged(0, 0x7ffffffe)` yields `[0, 0x7ffffffe]`, so 0x7fffffff values.
-/// A band of >= 1.0 lets every roll pass.
-const DAMAGE_SPARK_ROLL_COUNT: u32 = 0x7fff_ffff;
-
-/// Compute the integer spawn threshold for a damage-Spark probability `band`:
-/// the number of `roll` values in `[0, 0x7ffffffe]` for which gamemd's roll
-/// SUCCEEDS, so the per-tick test reduces to the pure-integer `roll < threshold`
-/// (no float in the sim hot path; `roll` from `next_range_u32_inclusive(0,
-/// 0x7ffffffe)`).
-///
-/// gamemd compares `(double)roll * SCALE < band` with `SCALE` the exact double
-/// `0x3E00000000400000` = `(2^30 + 1)·2^-61`, evaluated in x87 80-bit. Because
-/// `roll·(2^30 + 1) <= 2^61 - 2` fits the 64-bit x87 mantissa, that product is
-/// the EXACT real value, and `band` is an exact f64 — so the boundary is the
-/// exact-rational comparison `roll·(2^30+1)·2^-61 < band`, computed here with
-/// integer arithmetic (machine-independent; no float, no x87 dependency, no
-/// multiply-vs-divide rounding hazard). A 1-off here flips the draw count on a
-/// boundary tick → desync, so the two stock thresholds are pinned by test.
-pub(crate) fn damage_spark_spawn_threshold(band: f64) -> u32 {
-    // band <= 0 (or NaN): no roll passes. band >= 1: every roll passes.
-    if band.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
-        return 0;
-    }
-    if band >= 1.0 {
-        return DAMAGE_SPARK_ROLL_COUNT;
-    }
-    // Decompose band = mant · 2^exp (normalized double carries the implicit 53rd
-    // bit): value = (2^52 + frac) · 2^(exp_field - 1075).
-    let bits = band.to_bits();
-    let exp_field = ((bits >> 52) & 0x7ff) as i32;
-    let frac = bits & ((1u64 << 52) - 1);
-    let (mant, exp) = if exp_field == 0 {
-        (frac, -1074) // subnormal
-    } else {
-        ((1u64 << 52) | frac, exp_field - 1075)
-    };
-    // roll·SCALE >= band  <=>  roll·(2^30+1) >= mant·2^(exp+61).
-    // threshold = smallest qualifying roll = ceil(mant·2^(exp+61) / (2^30+1)).
-    const D: u128 = (1u128 << 30) + 1;
-    let k = exp + 61;
-    let threshold: u128 = if k >= 0 {
-        ((mant as u128) << (k as u32)).div_ceil(D)
-    } else {
-        // mant·2^(exp+61) is fractional; scale the divisor instead:
-        // roll >= ceil(mant / ((2^30+1) << -k)).
-        (mant as u128).div_ceil(D << ((-k) as u32))
-    };
-    threshold.min(DAMAGE_SPARK_ROLL_COUNT as u128) as u32
-}
-
 /// `[General] URepairRate=` default, in minutes.
 const U_REPAIR_RATE_MINUTES: f64 = 0.016;
 
@@ -2448,8 +2399,8 @@ impl Default for GeneralRules {
             airstrike_attack_voice: None,
             condition_red_sparking_probability: 0.02,
             condition_yellow_sparking_probability: 0.01,
-            condition_red_spark_threshold: damage_spark_spawn_threshold(0.02),
-            condition_yellow_spark_threshold: damage_spark_spawn_threshold(0.01),
+            condition_red_spark_threshold: unit_draw_threshold(0.02),
+            condition_yellow_spark_threshold: unit_draw_threshold(0.01),
             dumb_my_effectiveness_coefficient: 200.0,
             dumb_target_effectiveness_coefficient: 200.0,
             dumb_target_special_threat_coefficient: 200.0,
@@ -3272,10 +3223,8 @@ impl GeneralRules {
             savour_delay_minutes,
             condition_red_sparking_probability: condition_red_spark_prob,
             condition_yellow_sparking_probability: condition_yellow_spark_prob,
-            condition_red_spark_threshold: damage_spark_spawn_threshold(condition_red_spark_prob),
-            condition_yellow_spark_threshold: damage_spark_spawn_threshold(
-                condition_yellow_spark_prob,
-            ),
+            condition_red_spark_threshold: unit_draw_threshold(condition_red_spark_prob),
+            condition_yellow_spark_threshold: unit_draw_threshold(condition_yellow_spark_prob),
             dumb_my_effectiveness_coefficient: general.read_double(
                 "DumbMyEffectivenessCoefficient",
                 defaults.dumb_my_effectiveness_coefficient,
@@ -4088,6 +4037,14 @@ pub struct RuleSet {
     /// [`PrerequisiteGroup::ALL`] order: an on-map building of any of them
     /// meets that group in CanBuild.
     prerequisite_lists: [Vec<Prerequisite>; 6],
+    /// Immutable gameplay projection of the retained Rules registry catalog.
+    ares_prerequisites: Option<GenericPrerequisites>,
+    /// Immutable projection of NativeRulesRegistryState's ordered armor catalog.
+    ares_armors: Option<crate::rules::ares_armor::ArmorCatalog>,
+    /// Derived type-membership index for the lifecycle hooks; rebuilt together
+    /// with the RuleSet after every load/reset/pass. The catalog above is its
+    /// only source of truth. This cache is not serialized or hashed separately.
+    ares_prerequisite_alternates: HashSet<TypeHandle>,
     /// Rules-driven terrain land-type semantics keyed by TMP land byte.
     pub terrain_rules: TerrainRules,
     /// Native `[Tiberiums]` definitions in GameMD type order.
@@ -4183,6 +4140,12 @@ pub struct RuleSet {
     /// active AssetManager with effect assets. Gameplay and rendering share
     /// the GPU-independent physical model loader.
     voxel_assets: crate::rules::voxel_asset_catalog::VoxelAssetCatalog,
+    /// The one TechnoType custom palette name (art `Palette=`, lowercase,
+    /// without theater suffix or `.pal`). gamemd keeps one generated palette
+    /// per name and exits when a second exists ("only one extra building
+    /// palette", `0x00715857..0x00715871`), so every type with
+    /// `ObjectType::custom_palette` shares it. Projected from ART.
+    extra_building_palette: Option<String>,
     /// Every building type's construction control from its Buildup SHP,
     /// bound once from the active assets (`bind_building_buildup_assets`).
     buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog,
@@ -4316,6 +4279,20 @@ impl RuleSet {
         rules.general.prerequisite_proc_alternate =
             processed.prerequisite_proc_alternate().map(str::to_owned);
         rules.prerequisite_lists = processed.prerequisite_lists().clone();
+        rules.ares_prerequisites = processed.ares_prerequisites().cloned();
+        rules.ares_prerequisite_alternates = rules
+            .ares_prerequisites
+            .as_ref()
+            .into_iter()
+            .flat_map(|catalog| catalog.groups())
+            .flat_map(|group| group.alternates())
+            .filter_map(|alternate| {
+                rules
+                    .object_category_index
+                    .get(&(alternate.category(), alternate.id().to_ascii_uppercase()))
+                    .copied()
+            })
+            .collect();
         rules.general.building_types = processed.building_types().clone();
         let (lightning, weather_anim, nullify_anim, splash) = processed.select_anim_rules();
         rules.general.lightning_warhead = lightning.to_owned();
@@ -4324,7 +4301,7 @@ impl RuleSet {
         rules.combat_damage.splash_list = splash.to_vec();
         rules.combat_damage.death_weapon =
             processed.combat_damage_death_weapon().map(str::to_owned);
-        for (name, conventional, em_effect, anim_list, debris_types, verses) in
+        for (name, conventional, em_effect, anim_list, debris_types, verses, ares_verses) in
             processed.warhead_read_states()
         {
             if let Some(warhead) = rules
@@ -4337,6 +4314,23 @@ impl RuleSet {
                 warhead.anim_list = anim_list.to_vec();
                 warhead.debris_types = debris_types.to_vec();
                 warhead.verses_f64 = verses.map(|value| f64::from_bits(value.bits()));
+                warhead.install_ares_verses(ares_verses);
+            }
+        }
+        for (category, name, armor) in processed.object_armor_states() {
+            if let Some(category) = category {
+                if let Some(handle) = rules
+                    .object_category_index
+                    .get(&(category, name.to_ascii_uppercase()))
+                    .copied()
+                {
+                    rules.object_list[handle.0 as usize].bind_armor(armor);
+                }
+            } else if let Some(terrain) = rules
+                .terrain_object_types
+                .get_mut(&name.to_ascii_uppercase())
+            {
+                terrain.bind_armor(armor);
             }
         }
         (
@@ -4475,6 +4469,15 @@ impl RuleSet {
                 .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
             {
                 object.project_infantry_pips(pips);
+            }
+        }
+        for (name, reads) in processed.infantry_sequence_sound_reads() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
+            {
+                object.project_sequence_sound_reads(reads);
             }
         }
         for (name, flags) in processed.infantry_infiltration_states() {
@@ -4807,6 +4810,7 @@ impl RuleSet {
         self.general.scold_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "ScoldSound"));
+        #[cfg(feature = "ares")]
         for sw in self.super_weapons.values_mut() {
             if let Some(delivery) = sw.unit_delivery.as_mut() {
                 // Ares NullableIdx<VocClass>: unknown retains the previous
@@ -4882,6 +4886,9 @@ impl RuleSet {
                     .and_then(|section| sounds.read_rules_reference(section, "EnterWaterSound"));
                 object.leave_water_sound = section
                     .and_then(|section| sounds.read_rules_reference(section, "LeaveWaterSound"));
+                // ReadSequenceData (`0x0052403F`) resolves each pair through
+                // VocClass::FindByName (`0x007514D0`, first _strcmpi match).
+                object.bind_sequence_sounds(|name| sounds.get(name).map(|entry| entry.id.clone()));
             }
         }
     }
@@ -4893,6 +4900,9 @@ impl RuleSet {
         ini: &IniFile,
         eva: &crate::rules::sound_ini::EvaRegistry,
     ) {
+        #[cfg(not(feature = "ares"))]
+        let _ = (ini, eva);
+        #[cfg(feature = "ares")]
         for sw in self.super_weapons.values_mut() {
             sw.insufficient_funds_eva = eva.read_rules_reference(
                 ini.section(&sw.id),
@@ -5334,6 +5344,9 @@ impl RuleSet {
             building_ids,
             factory_map,
             prerequisite_lists: Default::default(),
+            ares_prerequisites: None,
+            ares_armors: processed.ares_armors().cloned(),
+            ares_prerequisite_alternates: HashSet::new(),
             terrain_rules,
             tiberium_types,
             terrain_object_types,
@@ -5370,6 +5383,7 @@ impl RuleSet {
                 .collect(),
             effect_assets: crate::rules::effect_asset_catalog::EffectAssetCatalog::default(),
             voxel_assets: crate::rules::voxel_asset_catalog::VoxelAssetCatalog::default(),
+            extra_building_palette: None,
             buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog::default(),
             rubble_assets: crate::rules::building_rubble::RubbleAssetCatalog::default(),
             terrain_spawner_assets:
@@ -5735,15 +5749,23 @@ impl RuleSet {
         self.source_ini_hash
     }
 
+    /// The one TechnoType custom palette name, lowercase, without theater
+    /// suffix or `.pal`; every type with `ObjectType::custom_palette` draws
+    /// from it (`TechnoClass::GetRemapColour @ 0x00705D70`).
+    pub fn extra_building_palette(&self) -> Option<&str> {
+        self.extra_building_palette.as_deref()
+    }
+
     /// Compatibility identity for processed rules plus the resolved animation,
-    /// effect-frame, terrain-spawner frame, smudge-selection and projectile
-    /// launch ART inputs bound to this ruleset.
+    /// effect-frame, terrain-spawner frame, smudge-selection, projectile
+    /// launch and TechnoType `CanBeHidden=` and `Palette=` ART inputs bound to
+    /// this ruleset.
     /// Other asset-derived simulation inputs are added by later ownership
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        // v29: BuildingType upgrade inputs retain prior Rules-pass values.
-        b"rules-simulation-config-v29".hash(&mut hasher);
+        // v32: the custom palette remaps a DestroyAnim.
+        b"rules-simulation-config-v32".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
         self.object_list
             .iter()
@@ -5751,6 +5773,36 @@ impl RuleSet {
             .map(|object| (object.id.to_ascii_uppercase(), object.building_upgrade()))
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
+        // The process registry is admitted only when its retained capability
+        // matches this binary. Include that immutable build identity even if
+        // the selected INIs contain no extension keys.
+        b"rules-build-compatibility-v1".hash(&mut hasher);
+        crate::rules::ARES_ENABLED.hash(&mut hasher);
+        // Equal flattened INIs may have different retained group lists.
+        self.ares_prerequisites.hash(&mut hasher);
+        b"retained-armor-bindings-and-ares-versus-v1".hash(&mut hasher);
+        self.ares_armors.hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    object.armor_id(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
+        self.terrain_object_types
+            .iter()
+            .map(|(name, terrain)| (name.to_ascii_uppercase(), terrain.armor_id()))
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
+        self.warheads
+            .iter()
+            .map(|(name, warhead)| (name.to_ascii_uppercase(), warhead.ares_verses_hash_state()))
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
+
         // UnitType747734 retains CarriesCrate across later absent/invalid
         // keys; equal current source text can still mean different cargo.
         self.object_list
@@ -5829,6 +5881,22 @@ impl RuleSet {
             b"behind-anim-v1".hash(&mut hasher);
             self.general.behind.hash(&mut hasher);
         }
+        // CanBeHidden is read from ART (0x007121EB), outside the source INI
+        // hash; it decides which objects construct the Behind anim.
+        self.object_list
+            .iter()
+            .map(|o| (&o.id, o.can_be_hidden))
+            .collect::<Vec<_>>()
+            .hash(&mut hasher);
+        // So is Palette= (0x0071582B); DestructionEffects gives a custom
+        // palette type's DestroyAnim its scheme (0x00441D2F).
+        self.object_list
+            .iter()
+            .filter(|o| o.custom_palette)
+            .map(|o| &o.id)
+            .collect::<Vec<_>>()
+            .hash(&mut hasher);
+        self.extra_building_palette.hash(&mut hasher);
         self.general.default_mirage_disguises.hash(&mut hasher);
         self.general.infantry_disguises.hash(&mut hasher);
         if self
@@ -6820,9 +6888,28 @@ impl RuleSet {
         &self.prerequisite_lists[group.index()]
     }
 
-    /// Whether a structure type is marked as a refinery in rules.ini.
-    pub fn is_refinery_type(&self, structure_id: &str) -> bool {
-        self.object(structure_id).is_some_and(|obj| obj.refinery)
+    pub(crate) fn ares_prerequisite_group(
+        &self,
+        entry: Prerequisite,
+    ) -> Option<&GenericPrerequisite> {
+        self.ares_prerequisites
+            .as_ref()?
+            .group(entry.group_index()?)
+    }
+
+    /// Ares TechnoTypeExt::IsGenericPrerequisite1003DD00 and its six Foot
+    /// lifecycle callers1004E750..1004E8B9. For a normal fresh match Types
+    /// finish loading before these checks. Retain an immutable O(1) membership
+    /// projection, rather than scanning every group for each live object.
+    /// Original cache/live-reread limits: rules_oracle/ares_prerequisites.md.
+    pub(crate) fn is_ares_prerequisite_alternate(
+        &self,
+        category: ObjectCategory,
+        id: &str,
+    ) -> bool {
+        self.object_category_index
+            .get(&(category, id.to_ascii_uppercase()))
+            .is_some_and(|handle| self.ares_prerequisite_alternates.contains(handle))
     }
 
     /// Resolve BuildingType FreeUnit, read by Grand_Opening446AA9. The native
@@ -6871,11 +6958,29 @@ impl RuleSet {
         let mut buildings_checked: u32 = 0;
         let mut infantry_checked: u32 = 0;
         let mut crawls_patched: u32 = 0;
+        self.extra_building_palette = None;
         for obj in self.object_list.iter_mut() {
             // Resolve the art.ini section: use Image= override if present,
             // otherwise fall back to the object ID itself.
             let art_key: &str = &obj.image;
             let entry = art.get(art_key).or_else(|| art.get(&obj.id));
+            // Every TechnoType's ReadINI reads CanBeHidden from the ART
+            // section of its own ID (0x007121EB); art is not layered.
+            obj.can_be_hidden = art.can_be_hidden(&obj.id);
+            // ...and Palette= from its ImageFile's section (0x0071582B).
+            let palette = art.techno_palette(art_key);
+            obj.custom_palette = palette.is_some();
+            if let Some(name) = palette {
+                match &self.extra_building_palette {
+                    None => self.extra_building_palette = Some(name.to_owned()),
+                    Some(first) if first != name => log::error!(
+                        "[{}] Palette={name}: gamemd allows one extra building palette \
+                         and exits; Palette={first} is kept",
+                        obj.id
+                    ),
+                    Some(_) => {}
+                }
+            }
             if obj.category == crate::rules::object_type::ObjectCategory::Infantry {
                 infantry_checked += 1;
                 if let Some(entry) = entry {
@@ -7959,6 +8064,7 @@ SpawnCount=3
         );
     }
 
+    #[cfg(feature = "ares")]
     #[test]
     fn unit_delivery_negative_deferment_keeps_the_twenty_frame_fallback() {
         let mut layers = RulesLayerStack::new(IniFile::from_str(
@@ -7981,6 +8087,7 @@ SpawnCount=3
         );
     }
 
+    #[cfg(feature = "ares")]
     #[test]
     fn unit_delivery_activation_sound_binding_keeps_known_values_across_unknown_layers() {
         let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
@@ -9097,11 +9204,33 @@ MutateWarhead=MyMutate\n\
 
         // Warheads referenced by weapons should be loaded.
         let sa: &WarheadType = rules.warhead("SA").expect("SA exists");
-        assert!((sa.verses_f64[0] - 1.0).abs() < 1e-9); // none: 100%
-        assert!((sa.verses_f64[5] - 0.25).abs() < 1e-9); // heavy: 25%
+        assert_eq!(
+            f64::from_bits(
+                sa.interaction(crate::rules::armor::armor_index("none"))
+                    .multiplier()
+                    .bits()
+            ),
+            1.0
+        );
+        assert_eq!(
+            f64::from_bits(
+                sa.interaction(crate::rules::armor::armor_index("heavy"))
+                    .multiplier()
+                    .bits()
+            ),
+            0.25
+        );
 
         let ap: &WarheadType = rules.warhead("AP").expect("AP exists");
-        assert!((ap.verses_f64[6] - 0.6).abs() < 1e-9); // wood: 60%
+        assert!(
+            (f64::from_bits(
+                ap.interaction(crate::rules::armor::armor_index("wood"))
+                    .multiplier()
+                    .bits()
+            ) - 0.6)
+                .abs()
+                < 1e-9
+        );
     }
 
     #[test]
@@ -9137,7 +9266,16 @@ MutateWarhead=MyMutate\n\
         assert_eq!(lower.id, "RegistryOnlyWH");
         assert_eq!(lower.percent_at_max_f64, 0.5);
         let expected = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0];
-        for (actual, expected) in lower.verses_f64.iter().zip(expected) {
+        for (name, expected) in crate::rules::armor::RETAIL_ARMOR_NAMES
+            .into_iter()
+            .zip(expected)
+        {
+            let actual = f64::from_bits(
+                lower
+                    .interaction(crate::rules::armor::armor_index(name))
+                    .multiplier()
+                    .bits(),
+            );
             assert!((actual - expected).abs() < 1e-9);
         }
     }
@@ -9163,8 +9301,8 @@ MutateWarhead=MyMutate\n\
         );
         let rules = RuleSet::from_ini(&ini).expect("Should parse");
 
-        assert!(rules.is_refinery_type("modproc"));
-        assert!(!rules.is_refinery_type("FAKEREF"));
+        assert!(rules.object("modproc").is_some_and(|obj| obj.refinery));
+        assert!(!rules.object("FAKEREF").is_some_and(|obj| obj.refinery));
         assert_eq!(rules.building_free_unit("MODPROC"), Some("MODHARV"));
         assert!(rules.harvester_can_dock_at("modharv", "MODPROC"));
         assert!(!rules.harvester_can_dock_at("modharv", "GAREFN"));
@@ -9188,7 +9326,7 @@ MutateWarhead=MyMutate\n\
         );
         let rules = RuleSet::from_ini(&ini).expect("Should parse");
 
-        assert!(rules.is_refinery_type("MODPROC"));
+        assert!(rules.object("MODPROC").is_some_and(|obj| obj.refinery));
         assert_eq!(rules.building_free_unit("MODPROC"), Some("UNKNOWN"));
         assert!(
             rules.type_handle("UNKNOWN").is_some(),
@@ -10380,39 +10518,41 @@ DefaultSparkSystem=SparkSys
         assert_eq!(g.guard_area_targeting_delay, -10);
     }
 
+    /// The constructor bands take the executed Spark gate's boundary draws
+    /// (`0x006FAE2D..0x006FAE40`); a 1-off flips the draw count on a boundary
+    /// tick. A subnormal and a tiny reader value admit roll 0 alone.
     #[test]
-    fn damage_spark_thresholds_match_x87_boundary() {
-        // The stock-default thresholds are the EXACT boundary of gamemd's 80-bit
-        // `(double)roll * 0x3E00000000400000 < band` compare. A 1-off here flips
-        // the per-tick draw count → desync, so pin both bands and the threshold
-        // derived into GeneralRules.
-        assert_eq!(damage_spark_spawn_threshold(0.02), 42_949_673);
-        assert_eq!(damage_spark_spawn_threshold(0.01), 21_474_837);
+    fn damage_spark_thresholds_from_the_general_reader() {
         let d = GeneralRules::default();
+        let mut checked = 0;
+        for (band, draw, passed) in crate::util::native_random::native_gate_rows("spark") {
+            for (probability, threshold) in [
+                (
+                    d.condition_red_sparking_probability,
+                    d.condition_red_spark_threshold,
+                ),
+                (
+                    d.condition_yellow_sparking_probability,
+                    d.condition_yellow_spark_threshold,
+                ),
+            ] {
+                if band.to_bits() == probability.to_bits() {
+                    assert_eq!(draw < threshold, passed, "band {band}, draw {draw:#x}");
+                    checked += 1;
+                }
+            }
+        }
+        assert_eq!(checked, 12);
         assert_eq!(d.condition_red_spark_threshold, 42_949_673);
         assert_eq!(d.condition_yellow_spark_threshold, 21_474_837);
 
-        // Verify the boundary directly against the exact f64 product gamemd uses:
-        // roll = threshold-1 must PASS (roll*scale < band), roll = threshold must FAIL.
-        // (roll·(2^30+1) fits the 64-bit x87 mantissa, so this f64 multiply equals
-        // gamemd's 80-bit product exactly at the boundary.)
-        let scale = f64::from_bits(0x3E00_0000_0040_0000);
-        for (band, t) in [(0.02_f64, 42_949_673_u32), (0.01, 21_474_837)] {
-            assert!(
-                (t as f64 - 1.0) * scale < band,
-                "roll=t-1 must pass for band {band}"
-            );
-            assert!(
-                ((t as f64) * scale).partial_cmp(&band) != Some(std::cmp::Ordering::Less),
-                "roll=t must fail for band {band}"
-            );
-        }
-
-        // Degenerate bands.
-        assert_eq!(damage_spark_spawn_threshold(0.0), 0);
-        assert_eq!(damage_spark_spawn_threshold(-1.0), 0);
-        assert_eq!(damage_spark_spawn_threshold(1.0), DAMAGE_SPARK_ROLL_COUNT);
-        assert_eq!(damage_spark_spawn_threshold(2.0), DAMAGE_SPARK_ROLL_COUNT);
+        let g = GeneralRules::from_ini(&ini_with_general(
+            "ConditionRedSparkingProbability=1e-45\nConditionYellowSparkingProbability=1e-30",
+        ));
+        let red = g.condition_red_sparking_probability;
+        assert!(red > 0.0 && red < f64::from(f32::MIN_POSITIVE), "{red:e}");
+        assert_eq!(g.condition_red_spark_threshold, 1);
+        assert_eq!(g.condition_yellow_spark_threshold, 1);
     }
 
     /// The constructor empties every paradrop list (`0x00666649..0x006666D8`)

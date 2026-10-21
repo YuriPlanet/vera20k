@@ -158,10 +158,11 @@ fn a_return_order_ends_the_harvesting_byte_and_oregath() {
     let refinery = s.refinery;
     order(
         &mut s,
-        crate::sim::command::Command::MinerReturn {
-            entity_id: miner,
-            target_refinery_id: Some(refinery),
-        },
+        crate::sim::command::Command::clicked_mission(
+            miner,
+            crate::sim::mission::MissionType::Enter,
+            crate::sim::combat::TargetKind::Entity(refinery),
+        ),
     );
     let sample = frame(&mut s);
     assert!(!sample.harvesting, "Unit+0x6D2 cleared by the unit AI");

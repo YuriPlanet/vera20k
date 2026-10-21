@@ -2475,7 +2475,7 @@ impl ScenarioBootstrapRng {
         let projection = scenario_prefix.install_before_terrain(&mut self.scenario)?;
         let mut simulation = self.into_simulation(descriptor);
         simulation.session.install_start_header(start_header);
-        simulation.native_unique_ids = Some(native_id_prefix.into_cursor());
+        simulation.install_native_unique_id_cursor(native_id_prefix.into_cursor());
         Ok((simulation, projection))
     }
 
@@ -2556,7 +2556,7 @@ impl ScenarioBootstrapRng {
                     mission_counter,
                     game_options,
                 )?;
-                simulation.native_unique_ids = Some(
+                simulation.install_native_unique_id_cursor(
                     crate::sim::native_identity::NativeUniqueIdCursor::begin_campaign_prefix(
                         early_events.len(),
                         rebuilt_events.len(),

@@ -81,8 +81,12 @@ class CachePolicy:
 # focused-test compiles took 75 s or more against a 32 s median.
 ACTIVE_SESSION_SECONDS = 12 * 60 * 60
 # A registered cache whose checkout is gone, unused at least this long, is
-# reclaimed whatever the budgets; see _abandoned_roots.
-ABANDONED_SECONDS = 60 * 60
+# reclaimed whatever the budgets; see _abandoned_roots. A run holds its checkout's
+# lock, so the wait only covers a checkout removed and recreated at the same path.
+# Feature worktrees live about an hour: at an hour, and with passes up to two
+# hours apart, six caches of removed worktrees held 28 GB on 2026-10-20 while
+# free space fell to 16 GiB.
+ABANDONED_SECONDS = 10 * 60
 # Receipts are an audit trail of recent passes: 3,883 held 1.1 GiB on 2026-10-19.
 RECEIPT_SECONDS = 7 * 24 * 60 * 60
 
@@ -1054,12 +1058,15 @@ def _futile_pass(root: Path, store: Path) -> Path | None:
         return None
 
 
-def retention_due(store: Path, policy: CachePolicy, volumes) -> bool:
+def retention_due(root: Path, store: Path, policy: CachePolicy, volumes) -> bool:
     """Whether a pass after a build can matter now.
 
     A pass inventories every registered cache, which takes seconds and grows with
     each worktree, so the soft budgets are enforced at most once per interval. A
-    volume below the reserve, or one that cannot be measured, always gets a pass.
+    volume below the reserve, or one that cannot be measured, always gets a pass,
+    as does a cache abandoned since the newest applied pass: it is reclaimed
+    whatever the budgets. A cache that pass already reported and left (files a
+    live or saved build still names) starts no further pass.
     """
     try:
         if any(shutil.disk_usage(volume).free < policy.min_free_bytes for volume in volumes):
@@ -1067,7 +1074,14 @@ def retention_due(store: Path, policy: CachePolicy, volumes) -> bool:
     except OSError:
         return True
     last = _last_applied_pass(store)
-    return last is None or not 0 <= time.time() - last[2] < AUTOMATIC_INTERVAL_SECONDS
+    if last is None or not 0 <= time.time() - last[2] < AUTOMATIC_INTERVAL_SECONDS:
+        return True
+    reported = last[1].get('abandoned_roots')
+    try:
+        abandoned = _abandoned_roots(root, store)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False  # The interval pass reports a malformed registry.
+    return not isinstance(reported, list) or not {str(path) for path in abandoned} <= set(reported)
 
 
 def automatic_locked(root: Path, store: Path, policy: CachePolicy):

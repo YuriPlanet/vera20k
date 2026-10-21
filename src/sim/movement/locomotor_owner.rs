@@ -146,7 +146,7 @@ fn end_piggyback(entity: &mut GameEntity) -> PiggybackEnd {
     let restored = entity
         .locomotor
         .as_mut()
-        .is_some_and(|locomotor| locomotor.end_piggyback());
+        .is_some_and(|locomotor| locomotor.end_piggyback().is_some());
     if restored {
         // END transfers the controller without moving Object+9C.
         entity.position.put_z(physical.z);

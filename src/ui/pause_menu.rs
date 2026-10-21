@@ -74,6 +74,9 @@ pub enum InGameMenuState {
     Sound,
     /// Shared Keyboard A3, child of Game Controls (native state4).
     Keyboard,
+    /// The WOL page dialog 0xCF, opened by PageUser. (gamemd: 7) It is a
+    /// compact popup over the live battlefield, not a full-screen shell.
+    Page,
     /// The Diplomacy dialog 0x73. (gamemd: 8)
     Diplomacy,
     /// The mission restate briefing, dialog 0x10C. (gamemd: 9)
@@ -88,6 +91,14 @@ impl InGameMenuState {
     /// the simulation for exactly this condition.
     pub fn is_open(self) -> bool {
         !matches!(self, Self::Closed)
+    }
+
+    /// The battlefield keeps drawing under this modal: the modal pump's
+    /// Main_Tick still blits the tactical surface (`0x004F4780` only changes
+    /// its copy flag while `g_WSDialogCount` is nonzero), and the popup
+    /// window sits over it.
+    pub fn draws_over_battlefield(self) -> bool {
+        matches!(self, Self::Page)
     }
 
     /// Where Escape goes from here.
@@ -112,7 +123,13 @@ impl InGameMenuState {
             // (0x006581A7). IDCANCEL names no child window, so the id is 0:
             // neither Return 0x423 nor in its box tables. Escape is ignored.
             // The 0x10C proc keys Return the same way (0x0065F710).
-            Self::SavedGame(_) | Self::Sound | Self::Diplomacy | Self::MissionBriefing => self,
+            // The 0xCF loop (0x007759E0 with 0x00623120) runs no
+            // IsDialogMessage, so Escape never reaches the proc.
+            Self::SavedGame(_)
+            | Self::Sound
+            | Self::Diplomacy
+            | Self::MissionBriefing
+            | Self::Page => self,
             Self::Keyboard => Self::Options,
         }
     }

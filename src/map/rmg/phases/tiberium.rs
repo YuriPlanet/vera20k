@@ -19,7 +19,7 @@ use crate::map::rmg::tiles::TileIds;
 use crate::map::rmg::x87::{Gaussian, TruncF64, approx_sqrt, approx_sqrt_f32};
 use crate::util::native_x87::X87Chop53;
 
-use super::blob::MinHeap;
+use super::blob::{CellHeap, by_key};
 use super::regions::Regions;
 use super::zones::diamond_frame_contains;
 
@@ -322,7 +322,7 @@ fn place_field(
     let mut anchor = origin;
     let mut placed = 0i32;
     let mut seed_count = 0i32;
-    let mut heap = MinHeap::new(cap);
+    let mut heap = CellHeap::new(cap);
     let mut current: Option<(i32, i32)> = None;
     let mut first_written = false;
 
@@ -333,10 +333,10 @@ fn place_field(
         if current.is_none() {
             // New seed: wipe every claim, re-seed from the same origin.
             ctx.scratch.clear_stamps();
-            heap = MinHeap::new(cap);
+            heap = CellHeap::new(cap);
             ctx.scratch.get_mut(origin.0, origin.1).stamp = field_id;
-            heap.push(0.0, origin);
-            current = heap.pop().map(|(_, coord)| coord);
+            heap.push((0.0, origin), by_key);
+            current = heap.pop(by_key).map(|(_, coord)| coord);
             seed_count += 1;
             anchor = origin;
             first_written = false;
@@ -353,7 +353,7 @@ fn place_field(
                 anchor = cur;
                 first_written = true;
                 // Rebinding the anchor discards the current frontier.
-                heap = MinHeap::new(cap);
+                heap = CellHeap::new(cap);
                 if !is_gem {
                     let variant = tibtre_draw(ctx.rng);
                     out.trees
@@ -413,10 +413,10 @@ fn place_field(
                 .add(jitter)
                 .to_f64() as f32;
             ctx.scratch.get_mut(nx, ny).stamp = field_id;
-            heap.push(priority, (nx, ny));
+            heap.push((priority, (nx, ny)), by_key);
         }
 
-        current = heap.pop().map(|(_, coord)| coord);
+        current = heap.pop(by_key).map(|(_, coord)| coord);
     }
 }
 

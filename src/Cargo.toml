@@ -25,6 +25,8 @@ name = "sim-bench"
 path = "bin/sim-bench.rs"
 
 [features]
+# Compile the supported Ares behavior; INIs cannot enable an absent capability.
+ares = []
 # The client's Ctrl+Shift dev chord reaches simulation and utility hooks.
 dev-overlays = []
 # Read-only snapshots and opt-in frame timing for the browser dashboard.

@@ -27,7 +27,7 @@ use crate::ui::wol_lobby::*;
 use std::time::Instant;
 
 /// The popups paint over the covered dialog, before their own controls.
-const POPUP_DEPTHS: ModalDepths = ModalDepths {
+pub(super) const POPUP_DEPTHS: ModalDepths = ModalDepths {
     background: 0.00060,
     button: 0.00057,
     text: 0.00038,
@@ -45,14 +45,14 @@ pub(crate) struct WolLobbyPaint {
 }
 
 /// LB row colors are packed `00BBGGRR`; -1 is the ordinary yellow.
-fn row_rgb(color: u32) -> [f32; 3] {
+pub(super) fn row_rgb(color: u32) -> [f32; 3] {
     if color == u32::MAX {
         return SHELL_LABEL_TEXT_RGB;
     }
     [color as u8, (color >> 8) as u8, (color >> 16) as u8].map(|c| f32::from(c) / 255.0)
 }
 
-fn label(state: &AppState, key: &str) -> String {
+pub(super) fn label(state: &AppState, key: &str) -> String {
     state
         .process_assets
         .csf
@@ -61,7 +61,7 @@ fn label(state: &AppState, key: &str) -> String {
 }
 
 /// A PCX of the lobby art centred vertically in `rect`, `x` columns in.
-fn push_icon(
+pub(super) fn push_icon(
     out: &mut Vec<SpriteInstance>,
     art: &WolPageArt,
     file: &str,
@@ -79,7 +79,7 @@ fn push_icon(
 }
 
 /// A NewEdit's frame and text, as BB and `0x10F` paint theirs.
-fn push_edit(
+pub(super) fn push_edit(
     paint: &mut WolLobbyPaint,
     state: &AppState,
     edit: &SavedSeedDescriptionEdit,

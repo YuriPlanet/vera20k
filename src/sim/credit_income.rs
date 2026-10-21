@@ -492,13 +492,14 @@ pub(crate) fn clear_drain_links_on_expiry(
 ///    refineries `GAREFN`/`NAREFN`/`YAREFN`); a drained `GAPOWR` loses power
 ///    (the `+0x5778` recalc, retained House assessment) but no credits.
 /// 2. Drainer side `0x006FA1C5..0x006FA224`: with `DrainTarget` (`+0x1CC`)
-///    set and `HouseClass::IsAlliedWith(target->Owner, this)` true, stop the
-///    drain inline.
+///    set and the target's house allied with this object's
+///    (`HouseClass::Is_Ally_ByObject @ 0x004F9A90`, asked by the target's
+///    house at `0x006FA1CF`), stop the drain inline.
 pub(crate) fn drain_common_step(sim: &mut Simulation, stable_id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(stable_id) else {
         return;
     };
-    let victim_owner = entity.owner();
+    let owner = entity.owner();
     let draining_me = entity.drain.draining_me;
     let drain_target = entity.drain.target;
     let type_ref = entity.type_ref();
@@ -520,11 +521,11 @@ pub(crate) fn drain_common_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
                 .map(|drainer| drainer.owner())
         {
             let mut amount = rules.general.drain_money_amount;
-            let available = available_money(&sim.houses, victim_owner);
+            let available = available_money(&sim.houses, owner);
             if available < amount {
                 amount = available;
             }
-            spend_money(&mut sim.houses, victim_owner, amount);
+            spend_money(&mut sim.houses, owner, amount);
             add_credits(&mut sim.houses, drainer_owner, amount);
         }
     }
@@ -535,10 +536,10 @@ pub(crate) fn drain_common_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
             .entities
             .get(victim_id)
             .map(|victim| victim.owner())
-        && crate::map::houses::are_houses_friendly(
+        && crate::map::houses::is_allied_with(
             sim.house_alliances.as_map(),
             sim.interner.resolve(target_owner),
-            sim.interner.resolve(victim_owner),
+            sim.interner.resolve(owner),
         )
     {
         stop_drain(sim, stable_id, Some(rules));
@@ -1026,6 +1027,41 @@ mod tests {
             sim.substrate.entities.get(disk).unwrap().drain.target,
             Some(refinery)
         );
+    }
+
+    /// The drainer side stops the link once the drained building's house is
+    /// allied with the disc's, as the building's house asks it (`0x006FA1CF`,
+    /// `HouseClass::Is_Ally_ByObject @ 0x004F9A90`): the disc's house allying
+    /// the building's alone keeps the link.
+    #[test]
+    fn the_drained_buildings_house_asks_whether_the_drain_stops() {
+        let rules = rules();
+        let linked = |asker: &str, other: &str| {
+            let mut sim = Simulation::with_seed(0x006F_A1CF);
+            house(&mut sim, "YuriCountry", false, 500);
+            house(&mut sim, "Americans", true, 75);
+            let plant = sim
+                .spawn_object("GAPOWR", "Americans", 20, 20, 0, &rules)
+                .expect("power plant spawns");
+            let disk = sim
+                .spawn_object("DISK", "YuriCountry", 21, 21, 0, &rules)
+                .expect("disc spawns");
+            assert!(install_drain_link(
+                &mut sim.substrate,
+                &sim.houses,
+                &mut sim.power_states,
+                disk,
+                plant
+            ));
+            *sim.house_alliances_mut_for_test() = crate::map::houses::HouseAllianceMap::from([(
+                asker.to_ascii_uppercase(),
+                [other.to_ascii_uppercase()].into(),
+            )]);
+            drain_common_step(&mut sim, disk, &rules);
+            sim.substrate.entities.get(disk).unwrap().drain.target == Some(plant)
+        };
+        assert!(linked("YuriCountry", "Americans"));
+        assert!(!linked("Americans", "YuriCountry"));
     }
 
     /// `TechnoClass::AI_Update @ 0x006FA15D` reads `Type+0x5ED` =

@@ -12,17 +12,23 @@
 //! components, unless the Options page's developer box picks VERA's offline
 //! stand-in ([`WolProvider::TestService`]).
 
+pub(crate) mod buddies;
+pub(crate) mod buddy;
 pub(crate) mod lobby;
 mod login;
+pub(crate) mod my_info;
 pub(crate) mod options;
+pub(crate) mod page;
+pub(crate) mod persona;
 mod service;
 mod test_service;
 
 pub(crate) use login::{combo_popup, login_layout, open_login_art};
 pub(crate) use service::{
-    NET_STATUS_LOST, WolApiStatus, WolLoginAccepted, WolProvider, WolServer, WolServerList,
-    WolServiceEvent, WolServiceRequest, service_event,
+    NET_STATUS_LOST, WolApiStatus, WolLadderRecord, WolLoginAccepted, WolProvider, WolServer,
+    WolServerList, WolServiceEvent, WolServiceRequest, service_event,
 };
+pub(crate) use test_service::{WolTestGuest, default_buddies as test_service_buddies};
 
 /// The wait box's reveal timer and the login drop list's scroll repeats;
 /// the caller schedules the earliest deadline with the other shell timers.
@@ -30,6 +36,10 @@ pub(crate) fn poll(state: &mut AppState) -> Option<std::time::Instant> {
     [
         service::poll_wait(state),
         login::poll_scroll_repeat(state),
+        persona::poll_scroll_repeat(state),
+        my_info::poll_scroll_repeat(state),
+        buddy::poll(state),
+        page::poll_scroll_repeat(state),
         lobby::poll(state),
         test_service::poll(state),
     ]
@@ -114,6 +124,15 @@ pub(crate) enum WolPage {
     /// WOL Options `0x2BC` (and its Sound Options `0xD6`) over the hidden
     /// lobby.
     Options(Box<options::WolOptionsPage>),
+    /// The auto-login query `0x112` after a dialog login.
+    AutoLoginQuery(Box<crate::ui::wol_persona::WolAutoLoginQuery>),
+    /// The locale page `0xFE` during the connect.
+    Locale(Box<crate::ui::wol_persona::WolLocalePage>),
+    /// My Information `0x114` (welcome mode 6).
+    MyInformation(Box<crate::ui::wol_my_info::WolMyInfoPage>),
+    /// The Buddy List `0x116` (mode 5); its runner's records stay in the
+    /// visit's [`lobby::WolLobby`].
+    Buddy(Box<buddy::BuddyDialog>),
 }
 
 /// What follows a WOL message box.
@@ -123,6 +142,9 @@ pub(crate) enum WolBoxThen {
     Leave(i32),
     /// The login flow returned 0: the welcome runs again.
     Welcome,
+    /// The silent auto-login connect failed without a Yes/No result: the
+    /// flow goes on to `0x10F`.
+    Login,
 }
 
 /// One visit to Westwood Online, from Internet until `WOL_Main` returns.
@@ -133,6 +155,8 @@ pub(crate) struct WolVisit {
     saved_shuffle: bool,
     /// `[0xA8B244]`; `None` is mode 0.
     mode: Option<WolMode>,
+    /// `[0xA8B248]`: the mode the Buddy List runner returns to (0, 4 or 6).
+    return_mode: Option<WolMode>,
     /// Login category `[0xB73678]`: set once the login flow returned 1.
     authenticated: bool,
     /// `[0xAC116C]`: the WOLAPI object exists. Created by `0x00786390`
@@ -142,10 +166,15 @@ pub(crate) struct WolVisit {
     /// The status help the welcome's last hit test wrote.
     pub(crate) status_help: Option<&'static str>,
     /// Server records of the last list (`0xB778D8` count, `0xF8` records)
-    /// and the selected record `[0xB76468]`.
+    /// and the selected record `[0xB76468]` (-1 for none).
     servers: Vec<WolServer>,
-    selected_server: usize,
+    selected_server: i32,
     awaiting: service::Awaiting,
+    /// The login flow between its connect and its return.
+    flow: Option<service::LoginFlow>,
+    /// `0x10E`'s persona heading and stats (`0x007989AA`), by control id;
+    /// empty without a nickname.
+    pub(crate) welcome_texts: Vec<(u16, String)>,
     provider: WolProvider,
     requests: Vec<WolServiceRequest>,
     /// The WOLAPI credential store as the service last reported it.
@@ -178,13 +207,17 @@ pub(crate) struct WolVisit {
     /// The ladder table `[0xB77E0C]` (`0xB77D80` outside mode 3) and the
     /// locale table `0xB76530`, keyed by the ASCII-lowered name the tooltip
     /// `0x00780A90` looks up with (`0x007B5B30`). `0x00780110` clears both.
-    ladder_ranks: std::collections::HashMap<String, i32>,
+    ladder: std::collections::HashMap<String, service::WolLadderRecord>,
     locales: std::collections::HashMap<String, i32>,
     /// The custom lobby runner; kept hidden while C2/C9 run over it.
     lobby: Option<Box<lobby::WolLobby>>,
     /// A chat lobby was joined earlier in this visit: the picker passes
     /// over crowded lobbies (`0x00788180`).
     lobby_joined_before: bool,
+    /// The page dialog `0xCF` over `0x113`, C2 or C9.
+    page_dialog: Option<Box<crate::ui::wol_page::WolPageDialog>>,
+    /// The modeless page-received dialog `0x11E`.
+    page_received: Option<Box<crate::ui::wol_page::WolPageReceived>>,
 }
 
 impl WolVisit {
@@ -192,6 +225,7 @@ impl WolVisit {
         Self {
             saved_shuffle,
             mode: None,
+            return_mode: None,
             authenticated: false,
             api: false,
             page: WolPage::Welcome,
@@ -199,6 +233,8 @@ impl WolVisit {
             servers: Vec::new(),
             selected_server: 0,
             awaiting: service::Awaiting::Nothing,
+            flow: None,
+            welcome_texts: Vec::new(),
             provider: WolProvider::Unavailable,
             requests: Vec::new(),
             credentials: Vec::new(),
@@ -211,10 +247,12 @@ impl WolVisit {
             disconnected: false,
             relogin: None,
             locate_name: None,
-            ladder_ranks: Default::default(),
+            ladder: Default::default(),
             locales: Default::default(),
             lobby: None,
             lobby_joined_before: false,
+            page_dialog: None,
+            page_received: None,
         }
     }
 
@@ -239,6 +277,10 @@ impl WolVisit {
 
     pub(crate) fn motd(&self) -> Option<&str> {
         self.motd.as_deref()
+    }
+
+    pub(crate) fn return_mode(&self) -> Option<WolMode> {
+        self.return_mode
     }
 
     pub(crate) fn wait_box(&self) -> Option<&WolWaitBox> {
@@ -299,6 +341,43 @@ pub(crate) fn chat_sent(state: &mut AppState, line: &crate::ui::wol_chat::WolCha
     }
 }
 
+/// `[0xB77DC1]`: a WOL match runs.
+pub(crate) fn in_match(state: &AppState) -> bool {
+    state.frontend.wol.as_ref().is_some_and(|visit| visit.in_game)
+}
+
+/// A WOL box (`0x005E2CD0` style 0) with a CSF body.
+pub(crate) fn message_box(state: &AppState, key: &str) -> crate::ui::wol_shell::WolMessageBox {
+    service::message_box(state, key, false)
+}
+
+/// Start Game Now's abort (`0x00794D13..0x00794E64`): `0x130` closes,
+/// `[0xB77DC1]` is set and the game channel is left (API+0x24 at
+/// `0x00794E00`); event 6 then ends the runner (`0x00787F49..0x00787F95`,
+/// one more leave), every dialog closes and `WOL_Main` runs mode 0, whose
+/// category change logs out before the welcome.
+/// RESIDUAL: the Buddy List runner's handling of event 6 is not traced; it
+/// ends the same way here.
+pub(crate) fn start_aborted(state: &mut AppState) {
+    crate::app::shell_network_setup::abandon_for_wol_runner(state);
+    if let Some(visit) = state.frontend.wol.as_mut() {
+        visit.in_game = true;
+    }
+    lobby::start_aborted(state);
+}
+
+/// `0x00785EA0`: `[0xB77DC0]` set (not connected), the WOLAPI logout
+/// (API+0x34), `0x11E` and the wait box close. The caller clears the
+/// login category `[0xB73678]`.
+/// RESIDUAL: the logout's wait (`TXT_WOL_LOGGING_OUT` behind the hidden
+/// `0xC4`, up to five events for event 0 or 9) is not modelled; it shows
+/// only after 7 s.
+fn logout(visit: &mut WolVisit) {
+    visit.connected = false;
+    visit.requests.push(service::WolServiceRequest::Logout);
+    visit.page_received = None;
+}
+
 /// The runner handed over to a WOL match (`[0xB77DC1]` set).
 pub(crate) fn match_started(state: &mut AppState) {
     if let Some(visit) = state.frontend.wol.as_mut() {
@@ -306,11 +385,24 @@ pub(crate) fn match_started(state: &mut AppState) {
     }
 }
 
-/// The custom lobby runner `0x00787770` entered after a successful login or
-/// setup Back (`postmatch` false) or after a match (`postmatch` true, the
-/// state 0x11 flag `WOL_Main` passes on).
+/// The runner of the visit's mode after a successful login or setup Back
+/// (`postmatch` false) or after a match (`postmatch` true, the state 0x11
+/// flag `WOL_Main` passes on): the custom lobby runner `0x00787770`, or for
+/// mode 5 the Buddy List runner `0x0079F140`. Setup Back under the Buddy
+/// List runner is its stop path back to `0x116`.
 pub(crate) fn open_lobby(state: &mut AppState, postmatch: bool) {
-    lobby::open(state, postmatch);
+    let Some(visit) = state.frontend.wol.as_ref() else {
+        return;
+    };
+    let buddy_mode = visit.mode == Some(WolMode::PlayBuddy);
+    let buddy_runner = visit
+        .lobby()
+        .is_some_and(|lobby| lobby.runner == lobby::Runner::Buddy);
+    match (buddy_mode, postmatch, buddy_runner) {
+        (true, false, true) => buddy::stopped(state),
+        (true, _, _) => buddy::open(state),
+        (false, _, _) => lobby::open(state, postmatch),
+    }
 }
 
 /// PrepareSession state 0x11 runs `WOL_Main` again. Its game-start exit
@@ -320,6 +412,7 @@ pub(crate) fn open_lobby(state: &mut AppState, postmatch: bool) {
 /// mode-loop apply (`0x0077B402`) and the lobby runner with postmatch set
 /// (`0x0077B44B`) follow.
 pub(crate) fn reenter_after_match(state: &mut AppState) {
+    persona::enter_wol_main(state);
     read_wol_settings(state);
     let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     let lobby_music = state.frontend.wol_preferences.lobby_music != 0;
@@ -342,6 +435,7 @@ impl App {
         // The message boxes paint from the skirmish chrome atlas.
         let _ = Self::ensure_skirmish_shell_chrome(state);
         Self::ensure_wol_welcome_art(state);
+        persona::enter_wol_main(state);
         read_wol_settings(state);
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         let lobby_music = state.frontend.wol_preferences.lobby_music != 0;
@@ -351,6 +445,7 @@ impl App {
             visit.provider = WolProvider::TestService;
         }
         state.frontend.wol = Some(visit);
+        persona::fill_welcome(state);
         // The first mode-loop pass (0x0077B402) applies again.
         apply_wol_preferences(state);
         state.frontend.shell_route = ShellRoute::Wol;
@@ -472,7 +567,7 @@ impl App {
             .is_some_and(|visit| matches!(visit.page, WolPage::Options(_)))
     }
 
-    fn wol_page_is_lobby(state: &AppState) -> bool {
+    pub(super) fn wol_page_is_lobby(state: &AppState) -> bool {
         state
             .frontend
             .wol
@@ -481,8 +576,24 @@ impl App {
     }
 
     pub(super) fn handle_wol_mouse_move(state: &mut AppState) {
+        if page::open(state) {
+            page::cursor_moved(state);
+            return;
+        }
         if Self::wol_page_is_options(state) {
             options::cursor_moved(state);
+            return;
+        }
+        if persona::page_open(state) {
+            persona::cursor_moved(state);
+            return;
+        }
+        if my_info::page_open(state) {
+            my_info::cursor_moved(state);
+            return;
+        }
+        if buddy::page_open(state) {
+            buddy::cursor_moved(state);
             return;
         }
         if Self::wol_page_is_lobby(state) && Self::wol_box_feed(state).is_none() {
@@ -516,8 +627,24 @@ impl App {
     }
 
     pub(super) fn handle_wol_mouse_down(state: &mut AppState) {
+        if page::open(state) {
+            page::mouse(state, true);
+            return;
+        }
         if Self::wol_page_is_options(state) {
             options::mouse(state, true);
+            return;
+        }
+        if persona::page_open(state) {
+            persona::mouse(state, true);
+            return;
+        }
+        if my_info::page_open(state) {
+            my_info::mouse(state, true);
+            return;
+        }
+        if buddy::page_open(state) {
+            buddy::mouse(state, true);
             return;
         }
         if Self::wol_page_is_lobby(state) && Self::wol_box_feed(state).is_none() {
@@ -548,8 +675,24 @@ impl App {
     }
 
     pub(super) fn handle_wol_mouse_up(state: &mut AppState) {
+        if page::open(state) {
+            page::mouse(state, false);
+            return;
+        }
         if Self::wol_page_is_options(state) {
             options::mouse(state, false);
+            return;
+        }
+        if persona::page_open(state) {
+            persona::mouse(state, false);
+            return;
+        }
+        if my_info::page_open(state) {
+            my_info::mouse(state, false);
+            return;
+        }
+        if buddy::page_open(state) {
+            buddy::mouse(state, false);
             return;
         }
         if Self::wol_page_is_lobby(state) && Self::wol_box_feed(state).is_none() {
@@ -581,9 +724,14 @@ impl App {
                     .wol
                     .as_ref()
                     .is_some_and(|visit| visit.provider != WolProvider::Unavailable);
-                if controlled && mode != WolMode::CustomMatch {
-                    // Quick Match, Quick Co-op, Buddy List and My Information
-                    // behind a working WOLAPI are later chains.
+                if controlled
+                    && !matches!(
+                        mode,
+                        WolMode::CustomMatch | WolMode::MyInformation | WolMode::PlayBuddy
+                    )
+                {
+                    // Quick Match and Quick Co-op behind a working WOLAPI
+                    // are later chains.
                     log::warn!(
                         "WOL mode {} with a controlled service is not implemented; \
                          0x10E stays",
@@ -607,10 +755,14 @@ impl App {
         pressed: bool,
         text: Option<&str>,
     ) {
-        if pressed && Self::wol_page_is_login(state) {
+        if pressed && page::open(state) {
+            page::key_press(state, code, text);
+        } else if pressed && Self::wol_page_is_login(state) {
             login::key_press(state, code, text);
         } else if pressed && Self::wol_page_is_lobby(state) {
             lobby::key_press(state, code, text);
+        } else if pressed && buddy::page_open(state) {
+            buddy::key_press(state, code, text);
         }
     }
 
@@ -621,9 +773,17 @@ impl App {
             return;
         };
         visit.mode = Some(mode);
+        // 0x00798DB5: the welcome's Buddy List returns to mode 0.
+        visit.return_mode = None;
         visit.status_help = None;
         visit.page = WolPage::Backdrop { wait: None };
-        service::begin_flow(state);
+        // Mode 6 needs no login (0x0077B3AA): its driver 0x00799D30 only
+        // ensures the WOLAPI object and waits for the server list.
+        if mode == WolMode::MyInformation {
+            service::begin_my_information(state);
+        } else {
+            service::begin_flow(state);
+        }
     }
 
     /// The login flow returned 0 (Back, or a failed connect after its box):
@@ -634,9 +794,18 @@ impl App {
             return;
         };
         visit.mode = None;
+        visit.return_mode = None;
         visit.status_help = None;
         visit.relogin = None;
+        visit.flow = None;
+        // 0x0077B4D3..0x0077B519: mode 0 needs no login category, so a
+        // held one logs out and clears.
+        if visit.authenticated {
+            logout(visit);
+            visit.authenticated = false;
+        }
         visit.page = WolPage::Welcome;
+        persona::fill_welcome(state);
         // The mode-loop pass (0x0077B402) before the welcome runs.
         apply_wol_preferences(state);
         state.frontend.wol_login_art = None;
@@ -662,6 +831,9 @@ impl App {
         state.frontend.wol_lobby_art = None;
         state.frontend.wol_options_art = None;
         state.frontend.wol_sound_options_art = None;
+        state.frontend.wol_auto_login_art = None;
+        state.frontend.wol_my_info_art = None;
+        state.frontend.wol_buddy_art = None;
         state.frontend.shell_route = ShellRoute::MainMenu;
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);

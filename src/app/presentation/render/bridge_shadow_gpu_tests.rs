@@ -128,6 +128,7 @@ fn bridge_shadow_submission_matches_native_color_depth_and_repeat() {
 use crate::app::presentation::instances::bridges::{
     build_bridge_body_instances_inner, build_bridge_shadow_instances_inner,
 };
+use crate::app::presentation::instances::{CellBodyDraw, submit_cell_body_sweep};
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::map::resolved_terrain::{test_flat_cell, test_grid};
 use crate::render::batch::{CameraUniform, SpriteInstance};
@@ -333,7 +334,7 @@ impl RetailBridgeFixture {
         atlas: &BridgeAtlas,
         size: [u32; 2],
         kind: BridgeFrameKind,
-    ) -> (CameraUniform, Vec<SpriteInstance>) {
+    ) -> (CameraUniform, Vec<SpriteInstance>, Vec<CellBodyDraw>) {
         let cells: Vec<&Value> = input.get("cells").map_or_else(
             || vec![input],
             |cells| cells.as_array().unwrap().iter().collect(),
@@ -455,7 +456,7 @@ impl RetailBridgeFixture {
         ];
         // Native fixture viewport +Y moves the shape; its Z-buffer origin is
         // independently zero. Do not use viewport Y as a second depth bias.
-        let mut instances = Vec::new();
+        let (mut instances, mut draws) = (Vec::new(), Vec::new());
         match kind {
             BridgeFrameKind::Shadow => build_bridge_shadow_instances_inner(
                 &terrain,
@@ -473,20 +474,25 @@ impl RetailBridgeFixture {
                 size[1] as f32,
                 &mut instances,
             ),
-            BridgeFrameKind::Body => build_bridge_body_instances_inner(
-                &terrain,
-                Some(&live_grid),
-                atlas,
-                &self.names,
-                &crate::map::lighting::CellLightGrid::new(),
-                camera.world_origin_y,
-                camera.world_height,
-                camera.camera_pos[0],
-                camera.camera_pos[1],
-                size[0] as f32,
-                size[1] as f32,
-                &mut instances,
-            ),
+            BridgeFrameKind::Body => {
+                let mut bodies = Vec::new();
+                build_bridge_body_instances_inner(
+                    &terrain,
+                    Some(&live_grid),
+                    atlas,
+                    &self.names,
+                    &crate::map::lighting::CellLightGrid::new(),
+                    camera.world_origin_y,
+                    camera.world_height,
+                    camera.camera_pos[0],
+                    camera.camera_pos[1],
+                    size[0] as f32,
+                    size[1] as f32,
+                    &mut bodies,
+                );
+                // A scene's bodies take the production sweep's order and draws.
+                submit_cell_body_sweep(bodies, &mut instances, &mut draws);
+            }
         }
         let admitted = input["expect_no_draw"] != true
             && input["expect_clipped"] != true
@@ -497,8 +503,8 @@ impl RetailBridgeFixture {
             "original caller admits {}",
             input["name"]
         );
-        let instances = instances.repeat(input["repeat"].as_u64().unwrap() as usize);
-        (camera, instances)
+        let repeat = input["repeat"].as_u64().unwrap() as usize;
+        (camera, instances.repeat(repeat), draws.repeat(repeat))
     }
 }
 
@@ -539,7 +545,7 @@ fn assert_native_cell_sweep_order(
             "cell_point":[(point.0+600.0) as i32,(point.1-200.0) as i32], "viewport_y":0});
         // A single emitted instance identifies its source cell. The ordering
         // expectation itself is the recorded original Display traversal.
-        let (_, one) = fixture.instances(&input, atlas, [1024, 1024], BridgeFrameKind::Shadow);
+        let (_, one, _) = fixture.instances(&input, atlas, [1024, 1024], BridgeFrameKind::Shadow);
         assert!(
             identity_by_position
                 .insert(one[0].position.map(f32::to_bits), coords)
@@ -607,7 +613,7 @@ fn retail_bridge_caller_matches_native_color_and_depth_attachments() {
         let mut pool = InstanceBufferPool::new();
         for row in packet["rows"].as_array().unwrap() {
             let input = &row["input"];
-            let (camera, instances) =
+            let (camera, instances, _) =
                 fixture.instances(input, &atlas, size, BridgeFrameKind::Shadow);
             batch.write_camera(&gpu.queue, camera);
             terrain.prepare(&gpu.device, &color, &dv, camera);
@@ -710,7 +716,7 @@ fn retail_crate_live_mark_ff_emits_shadow_and_live_removal_wins() {
         input["state"],
         crate::rules::overlay_types::native_mark_overlay_data(flags)
     );
-    let (_, instances) = fixture.instances(&input, &atlas, [192, 160], BridgeFrameKind::Shadow);
+    let (_, instances, _) = fixture.instances(&input, &atlas, [192, 160], BridgeFrameKind::Shadow);
     assert_eq!(
         instances.len(),
         1,
@@ -725,7 +731,7 @@ fn retail_crate_live_mark_ff_emits_shadow_and_live_removal_wins() {
         "body retains the existing OverlayAtlas owner"
     );
     input["overlay_id"] = Value::from(-1);
-    let (_, removed) = fixture.instances(&input, &atlas, [192, 160], BridgeFrameKind::Shadow);
+    let (_, removed, _) = fixture.instances(&input, &atlas, [192, 160], BridgeFrameKind::Shadow);
     assert!(
         removed.is_empty(),
         "live clear defeats the retained published anchor"
@@ -753,7 +759,8 @@ fn assert_native_shadow_rows(
         if let Some(building_type) = building_type {
             input["building_type"] = Value::from(building_type);
         }
-        let (camera, instances) = fixture.instances(&input, atlas, size, BridgeFrameKind::Shadow);
+        let (camera, instances, _) =
+            fixture.instances(&input, atlas, size, BridgeFrameKind::Shadow);
         if row["name"] == "repeat" {
             assert_eq!(instances.len(), 2);
             assert_eq!(row["steps"].as_array().unwrap().len(), 2);
@@ -858,7 +865,7 @@ fn retail_crate_shadow_matches_native_color_depth_and_clear_controls() {
                 - rect["rect"][0].as_i64().unwrap(),
         );
         edge["expect_clipped"] = Value::Bool(true);
-        let (_, instances) = fixture.instances(&edge, &atlas, size, BridgeFrameKind::Shadow);
+        let (_, instances, _) = fixture.instances(&edge, &atlas, size, BridgeFrameKind::Shadow);
         assert!(
             instances.is_empty(),
             "touching viewport boundary has zero area"
@@ -940,7 +947,7 @@ fn retail_rubble_shadow_matches_native_color_depth_and_clear_controls() {
         input["building_type"] = Value::from(building_type);
         input["state"] = Value::from(255);
         input["expect_no_draw"] = Value::Bool(true);
-        let (_, instances) = fixture.instances(&input, &atlas, size, BridgeFrameKind::Shadow);
+        let (_, instances, _) = fixture.instances(&input, &atlas, size, BridgeFrameKind::Shadow);
         assert!(
             instances.is_empty(),
             "original outer sweep refuses proxy frame256"
@@ -962,7 +969,7 @@ fn retail_rubble_shadow_matches_native_color_depth_and_clear_controls() {
                 - rect["rect"][0].as_i64().unwrap(),
         );
         input["expect_clipped"] = Value::Bool(true);
-        let (_, instances) = fixture.instances(&input, &atlas, size, BridgeFrameKind::Shadow);
+        let (_, instances, _) = fixture.instances(&input, &atlas, size, BridgeFrameKind::Shadow);
         assert!(
             instances.is_empty(),
             "native proxy rectangle owns outer admission"
@@ -1008,7 +1015,7 @@ fn retail_bridge_body_matches_native_color_and_depth_attachments() {
             if let Some(cells) = row.get("cells") {
                 builder_input["cells"] = cells.clone();
             }
-            let (camera, instances) =
+            let (camera, instances, draws) =
                 fixture.instances(&builder_input, &atlas, size, BridgeFrameKind::Body);
             batch.write_camera(&gpu.queue, camera);
             pool.upload_on_device(&gpu.device, &gpu.queue, "bridge-native-body", &instances);
@@ -1041,12 +1048,14 @@ fn retail_bridge_body_matches_native_color_and_depth_attachments() {
                 let clip: [u32; 4] =
                     std::array::from_fn(|i| input["clip"][i].as_u64().unwrap() as u32);
                 pass.set_scissor_rect(clip[0], clip[1], clip[2], clip[3]);
-                super::draw_passes::draw_pooled_bridge_bodies(
+                super::draw_passes::draw_pooled_cell_bodies(
                     &mut pass,
                     &batch,
                     &pool,
+                    None,
                     Some(&atlas),
                     "bridge-native-body",
+                    &draws,
                 );
             }
             let reads = [
@@ -1076,7 +1085,7 @@ fn retail_bridge_shadow_workload_timing() {
     let atlas = fixture.atlas(&gpu, &batch);
     let mut input = packet["rows"][0]["input"].clone();
     input["cell_point"] = serde_json::json!([180, 200]);
-    let (camera, one) = fixture.instances(&input, &atlas, size, BridgeFrameKind::Shadow);
+    let (camera, one, _) = fixture.instances(&input, &atlas, size, BridgeFrameKind::Shadow);
     batch.write_camera(&gpu.queue, camera);
     let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
     let color = gpu.target(size, format);

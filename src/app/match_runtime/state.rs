@@ -102,6 +102,22 @@ impl MatchState {
                 .is_some_and(|radar| radar.movie_pause())
     }
 
+    /// Main_Tick (`0x0055D360`) is not running. A LAN/WOL modal's pump
+    /// `0x00623120` keeps calling it in GameMode 3/4, so what Main_Tick
+    /// drives keeps going under the dialog: `MessageListClass::Manage`
+    /// (`0x005D4430`, its only caller) ages the rows. The debug pause and
+    /// the radar movie pause still stop it.
+    pub(crate) fn main_tick_frozen(&self) -> bool {
+        self.debug_pause
+            || self
+                .match_presentation
+                .radar_anim
+                .as_ref()
+                .is_some_and(|radar| radar.movie_pause())
+            || (self.match_presentation.in_game_menu.is_open()
+                && !self.session_mode().is_network())
+    }
+
     /// `GameMode` (`0x00A8B238`) from whichever side holds it: the installed
     /// world's saved ScenarioSession from install until the shell writes it
     /// again, otherwise the shell (see `MatchSession`).

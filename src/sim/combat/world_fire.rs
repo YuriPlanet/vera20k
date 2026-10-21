@@ -182,10 +182,8 @@ fn admit_attacker_fire<'r>(
                 let (rx, ry, sx, sy) = resolve_target_coords(&snap.target, world)?;
                 Some((rx, ry, sx, sy, target.health(), target.type_ref()))
             }),
-        TargetKind::Cell(rx, ry) => {
-            let (trx, try_, tsx, tsy) = cell_center_coords(rx, ry);
-            Some((trx, try_, tsx, tsy, 1i32, snap.type_id))
-        }
+        TargetKind::Cell(..) => resolve_target_coords(&snap.target, world)
+            .map(|(trx, try_, tsx, tsy)| (trx, try_, tsx, tsy, 1i32, snap.type_id)),
     };
 
     let (target_rx, target_ry, target_sub_x, target_sub_y, target_type_ref) = match target_data {
@@ -570,7 +568,7 @@ fn admit_attacker_fire<'r>(
                     })?;
                 (coords, type_ref)
             }
-            TargetKind::Cell(rx, ry) => (cell_center_coords(rx, ry), snap.type_id),
+            TargetKind::Cell(..) => (resolve_target_coords(&snap.target, world)?, snap.type_id),
         }
     } else {
         (
@@ -3111,9 +3109,14 @@ pub(crate) fn estimated_damage_on(
         warhead: warhead.map(|warhead| damage::estimate::EstimateWarhead {
             cell_spread: warhead.cell_spread_f64,
             percent_at_max: warhead.percent_at_max_f64,
-            verses: &warhead.verses_f64,
+            armor_multiplier: warhead
+                .interaction(
+                    target_obj.map_or(crate::rules::armor::ArmorId::NONE, |object| {
+                        object.armor_id()
+                    }),
+                )
+                .multiplier(),
         }),
-        armor: damage::ArmorClass(target_obj.map_or(0, |object| armor_index(&object.armor) as u8)),
         scenario_no_damage: sim.session.no_damage(),
         max_damage: rules.combat_damage.max_damage,
     })

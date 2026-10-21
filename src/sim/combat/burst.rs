@@ -256,14 +256,6 @@ mod tests {
                     .set_passively_acquired_target_for_test(true);
                 actor.weapon_burst.complete_shot(2);
                 let command = match order {
-                    0 => Command::RepairAtDepot {
-                        entity_id: id,
-                        depot_id: destination,
-                    },
-                    1 => Command::EnterTransport {
-                        passenger_id: id,
-                        transport_id: destination,
-                    },
                     2 => Command::PlantC4 {
                         attacker_id: id,
                         target_building_id: destination,
@@ -272,21 +264,27 @@ mod tests {
                         engineer_id: id,
                         target_building_id: destination,
                     },
-                    _ => Command::EnterBunker {
-                        unit_id: id,
-                        bunker_id: destination,
-                    },
+                    // Into a depot, a transport or a bunker.
+                    _ => Command::clicked_mission(
+                        id,
+                        crate::sim::mission::MissionType::Enter,
+                        TargetKind::Entity(destination),
+                    ),
                 };
-                // Rejected ownership cannot cancel a burst or passive provenance.
-                assert!(!sim.apply_command("Russians", &command, Some(&rules)));
-                let actor = sim.substrate.entities.get(id).unwrap();
-                assert_eq!(
-                    actor.attack_target.target().is_some(),
-                    had_target,
-                    "{command:?}"
-                );
-                assert!(actor.passive_scan.acquired(), "{command:?}");
-                assert_eq!(actor.weapon_burst.index(), 1, "{command:?}");
+                // Rejected ownership cannot cancel a burst or passive
+                // provenance. The MEGAMISSION Enter tests no owner
+                // (`0x004C71F6..0x004C721F`), so only the typed orders do.
+                if matches!(order, 2 | 3) {
+                    assert!(!sim.apply_command("Russians", &command, Some(&rules)));
+                    let actor = sim.substrate.entities.get(id).unwrap();
+                    assert_eq!(
+                        actor.attack_target.target().is_some(),
+                        had_target,
+                        "{command:?}"
+                    );
+                    assert!(actor.passive_scan.acquired(), "{command:?}");
+                    assert_eq!(actor.weapon_burst.index(), 1, "{command:?}");
+                }
 
                 assert!(
                     sim.apply_command("Americans", &command, Some(&rules)),

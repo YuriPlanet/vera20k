@@ -22,6 +22,7 @@ pub mod scenario_resources;
 use saved_local_view::SavedLocalView;
 use scenario_resources::{SavedScenarioResources, SavedScenarioResourcesRef};
 
+use crate::rules::compatibility::RulesCompatibility;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
 use crate::util::save_codec;
@@ -1222,7 +1223,23 @@ use crate::util::save_codec;
 // 457 -> 458: retained upgrade rules, host-owned installed type slots and
 // scenario-owned mutable BuildingType upgrade animation names. Temporary
 // upgrade objects no longer retain a competing authored-building identity.
-const SNAPSHOT_VERSION: u32 = 458;
+// 458 -> 459: retain the build's extension capability in Rules and the save
+// header; reject cross-capability saves before deserializing Simulation.
+// 459 -> 460: retained Ares generic prerequisite definitions and custom group
+// references in typed TechnoType prerequisites.
+// 460 -> 461: a Tiberium queue's heap is the shared native heap: its slots
+// lose the unused slot 0 and its size word replaces the queue's capacity.
+// 461 -> 462: Command::MinerReturn, RepairAtDepot, EnterTransport, EnterBunker
+// and HarvestCell are gone (each was the MEGAMISSION event under a second
+// name), which renumbers the later Command variants in pending
+// CommandEnvelope payloads.
+// 462 -> 463: retained ObjectType armor IDs, Ares armor registry and independent
+// Warhead extension records; the capability metadata header still starts at 459.
+// 463 -> 464: the retained type registry keeps each InfantryType's
+// ReadSequenceData sound pairs from every reached pass.
+// 464 -> 465: an Anim keeps its Temporal erase pause (+0x11A) and no longer
+// keeps a DoubleThick copy; DrawIt reads the type's.
+const SNAPSHOT_VERSION: u32 = 465;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1358,6 +1375,8 @@ pub struct GameSnapshot {
     pub save_timestamp: u64,
     /// Map name at save time — stored in header for quick preview.
     pub map_name: String,
+    /// Capability of the retained Rules owner, or this build for synthetic saves.
+    compatibility: RulesCompatibility,
     /// The full authoritative simulation state (caches excluded via serde skip).
     pub sim: Simulation,
     /// Presentation-owned Techno+3CA waterline shorts by stable entity ID.
@@ -1387,6 +1406,22 @@ pub struct GameSnapshotHeader {
     pub tick: u64,
     pub save_timestamp: u64,
     pub map_name: String,
+    compatibility: RulesCompatibility,
+}
+
+/// The metadata prefix used before the capability marker. An incompatible
+/// schema remains listable; its absent mode is never used to admit a load.
+#[derive(Deserialize)]
+struct LegacyGameSnapshotHeader {
+    product_magic: [u8; 8],
+    envelope_version: u32,
+    version: u32,
+    description: String,
+    map_hash: u64,
+    rules_hash: u64,
+    tick: u64,
+    save_timestamp: u64,
+    map_name: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1409,6 +1444,11 @@ pub enum SnapshotError {
     EnvelopeVersionMismatch { expected: u32, found: u32 },
     #[error("snapshot version {found} does not match expected {expected}")]
     VersionMismatch { expected: u32, found: u32 },
+    #[error("snapshot capability {found:?} does not match this build's {expected:?}")]
+    CapabilityMismatch {
+        expected: RulesCompatibility,
+        found: RulesCompatibility,
+    },
     #[error("map hash {found:#018x} does not match active map {expected:#018x}")]
     MapMismatch { expected: u64, found: u64 },
     #[error("rules hash {found:#018x} does not match active rules {expected:#018x}")]
@@ -1659,6 +1699,7 @@ struct GameSnapshotRef<'a> {
     tick: u64,
     save_timestamp: u64,
     map_name: String,
+    compatibility: RulesCompatibility,
     sim: &'a Simulation,
     sinking_waterlines: &'a [(u64, i16)],
     sidebar_order: Option<&'a SavedSidebarOrder>,
@@ -1695,6 +1736,10 @@ impl GameSnapshot {
             tick: sim.session.tick(),
             save_timestamp,
             map_name: map_name.to_string(),
+            compatibility: scenario_resources
+                .map_or_else(RulesCompatibility::default, |resources| {
+                    resources.compatibility()
+                }),
             sim,
             sinking_waterlines,
             sidebar_order,
@@ -1908,14 +1953,38 @@ impl GameSnapshot {
                 found: preamble.version,
             });
         }
-        Ok(save_codec::deserialize(bytes)?)
+        let header: GameSnapshotHeader = save_codec::deserialize(bytes)?;
+        if !header.compatibility.matches_build() {
+            return Err(SnapshotError::CapabilityMismatch {
+                expected: RulesCompatibility::default(),
+                found: header.compatibility,
+            });
+        }
+        Ok(header)
     }
 
     /// SaveInfo681840/559ED0 reads metadata even when its internal version is
     /// incompatible. Browser5596A0 sorts those rows before5599DF hides them;
     /// full load still requires the strict current-version header above.
     pub fn read_metadata(bytes: &[u8]) -> Result<GameSnapshotHeader, SnapshotError> {
-        Self::read_preamble(bytes)?;
+        let preamble = Self::read_preamble(bytes)?;
+        if preamble.version < 459 {
+            let header: LegacyGameSnapshotHeader = save_codec::deserialize(bytes)?;
+            return Ok(GameSnapshotHeader {
+                product_magic: header.product_magic,
+                envelope_version: header.envelope_version,
+                version: header.version,
+                description: header.description,
+                map_hash: header.map_hash,
+                rules_hash: header.rules_hash,
+                tick: header.tick,
+                save_timestamp: header.save_timestamp,
+                map_name: header.map_name,
+                // The schema mismatch always rejects this row. The old format
+                // did not record a capability and cannot certify either mode.
+                compatibility: RulesCompatibility::Retail,
+            });
+        }
         Ok(save_codec::deserialize(bytes)?)
     }
 
@@ -1939,8 +2008,12 @@ impl GameSnapshot {
 }
 
 impl GameSnapshotHeader {
-    pub fn is_current_version(&self) -> bool {
-        self.version == SNAPSHOT_VERSION
+    pub fn compatibility(&self) -> RulesCompatibility {
+        self.compatibility
+    }
+
+    pub fn is_compatible(&self) -> bool {
+        self.version == SNAPSHOT_VERSION && self.compatibility.matches_build()
     }
 }
 
@@ -1953,112 +2026,85 @@ impl RestoredObjectIndex {
     fn build(
         sim: &Simulation,
     ) -> Result<(Self, BTreeMap<u64, &'static str>), SnapshotRestoreError> {
+        use crate::sim::world::ObjectKind;
         let mut identities = BTreeMap::new();
-        let mut highest_id = 0;
-
-        for (registry_id, entity) in sim.substrate.entities.iter_sorted() {
-            Self::register(
-                &mut identities,
-                "EntityStore",
-                registry_id,
-                entity.stable_id(),
-            )?;
-            highest_id = highest_id.max(registry_id);
-        }
-        for (&registry_id, anim) in sim.substrate.anims.iter() {
-            Self::register(&mut identities, "AnimStore", registry_id, anim.stable_id())?;
-            highest_id = highest_id.max(registry_id);
-        }
-        for (&registry_id, light) in sim.substrate.spotlights.iter() {
-            Self::register(
-                &mut identities,
-                "SpotlightStore",
-                registry_id,
-                light.stable_id(),
-            )?;
-            highest_id = highest_id.max(registry_id);
-        }
-        for (&registry_id, debris) in sim.substrate.voxel_anims.iter() {
-            Self::register(
-                &mut identities,
-                "VoxelAnimStore",
-                registry_id,
-                debris.stable_id(),
-            )?;
-            highest_id = highest_id.max(registry_id);
-        }
-        for (&registry_id, system) in sim.substrate.particle_systems.iter() {
-            Self::register(
-                &mut identities,
-                "ParticleSystemStore",
-                registry_id,
-                system.stable_id(),
-            )?;
-            highest_id = highest_id.max(registry_id);
-            // Individual particles retain AIR Display membership. Register
-            // their owning store's identities in the existing restore index.
-            for particle in system.particles() {
-                let id = particle.stable_id();
-                Self::register(&mut identities, "ParticleSystemStore.children", id, id)?;
-                highest_id = highest_id.max(id);
+        let registry = &mut identities;
+        for kind in ObjectKind::ALL {
+            match kind {
+                ObjectKind::Entity => {
+                    for (id, entity) in sim.substrate.entities.iter_sorted() {
+                        Self::register(registry, "EntityStore", id, entity.stable_id())?;
+                    }
+                }
+                ObjectKind::Anim => {
+                    for (&id, anim) in sim.substrate.anims.iter() {
+                        Self::register(registry, "AnimStore", id, anim.stable_id())?;
+                    }
+                }
+                ObjectKind::VoxelAnim => {
+                    for (&id, debris) in sim.substrate.voxel_anims.iter() {
+                        Self::register(registry, "VoxelAnimStore", id, debris.stable_id())?;
+                    }
+                }
+                ObjectKind::Spotlight => {
+                    for (&id, light) in sim.substrate.spotlights.iter() {
+                        Self::register(registry, "SpotlightStore", id, light.stable_id())?;
+                    }
+                }
+                ObjectKind::ParticleSystem => {
+                    for (&id, system) in sim.substrate.particle_systems.iter() {
+                        Self::register(registry, "ParticleSystemStore", id, system.stable_id())?;
+                    }
+                }
+                // Individual particles retain AIR Display membership.
+                ObjectKind::Particle => {
+                    for (_, system) in sim.substrate.particle_systems.iter() {
+                        for particle in system.particles() {
+                            let id = particle.stable_id();
+                            Self::register(registry, "ParticleSystemStore.children", id, id)?;
+                        }
+                    }
+                    for (id, particle, _, _) in sim.substrate.particle_systems.detached_particles()
+                    {
+                        Self::register(
+                            registry,
+                            "ParticleSystemStore.detached",
+                            id,
+                            particle.stable_id(),
+                        )?;
+                    }
+                }
+                ObjectKind::Terrain => {
+                    for (&id, terrain) in sim.terrain_objects.objects() {
+                        Self::register(registry, "TerrainObjectStore", id, terrain.stable_id())?;
+                    }
+                }
+                ObjectKind::Projectile => {
+                    for (&id, projectile) in sim.projectiles.iter() {
+                        Self::register(registry, "ProjectileStore", id, projectile.id())?;
+                    }
+                }
+                ObjectKind::Wave => {
+                    for (&id, wave) in sim.waves.iter() {
+                        Self::register(registry, "WaveStore", id, wave.id())?;
+                    }
+                }
+                ObjectKind::Smudge => {
+                    for (id, object) in sim.smudge_grid.iter().flat_map(|grid| grid.objects()) {
+                        Self::register(registry, "SmudgeGrid", id, object.stable_id())?;
+                    }
+                }
             }
         }
-        for (registry_id, particle, _, _) in sim.substrate.particle_systems.detached_particles() {
-            Self::register(
-                &mut identities,
-                "ParticleSystemStore.detached",
-                registry_id,
-                particle.stable_id(),
-            )?;
-            highest_id = highest_id.max(registry_id);
-        }
-        for (&registry_id, terrain) in sim.terrain_objects.objects() {
-            Self::register(
-                &mut identities,
-                "TerrainObjectStore",
-                registry_id,
-                terrain.stable_id(),
-            )?;
-            highest_id = highest_id.max(registry_id);
-        }
-        for (&registry_id, projectile) in sim.projectiles.iter() {
-            Self::register(
-                &mut identities,
-                "ProjectileStore",
-                registry_id,
-                projectile.id(),
-            )?;
-            highest_id = highest_id.max(registry_id);
-        }
-        for (&registry_id, wave) in sim.waves.iter() {
-            Self::register(&mut identities, "WaveStore", registry_id, wave.id())?;
-            highest_id = highest_id.max(registry_id);
-        }
+        // The other registries numbered from the same allocator.
         for shot in sim.disk_laser_observations() {
-            Self::register(&mut identities, "DiskLaserStore", shot.id, shot.id)?;
-            highest_id = highest_id.max(shot.id);
+            Self::register(registry, "DiskLaserStore", shot.id, shot.id)?;
         }
-        if let Some(grid) = &sim.smudge_grid {
-            for (registry_id, object) in grid.objects() {
-                Self::register(
-                    &mut identities,
-                    "SmudgeGrid",
-                    registry_id,
-                    object.stable_id(),
-                )?;
-                highest_id = highest_id.max(registry_id);
-            }
-        }
-        for registry_id in sim.load_objects.retained_overlay_ids() {
-            Self::register(
-                &mut identities,
-                "LoadObjectLifecycle",
-                registry_id,
-                registry_id,
-            )?;
-            highest_id = highest_id.max(registry_id);
+        for id in sim.load_objects.retained_overlay_ids() {
+            Self::register(registry, "LoadObjectLifecycle", id, id)?;
         }
 
+        let highest_id = identities.last_key_value().map_or(0, |(&id, _)| id);
         Ok((Self { highest_id }, identities))
     }
 
@@ -2790,6 +2836,11 @@ impl Simulation {
     /// weak/derived identities, and reconstructs skipped indexes in dependency
     /// order.
     pub fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
+        for (_, entity) in self.substrate.entities.iter_sorted() {
+            entity
+                .validate_ares_build_compatibility()
+                .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
+        }
         self.validate_paid_super_weapon_selections()
             .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
         self.unit_deliveries
@@ -3075,12 +3126,7 @@ impl Simulation {
                 entity.parasite.restart_timers_after_load(frame);
             }
         }
-        Self::rebuild_logic_membership(
-            &mut self.terrain_objects,
-            &mut self.substrate,
-            &mut self.projectiles,
-            &mut self.waves,
-        );
+        self.rebuild_logic_membership();
         self.substrate.rebuild_building_anim_slot_indices();
         Self::rebuild_bomb_carriers(&self.substrate, &mut self.bombs);
         // The kamikaze tracker's Load (`0x0054E7B0`) follows its Clear.
@@ -3838,12 +3884,7 @@ mod tests {
         // monotonic allocators. Rebuild their substrate caches directly; the
         // production path uses `restore_after_snapshot_load`.
         sim.substrate.entities.rebuild_class_registries();
-        Simulation::rebuild_logic_membership(
-            &mut sim.terrain_objects,
-            &mut sim.substrate,
-            &mut sim.projectiles,
-            &mut sim.waves,
-        );
+        sim.rebuild_logic_membership();
         sim.substrate
             .occupancy
             .restore_memberships(&sim.substrate.entities)
@@ -4312,6 +4353,7 @@ mod tests {
             tick: 3,
             save_timestamp: 4,
             map_name: "current-layout".to_string(),
+            compatibility: RulesCompatibility::default(),
         })
         .expect("serialize current header only");
 
@@ -4333,8 +4375,60 @@ mod tests {
         assert_eq!(header.product_magic, SNAPSHOT_PRODUCT_MAGIC);
         assert_eq!(header.envelope_version, SNAPSHOT_ENVELOPE_VERSION);
         assert_eq!(header.version, SNAPSHOT_VERSION);
+        assert_eq!(header.compatibility, RulesCompatibility::default());
         assert_eq!(header.description, "Hold the northern ridge");
         assert_eq!(header.map_name, "OFFICIAL.MAP");
+    }
+
+    #[test]
+    fn snapshot_capability_rejects_foreign_mode_before_body_decode() {
+        let bytes = GameSnapshot::save_validated(&Simulation::new(), 0, 0, "synthetic", 0);
+        let mut header = GameSnapshot::read_header(&bytes).unwrap();
+        header.compatibility = match RulesCompatibility::default() {
+            RulesCompatibility::Retail => RulesCompatibility::Ares,
+            RulesCompatibility::Ares => RulesCompatibility::Retail,
+        };
+        // A complete header with no body proves capability admission runs before
+        // Simulation deserialization, even without bound scenario resources.
+        let bytes = save_codec::serialize(&header).unwrap();
+        for result in [
+            GameSnapshot::load(&bytes),
+            GameSnapshot::load_with_resources(&bytes),
+        ] {
+            assert!(matches!(
+                result,
+                Err(SnapshotError::CapabilityMismatch { expected, found })
+                    if expected == RulesCompatibility::default() && found == header.compatibility
+            ));
+        }
+        let metadata = GameSnapshot::read_metadata(&bytes).unwrap();
+        assert_eq!(metadata.compatibility, header.compatibility);
+        assert!(!metadata.is_compatible());
+    }
+
+    #[test]
+    fn snapshot_capability_keeps_legacy_metadata_readable_without_admitting_it() {
+        let bytes = save_codec::serialize(&(
+            SNAPSHOT_PRODUCT_MAGIC,
+            SNAPSHOT_ENVELOPE_VERSION,
+            457_u32,
+            "older layout",
+            1_u64,
+            2_u64,
+            3_u64,
+            4_u64,
+            "OLD.MAP",
+        ))
+        .unwrap();
+        let header = GameSnapshot::read_metadata(&bytes).unwrap();
+        assert_eq!(header.version, 457);
+        assert_eq!(header.description, "older layout");
+        assert_eq!(header.map_name, "OLD.MAP");
+        assert!(!header.is_compatible());
+        assert!(matches!(
+            GameSnapshot::read_header(&bytes),
+            Err(SnapshotError::VersionMismatch { found: 457, .. })
+        ));
     }
 
     #[test]
@@ -9127,12 +9221,7 @@ mod tests {
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);
         let mut restored = GameSnapshot::load(&bytes).expect("load should succeed").sim;
-        Simulation::rebuild_logic_membership(
-            &mut restored.terrain_objects,
-            &mut restored.substrate,
-            &mut restored.projectiles,
-            &mut restored.waves,
-        );
+        restored.rebuild_logic_membership();
 
         let member = restored.substrate.entities.get(1).expect("member restored");
         assert!(member.in_logic_vector.is_member());
@@ -10120,6 +10209,13 @@ mod tests {
         // 455 -> 456: saved paid two-stage selections and ticketed commands.
         // 456 -> 457: retained per-pass Warhead Verses table.
         // 457 -> 458: host-owned installed upgrades and shared type art.
-        assert_eq!(super::SNAPSHOT_VERSION, 458);
+        // 458 -> 459: the retained Rules/build extension capability.
+        // 459 -> 460: retained generic prerequisite definitions.
+        // 460 -> 461: Tiberium queues hold the shared native heap.
+        // 461 -> 462: the typed Enter and Harvest commands are gone.
+        // 462 -> 463: retained armor IDs and Ares warhead extension records.
+        // 463 -> 464: retained InfantryType sequence sound pairs.
+        // 464 -> 465: the Anim Temporal erase pause.
+        assert_eq!(super::SNAPSHOT_VERSION, 465);
     }
 }

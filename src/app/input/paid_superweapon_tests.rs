@@ -53,6 +53,7 @@ fn drain(sim: &mut Simulation, rules: &RuleSet) {
     }
 }
 
+#[cfg(feature = "ares")]
 #[test]
 fn paid_superweapon_input_cancels_before_source_exec_and_does_not_duplicate_cancel() {
     let (rules, mut sim, owner, source, _) = fixture(true);
@@ -82,6 +83,7 @@ fn paid_superweapon_input_cancels_before_source_exec_and_does_not_duplicate_canc
     assert_eq!(sim.houses()[&owner].economy().credits(), 1000);
 }
 
+#[cfg(feature = "ares")]
 #[test]
 fn paid_superweapon_input_final_and_mode_switch_use_the_saved_ticket() {
     let (rules, mut sim, owner, source, destination) = fixture(true);
@@ -121,5 +123,33 @@ fn paid_superweapon_input_free_pair_keeps_native_command_shape() {
             })
         );
     }
+    assert!(paid_super_weapon_cursor_cancellation(&sim, owner, None).is_none());
+}
+
+#[cfg(not(feature = "ares"))]
+#[test]
+fn disabled_ares_money_keeps_two_stage_clicks_on_stock_commands() {
+    let (rules, mut sim, owner, source, destination) = fixture(true);
+    let source_click = super_weapon_click_command(&sim, &rules, owner, source, (10, 10)).unwrap();
+    assert_eq!(
+        source_click,
+        Command::LaunchSuperWeapon {
+            sw_type_id: source,
+            target_rx: 10,
+            target_ry: 10,
+        }
+    );
+    schedule_command_in_sim(&mut sim, "Americans", source_click);
+    drain(&mut sim, &rules);
+    assert!(sim.paid_super_weapon_selection(owner).is_none());
+    assert_eq!(sim.houses()[&owner].economy().credits(), 1000);
+    assert_eq!(
+        super_weapon_click_command(&sim, &rules, owner, destination, (15, 15)),
+        Some(Command::LaunchSuperWeapon {
+            sw_type_id: destination,
+            target_rx: 15,
+            target_ry: 15,
+        })
+    );
     assert!(paid_super_weapon_cursor_cancellation(&sim, owner, None).is_none());
 }

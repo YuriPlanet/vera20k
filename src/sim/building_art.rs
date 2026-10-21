@@ -97,8 +97,8 @@ impl BuildingTintSample {
 }
 
 impl BuildingArt {
-    /// Sample once at Building43FE22, before Techno43FE56 can update either
-    /// tint stage, draw Scenario RNG, or decrement the flash countdown.
+    /// The light a relight gives the slot anims
+    /// ([`crate::sim::world::ObjectSubstrate::relight_building_anims`]).
     pub fn capture_tint_sample(
         &mut self,
         frame: u32,
@@ -187,6 +187,39 @@ impl BuildingArt {
 
     pub(crate) fn storage_mut_for_test(&mut self) -> &mut BuildingStorage {
         &mut self.storage
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// `BuildingClass` `0x00452000`, and its copy at the end of Flash
+    /// (`0x00456E00`): relight the slot anims from the building's light at
+    /// `frame`, which [`BuildingArt::tint_sample`] keeps for the draw.
+    /// UpdateAnimation (`0x00450A47..0x00450A77`) relights them the same way
+    /// on each Update (Building `0x0043FE22`), before the Techno AI
+    /// (`0x0043FE56`) steps either tint stage or the flash.
+    pub(crate) fn relight_building_anims(&mut self, id: u64, frame: u32) {
+        let airstrike_active = self.airstrike_tint_active(id);
+        if let Some(entity) = self.entities.get_mut(id)
+            && entity.category() == crate::map::entities::EntityCategory::Structure
+        {
+            entity.building_art.capture_tint_sample(
+                frame,
+                entity.flashing.flashed(),
+                entity.invulnerability.as_ref(),
+                &entity.airstrike_tint,
+                airstrike_active,
+            );
+        }
+    }
+
+    /// Building vt+0x148 `Flash` (`0x00456E00`): the Techno body
+    /// ([`GameEntity::flash_base`]), then the slot-anim relight. Its redraw
+    /// flag (`+0x80`) is presentation.
+    pub(crate) fn flash_building(&mut self, id: u64, frames: i32, frame: u32) {
+        if let Some(entity) = self.entities.get_mut(id) {
+            entity.flash_base(frames);
+        }
+        self.relight_building_anims(id, frame);
     }
 }
 
@@ -648,6 +681,11 @@ impl Simulation {
         if !enabled && object.powered && self.building_anim_power_flags(id, slot, rules).powered {
             self.substrate.anims.get_mut(new_id)?.pause();
         }
+        // 0x00451B17..0x00451B25: a building being erased (`vt+0x1D4`,
+        // Techno `+0x270`) freezes the new anim.
+        if self.substrate.entities.get(id)?.is_warped_out() {
+            self.substrate.anims.get_mut(new_id)?.temporal_pause();
+        }
         Some(new_id)
     }
 
@@ -917,6 +955,33 @@ pub fn body_frame(
         frame = frame.wrapping_add(offset);
     }
     frame
+}
+
+/// The image `BuildingClass::GetImage @ 0x004513D0` hands DrawBody.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BuildingImage {
+    /// The type's own image (vt+0x9C, `0x0045F040`).
+    Body,
+    /// The type's Buildup SHP (vt+0xC0, `0x00465960`).
+    Buildup,
+    /// A null Buildup: DrawBody returns before drawing anything
+    /// (`0x0043D2BB`).
+    Null,
+}
+
+/// `BuildingClass::GetImage @ 0x004513D0`: the type's image once BState
+/// (+0x534) is nonzero and OnConstructionComplete has set +0x6E4
+/// (`0x00446A6E`); its Buildup until then, whatever the BState, so a human
+/// player's placement draws Buildup in its idle frame before Construction
+/// begins. Either image is drawn at GetCurrentFrame ([`body_frame`]).
+pub fn building_image(entity: &GameEntity, has_buildup: bool) -> BuildingImage {
+    if !entity.in_construction_bstate() && entity.building_art.actually_placed() {
+        BuildingImage::Body
+    } else if has_buildup {
+        BuildingImage::Buildup
+    } else {
+        BuildingImage::Null
+    }
 }
 
 /// Equality key for health-only receiver continuation442B37. Represented

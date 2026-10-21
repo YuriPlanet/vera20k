@@ -18,7 +18,7 @@ use crate::map::rmg::tiles::TileIds;
 use crate::map::rmg::x87::{Gaussian, TruncF64, approx_sqrt};
 use crate::util::native_x87::X87Chop53;
 
-use super::blob::MinHeap;
+use super::blob::{CellHeap, by_key};
 
 /// Placement iterations cap (`local_5c < 100`).
 const MAX_ITERATIONS: i32 = 100;
@@ -200,13 +200,13 @@ fn place_region(
         return 0;
     }
     let budget = size * REGION_MULT;
-    let mut heap = MinHeap::new(budget as usize + 8);
+    let mut heap = CellHeap::new(budget as usize + 8);
     ctx.scratch.get_mut(origin.0, origin.1).visited = true;
-    heap.push(0.0, origin);
+    heap.push((0.0, origin), by_key);
     // `admitted` is the monotonic total of cells ever pushed (native `local_58`,
     // seeded at 1 for the origin); it caps the region and never decreases.
     let mut admitted = 1i32;
-    let mut current = heap.pop().map(|(_, coord)| coord);
+    let mut current = heap.pop(by_key).map(|(_, coord)| coord);
     let mut placed = 0i32;
 
     while placed < size {
@@ -259,11 +259,11 @@ fn place_region(
                 .add(jitter)
                 .to_f64() as f32;
             ctx.scratch.get_mut(nx, ny).visited = true;
-            heap.push(priority, (nx, ny));
+            heap.push((priority, (nx, ny)), by_key);
             admitted += 1;
         }
 
-        current = heap.pop().map(|(_, coord)| coord);
+        current = heap.pop(by_key).map(|(_, coord)| coord);
     }
     placed
 }

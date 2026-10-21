@@ -85,7 +85,7 @@ MAX_OBSERVATION_SAMPLES = 100_000
 MAX_RECEIPT_BYTES = 128 * 1024 * 1024
 ORDER_VARIANTS = frozenset(('Select', 'Move', 'Stop', 'Attack', 'Guard',
                             'DeployMcv', 'ForceAttackCell', 'CaptureBuilding', 'ToggleRepair',
-                            'EnterTransport', 'UnloadPassengers', 'RepairAtDepot', 'SellBuilding', 'SetRally', 'PlantC4',
+                            'MegaMission', 'UnloadPassengers', 'SellBuilding', 'SetRally', 'PlantC4',
                             'LaunchSuperWeapon', 'TogglePrimaryFactory'))
 PRODUCTION_VARIANTS = frozenset(('QueueProduction', 'PlaceReadyBuilding'))
 EXTENSION_FIELDS = frozenset(('commands', 'gestures', 'observe_owners', 'observe_types',
@@ -429,6 +429,9 @@ def _symbolic_requests(payload: Mapping[str, Any], label: str) -> dict[str, Any]
                 references[pointer] = _binding_name(value, f'{label}{pointer}')
             elif field.endswith('_id') and field not in ('type_id', 'sw_type_id') and isinstance(value, dict):
                 references[pointer] = value
+            elif (variant == 'MegaMission' and field == 'destination' and isinstance(value, dict)
+                  and isinstance(value.get('Entity'), dict)):
+                references[f'{pointer}/Entity'] = value['Entity']
             elif field in ('entity_ids', 'producer_ids') and isinstance(value, list):
                 references.update((f'{pointer}/{index}', item)
                                   for index, item in enumerate(value) if isinstance(item, dict))
@@ -779,14 +782,15 @@ def _animation_runtime(value: Any, label: str) -> None:
     runtime = require_object(value, label)
     require_exact_keys(runtime, ('current_frame', 'frame_step', 'delay_remaining', 'rate_reload',
                                  'frame_timer', 'loop_remaining', 'first_ai_guard',
-                                 'constructor_reverse', 'inactive', 'paused'), label)
+                                 'constructor_reverse', 'inactive', 'paused', 'temporal_paused'),
+                      label)
     for key in ('current_frame', 'frame_step'):
         _bounded_int(runtime[key], f'{label}.{key}', -(1 << 31), (1 << 31) - 1)
     for key in ('delay_remaining', 'rate_reload'):
         _bounded_int(runtime[key], f'{label}.{key}', 0, (1 << 16) - 1)
     _bounded_int(runtime['loop_remaining'], f'{label}.loop_remaining', 0, 255)
     _timer(runtime['frame_timer'], f'{label}.frame_timer')
-    for key in ('first_ai_guard', 'constructor_reverse', 'inactive', 'paused'):
+    for key in ('first_ai_guard', 'constructor_reverse', 'inactive', 'paused', 'temporal_paused'):
         if type(runtime[key]) is not bool:
             raise ValidationError(f'{label}.{key} must be a boolean')
 

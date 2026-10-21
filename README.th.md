@@ -54,15 +54,20 @@ VERA20K สร้างโดยเกมเมอร์ เพื่อเก�
 
 ![แอปพลิเคชันส่งคำสั่งไปยังการจำลองและรับสถานะของโลกกลับมา แล้วส่งข้อมูลการวาดไปยังการเรนเดอร์](docs/images/architecture.th.png)
 
+## ความต้องการของระบบ
+
+- **เกม:** Red Alert 2: Yuri's Revenge เวอร์ชัน 1.001
+- **ระบบปฏิบัติการ:** Windows 10 ขึ้นไป, Linux (glibc 2.35 ขึ้นไป เช่น Ubuntu 22.04 หรือ Steam Deck)
+  หรือ macOS 11 ขึ้นไปบน Apple Silicon
+- **กราฟิก:** Vulkan, DirectX 12 หรือ Metal
+
 ## บิลด์และรัน
 
 สิ่งที่ต้องมี:
 
-- **เกม:** Red Alert 2: Yuri's Revenge
-- **Rust และ Git:** [Rust](https://rustup.rs/) เวอร์ชันเสถียรล่าสุดที่ติดตั้งผ่าน rustup และ [Git](https://git-scm.com/)
+- **Rust และ Git:** [Rust](https://rustup.rs/) 1.88 หรือใหม่กว่า ที่ติดตั้งผ่าน rustup และ [Git](https://git-scm.com/)
 - **เครื่องมือบิลด์:** บน Windows ใช้ C++ build tools ของ Visual Studio ซึ่งตัวติดตั้ง Rust จะเสนอให้ติดตั้ง
   บน macOS รัน `xcode-select --install` บน Debian และ Ubuntu รัน `sudo apt install build-essential libasound2-dev pkg-config`
-- **กราฟิก:** GPU ที่รองรับ Vulkan, DirectX 12 หรือ Metal
 
 มีการเล่น VERA20K บน Windows, Linux และ macOS แล้ว
 
@@ -73,6 +78,8 @@ cp config.toml.example config.toml
 # ก่อนรัน ให้แก้ไข config.toml และตั้งค่า ra2_dir เป็นโฟลเดอร์เกมของคุณ:
 cargo run --release --bin vera20k
 ```
+
+การบิลด์ใช้พื้นที่หลาย GB ใน `target/`
 
 ## วิธีทำงานของเรา
 

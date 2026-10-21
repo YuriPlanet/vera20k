@@ -202,7 +202,7 @@ impl App {
             .into_iter()
             .map(
                 |(entry, last_write_time)| crate::ui::skirmish_shell::SavedSeedBrowserRow {
-                    visible: entry.header.is_current_version(),
+                    visible: entry.header.is_compatible(),
                     file_name: Some(entry.path),
                     description: entry.header.description.into(),
                     last_write_time,

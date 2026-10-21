@@ -1091,15 +1091,17 @@ mod tests {
     /// (`0x006F511A`).
     /// The floor is native's: `tools/ramp_height_vectors.json`
     /// `ramp_1_sub_64_192` (level 0, ramp 1, sub-cell (64, 192)) is 26.
+    /// The rider is bound past the exit, so that arrival's idle entry
+    /// (`0x0051A88B`) leaves him alone.
     #[test]
     fn infantry_leaves_a_tube_at_the_floor_of_its_spot() {
         let (mut sim, rules) = infantry_at_tube_end();
         sim.set_playfield_bounds_for_test(Some(crate::sim::arena_fixture::OPEN_PLAYFIELD));
-        sim.substrate
-            .entities
-            .get_mut(1)
-            .unwrap()
-            .set_in_playfield(false);
+        let rider = sim.substrate.entities.get_mut(1).unwrap();
+        rider.set_in_playfield(false);
+        rider
+            .navigation
+            .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::cell(3, 0)));
         sim.resolved_terrain
             .as_mut()
             .unwrap()

@@ -105,8 +105,8 @@ impl BunkerLinks {
 /// Native callers: the bunker's radio receiver (`0x0043C512`, CAN_LOAD's
 /// Bunker arm in [`crate::sim::radio::receive::can_load`]; `0x0043C86A`)
 /// and `FootClass::EnterTankBunker` (`0x004DFF4F`,
-/// [`Simulation::foot_enter_tank_bunker`]). VERA's EnterBunker order and the
-/// app's cursor and click order ask it too.
+/// [`Simulation::foot_enter_tank_bunker`]). VERA's bunker adapter in the
+/// MEGAMISSION Enter arm and the app's cursor and click order ask it too.
 pub fn can_auto_deploy_here(sim: &Simulation, unit_id: u64, rules: &RuleSet) -> bool {
     let Some(unit) = sim.substrate.entities.get(unit_id) else {
         return false;
@@ -128,8 +128,8 @@ pub fn can_auto_deploy_here(sim: &Simulation, unit_id: u64, rules: &RuleSet) -> 
 /// CAN_LOAD; on ROGER, DOCK_NOW queues its install mission, `retask` gives
 /// the unit its Enter, and the unit, marked as approaching this bunker (the
 /// install machine's keep-alive), drives to the bunker's cell. False, with
-/// nothing changed, when the bunker refuses. Shared by the EnterBunker order
-/// and [`Simulation::foot_enter_tank_bunker`].
+/// nothing changed, when the bunker refuses. Shared by the MEGAMISSION Enter
+/// arm and [`Simulation::foot_enter_tank_bunker`].
 ///
 /// RESIDUAL: native sends DOCK_NOW near arrival (UnitClass::PerCellProcess
 /// `0x0073A5C4`, tethered to the bunker), and the AI seek sends HELLO with no

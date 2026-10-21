@@ -8,6 +8,35 @@ from tools.tests.pe_fixture import pe_image
 
 
 class NativeImageTests(unittest.TestCase):
+    def test_explicit_dll_mapping_uses_the_shared_section_owner(self):
+        data = bytearray(pe_image())
+        struct.pack_into("<I", data, 0x80 + 24 + 28, 0x10000000)
+        machine = Mock()
+        oracle.map_pe32_image(machine, bytes(data), image_base=0x10000000,
+                             image_size=0x4000, header_size=0x200)
+        machine.mem_map.assert_called_once_with(0x10000000, 0x4000)
+        self.assertEqual(machine.mem_write.call_args_list[0].args,
+                         (0x10000000, bytes(data[:0x200])))
+        self.assertEqual(machine.mem_write.call_args_list[1].args,
+                         (0x10001000, b"\x90\x90\xc3\xcc"))
+        # Explicit DLL bounds do not change the default stock reader.
+        with self.assertRaises(oracle.OracleError):
+            list(oracle._sections(bytes(data)))
+
+    def test_explicit_mapping_rejects_invalid_bounds_before_mapping(self):
+        data = pe_image()
+        for base, size, headers in [(0x400001, 0x4000, 0x200),
+                                    (0x400000, 0x4001, 0x200),
+                                    (0xfffff000, 0x4000, 0x200),
+                                    (0x400000, 0x4000, 0),
+                                    (0x400000, 0x4000, len(data) + 1),
+                                    (0x400000, 0x1000, 0x200)]:
+            machine = Mock()
+            with self.subTest(base=base, size=size, headers=headers), self.assertRaises(oracle.OracleError):
+                oracle.map_pe32_image(machine, data, image_base=base,
+                                     image_size=size, header_size=headers)
+            machine.mem_map.assert_not_called()
+
     def test_virtual_address_maps_through_raw_pointer(self):
         data = pe_image()
         self.assertEqual(oracle.file_span(data, oracle.IMAGE_BASE + 0x1001, 2),

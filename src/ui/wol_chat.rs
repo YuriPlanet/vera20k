@@ -7,9 +7,10 @@
 //! 0x3ED sends through `0077E300`. Command words are CSF strings. Words are
 //! separated by the one-character string `L" "` at `0082083C`.
 //!
-//! The in-game observer branch of page/reply (`TXT_OBSERVER_CANT_PAGE`,
-//! gated by the byte VERA's Ghidra names `g_MuteSWLaunches`) only runs during
-//! a match, not in the shell.
+//! The observer branch of page/reply (`TXT_OBSERVER_CANT_PAGE`) is gated
+//! by `[0xA8B538]`, the local player's defeated/observer byte (Ghidra's
+//! `g_MuteSWLaunches` label is wrong), and the connection nodes
+//! `[0xA8DA78]`; it refuses pages only from a match.
 
 /// The localized command words the parser compares against.
 #[derive(Debug, Clone, Default)]
