@@ -216,7 +216,7 @@ def generate_starting_ownership():
   qualifier_gates=starting_ownership_qualifier_gates(m,houses['Alliance'])
   assert rng==m.rng_state()
   m.u.hook_del(hook);assert not rng_entries;m.check_code()
-  return dict(schema_version=1,selected_binary_sha256=hashlib.sha256(configured_gamemd().read_bytes()).hexdigest(),
+  return dict(schema_version=1,
    root=root,passive_layer=passive_layer,country_inputs=country_inputs,
    base_units=['V_BASE'],tech_level=10,unit_count=4,type_inputs=type_rows,
    candidate_lists=candidate_lists,candidate_house_tech_controls=candidate_house_tech_controls,

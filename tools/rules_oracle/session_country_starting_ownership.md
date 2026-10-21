@@ -9,7 +9,7 @@ python -m tools.rules_oracle.session_country --starting-ownership --check
 
 The [corpus](session_country_starting_ownership.json) and
 [sidecar](session_country_starting_ownership.meta.json) retain synthetic inputs,
-native outputs, selected binary identity and execution bounds. The default
+native outputs and execution bounds. The default
 `session_country` mode and its references are unchanged. No mod assets are needed.
 
 ## Native decisions

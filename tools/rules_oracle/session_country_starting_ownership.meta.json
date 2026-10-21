@@ -37,5 +37,5 @@
     "can_build_qualifier_reject": "0x004F7994"
   },
   "replay_command": "python -m tools.rules_oracle.session_country --starting-ownership",
-  "payload_sha256": "03772fe8e07fb6d67b91423fddd292a254588a54ae0446fc58b645c7c86b7ad1"
+  "payload_sha256": "bb57a3cce4fd09737cbf8d5ec0ab1f434f539fb5277f5b7056afed5983b241d9"
 }
