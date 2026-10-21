@@ -1305,8 +1305,13 @@ pub(crate) fn greatest_threat(
         [0, 0]
     };
     // `0x006F9024..0x006F903E`: a healer on mission Guard (`+0xAC == 5`).
-    let healer_on_guard = healer && scanner.mission.current().known() == Some(MissionType::Guard);
-    let range = scan_range(attacker_obj, mask, weapon_ranges, healer_on_guard);
+    let range = scan_range(
+        attacker_obj,
+        mask,
+        weapon_ranges,
+        healer,
+        scanner.mission.current().known(),
+    );
     let flags = threat_mask::flags_for(mask);
 
     // `TEST AL,0x3 ; JZ 0x006F9B6E @ 0x006F8FE0`: a mask without bit 0 or 1

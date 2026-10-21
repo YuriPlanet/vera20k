@@ -1683,7 +1683,7 @@ impl Simulation {
     /// mission target unless it had moved off it; a cell target off the
     /// playfield (`0x00578540`) sets leaving-map and clears every member's
     /// destination, one on it clears leaving-map.
-    pub(super) fn team_assign_mission_target(
+    pub(crate) fn team_assign_mission_target(
         &mut self,
         team_id: u64,
         target: Option<TeamTarget>,

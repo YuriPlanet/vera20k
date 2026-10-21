@@ -13,7 +13,7 @@ use crate::sim::movement::{ground_pose, motion_query, nav_target_coordinate};
 
 #[cfg(test)]
 #[path = "aircraft_move_tests.rs"]
-mod tests;
+pub(crate) mod tests;
 
 /// `Rules+0x1478`, the leptons Find_Attack_Cell searches out to: the
 /// RulesClass constructor's 0x2000 (`0x00667235`), which no INI reader
