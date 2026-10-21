@@ -861,7 +861,7 @@ impl GameEntity {
 
     /// The two building crew producers' stores443127 and44A747.
     pub(crate) fn mark_nominal_survivor(&mut self) {
-        assert_eq!(self.category, EntityCategory::Infantry);
+        debug_assert_eq!(self.category, EntityCategory::Infantry);
         self.nominal_survivor = true;
     }
 

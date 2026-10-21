@@ -100,12 +100,12 @@
 //!   before its UnInit. A UnitAbsorb passenger (no stock building) leaves
 //!   without its Scatter in Phase A and with it in a sale; VERA scatters
 //!   neither.
-//! Nominal crew retain Infantry+6D9: death443127 sets it before Unlimbo
-//! when Building+6E9 is set; sale44A747 sets it after successful Unlimbo.
-//! Added_To_Game502C3C skips only the active infantry increment, while
-//! Removed_From_Game still decrements it. The two producer timings differ.
-//! The BuildupAssetCatalog supplies immutable fresh-match Building+6E9;
-//! live art rebinding/reinitialization of existing buildings is not modeled.
+//! - Nominal crew retain Infantry+6D9: death443127 sets it before Unlimbo
+//!   when Building+6E9 is set; sale44A747 sets it after successful Unlimbo.
+//!   Added_To_Game502C3C skips only the active infantry increment, while
+//!   Removed_From_Game still decrements it. The two producer timings differ.
+//!   The BuildupAssetCatalog supplies immutable fresh-match Building+6E9;
+//!   live art rebinding/reinitialization of existing buildings is not modeled.
 //! - The off-map cell a passenger past the occupy list places in keeps the
 //!   coordinate its lookup stamps (`MapClass::operator[]`); VERA's absorbed
 //!   exit reads the off-map cell's bytes without stamping it. After Phase A
