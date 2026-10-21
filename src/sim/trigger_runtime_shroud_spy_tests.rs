@@ -246,6 +246,14 @@ fn retail_spy_house_entry_survives_restore_and_reaches_the_message_consumer() {
             .unwrap()
             .set_country_for_test(Some(country));
     }
+    sim.houses
+        .get_mut(&houses[0])
+        .unwrap()
+        .set_is_human_for_test(true);
+    sim.houses
+        .get_mut(&houses[0])
+        .unwrap()
+        .set_player_control_for_test(true);
     sim.session.set_current_house_for_test(Some(houses[1]));
     let actor = sim
         .spawn_object("SPY", "House0", 16, 15, 0, &rules)

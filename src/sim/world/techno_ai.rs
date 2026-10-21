@@ -825,7 +825,7 @@ fn techno_ai_shell(
                 return;
             }
             target_reach_step(sim, id, rules, ctx.overlay_registry, ctx.effects);
-            techno_common_post(sim, id, rules);
+            techno_common_post(sim, id, rules, ctx.effects);
         }
         EntityCategory::Structure => {
             // Building43FC39 damage-fire (run above, before the warp
@@ -1064,7 +1064,7 @@ fn techno_ai_shell(
             if !techno_after_acquisition(sim, id, rules, ctx, outcome) {
                 return;
             }
-            techno_common_post(sim, id, rules);
+            techno_common_post(sim, id, rules, ctx.effects);
         }
     }
 }
@@ -2166,7 +2166,7 @@ fn healer_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 
 /// The common Techno post-mission stage and the stock-dormant Cyborg Spark
 /// producer. The retained system and both native producers share particles::spawn.
-fn techno_common_post(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+fn techno_common_post(sim: &mut Simulation, id: u64, rules: &RuleSet, _effects: FrameEffects<'_>) {
     // Techno6FABC4 follows Mission, passive acquisition and the reach slot.
     // Native Buildings step at4509DE in UpdateAnimation before Techno and
     // never enter this receiver. Their existing construction owner still
@@ -2179,6 +2179,10 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     flash_step(&mut sim.substrate, id, sim.session.binary_frame());
 
     sim.update_damage_spark_after_ai(id, rules);
+    // Installed Ares6FAF0D ->10053DF0, after the ordinary Techno tail.
+    // No global frame sweep: limbo/skipped/dead visits never reach this slot.
+    #[cfg(feature = "ares")]
+    sim.tick_ares_emp(id, rules, _effects);
 }
 
 /// Shared late Techno6FAC31..6FAC79 slot for every represented category.
@@ -2253,7 +2257,7 @@ fn unit_techno_bracket(
         return BracketReach::Dispatched;
     }
     target_reach_step(sim, id, rules, ctx.overlay_registry, ctx.effects);
-    techno_common_post(sim, id, rules);
+    techno_common_post(sim, id, rules, ctx.effects);
     BracketReach::Dispatched
 }
 
@@ -5519,7 +5523,7 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
             }
             let mut expect = sim.scenario_rng.clone();
             let main = sim.main_rng.state();
-            techno_common_post(&mut sim, 1, &rules);
+            techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
             for &max in draws {
                 expect.next_range_u32_inclusive(0, max);
             }
@@ -5539,7 +5543,7 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
         insert_cyborg_unit(&mut sim, 1, 20);
         let mut expect = sim.scenario_rng.clone();
         let main = sim.main_rng.state();
-        techno_common_post(&mut sim, 1, &rules);
+        techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
         expect.next_range_u32_inclusive(0, DAMAGE_SPARK_ROLL_MAX); // roll
         expect.next_range_u32_inclusive(0, 1); // list-pick over 2 sparks
         assert_eq!(
@@ -5567,12 +5571,12 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
         let rules = cyborg_rules("1.0", "1.0", "SparkA,SparkB", TWO_SPARK_SYSTEMS);
         let mut sim = Simulation::new();
         insert_cyborg_unit(&mut sim, 1, 20);
-        techno_common_post(&mut sim, 1, &rules);
+        techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
         let first = spark_system(&sim, 1).unwrap();
         let frozen = sim.scenario_rng.state();
         // Advancing the session clock alone must never expire a live link.
         sim.session.set_tick_for_test(1_000_000);
-        techno_common_post(&mut sim, 1, &rules);
+        techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
         assert_eq!(sim.scenario_rng.state(), frozen);
         assert_eq!(spark_system(&sim, 1), Some(first));
 
@@ -5586,7 +5590,7 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
         let mut expect = sim.scenario_rng.clone();
         expect.next_range_u32_inclusive(0, DAMAGE_SPARK_ROLL_MAX);
         expect.next_range_u32_inclusive(0, 1);
-        techno_common_post(&mut sim, 1, &rules);
+        techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
         assert_eq!(sim.scenario_rng.state(), expect.state());
         assert_ne!(spark_system(&sim, 1), Some(first));
         assert!(spark_system(&sim, 1).is_some());
@@ -5602,7 +5606,7 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
         );
         let mut sim = Simulation::new();
         insert_cyborg_unit(&mut sim, 1, 20);
-        techno_common_post(&mut sim, 1, &rules);
+        techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
         let system_id = spark_system(&sim, 1).unwrap();
         assert_eq!(
             sim.particle_systems().get(system_id).unwrap().lifetime(),

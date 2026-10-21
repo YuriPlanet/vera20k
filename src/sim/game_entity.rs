@@ -33,6 +33,7 @@ use crate::sim::superweapon::invulnerability::InvulnerabilityState;
 use crate::sim::world::ObjectLifecycle;
 
 mod distributed_fire;
+mod emp;
 mod foot_air;
 mod pip_fill;
 pub(crate) use distributed_fire::DistributedFireCandidate;
@@ -104,6 +105,10 @@ pub struct GameEntity {
     /// this displacement through70BE50; no simulation/RNG/timer consumer.
     /// Retain the raw datum, not a renderer-owned reconstructed animation.
     native_cloak_displacement: crate::util::native_x87::NativeF32Bits,
+    /// Techno+504 and Ares held sparkle. One private counter owner; stock
+    /// constructor remains zero and only the feature-gated EMP producer writes it.
+    #[serde(default)]
+    emp: emp::EmpState,
     /// Low word of the one raw Scenario RNG draw performed by the active-retail
     /// `TechnoClass` constructor (`0x006F3254`, stored at native `+0x3C8`).
     /// Later report-selection consumers read this persistent value; placement
@@ -1570,6 +1575,7 @@ impl GameEntity {
             stable_id,
             native_unique_id,
             native_cloak_displacement: crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO,
+            emp: Default::default(),
             techno_ctor_random_word,
             secret_lab_fallback: None,
             stage: crate::sim::stage::StageClass::constructed(construction_frame as i32),

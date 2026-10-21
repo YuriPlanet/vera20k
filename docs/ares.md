@@ -36,6 +36,7 @@ complete mission loading or all downstream campaign extensions.
 
 Supported extensions:
 
+- [Ordinary ground EMP](ares-emp.md) (bounded human Drive/Walk victims)
 - [Custom armor](ares-custom-armor.md)
 - [EVA voice tags and Side selection](ares-eva.md)
 - [Generic production prerequisites](ares-prerequisites.md)

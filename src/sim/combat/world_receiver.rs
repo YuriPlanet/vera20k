@@ -2354,6 +2354,17 @@ fn emit_detonation_receivers<'r>(
             });
     }
 
+    // Installed Ares46920B ->100536E0/10052870 runs after radiation,
+    // before the exclusive special/ordinary damage arms (including Damage=0).
+    #[cfg(feature = "ares")]
+    world.apply_ares_emp_detonation(
+        detonation.impact,
+        Some(detonation.source_id),
+        warhead,
+        rules,
+        effects,
+    );
+
     // `BulletClass::DetonateAtCoord @ 0x0046978e` is the chain's only
     // conditional arm and the only one that consults the target: it reads the
     // bullet's raw `+0x10c` and calls `What_Am_I` through vtable `+0x2c`,

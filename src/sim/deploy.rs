@@ -293,8 +293,9 @@ impl Simulation {
     /// `vt+0x310` (`0x00700D10`), the deploy key's other test, refuses only a
     /// Unit in a tube or under EMP, which this already refuses.
     ///
-    /// RESIDUAL: the EMP refusal (vt+0x37C) of Units and Aircraft is not
-    /// represented: EMP has no Rust producer.
+    /// The feature-gated Ares producer reaches the existing Unit EMP refusal.
+    /// Aircraft EMP and Unit DeathFrame's separate virtual override remain
+    /// outside the ordinary live ground-victim chain.
     pub fn can_deploy_slash_unload(&self, id: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -311,6 +312,15 @@ impl Simulation {
         }
         match entity.category() {
             EntityCategory::Unit => {
+                //700E47..700E53 invokes Unit746C90 -> Techno70EFD0 before
+                // admission. For the live Drive victim, positive+504 vetoes
+                // both AI Hunt deploy and Guard→Unload through this owner.
+                // Active-retail EMP producer reachability is not established;
+                // default builds retain their current constructor-zero path.
+                #[cfg(feature = "ares")]
+                if entity.emp_remaining() > 0 {
+                    return false;
+                }
                 if entity.low_bridge_tube_state.is_some() {
                     return false;
                 }

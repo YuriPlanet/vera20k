@@ -530,6 +530,12 @@ impl RuntimeDefinitions {
 // Original jump-table bytes71F700/71F744/71F780/71F7C0 and6E3F08.
 // These are classification only, never substitutes for event predicates.
 fn event_classification(kind: i32) -> u8 {
+    // Ares3.0 GetFlags1004F6A0: EMP62..65 are attached-object events;
+    // Persistable1004F610 returns false for every one of them.
+    #[cfg(feature = "ares")]
+    if matches!(kind, 62..=65) {
+        return 2;
+    }
     let mut flags = 0;
     if matches!(kind, 0 | 1 | 4 | 8 | 24 | 25 | 26 | 31 | 53 | 54 | 59) {
         flags |= 1;
@@ -1483,6 +1489,29 @@ impl Simulation {
             .condition
             .clone();
         match condition.kind {
+            #[cfg(feature = "ares")]
+            62..=65 => {
+                // Installed HasOccurred71E949 ->100503E0/1004F7DC..870.
+                // The actor is the affected Techno. House-specific63/65
+                // compare the source's raw House+30, without Country/MP
+                // lookup; no mutable persistence or shared House is written.
+                if input.kind != condition.kind {
+                    return false;
+                }
+                let Some(actor) = input.actor.and_then(|id| self.substrate.entities.get(id)) else {
+                    return false;
+                };
+                if matches!(condition.kind, 63 | 65)
+                    && !input
+                        .source
+                        .and_then(|id| self.substrate.entities.get(id))
+                        .and_then(|source| self.base_reservation_house_index(source.owner()))
+                        .is_some_and(|index| index == condition.value)
+                {
+                    return false;
+                }
+                (actor.emp_remaining() > 0) == matches!(condition.kind, 62 | 63)
+            }
             53 => {
                 // HasOccurred71ECF5..71ED56, original gamemd: raised53
                 // and clear A8ED6B admit a forced GetDisplayOwner(+D0,1).

@@ -4041,6 +4041,7 @@ pub struct RuleSet {
     ares_prerequisites: Option<GenericPrerequisites>,
     /// Immutable projection of NativeRulesRegistryState's ordered armor catalog.
     ares_armors: Option<crate::rules::ares_armor::ArmorCatalog>,
+    emp_sparkles: Option<String>,
     #[cfg(feature = "ares")]
     ares_global_controls: crate::rules::native_processing::AresGlobalControls,
     /// Derived type-membership index for the lifecycle hooks; rebuilt together
@@ -4190,6 +4191,13 @@ impl RuleSet {
         }
     }
 
+    pub(crate) fn bind_emp_sparkles(&mut self, name: Option<String>) {
+        self.emp_sparkles = name;
+    }
+    pub(crate) fn emp_sparkles(&self) -> Option<&str> {
+        self.emp_sparkles.as_deref()
+    }
+
     pub(crate) fn reveal_trigger_radius(&self) -> i32 {
         self.reveal_trigger_radius
     }
@@ -4326,6 +4334,24 @@ impl RuleSet {
                 warhead.debris_types = debris_types.to_vec();
                 warhead.verses_f64 = verses.map(|value| f64::from_bits(value.bits()));
                 warhead.install_ares_verses(ares_verses);
+            }
+        }
+        for (category, name, emp) in processed.emp_type_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == category && object.id == name)
+            {
+                object.bind_emp_rules(emp);
+            }
+        }
+        for (name, emp) in processed.emp_warhead_states() {
+            if let Some(warhead) = rules
+                .warheads
+                .values_mut()
+                .find(|wh| wh.id.eq_ignore_ascii_case(name))
+            {
+                warhead.bind_emp_rules(emp);
             }
         }
         for (category, name, armor) in processed.object_armor_states() {
@@ -5400,6 +5426,7 @@ impl RuleSet {
             prerequisite_lists: Default::default(),
             ares_prerequisites: None,
             ares_armors: processed.ares_armors().cloned(),
+            emp_sparkles: None,
             #[cfg(feature = "ares")]
             ares_global_controls: processed.ares_global_controls().clone(),
             ares_prerequisite_alternates: HashSet::new(),
@@ -5971,6 +5998,27 @@ impl RuleSet {
             .map(|(name, warhead)| (name.to_ascii_uppercase(), warhead.ares_verses_hash_state()))
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
+
+        #[cfg(feature = "ares")]
+        {
+            b"ares-emp-rules-v1".hash(&mut hasher);
+            self.emp_sparkles.hash(&mut hasher);
+            self.object_list
+                .iter()
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.emp_rules(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+                .hash(&mut hasher);
+            self.warheads
+                .iter()
+                .map(|(name, wh)| (name.to_ascii_uppercase(), wh.emp_rules()))
+                .collect::<BTreeMap<_, _>>()
+                .hash(&mut hasher);
+        }
 
         // UnitType747734 retains CarriesCrate across later absent/invalid
         // keys; equal current source text can still mean different cargo.

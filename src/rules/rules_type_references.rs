@@ -93,6 +93,10 @@ fn named(id: &str) -> Option<String> {
 /// The kept pointers, by reader. Each Rules offset is the constructor's null
 /// store and the read's store.
 const POINTERS: &[(&str, PublishPointer)] = &[
+    // ReadGeneral already resolves this pointer; EMP is its first consumer.
+    ("EMPulseSparkles", |rules, id| {
+        rules.bind_emp_sparkles(named(id))
+    }),
     // ReadCombatDamage (`0x0066BBB0`): C4Warhead +FA8 (constructor
     // `0x00666B52`, read `0x0066C31F`), CrushWarhead +FAC (`0x00666B58`,
     // `0x0066C35D`), IvanWarhead +FC8 (`0x00666B82`, `0x0066C50C`), WarheadTypes;
