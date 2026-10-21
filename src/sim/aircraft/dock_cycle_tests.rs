@@ -4,7 +4,10 @@
 //! Mission_Enter (`0x00419C80`), which lands it on the pad its radio contact
 //! names; the airfield's Mission_Repair (`0x0044C836`) reloads it and
 //! releases it to Guard on the pad, still in radio contact. A Target sends
-//! it off its pad again (Mission_Guard's Target arm, `0x0041A822`).
+//! it off its pad again (Mission_Guard's Target arm, `0x0041A822`), unless
+//! the airfield's Guard comes first and its Repair puts it to sleep there.
+//! The airfield clears `HasStupidGuardMode=` as retail GAAIRC does, so its
+//! Guard runs the UnitReload re-queue (`0x00449970..0x004499B5`).
 
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::mission::{MissionId, MissionType};
@@ -17,6 +20,7 @@ const RULES: &str = "[General]\nFlightLevel=1500\nReloadRate=.3\n\
 [ORCA]\nStrength=150\nSpeed=14\nAmmo=1\nLandable=yes\nAirportBound=yes\nFighter=yes\n\
 Primary=TestGun\nDock=GAAIRC\nLocomotor={4A582746-9839-11D1-B709-00A024DDAFD1}\n\
 [GAAIRC]\nStrength=1000\nFoundation=2x2\nHelipad=yes\nUnitReload=yes\nNumberOfDocks=4\n\
+HasStupidGuardMode=no\n\
 [TestGun]\nDamage=10\nRange=6\nROF=60\nProjectile=TestShot\nWarhead=TestWH\n\
 [TestShot]\nROT=0\n[TestWH]\nVerses=100%\n\
 [VICTIM]\nStrength=1000\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
@@ -24,6 +28,48 @@ Primary=TestGun\nDock=GAAIRC\nLocomotor={4A582746-9839-11D1-B709-00A024DDAFD1}\n
 
 fn mission(sim: &Simulation, id: u64) -> Option<MissionType> {
     sim.substrate.entities.get(id)?.mission.current().known()
+}
+
+/// Frames until `id`'s next mission dispatch; 0 or less is the next frame's.
+fn frames_to_dispatch(sim: &Simulation, id: u64) -> i32 {
+    let timer = sim
+        .substrate
+        .entities
+        .get(id)
+        .unwrap()
+        .mission
+        .dispatch_timer();
+    timer
+        .start_frame()
+        .wrapping_add(timer.delay())
+        .wrapping_sub(sim.session.binary_frame() as i32)
+}
+
+/// Runs frames until the next one dispatches `first` and `second`'s next
+/// dispatch is `lead` or more frames after it.
+fn advance_until_dispatch_leads(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    first: u64,
+    second: u64,
+    lead: i32,
+) {
+    for _ in 0..1000 {
+        if frames_to_dispatch(sim, first) <= 0 && frames_to_dispatch(sim, second) >= lead {
+            return;
+        }
+        let _ = sim.advance_tick(&[], Some(rules), None, None, 33);
+    }
+    panic!("{first} never dispatches {lead} frames before {second}");
+}
+
+fn set_target(sim: &mut Simulation, id: u64, target: u64) {
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(crate::sim::combat::TargetKind::Entity(target)));
 }
 
 /// What a frame shows of the loop.
@@ -114,6 +160,13 @@ fn a_spent_aircraft_enters_its_dock_reloads_and_guards_on_the_pad() {
     }
 }
 
+/// A Target reaches the guarding aircraft just before its own Guard visit,
+/// while the airfield's next Guard visit is four or more frames away. The
+/// visit queues Attack (`0x0041A822`); Mission_Attack's state 1
+/// (`0x00418031`) assigns it a destination, and Assign_Destination's pad
+/// tail sends the airfield OVER_OUT (`0x0041AD86..0x0041ADA6`). Several
+/// hundred frames on it still attacks, airborne, and the airfield's later
+/// Guard and Repair visits no longer reach it.
 #[test]
 fn a_guarding_aircraft_with_a_target_leaves_its_pad_to_attack() {
     let rules = RuleSet::from_ini(&IniFile::from_str(RULES)).expect("rules");
@@ -124,12 +177,8 @@ fn a_guarding_aircraft_with_a_target_leaves_its_pad_to_attack() {
     let seen = run_cycle(&mut sim, &rules, orca, airfield);
     assert_eq!(seen.guarding_frames, 300, "the aircraft reloads and guards");
 
-    sim.substrate
-        .entities
-        .get_mut(orca)
-        .unwrap()
-        .attack_target
-        .set_for_test(Some(crate::sim::combat::TargetKind::Entity(victim)));
+    advance_until_dispatch_leads(&mut sim, &rules, orca, airfield, 4);
+    set_target(&mut sim, orca, victim);
     let mut relaunched = false;
     for _ in 0..600 {
         let _ = sim.advance_tick(&[], Some(&rules), None, None, 33);
@@ -142,6 +191,79 @@ fn a_guarding_aircraft_with_a_target_leaves_its_pad_to_attack() {
         }
     }
     assert!(relaunched, "a guarding aircraft holding a Target attacks");
+    for _ in 0..300 {
+        let _ = sim.advance_tick(&[], Some(&rules), None, None, 33);
+        assert_eq!(
+            mission(&sim, orca),
+            Some(MissionType::Attack),
+            "it keeps attacking"
+        );
+        assert!(
+            !sim.substrate
+                .entities
+                .get(airfield)
+                .unwrap()
+                .radio_contacts
+                .contains(orca),
+            "off its pad it is no contact of the airfield"
+        );
+    }
+    let entity = sim.substrate.entities.get(orca).unwrap();
+    assert!(air_movement::current_fly_height(entity, sim.resolved_terrain.as_ref()) > 0);
+}
+
+/// The other order: the airfield's Guard visit comes first and the
+/// aircraft's two or more frames later. The UnitReload re-queue
+/// (`0x00449970..0x004499B5`) asks the aircraft QUERY_RELOADED, which its
+/// Target refuses (`0x00419153`); stopped on its pad it answers NEED_TO_MOVE
+/// with ROGER (`0x00419274`), and the airfield queues Repair, which its
+/// after-AI ready check commences that frame. The next frame Repair finds the
+/// aircraft, not on Enter, answering NEED_TO_MOVE with ROGER and queues Sleep
+/// on it (`0x0044C8C9`), and with no Guard visit of its own that frame to
+/// queue Attack over it, its Fly Process commences it
+/// (`0x004CCB84..0x004CCBAD`). Asleep with its Target and at least half its
+/// Ammo it answers each later RELOAD with ROGER (`0x00419109`), so the
+/// airfield never releases it and it sleeps on its pad, still holding the
+/// Target. Native behavior established by instruction reading of each step.
+#[test]
+fn an_airfield_guard_first_puts_a_guarding_aircraft_with_a_target_to_sleep() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(RULES)).expect("rules");
+    let (mut sim, orca, airfield) = spent_orca(&rules, true);
+    let victim = sim
+        .spawn_object("VICTIM", "Russians", 40, 30, 0, &rules)
+        .expect("target");
+    let seen = run_cycle(&mut sim, &rules, orca, airfield);
+    assert_eq!(seen.guarding_frames, 300, "the aircraft reloads and guards");
+
+    advance_until_dispatch_leads(&mut sim, &rules, airfield, orca, 2);
+    assert_eq!(mission(&sim, airfield), Some(MissionType::Guard));
+    set_target(&mut sim, orca, victim);
+    let _ = sim.advance_tick(&[], Some(&rules), None, None, 33);
+    assert_eq!(mission(&sim, airfield), Some(MissionType::Repair));
+    let _ = sim.advance_tick(&[], Some(&rules), None, None, 33);
+    // Past two more Repair visits, `ReloadRate=` 270 frames apart.
+    for _ in 0..600 {
+        let entity = sim.substrate.entities.get(orca).expect("aircraft survives");
+        assert_eq!(mission(&sim, orca), Some(MissionType::Sleep));
+        assert!(
+            entity.attack_target.target().is_some(),
+            "it holds its Target"
+        );
+        assert_eq!(
+            air_movement::current_fly_height(entity, sim.resolved_terrain.as_ref()),
+            0
+        );
+        assert!(
+            sim.substrate
+                .entities
+                .get(airfield)
+                .unwrap()
+                .radio_contacts
+                .contains(orca)
+        );
+        assert_eq!(mission(&sim, airfield), Some(MissionType::Repair));
+        let _ = sim.advance_tick(&[], Some(&rules), None, None, 33);
+    }
 }
 
 /// Building4422F9 saves all four contacts before Destroy/Stun clears the
