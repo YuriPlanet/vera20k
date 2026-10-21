@@ -831,7 +831,8 @@ pub enum Command {
     /// Undeploy a structure back into its mobile unit (e.g. ConYard → MCV).
     /// Reads UndeploysInto from rules.ini to determine the spawned unit type.
     UndeployBuilding { entity_id: u64 },
-    /// Archive a rally cell on each selected factory the command owner owns.
+    /// Accepted ARCHIVE cell events for the selected factories. Input checks
+    /// ownership before issue; dispatch retains the actor through capture.
     SetRally {
         rx: u16,
         ry: u16,

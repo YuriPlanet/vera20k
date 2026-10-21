@@ -1491,7 +1491,7 @@ impl Simulation {
                 rx,
                 ry,
                 producer_ids,
-            } => self.set_rally_point_for_producers(command_owner, producer_ids, *rx, *ry, rules),
+            } => self.set_rally_point_for_producers(producer_ids, *rx, *ry),
             Command::ArchiveObject {
                 entity_id,
                 target_id,
@@ -2108,27 +2108,21 @@ impl Simulation {
     /// The rally click's event 0x1E for each selected factory:
     /// `BuildingClass::SetRallyPoint @ 0x00443860` queues it and
     /// [`Self::execute_archive_event`] runs it, so the factory archives the
-    /// cell (its only store). [`Self::takes_rally_point`] is VERA's command
-    /// admission.
+    /// cell (its only store). Input uses [`Self::takes_rally_point`] before
+    /// issuing it. The accepted event does not repeat ownership/admission:
+    /// native4C6DAA..4C6DDE tests only the resolved actor's Alive byte. A
+    /// capture between enqueue and dispatch must retain an accepted event,
+    /// even if a full OutList refuses the new owner's replacement rally.
     ///
     /// The input owner `factory_rally_cell_input` has already run native
     /// Map56DC20's nearby-passable search separately for each producer. This
     /// synchronized event stores that prepared target without searching again.
-    fn set_rally_point_for_producers(
-        &mut self,
-        command_owner: &str,
-        producer_ids: &[u64],
-        rx: u16,
-        ry: u16,
-        rules: &RuleSet,
-    ) -> bool {
+    fn set_rally_point_for_producers(&mut self, producer_ids: &[u64], rx: u16, ry: u16) -> bool {
         let mut ids = producer_ids.to_vec();
         ids.sort_unstable();
         ids.dedup();
         for stable_id in ids {
-            if self.takes_rally_point(stable_id, command_owner, rules) {
-                self.execute_archive_event(stable_id, crate::sim::combat::TargetKind::Cell(rx, ry));
-            }
+            self.execute_archive_event(stable_id, crate::sim::combat::TargetKind::Cell(rx, ry));
         }
         // `EVA_NewRallyPointEstablished` is not a sim fact: `BuildingClass::
         // SetRallyPoint 0x00443A69` speaks inside the click handler, after the

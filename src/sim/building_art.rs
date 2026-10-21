@@ -430,6 +430,8 @@ impl Simulation {
                     ),
                 });
         }
+        //44699A..446A5B: default naval rally, before placement/power publication.
+        self.initialize_naval_rally_point(id, rules);
         //446A61 sets the same House tech-recheck consumed at its late update.
         if let Some(house) = self.houses.get_mut(&owner) {
             house.request_tech_recheck();
