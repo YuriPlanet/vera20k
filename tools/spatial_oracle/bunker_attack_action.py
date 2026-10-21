@@ -1173,7 +1173,7 @@ def generate_no_manual_fire():
         rows.append(no_manual_fire_action(ares,flag,case))
     return dict(schema_version=1,binaries={name:dict(bytes=len(raw),
         sha256=hashlib.sha256(raw).hexdigest()) for name,raw in
-        [('Ares.dll',ares),('gamemd.exe',gamemd)]},readers=readers,
+        [('Ares.dll',ares)]},readers=readers,
         physical_readers=no_manual_fire_physical(ares),rows=rows)
 
 

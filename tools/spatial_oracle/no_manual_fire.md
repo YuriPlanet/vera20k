@@ -10,7 +10,8 @@ python -m tools.spatial_oracle.bunker_attack_action --no-manual-fire --check
 
 `--write` deliberately regenerates only `no_manual_fire.json` and its sidecar.
 Historical default, allied-object and voice corpora are unchanged. The dedicated
-payload records both binary byte counts and SHA256 values. Its Ares input is the
+payload records the Ares DLL's byte count and SHA256; every gamemd.exe build is the
+same game, so it records none for the executable. Its Ares input is the
 same enrolled DLL as `rules_oracle.ares_prerequisites`; no DLL, game executable,
 MO INI or other mod asset is distributed.
 

@@ -3,10 +3,6 @@
     "Ares.dll": {
       "bytes": 875520,
       "sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83"
-    },
-    "gamemd.exe": {
-      "bytes": 4816864,
-      "sha256": "7cd005d263fde203d9c84548200a057a8df61d724da3c6bd1e521eeb61cd0747"
     }
   },
   "physical_readers": {

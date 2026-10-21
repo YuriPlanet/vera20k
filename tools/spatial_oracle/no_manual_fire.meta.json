@@ -35,5 +35,5 @@
     "cell_skip": "0x00700AB7"
   },
   "replay_command": "python -m tools.spatial_oracle.bunker_attack_action --no-manual-fire",
-  "payload_sha256": "7fde9c8601ac7e5efd804794acf4cded934facf4eeefc91130f70dd30a66c01c"
+  "payload_sha256": "7bebf168f43f8417747ba7c61a0d8452bb17ff34ecd0c407633fce9c5a832d85"
 }

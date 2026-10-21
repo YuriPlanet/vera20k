@@ -1144,7 +1144,8 @@ fn attack_cursor_is_in_range(
         )
 }
 
-/// Ctrl action feedback. Outer None retains an unarmed receiver's fallback;
+/// Ctrl action feedback. Outer None retains an unarmed receiver's fallback,
+/// and a rejected Cell attack rung's movement tail (`0x00700AB7`);
 /// Some(None) is native Action0 and preserves the default arrow.
 fn force_fire_feedback(
     sim: &crate::sim::world::Simulation,

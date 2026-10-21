@@ -186,8 +186,10 @@ fn friendly_attack_is_admitted(
 /// Cell target (`TechnoClass::What_Action_OnCell @ 0x00700600`): the rung is
 /// a human player's too (`0x007008A6..0x007008B3`), and the caller has asked
 /// the weapon ([`armed_action`]); control or range answers Attack
-/// (`0x007009F3..0x00700A44`), else 0. Any other house's object answers 0
-/// there (`0x00700AB7..0x00700AC4`).
+/// (`0x007009F3..0x00700A44`). A rejected rung continues at the Cell
+/// movement tail (`0x00700AB7`), which callers resolve through
+/// `cell_move_action` and `ordinary_cell_move_goal`. Any other house's object
+/// answers 0 there (`0x00700AB7..0x00700AC4`).
 ///
 /// This asks no ROF or reload. The class post-processing follows below. See
 /// the original DetermineAction/Unit/Foot/Techno and Display action corpus
@@ -252,6 +254,11 @@ pub(crate) fn attack_action(
         // fallback below; a Unit's rejected object attack becomes NoMove,
         // whose click still moves near the object. Do not gate CanFire or
         // received simulation missions: auto-targeting/scripts bypass UI.
+        // RESIDUAL: Infantry's C4 and infiltration arms need this Attack
+        // (`cmp ebp,5` at 0x0051E9F1 and 0x0051EE62), but `infantry_c4_action`
+        // and `infiltrator_capture_orders` decide without it, so a
+        // NoManualFire Tanya or Spy still plants C4 or infiltrates. Only Ares
+        // builds read the key; retail rules never set it.
         && !kind.no_manual_fire()
     {
         AttackAction::Attack
