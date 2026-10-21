@@ -8,7 +8,7 @@ use super::super::layout::{
 };
 use super::{
     SkirmishShellAction, SkirmishShellState, SkirmishShellUiSound, handle_combo_mouse_down,
-    set_open_combo_top_index, top_index_from_thumb_y,
+    handle_combo_mouse_move, set_open_combo_top_index, top_index_from_thumb_y,
 };
 use crate::ui::shell::trackbar::{TrackbarPress, TrackbarRange};
 
@@ -233,6 +233,8 @@ pub fn handle_option_mouse_move(
         }
         return SkirmishShellAction::None;
     }
+
+    handle_combo_mouse_move(state, layout, maps, x, y);
 
     // Only a hold that grabbed the thumb follows the pointer.
     let Some(hold) = state.trackbar_hold.filter(|hold| hold.dragging) else {

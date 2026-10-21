@@ -523,6 +523,7 @@ fn hovered_shell_control_resolves_core_controls_and_dropdown_rows() {
     shell.open_combo_dropdown = Some(OpenComboDropdown {
         id: SkirmishComboId::AiType(0),
         top_index: 0,
+        hot_row: None,
     });
     let content =
         combo_dropdown_content_rect(&shell, &layout, &maps, SkirmishComboId::AiType(0)).unwrap();
@@ -1212,6 +1213,7 @@ fn accepted_map_shrink_resets_and_hides_complete_opponent_rows_atomically() {
     shell.open_combo_dropdown = Some(OpenComboDropdown {
         id: SkirmishComboId::Team(3),
         top_index: 0,
+        hot_row: None,
     });
 
     assert!(accept_selected_map(&mut shell, &maps, 1));
@@ -1489,6 +1491,51 @@ fn side_combo_exposes_random_country_and_verified_dropdown_cap() {
 }
 
 #[test]
+fn dropdown_hover_uses_scrolled_rows_and_only_click_commits_the_choice() {
+    let layout = compute_layout(800, 600);
+    let mut shell = controlled_country_shell();
+    let maps = [test_map_entry("map.mmx")];
+    let id = SkirmishComboId::Side(0);
+    let rect = combo_rect(&layout, id).unwrap();
+    let saved = selected_combo_item(&shell, id);
+
+    handle_option_mouse_down(&mut shell, &layout, &maps, rect.x + rect.w - 1, rect.y + 1);
+    let scrollbar = combo_dropdown_scrollbar_rect(&shell, &layout, &maps, id).unwrap();
+    handle_option_mouse_down(
+        &mut shell,
+        &layout,
+        &maps,
+        scrollbar.x + 1,
+        scrollbar.y + scrollbar.h - 1,
+    );
+    handle_option_mouse_up(&mut shell);
+    shell.drain_pending_ui_sounds();
+    assert_eq!(shell.open_combo_dropdown.unwrap().top_index, 1);
+
+    let content = combo_dropdown_content_rect(&shell, &layout, &maps, id).unwrap();
+    let x = content.x + 1;
+    let y = content.y + 2 * COMBO_DROPDOWN_ROW_H + 1;
+    handle_option_mouse_move(&mut shell, &layout, &maps, x, y);
+    assert_eq!(shell.open_combo_dropdown.unwrap().hot_row, Some(3));
+    assert_eq!(selected_combo_item(&shell, id), saved);
+    assert!(shell.drain_pending_ui_sounds().is_empty());
+
+    // The scrollbar is popup chrome, not another selectable row.
+    handle_option_mouse_move(&mut shell, &layout, &maps, scrollbar.x + 1, scrollbar.y + 1);
+    assert_eq!(shell.open_combo_dropdown.unwrap().hot_row, Some(3));
+    assert_eq!(selected_combo_item(&shell, id), saved);
+
+    let picked = combo_items(&shell, &maps, id)[3];
+    handle_option_mouse_down(&mut shell, &layout, &maps, x, y);
+    assert_eq!(selected_combo_item(&shell, id), Some(picked));
+    assert!(shell.open_combo_dropdown.is_none());
+    assert_eq!(
+        shell.drain_pending_ui_sounds(),
+        vec![SkirmishShellUiSound::GuiComboCloseSound],
+    );
+}
+
+#[test]
 fn dropdown_wheel_is_inert_and_content_click_uses_top_index() {
     let layout = compute_layout(800, 600);
     let mut shell = controlled_country_shell();
@@ -1663,7 +1710,8 @@ fn combo_arrow_opens_dropdown_and_selects_color_row() {
         shell.open_combo_dropdown,
         Some(OpenComboDropdown {
             id: SkirmishComboId::Color(0),
-            top_index: 0
+            top_index: 0,
+            hot_row: Some(1),
         })
     );
 

@@ -4,6 +4,7 @@ use crate::map::scenario_menu::MapMenuEntry;
 use crate::skirmish_launch::{
     HOUSE_COLOR_COUNT, LaunchCountry, LaunchStartPosition, SKIRMISH_PLAYER_SLOT_COUNT,
 };
+use crate::ui::shell::combobox::ComboPopup;
 
 use super::super::layout::{
     DropdownMetrics, RectPx, SkirmishShellLayout, combo_arrow_hit_rect, combo_face_rect,
@@ -32,6 +33,16 @@ pub fn combo_dropdown_rect(
     maps: &[MapMenuEntry],
     id: SkirmishComboId,
 ) -> Option<RectPx> {
+    Some(combo_popup(state, layout, maps, id, 0)?.rect)
+}
+
+fn combo_popup(
+    state: &SkirmishShellState,
+    layout: &SkirmishShellLayout,
+    maps: &[MapMenuEntry],
+    id: SkirmishComboId,
+    top_index: usize,
+) -> Option<ComboPopup> {
     if !combo_enabled(state, maps, id) {
         return None;
     }
@@ -40,16 +51,13 @@ pub fn combo_dropdown_rect(
     if item_count == 0 {
         return None;
     }
-    Some(
-        crate::ui::shell::combobox::ComboPopup::new(
-            combo_face_rect(rect, layout.scale),
-            layout.scale,
-            item_count as usize,
-            combo_dropdown_max_visible_rows(id) as usize,
-            0,
-        )
-        .rect,
-    )
+    Some(ComboPopup::new(
+        combo_face_rect(rect, layout.scale),
+        layout.scale,
+        item_count as usize,
+        combo_dropdown_max_visible_rows(id) as usize,
+        top_index,
+    ))
 }
 
 pub const fn combo_dropdown_max_visible_rows(id: SkirmishComboId) -> i32 {
@@ -675,6 +683,24 @@ pub(super) fn apply_combo_selection(
     }
 }
 
+pub(super) fn handle_combo_mouse_move(
+    state: &mut SkirmishShellState,
+    layout: &SkirmishShellLayout,
+    maps: &[MapMenuEntry],
+    x: i32,
+    y: i32,
+) {
+    let Some(open) = state.open_combo_dropdown else {
+        return;
+    };
+    let Some(popup) = combo_popup(state, layout, maps, open.id, open.top_index) else {
+        return;
+    };
+    if let Some(open) = state.open_combo_dropdown.as_mut() {
+        popup.track_hot_row(&mut open.hot_row, x, y);
+    }
+}
+
 pub(super) fn handle_combo_mouse_down(
     state: &mut SkirmishShellState,
     layout: &SkirmishShellLayout,
@@ -758,7 +784,11 @@ pub(super) fn handle_combo_mouse_down(
     if let Some(id) = combo_face_at(state, layout, maps, x, y) {
         state.push_ui_sound(SkirmishShellUiSound::GuiComboOpenSound);
         if combo_arrow_at(state, layout, maps, x, y) == Some(id) {
-            state.open_combo_dropdown = Some(OpenComboDropdown { id, top_index: 0 });
+            state.open_combo_dropdown = Some(OpenComboDropdown {
+                id,
+                top_index: 0,
+                hot_row: selected_combo_item_index(state, maps, id),
+            });
             state.dropdown_scroll_drag = None;
             state.dropdown_scroll_press = None;
         }
