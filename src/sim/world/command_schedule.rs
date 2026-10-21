@@ -107,8 +107,8 @@ impl Simulation {
         selected
     }
 
-    /// Speed the next ordinary frame will observe after all due offline
-    /// Options transitions execute in canonical house/insertion order.
+    /// Speed after the next ordinary frame's local Options ingress and then
+    /// its admitted live-speed events, in canonical house/insertion order.
     ///
     /// This read-only projection lets fresh-map and snapshot replacement sync
     /// client UI without consuming or applying a pending authoritative command.
@@ -117,22 +117,29 @@ impl Simulation {
             .ok()
             .filter(|speed| *speed <= crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED);
         let execute_tick = self.session.tick().saturating_add(1);
-        for owner in self.due_command_house_order(&self.pending_commands, execute_tick) {
-            for command in self
-                .pending_commands
-                .iter()
-                .filter(|command| command.execute_tick <= execute_tick && command.owner == owner)
-            {
-                if !self.houses.contains_key(&owner) {
-                    continue;
-                }
-                let (Command::SetGameSpeed { speed } | Command::LiveGameSpeed { speed }) =
-                    &command.payload
-                else {
+        let house_order = self.due_command_house_order(&self.pending_commands, execute_tick);
+        // Match execution phases: all local Options ingress first, then all
+        // eligible EventClass tails. Interleaving them by House can predict
+        // a different speed from the one the frame actually commits.
+        for at_tail in [false, true] {
+            for &owner in &house_order {
+                let Some(house) = self.houses.get(&owner) else {
                     continue;
                 };
-                if *speed <= crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED {
-                    projected = Some(*speed);
+                if at_tail && !house.event_dispatch_eligible() {
+                    continue;
+                }
+                for command in self.pending_commands.iter().filter(|command| {
+                    command.execute_tick <= execute_tick && command.owner == owner
+                }) {
+                    let speed = match (at_tail, &command.payload) {
+                        (false, Command::SetGameSpeed { speed })
+                        | (true, Command::LiveGameSpeed { speed }) => speed,
+                        _ => continue,
+                    };
+                    if *speed <= crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED {
+                        projected = Some(*speed);
+                    }
                 }
             }
         }
@@ -667,8 +674,8 @@ impl Simulation {
         executed_commands
     }
 
-    /// Apply all due tail commands in HouseClass registration
-    /// order. Each house preserves insertion order within the normal and
+    /// Apply admitted tail commands in HouseClass registration
+    /// order. Each eligible house preserves insertion order within the normal and
     /// staged-megamission streams. Returns
     /// `(executed_commands, spawned_entities)`. A sale or undeploy order only
     /// starts the Selling mission: the building leaves the map at its last
@@ -684,7 +691,23 @@ impl Simulation {
         let mut executed_commands = 0usize;
         let mut spawned_entities = false;
 
+        // Empty-roster diagnostic scenes deliberately allow synthetic owners
+        // (the same UnregisteredDiagnostic boundary as spawn_from_map). A
+        // loaded scenario has a registered roster: Execute_DoList then scans
+        // only its eligible Houses, never a missing sender. Preserve this
+        // diagnostic extension without weakening live EventClass admission.
+        let diagnostic_scene = self.houses.is_empty();
         for owner in self.due_command_house_order(commands, execute_tick) {
+            // Native 0x0064C4FB..0x0064C50D reads the flags on reaching each
+            // House, after prior Houses' events, not when taking the snapshot.
+            if !diagnostic_scene
+                && !self
+                    .houses
+                    .get(&owner)
+                    .is_some_and(|house| house.event_dispatch_eligible())
+            {
+                continue;
+            }
             for command in commands.iter().filter(|command| {
                 command.execute_tick <= execute_tick
                     && command.owner == owner
@@ -752,3 +775,7 @@ fn within_spread_band(target_height: i32, candidate_height: i32) -> bool {
 #[cfg(test)]
 #[path = "group_spread_gate_tests.rs"]
 mod group_spread_gate_tests;
+
+#[cfg(test)]
+#[path = "command_admission_tests.rs"]
+mod command_admission_tests;

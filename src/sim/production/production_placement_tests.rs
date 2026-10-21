@@ -1025,10 +1025,11 @@ fn placed_gapowr_completion(human: bool) -> (u32, Option<u32>) {
     rules.set_buildup_control_for_test("GAPOWR", [0, 26, 2]);
     let grid = PathGrid::new(64, 64);
     let americans = sim.interner.intern("Americans");
-    sim.houses
-        .register(crate::sim::house_state::HouseState::new(
-            americans, 0, None, human, 10_000, 10,
-        ));
+    let mut house = crate::sim::house_state::HouseState::new(americans, 0, None, human, 10_000, 10);
+    // Both rows exercise a player PLACE. Keep the independent IsHuman
+    // input while admitting the command through native PlayerControl.
+    house.set_player_control_for_test(true);
+    sim.houses.register(house);
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
     let gapowr = sim.interner.intern("GAPOWR");
     sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
@@ -2555,6 +2556,15 @@ fn gsi_04_07_placement_command_places_only_its_own_houses_production() {
     sim.overlay_grid = Some(OverlayGrid::new(64, 64));
     ready_building(&mut sim, &rules, "Russians", "GAWALL");
     let event_owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            event_owner,
+            0,
+            None,
+            true,
+            0,
+            10,
+        ));
     let wall_type = sim.interner.get("GAWALL").expect("wall type");
 
     let tick = sim.advance_tick(

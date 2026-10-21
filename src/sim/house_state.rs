@@ -2273,8 +2273,8 @@ impl HouseState {
             .unwrap_or(0)
     }
 
-    /// Active offline EventClass house-scan eligibility.
-    #[cfg(any(test, feature = "test-support"))]
+    /// `Execute_DoList 0x0064C4FB..0x0064C50D` admits a registered House
+    /// when either IsHuman or PlayerControl is set, in every session mode.
     pub const fn event_dispatch_eligible(&self) -> bool {
         self.is_human || self.player_control
     }

@@ -329,9 +329,11 @@ fn a_rhino_stops_short_of_its_approach_cell_when_its_target_closes_in() {
             target_id: tank,
         },
     );
+    // Synthetic setup uses the registered human sender without changing
+    // the Russian actor's AI flags or the order's frame-tail timing.
     order(
         &mut sim,
-        "Russians",
+        "Americans",
         Command::Move {
             entity_id: tank,
             target_rx: 4,
@@ -599,9 +601,11 @@ fn a_hunting_conscript_drops_his_walk_to_approach_his_quarry() {
     let mut sim = arena(&rules);
     let conscript = spawn(&mut sim, &rules, "E2", "Russians", (4, 10));
     let tank = spawn(&mut sim, &rules, "MTNK", "Americans", (24, 10));
+    // Synthetic setup uses the registered human sender without changing
+    // the Russian actor's AI flags or the order's frame-tail timing.
     order(
         &mut sim,
-        "Russians",
+        "Americans",
         Command::Move {
             entity_id: conscript,
             target_rx: 4,

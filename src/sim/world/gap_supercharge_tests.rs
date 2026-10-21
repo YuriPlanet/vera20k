@@ -317,7 +317,15 @@ fn an_allied_current_house_without_the_gap_keeps_the_charge_through_the_outage()
     for _ in 0..4 {
         run(&mut sim, rules, &grid, &[]);
     }
-    click(&mut sim, rules, &grid, owner, gap);
+    // The charge is a supplied initial AI posture, not a player click from
+    // this computer House. Use the existing class receiver to order it.
+    assert!(sim.apply_command_with_overlays(
+        "Russians",
+        &Command::UnloadPassengers { transport_id: gap },
+        rules,
+        None,
+        FrameEffects::default(),
+    ));
     run_until_charged(&mut sim, rules, &grid, gap, true);
     run(&mut sim, rules, &grid, &[]);
     assert_eq!(totals(&sim, owner), (10000, 9100));

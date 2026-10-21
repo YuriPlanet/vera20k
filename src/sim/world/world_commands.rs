@@ -1135,10 +1135,11 @@ impl Simulation {
                 )
                 .accepted(),
             Command::Stop { entity_id } => {
-                if !self.entity_owned_by_id(command_owner, *entity_id) {
-                    return false;
-                }
-                // Native order admission (actor half).
+                // Event IDLE 0x004C74CB..0x004C76BB replaces the Event
+                // receiver with its decoded actor at 0x004C74D3. It never
+                // compares the sender's House with the actor's owner; sender
+                // eligibility belongs to Execute_DoList's House scan.
+                // Source: original gamemd.exe instructions.
                 if !self.order_actor_admits(*entity_id) {
                     return false;
                 }

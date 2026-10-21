@@ -1239,7 +1239,9 @@ fn erasing_a_superweapon_building_revokes_its_super() {
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
     let americans = sim.interner.get("Americans").unwrap();
     let nuke = sim.interner.get("NukeSpecial").unwrap();
-    let owner = sim.interner.intern("Russians");
+    // Use the registered human sender for this synthetic cross-House order;
+    // keep the actor House AI-controlled and preserve the frame-tail timing.
+    let owner = sim.interner.intern("Americans");
     sim.queue_command(CommandEnvelope::new(
         owner,
         sim.session.tick() + 1,
@@ -1399,7 +1401,9 @@ fn a_chrono_legionnaire_erases_a_tank() {
             rules.general.veteran_cap,
         );
     }
-    let owner = sim.interner.intern("Russians");
+    // Use the registered human sender for this synthetic cross-House order;
+    // keep the actor House AI-controlled and preserve the frame-tail timing.
+    let owner = sim.interner.intern("Americans");
     sim.queue_command(CommandEnvelope::new(
         owner,
         sim.session.tick() + 1,
@@ -1612,7 +1616,9 @@ fn a_legionnaires_inviso_bullet_warps_after_existing_object_turns() {
             let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
             (cleg, spawn(&mut sim, &rules, "HTNK", "Americans", 13, 10))
         };
-        let owner = sim.interner.intern("Russians");
+        // Use the registered human sender for this synthetic cross-House order;
+        // keep the actor House AI-controlled and preserve the frame-tail timing.
+        let owner = sim.interner.intern("Americans");
         sim.queue_command(CommandEnvelope::new(
             owner,
             sim.session.tick() + 1,
@@ -1664,7 +1670,9 @@ fn only_temporal_fire_reaches_a_warped_target() {
         None,
         crate::sim::world::FrameEffects::default(),
     );
-    let owner = sim.interner.intern("Russians");
+    // Use the registered human sender for this synthetic cross-House order;
+    // keep the actor House AI-controlled and preserve the frame-tail timing.
+    let owner = sim.interner.intern("Americans");
     sim.queue_command(CommandEnvelope::new(
         owner,
         sim.session.tick() + 1,
@@ -1697,7 +1705,9 @@ fn moving_releases_the_target() {
     let (mut sim, grid) = arena(12, &rules);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
     let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 13, 10);
-    let owner = sim.interner.intern("Russians");
+    // Use the registered human sender for this synthetic cross-House order;
+    // keep the actor House AI-controlled and preserve the frame-tail timing.
+    let owner = sim.interner.intern("Americans");
     sim.queue_command(CommandEnvelope::new(
         owner,
         sim.session.tick() + 1,
@@ -2004,7 +2014,9 @@ fn stop_retains_the_legionnaires_victim_until_attack_dispatch() {
     let (mut sim, grid) = arena(23, &rules);
     let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 13, 10);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
-    let owner = sim.interner.intern("Russians");
+    // Use the registered human sender for this synthetic cross-House order;
+    // keep the actor House AI-controlled and preserve the frame-tail timing.
+    let owner = sim.interner.intern("Americans");
     let step = |sim: &mut Simulation| {
         let commands = sim.take_due_commands();
         sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33);

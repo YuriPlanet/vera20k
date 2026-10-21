@@ -93,13 +93,17 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
         sim.fog.mark_visible_for_owner(owner, x, y);
     }
     for id in [target, neighbor] {
-        sim.queue_command(CommandEnvelope::new(
-            enemy,
-            1,
-            Command::Guard {
+        // Establish the AI's guard posture through the class receiver; this
+        // fixture does not originate a player event for the computer House.
+        assert!(sim.apply_command_with_overlays(
+            "Russians",
+            &Command::Guard {
                 entity_id: id,
                 target: None,
             },
+            &rules,
+            None,
+            FrameEffects::default(),
         ));
     }
     let source = sim.substrate.entities.get(kirov).unwrap();
