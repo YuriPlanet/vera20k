@@ -50,7 +50,9 @@ def ints(u, address, count):
 
 def physical_assets(*, body=False, ore=False, tile=False, placement=False, radar=False,
                     frontier=False, tmp_names=(), smudge=False, hills=False, ore_natural=False, wall=False,
-                    wall_materials=(), radiation=False, tmp_families=(), snow=False, rubble=False, crate=False):
+                    wall_materials=(), radiation=False, tmp_families=(), snow=False, rubble=False, crate=False,
+                    ore_slopes=False):
+    assert not ore_slopes or ore
     assert wall or not wall_materials
     assert tile or not tmp_families
     assert not snow or tile or radiation
@@ -68,10 +70,15 @@ def physical_assets(*, body=False, ore=False, tile=False, placement=False, radar
                        'lunar.mix': ('bridge.lun', 'bridgb.lun')}),
     )
     if ore:
+        ore_types = tuple(f'TIB{index:02}' for index in range(1, 21)) if ore_slopes else ORE_TYPES
         containers = (
-            ('ra2.mix', {'temperat.mix': tuple(f'{name.lower()}.tem' for name in ORE_TYPES),
-                         'urban.mix': tuple(f'{name.lower()}.urb' for name in ORE_TYPES),
-                         'cache.mix': ('palette.pal', 'anim.pal', 'temperat.pal', 'urban.pal')}),
+            ('ra2.mix', {'temperat.mix': tuple(f'{name.lower()}.tem' for name in ore_types),
+                         'urban.mix': tuple(f'{name.lower()}.urb' for name in ore_types),
+                         'cache.mix': ('palette.pal', 'anim.pal', 'temperat.pal', 'urban.pal'),
+                         **({'isotemp.mix': tuple(f'slop0{index}z.tem' for index in range(1, 5))}
+                            if ore_slopes else {}),
+                         **({'isourb.mix': tuple(f'slop0{index}z.urb' for index in range(1, 5))}
+                            if ore_slopes else {})}),
             ('ra2md.mix', {'localmd.mix': ('ARTMD.INI', 'MPBattleMD.ini')}),
         )
     if wall:
@@ -197,12 +204,15 @@ def physical_assets(*, body=False, ore=False, tile=False, placement=False, radar
 
 
 def prepare(*, body=False, ore=False, placement=False, ore_natural=False, wall=False,
-            wall_types=(), wall_materials=(), radiation=False, snow=False, rubble=False, crate=False):
+            wall_types=(), wall_materials=(), radiation=False, snow=False, rubble=False, crate=False,
+            ore_slopes=False):
+    assert not ore_slopes or ore
     assert sum((body, ore, placement, wall, radiation, rubble, crate)) <= 1
     assert wall or not (wall_types or wall_materials)
     assert not snow or radiation
     assets, sources = physical_assets(body=body, ore=ore, placement=placement,
-        ore_natural=ore_natural, wall=wall, wall_materials=wall_materials, radiation=radiation, snow=snow, rubble=rubble, crate=crate)
+        ore_natural=ore_natural, wall=wall, wall_materials=wall_materials, radiation=radiation, snow=snow, rubble=rubble, crate=crate,
+        ore_slopes=ore_slopes)
     map_filename = 'XMP03T4.MAP' if ore_natural or wall or rubble or crate else 'GoldSt.mmx'
     shadow_bytes, shape_aliases = {}, []
     for name, raw in assets.items():
@@ -225,7 +235,8 @@ def prepare(*, body=False, ore=False, placement=False, ore_natural=False, wall=F
                                    shadow_frames_sha256=hashlib.sha256(normalized).hexdigest()))
     assert all(len(images) == 6 and all(raw == images[0] for raw in images)
                for images in shadow_bytes.values())
-    selected_types = ('CRATE',) if crate else ('RUBBLE_OVERLAY',) if rubble else () if radiation else ('GAPOWR',) if placement else (wall_types or WALL_TYPES) if wall else ORE_TYPES if ore else BRIDGE_TYPES
+    ore_types = tuple(f'TIB{index:02}' for index in range(1, 21)) if ore_slopes else ORE_TYPES
+    selected_types = ('CRATE',) if crate else ('RUBBLE_OVERLAY',) if rubble else () if radiation else ('GAPOWR',) if placement else (wall_types or WALL_TYPES) if wall else ore_types if ore else BRIDGE_TYPES
     art, art_lines = lexical(assets['ARTMD.INI'], set(selected_types)
                              | ({'CAHSE05', 'SROCK01'} if rubble else set() if ore or wall or radiation or crate else {'BRIDGE', 'BRIDGB'}))
     m = PaletteReader(art)
@@ -325,9 +336,9 @@ def prepare(*, body=False, ore=False, placement=False, ore_natural=False, wall=F
                              cells=[dict(coords=list(xy), **cells[xy])
                                     for xy in (((72, 25),) if ore_natural else ((123, 33), (124, 33)))],
                              boundary='Authored pack data only; live slope0/flags0 are supplied component inputs, not native map-loader results.')
-        assert all(assets[f'{name}.TEM'] == assets[f'{name}.URB'] for name in ORE_TYPES)
+        assert all(assets[f'{name}.TEM'] == assets[f'{name}.URB'] for name in ore_types)
         assert assets['TEMPERAT.PAL'] == assets['URBAN.PAL']
-        inputs['urban_aliases'] = dict(images=list(ORE_TYPES), byte_identical=True,
+        inputs['urban_aliases'] = dict(images=list(ore_types), byte_identical=True,
                                        palettes=['TEMPERAT.PAL', 'URBAN.PAL'])
     return m, types, inputs
 
@@ -463,7 +474,9 @@ def snapshot(u, background, old_z):
 
 
 def execute(m, types, case, *, body=False, ore=False, wall=False, shadow=False,
-            boundary_only=False, reset_surface=True, allow_empty_frame=False, rubble_type=None, crate=False):
+            boundary_only=False, reset_surface=True, allow_empty_frame=False, rubble_type=None, crate=False,
+            allow_shape_clip=False):
+    assert not allow_shape_clip or ore
     assert wall or crate or rubble_type is not None or not shadow
     assert body or ore or wall or not boundary_only
     case = dict(type='TIB01' if ore else 'BRIDGE1',
@@ -483,7 +496,7 @@ def execute(m, types, case, *, body=False, ore=False, wall=False, shadow=False,
     u.mem_write(CELL + 0x11E, bytes((case.get('state', 0),)))
     u.mem_write(CELL + 0x140, dwords(case.get('flags', 0x180)))
     if ore:
-        u.mem_write(CELL + 0x11C, bytes((0,)))
+        u.mem_write(CELL + 0x11C, bytes((case.get('slope', 0),)))
     u.mem_write(0x886FA0, dwords(0, case.get('viewport_y', 0), WIDTH, HEIGHT))
     u.mem_write(POINT, dwords(*case.get('cell_point', [66, 81])))
     u.mem_write(CLIP, dwords(*case.get('clip', [0, 0, WIDTH, HEIGHT])))
@@ -501,10 +514,19 @@ def execute(m, types, case, *, body=False, ore=False, wall=False, shadow=False,
                     native_rect=[0,0,0,0],native_traversal=native_traversal,
                     output=snapshot(u,background,old_z))
     draws, rows, reached, steps = [], [], set(), []
+    empty_shape_rectangles = []
     leaves = (BODY_LEAVES | {0x4978C0: 'rle_alpha_body'}) if wall and not shadow else BODY_LEAVES if body or ore else LEAVES
     entry = 0x47F6A0 if (body or ore or wall) and not shadow else 0x47F510
 
     def observe(_u, address, _size, _data):
+        if allow_shape_clip and address == 0x437AC1:
+            reached.add(address)
+        if allow_shape_clip and address in (0x4AF0F3, 0x4AF0FB):
+            register = UC_X86_REG_EAX if address == 0x4AF0F3 else UC_X86_REG_ECX
+            value = u.reg_read(register)
+            if value == 0 or value >= 0x80000000:
+                sp = u.reg_read(UC_X86_REG_ESP)
+                empty_shape_rectangles.append(ints(u, sp + 0x1C, 4))
         if address in (entry, 0x480110, 0x5FDCC0, 0x4AED70, 0x69E7E0,
                        0x69E740, 0x69E900, 0x490E50, 0x437A10, 0x45F160, 0x45F1D0, *leaves):
             reached.add(address)
@@ -559,6 +581,14 @@ def execute(m, types, case, *, body=False, ore=False, wall=False, shadow=False,
         required.discard(0x4990E0)
         if not allow_empty_frame:
             assert any(p in reached for p in leaves)
+    if allow_shape_clip:
+        # An optional shape can leave the extended walker's final rectangle
+        # empty even though the source frame is populated. Observe the actual
+        # original empty-intersection return; never manufacture empty pixels.
+        required.discard(0x4990E0)
+        assert rows or 0x437AC1 in reached or empty_shape_rectangles
+        if empty_shape_rectangles:
+            required -= {0x490E50, 0x437A10}
     # Only the opt-in low bridge component accepts a native empty SHP crop.
     # A bound physical image and actual Shape call are still mandatory; zero
     # crop is read by original69E7E0, never manufactured by the host.
@@ -591,6 +621,8 @@ def execute(m, types, case, *, body=False, ore=False, wall=False, shadow=False,
         result['steps'] = steps
     if ore:
         result['display_overlay_id'] = m.read32(typ + 0x294)
+    if allow_shape_clip:
+        result['empty_shape_rectangles'] = empty_shape_rectangles
     return result
 
 

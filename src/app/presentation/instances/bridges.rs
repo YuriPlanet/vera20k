@@ -494,6 +494,8 @@ mod tests {
                 pixel_size: [29.0, 15.0],
                 offset_x: -4.0,
                 offset_y: -7.0,
+                draw_point_offset: [0; 2],
+                extended: false,
             },
             building: OverlaySpriteEntry {
                 uv_origin: [0.0; 2],
@@ -501,6 +503,8 @@ mod tests {
                 pixel_size: [74.0, 37.0],
                 offset_x: -50.0,
                 offset_y: 1.0,
+                draw_point_offset: [0; 2],
+                extended: false,
             },
         };
         let emit = |grid: &crate::sim::overlay_grid::OverlayGrid, viewport: [f32; 4]| {
@@ -675,6 +679,8 @@ mod tests {
                     pixel_size: [60.0, 30.0],
                     offset_x: 0.0,
                     offset_y: 0.0,
+                    draw_point_offset: [0; 2],
+                    extended: false,
                 },
                 frames: Default::default(),
             };
@@ -771,6 +777,8 @@ mod tests {
                 pixel_size: [60.0, 30.0],
                 offset_x: 0.0,
                 offset_y: 0.0,
+                draw_point_offset: [0; 2],
+                extended: false,
             },
             body_queries: std::cell::RefCell::new(Vec::new()),
             shadow_queries: std::cell::RefCell::new(Vec::new()),

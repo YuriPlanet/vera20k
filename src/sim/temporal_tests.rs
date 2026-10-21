@@ -1451,6 +1451,87 @@ fn a_chrono_legionnaire_erases_a_tank() {
     );
 }
 
+/// The normal loader must bind both General references before Temporal can
+/// construct them. Synthetic temporal fixtures already supplied frame counts,
+/// which hid missing roots in the production asset closure.
+#[test]
+fn retail_cleg_attack_constructs_sparkles_and_warp_away_from_loaded_assets() {
+    use crate::rules::effect_asset_catalog::tolerant_anim_class_roots;
+    use crate::sim::command::Command;
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+    let mut rules = retail.rules;
+    let roots = tolerant_anim_class_roots(&rules);
+    rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
+    for name in [
+        &rules.general.chrono_sparkle1.name,
+        &rules.general.warp_away.name,
+    ] {
+        assert!(
+            rules.art().anim_runtime_config(name).is_some_and(|config| {
+                config.raw_shp_frame_count.is_some_and(|frames| frames > 0)
+            }),
+            "production animation roots must bind [{name}]'s retail SHP"
+        );
+    }
+
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let tank = sim
+        .spawn_object("MTNK", "Russians", 13, 10, 0, &rules)
+        .unwrap();
+    let cleg = sim
+        .spawn_object("CLEG", "Americans", 10, 10, 64, &rules)
+        .unwrap();
+    let owner = entity(&sim, cleg).owner();
+    sim.session.set_current_house_for_test(Some(owner));
+    sim.fog.mark_visible_for_owner(owner, 13, 10);
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Attack {
+            attacker_id: cleg,
+            target_id: tank,
+        },
+        Some(&rules)
+    ));
+    let grid = sim.path_grid_snapshot().unwrap();
+    let target_location = location_coord(entity(&sim, tank));
+    let mut saw_sparkle = false;
+    for _ in 0..1000 {
+        sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33);
+        for (&id, anim) in sim.substrate.anims.iter() {
+            let name = sim.interner.resolve(anim.type_id());
+            if name == rules.general.chrono_sparkle1.name {
+                let coord = sim.anim_absolute_coord(id).unwrap();
+                assert_eq!(
+                    coord,
+                    AnimWorldCoord {
+                        x: target_location.x + 0x78,
+                        y: target_location.y + 0x78,
+                        z: target_location.z,
+                    }
+                );
+                saw_sparkle = true;
+            }
+            if name == rules.general.warp_away.name {
+                assert!(saw_sparkle, "the held target sparkles before its erase");
+                assert_eq!(sim.anim_absolute_coord(id), Some(target_location));
+                assert!(erased(&sim, tank));
+                return;
+            }
+        }
+    }
+    panic!("ordinary retail CLEG attack never produced its erase animation");
+}
+
 /// Issue #2231. `TemporalClass::Update`'s erase clears a bunkered target's
 /// bunker: `0x0071AA90` calls `BuildingClass::ClearBunker` (`0x00459470`)
 /// when the erased object's bunker link (`+0x2E4`) names a building, before

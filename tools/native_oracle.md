@@ -1,5 +1,22 @@
 # Native comparison workflow
 
+### Mind-control attacked-object events
+
+`python -m tools.spatial_oracle.mind_control_tags --check` runs eleven original
+`BulletClass::DetonateAtCoord` controls through attached-object events 6 and 44.
+The ordinary rows stop before CaptureUnit; two rejection controls execute its
+refusal. The fixture inputs, callback state and excluded world lifecycles are
+documented in [`mind_control_tags.md`](spatial_oracle/mind_control_tags.md).
+
+The Rust regression
+`retail_all02_mind_control_attack_starts_the_authored_stallone_script` uses the
+physical Allied mission 2 map's Lasher/Stallone actors and unchanged trigger
+definitions. A stock YURI attack must start the authored ChangeHouse, CreateTeam
+and Voice chain without damaging the tank. It supplies a flat arena and an
+already-acquired YURI; it does not replay the Engineer/base-building opening or
+compare a complete original campaign. Set `RA2_DIR` to the retail install and
+`VERA20K_REQUIRE_RETAIL_ASSETS=1` so absent archives fail instead of skipping.
+
 ### Computer sale of captured buildings
 
 `python -m tools.spatial_oracle.captured_building_sale --check` executes the
@@ -308,6 +325,7 @@ covered. The metadata records the executed binary, command and supplied type get
 | `tools.spatial_oracle.radiation_damage_boundary` | Six original percentage/Radiation reader, flat-site spread, Foot admission and Object receiver rows explaining the shared Verses regression | `combat_tests::rad_damage_fires_on_application_delay_boundary_only`; final health/admission only, with native base59 versus Rust60 explicitly unresolved. [Bounds and required radiation follow-up](spatial_oracle/radiation_damage_boundary.md) |
 | `tools.rules_oracle.bridge_child_sound` | Original selected SOUNDMD registry/Voc readers and three ART Report bindings; native Release versus hard-stop on two playing one-shot events | `sound_dispatch::bridge_child_sound_tests` exercises the existing Anim event/audio owner; device channels, waveform equivalence and whole child AI order remain outside native execution. [Sound evidence](rules_oracle/bridge_child_sound.md) |
 | `tools.rules_oracle.anim_image` | 11 original Image25 reads and loader fallback selections; exact section and current-ID default supplied from the caller | `art_data_tests.rs`, asset catalog and both atlas consumers preserve literal animation type identity |
+| `tools.rules_oracle.anim_theater_flags` | 26 original fresh AnimType reader/theater-postpass controls: Image-section flag defaults, own overrides, invalid/missing values, one-hop aliases and literal-file availability; declared header-only SHPs | `art_data_tests.rs::animation_theater_flags_match_original_fresh_read_and_postpass`; [scope and reproduction](rules_oracle/anim_theater_flags.md). Retained INI rereads, instance lifetime and the complete Theater filename policy are excluded |
 | `tools.spatial_oracle.bridge_debris_producer` | 266 original Cell47DD70 producer/Anim constructors plus 12 shared death-debris loops; production-exported 15/4 animation pools and SHP frame counts | `world/bridge_debris_tests.rs` and combat death-debris tests; synchronous constructor/RNG order, excluding later AI |
 | `tools.spatial_oracle.bridge_debris_flight` | 32 joined original producer/primary AnimAI/Bounce histories across dry, water, deck and discontinuous ground; per-visit RNG and child constructors; duplicate pending-delete queue drain executes once | `world/bridge_debris_flight_tests.rs`; only primary AI scheduled, empty contact/observer lists, supplied audio boundaries and false bridge drivers. See chain evidence |
 | `tools.spatial_oracle.terrain_debris_receiver` | 24 original Bouncer contact/Terrain ReceiveDamage/unlink/Logic/retirement rows; actual retail TREE01 occupation bits | `anim_debris_tests.rs` compares 19 single-tree receiver cases. Synthetic multi-tree, custom successful death-animation and populated observer chains are excluded |

@@ -2296,6 +2296,13 @@ and complete retained runtime/timer. A stale occupied slot retains its ID with
 construction completion and the following operational visit's allocation,
 replacement and cleanup to be inspected through the normal match path.
 
+Current animation runtime receipts include `temporal_paused` (Anim +11A),
+separate from `paused` (Anim +19E), for both building slots and effect animations.
+This additive v8 projection is optional when reading older sealed receipts:
+omission stays unobserved and is never converted to `false`. When present, the
+field must be a boolean, is retained unchanged and participates in comparison.
+Other unknown runtime fields remain invalid.
+
 The camera calls the existing presentation centering/clamp owner once at L0.
 `render.camera` records its requested cell and actual final top-left/zoom. The
 existing neutral-input and exact draw requirements remain in force. A terrain

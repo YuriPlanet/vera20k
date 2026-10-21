@@ -84,6 +84,7 @@ use crate::sim::anim_class::{AnimId, AnimWorldCoord};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
+use crate::sim::projectile::{ProjectileDetonation, ProjectileTarget};
 use crate::sim::world::{SimSoundEvent, Simulation};
 
 /// The manager constructor's overload check countdown (`+0x4C = 30`).
@@ -691,49 +692,133 @@ impl Simulation {
     /// house or the target's house before the capture passes
     /// `HouseClass::IsHumanPlayer @ 0x0050B6F0` (the local player in skirmish;
     /// the app resolves it from the two houses on the event).
-    /// RESIDUAL: the two object-tag events raised before the attempt (6 and
-    /// 0x2C, `0x0046929D`/`0x004692B8`) need object Tag attachment, which VERA
-    /// does not have.
+    /// An alive Object target raises attached-object events 6 and 44 before
+    /// the capture attempt (`0x0046929D`/`0x004692B8`). Their synchronous
+    /// actions can change the Tag, bullet source/target and capture admission.
     pub(crate) fn mind_control_detonation(
         &mut self,
-        firer_id: u64,
-        target: Option<u64>,
+        detonation: ProjectileDetonation,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let Some(firer) = self.substrate.entities.get(firer_id) else {
+        let initial = self.projectiles.current_detonation(detonation);
+        let Some(firer) = self.substrate.entities.get(initial.source_id) else {
             return;
         };
         if firer.capture_manager.is_none() {
             return;
         }
-        let firer_owner = firer.owner();
-        let Some(target_id) = target else {
+        // 469249 casts to Object, not Techno. Terrain can raise the events
+        // even though CaptureUnit's later Techno cast rejects it.
+        let (actor, target_owner) = match initial.target {
+            ProjectileTarget::Entity(id) => self
+                .substrate
+                .entities
+                .get(id)
+                .map_or((None, None), |target| {
+                    (Some((id, target.is_object_alive())), Some(target.owner()))
+                }),
+            ProjectileTarget::Terrain(id) => (
+                self.terrain_objects
+                    .objects()
+                    .get(&id)
+                    .map(|target| (id, target.object_alive())),
+                None,
+            ),
+            ProjectileTarget::Cell { .. }
+            | ProjectileTarget::DummyCell
+            | ProjectileTarget::None => (None, None),
+        };
+        // 46927A reads Object+90, not HP. EDI retains this original actor;
+        // neither a changed bullet target nor an Alive reread replaces it.
+        if let Some((actor, true)) = actor {
+            let context =
+                crate::sim::world::UninitContext::new(rules, registry).with_effects(frame_effects);
+            if self.dispatch_object_tag_event(
+                actor,
+                6,
+                Some(actor),
+                Some(initial.source_id),
+                context,
+            ) {
+                // 4692A2 rereads Bullet+B0 after event 6. PointerExpired
+                // may have cleared it; the dispatcher also rereads the Tag.
+                let current = self.projectiles.current_detonation(detonation);
+                self.dispatch_object_tag_event(
+                    actor,
+                    44,
+                    Some(actor),
+                    (current.source_id != crate::sim::combat::RAD_NO_ATTACKER)
+                        .then_some(current.source_id),
+                    context,
+                );
+            }
+        }
+        // 4692BD..4692D0 rereads source, target and the source's manager.
+        // CaptureUnit owns all Techno admission; no HP/Alive filter belongs
+        // here. A non-Techno target fails its cast before CanCapture.
+        let current = self.projectiles.current_detonation(detonation);
+        let ProjectileTarget::Entity(target_id) = current.target else {
             return;
         };
-        let Some(target_owner) = self
-            .substrate
-            .entities
-            .get(target_id)
-            .map(GameEntity::owner)
-        else {
-            return;
-        };
-        if !self.capture_unit(firer_id, target_id, rules, registry, frame_effects) {
+        if !self.capture_unit(current.source_id, target_id, rules, registry, frame_effects) {
             return;
         }
         let Some(sound) = rules.mind_control.mind_control_sound.clone() else {
             return;
         };
-        if let Some(target) = self.substrate.entities.get(target_id) {
-            let event = SimSoundEvent::voc_at_for(
-                sound,
-                Some([firer_owner, target_owner]),
-                &target.position,
-            );
-            self.sound_events.emit(event);
-        }
+        // 4692F0 rereads the bullet source after CaptureUnit's callbacks.
+        // The target-house candidate was saved before either Tag call;
+        // 46930D still takes Location from the original Object in EDI.
+        let current = self.projectiles.current_detonation(detonation);
+        let Some(firer_owner) = self
+            .substrate
+            .entities
+            .get(current.source_id)
+            .map(GameEntity::owner)
+        else {
+            return;
+        };
+        let location = match initial.target {
+            ProjectileTarget::Entity(id) => self.substrate.entities.get(id).map(|target| {
+                let location = crate::sim::movement::ground_pose::object_location(
+                    target,
+                    self.resolved_terrain.as_ref(),
+                );
+                AnimWorldCoord {
+                    x: location.x,
+                    y: location.y,
+                    z: location.z,
+                }
+            }),
+            ProjectileTarget::Terrain(id) => {
+                self.terrain_objects.objects().get(&id).map(|target| {
+                    let location = target.world_coord();
+                    AnimWorldCoord {
+                        x: location.x,
+                        y: location.y,
+                        z: location.z,
+                    }
+                })
+            }
+            ProjectileTarget::Cell { .. }
+            | ProjectileTarget::DummyCell
+            | ProjectileTarget::None => None,
+        };
+        let Some(location) = location else {
+            return;
+        };
+        let (rx, ry, sub_x, sub_y, _) = location.to_cell_sub_z();
+        self.sound_events.emit(SimSoundEvent::VocAt {
+            sound_id: sound,
+            audible_to: Some([firer_owner, target_owner.unwrap_or(firer_owner)]),
+            rx,
+            ry,
+            sub_x,
+            sub_y,
+            world_z_leptons: location.z,
+        });
     }
 
     /// Gate `0x00471E55..0x00471E9F`, then `vt+0x3D0` at471EA5: unless a Simple Deployer
