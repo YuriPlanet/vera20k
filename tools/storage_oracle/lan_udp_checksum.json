@@ -1,0 +1,190 @@
+{
+  "cases": [
+    {
+      "checksum": 0,
+      "name": "empty",
+      "payload": ""
+    },
+    {
+      "checksum": 255,
+      "name": "prefix_1",
+      "payload": "ff"
+    },
+    {
+      "checksum": 255,
+      "name": "prefix_2",
+      "payload": "ff00"
+    },
+    {
+      "checksum": 8388863,
+      "name": "prefix_3",
+      "payload": "ff0080"
+    },
+    {
+      "checksum": 2139095295,
+      "name": "prefix_4",
+      "payload": "ff00807f"
+    },
+    {
+      "checksum": 4278190829,
+      "name": "prefix_5",
+      "payload": "ff00807fef"
+    },
+    {
+      "checksum": 4278243309,
+      "name": "prefix_6",
+      "payload": "ff00807fefcd"
+    },
+    {
+      "checksum": 4289449965,
+      "name": "prefix_7",
+      "payload": "ff00807fefcdab"
+    },
+    {
+      "checksum": 2292961261,
+      "name": "prefix_8",
+      "payload": "ff00807fefcdab89"
+    },
+    {
+      "checksum": 290955481,
+      "name": "prefix_9",
+      "payload": "ff00807fefcdab89fe"
+    },
+    {
+      "checksum": 291020761,
+      "name": "prefix_10",
+      "payload": "ff00807fefcdab89feff"
+    },
+    {
+      "checksum": 307732441,
+      "name": "prefix_11",
+      "payload": "ff00807fefcdab89feffff"
+    },
+    {
+      "checksum": 290955225,
+      "name": "prefix_12",
+      "payload": "ff00807fefcdab89feffffff"
+    },
+    {
+      "checksum": 581910570,
+      "name": "prefix_13",
+      "payload": "ff00807fefcdab89feffffff78"
+    },
+    {
+      "checksum": 581932586,
+      "name": "prefix_14",
+      "payload": "ff00807fefcdab89feffffff7856"
+    },
+    {
+      "checksum": 585340458,
+      "name": "prefix_15",
+      "payload": "ff00807fefcdab89feffffff785634"
+    },
+    {
+      "checksum": 887330346,
+      "name": "prefix_16",
+      "payload": "ff00807fefcdab89feffffff78563412"
+    },
+    {
+      "checksum": 4294967292,
+      "name": "word_carry",
+      "payload": "ffffffffffffffffffffffff"
+    },
+    {
+      "checksum": 1547969351,
+      "name": "private_payload_limit",
+      "payload": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d"
+    }
+  ],
+  "empty_peer_broadcast": {
+    "peer_count": 0,
+    "returned": 0
+  },
+  "response_time_cases": [
+    {
+      "after": [
+        4294967295,
+        1,
+        4294967295
+      ],
+      "before": [
+        0,
+        0,
+        0
+      ],
+      "elapsed": 4294967295,
+      "name": "first_max"
+    },
+    {
+      "after": [
+        32,
+        2,
+        16
+      ],
+      "before": [
+        4294967280,
+        1,
+        4294967280
+      ],
+      "elapsed": 48,
+      "name": "division_wrap"
+    },
+    {
+      "after": [
+        2561,
+        256,
+        10
+      ],
+      "before": [
+        2550,
+        255,
+        10
+      ],
+      "elapsed": 11,
+      "name": "sample_256"
+    },
+    {
+      "after": [
+        2687,
+        256,
+        10
+      ],
+      "before": [
+        2560,
+        256,
+        10
+      ],
+      "elapsed": 137,
+      "name": "tail_127"
+    },
+    {
+      "after": [
+        2688,
+        256,
+        11
+      ],
+      "before": [
+        2560,
+        256,
+        10
+      ],
+      "elapsed": 138,
+      "name": "tail_128"
+    },
+    {
+      "after": [
+        2147483648,
+        256,
+        8388608
+      ],
+      "before": [
+        2147483648,
+        256,
+        8388608
+      ],
+      "elapsed": 8388608,
+      "name": "logical_shift"
+    }
+  ],
+  "source": "unicorn/gamemd.exe"
+}

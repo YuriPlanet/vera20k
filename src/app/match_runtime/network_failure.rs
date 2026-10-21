@@ -14,6 +14,31 @@ pub(crate) const DIALOG: DialogId = DialogId(0xCE);
 pub(crate) const BODY: (&str, &str) = ("TXT_OUT_OF_SYNC", "Reconnection Error!");
 pub(crate) const STOP: (&str, &str) = ("TXT_STOP", "Stop");
 
+pub(crate) fn labels(
+    state: &AppState,
+) -> ((&'static str, &'static str), (&'static str, &'static str)) {
+    use crate::sim::world::NetworkInterruption;
+    let interruption = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .and_then(|rt| rt.simulation.pending_network_interruption());
+    let body = match interruption {
+        Some(NetworkInterruption::ScenariosDiffer) => {
+            ("TXT_SCENARIOS_DO_NOT_MATCH", "Scenarios do not match.")
+        }
+        Some(NetworkInterruption::QueueFull) => ("TXT_QUEUE_FULL", "Network event queue is full."),
+        Some(NetworkInterruption::ConnectionFailed) => (
+            "TXT_SYSTEM_NOT_RESPONDING",
+            "The other system is not responding.",
+        ),
+        None => return (BODY, STOP),
+    };
+    //6480A7..64818A reads these body keys and825FB0=TXT_OK. The
+    //checksum branch64CCEB uses TXT_STOP instead.
+    (body, ("TXT_OK", "OK"))
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct NetworkFailureModal {
     acknowledged: bool,
@@ -39,11 +64,10 @@ impl NetworkFailureModal {
 
 pub(crate) fn pending(state: &AppState) -> bool {
     state.frontend.screen == crate::app::GameScreen::InGame
-        && state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .is_some_and(|rt| rt.simulation.pending_network_failure().is_some())
+        && state.match_state.sim_runtime.as_ref().is_some_and(|rt| {
+            rt.simulation.pending_network_failure().is_some()
+                || rt.simulation.pending_network_interruption().is_some()
+        })
 }
 
 /// Also used for a restored suspended frame: no second mismatch record or
@@ -55,6 +79,14 @@ pub(crate) fn show(state: &mut AppState) {
             .sim_runtime
             .as_ref()
             .and_then(|rt| rt.simulation.pending_network_failure())
+        {
+            log::error!("{failure}");
+        }
+        if let Some(failure) = state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .and_then(|rt| rt.simulation.pending_network_interruption())
         {
             log::error!("{failure}");
         }

@@ -27,7 +27,7 @@ use crate::sim::command::{CommandRecord, CommandRecordError};
 pub use crate::sim::command_queue::{
     CHECKSUM_HISTORY_LEN, ChecksumMismatch, CommandDispatchHouse, DO_LIST_CAPACITY,
     DispatchSummary, FRAMEINFO_EVENT_OPCODE, FrameInfo, FrameInfoCompareGate,
-    MultiplayerChecksumHistory, OUT_LIST_CAPACITY,
+    MultiplayerChecksumHistory, NETWORK_LOCAL_MIRROR_LIMIT, OUT_LIST_CAPACITY,
 };
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::command_queue::{
@@ -37,8 +37,6 @@ use crate::sim::command_queue::{
     DoList, DoListEvent, LocalCommandEvent, LocalCommandStage, SemanticEventHeader,
 };
 use crate::sim::intern::InternedId;
-
-pub const NETWORK_LOCAL_MIRROR_LIMIT: usize = 0x2000;
 
 /// Initial LAN host5DD48D / guest5DD2CD MaxAhead calculation. Native
 /// IPX response getter5424C0 is observed twice only when the first calculation

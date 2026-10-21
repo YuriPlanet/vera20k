@@ -27,6 +27,17 @@ use crate::sim::pathfinding::zone_map::ZoneGrid;
 use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS;
 
 impl Simulation {
+    /// Foot's cell click constructs MoveFlash before it issues the unit order
+    /// (4D7EB5..4D8065), outside EventClass. In LAN/WOL the native flash joins
+    /// a local unsynced list (4D7F28..4D8062). Keep that local action off the
+    /// packet FIFO while using the existing ingress and animation owners.
+    /// `spawn_move_flash` still declines network animation construction until
+    /// that local visual owner exists. Offline flashes retain their established
+    /// tail timing, including animation identities and any constructor RNG.
+    fn command_uses_frame_ingress(command: &Command, is_network: bool) -> bool {
+        command.uses_frame_ingress() || is_network && matches!(command, Command::MoveFlash { .. })
+    }
+
     /// Queue_Options647040 checks the current House's result/death flags and
     /// appends OPTIONS. Full admission returns false without opening a menu.
     pub fn queue_options_request(&mut self) -> bool {
@@ -56,7 +67,8 @@ impl Simulation {
         if self.replaying_recorded_commands {
             return false;
         }
-        if command.payload.uses_frame_ingress() {
+        if Self::command_uses_frame_ingress(&command.payload, self.session.game_mode().is_network())
+        {
             return self.admit_queued_command(QueuedCommand::from_envelope(command), false);
         }
         if let Command::SetRally {
@@ -105,7 +117,11 @@ impl Simulation {
 
     /// Add_Event_To_DoList clears the processed bit only on fresh admission.
     /// The dispatcher reserves its moved FIFO's slots until retirement.
-    fn admit_queued_command(&mut self, mut command: QueuedCommand, record: bool) -> bool {
+    pub(super) fn admit_queued_command(
+        &mut self,
+        mut command: QueuedCommand,
+        record: bool,
+    ) -> bool {
         command.clear_processed();
         let receipt = record.then(|| command.replay_envelope());
         let accepted = self
@@ -170,7 +186,10 @@ impl Simulation {
         if self.replaying_recorded_commands {
             return;
         }
-        let record = !command.payload.uses_frame_ingress();
+        let record = !Self::command_uses_frame_ingress(
+            &command.payload,
+            self.session.game_mode().is_network(),
+        );
         self.admit_queued_command(QueuedCommand::from_envelope(command), record);
     }
 
@@ -303,10 +322,12 @@ impl Simulation {
     /// and semantic tail events stay in place until the canonical DoList scan.
     pub fn take_due_commands(&mut self) -> Vec<CommandEnvelope> {
         let execute_tick = self.session.tick().saturating_add(1);
+        let is_network = self.session.game_mode().is_network();
         self.pending_commands
             .take_where(|entry| {
                 entry.semantic().is_some_and(|command| {
-                    command.payload.uses_frame_ingress() && command.execute_tick <= execute_tick
+                    Self::command_uses_frame_ingress(&command.payload, is_network)
+                        && command.execute_tick <= execute_tick
                 })
             })
             .into_iter()
@@ -349,7 +370,10 @@ impl Simulation {
     ) -> Vec<CommandEnvelope> {
         crate::sim::production::publish_production_changes(self, rules);
         for command in commands {
-            if command.payload.uses_frame_ingress() {
+            if Self::command_uses_frame_ingress(
+                &command.payload,
+                self.session.game_mode().is_network(),
+            ) {
                 self.frame_command_admissions.push(command.clone());
             } else {
                 self.admit_queued_command(QueuedCommand::from_envelope(command.clone()), true);
@@ -729,7 +753,10 @@ impl Simulation {
     ) -> Vec<InternedId> {
         let mut house_order = self.houses.order().to_vec();
         for command in commands.into_iter().filter(|command| {
-            command.payload.uses_frame_ingress() && command.execute_tick <= execute_tick
+            Self::command_uses_frame_ingress(
+                &command.payload,
+                self.session.game_mode().is_network(),
+            ) && command.execute_tick <= execute_tick
         }) {
             if !house_order.contains(&command.owner) {
                 house_order.push(command.owner);
@@ -754,11 +781,12 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> usize {
         let mut executed_commands = 0usize;
+        let is_network = self.session.game_mode().is_network();
         for owner in self.due_command_house_order(commands.iter(), execute_tick) {
             for command in commands.iter().filter(|command| {
                 command.execute_tick <= execute_tick
                     && command.owner == owner
-                    && command.payload.uses_frame_ingress()
+                    && Self::command_uses_frame_ingress(&command.payload, is_network)
             }) {
                 match &command.payload {
                     Command::SetGameSpeed { speed } => {
@@ -766,7 +794,7 @@ impl Simulation {
                             let _ = self.session.apply_in_game_speed(*speed);
                         }
                     }
-                    Command::Select { .. } => {
+                    Command::Select { .. } | Command::MoveFlash { .. } => {
                         let _ = self.apply_one_due_command(command, rules, None, frame_effects);
                     }
                     _ => unreachable!("frame-ingress predicate admitted a tail command"),
@@ -812,9 +840,10 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(usize, bool), (super::NetworkCommandError, usize, bool)> {
+        let is_network = self.session.game_mode().is_network();
         for command in commands
             .iter()
-            .filter(|command| !command.payload.uses_frame_ingress())
+            .filter(|command| !Self::command_uses_frame_ingress(&command.payload, is_network))
         {
             self.admit_queued_command(QueuedCommand::from_envelope(command.clone()), true);
         }
@@ -1057,3 +1086,7 @@ mod group_spread_gate_tests;
 #[cfg(test)]
 #[path = "command_admission_tests.rs"]
 mod command_admission_tests;
+
+#[cfg(test)]
+#[path = "move_flash_ingress_tests.rs"]
+mod move_flash_ingress_tests;

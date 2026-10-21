@@ -8,7 +8,9 @@ mod actions;
 mod cooperative;
 pub(crate) use cooperative::chooser_rows as cooperative_chooser_rows;
 mod service;
-pub(crate) use service::{HostOptions, NetworkSetupEvent, poll, service_event};
+pub(crate) use service::{
+    HostOptions, NetworkSetupEvent, poll, prepare_lan_guest_handoff, service_event,
+};
 pub(crate) mod view;
 mod wol;
 pub(crate) use actions::{apply_action, commit_map_selection, commit_start, open_choose_map};
@@ -124,7 +126,8 @@ pub(crate) struct NetworkSetupProtocol {
     wol_verify: Option<crate::ui::wol_verify::WolVerifyDialog>,
     start_requested: bool,
     accept_eligible: bool,
-    go_deadline: Option<Instant>,
+    /// LAN5DD5E5/5DD690/5DD950: send admission, drain and reply phases.
+    lan_go: Option<LanGoWait>,
     map_transfer_pending: bool,
     /// A random map's `RandMap.Sed` has arrived; its `RandMap.img` is the
     /// second receive (`0x005DDA5D..0x005DDA68`).
@@ -153,6 +156,147 @@ pub(crate) struct NetworkSetupProtocol {
     requests: Vec<NetworkSetupRequest>,
 }
 
+/// The native blocking GO loops decide which global packets are consumed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LanGoReceiveMode {
+    Normal,
+    Defer,
+    RepliesOnly,
+}
+
+#[derive(Debug)]
+enum LanGoWait {
+    HostSending {
+        pending: Vec<usize>,
+    },
+    HostDrain {
+        pending: Vec<usize>,
+        timer: crate::app::match_runtime::session::WallBucketTimer,
+    },
+    HostReplies {
+        pending: Vec<usize>,
+        timer: crate::app::match_runtime::session::WallBucketTimer,
+    },
+    GuestPreparing,
+    GuestSending,
+    GuestDrain,
+    Complete,
+    HandingOff,
+    Failed,
+}
+
+impl LanGoWait {
+    fn receive_mode(&self) -> LanGoReceiveMode {
+        match self {
+            Self::HostReplies { .. } => LanGoReceiveMode::RepliesOnly,
+            _ => LanGoReceiveMode::Defer,
+        }
+    }
+
+    fn packets_queued(self, now: u32) -> anyhow::Result<Self> {
+        use crate::app::match_runtime::session::WallBucketTimer;
+        match self {
+            Self::HostSending { pending } => Ok(Self::HostDrain {
+                pending,
+                timer: WallBucketTimer::start(now, 1200),
+            }),
+            Self::GuestSending => Ok(Self::GuestDrain),
+            _ => anyhow::bail!("GO packets were queued outside their send phase"),
+        }
+    }
+
+    fn observe(self, now: u32, queued: usize, service_ok: bool) -> Self {
+        use crate::app::match_runtime::session::WallBucketTimer;
+        match self {
+            Self::HostDrain { pending, timer } => {
+                // Original5DD629 JNZ exits while time remains. A fresh timer
+                // therefore skips this drain; an expired one keeps servicing
+                // until the queue empties. Do not turn it into a timeout.
+                if queued == 0 || timer.remaining(now) != 0 {
+                    if pending.is_empty() {
+                        Self::Complete
+                    } else {
+                        Self::HostReplies {
+                            pending,
+                            timer: WallBucketTimer::start(now, 600),
+                        }
+                    }
+                } else {
+                    Self::HostDrain { pending, timer }
+                }
+            }
+            Self::HostReplies { pending, timer } => {
+                if pending.is_empty() || timer.remaining(now) == 0 {
+                    Self::Complete
+                } else {
+                    Self::HostReplies { pending, timer }
+                }
+            }
+            // 5DD950..97D exits on queue empty or a false541820 result.
+            Self::GuestDrain if queued == 0 || !service_ok => Self::Complete,
+            phase => phase,
+        }
+    }
+
+    fn acknowledge(&mut self, source: usize) {
+        if let Self::HostReplies { pending, .. } = self {
+            pending.retain(|candidate| *candidate != source);
+            if pending.is_empty() {
+                *self = Self::Complete;
+            }
+        }
+    }
+}
+
+/// Called before every global dequeue, including after a GO reply changed phase.
+pub(crate) fn lan_go_receive_mode(state: &AppState) -> LanGoReceiveMode {
+    state
+        .frontend
+        .network_setup_protocol
+        .as_ref()
+        .and_then(|protocol| protocol.lan_go.as_ref())
+        .map_or(LanGoReceiveMode::Normal, LanGoWait::receive_mode)
+}
+
+/// Call only after the complete GO broadcast or the guest's Type13 was admitted.
+pub(crate) fn mark_lan_go_packets_queued(state: &mut AppState, now: u32) -> anyhow::Result<()> {
+    let protocol = state
+        .frontend
+        .network_setup_protocol
+        .as_mut()
+        .ok_or_else(|| anyhow::anyhow!("GO send has no setup owner"))?;
+    anyhow::ensure!(
+        matches!(
+            protocol.lan_go,
+            Some(LanGoWait::HostSending { .. } | LanGoWait::GuestSending)
+        ),
+        "GO packets were queued outside their send phase"
+    );
+    let phase = protocol
+        .lan_go
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("no GO send is pending"))?;
+    protocol.lan_go = Some(phase.packets_queued(now)?);
+    Ok(())
+}
+
+/// The transport supplies observations, while this owner decides progression.
+/// A true result requires current guest timing followed by GoCompleted.
+pub(crate) fn observe_lan_go_transport(
+    state: &mut AppState,
+    now: u32,
+    queued: usize,
+    service_ok: bool,
+) -> bool {
+    let Some(protocol) = state.frontend.network_setup_protocol.as_mut() else {
+        return false;
+    };
+    if let Some(phase) = protocol.lan_go.take() {
+        protocol.lan_go = Some(phase.observe(now, queued, service_ok));
+    }
+    matches!(protocol.lan_go, Some(LanGoWait::Complete))
+}
+
 /// The host's offer as sent: the guests it went to (the node count is fixed
 /// at the send, `0xA8DA84`, and acks match by sender, `0x005E82D0`), and the
 /// preview the `'W'` described.
@@ -179,7 +323,7 @@ impl NetworkSetupProtocol {
             wol_verify: None,
             start_requested: false,
             accept_eligible: false,
-            go_deadline: None,
+            lan_go: None,
             map_transfer_pending: false,
             awaiting_random_map_image: false,
             transfer_progress: None,
@@ -681,7 +825,16 @@ pub(crate) fn return_after_match(state: &mut AppState) {
     if dialog.wol() {
         crate::app::shell_wol::reenter_after_match(state);
     } else {
+        crate::app::lan_service::restart_lobby_visit(state);
         App::open_lan_lobby(state);
+    }
+}
+
+/// Type8's synchronous native departure drain blocks further setup input.
+/// The LAN service resumes the existing Kicked transition when it finishes.
+pub(crate) fn lock_lan_departure(state: &mut AppState) {
+    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+        protocol.locked = true;
     }
 }
 
@@ -717,6 +870,9 @@ fn leave_setup(state: &mut AppState) -> SetupDialog {
     state.frontend.skirmish_preview_texture = None;
     state.frontend.skirmish_shell_state.choose_map_modal = None;
     state.frontend.loading_screen_atlas = None;
+    if !dialog.wol() {
+        crate::app::lan_service::leave_setup(state);
+    }
     state.match_state.session.return_to_network_lobby();
     dialog
 }
@@ -744,6 +900,68 @@ pub(crate) fn acknowledge_notice(state: &mut AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lan_go_drain_gates_match_executed_original_branches() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/lan_messages.json",
+        ))
+        .unwrap();
+        for case in corpus["go_waits"]["host"].as_array().unwrap() {
+            let start = case["start"].as_u64().unwrap() as u32;
+            let now = case["now"].as_u64().unwrap() as u32;
+            let queued = case["queued"].as_u64().unwrap() as usize;
+            let phase = LanGoWait::HostSending { pending: vec![1] }
+                .packets_queued(start)
+                .unwrap()
+                .observe(now, queued, true);
+            let expected = if case["service_calls"].as_u64().unwrap() == 0 {
+                LanGoReceiveMode::RepliesOnly
+            } else {
+                LanGoReceiveMode::Defer
+            };
+            assert_eq!(phase.receive_mode(), expected, "{case}");
+        }
+        for case in corpus["go_waits"]["guest"].as_array().unwrap() {
+            let phase = LanGoWait::GuestSending
+                .packets_queued(100)
+                .unwrap()
+                .observe(
+                    100,
+                    case["queued"].as_u64().unwrap() as usize,
+                    case["service_ok"].as_bool().unwrap(),
+                );
+            assert_eq!(
+                matches!(phase, LanGoWait::Complete),
+                case["service_calls"].as_u64().unwrap() == 0,
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn lan_go_admission_reply_and_timeout_phases_remain_separate() {
+        let mut phase = LanGoWait::HostSending {
+            pending: vec![1, 2],
+        };
+        phase.acknowledge(1);
+        assert_eq!(phase.receive_mode(), LanGoReceiveMode::Defer);
+        let mut phase = phase.packets_queued(100).unwrap().observe(100, 3, true);
+        phase.acknowledge(9);
+        phase.acknowledge(1);
+        phase.acknowledge(1);
+        assert_eq!(phase.receive_mode(), LanGoReceiveMode::RepliesOnly);
+        let phase = phase.observe(699, 3, true);
+        assert_eq!(phase.receive_mode(), LanGoReceiveMode::RepliesOnly);
+        assert!(matches!(phase.observe(700, 3, true), LanGoWait::Complete));
+
+        let unsent = LanGoWait::GuestSending.observe(100, 0, true);
+        assert!(matches!(unsent, LanGoWait::GuestSending));
+        let sent = unsent.packets_queued(100).unwrap();
+        let waiting = sent.observe(101, 1, true);
+        assert!(matches!(waiting, LanGoWait::GuestDrain));
+        assert!(matches!(waiting.observe(102, 0, true), LanGoWait::Complete));
+    }
 
     #[test]
     fn repeated_host_entries_match_native_main_to_crt_seed_history() {

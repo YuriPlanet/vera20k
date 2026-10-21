@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Event constructors4C6860/4C65E0, send header649CA0..649D94, probe64A000..64A090, Compress64B660/cache64B4D0 and Uncompress64BDD0; bounded raw packet and admission controls",
+  "assumptions": [
+    "Move/Stop input records execute their whole native constructors with House9, object kind34, Move mission2, null target, Cell kind0B, explicit cell50087/50088 and auxiliary IDs. Constructor storage startsA5 with flagsF3, preserving untouched bytes; the first record issue frame is1 and later constructor calls see the prior send frame.",
+    "Protocol2, send rate5, local House2, checksum12345678, ahead10 and prior low16 frontier7 are supplied upstream inputs. Original649CA0 computes header and signed min(OutListCount,2000h-DoListCount), then full64B660 executes. Stop at649D94 before any transport call. Packet capacity558 is the original Session constructor69768C value; 38/43 are boundary controls.",
+    "Sender/receiver VMs persist separately per flow, preserving all native caches. OutList/DoList indexes start0, source timestamps9000+index, receiver capacity4000h. Successful and failing native calls retain their observed prefix and cache changes.",
+    "Fixed-payload table controls execute original no-payload constructor4C66C0 then set payload bytes00..67 explicitly; these establish copying offsets, not semantic validity of gameplay receiver parameters. Full-admission controls record retained native cache counts/tokens without retrying after the fatal condition.",
+    "FRAMESYNC controls execute64A000 through64A090 before its transport call, with explicit frame, MaxAhead, sequence and Scenario seed0BADC0DE. Native computes all14 header bytes; protocol2 and send-rate5 are retained.",
+    "Records are stored losslessly as hex with trailing input/mirrorA5 or decoded00 omitted; consumers restore111 bytes. This is a bounded codec comparison, not execution of gameplay receivers or UDP transport."
+  ],
+  "substitutions": [
+    "DebugLog4068E0 returns without output; timeGetTime import7E1530 returns12345. Original constructors, header arithmetic, compression/cache bodies, decode/admission and local mirror copies execute unchanged.",
+    "Upstream session fields and already-admitted source records are placed directly in native storage. No encoded bytes, lengths, cache decisions, receiver events or native header values are calculated by Python."
+  ],
+  "entry_points": {
+    "move": "0x004C6860",
+    "stop": "0x004C65E0",
+    "header": "0x004C66C0",
+    "send": "0x00649CA0",
+    "probe": "0x0064A000",
+    "probe_stop": "0x0064A090",
+    "send_stop": "0x00649D94",
+    "compress": "0x0064B660",
+    "cache": "0x0064B4D0",
+    "decompress": "0x0064BDD0"
+  },
+  "replay_command": "python -m tools.storage_oracle.lan_lobby --event-packets",
+  "payload_sha256": "523a016f196251b54bac9531fc575e6b17a250c60a3d955d7c3314c6187bc4ec"
+}

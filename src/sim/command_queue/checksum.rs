@@ -145,7 +145,8 @@ impl MultiplayerChecksumHistory {
         self.values[(frame & 0xff) as usize] = checksum;
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    /// Read the retained ring slot for diagnostics. Callers tracking more than
+    /// 256 frames must read each value before its slot is overwritten.
     #[inline]
     pub fn get(&self, frame: u32) -> u32 {
         self.values[(frame & 0xff) as usize]
@@ -240,7 +241,7 @@ impl FrameChecksumState {
         Ok(true)
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    /// The same history used by live FRAMEINFO comparisons, without mutation.
     pub fn checksum_history(&self) -> &MultiplayerChecksumHistory {
         &self.history
     }

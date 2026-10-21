@@ -104,7 +104,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             .iter()
             .enumerate()
             .find(|(_, human)| human.raw_slot_index == Some(row));
-        let ai = launch.opponents.iter().find(|ai| ai.raw_slot_index == row);
+        let ai = session.network_display_ai(row);
         let vacancy = session.network_vacancy(row);
         let is_local = local.raw_slot_index == Some(row);
         let observer = human.is_some_and(|(_, human)| human.is_observer())
@@ -132,7 +132,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         let slot_value = if human.is_some() {
             0
         } else if let Some(ai) = ai {
-            match ai.difficulty {
+            match ai {
                 AiDifficulty::Easy => 4,
                 AiDifficulty::Normal => 5,
                 AiDifficulty::Hard => 6,
@@ -142,6 +142,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 NetworkVacancy::Open => 2,
                 NetworkVacancy::Closed => 3,
                 NetworkVacancy::OpenObserver => 7,
+                NetworkVacancy::Waiting => 1,
             }
         };
         let slot_label = human

@@ -37,9 +37,8 @@ const RESERVED_LITERALS: [&str; 7] = [
     "<OpenObserver>",
 ];
 
-/// Semantic service requests, not serialized packets or an online backend.
-/// A controlled service drains these and returns the same events as a future
-/// transport adapter. No request ever manufactures a successful response.
+/// Semantic UI requests consumed by the LAN transport adapter. Controlled
+/// captures use the same boundary; no request manufactures a successful reply.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LanServiceRequest {
     Refresh,
@@ -144,6 +143,7 @@ impl App {
             .lobby
             .replace_players(vec![local_lobby_row(&local.name)]);
         state.frontend.lan = Some(runtime);
+        crate::app::lan_service::open(state);
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         shell_transition::invalidate_main_menu_dialog_instance(state);
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::LanLobby;
@@ -159,6 +159,7 @@ impl App {
             .multiplayer_shell_runtime
             .persist_lan_preferences();
         state.frontend.lan = None;
+        crate::app::lan_service::close(state);
         state.match_state.session.leave_network();
         Self::close_single_player_shell(state);
         state
@@ -170,12 +171,13 @@ impl App {
     }
 
     pub(crate) fn commit_lan_create(state: &mut AppState, observe: bool) {
+        crate::app::lan_service::force_presence(state);
         state.frontend.lan = None;
         Self::open_host_setup(state, observe);
     }
 }
 
-fn local_lobby_row(name: &str) -> LanPlayerRow {
+pub(crate) fn local_lobby_row(name: &str) -> LanPlayerRow {
     LanPlayerRow {
         name: name.to_owned(),
         color: None,

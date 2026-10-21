@@ -208,11 +208,17 @@ pub(super) struct MoviesCapture {
 }
 
 impl MoviesCapture {
-    pub(super) fn new(target: MoviesTarget, output: &Path) -> Self {
+    pub(super) fn new(
+        target: MoviesTarget,
+        output: &Path,
+        live_lan: Option<super::LiveLanConfig>,
+    ) -> Self {
         Self {
             target,
             lan: if let MoviesTarget::Lan(target) = target {
-                Some(lan::LanCapture::new(target))
+                let mut capture = lan::LanCapture::new(target);
+                capture.configure_live(live_lan);
+                Some(capture)
             } else {
                 None
             },

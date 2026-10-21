@@ -1449,11 +1449,16 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
                 let now = (crate::app::match_runtime::frame_pacer::wall_clock_ms() >> 4) as i32;
                 let wait =
                     NetworkLoadWait::new(now, native.progress_row.total_fraction(&native.progress));
-                let raw = native.progress_cadence.terminal_raw_percent() as i32;
+                //69AE90 sends the displayed percent, after random-map
+                //milestones have passed through their existing halving owner.
+                let percent = native
+                    .progress_cadence
+                    .effective_percent(native.progress_cadence.terminal_raw_percent())
+                    as i32;
                 state
                     .match_state
                     .session
-                    .report_network_loading_progress(raw);
+                    .report_network_loading_progress(percent);
                 poll_network_load_wait(
                     state,
                     LoadingSession {
@@ -1565,10 +1570,12 @@ fn poll_network_load_wait(state: &mut AppState, mut session: LoadingSession) -> 
         poll,
         NetworkLoadPoll::ReportProgress | NetworkLoadPoll::Complete
     ) {
-        state
-            .match_state
-            .session
-            .report_network_loading_progress(native.progress_cadence.terminal_raw_percent() as i32);
+        state.match_state.session.report_network_loading_progress(
+            native
+                .progress_cadence
+                .effective_percent(native.progress_cadence.terminal_raw_percent())
+                as i32,
+        );
     }
     if matches!(poll, NetworkLoadPoll::Complete | NetworkLoadPoll::TimedOut) {
         let timed_out = if poll == NetworkLoadPoll::TimedOut {

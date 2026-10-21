@@ -200,6 +200,28 @@ impl SimRuntime {
             effects,
         )
     }
+
+    pub fn resume_network_wait(
+        &mut self,
+        effects: crate::sim::world::FrameEffects<'_>,
+    ) -> Result<crate::sim::world::SimFrameOutput, crate::sim::world::FrameAdvanceError> {
+        self.simulation.resume_network_wait(
+            &self.resources.rules,
+            Some(&self.resources.overlay_registry),
+            effects,
+        )
+    }
+
+    pub fn leave_network_wait(
+        &mut self,
+        effects: crate::sim::world::FrameEffects<'_>,
+    ) -> Result<crate::sim::world::SimFrameOutput, crate::sim::world::FrameAdvanceError> {
+        self.simulation.leave_network_wait(
+            &self.resources.rules,
+            Some(&self.resources.overlay_registry),
+            effects,
+        )
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]

@@ -625,6 +625,8 @@ impl App {
                 session: Default::default(),
                 network_wait: Default::default(),
                 network_failure: None,
+                live_network: None,
+                lan_service: None,
                 startup: Default::default(),
                 sim_runtime: None,
                 input: crate::app::input::state::MatchInputState::new(hotkey_bindings),

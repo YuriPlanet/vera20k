@@ -285,6 +285,11 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
         }
     }
     queue(state, NetworkSetupRequest::PublishOptions);
+    if column == SetupColumn::Player {
+        //5EC9F0 ->5DAF30 publishes the changed row bindings independently
+        //of the options' participant array, including kicked/unbound nodes.
+        queue(state, NetworkSetupRequest::PublishRoster);
+    }
     Ok(())
 }
 
