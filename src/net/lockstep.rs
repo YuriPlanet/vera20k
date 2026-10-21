@@ -15,7 +15,6 @@
 //! gameplay adapter decodes only after the shared dispatcher admits an event.
 //! Network packetization and the send policy remain transport responsibilities.
 
-use std::mem::size_of;
 #[cfg(any(test, feature = "test-support"))]
 use std::num::NonZeroU8;
 use std::num::NonZeroU32;
@@ -26,7 +25,9 @@ use serde::{Deserialize, Serialize};
 use crate::sim::command::MEGAMISSION_STAGE_CAPACITY;
 use crate::sim::command::{CommandRecord, CommandRecordError};
 pub use crate::sim::command_queue::{
-    ChecksumMismatch, CommandDispatchHouse, DO_LIST_CAPACITY, DispatchSummary, OUT_LIST_CAPACITY,
+    CHECKSUM_HISTORY_LEN, ChecksumMismatch, CommandDispatchHouse, DO_LIST_CAPACITY,
+    DispatchSummary, FRAMEINFO_EVENT_OPCODE, FrameInfo, FrameInfoCompareGate,
+    MultiplayerChecksumHistory, OUT_LIST_CAPACITY,
 };
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::command_queue::{
@@ -37,13 +38,7 @@ use crate::sim::command_queue::{
 };
 use crate::sim::intern::InternedId;
 
-pub const FRAMEINFO_EVENT_OPCODE: u8 = 0x1c;
-pub const CHECKSUM_HISTORY_LEN: usize = 0x100;
 pub const NETWORK_LOCAL_MIRROR_LIMIT: usize = 0x2000;
-
-const FRAMEINFO_CHECKSUM_PAYLOAD_OFFSET: usize = 0;
-const FRAMEINFO_TIMING_WORD_PAYLOAD_OFFSET: usize = 4;
-const FRAMEINFO_DELAY_PAYLOAD_OFFSET: usize = 6;
 
 /// Initial LAN host5DD48D / guest5DD2CD MaxAhead calculation. Native
 /// IPX response getter5424C0 is observed twice only when the first calculation
@@ -221,169 +216,6 @@ impl NetworkSendPolicy {
                     .wrapping_mul(rate)
             }
         }
-    }
-}
-
-/// Payload carried by the leading FRAMEINFO record of a multiplayer packet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FrameInfo {
-    pub house_id: i8,
-    pub event_frame: i32,
-    pub checksum: u32,
-    pub timing_word: u16,
-    pub delay: u8,
-}
-
-impl FrameInfo {
-    pub fn encode(self) -> CommandRecord {
-        assert!(
-            self.house_id >= 0,
-            "outgoing FRAMEINFO requires a registered house id"
-        );
-        let mut record = CommandRecord::encode(
-            FRAMEINFO_EVENT_OPCODE,
-            i32::from(self.house_id),
-            self.event_frame,
-            &[],
-        )
-        .expect("FRAMEINFO has a fixed in-record payload");
-        self.write_to(&mut record);
-        record
-    }
-
-    /// Overwrite only the verified FRAMEINFO fields. Flags and every unknown
-    /// payload byte remain untouched.
-    pub fn write_to(self, record: &mut CommandRecord) {
-        assert!(
-            self.house_id >= 0,
-            "outgoing FRAMEINFO requires a registered house id"
-        );
-        record.set_issue_header(
-            FRAMEINFO_EVENT_OPCODE,
-            i32::from(self.house_id),
-            self.event_frame,
-        );
-        let payload = record.payload_mut();
-        payload[FRAMEINFO_CHECKSUM_PAYLOAD_OFFSET
-            ..FRAMEINFO_CHECKSUM_PAYLOAD_OFFSET + size_of::<u32>()]
-            .copy_from_slice(&self.checksum.to_le_bytes());
-        payload[FRAMEINFO_TIMING_WORD_PAYLOAD_OFFSET
-            ..FRAMEINFO_TIMING_WORD_PAYLOAD_OFFSET + size_of::<u16>()]
-            .copy_from_slice(&self.timing_word.to_le_bytes());
-        payload[FRAMEINFO_DELAY_PAYLOAD_OFFSET] = self.delay;
-    }
-
-    pub fn decode(record: &CommandRecord) -> Option<Self> {
-        if record.opcode() != FRAMEINFO_EVENT_OPCODE {
-            return None;
-        }
-        let payload = record.payload();
-        Some(Self {
-            house_id: record.house_id(),
-            event_frame: record.frame_stamp(),
-            checksum: u32::from_le_bytes(
-                payload[FRAMEINFO_CHECKSUM_PAYLOAD_OFFSET
-                    ..FRAMEINFO_CHECKSUM_PAYLOAD_OFFSET + size_of::<u32>()]
-                    .try_into()
-                    .expect("FRAMEINFO checksum is four bytes"),
-            ),
-            timing_word: u16::from_le_bytes(
-                payload[FRAMEINFO_TIMING_WORD_PAYLOAD_OFFSET
-                    ..FRAMEINFO_TIMING_WORD_PAYLOAD_OFFSET + size_of::<u16>()]
-                    .try_into()
-                    .expect("FRAMEINFO timing word is two bytes"),
-            ),
-            delay: payload[FRAMEINFO_DELAY_PAYLOAD_OFFSET],
-        })
-    }
-
-    #[inline]
-    pub fn history_index(self) -> usize {
-        ((self.event_frame as u32).wrapping_sub(u32::from(self.delay)) & 0xff) as usize
-    }
-}
-
-/// The two live fields read from the network timing gate before retail compares
-/// a due FRAMEINFO checksum.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FrameInfoCompareGate {
-    /// Native timing-window start frame. `-1` means no elapsed-frame subtraction.
-    pub base_frame: i32,
-    /// Native `param_2[2]`, tested against elapsed frames.
-    pub remaining_frames: i32,
-}
-
-impl FrameInfoCompareGate {
-    /// An already-open gate.
-    pub const OPEN: Self = Self {
-        base_frame: -1,
-        remaining_frames: 0,
-    };
-
-    pub const fn new(base_frame: i32, remaining_frames: i32) -> Self {
-        Self {
-            base_frame,
-            remaining_frames,
-        }
-    }
-
-    /// Retail compares when the no-base remainder is zero, or when elapsed
-    /// frames have reached the stored remainder.
-    #[inline]
-    pub fn allows_compare(self, current_frame: i32) -> bool {
-        if self.base_frame == -1 {
-            self.remaining_frames == 0
-        } else {
-            self.remaining_frames <= current_frame.wrapping_sub(self.base_frame)
-        }
-    }
-}
-
-/// The active 256-frame checksum ring.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MultiplayerChecksumHistory {
-    values: [u32; CHECKSUM_HISTORY_LEN],
-}
-
-impl MultiplayerChecksumHistory {
-    pub const fn new() -> Self {
-        Self {
-            values: [0; CHECKSUM_HISTORY_LEN],
-        }
-    }
-
-    #[inline]
-    pub fn record(&mut self, frame: u32, checksum: u32) {
-        self.values[(frame & 0xff) as usize] = checksum;
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    #[inline]
-    pub fn get(&self, frame: u32) -> u32 {
-        self.values[(frame & 0xff) as usize]
-    }
-
-    pub fn compare(&self, frame_info: FrameInfo) -> Result<(), ChecksumMismatch> {
-        let history_index = frame_info.history_index();
-        let local_checksum = self.values[history_index];
-        if local_checksum == frame_info.checksum {
-            Ok(())
-        } else {
-            Err(ChecksumMismatch {
-                house_id: frame_info.house_id,
-                event_frame: frame_info.event_frame,
-                delay: frame_info.delay,
-                history_index: history_index as u8,
-                local_checksum,
-                remote_checksum: frame_info.checksum,
-            })
-        }
-    }
-}
-
-impl Default for MultiplayerChecksumHistory {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

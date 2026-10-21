@@ -451,7 +451,9 @@ fn queued_hut_capture_survives_repair_before_event_execution() {
             &sim,
             (9, 10)
         ));
-        let due = sim.take_due_commands();
+        // Exercise the delayed receiver without an intervening world AI pass.
+        // Production frame ingress deliberately leaves tail commands queued.
+        let due = sim.take_frame_commands_for_test();
         assert_eq!(due.len(), 1);
         let rng_before = (
             sim.scenario_rng.logical_state(),

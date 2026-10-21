@@ -51,6 +51,27 @@ pub trait NetworkCommandBoundary {
     ) -> Result<bool, NetworkCommandError>;
 }
 
+/// Headless/replay borrows the same checksum owner as the live process. Only
+/// the owner instance differs; frame-zero reset, grace and comparison do not.
+impl NetworkCommandBoundary for std::cell::RefCell<crate::sim::command_queue::FrameChecksumState> {
+    fn record_frame_checksum(&self, frame: u32, checksum: u32) {
+        self.borrow_mut().record_frame_checksum(frame, checksum);
+    }
+
+    fn compare_frame_info(
+        &self,
+        record: &crate::sim::command::CommandRecord,
+        current_frame: i32,
+    ) -> Result<bool, NetworkCommandError> {
+        let info = crate::sim::command_queue::FrameInfo::decode(record).ok_or_else(|| {
+            NetworkCommandError::Unavailable("comparison requires FRAMEINFO bytes".to_owned())
+        })?;
+        self.borrow()
+            .compare_frame_info(info, current_frame)
+            .map_err(NetworkCommandError::Mismatch)
+    }
+}
+
 /// Stack-scoped process effects accompanying this simulation visit.
 #[derive(Clone, Copy, Default)]
 pub struct FrameEffects<'a> {

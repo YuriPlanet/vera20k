@@ -519,7 +519,9 @@ fn area_guard_snapshot_retains_pending_order_post_and_retask_references() {
     assert_eq!(actor.archive_target(), original.archive_target());
 
     let owner = f.sim.interner.resolve(owner).to_owned();
-    let pending = f.sim.take_due_commands();
+    // This receiver-only checkpoint excludes world AI; extract its scheduled
+    // tail command explicitly instead of draining production frame ingress.
+    let pending = f.sim.take_frame_commands_for_test();
     assert_eq!(pending.len(), 1);
     assert!(
         f.sim

@@ -179,11 +179,19 @@ fn actual_local_loss_refuses_eligible_cheer_without_consuming_the_input_clock() 
             )
             .unwrap();
         let admitted = output.take_admitted_commands();
+        let house_id = scene
+            .sim()
+            .houses()
+            .order()
+            .iter()
+            .position(|owner| *owner == owners[index].0)
+            .unwrap() as i8;
         assert_eq!(
             admitted
                 .iter()
                 .filter(|command| {
-                    command.owner == owners[index].0 && command.payload == Command::Cheer
+                    matches!(&command.payload, Command::SynchronizedRecord { record }
+                        if record.opcode() == crate::sim::command::CHEER_OPCODE && record.house_id() == house_id)
                 })
                 .count(),
             usize::from(index == 1)

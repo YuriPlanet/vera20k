@@ -24,9 +24,9 @@
 //! holds it. A network visit's mode follows from the service it visits
 //! (`NetworkReturnContext`), so the visit stores no copy either.
 
-use crate::net::lockstep::{
-    ChecksumMismatch, FrameInfo, FrameInfoCompareGate, MultiplayerChecksumHistory,
-};
+#[cfg(test)]
+use crate::sim::command_queue::MultiplayerChecksumHistory;
+use crate::sim::command_queue::{ChecksumMismatch, FrameChecksumState, FrameInfo};
 use crate::skirmish_launch::{
     SkirmishAiSlot, SkirmishLaunchOptions, SkirmishLaunchSession, SkirmishLocalSlot,
 };
@@ -239,15 +239,9 @@ pub(crate) struct MatchSession {
     offline_player_name: Option<String>,
     network: Option<NetworkSession>,
     host: bool,
-    /// gamemd's 256-entry checksum ring at `0x00B04474`, written once per
-    /// multiplayer frame by `Queue_AI_Multiplayer` (`0x006476A5`) and read by
-    /// the FRAMEINFO comparison. Process-lifetime like the native global: no
-    /// launch or load clears it; only Queue_AI_Multiplayer's reset branch does.
-    checksum_history: MultiplayerChecksumHistory,
-    /// Process-lifetime timer AFA450/AFA458. Queue_AI_Multiplayer initializes
-    /// it lazily and rearms it with the checksum-ring reset; Execute_DoList
-    /// suppresses FRAMEINFO comparisons until its frame period has elapsed.
-    checksum_compare_gate: Option<FrameInfoCompareGate>,
+    /// Process-lifetime checksum history and comparison timer. Launch/load
+    /// retain this owner; only Queue_AI_Multiplayer's reset branch clears it.
+    frame_checksums: FrameChecksumState,
     /// Process byte B07788, set by the first ReadMultiPlayerSettings call.
     /// It survives dialog, match and saved-game transitions.
     multiplayer_settings_initialized: bool,
@@ -315,8 +309,7 @@ impl Default for MatchSession {
             offline_player_name: None,
             network: None,
             host: false,
-            checksum_history: MultiplayerChecksumHistory::new(),
-            checksum_compare_gate: None,
+            frame_checksums: FrameChecksumState::new(),
             multiplayer_settings_initialized: false,
             latency_fudge: 0,
             pause_event_limiters: PauseEventLimiters::default(),
@@ -1908,14 +1901,7 @@ impl MatchSession {
     /// runs while `[0x00A8B8B8]` is set; that flag belongs to the network
     /// timing service of a later stage and VERA has no writer for it yet.
     pub(crate) fn record_frame_checksum(&mut self, frame: u32, checksum: u32) {
-        //647615..64762F initializes the static timer on the first call, with
-        // no grace period unless the reset branch below is also reached.
-        self.checksum_compare_gate
-            .get_or_insert(FrameInfoCompareGate::new(frame as i32, 0));
-        self.checksum_history.record(frame, checksum);
-        if frame == 0 {
-            self.reset_frame_checksum_history(frame);
-        }
+        self.frame_checksums.record_frame_checksum(frame, checksum);
     }
 
     /// Queue_AI_Multiplayer647849..647879 resets both the history and its
@@ -1923,11 +1909,7 @@ impl MatchSession {
     /// even at a nonzero-frame restart. The other native trigger is A8B8B8;
     /// its transport writer is not yet implemented here.
     pub(crate) fn reset_frame_checksum_history(&mut self, frame: u32) {
-        self.checksum_history = MultiplayerChecksumHistory::new();
-        self.checksum_compare_gate = Some(FrameInfoCompareGate::new(
-            frame as i32,
-            frame.wrapping_add(0x100) as i32,
-        ));
+        self.frame_checksums.reset_frame_checksum_history(frame);
     }
 
     /// Execute_DoList64C668..64C6F2 checks the grace timer before comparing
@@ -1939,20 +1921,12 @@ impl MatchSession {
         info: FrameInfo,
         current_frame: i32,
     ) -> Result<bool, ChecksumMismatch> {
-        if !self
-            .checksum_compare_gate
-            .unwrap_or(FrameInfoCompareGate::OPEN)
-            .allows_compare(current_frame)
-        {
-            return Ok(false);
-        }
-        self.checksum_history.compare(info)?;
-        Ok(true)
+        self.frame_checksums.compare_frame_info(info, current_frame)
     }
 
     #[cfg(test)]
     pub(crate) fn checksum_history(&self) -> &MultiplayerChecksumHistory {
-        &self.checksum_history
+        self.frame_checksums.checksum_history()
     }
 
     /// Whether this client owns the match setup: it reads the seed and fixes
@@ -2940,18 +2914,18 @@ mod tests {
     #[test]
     fn frame_zero_resets_the_checksum_ring_and_launches_do_not() {
         let mut session = MatchSession::default();
-        assert_eq!(session.checksum_compare_gate, None);
+        assert_eq!(session.frame_checksums.compare_gate(), None);
         session.record_frame_checksum(0x1_05, 0xdead_beef);
         assert_eq!(session.checksum_history().get(0x05), 0xdead_beef);
         assert_eq!(session.checksum_history().get(0x2_05), 0xdead_beef);
         assert_eq!(
-            session.checksum_compare_gate,
+            session.frame_checksums.compare_gate(),
             Some(FrameInfoCompareGate::new(0x1_05, 0))
         );
         session.begin_offline(SessionMode::Skirmish, Some("Commander".to_owned()));
         assert_eq!(session.checksum_history().get(0x05), 0xdead_beef);
         assert_eq!(
-            session.checksum_compare_gate,
+            session.frame_checksums.compare_gate(),
             Some(FrameInfoCompareGate::new(0x1_05, 0))
         );
 
@@ -2959,7 +2933,7 @@ mod tests {
         assert_eq!(session.checksum_history().get(0), 0);
         assert_eq!(session.checksum_history().get(0x05), 0);
         assert_eq!(
-            session.checksum_compare_gate,
+            session.frame_checksums.compare_gate(),
             Some(FrameInfoCompareGate::new(0, 256))
         );
         session.record_frame_checksum(1, 0x1234_5678);
@@ -3019,7 +2993,7 @@ mod tests {
         session.reset_frame_checksum_history(100);
         assert_eq!(session.checksum_history().get(100), 0);
         assert_eq!(
-            session.checksum_compare_gate,
+            session.frame_checksums.compare_gate(),
             Some(FrameInfoCompareGate::new(100, 356))
         );
         let info = |frame, checksum| FrameInfo {

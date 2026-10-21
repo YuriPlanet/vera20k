@@ -1049,6 +1049,7 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
     assert_eq!(
         admitted,
         [
+            future.clone(),
             rally,
             crate::sim::command::CommandEnvelope::new(
                 owner,
@@ -1176,9 +1177,10 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         )
         .unwrap();
     let admitted = output.take_admitted_commands();
-    assert_eq!(admitted.len(), 128);
+    assert_eq!(admitted.len(), 129);
+    assert_eq!(admitted[0], future);
     assert!(
-        admitted
+        admitted[1..]
             .iter()
             .all(|command| matches!(command.payload, Command::Stop { .. }))
     );

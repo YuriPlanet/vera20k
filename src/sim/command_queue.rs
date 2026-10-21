@@ -1,5 +1,11 @@
 //! Event admission and synchronized dispatch shared by gameplay and byte queues.
 
+mod checksum;
+pub use checksum::{
+    CHECKSUM_HISTORY_LEN, FRAMEINFO_EVENT_OPCODE, FrameChecksumState, FrameInfo,
+    FrameInfoCompareGate, MultiplayerChecksumHistory,
+};
+
 mod dispatch;
 pub use dispatch::{
     CommandDispatchClock, CommandDispatchHouse, CommandDispatchMode, DO_LIST_CAPACITY,
