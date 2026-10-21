@@ -36,6 +36,8 @@ mod draw_passes;
 mod magnetic_wave_gpu_tests;
 mod object_extras;
 #[cfg(test)]
+mod parachute_native_gpu_tests;
+#[cfg(test)]
 mod parachute_owner_color_gpu_tests;
 #[cfg(test)]
 mod placement_gpu_tests;

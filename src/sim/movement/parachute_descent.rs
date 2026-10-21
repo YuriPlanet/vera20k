@@ -165,11 +165,12 @@ impl crate::sim::world::Simulation {
     /// RESIDUAL: a bullet takes `Rules+0xBB8` (`BombParachute=`) at the
     /// uncopied coordinate instead; VERA has no parachuted bullets.
     ///
-    /// DRIFT: after the attach native copies the owner's drawer (`vtable+0x1E4`)
-    /// to the anim's `+0xD4` and the owner cell's ground Z adjust (`+0x10A`) to
-    /// `+0xFC`, the pair `set_cell_anim_draw_authority` models for cell anims.
-    /// They are not stored here; the presentation consequence is recorded at
-    /// `build_parachute_instances`.
+    /// Native copies the owner's drawer (`vtable+0x1E4`) to Anim+0xD4; the
+    /// House remap below retains that selection. It also copies the owner's
+    /// Cell+0x10A light intensity to Anim+0xFC, separately from the instance
+    /// ZAdjust at+0x100. RESIDUAL: that frozen scalar is not retained here;
+    /// presentation derives canopy light from the current cell grid. The flat,
+    /// unchanged-light component comparison does not cover later relighting.
     pub(crate) fn attach_parachute_anim(
         &mut self,
         rules: &crate::rules::ruleset::RuleSet,

@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Eight physical PARACH whole DrawIfVisible/raster observations: two admitted fixed E1 heights, constructorframe0 and original-AI frame20, each on empty and split destination Z.",
+  "assumptions": [
+    "Two fresh shared TMP/palette/map/House VMs execute real physical palette/Convert startup, Country5113F0, House4F54A0, InfantryType5236A0 and layered E1 reader5240A0. Full selected E1 weapon/projectile/warhead readers and postpass complete the real Infantry517A50 constructor; COM creation reaches the original Walk6C4790 factory. The inherited GAPOWR setup is a House/map dependency and is never drawn here.",
+    "Existing immutable MIX/INI caches transport unchanged selected retail resources from the configured executable directory. The original archive/physical INI parser is excluded. Full physical PARACH reader 427D00/image load427B50 and General Parachute66E561..66E59F execute. Resource payloads and lexical sections are excluded from publication.",
+    "Admitted ownerXYZ2688/5248 with fresh fixed heights104 or232, alive, marked/nonlimbo/inAir, sparse revealed flat Cells and original normalized LocalSize are explicit component priors. Only original ObjectParadrop suffix5F5A9D..5F5B3E executes, including Anim421EA0, SetOwner424B50, owner coordinate/remap/cell virtuals and palette/light stores. Whole5F5940 admission, Unlimbo, placement, aircraft cargo, owner descent/body actions and landed playout are excluded.",
+    "Each fixed owner remains unchanged. Original AnimAI423AC0 advances from constructorframe0 to actualframe20 through global clock visits only, bounded512 visits. No frame/timer/rate/loop/shape value is rewritten. This is not a whole Logic/MainTick schedule.",
+    "Original RGB565 masks4BAA73..4BAB06, discovery geometry and Tactical matrix startup run. Camera(-384,380), clock1000, speed4 and detail2 are declared inputs. Original Logic-counter/Throttle timing setup produces FPS60 from60 counter visits with OS times0/960ms; minimum FPS queries remain original. Actual host performance is excluded.",
+    "Every complete422C70/5F4B10/422CA0 draw starts from160x160 RGB565BDF7, A127 and either Z65535 everywhere or Z0 atx<80/Z65535 elsewhere on every row. The split is independent of source crop or observed pixels. Selected4AED70/Convert/decoder/raster bodies execute, with full color/Z/A before/after planes and store coverage retained. No output pixel or native decision is computed by a host formula.",
+    "Original text and selected class/raster vtables remain unchanged. Only semantic fields and exact planes are published; allocator pointers, raw resource snippets and file identities are omitted. No terrain/body drawing, retained Display traversal, full-scene occlusion or complete game parity is claimed."
+  ],
+  "substitutions": [
+    "Shared PaletteReader heap/delete/TLS/platform and immutable file transports; supplied empty registry capacity and sparse map/House priors. Pristine missing vector headers use original CRT prefixes before unrelated exit registration, without replacing live vectors.",
+    "OS Interlocked/GUID/COM transports, successful OleRun/atexit and setup clock boundaries. The original Walk constructor, native readers and returned gameplay/draw decisions remain live.",
+    "Object Mark5F5850 and Display registration4A9720 return1 as recorded presentation sinks. Native retained membership and order are therefore outside this corpus. No type/frame/palette/light/getter, selector/decoder or pixel answer is supplied."
+  ],
+  "entry_points": {
+    "infantry_type": "0x005236A0",
+    "infantry_reader": "0x005240A0",
+    "infantry": "0x00517A50",
+    "walk_factory": "0x006C4790",
+    "weapon_reader": "0x00772080",
+    "projectile_reader": "0x0046BEE0",
+    "warhead_reader": "0x0075D3A0",
+    "weapon_postpass": "0x007729F0",
+    "general_parachute_begin": "0x0066E561",
+    "general_parachute_end": "0x0066E59F",
+    "anim_reader": "0x00427D00",
+    "image_load": "0x00427B50",
+    "admitted_paradrop_suffix": "0x005F5A9D",
+    "anim": "0x00421EA0",
+    "set_owner": "0x00424B50",
+    "coords": "0x00422BE0",
+    "layer": "0x00424CB0",
+    "ai": "0x00423AC0",
+    "draw_if_visible": "0x00422C70",
+    "object_projection": "0x005F4B10",
+    "draw": "0x00422CA0",
+    "shape": "0x004AED70",
+    "plain_selector": "0x00490B90",
+    "rle_selector": "0x00490E50",
+    "format_masks_begin": "0x004BAA73",
+    "format_masks_end": "0x004BAB06"
+  },
+  "replay_command": "python -m tools.spatial_oracle.parachute_canopy",
+  "payload_sha256": "4e31259dffbbd9634091f94ee2d81a03877b4441ea0a866a82391435f35ca7ec",
+  "raw_archive": {
+    "file": "parachute_canopy.raw.json.gz",
+    "sha256": "2f551a8bdc25ee36b31955709ddba59db4aa9a938697c29978fa660dca9374dc",
+    "bytes": 41242,
+    "uncompressed_sha256": "9617eb733e1299392763d2e7073db6fbc8a2d35481179c735cceaf0e6fa17821",
+    "uncompressed_bytes": 1318105,
+    "canonical_payload_sha256": "c09d64b8fb0f25948de2b08e503a7bf7e92bf620e342f8a30832f7e330fcf09d",
+    "compression": {
+      "format": "gzip",
+      "level": 9,
+      "mtime": 0,
+      "filename": "",
+      "os_byte": 255,
+      "zlib_runtime": "1.3.2"
+    }
+  }
+}

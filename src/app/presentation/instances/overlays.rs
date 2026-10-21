@@ -334,11 +334,10 @@ pub(crate) fn build_display_effect_instances(
         let Some(anim) = sim.anim(stable_id) else {
             continue;
         };
-        // The canopy is placed by `build_parachute_instances`, on its owner's
-        // sort key.
-        if parachute_type.is_some_and(|ty| parachute_canopy_owner(anim, ty).is_some()) {
-            continue;
-        }
+        // Paradrop creates a retained Anim, whose GetCoords resolves its
+        // owner-relative75-lepton lift. Draw it at its own Display encounter.
+        let is_parachute =
+            parachute_type.is_some_and(|ty| parachute_canopy_owner(anim, ty).is_some());
         let type_name: &str = sim.interner().resolve(anim.type_id());
         let config = input.rules.art().anim_runtime_config(type_name);
         if config.is_some_and(|config| !config.art_body_read) {
@@ -442,12 +441,18 @@ pub(crate) fn build_display_effect_instances(
         let Ok(frame) = u16::try_from(anim.runtime().current_frame.wrapping_add(start)) else {
             continue;
         };
-        let tint = input.lighting.anim_tint_at((rx, ry), config);
+        let tint = if is_parachute {
+            [1.0; 3]
+        } else {
+            input.lighting.anim_tint_at((rx, ry), config)
+        };
         let remap_color =
             crate::render::sprite_atlas::anim_remap_color(anim, sim.interner(), input.house_colors);
-        let palette_light = if remap_color.is_some() {
+        let palette_light = if remap_color.is_some() && !is_parachute {
             Default::default()
         } else {
+            // Keep the canopy's instance Convert/53-row scheme transport,
+            // including shroud selection, when joining the ordinary Anim draw.
             crate::app::presentation::lighting::anim_palette_light(
                 input.lighting,
                 (rx, ry),
@@ -647,26 +652,6 @@ pub(super) fn presentation_anim_frame_count(
         let canonical = type_name.to_ascii_uppercase();
         frame_counts.get(&canonical).copied()
     })
-}
-
-/// Every object that owns a live canopy this frame: the falling ones, and the
-/// landed ones whose canopy is still playing out.
-pub(crate) fn parachute_canopy_owners(
-    state: &AppState,
-    sim: &crate::sim::world::Simulation,
-) -> std::collections::HashSet<u64> {
-    let Some(parachute_type) = state
-        .rules()
-        .and_then(|rules| rules.general.parachute_shp.as_deref())
-        .and_then(|name| sim.interner().get(name))
-    else {
-        return std::collections::HashSet::new();
-    };
-    sim.display_layers()
-        .ordered_ids()
-        .filter_map(|&id| sim.anim(id))
-        .filter_map(|anim| parachute_canopy_owner(anim, parachute_type))
-        .collect()
 }
 
 /// The object a canopy hangs on: an owner-attached anim of the
@@ -1261,172 +1246,6 @@ pub(crate) fn build_weapon_wave_instances(
     // native DrawExtras first uses SpotlightClass type 16's zero-blend
     // shape-blitter/light-mask path, which this renderer does not yet expose.
     // A white quad or alpha approximation would invent visible behavior.
-}
-
-/// Emit one sprite instance per active parachute anim, anchored at the
-/// descending GI's screen position with the SHP atlas's pre-baked
-/// offset_x/offset_y handling sprite-center anchoring.
-///
-/// Depth: chute depth = GI body depth − epsilon, so it sorts above the body
-/// in the same Layer 2 (Ground) band — matching gamemd's
-/// AnimClass::GetLayer override that forces owner-attached anims to Layer 2
-/// regardless of art.ini Layer=.
-///
-/// The body's key arrives in `body_depths` from `build_shp_instances`, which
-/// must therefore have run first this frame. It is not re-derived here: the
-/// body's key is anchored on the ground row the GI is descending onto, not on
-/// the row it is drawn at, and a paradrop starts 216 px above that row. A
-/// canopy keyed off the drawn row would sort ~14 iso rows behind the man
-/// hanging on it and disappear behind any building in between.
-///
-/// Palette: native `ObjectClass::Paradrop @ 0x005F5940` stores the owner's
-/// `GetRemapColour` result at Anim+0xD4. The retained Anim remap selects the
-/// matching `SelectedScheme` atlas variant; an absent remap keeps the ordinary
-/// AltPalette `GlobalAnim`/colour-0 path.
-///
-/// RESIDUAL: native also copies `+0x10A` of the owner's cell (vtable+0x1BC)
-/// to Anim+0xFC after attach (`0x005F5B1F..0x005F5B30`); this renderer still
-/// draws without a Z test. It is independent of the owner's palette selection.
-pub(crate) fn build_parachute_instances(
-    input: &DisplayEffectInputs<'_>,
-    ground_objects: &mut [crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance],
-    body_depths: &super::shp::ParachuteBodyDepths,
-    interpolation: Option<&crate::app::presentation::interpolation::RenderInterpolation>,
-) {
-    /// Depth epsilon — chute sorts slightly above the GI body. Half of the
-    /// per-Z bias used in `compute_sprite_depth_params`. Increase if
-    /// z-fighting is observed in-game.
-    const CHUTE_DEPTH_EPSILON: f32 = 0.0005;
-
-    /// Vertical lift, in pixels, applied to the chute sprite so the canopy
-    /// sits above the GI's head rather than centered on the body. Tunable;
-    /// gamemd's PARACH SHP layout produces this offset implicitly through
-    /// frame-internal positioning, which our atlas doesn't replicate exactly.
-    const CHUTE_Y_LIFT: f32 = 8.0;
-
-    let sim = input.sim;
-    let Some(atlas) = input.atlas else {
-        return;
-    };
-    let z = input.zoom;
-    let (cam_x, cam_y, sw, sh) = (
-        input.camera[0],
-        input.camera[1],
-        input.render_size[0] as f32 / z,
-        input.render_size[1] as f32 / z,
-    );
-    // The canopy is a simulation `AnimClass` attached to the falling object
-    // (`Simulation::attach_parachute_anim`); this pass only places it on the
-    // body's sort key. The generic anim pass skips it (`parachute_canopy_owner`).
-    let Some(shp_name) = input.rules.general.parachute_shp.as_deref() else {
-        return;
-    };
-    let Some(parachute_type) = sim.interner().get(shp_name) else {
-        return;
-    };
-
-    for &anim_id in sim.display_layers().ordered_ids() {
-        let Some(anim) = sim.anim(anim_id) else {
-            continue;
-        };
-        let Some(target_id) = parachute_canopy_owner(anim, parachute_type) else {
-            continue;
-        };
-        let Ok(frame) = u16::try_from(anim.runtime().current_frame) else {
-            continue;
-        };
-        let entity = match sim.entities().get(target_id) {
-            Some(e) => e,
-            None => continue,
-        };
-        // The body's own key for this frame. Absent means the body was culled
-        // or never emitted, in which case there is nothing for a canopy to
-        // hang on and nothing to sort it against.
-        let Some(&body_depth) = body_depths.get(&target_id) else {
-            continue;
-        };
-        // Draw the chute exactly where the body is drawn, so it follows the
-        // airborne GI rather than the ground beneath it.
-        let (gx, gy) = interpolation.map_or_else(
-            || crate::render::locomotor_visual::screen_position(entity),
-            |interpolation| {
-                let pose = interpolation.sample_entity(entity, sim.session().binary_frame());
-                (pose.screen[0], pose.screen[1])
-            },
-        );
-        if !in_view(gx, gy, 200.0, 200.0, cam_x, cam_y, sw, sh, 200.0) {
-            continue;
-        }
-
-        // Single-facing anim (no Facings= in art.ini for PARACH).
-        let remap_color =
-            crate::render::sprite_atlas::anim_remap_color(anim, sim.interner(), input.house_colors);
-        let key = ShpSpriteKey {
-            palette_context: if remap_color.is_some() {
-                crate::render::sprite_atlas::anim_remap_context(anim)
-            } else {
-                crate::render::sprite_atlas::ShpPaletteContext::GlobalAnim
-            },
-            type_id: shp_name.to_string(),
-            facing: 0,
-            frame,
-            house_color: remap_color.unwrap_or(HouseColorIndex(0)),
-        };
-        let Some(entry) = atlas.get(&key) else {
-            // PARACH not yet loaded into the atlas. Logged once at startup
-            // by the atlas-load path; per-frame silence here is intentional.
-            continue;
-        };
-        let cx: f32 = gx + entry.offset_x;
-        let cy: f32 = gy + entry.offset_y - CHUTE_Y_LIFT;
-
-        // Preserve the existing canopy tint; only the source palette variant
-        // follows the native per-instance ConvertClass.
-        let tint: [f32; 3] = [1.0, 1.0, 1.0];
-
-        // Depth: GI body depth minus a small epsilon so the chute draws on
-        // top. ZAdjust=-10 in gamemd is a depth-sort fudge with no precise
-        // pixel mapping; in our depth-buffer rendering, lower depth = closer
-        // to camera = on top.
-        let depth = (body_depth - CHUTE_DEPTH_EPSILON).clamp(0.001, 0.999);
-
-        let Some(parent) = ground_objects
-            .iter_mut()
-            .find(|object| object.parent.id == target_id)
-        else {
-            continue;
-        };
-        parent.pieces.push(
-            crate::app::presentation::render::draw_plan_lowering::ObjectPieceInstance {
-                target:
-                    crate::app::presentation::render::draw_plan_lowering::ObjectTexture::ShpPage(
-                        entry.page as usize,
-                    ),
-                // VERA-internal: the chute's native Z term (an anim ZAdjust of
-                // -10 above a descending body) is not carried by this piece,
-                // so it draws without a Z test rather than with a wrong one.
-                render_z: crate::render::tactical_draw_plan::RenderZPolicy::None,
-                instance: SpriteInstance {
-                    position: [cx, cy],
-                    size: entry.pixel_size,
-                    uv_origin: entry.uv_origin,
-                    uv_size: entry.uv_size,
-                    source_palette: entry.source_palette,
-                    depth,
-                    tint,
-                    palette_light: crate::app::presentation::lighting::anim_palette_light(
-                        input.lighting,
-                        (entity.position.rx(), entity.position.ry()),
-                        input.rules.art().anim_runtime_config(shp_name),
-                        false,
-                        anim.remap().as_ref(),
-                    ),
-                    alpha: 1.0,
-                    ..Default::default()
-                },
-            },
-        );
-    }
 }
 
 #[cfg(test)]

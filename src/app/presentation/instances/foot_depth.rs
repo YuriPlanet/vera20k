@@ -127,11 +127,7 @@ fn unit_bridge_split_in_runtime(
 /// Direct SHP Unit no-turret branch 0x73CE0D..0x73CE7F (stock SQD).
 /// It changes the whole body's a7 by -16 and a8 to gradient zero, with
 /// neither the composite's factory alternative nor its height > 16 test.
-pub(crate) fn shp_unit_bridge_fudge(state: &AppState, entity: &GameEntity) -> bool {
-    shp_unit_bridge_fudge_in_runtime(state.match_state.sim_runtime.as_ref(), entity)
-}
-
-fn shp_unit_bridge_fudge_in_runtime(
+pub(super) fn shp_unit_bridge_fudge_in_runtime(
     runtime: Option<&crate::sim::runtime::SimRuntime>,
     entity: &GameEntity,
 ) -> bool {
@@ -205,11 +201,7 @@ fn unit_bridge_condition_in_runtime(
 
 /// SHP's 0x705E00 gate is GetHeight()==0, not a display-layer test. Aircraft
 /// always bypass Foot. Raw VXL and OREGATH callers use Foot directly instead.
-pub(crate) fn shp_z_adjust(state: &AppState, entity: &GameEntity) -> f32 {
-    shp_z_adjust_in_runtime(state.match_state.sim_runtime.as_ref(), entity)
-}
-
-fn shp_z_adjust_in_runtime(
+pub(super) fn shp_z_adjust_in_runtime(
     runtime: Option<&crate::sim::runtime::SimRuntime>,
     entity: &GameEntity,
 ) -> f32 {

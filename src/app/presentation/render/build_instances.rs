@@ -227,16 +227,7 @@ pub(super) fn build_world_instances(
     // A building's voxel turret remains owned by the building display call.
     // The SHP builder therefore adds it to the same contiguous Ground parent
     // instead of leaking it into an atlas-level tie.
-    // Parachute canopies are composed into their body's draw, so they take the
-    // body's key rather than deriving one. Collected here, consumed by
-    // `build_parachute_instances` below — which is why it must run after this.
-    let mut parachute_body_depths = instances::ParachuteBodyDepths::new();
-    instances::build_shp_instances(
-        state,
-        &mut parachute_body_depths,
-        &mut planned_objects,
-        &display_order,
-    );
+    instances::build_shp_instances(state, &mut planned_objects, &display_order);
     // Prepare slot binding/light pieces without querying the shared FPS latch.
     // Each Anim's retained Display encounter admits and appends its pieces.
     let mut building_anim_instances = Vec::new();
@@ -283,14 +274,6 @@ pub(super) fn build_world_instances(
         );
     }
     instances::build_projectile_visual_instances(state, &mut planned_objects, &display_order);
-    if let Some(input) = display_inputs.as_ref() {
-        instances::build_parachute_instances(
-            input,
-            &mut planned_objects,
-            &parachute_body_depths,
-            Some(&state.match_state.match_presentation.interpolation),
-        );
-    }
 
     // Every dynamic pose consumer, including Bullet46B0C0, has now populated
     // the shared page. One upload precedes this frame's draw submission.
@@ -394,7 +377,7 @@ pub(super) fn build_world_instances(
         }
     }
     instances::build_weapon_wave_instances(state, &mut planned_objects, &display_order);
-    // Body/canopy builders already sampled their anchors. Cancel the same
+    // Entity body builders already sampled their anchors. Cancel the same
     // sampled height for depth and per-pixel Z rather than the authority's
     // next height; otherwise climbing units slide through their occluders.
     if let Some(rt) = state.match_state.sim_runtime.as_ref() {

@@ -103,3 +103,8 @@ bases with zero starting combat units, and disables crates, shroud and fog.
 It does not test buying the initial buildings, mouse input, rendered pixels,
 or a matching whole original mission. The native coordinate-prefix comparison
 above retains its narrower boundary.
+
+The separate [canopy draw comparison](parachute_canopy.md) checks the retained
+Anim emitter and full native color/Z/A planes at declared admitted poses. Its
+component inputs do not extend this lifecycle test into a whole-original-match
+comparison.
