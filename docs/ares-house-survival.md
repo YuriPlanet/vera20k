@@ -29,7 +29,7 @@ The signed counter wraps and survives Rust save/load without being rebuilt
 from the surviving objects. Constructor-bound type facts retain the matching
 removal input; production types are immutable during this selected match path.
 Live type mutation or INI rereading while objects remain alive is outside this
-coverage. Snapshot schema470 rejects older positional records; the existing
+coverage. Snapshot schema473 rejects older positional records; the existing
 capability header rejects cross-mode loads before Simulation decoding.
 
 The multiplayer gate keeps its retail campaign, frame, defeated and passive
