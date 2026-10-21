@@ -26,9 +26,9 @@ filename instead uses the selected record's Scenario. The actual index write at
 `683B0A` and CD lookup at `683B86` are required execution points.
 
 This matches the external call shape in official
-[yrpp-spawner Spawner.cpp](https://github.com/CnCNet/yrpp-spawner/blob/de64f070815b5c9d0fdd13e721072da5d6a87933/src/Spawner/Spawner.cpp#L327):
+[yrpp-spawner Spawner.cpp](https://github.com/CnCNet/yrpp-spawner/blob/de64f070815b5c9d0fdd13e721072da5d6a87933/src/Spawner/Spawner.cpp#L304):
 its campaign route passes an explicit filename, action flag 1 and index 0.
-The [client selector](https://github.com/CnCNet/xna-cncnet-client/blob/3a5c4c6acd641dabc4c74be0367fc0e08daf3ec9/DXMainClient/DXGUI/Campaign/CampaignSelector.cs#L458)
+The [client selector](https://github.com/CnCNet/xna-cncnet-client/blob/3a5c4c6acd641dabc4c74be0367fc0e08daf3ec9/DXMainClient/DXGUI/Campaign/CampaignSelector.cs#L416-L419)
 writes its own selected Scenario; its catalog identity is not an engine record
 index. These pinned sources are a launch adapter contract, not evidence about
 any installed legacy mod's spawner DLL.
