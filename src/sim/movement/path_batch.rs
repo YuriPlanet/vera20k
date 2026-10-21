@@ -45,6 +45,25 @@
 //! depends on the thread count. Simulations start without batching; real
 //! matches and sim-bench turn it on ([`Simulation::batch_path_searches`]).
 //!
+//! A request that heads for the Foot's own cell never waits, even when the
+//! pass did not answer the Foot or the Foot searched already that frame: it
+//! runs in native order, in the same call. It seldom searches at all, since
+//! AStar returns no route for a goal in its start cell and height
+//! (0x429BF3..0x429C0A), and its Find_Path failure is what stops the Foot:
+//! PathDelay, then Stop_Driver (0x4D4044; the Unit's is 0x4D55C0), whose
+//! Drive Stop_Moving clears the destination (0x4AFEA7..0x4AFEC0). Waiting
+//! could strand the Foot. A Drive/Ship Foot whose track ends exactly on its
+//! destination with no NavCom, as a Tank Bunker's install Force_Track does,
+//! makes that request in the same Process (Drive 0x4B0647, Ship 0x69FCEE).
+//! Had it waited, a Guard Foot's next Process would take the at-destination
+//! stop (Drive 0x4B06D5..0x4B0772, Ship 0x69FD7F..0x69FE1C) before
+//! Process_Movement repeats the request, and that stop's
+//! SetDestination(NULL, 1) does nothing without a NavCom (Unit
+//! 0x741A80..0x741A90). The Foot would stay moving on the spot (Drive
+//! Is_Moving 0x4AFB80), so the bunker, which waits for it to stop
+//! (`BuildingClass::UpdateBunker` 0x458E50 at 0x45920B), would never raise
+//! its walls (#2448).
+//!
 //! A second proposed sim-scale deviation (update order), pending side-by-side
 //! play, caps the work: a pass answers at most [`SEARCHES_PER_PASS`]
 //! registrations besides its urgency-2 re-paths (below), taking them in
@@ -126,6 +145,7 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::{DriveCoord, NavTargetRef};
+use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionId;
@@ -457,6 +477,31 @@ pub(super) fn code2_ladder_destination(actor: &GameEntity) -> Option<DriveCoord>
     }
 }
 
+/// The destination a no-queue request searches toward: Walk's destination
+/// or Drive/Ship's track destination.
+fn no_queue_destination(actor: &GameEntity) -> Option<DriveCoord> {
+    let loco = actor.locomotor.as_ref()?;
+    match loco.active_kind() {
+        LocomotorKind::Walk => loco.walk_destination(),
+        LocomotorKind::Drive | LocomotorKind::Ship => super::track_path::track_destination(actor),
+        _ => None,
+    }
+}
+
+/// Whether `foot`'s `request` heads for the cell the Foot stands in: its
+/// core search would start in its goal cell. Such a request never waits;
+/// see the module docs.
+fn heads_for_own_cell(foot: &GameEntity, request: WaitingRequest) -> bool {
+    let destination = match request {
+        WaitingRequest::NoQueue => no_queue_destination(foot),
+        WaitingRequest::Code2Ladder { .. } => code2_ladder_destination(foot),
+    };
+    destination.is_some_and(|destination| {
+        let (start, goal) = super::movement_tick::core_search_cells(foot, destination);
+        start == goal
+    })
+}
+
 impl Simulation {
     /// Batch the path searches from now on; see the module docs.
     pub fn batch_path_searches(&mut self) {
@@ -465,13 +510,16 @@ impl Simulation {
 
     /// Whether `id`'s `request` waits for the next frame's batch, as if its
     /// movement timer still ran. It does, and registers, when batching is
-    /// on, the batch can search this map, and `id` has no unclaimed answer
-    /// this frame; otherwise this request claims the answer. A code-2
-    /// re-path the last pass left out registers at the urgency it had.
+    /// on, the batch can search this map, `id` has no unclaimed answer this
+    /// frame, and the request heads for a cell other than the Foot's own
+    /// (see the module docs); otherwise it does not wait, and claims the
+    /// unclaimed answer if there is one. A code-2 re-path the last pass left
+    /// out registers at the urgency it had.
     pub(super) fn defer_path_search(
         path_batch: &mut Option<PathBatch>,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         overlay_grid: &Option<OverlayGrid>,
+        entities: &EntityStore,
         id: u64,
         request: WaitingRequest,
     ) -> bool {
@@ -485,6 +533,12 @@ impl Simulation {
             && !slot.claimed
         {
             slot.claimed = true;
+            return false;
+        }
+        if entities
+            .get(id)
+            .is_some_and(|foot| heads_for_own_cell(foot, request))
+        {
             return false;
         }
         let request = match (request, batch.left_out_code2.get(&id)) {
@@ -821,14 +875,7 @@ impl Simulation {
     /// `FootClass::Find_Path` (`0x004D3920`) at Walk `0x0075AFC5`, Drive
     /// `0x004B28A3` and Ship `0x006A1EF3`.
     fn no_queue_request(&self, id: u64) -> Option<FootPathRequest> {
-        let actor = self.substrate.entities.get(id)?;
-        let destination = match actor.locomotor.as_ref()?.active_kind() {
-            LocomotorKind::Walk => actor.locomotor.as_ref()?.walk_destination()?,
-            LocomotorKind::Drive | LocomotorKind::Ship => {
-                super::track_path::track_destination(actor)?
-            }
-            _ => return None,
-        };
+        let destination = no_queue_destination(self.substrate.entities.get(id)?)?;
         FootPathRequest::track(
             &self.substrate.entities,
             id,

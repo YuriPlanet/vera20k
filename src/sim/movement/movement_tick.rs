@@ -147,6 +147,18 @@ pub(crate) struct FootPathRequest {
     visit: OrdinaryMoverVisit,
 }
 
+/// The start and goal cells of `actor`'s core search toward `goal`
+/// ([`FootPathRequest::search`]): the Foot's own cell and the goal's.
+pub(super) fn core_search_cells(
+    actor: &crate::sim::game_entity::GameEntity,
+    goal: crate::sim::components::DriveCoord,
+) -> ((u16, u16), (u16, u16)) {
+    (
+        (actor.position.rx(), actor.position.ry()),
+        ((goal.x / 256) as u16, (goal.y / 256) as u16),
+    )
+}
+
 /// The retained no-queue request of a live Walk Foot with no paid head, whose
 /// Foot+5E0 head is empty (native -1): `WalkLocomotionClass::ProcessMovement`
 /// (`0x0075AEC0`), whose request is the call at `0x0075AFC5`. Drive/Ship
@@ -224,7 +236,7 @@ impl FootPathRequest {
     ) -> Result<Vec<(u16, u16)>, super::movement_path::MovePathFailure> {
         let snap = &self.visit.snap;
         let actor = entities.get(self.entity_id).expect("live suspended mover");
-        let start = (actor.position.rx(), actor.position.ry());
+        let (start, goal) = core_search_cells(actor, goal);
         // AStar 0x00429A90 takes the start height from the Foot's OnBridge
         // byte (+0x8C): the cell level, +4 on a bridge. No path layer.
         let layer = if actor.on_bridge() {
@@ -232,7 +244,6 @@ impl FootPathRequest {
         } else {
             MovementLayer::Ground
         };
-        let goal = ((goal.x / 256) as u16, (goal.y / 256) as u16);
         debug_assert!(
             ctx.blocker_neighbor_counts.is_some() == ctx.path_grid.is_some(),
             "path build on a pass that skipped the blocker plane; see pass_may_build_paths"
