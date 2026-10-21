@@ -448,7 +448,7 @@ impl Simulation {
     /// native reads GetCoords again (`0x0074631A` / `0x0041BD4F`), which the first bullet
     /// leaves unchanged.
     ///
-    /// Each Create (74628A/746355 or41BCBB/41BD86) constructs a Bright1 Bullet
+    /// Each Create (74628A/746355 or 41BCBB/41BD86) constructs a Bright1 Bullet
     /// with no installed WeaponType. It remains in Limbo, but participates
     /// in pointer expiry through its synchronous detonation and destruction.
     /// Native dereferences a missing `DeathWeapon=`; VERA then books the

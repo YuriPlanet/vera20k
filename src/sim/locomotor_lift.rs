@@ -38,10 +38,11 @@
 //!
 //! Ledger: the arm, Imbue and the release draw no random number of their
 //! own; their callees keep theirs (Jumpjet `Stop_Moving`'s placement draws
-//! nothing for a Unit). Timers: Foot's destination timers through the class
-//! setter, and the mission timers of Imbue's `ResetOrdersToGuard` and queued
-//! missions. Detaches: none; the held object's Stun skips `Detach_All`
-//! (`0x006FCD79`).
+//! nothing for a Unit, while an Aircraft takes its non-Unit arm, which draws
+//! Scenario RNG; the native comparison checks that stream). Timers: Foot's
+//! destination timers through the class setter, and the mission timers of
+//! Imbue's `ResetOrdersToGuard` and queued missions. Detaches: none; the held
+//! object's Stun skips `Detach_All` (`0x006FCD79`).
 //!
 //! Bounded original execution for landed Aircraft, installed-locomotor
 //! destination routing, release and restoration is recorded in

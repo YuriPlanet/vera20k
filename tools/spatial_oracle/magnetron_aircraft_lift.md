@@ -10,9 +10,6 @@ python -m tools.spatial_oracle.magnetron_aircraft_lift --check
 `--write` deliberately replaces the JSON and provenance sidecar. Import and
 `--help` are inert without retail files, in normal and optimized Python.
 
-The replay used YR 1.001 `gamemd.exe`, SHA-256
-`d4ad8c6f6642844cb40b2a45ceb71c6f7a0adff83da921162fdb7cfcf5628c0c`.
-
 The ten hit histories execute original instructions from `0x46963A` to
 `0x469AA4`. Accepted hits call `Techno::ImbueLocomotor` (`0x710000`), the
 original Jumpjet COM factory and constructor, BeginPiggyback, the actual class
@@ -90,7 +87,7 @@ reloads while held, then requires natural release and restoration of Fly.
 These whole-frame checks are Rust integration evidence, not a native flight
 capture. No snapshot field or format version changes.
 
-Suggested interactive check (not performed for this contribution): in stock
+Suggested interactive check: in stock
 skirmish, let a Harrier or Black Eagle return and reload at its airfield, then
 attack it with an enemy Magnetron. Check pad contact release, lift/pull, and
 release over clear ground and over a blocking object. Save while held and
