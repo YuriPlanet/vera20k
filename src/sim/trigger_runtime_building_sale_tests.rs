@@ -173,7 +173,7 @@ fn scene(case: &Value, corpus: &Value) -> (Simulation, RuleSet, u64) {
     assert_eq!(json!(slot3), case["before"]["slot3"]);
     let map = definitions(case);
     sim.initialize_trigger_definitions(&map, &Default::default(), None, None);
-    sim.classify_map_triggers(Some(&rules));
+    sim.classify_map_triggers(&rules);
     if let Some(tag) = case["input"]["definitions"]["Tags"]
         .as_object()
         .and_then(|tags| tags.keys().next())
@@ -259,7 +259,7 @@ fn sale_completion_tag_callbacks_match_original_histories() {
             let stopped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 crate::sim::production::sell_complete(
                     &mut sim,
-                    Some(&rules),
+                    &rules,
                     None,
                     id,
                     FrameEffects::default(),
@@ -285,7 +285,7 @@ fn sale_completion_tag_callbacks_match_original_histories() {
         } else {
             assert!(!crate::sim::production::sell_complete(
                 &mut sim,
-                Some(&rules),
+                &rules,
                 None,
                 id,
                 FrameEffects::default()

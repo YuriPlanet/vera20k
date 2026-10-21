@@ -112,7 +112,6 @@ impl Simulation {
         // array index (+0xB8), not its House registration index. Capture and
         // snapshot restoration retain this value; only construction runs here.
         if category == EntityCategory::Structure
-            && let Some(rules) = rules
             && let Some(country) = houses.get(&ge.owner()).and_then(|house| house.country())
             && let Some(index) = rules.country_index(interner.resolve(country))
         {

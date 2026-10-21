@@ -311,7 +311,7 @@ fn stock_all01_spy_satellite_sale_reshrouds_then_reveals_waypoint() {
         .expect("allocated cell outside friendly sight and waypoint reveal");
     sim.reveal_entire_map(
         Some(player),
-        UninitContext::new(Some(rules), Some(&runtime.resources.overlay_registry)),
+        UninitContext::new(rules, Some(&runtime.resources.overlay_registry)),
     );
     assert!(sim.fog.is_ground_unshrouded(player, far.0, far.1));
     assert!(sim.fog.is_ground_unshrouded(player, WAYPOINT.0, WAYPOINT.1));
