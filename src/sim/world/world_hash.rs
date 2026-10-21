@@ -1058,6 +1058,9 @@ impl Simulation {
             house.outcome().hash(hasher);
             house.map_is_clear().hash(hasher);
             house.spy_sat_active().hash(hasher);
+            if house.initial_sight_refresh_pending() {
+                b"house-initial-sight-refresh-v1".hash(hasher);
+            }
             house.tracking().hash_defeat_counters(hasher);
             if house.tech_recheck_pending() {
                 b"house-tech-recheck-v1".hash(hasher);

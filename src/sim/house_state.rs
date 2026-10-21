@@ -592,6 +592,12 @@ pub struct HouseState {
     /// warp-out clears the latch; otherwise that provider sets it.
     #[serde(default)]
     spy_sat_active: bool,
+    /// House+24B: Constructor4F57A7 arms the first local Update's full
+    /// Map4ADCD0 sight pass. Update4F9353 clears it before the callback;
+    /// Fill_In_Data's earlier mobile-only pass leaves it armed. Save/Load
+    /// retains this byte with the House. Executed: house_initial_sight.
+    #[serde(default)]
+    initial_sight_refresh_pending: bool,
     /// The object counts the defeat gate reads (`house_tracking`), written by
     /// the lifecycle authority at construction, deletion, Limbo, Unlimbo and
     /// owner change.
@@ -1386,6 +1392,14 @@ impl HouseState {
 
     pub const fn spy_sat_active(&self) -> bool {
         self.spy_sat_active
+    }
+
+    pub(crate) const fn initial_sight_refresh_pending(&self) -> bool {
+        self.initial_sight_refresh_pending
+    }
+
+    pub(super) fn take_initial_sight_refresh(&mut self) -> bool {
+        std::mem::take(&mut self.initial_sight_refresh_pending)
     }
 
     pub const fn tracking(&self) -> &crate::sim::house_tracking::HouseTracking {
@@ -2529,6 +2543,7 @@ impl HouseState {
             allow_win_timer: CdTimer::default(),
             map_is_clear: false,
             spy_sat_active: false,
+            initial_sight_refresh_pending: true,
             tracking: Default::default(),
             tech_recheck: true,
             self_heal_infantry: 0,
