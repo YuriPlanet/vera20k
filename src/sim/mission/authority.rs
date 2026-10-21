@@ -553,9 +553,9 @@ impl Simulation {
         self.mission_restore_exact_with_effects(receiver, &mut effects)
     }
 
-    /// The overlay registry and frame effects serve the Infantry setter's
-    /// `Infiltrate=` arm, the one that sets a destination
-    /// ([`Simulation::infiltrator_target_building`]).
+    /// The overlay registry serves Building target admission's line of fire
+    /// and, with frame effects, the Infantry setter's `Infiltrate=` destination
+    /// arm ([`Simulation::infiltrator_target_building`]).
     pub fn assign_target_represented(
         &mut self,
         receiver: u64,
@@ -671,6 +671,7 @@ impl Simulation {
         receiver: u64,
         attacker: u64,
         rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         if !self.substrate.entities.contains(attacker)
@@ -678,7 +679,8 @@ impl Simulation {
         {
             return false;
         }
-        let mut effects = RepresentedConcreteMissionEffects::new(rules, None, frame_effects);
+        let mut effects =
+            RepresentedConcreteMissionEffects::new(rules, overlay_registry, frame_effects);
         //7013CB dispatches the class target setter AFTER the mission writes.
         // A dying source or a refused Building target still takes the override;
         // target admission belongs to that live setter, not this caller.
@@ -1457,6 +1459,7 @@ mod tests {
                         1,
                         2,
                         rules,
+                        None,
                         crate::sim::world::FrameEffects::default(),
                     )
                 } else {

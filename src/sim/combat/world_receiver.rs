@@ -1046,6 +1046,7 @@ pub(crate) fn commit_entities(
                     target_id,
                     attacker_id,
                     rules,
+                    overlay_registry,
                     run.effects(),
                 );
             }
