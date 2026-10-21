@@ -1566,7 +1566,7 @@ fn emit_building_anims(
         }
         // DrawIt's translucency selection (`0x00423061`): a building being
         // erased draws its slot anims at 50%, or 75% for `DoubleThick=`.
-        let Some(alpha) = super::overlays::anim_instance_alpha_with_flags(
+        let Some(flags) = super::overlays::anim_instance_flags(
             Some(runtime_config),
             instance.draw_flags(),
             instance.runtime().current_frame,
@@ -1675,6 +1675,29 @@ fn emit_building_anims(
             } else {
                 0
             });
+        // DrawIt422CA0 -> 4AED70 retains the Anim's Convert selector. Reducing
+        // it to alpha loses the indexed palette/A lookup and packed RGB565
+        // blend (spatial_oracle/building_anim_translucency). The inherited
+        // cloak/offset/effect composition is a separate, unresolved owner.
+        let (alpha, draw_state) = if flags & 6 != 0
+            && super::anim_draw::ordinary_anim_type(anim_name, Some(runtime_config))
+            && anim_entry.source_palette != 0
+            && palette_light.rows() != 0
+            && draw_state
+                == (DrawState {
+                    remap_row: draw_state.remap_row,
+                    ..DrawState::default()
+                }) {
+            (
+                1.0,
+                DrawState::from_native_selector(draw_state.remap_row, (flags & 6) as u8),
+            )
+        } else {
+            (
+                crate::rules::art_data::anim_translucency_source_alpha(flags),
+                draw_state,
+            )
+        };
         // Native Z (`AnimClass__DrawIt @ 0x00422CA0`): an anim draw carries
         // 0x2800 with gradient entry 2 and `YDrawOffset + ZAdjust -
         // AdjustForZ - 2`; it tests Z per pixel and never writes.
@@ -2053,6 +2076,12 @@ mod tests {
 #[cfg(test)]
 #[path = "building_anim_tests.rs"]
 mod building_anim_tests;
+
+#[cfg(test)]
+#[path = "building_anim_translucency_gpu_tests.rs"]
+mod building_anim_translucency_gpu_tests;
+#[cfg(test)]
+pub(crate) use building_anim_translucency_gpu_tests::{PLANT_OWNER, SlotScene};
 
 #[cfg(test)]
 #[path = "building_sale_draw_tests.rs"]

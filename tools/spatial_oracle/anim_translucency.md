@@ -69,8 +69,8 @@ records the startup writes, live globals `8A0DE8/EA`, Convert fields
 `+180/+184`, and each translucent selector's actual pixel-object mask at `+C`.
 The masks are not assigned to an already constructed Convert or blitter.
 Original text remains unchanged across startup. This bounded format startup
-does not execute the complete DirectDraw/DSurface creation path. Other shared
-fixture callers keep their existing default setup; only this fixture opts in.
+does not execute the complete DirectDraw/DSurface creation path. This opt-in
+does not change the shared helpers' default setup for other callers.
 
 Inherited heap/delete/TLS/platform and immutable named-file transports remain
 declared boundaries. Mark `5F5850` and Display registration `4A9720` are recorded
@@ -89,10 +89,15 @@ test separately establishes agreement through that Rust path. This does not
 execute an original fired shot, Bullet flight/impact, full physical INI/MIX
 loader, Display traversal or whole map. Building-slot temporal/inherited state,
 owner-remapped canopies and occluded-depth controls are outside this corpus;
-unchanged Z at initial 65535 does not establish that Z is never read. The
-production change applies to ordinary free Anim bodies with native palette
-metadata. The separate tiled, bouncing, meteor, RING1 and owner-remapped paths
-retain their previous material handling.
+unchanged Z at initial 65535 does not establish that Z is never read. This
+consumer covers ordinary free Anim bodies with native palette metadata. The
+separate [populated Building-slot comparison](building_anim_translucency.md)
+owns temporal notice/release evidence and the slot material transport. That
+transport is narrower: it requires an ordinary Anim with nonzero selector bits,
+an indexed source, palette metadata and an inherited material that is default
+except for its remap row. Neither corpus establishes composition with inherited
+cloak or displacement. The separate tiled, bouncing, meteor, RING1 and
+owner-remapped free-animation paths retain their previous material handling.
 
 Run the actual-emitter comparison separately, with extracted retail INIs in
 the ignored `ini/` directory and `RA2_DIR` pointing to the retail archives:
@@ -105,8 +110,10 @@ cargo test --locked -p vera20k --lib retail_smkpuff_effect_builder_matches_origi
 
 It compares both BGRA and RGBA sRGB targets, including opaque controls,
 transparent holes and untouched margins. Rendering must leave simulation
-state and RNG unchanged. Building-attached animation materials are covered
-separately by the existing slot tests.
+state and RNG unchanged. The separate
+[slot guide](building_anim_translucency.md) lists its command-produced lifecycle,
+actual slot-emitter GPU comparison and compatibility boundaries; those are not
+validation results of this free-animation test.
 
 A manual gameplay check is to let a stock Flak Cannon fire on hostile aircraft
 and watch its smoke puffs fade over both dark ground and lighter terrain. That

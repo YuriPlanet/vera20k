@@ -10,6 +10,16 @@ lowering and GPU consumer is `anim_translucency_gpu_tests`; building-slot
 temporal state and complete battles are outside the comparison.
 See [inputs and boundaries](spatial_oracle/anim_translucency.md).
 
+### Building-slot animation translucency
+
+`python -m tools.spatial_oracle.building_anim_translucency --check` runs
+physical GAPOWR/GAPOWR_A readers and slot construction, a populated temporal
+notice, whole LetGo, AI and complete no-shadow animation draws. Three supplied
+surfaces cover all eight loop frames and replacement during erasure: 78 full
+color/Z/A outputs. Compact lossless planes accompany a complete raw archive.
+The ordinary CLEG Attack/Stop lifecycle and actual slot-emitter GPU comparison
+are separate tests. See [inputs and boundaries](spatial_oracle/building_anim_translucency.md).
+
 ### Computer sale of captured buildings
 
 `python -m tools.spatial_oracle.captured_building_sale --check` executes the

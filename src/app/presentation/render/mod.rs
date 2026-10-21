@@ -29,6 +29,8 @@ mod build_instances;
 mod building_bracket_gpu_tests;
 #[cfg(test)]
 mod building_shadow_gpu_tests;
+#[cfg(test)]
+mod building_slot_native_gpu_tests;
 mod draw_passes;
 #[cfg(test)]
 mod magnetic_wave_gpu_tests;
