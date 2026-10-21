@@ -956,6 +956,74 @@ fn a_warped_building_goes_offline() {
     assert_eq!(sim.building_operational_state(plant, &rules), Some(true));
 }
 
+/// A Temporal erase freezes a building's slot anims and draws them
+/// translucent (`0x004521C0`: Anim `+0x11A`, `+0x119`). One created while the
+/// building is erased starts frozen but opaque (`0x00451B25`). The release
+/// (`0x00452210`) frees and clears them all.
+#[test]
+fn a_warped_buildings_slot_anims_freeze() {
+    let art_text = ART.replace(
+        "[GAPOWR]\nFoundation=2x2\n",
+        "[GAPOWR]\nFoundation=2x2\nActiveAnim=PWRA\n[PWRA]\nLoopCount=-1\nRate=900\n",
+    );
+    let mut rules = rules_from(&format!("{RULES}[Animations]\n0=PWRA\n"), &art_text);
+    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(&art_text));
+    for (name, frames) in [("WARPAWAY", 20), ("CHRONOSK", 3), ("PWRA", 40)] {
+        art.bind_anim_frame_count_for_test(name, frames);
+    }
+    rules.replace_art_registry_for_test(art);
+    let mut sim = sim(9);
+    let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 12, 10);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    let anim = sim
+        .set_building_anim_slot(plant, 3, false, false, 0, &rules)
+        .expect("ActiveAnim");
+    let mut now = sim.session.binary_frame();
+    let mut play = |sim: &mut Simulation, anim: u64| {
+        for _ in 0..30 {
+            now += 1;
+            sim.session.set_binary_frame_for_test(now);
+            sim.visit_anim(
+                anim,
+                &rules,
+                None,
+                crate::sim::world::FrameEffects::default(),
+            );
+        }
+        sim.anim(anim).unwrap().runtime().current_frame
+    };
+    let start = sim.anim(anim).unwrap().runtime().current_frame;
+    let playing = play(&mut sim, anim);
+    assert_ne!(playing, start, "a live slot anim plays");
+
+    sim.temporal_initiate_warp(
+        cleg,
+        Some(plant),
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert!(sim.anim(anim).unwrap().draw_runtime().forced_translucent);
+    assert_eq!(play(&mut sim, anim), playing, "AI stops at 0x004244A9");
+
+    sim.clear_building_anim_slot(plant, 3);
+    let created = sim
+        .set_building_anim_slot(plant, 3, false, false, 0, &rules)
+        .expect("ActiveAnim");
+    assert!(!sim.anim(created).unwrap().draw_runtime().forced_translucent);
+    let start = sim.anim(created).unwrap().runtime().current_frame;
+    assert_eq!(play(&mut sim, created), start, "created frozen");
+
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg,
+    );
+    assert!(!sim.anim(created).unwrap().draw_runtime().forced_translucent);
+    assert_ne!(play(&mut sim, created), start, "the release frees it");
+}
+
 #[test]
 fn trigger_online_is_independent_of_temporal_and_corrupt_chain_clear_does_not_restore_it() {
     let rules = rules();

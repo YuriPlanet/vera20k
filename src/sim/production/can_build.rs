@@ -127,11 +127,15 @@ pub(crate) fn can_build(
         rules,
         sim.interner.resolve(house.house_type_id()),
     );
-    let house_mask = |tokens: &[String]| rules.house_type_mask(tokens);
-    if !obj.required_houses.is_empty() && house_mask(&obj.required_houses) & house_bit == 0 {
+    if !obj.required_houses.is_empty()
+        && rules.house_type_mask(&obj.required_houses) & house_bit == 0
+    {
         return CanBuild::No;
     }
-    if !obj.forbidden_houses.is_empty() && house_mask(&obj.forbidden_houses) & house_bit != 0 {
+    // CanBuild4F7A7D treats raw-1 as its skip sentinel, even when a
+    // nonempty authored list actually resolved to all32 Country bits.
+    let forbidden = rules.house_type_mask(&obj.forbidden_houses);
+    if forbidden != u32::MAX && forbidden & house_bit != 0 {
         return CanBuild::No;
     }
     if !sim.session.game_options().super_weapons

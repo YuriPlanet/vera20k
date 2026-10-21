@@ -114,6 +114,24 @@ pub enum WolTarget {
     TestServiceCreate,
     /// The same, then Join on the first game: C9 settled.
     TestServiceJoin,
+    /// Test-service C2: the stand-in guest joins, picks Korea and colour 3
+    /// and accepts; its next `R` asks for the host's colour, a start and
+    /// team 7 (`0x7A8260`): Random colour, the start, no team.
+    GuestChoices,
+    /// The same guest asks to observe, then to play again.
+    GuestObserver,
+    /// The host kicks the guest: the server's echo prints
+    /// `TXT_USER_KICKED` in C2 and its row goes.
+    GuestKick,
+    /// Controlled C2 Start: OnGameStart opens the verify `0x130` over C2,
+    /// node 0 and the guest connect, a peer box click clears it.
+    VerifyDialog,
+    /// Test-service C2 Start with its guest: `0x130`, then the
+    /// negotiation's "Scenarios don't match" box over it.
+    ScenariosMismatch,
+    /// The same, then OK: the runner ends, the login goes and `0x10E`
+    /// settles.
+    MismatchOk,
     /// `0x113` Options: WOL Options `0x2BC` settled, help under Pages.
     OptionsSteady,
     /// `0x2BC` Play Music unchecked: the preview queues -3, nothing saved.
@@ -206,6 +224,17 @@ pub enum WolTarget {
     BuddyFromLobby,
     /// `0x114` Play Buddy, the login, then Back: `0x114` again.
     BuddyFromMyInfo,
+    /// Test service: Join on Tanya's game; the guest's first R, then the
+    /// host's options: Tanya on row 0 under the host marker.
+    GuestHostOptions,
+    /// The same, then the host leaves: the guest leaves, C9 closes and
+    /// `0x113` settles again, no box.
+    GuestHostLeft,
+    /// The same, then this guest is kicked: `TXT_YOURE_KICKED` in `0x113`.
+    GuestKicked,
+    /// The same, then another user joins and is kicked: its row and the
+    /// `TXT_USER_KICKED` line in C9.
+    GuestUserKicked,
 }
 
 impl WolTarget {
@@ -307,14 +336,31 @@ impl WolTarget {
         )
     }
 
+    /// Test service: C9 in Tanya's game with the host's options.
+    fn guest_service(self) -> bool {
+        matches!(
+            self,
+            Self::GuestHostOptions
+                | Self::GuestHostLeft
+                | Self::GuestKicked
+                | Self::GuestUserKicked
+        )
+    }
+
     /// The production test service answers instead of the capture.
     fn test_service(self) -> bool {
         self.buddy()
+            || self.guest_service()
             || matches!(
                 self,
                 Self::TestServiceLobby
                     | Self::TestServiceCreate
                     | Self::TestServiceJoin
+                    | Self::GuestChoices
+                    | Self::GuestObserver
+                    | Self::GuestKick
+                    | Self::ScenariosMismatch
+                    | Self::MismatchOk
                     | Self::PageDialog
                     | Self::PageFindStatus
                     | Self::PageUserGone
@@ -356,6 +402,7 @@ impl WolTarget {
                 | Self::IngamePage
                 | Self::IngamePageCancel
                 | Self::AbortRelogin
+                | Self::VerifyDialog
         )
     }
 
@@ -432,6 +479,12 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-test-service-lobby", WolTarget::TestServiceLobby),
     ("wol-test-service-create", WolTarget::TestServiceCreate),
     ("wol-test-service-join", WolTarget::TestServiceJoin),
+    ("wol-c2-guest-choices", WolTarget::GuestChoices),
+    ("wol-c2-guest-observer", WolTarget::GuestObserver),
+    ("wol-c2-kick", WolTarget::GuestKick),
+    ("wol-0x130-verify", WolTarget::VerifyDialog),
+    ("wol-0x130-scenarios-mismatch", WolTarget::ScenariosMismatch),
+    ("wol-0x130-mismatch-ok", WolTarget::MismatchOk),
     ("wol-0x2bc-steady", WolTarget::OptionsSteady),
     ("wol-0x2bc-music-off", WolTarget::OptionsMusicOff),
     ("wol-0x2bc-cancel", WolTarget::OptionsCancel),
@@ -475,10 +528,16 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-0x116-back-to-welcome", WolTarget::BuddyBack),
     ("wol-0x116-back-to-lobby", WolTarget::BuddyFromLobby),
     ("wol-0x116-back-to-my-info", WolTarget::BuddyFromMyInfo),
+    ("wol-c9-host-options", WolTarget::GuestHostOptions),
+    ("wol-c9-host-left", WolTarget::GuestHostLeft),
+    ("wol-c9-kicked", WolTarget::GuestKicked),
+    ("wol-c9-user-kicked", WolTarget::GuestUserKicked),
 ];
 
 /// The controlled guest of the C2 targets, the host of the C9 targets.
 const PEER: &str = "Alpha";
+/// The test service's stand-in guest of a created game.
+const SERVICE_GUEST: &str = "Natasha";
 
 const NICKNAME: &str = "Tester";
 const PASSWORD: &str = "secret12";
@@ -487,6 +546,12 @@ const BAD_PASSWORD: u32 = 0x8004_0065;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WolPhase {
     Main,
+    /// The test service's start is outstanding, then its mismatch box.
+    Mismatch,
+    /// The mismatch box's OK ended the runner; `0x10E` is due.
+    MismatchClosed,
+    /// The host kicked the stand-in guest; the echo is outstanding.
+    GuestKicked,
     Welcome,
     /// Custom Match pressed: its teardown, then the API request.
     Custom,
@@ -1256,9 +1321,38 @@ impl WolCapture {
                 if state.frontend.shell_exit.is_none()
                     && state.frontend.shell_route.wol_lobby() =>
             {
-                let requests = self.requests(state, frame)?;
+                let mut requests = self.requests(state, frame)?;
                 if requests.is_empty() {
                     return Ok(());
+                }
+                if !self.target.guest() {
+                    // C2 Back's own leave (0x7900B8), then the runner's join
+                    // (0x788A30) leaves again first (0x788800); the OnPart
+                    // says TXT_YOULEFT.
+                    ensure!(
+                        requests
+                            == [
+                                WolServiceRequest::LeaveChannel,
+                                WolServiceRequest::LeaveChannel
+                            ],
+                        "C2 Back did not leave the game channel first: {requests:?}"
+                    );
+                    let game = crate::app::shell_wol::lobby::current_channel(state)
+                        .context("the game channel stays until its leave")?;
+                    service_event(state, WolServiceEvent::ChannelLeft);
+                    let left = crate::assets::csf_file::format_csf(
+                        &App::csf_label(state, "TXT_YOULEFT", "TXT_YOULEFT"),
+                        &[crate::assets::csf_file::CsfArg::Str(&game.name)],
+                    );
+                    let shown = Self::lobby(state)?
+                        .ui
+                        .chat
+                        .lines
+                        .iter()
+                        .any(|line| String::from_utf16_lossy(&line.text) == left);
+                    ensure!(shown, "C2 Back's leave did not say {left:?} in 0x113");
+                    self.event(frame, json!({"C2 Back left": left}));
+                    requests = self.requests(state, frame)?;
                 }
                 ensure!(
                     requests
@@ -1487,7 +1581,13 @@ impl WolCapture {
                 }
                 if matches!(
                     self.target,
-                    WolTarget::TestServiceCreate | WolTarget::SetupPage
+                    WolTarget::TestServiceCreate
+                        | WolTarget::SetupPage
+                        | WolTarget::GuestChoices
+                        | WolTarget::GuestObserver
+                        | WolTarget::GuestKick
+                        | WolTarget::ScenariosMismatch
+                        | WolTarget::MismatchOk
                 ) {
                     let layout = crate::app::shell_wol::lobby::layout(state);
                     lobby_button(state, &layout, lobby_ui::CREATE)?;
@@ -1517,7 +1617,37 @@ impl WolCapture {
                     self.phase = WolPhase::PageWelcome;
                     return Ok(());
                 }
-                if self.target == WolTarget::TestServiceJoin {
+                if self.target == WolTarget::TestServiceJoin || self.target.guest_service() {
+                    if self.rejoined {
+                        self.event(frame, "0x113 settled after C9 closed");
+                        let lobby = Self::lobby(state)?;
+                        let lines: Vec<String> = lobby
+                            .ui
+                            .chat
+                            .lines
+                            .iter()
+                            .map(|line| String::from_utf16_lossy(&line.text))
+                            .collect();
+                        if self.target == WolTarget::GuestKicked {
+                            let kicked =
+                                App::csf_label(state, "TXT_YOURE_KICKED", "TXT_YOURE_KICKED");
+                            let expected = crate::assets::csf_file::format_csf(
+                                &kicked,
+                                &[
+                                    crate::assets::csf_file::CsfArg::Str("Tanya's_game"),
+                                    crate::assets::csf_file::CsfArg::Str("Tanya"),
+                                ],
+                            );
+                            ensure!(
+                                lines.contains(&expected),
+                                "the kick line did not reach 0x113: {lines:?}"
+                            );
+                        }
+                        ensure!(lobby.message().is_none(), "C9's close showed a box");
+                        self.event(frame, json!({"0x113 transcript": lines}));
+                        self.hover_settle(state);
+                        return Ok(());
+                    }
                     game_row_click(state, 0)?;
                     let layout = crate::app::shell_wol::lobby::layout(state);
                     lobby_button(state, &layout, lobby_ui::JOIN)?;
@@ -1529,7 +1659,10 @@ impl WolCapture {
             }
             WolPhase::ServiceSetup
                 if rendered == PresentedShell::NetworkSetup
-                    && wol_setup_settled(state, self.target != WolTarget::TestServiceJoin) =>
+                    && wol_setup_settled(
+                        state,
+                        self.target != WolTarget::TestServiceJoin && !self.target.guest_service(),
+                    ) =>
             {
                 ensure!(
                     state
@@ -1540,10 +1673,23 @@ impl WolCapture {
                     "C2/C9 did not open for the local user"
                 );
                 self.event(frame, "C2/C9 settled from the test service");
+                if self.target.guest_service() {
+                    return self.guest_options(state, frame);
+                }
                 if self.target == WolTarget::SetupPage {
                     setup_button(state, crate::ui::multiplayer_setup::PAGE)?;
                     self.page_input(state, frame, true)?;
                     return Ok(());
+                }
+                if matches!(
+                    self.target,
+                    WolTarget::GuestChoices
+                        | WolTarget::GuestObserver
+                        | WolTarget::GuestKick
+                        | WolTarget::ScenariosMismatch
+                        | WolTarget::MismatchOk
+                ) {
+                    return self.service_host(state, frame);
                 }
                 MoviesCapture::restore_neutral_pointer(state);
                 crate::app::input::multiplayer_setup::cursor_moved(state);
@@ -1604,6 +1750,87 @@ impl WolCapture {
                     && Self::page_settled(state, ShellSlideKind::WolBuddyList) =>
             {
                 self.buddy_shown(state, frame)?;
+            }
+            WolPhase::Mismatch => {
+                let Some(verify) = crate::app::shell_network_setup::verify(state) else {
+                    return Ok(());
+                };
+                let Some(message) = &verify.mismatch else {
+                    return Ok(());
+                };
+                let expected = App::csf_label(
+                    state,
+                    "TXT_SCENARIOS_DO_NOT_MATCH",
+                    "TXT_SCENARIOS_DO_NOT_MATCH",
+                );
+                ensure!(
+                    message.body == expected
+                        && verify.names == [NICKNAME.to_owned(), SERVICE_GUEST.to_owned()]
+                        && verify.checked[..2] == [true, true],
+                    "the mismatch box over 0x130: {verify:?}"
+                );
+                self.event(frame, json!({"0x130": verify.names, "box": message.body}));
+                if self.target == WolTarget::MismatchOk {
+                    let (width, height) = (
+                        state.renderer.gpu.config.width as i32,
+                        state.renderer.gpu.config.height as i32,
+                    );
+                    let ok = crate::ui::shell::modal::body_ok_layout(width, height).ok;
+                    setup_click(state, ok);
+                    self.event(frame, "mismatch box OK");
+                    self.phase = WolPhase::MismatchClosed;
+                    return Ok(());
+                }
+                MoviesCapture::restore_neutral_pointer(state);
+                crate::app::input::multiplayer_setup::cursor_moved(state);
+                self.settle();
+            }
+            WolPhase::MismatchClosed
+                if rendered == PresentedShell::WolWelcome
+                    && Self::page_settled(state, ShellSlideKind::WolWelcome) =>
+            {
+                let visit = state.frontend.wol.as_ref().context("WOL visit")?;
+                ensure!(
+                    !visit.authenticated()
+                        && visit.lobby().is_none()
+                        && state.match_state.session.network_setup().is_none(),
+                    "the abort did not log out and close the runner"
+                );
+                self.event(frame, "0x10E settled after the abort, logged out");
+                self.hover_settle(state);
+            }
+            WolPhase::GuestKicked => {
+                let gone = state
+                    .match_state
+                    .session
+                    .network_setup()
+                    .is_some_and(|launch| {
+                        !launch
+                            .humans
+                            .iter()
+                            .any(|human| human.name == SERVICE_GUEST)
+                    });
+                if !gone {
+                    return Ok(());
+                }
+                let channel = crate::app::shell_wol::lobby::current_channel(state)
+                    .context("C2's game channel")?;
+                let line = crate::assets::csf_file::format_csf(
+                    &App::csf_label(state, "TXT_USER_KICKED", "TXT_USER_KICKED"),
+                    &[
+                        crate::assets::csf_file::CsfArg::Str(SERVICE_GUEST),
+                        crate::assets::csf_file::CsfArg::Str(&channel.name),
+                        crate::assets::csf_file::CsfArg::Str(NICKNAME),
+                    ],
+                );
+                ensure!(
+                    setup_chat_has(state, &line)?,
+                    "the kick echo did not say {line:?} in C2"
+                );
+                self.event(frame, json!({"kick echo": line}));
+                MoviesCapture::restore_neutral_pointer(state);
+                crate::app::input::multiplayer_setup::cursor_moved(state);
+                self.settle();
             }
             WolPhase::BuddyStored => {
                 let listed = |name: &str| {
@@ -1709,6 +1936,28 @@ impl WolCapture {
                 self.phase = WolPhase::Rejoin;
                 return Ok(());
             }
+            WolTarget::JoinAccepted => {
+                // Before the host's 'L' (0x5E8EA0) the user-list sink's nodes
+                // (0x7A7110) hold no row, so 0x5EA3E0 marks no host.
+                let launch = state
+                    .match_state
+                    .session
+                    .network_setup()
+                    .context("C9 setup")?;
+                let rows: Vec<(String, Option<u8>)> = launch
+                    .humans
+                    .iter()
+                    .map(|human| (human.name.clone(), human.raw_slot_index))
+                    .collect();
+                let view = setup_view(state)?;
+                let marked = view.row_icons.iter().flatten().any(|icon| icon.host);
+                ensure!(
+                    rows.contains(&(PEER.to_owned(), None)) && !marked,
+                    "C9 before options must hold an unbound host and no host icon: \
+                     {rows:?} host icon {marked}"
+                );
+                self.event(frame, json!({"C9 before options": rows}));
+            }
             WolTarget::GuestAccept => {
                 setup_button(state, setup_ui::ACCEPT)?;
                 let requests = setup_requests(state);
@@ -1722,11 +1971,18 @@ impl WolCapture {
             WolTarget::GuestBack => {
                 setup_button(state, setup_ui::BACK)?;
                 let requests = setup_requests(state);
+                // The user-list sink's first R (0x7A7A5D) precedes Back's leave.
                 ensure!(
-                    requests == [NetworkSetupRequest::Leave] && state.frontend.shell_exit.is_none(),
+                    matches!(
+                        requests.as_slice(),
+                        [
+                            NetworkSetupRequest::PlayerChoices { row: 0, .. },
+                            NetworkSetupRequest::Leave
+                        ]
+                    ) && state.frontend.shell_exit.is_none(),
                     "C9 Back must leave the channel and wait: {requests:?}"
                 );
-                setup::service_event(state, NetworkSetupEvent::ChannelLeft)?;
+                service_event(state, WolServiceEvent::ChannelLeft);
                 ensure!(
                     state.frontend.shell_exit.is_some(),
                     "the channel-left event did not slide C9 out"
@@ -1762,6 +2018,7 @@ impl WolCapture {
                         self.start(state, frame)?;
                         return Ok(());
                     }
+                    WolTarget::VerifyDialog => return self.start(state, frame),
                     _ => {}
                 }
             }
@@ -1998,13 +2255,66 @@ impl WolCapture {
                 pings,
             },
         )?;
+        // Start Game Now (0x794BA0) keeps C2 up under its verify 0x130.
+        let names = |state: &AppState| {
+            setup::verify(state).map(|verify| (verify.names.clone(), verify.checked))
+        };
+        ensure!(
+            setup_requests(state).is_empty()
+                && state.frontend.shell_exit.is_none()
+                && names(state).is_some_and(|(names, checked)| {
+                    names == [NICKNAME.to_owned(), PEER.to_owned()] && checked == [false; 8]
+                }),
+            "OnGameStart did not open 0x130 over C2: {:?}",
+            names(state)
+        );
+        self.event(frame, "C2 Start, then controlled OnGameStart: 0x130");
+        // 0x7A7E03 holds [0xB77E28] = 2: a guest's A0 and K0 are dropped
+        // under 0x130 (0x5E3E73).
+        setup::player_ready(state, PEER, 0)?;
+        setup::map_status(state, PEER, 0)?;
+        let session = &state.match_state.session;
+        ensure!(
+            session.network_player_ready(1)
+                && session.network_map_status(1) == Some(1)
+                && setup_requests(state).is_empty(),
+            "a guest packet changed the setup under 0x130"
+        );
+        setup::service_event(state, NetworkSetupEvent::VerifyStarted { pairs: true })?;
+        setup::service_event(state, NetworkSetupEvent::PeerConnected { node: 1 })?;
+        // A click holds node 0's box and clears a peer's (0x7932D7).
+        let layout = setup::verify_layout(state);
+        for node in [0, 1] {
+            setup_click(
+                state,
+                crate::ui::skirmish_shell::checkbox_icon_rect(
+                    layout.boxes[node],
+                    crate::ui::shell::geom::ShellScale::RETAIL,
+                ),
+            );
+        }
+        let checked = names(state).context("0x130")?.1;
+        ensure!(
+            checked[..2] == [true, false],
+            "0x130 clicks: node 0 held, the peer cleared: {checked:?}"
+        );
+        self.event(frame, json!({"0x130 after clicks": checked[..2]}));
+        if self.target == WolTarget::VerifyDialog {
+            MoviesCapture::restore_neutral_pointer(state);
+            crate::app::input::multiplayer_setup::cursor_moved(state);
+            self.settle();
+            return Ok(());
+        }
+        setup::service_event(state, NetworkSetupEvent::Negotiated { result: 0 })?;
         let requests = setup_requests(state);
         ensure!(
-            requests == [NetworkSetupRequest::Leave] && state.frontend.shell_exit.is_some(),
-            "OnGameStart did not leave the channel and slide C2 out: {requests:?}"
+            requests == [NetworkSetupRequest::Leave]
+                && state.frontend.shell_exit.is_some()
+                && setup::verify(state).is_none(),
+            "the negotiation did not close 0x130, leave and slide C2 out: {requests:?}"
         );
         MoviesCapture::restore_neutral_pointer(state);
-        self.event(frame, "C2 Start, then controlled OnGameStart");
+        self.event(frame, "negotiated: 0x130 closed, channel left");
         self.phase = WolPhase::Loading;
         Ok(())
     }
@@ -4122,6 +4432,284 @@ impl WolCapture {
             );
         }
         self.hover_settle(state);
+        Ok(())
+    }
+}
+
+/// C9 in the test service's game: the host's options, then the target's
+/// departure or kick through the production lobby sinks.
+impl WolCapture {
+    /// Test-service C2 with its stand-in guest: the join sink `0x7A6100`,
+    /// the first `R` (`0x7A8260`) and `A1` (`0x77E900`).
+    fn service_host(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::skirmish_launch::{LaunchCountry, LaunchStartPosition, LaunchTeam};
+        let guest = |state: &AppState| {
+            let launch = state.match_state.session.network_setup()?;
+            let index = launch
+                .humans
+                .iter()
+                .position(|human| human.name == SERVICE_GUEST)?;
+            Some((index, launch.humans[index].clone()))
+        };
+        let (index, human) = guest(state).context("the stand-in guest did not join")?;
+        let view = setup_view(state)?;
+        let accepted = human
+            .raw_slot_index
+            .and_then(|row| view.row_icons[usize::from(row)].as_ref())
+            .is_some_and(|icon| icon.accepted);
+        ensure!(
+            human.raw_slot_index == Some(1)
+                && human.slot.country == LaunchCountry::Korea
+                && !human.slot.country_random
+                && human.slot.color_index == 3
+                && !human.slot.color_random
+                && state.match_state.session.network_player_ready(index)
+                && state.match_state.session.network_map_status(index) == Some(1)
+                && accepted,
+            "the stand-in guest's row, choices, K1 or acceptance: {human:?}, icon {accepted}"
+        );
+        self.event(
+            frame,
+            json!({"guest joined": {"row": 1, "country": "Korea", "color": 3, "K": 1, "accepted": true}}),
+        );
+        let choices = |state: &mut AppState, slot, observer| {
+            crate::app::shell_wol::service_event(
+                state,
+                WolServiceEvent::PlayerChoices {
+                    from: SERVICE_GUEST.into(),
+                    slot,
+                    observer,
+                },
+            );
+            setup_requests(state)
+        };
+        match self.target {
+            WolTarget::GuestChoices => {
+                // The host's colour 5 first, then the guest asks for it.
+                crate::app::shell_network_setup::apply_action(
+                    state,
+                    crate::ui::multiplayer_setup::SetupAction::Select {
+                        control: crate::ui::multiplayer_setup::SetupColumn::Color.control(0),
+                        value: 5,
+                    },
+                );
+                let host = state
+                    .match_state
+                    .session
+                    .network_setup()
+                    .context("C2")?
+                    .local_player()
+                    .slot
+                    .clone();
+                ensure!(
+                    host.color_index == 5 && !host.color_random,
+                    "the host's colour 5: {host:?}"
+                );
+                let requests = choices(
+                    state,
+                    crate::skirmish_launch::SkirmishLocalSlot {
+                        color_index: 5,
+                        start_position: LaunchStartPosition::Position(0),
+                        team: LaunchTeam::Team(7),
+                        ..human.slot.clone()
+                    },
+                    false,
+                );
+                let (_, human) = guest(state).context("guest")?;
+                ensure!(
+                    human.slot.color_random
+                        && human.slot.start_position == LaunchStartPosition::Position(0)
+                        && human.slot.team == LaunchTeam::None
+                        && requests.contains(&NetworkSetupRequest::PublishOptions),
+                    "the R checks: {human:?} {requests:?}"
+                );
+                self.event(
+                    frame,
+                    json!({"guest R": "colour 5 taken -> Random, start 1, team 7 -> none"}),
+                );
+            }
+            WolTarget::GuestObserver => {
+                // The host opens the observer row 7 first (player combo 7).
+                crate::app::shell_network_setup::apply_action(
+                    state,
+                    crate::ui::multiplayer_setup::SetupAction::Select {
+                        control: crate::ui::multiplayer_setup::SetupColumn::Player.control(7),
+                        value: 7,
+                    },
+                );
+                let open_observer = state.match_state.session.network_free_row(true);
+                ensure!(
+                    open_observer == Some(7),
+                    "C2 did not open observer row 7: {:?}",
+                    setup_view(state)?
+                        .combo(crate::ui::multiplayer_setup::SetupColumn::Player.control(7))
+                );
+                setup_requests(state);
+                let requests = choices(state, human.slot.clone(), true);
+                let (_, observer) = guest(state).context("guest")?;
+                let roster = [
+                    NetworkSetupRequest::Advertise,
+                    NetworkSetupRequest::PublishRoster,
+                    NetworkSetupRequest::PublishOptions,
+                ];
+                ensure!(
+                    requests == roster
+                        && match open_observer {
+                            Some(_) => {
+                                observer.is_observer()
+                                    && observer.raw_slot_index
+                                        == state.match_state.session.network_observer_row()
+                            }
+                            None => !observer.is_observer() && observer.raw_slot_index.is_none(),
+                        },
+                    "the observer R with observer row {open_observer:?}: {observer:?} {requests:?}"
+                );
+                self.event(frame, json!({"guest observes": {"open observer row": open_observer, "row": observer.raw_slot_index}}));
+                if open_observer.is_some() {
+                    let requests = choices(state, human.slot.clone(), false);
+                    let (_, player) = guest(state).context("guest")?;
+                    // 0x7A8838: country Random, then the R's Korea differs.
+                    ensure!(
+                        !player.is_observer()
+                            && player.raw_slot_index == Some(1)
+                            && player.slot.country == LaunchCountry::Korea
+                            && !player.slot.country_random
+                            && requests == roster,
+                        "the player R: {player:?} {requests:?}"
+                    );
+                    self.event(frame, json!({"guest plays again": {"row": 1}}));
+                }
+            }
+            WolTarget::ScenariosMismatch | WolTarget::MismatchOk => {
+                setup_button(state, crate::ui::multiplayer_setup::START)?;
+                self.event(frame, "C2 Start with the stand-in guest");
+                self.phase = WolPhase::Mismatch;
+                return Ok(());
+            }
+            WolTarget::GuestKick => {
+                crate::app::shell_network_setup::apply_action(
+                    state,
+                    crate::ui::multiplayer_setup::SetupAction::Select {
+                        control: crate::ui::multiplayer_setup::SetupColumn::Player.control(1),
+                        value: 2,
+                    },
+                );
+                self.event(frame, "C2 kicks the stand-in guest");
+                self.phase = WolPhase::GuestKicked;
+                return Ok(());
+            }
+            _ => {}
+        }
+        MoviesCapture::restore_neutral_pointer(state);
+        crate::app::input::multiplayer_setup::cursor_moved(state);
+        self.settle();
+        Ok(())
+    }
+
+    fn guest_options(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let launch = state
+            .match_state
+            .session
+            .network_setup()
+            .context("C9 setup")?;
+        let rows: Vec<(String, Option<u8>)> = launch
+            .humans
+            .iter()
+            .map(|human| (human.name.clone(), human.raw_slot_index))
+            .collect();
+        let map = launch.selected_map_file.clone();
+        let view = setup_view(state)?;
+        let host_icon = view.row_icons[0].as_ref().is_some_and(|icon| icon.host)
+            && !view.row_icons[1].as_ref().is_some_and(|icon| icon.host);
+        ensure!(
+            map.is_some()
+                && rows
+                    == [
+                        (NICKNAME.to_owned(), Some(1)),
+                        ("Tanya".to_owned(), Some(0))
+                    ]
+                && host_icon,
+            "C9 did not take the host's options: {rows:?} {map:?} host icon {host_icon}"
+        );
+        self.event(frame, json!({"host options": {"map": map, "rows": rows}}));
+        let channel = WolChannel {
+            kind: GAME_CHANNEL,
+            name: "Tanya's_game".into(),
+            ..Default::default()
+        };
+        match self.target {
+            WolTarget::GuestHostLeft => {
+                crate::app::shell_wol::service_event(
+                    state,
+                    WolServiceEvent::UserLeft("Tanya".into()),
+                );
+                self.event(frame, "the host left the game channel");
+                self.rejoined = true;
+                self.phase = WolPhase::ServiceLobby;
+                return Ok(());
+            }
+            WolTarget::GuestKicked => {
+                crate::app::shell_wol::service_event(
+                    state,
+                    WolServiceEvent::Kicked {
+                        channel,
+                        user: member(NICKNAME, crate::ui::wol_lobby::MEMBER_LOCAL, ""),
+                        by: member("Tanya", MEMBER_OPERATOR, ""),
+                    },
+                );
+                ensure!(
+                    state.frontend.shell_exit.is_some(),
+                    "the kick did not close C9"
+                );
+                self.event(frame, "this guest kicked by the host");
+                self.rejoined = true;
+                self.phase = WolPhase::ServiceLobby;
+                return Ok(());
+            }
+            WolTarget::GuestUserKicked => {
+                crate::app::shell_wol::service_event(
+                    state,
+                    WolServiceEvent::UserJoined(member("Boris", 0, "")),
+                );
+                let joined = state
+                    .match_state
+                    .session
+                    .network_setup()
+                    .is_some_and(|launch| launch.humans.iter().any(|human| human.name == "Boris"));
+                ensure!(joined, "Boris's join added no row");
+                crate::app::shell_wol::service_event(
+                    state,
+                    WolServiceEvent::Kicked {
+                        channel: channel.clone(),
+                        user: member("Boris", 0, ""),
+                        by: member("Tanya", MEMBER_OPERATOR, ""),
+                    },
+                );
+                let kicked = App::csf_label(state, "TXT_USER_KICKED", "TXT_USER_KICKED");
+                let expected = crate::assets::csf_file::format_csf(
+                    &kicked,
+                    &[
+                        crate::assets::csf_file::CsfArg::Str("Boris"),
+                        crate::assets::csf_file::CsfArg::Str("Tanya's_game"),
+                        crate::assets::csf_file::CsfArg::Str("Tanya"),
+                    ],
+                );
+                let gone = state
+                    .match_state
+                    .session
+                    .network_setup()
+                    .is_some_and(|launch| !launch.humans.iter().any(|human| human.name == "Boris"));
+                ensure!(
+                    gone && setup_chat_has(state, &expected)?,
+                    "Boris's kick: row gone {gone}, line {expected:?}"
+                );
+                self.event(frame, "Boris joined, then was kicked");
+            }
+            _ => {}
+        }
+        MoviesCapture::restore_neutral_pointer(state);
+        crate::app::input::multiplayer_setup::cursor_moved(state);
+        self.settle();
         Ok(())
     }
 }

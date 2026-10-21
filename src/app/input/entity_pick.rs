@@ -116,7 +116,8 @@ fn pick_distance_sq(dx: f32, dy: f32) -> f32 {
 }
 
 /// The object under the cursor that DetermineAction sees, for the cursor and
-/// the click, among those [`pick_admits_object`] admits.
+/// the click. ProcessClickCoords692515 calls TacticalPick6DA380 once before
+/// passing that same identity to DetermineAction and LeftUp693271/69328B.
 pub(crate) fn hover_target_at_point(
     source: impl PickWorld,
     world_x: f32,
@@ -126,108 +127,42 @@ pub(crate) fn hover_target_at_point(
     rules: Option<&RuleSet>,
 ) -> Option<HoverTargetKindWithId> {
     let sim = source.simulation();
-    let cells = crate::app::match_runtime::sim_tick::tactical_cells(sim);
-    let player = sim.interner().get(local_owner);
     let fog = (!ignore_visibility).then_some(sim.fog());
-    let (rx, ry) =
-        crate::app::match_runtime::sim_tick::world_point_to_cell(world_x, world_y, cells);
-    if crate::app::presentation::instances::cell_visibility_for_local_owner(
-        player,
+    let stable_id = pick_entity_at_point(
+        source,
+        sim.display_layers().ordered_ids(),
         fog,
-        rx,
-        ry,
-        ignore_visibility,
+        Some(local_owner),
+        world_x,
+        world_y,
+        0.,
+        rules,
+        Some(sim.houses()),
+        Some(sim.interner()),
         sim.resolved_terrain(),
-    ) == crate::app::presentation::instances::CellVisibilityState::Shrouded
-    {
-        return None;
-    }
-    let mut best: Option<(u64, f32)> = None;
-    for entity in sim.entities().values() {
-        if !pick_admits_object(entity, fog, player) {
-            continue;
-        }
-        let is_structure = entity.category() == EntityCategory::Structure;
-        let type_str = sim.interner().resolve(entity.type_ref());
-        let owner_str = sim.interner().resolve(entity.owner());
-        let (sx, sy) = source.screen_position(entity);
-        // Hit test: structures use foundation cells, mobile units use elliptical distance.
-        if is_structure {
-            let foundation = rules
-                .and_then(|r| r.object(type_str))
-                .map(|o| o.foundation.as_str())
-                .unwrap_or("1x1");
-            if !click_hits_foundation(
-                (rx, ry),
-                entity.position.rx(),
-                entity.position.ry(),
-                foundation,
-            ) {
-                continue;
-            }
-        } else {
-            let dx = sx - world_x;
-            let dy = sy - world_y;
-            if pick_distance_sq(dx, dy) >= PICK_DISTANCE_THRESHOLD {
-                continue;
-            }
-        }
-        // Distance for tie-breaking (prefer closest to anchor point).
-        let dx = sx - world_x;
-        let dy = sy - world_y;
-        let dist_sq = dx * dx + dy * dy;
-        // What_Action over an object asks the actor's house, here the local
-        // player's (`HouseClass::Is_Ally_ByObject @ 0x004F9A90` at `0x007003C4`).
-        let is_friendly =
-            crate::map::houses::is_allied_with(sim.house_alliances(), local_owner, owner_str);
-        let kind = if is_friendly {
-            if is_structure {
-                HoverTargetKind::FriendlyStructure
-            } else {
-                HoverTargetKind::FriendlyUnit
-            }
-        } else if is_structure {
-            HoverTargetKind::EnemyStructure
-        } else {
-            HoverTargetKind::EnemyUnit
-        };
-        match best {
-            Some((_, best_dist_sq)) if dist_sq >= best_dist_sq => {}
-            _ => best = Some((encode_hover_kind_with_id(kind, entity.stable_id()), dist_sq)),
-        }
-    }
-    best.map(|(encoded, _)| decode_hover_kind_with_id(encoded))
+    )?;
+    let entity = sim.entities().get(stable_id)?;
+    let is_structure = entity.category() == EntityCategory::Structure;
+    // What_Action asks the actor's house, here the local player's
+    // (HouseClass::Is_Ally_ByObject4F9A90 at 7003C4).
+    let is_friendly = crate::map::houses::is_allied_with(
+        sim.house_alliances(),
+        local_owner,
+        sim.interner().resolve(entity.owner()),
+    );
+    let kind = match (is_friendly, is_structure) {
+        (true, true) => HoverTargetKind::FriendlyStructure,
+        (true, false) => HoverTargetKind::FriendlyUnit,
+        (false, true) => HoverTargetKind::EnemyStructure,
+        (false, false) => HoverTargetKind::EnemyUnit,
+    };
+    Some(HoverTargetKindWithId { kind, stable_id })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct HoverTargetKindWithId {
     pub(crate) kind: HoverTargetKind,
     pub(crate) stable_id: u64,
-}
-
-fn encode_hover_kind_with_id(kind: HoverTargetKind, stable_id: u64) -> u64 {
-    let kind_bits = match kind {
-        HoverTargetKind::FriendlyUnit => 1u64,
-        HoverTargetKind::FriendlyStructure => 2,
-        HoverTargetKind::EnemyUnit => 3,
-        HoverTargetKind::EnemyStructure => 4,
-        HoverTargetKind::HiddenEnemy => 5,
-    };
-    (stable_id << 3) | kind_bits
-}
-
-fn decode_hover_kind_with_id(encoded: u64) -> HoverTargetKindWithId {
-    let kind = match encoded & 0b111 {
-        1 => HoverTargetKind::FriendlyUnit,
-        2 => HoverTargetKind::FriendlyStructure,
-        3 => HoverTargetKind::EnemyUnit,
-        4 => HoverTargetKind::EnemyStructure,
-        _ => HoverTargetKind::HiddenEnemy,
-    };
-    HoverTargetKindWithId {
-        kind,
-        stable_id: encoded >> 3,
-    }
 }
 
 #[cfg(test)]
@@ -1115,9 +1050,9 @@ fn click_hits_foundation(
     crx >= brx && crx < brx + fw as i32 && cry >= bry && cry < bry + fh as i32
 }
 
-pub(crate) fn pick_entity_at_point(
+pub(crate) fn pick_entity_at_point<'a>(
     source: impl PickSource,
-    encounter_order: &[u64],
+    encounter_order: impl IntoIterator<Item = &'a u64>,
     fog: Option<&FogState>,
     local_owner: Option<&str>,
     world_x: f32,
@@ -1175,15 +1110,15 @@ pub(crate) fn pick_entity_at_point(
     }
 
     // Cell/foundation occupancy is consulted only when the tracked-anchor pass
-    // found nothing. Preserve encounter order when a malformed overlap exists.
+    // found nothing. Preserve construction order when a malformed overlap exists.
     let click_cell =
         crate::app::match_runtime::sim_tick::world_point_to_cell(world_x, world_y, cells);
-    entities.values().find_map(|entity| {
+    let fallback = entities.values().find(|entity| {
         if entity.category() != EntityCategory::Structure
             || !entity.lifecycle.object_alive()
             || entity.lifecycle.in_limbo()
         {
-            return None;
+            return false;
         }
         let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
         let foundation = rules
@@ -1196,8 +1131,13 @@ pub(crate) fn pick_entity_at_point(
             entity.position.ry(),
             foundation,
         )
-        .then_some(entity.stable_id())
-    })
+    });
+    // ProcessClickCoords692529..69257F checks its chosen object's cloak
+    // after TacticalPick's fallback too. Keep the same gate for both callers;
+    // rejecting a winner does not scan for another object behind it.
+    fallback
+        .filter(|entity| pick_admits_object(entity, fog, local_owner_id))
+        .map(|entity| entity.stable_id())
 }
 
 /// Final object admission shared by selection callers. Ownership and the
@@ -1279,6 +1219,148 @@ mod tests {
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.selection.set_selected_for_test(selected);
         entity
+    }
+
+    #[test]
+    fn hover_and_click_match_original_weighted_pick_and_encounter_ties() {
+        use crate::sim::world::Simulation;
+
+        // These points are declared native registration inputs, not a second
+        // projection implementation. The ordinary retail scene is exercised
+        // separately by the bunker entry regression.
+        #[derive(Clone, Copy)]
+        struct Registrations<'a> {
+            sim: &'a Simulation,
+            points: [(f32, f32); 2],
+        }
+        impl PickSource for Registrations<'_> {
+            fn entities(&self) -> &EntityStore {
+                self.sim.entities()
+            }
+            fn screen_position(&self, entity: &GameEntity) -> (f32, f32) {
+                self.points[entity.stable_id() as usize - 1]
+            }
+        }
+        impl PickWorld for Registrations<'_> {
+            fn simulation(&self) -> &Simulation {
+                self.sim
+            }
+        }
+
+        let corpus = crate::test_fixture::json("tools/spatial_oracle/pointer_pick.json");
+        for row in corpus["controls"].as_array().unwrap() {
+            let mut sim = Simulation::new();
+            let viewer = sim.intern("viewer");
+            let typ = sim.intern("INIT");
+            for id in [1, 2] {
+                sim.entities_mut_for_test().insert(item83_entity(
+                    id,
+                    10,
+                    10,
+                    viewer,
+                    typ,
+                    EntityCategory::Infantry,
+                    false,
+                ));
+            }
+            let order: Vec<_> = row["registration_order"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_u64().unwrap() + 1)
+                .collect();
+            for &id in &order {
+                sim.resubmit_entity_display_for_test(id);
+            }
+            let point = |value: &serde_json::Value| {
+                (
+                    value[0].as_f64().unwrap() as f32,
+                    value[1].as_f64().unwrap() as f32,
+                )
+            };
+            let source = Registrations {
+                sim: &sim,
+                points: [point(&row["positions"][0]), point(&row["positions"][1])],
+            };
+            let (x, y) = point(&row["cursor"]);
+            let expected = Some(row["picked"].as_u64().unwrap() + 1);
+            assert_eq!(
+                pick_entity_at_point(
+                    source,
+                    &order,
+                    None,
+                    Some("viewer"),
+                    x,
+                    y,
+                    0.,
+                    None,
+                    None,
+                    Some(sim.interner()),
+                    None,
+                ),
+                expected,
+                "click: {}",
+                row["name"]
+            );
+            assert_eq!(
+                hover_target_at_point(source, x, y, "viewer", true, None)
+                    .map(|hover| hover.stable_id),
+                expected,
+                "hover: {}",
+                row["name"]
+            );
+        }
+    }
+
+    #[test]
+    fn foundation_fallback_keeps_the_post_pick_cloak_gate() {
+        use crate::sim::cloak_disguise::CloakRuntime;
+        use crate::sim::world::Simulation;
+
+        let mut sim = Simulation::new();
+        let viewer = sim.intern("viewer");
+        let other = sim.intern("other");
+        let typ = sim.intern("GAPOWR");
+        *sim.fog_mut_for_test() = FogState::new(32, 32);
+        sim.fog_mut_for_test().reveal_all_for_owner(viewer);
+        let mut building = item83_entity(1, 10, 10, other, typ, EntityCategory::Structure, false);
+        building.cloak = Some(CloakRuntime::new(0));
+        let (x, y) = crate::render::locomotor_visual::screen_position(&building);
+        sim.entities_mut_for_test().insert(building);
+        sim.resubmit_entity_display_for_test(1);
+        // Outside the tracked-anchor ellipse but inside this foundation.
+        // ProcessClickCoords692529..69257F repeats the cloak gate after the
+        // chosen fallback; sharing the picker must preserve hover's refusal.
+        for (cloak_state, expected) in [(0, Some(1)), (2, None)] {
+            sim.entities_mut_for_test()
+                .get_mut(1)
+                .unwrap()
+                .cloak
+                .as_mut()
+                .unwrap()
+                .set_state_for_test(cloak_state);
+            assert_eq!(
+                pick_entity_at_point(
+                    &sim,
+                    &[1],
+                    Some(sim.fog()),
+                    Some("viewer"),
+                    x + 20.,
+                    y,
+                    0.,
+                    None,
+                    None,
+                    Some(sim.interner()),
+                    None,
+                ),
+                expected
+            );
+            assert_eq!(
+                hover_target_at_point(&sim, x + 20., y, "viewer", false, None)
+                    .map(|hover| hover.stable_id),
+                expected
+            );
+        }
     }
 
     #[test]

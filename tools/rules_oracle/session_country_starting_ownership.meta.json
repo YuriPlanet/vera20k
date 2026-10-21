@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original starting-extra admission/shared budget and adjacent FirstBuildable/CanBuild country qualifier gates",
+  "assumptions": [
+    "Synthetic physical INI bytes; whole original Rules665650, Countries6722F0 and live Country virtual+64 readers. Both Countries deliberately have opposite ParentCountry. Original Unit/Infantry vector initializers and full type constructors enroll native registry order. Selected common Owner/RequiredHouses/ForbiddenHouses/TechLevel/Cost/AllowedToStart reader blocks execute; other type readers are excluded.",
+    "Two additional types read exact Owner=<none> and Owner=<random> through the same original Owner reader. Their stored mask values are observed, not supplied. Both have AllowedToStart=yes, TechLevel1 and Cost10000; the ordinary candidate and budget results exclude them.",
+    "Consumer House storage supplies Country pointer and TechLevel10, plus a separate American HouseTechLevel0 candidate control while global TechLevel remains10; selected House registry membership, BaseUnit pointer list, global TechLevel10 and unit_count4 are explicit continuation inputs. House/Scenario construction, full PrepareSession and full Rules Process are excluded. A retained physical Country reader sets Alliance MultiplayPassive for two budget controls.",
+    "Six independent qualifier controls follow the completed starting-unit observations. A fresh full UnitType constructor plus actual retained physical RequiredHouses/ForbiddenHouses reader produces omitted, none, unknown, actual-country and nonempty-all32-country masks. Original6722F0 appends thirty short Country IDs; the saved complete32-name list fits128 bytes. Full FirstBuildable5051E0 executes with a singleton generic-type vector, PlannedForSide=-1 from its constructor and supplied shell SuperWeapons=true. The original CanBuild qualifier block4F79E4 executes through pass4F7A9A or rejection4F7994 with supplied House/type registers and zero alternate-owner masks; preceding/following CanBuild gates and whole CanBuild return are excluded.",
+    "Candidate5D70F0 executes through5D72AB, then resumes original vector cleanup5D743E to return. Budget5D6D80 executes through5D6ED6 before any per-House callbacks. Both are bounded instruction regions, not whole starting-force creation, RNG selection, placement, world lifecycle or renderer parity. Full three-stream RNG states are compared unchanged; their hashes and raw/ranged draw-entry visits are retained. No timer write or detach call occurs in these executed admission/arithmetic paths; downstream spawn/mission effects are excluded."
+  ],
+  "substitutions": [
+    "Existing RetailRulesHistory physical-file/Windows/heap platform transport only. No original code, INI parser output, mask decision, cost arithmetic or RNG result is patched. The synthetic input catalog rejects undeclared resource requests."
+  ],
+  "entry_points": {
+    "countries": "0x006722F0",
+    "country_body": "0x00511850",
+    "unit_constructor": "0x007470D0",
+    "infantry_constructor": "0x005236A0",
+    "owner_reader": "0x007149E1",
+    "qualifiers_and_tech_level_reader": "0x00714522",
+    "cost_reader": "0x0071469F",
+    "allowed_to_start_reader": "0x00714C44",
+    "candidate_prefix": "0x005D70F0",
+    "candidate_stop": "0x005D72AB",
+    "candidate_cleanup": "0x005D743E",
+    "budget_prefix": "0x005D6D80",
+    "budget_stop": "0x005D6ED6",
+    "first_buildable": "0x005051E0",
+    "can_build_qualifier_start": "0x004F79E4",
+    "can_build_qualifier_pass": "0x004F7A9A",
+    "can_build_qualifier_reject": "0x004F7994"
+  },
+  "replay_command": "python -m tools.rules_oracle.session_country --starting-ownership",
+  "payload_sha256": "bb57a3cce4fd09737cbf8d5ec0ab1f434f539fb5277f5b7056afed5983b241d9"
+}

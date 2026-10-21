@@ -4144,6 +4144,12 @@ pub struct RuleSet {
     /// active AssetManager with effect assets. Gameplay and rendering share
     /// the GPU-independent physical model loader.
     voxel_assets: crate::rules::voxel_asset_catalog::VoxelAssetCatalog,
+    /// The one TechnoType custom palette name (art `Palette=`, lowercase,
+    /// without theater suffix or `.pal`). gamemd keeps one generated palette
+    /// per name and exits when a second exists ("only one extra building
+    /// palette", `0x00715857..0x00715871`), so every type with
+    /// `ObjectType::custom_palette` shares it. Projected from ART.
+    extra_building_palette: Option<String>,
     /// Every building type's construction control from its Buildup SHP,
     /// bound once from the active assets (`bind_building_buildup_assets`).
     buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog,
@@ -4467,6 +4473,15 @@ impl RuleSet {
                 .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
             {
                 object.project_infantry_pips(pips);
+            }
+        }
+        for (name, reads) in processed.infantry_sequence_sound_reads() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
+            {
+                object.project_sequence_sound_reads(reads);
             }
         }
         for (name, flags) in processed.infantry_infiltration_states() {
@@ -4875,6 +4890,9 @@ impl RuleSet {
                     .and_then(|section| sounds.read_rules_reference(section, "EnterWaterSound"));
                 object.leave_water_sound = section
                     .and_then(|section| sounds.read_rules_reference(section, "LeaveWaterSound"));
+                // ReadSequenceData (`0x0052403F`) resolves each pair through
+                // VocClass::FindByName (`0x007514D0`, first _strcmpi match).
+                object.bind_sequence_sounds(|name| sounds.get(name).map(|entry| entry.id.clone()));
             }
         }
     }
@@ -5369,6 +5387,7 @@ impl RuleSet {
                 .collect(),
             effect_assets: crate::rules::effect_asset_catalog::EffectAssetCatalog::default(),
             voxel_assets: crate::rules::voxel_asset_catalog::VoxelAssetCatalog::default(),
+            extra_building_palette: None,
             buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog::default(),
             rubble_assets: crate::rules::building_rubble::RubbleAssetCatalog::default(),
             terrain_spawner_assets:
@@ -5734,16 +5753,24 @@ impl RuleSet {
         self.source_ini_hash
     }
 
+    /// The one TechnoType custom palette name, lowercase, without theater
+    /// suffix or `.pal`; every type with `ObjectType::custom_palette` draws
+    /// from it (`TechnoClass::GetRemapColour @ 0x00705D70`).
+    pub fn extra_building_palette(&self) -> Option<&str> {
+        self.extra_building_palette.as_deref()
+    }
+
     /// Compatibility identity for processed rules plus the resolved animation,
     /// effect-frame, terrain-spawner frame, smudge-selection, projectile
-    /// launch and TechnoType `CanBeHidden=` ART inputs bound to this ruleset.
+    /// launch and TechnoType `CanBeHidden=` and `Palette=` ART inputs bound to
+    /// this ruleset.
     /// Other asset-derived simulation inputs are added by later ownership
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        // v32: retained Country+98 governs Owner admission independently
+        // v33: retained Country+98 governs Owner admission independently
         // of the current merged INI and actual Country restriction bits.
-        b"rules-simulation-config-v32".hash(&mut hasher);
+        b"rules-simulation-config-v33".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
         b"country-parent-v1".hash(&mut hasher);
         // The native parent lookup scans registration order and checks Name
@@ -5878,6 +5905,15 @@ impl RuleSet {
             .map(|o| (&o.id, o.can_be_hidden))
             .collect::<Vec<_>>()
             .hash(&mut hasher);
+        // So is Palette= (0x0071582B); DestructionEffects gives a custom
+        // palette type's DestroyAnim its scheme (0x00441D2F).
+        self.object_list
+            .iter()
+            .filter(|o| o.custom_palette)
+            .map(|o| &o.id)
+            .collect::<Vec<_>>()
+            .hash(&mut hasher);
+        self.extra_building_palette.hash(&mut hasher);
         self.general.default_mirage_disguises.hash(&mut hasher);
         self.general.infantry_disguises.hash(&mut hasher);
         if self
@@ -6662,7 +6698,8 @@ impl RuleSet {
     /// is rejected; <random> (-2) contributes bit30. Trigger's <none> ->0
     /// override does not apply. The production list reader owns capacity
     /// and tokenization; the retained Country registry owns name lookup.
-    /// Native controls: tools/rules_oracle/session_country_parent.json.
+    /// Native controls: tools/rules_oracle/session_country_starting_ownership.json
+    /// and tools/rules_oracle/session_country_parent.json.
     pub fn house_type_mask(&self, tokens: &[String]) -> u32 {
         tokens.iter().fold(0u32, |mask, token| {
             let index = house_type_index_of_name(token, self.country_lookup_members());
@@ -6972,6 +7009,7 @@ impl RuleSet {
         let mut buildings_checked: u32 = 0;
         let mut infantry_checked: u32 = 0;
         let mut crawls_patched: u32 = 0;
+        self.extra_building_palette = None;
         for obj in self.object_list.iter_mut() {
             // Resolve the art.ini section: use Image= override if present,
             // otherwise fall back to the object ID itself.
@@ -6980,6 +7018,20 @@ impl RuleSet {
             // Every TechnoType's ReadINI reads CanBeHidden from the ART
             // section of its own ID (0x007121EB); art is not layered.
             obj.can_be_hidden = art.can_be_hidden(&obj.id);
+            // ...and Palette= from its ImageFile's section (0x0071582B).
+            let palette = art.techno_palette(art_key);
+            obj.custom_palette = palette.is_some();
+            if let Some(name) = palette {
+                match &self.extra_building_palette {
+                    None => self.extra_building_palette = Some(name.to_owned()),
+                    Some(first) if first != name => log::error!(
+                        "[{}] Palette={name}: gamemd allows one extra building palette \
+                         and exits; Palette={first} is kept",
+                        obj.id
+                    ),
+                    Some(_) => {}
+                }
+            }
             if obj.category == crate::rules::object_type::ObjectCategory::Infantry {
                 infantry_checked += 1;
                 if let Some(entry) = entry {

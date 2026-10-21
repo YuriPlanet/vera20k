@@ -782,14 +782,15 @@ def _animation_runtime(value: Any, label: str) -> None:
     runtime = require_object(value, label)
     require_exact_keys(runtime, ('current_frame', 'frame_step', 'delay_remaining', 'rate_reload',
                                  'frame_timer', 'loop_remaining', 'first_ai_guard',
-                                 'constructor_reverse', 'inactive', 'paused'), label)
+                                 'constructor_reverse', 'inactive', 'paused', 'temporal_paused'),
+                      label)
     for key in ('current_frame', 'frame_step'):
         _bounded_int(runtime[key], f'{label}.{key}', -(1 << 31), (1 << 31) - 1)
     for key in ('delay_remaining', 'rate_reload'):
         _bounded_int(runtime[key], f'{label}.{key}', 0, (1 << 16) - 1)
     _bounded_int(runtime['loop_remaining'], f'{label}.loop_remaining', 0, 255)
     _timer(runtime['frame_timer'], f'{label}.frame_timer')
-    for key in ('first_ai_guard', 'constructor_reverse', 'inactive', 'paused'):
+    for key in ('first_ai_guard', 'constructor_reverse', 'inactive', 'paused', 'temporal_paused'):
         if type(runtime[key]) is not bool:
             raise ValidationError(f'{label}.{key} must be a boolean')
 

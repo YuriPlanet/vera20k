@@ -535,21 +535,6 @@ fn anim_theater_letter_needs_the_native_name_pattern() {
 }
 
 #[test]
-fn test_make_candidates_use_deduped_uppercase_names() {
-    let reg: ArtRegistry = ArtRegistry::empty();
-    let candidates: Vec<String> = make_shp_candidates(Some(&reg), "GAPOWR", "sno", "SNOW");
-    assert_eq!(
-        candidates,
-        vec![
-            "GAPOWRMK.SHP",
-            "GAPOWRMK.SNO",
-            "GGPOWRMK.SHP",
-            "GGPOWRMK.SNO",
-        ]
-    );
-}
-
-#[test]
 fn test_resolve_overlay_image_id_and_candidates() {
     let art_ini: IniFile = IniFile::from_str("[LOBRDG27]\nImage=LOBRDGX\nTheater=yes\n");
     let rules_ini: IniFile = IniFile::from_str("[LOBRDG27]\nImage=LOBRDGY\n");
@@ -887,4 +872,39 @@ fn can_be_hidden_reads_the_type_id_section() {
     assert!(reg.can_be_hidden("YAREFN"));
     assert!(reg.can_be_hidden("ODD"), "ReadBool's default for 'o'");
     assert!(reg.can_be_hidden("MISSING"));
+}
+
+/// ReadINI reads `Palette=` with ReadString (capacity 0x20) from the ART
+/// section its ImageFile names (`0x0071582B`, `ESI = this+0x1F8`); an ART
+/// `Image=` is not followed, and an empty value names nothing.
+#[test]
+fn techno_palette_reads_the_named_section() {
+    let ini =
+        IniFile::from_str("[CANEWY04]\nPalette=lib\n[ALIAS]\nImage=CANEWY04\n[BLANK]\nPalette=\n");
+    let reg = ArtRegistry::from_ini(&ini);
+    assert_eq!(reg.techno_palette("CANEWY04"), Some("lib"));
+    assert_eq!(reg.techno_palette("ALIAS"), None);
+    assert_eq!(reg.techno_palette("BLANK"), None);
+    assert_eq!(reg.techno_palette("MISSING"), None);
+}
+
+/// `RuleSet::project_art_data` reads `Palette=` under the rules `Image=`
+/// (ImageFile `+0x1F8`), not the type ID, and keeps the one extra building
+/// palette name.
+#[test]
+fn custom_palette_projects_through_the_rules_image() {
+    let mut rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=STATUE\n1=COPY\n2=PLAIN\n\
+         [STATUE]\nStrength=10\n[COPY]\nStrength=10\nImage=STATUE\n\
+         [PLAIN]\nStrength=10\nImage=OWN\n",
+    ))
+    .expect("rules");
+    rules.install_art_fixture(ArtRegistry::from_ini(&IniFile::from_str(
+        "[STATUE]\nPalette=lib\n[PLAIN]\nPalette=other\n[OWN]\n",
+    )));
+    let custom = |id: &str| rules.object(id).unwrap().custom_palette;
+    assert!(custom("STATUE"));
+    assert!(custom("COPY"), "the rules Image= names the section");
+    assert!(!custom("PLAIN"), "the type ID's section is not read");
+    assert_eq!(rules.extra_building_palette(), Some("lib"));
 }

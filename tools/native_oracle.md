@@ -1,5 +1,22 @@
 # Native comparison workflow
 
+### Computer sale of captured buildings
+
+`python -m tools.spatial_oracle.captured_building_sale --check` executes the
+original Engineer order/Walk/capture path through Building ChangeOwner's sale
+handoff, with additional bounded controls for its predicates, C4, Buildup and
+upgrade refunds. The real Building constructor establishes the initial House;
+the current owner may subsequently change without replacing that identity.
+The input setup, original call sites and explicit fixture boundaries are in
+[`captured_building_sale.md`](spatial_oracle/captured_building_sale.md).
+
+The corpus stops before the Selling mission visits. The retail Rust tests in
+`world::ai_captured_building_sale_tests` supply an ordinary AI Capture order,
+observe Engineer movement, and run the captured plant's sale through its
+refund/removal. A second test captures, saves/loads, and recaptures the plant
+for its constructor House, which keeps it. These compose the rebuilt engine;
+they do not execute autonomous native Team/Hunt planning or original SAV load.
+
 ### Selected-weapon target-scan bound
 
 `python -m tools.spatial_oracle.threat_scan_bound --check` compares 65 original
@@ -192,6 +209,15 @@ cover the Unit bunker bonus, direct/arcing boundaries and declared ordering and
 overflow controls. Their native input readers establish LTNK/ATGUN/Cannon fields;
 installation, acquisition, firing and rendering remain separate validation.
 
+### Tank-bunker entry
+
+`python -m tools.spatial_oracle.bunker_entry --check` executes eight joined
+original histories through the Unit destination, Building radio and Foot Enter
+owners, including busy, cancellation, replacement and AI seek controls. A supplied
+arrival exercises PerCell DOCK_NOW; a prepared state3 control pins the native
+wait for a retained Drive destination. Rust consumes these outputs separately
+from stock world-frame installation tests. See [scope and reproduction](spatial_oracle/bunker_entry.md).
+
 ### Stationary attack actions and building control
 
 `python -m tools.spatial_oracle.bunker_attack_action --check` executes original
@@ -291,6 +317,7 @@ covered. The metadata records the executed binary, command and supplied type get
 | `tools.spatial_oracle.bridge_base_edges` | 86 signed/clamped endpoint, canonical pair, reverse bucket order and deduplication cases | `src/sim/pathfinding/bridge_base_native_tests.rs`, production `zone_build.rs`; cache/restore regression in `world/navigation_tests.rs` |
 | `tools.spatial_oracle.tube_hierarchy` | 65 high/Tube hierarchy helper cases, five ReadTubes writes, six raw-zone gate cases, five constant-walk endpoints and seventeen DWORD zone queries; raw data domain remains bounded | `src/sim/pathfinding/tube_hierarchy_native_tests.rs`, production `zone_build/hierarchy.rs`; route/transaction regressions in `zone_search_tests.rs` and `app/persistence/tube_hierarchy_restore_tests.rs` |
 | `tools.spatial_oracle.path_entry` | 19 original endpoint lookup/query/retained projection and conditional playfield cases; final mover predicate supplied | `src/sim/pathfinding/zone_search/native_path_entry.rs`, production wrappers and tests in `zone_search_tests.rs` |
+| `tools.spatial_oracle.foot_path_window` | 10 original Unit/Drive-or-Ship/Find_Path wrapper cases: short and 23/24/25-word routes, an in-window tube word, copy canaries, terminator and reference-cell observations; complete AStar output supplied, search and later movement excluded. [Reproduction, bounds and manual check](spatial_oracle/foot_path_window.md) | `src/sim/movement/foot_path_window_tests.rs::installed_path_window_matches_original_find_path_copy` compares live words and reference cell; `retail_tank_and_infantry_replace_path_windows_and_reach_their_move_destination` separately runs stock MTNK/E1 long Move orders through serial and batched whole-frame Rust continuation, without a native route or timing claim |
 | `tools.spatial_oracle.astar_structural_height` (`--finishing`, `--hills-inputs`, `--mtnk-inputs`, `--threat-inputs`) | Original successful reconstruction/both finishing passes, physical Hills/MTNK inputs, Team coefficient readers/getter and signed House adjustment kernel | Shared movement/pathfinding and retained threat owners; [evidence bounds and commands](spatial_oracle/astar_path_finishing.md). Whole native route and production validation are separate requirements. |
 | `tools.spatial_oracle.bounce_height` | 48 ground/query/surface cases through original Bounce update; flat contacts and airborne slopes, velocity signed zero excluded from Rust comparison | `src/sim/world/bounce_terrain_tests.rs`, live `bounce_terrain.rs` and `bounce.rs`; separate cliff/slope physics remains open |
 | `tools.spatial_oracle.bounce_startup_capture` | Original process captures Bounce104/416 scalars and x87 control at four startup boundaries; executable section integrity | Inputs to `bounce_height`; constructor/startup evidence, not complete debris physics |
@@ -308,6 +335,7 @@ covered. The metadata records the executed binary, command and supplied type get
 | `tools.spatial_oracle.aircraft_fire_location` | 51 full original FindFireLocation calls: target identity, native rings/ranking, map/visibility, live reservations, Spawned/Carryall/AirportBound admission and RNG continuation; supplied runtime state, no substituted calls | `util/native_trig.rs` compares candidate geometry and ranked distances against existing deterministic math; production search, destination assignment and state1 integration remain required |
 | `tools.spatial_oracle.fly_destination` | 26 original non-null Fly MoveTo calls: retained XYZ, signed-cell landing refusal, power gate, signed Ammo/Target height substitution, FlightLevel fallback, mode/readiness suffix; no substituted calls | `world/fly_height_tests.rs` compares retained destination and refusal through the air order boundary, plus production cell orders and save/restore; moving/mode suffix, null/Stop and full Aircraft/Foot navigation remain unported |
 | `tools.spatial_oracle.track_destination --null-boundary` | 84 original Foot/Aircraft NULL setter calls over constructed Drive/Ship locomotors: current/queued Attack and target gate, clear/Stop/timer order, NULL admission bypass, flags, power, already-null NavCom, skip latch and signed timer edges; RNG continuation | `track_destination_null_boundary.{json,meta.json}` bounds evidence to Foot/class NULL control and timers. The Aircraft vtable with Drive/Ship is an explicit boundary probe; native Fly Stop and stock Aircraft flight are excluded. |
+| `tools.spatial_oracle.magnetron_aircraft_lift` | Ten original hit/Imbue/class-destination/Jumpjet histories, bounded release and restore gates, two Aircraft landing gates, and five terminal impact/Notice controls | `sim/locomotor_lift_native_tests.rs`, `world/crash_tests.rs` and Jumpjet landing tests consume the bounded native results. [Scope and reproduction](spatial_oracle/magnetron_aircraft_lift.md) separates supplied states and impact effect leaves from the physical ORCA/BEAG whole-frame Rust regression. |
 | `tools.spatial_oracle.fly_takeoff` | 80 original callbacks with live facing histories, strict height thresholds, Carryall landing base, bridge/slope, signed ROT and both flag clears; no substituted calls | `world/fly_height_tests.rs` compares production callback fields; existing FacingClass owns both turns. Excludes BeginTakeoff, landing and full flight |
 | `tools.spatial_oracle.fly_takeoff_phase` | 75 full original phase-dispatch calls with actual Foot/Techno/Object Mark and Display, health/flag gates and same-layer reordering | `world/fly_height_tests.rs` compares the production pure-takeoff transaction and save/restore continuation; excludes preceding Process motion, landing and non-Landable branches |
 | `tools.spatial_oracle.fly_landing_phase` | 29 full original accepted ordinary landing phases: retained Top-to-Ground resubmission, threshold/latch, air-tracker removal, neighbor-counter migration, destination clear/path timer and unchanged RNG | Evidence for the pending Rust landing callback; no substituted gameplay calls. Covers already-OnBridge state, not changed-layer phase suffixes, refusal/search/destruction, AirportBound docking, Carryall/type+C95 effects or full flight/rendered parity |

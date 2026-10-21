@@ -264,7 +264,16 @@ fn show_modal(state: &mut AppState, key: &'static str) {
 pub(crate) fn append_chat(state: &mut AppState, line: LanChatLine) {
     let route = state.frontend.shell_route;
     let setup = route == crate::app::shell_route::ShellRoute::NetworkSetup;
-    let wol_lobby = route.wol_lobby();
+    append_chat_to(state, setup, !setup && route.wol_lobby(), line);
+}
+
+/// The WOL lobby `0x113`'s transcript even while C2/C9 cover it: native
+/// keeps it in the shell stack, hidden, and its sinks still write to it.
+pub(crate) fn append_wol_lobby_chat(state: &mut AppState, line: LanChatLine) {
+    append_chat_to(state, false, true, line);
+}
+
+fn append_chat_to(state: &mut AppState, setup: bool, wol_lobby: bool, line: LanChatLine) {
     let (rect, scale) = if setup {
         let layout = crate::app::input::multiplayer_setup::layout(state);
         (layout.chat_log, layout.page.scale)

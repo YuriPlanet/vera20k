@@ -151,7 +151,11 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
     let live_remap_keys = collect_anim_remap_base_keys(&sim, &house_colors);
     let parachute_name = parachute_type.to_string();
     for color in &scheme_colors {
-        assert!(live_remap_keys.contains(&(parachute_name.to_ascii_uppercase(), *color)));
+        assert!(live_remap_keys.contains(&(
+            parachute_name.to_ascii_uppercase(),
+            crate::render::sprite_atlas::ShpPaletteContext::SelectedScheme,
+            *color
+        )));
     }
     assert_eq!(live_remap_keys.len(), 2, "only the two live canopy remaps");
 

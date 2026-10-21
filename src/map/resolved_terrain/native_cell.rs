@@ -254,7 +254,7 @@ impl<'a> NativeCellQuery<'a> {
         }
     }
 
-    pub(crate) fn terrain(&self) -> &'a ResolvedTerrainGrid {
+    pub fn terrain(&self) -> &'a ResolvedTerrainGrid {
         self.terrain
     }
     pub fn dummy(&self) -> SharedCellDummy {

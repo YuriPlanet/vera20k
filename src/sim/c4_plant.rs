@@ -287,8 +287,8 @@ impl Simulation {
                 return Ok(true);
             }
             let (flash, fuse) = (rules.c4_flash_frames(), rules.c4_delay_frames());
+            self.substrate.flash_building(building, flash, frame);
             if let Some(target) = self.substrate.entities.get_mut(building) {
-                target.flash_base(flash);
                 target.pending_c4_detonation.plant(frame as i32, fuse, id);
             }
         }

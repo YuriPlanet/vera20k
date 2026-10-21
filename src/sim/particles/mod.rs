@@ -150,6 +150,11 @@ pub struct Particle {
 
 impl Particle {
     #[cfg(any(test, feature = "test-support"))]
+    pub fn set_stable_id_for_test(&mut self, value: u64) {
+        self.stable_id = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     pub fn set_damage_counter_for_test(&mut self, value: i16) {
         self.damage_counter = value;
     }
@@ -832,6 +837,32 @@ impl ParticleSystemStore {
         self.detached_particles
             .get(&id)
             .map(|retired| (&retired.body, retired.object_alive))
+    }
+
+    /// Every particle: the detached ones, then each system's.
+    pub(crate) fn all_particles(&self) -> impl Iterator<Item = &Particle> {
+        self.detached_particles
+            .values()
+            .map(|retired| &retired.body)
+            .chain(
+                self.systems
+                    .values()
+                    .flat_map(|system| system.particles.iter()),
+            )
+    }
+
+    /// The particle `id`, detached or still in its system. Systems keep no
+    /// index of their particles, so this walks them.
+    pub(crate) fn particle(&self, id: u64) -> Option<&Particle> {
+        self.detached_particles
+            .get(&id)
+            .map(|retired| &retired.body)
+            .or_else(|| {
+                self.systems
+                    .values()
+                    .flat_map(|system| system.particles.iter())
+                    .find(|particle| particle.stable_id == id)
+            })
     }
 
     /// Read-only identity/body view for hashing, snapshot validation and the

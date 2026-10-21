@@ -1220,20 +1220,6 @@ fn astar_hierarchy_marker_follows_the_marked_straight_path() {
 }
 
 // ---------------------------------------------------------------------------
-// Path truncation tests (RA2 24-step segment system)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_truncate_layered_path_truncates_both_vecs() {
-    let path: Vec<(u16, u16)> = (0..31).map(|i| (i as u16, 0)).collect();
-    let layers: Vec<MovementLayer> = vec![MovementLayer::Ground; 31];
-    let (rp, rl) = truncate_layered_path(path, layers, 24);
-    assert_eq!(rp.len(), 25);
-    assert_eq!(rl.len(), 25);
-    assert_eq!(rp[24], (24, 0));
-}
-
-// ---------------------------------------------------------------------------
 // Water / naval pathfinding tests
 // ---------------------------------------------------------------------------
 

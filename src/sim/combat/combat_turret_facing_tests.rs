@@ -200,12 +200,7 @@ fn save_load_round_trip_on_kill_tick() {
     let hash_before = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);
     let mut restored = GameSnapshot::load(&bytes).expect("load").sim;
-    Simulation::rebuild_logic_membership(
-        &mut restored.terrain_objects,
-        &mut restored.substrate,
-        &mut restored.projectiles,
-        &mut restored.waves,
-    ); // the real post-deserialize step
+    restored.rebuild_logic_membership(); // the real post-deserialize step
     assert_eq!(
         restored.state_hash(),
         hash_before,

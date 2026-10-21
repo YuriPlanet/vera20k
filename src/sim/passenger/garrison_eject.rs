@@ -136,10 +136,7 @@ fn sellbuilding_direct_scatter_handoff(
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     passenger_id: u64,
-    building_rx: u16,
-    building_ry: u16,
-    building_width: u16,
-    building_height: u16,
+    building_id: u64,
     frame_effects: FrameEffects<'_>,
 ) {
     let Some(pax) = sim.substrate.entities.get(passenger_id) else {
@@ -153,13 +150,17 @@ fn sellbuilding_direct_scatter_handoff(
     {
         return;
     }
-    let source = (
-        i32::from(building_rx) * 256 + i32::from(building_width) * 128,
-        i32::from(building_ry) * 256 + i32::from(building_height) * 128,
+    // Read live for each occupant, as native does; the building is still
+    // stored while SellBuilding runs, sold or dying.
+    let [x, y] = crate::sim::movement::ground_pose::object_center_xy(
+        sim.substrate
+            .entities
+            .get(building_id)
+            .expect("SellBuilding's building is stored"),
     );
     if let Err(cause) = sim.infantry_scatter_from(
         passenger_id,
-        source,
+        (x, y),
         crate::sim::movement::ScatterFlags::new(true, true),
         rules,
         registry,
@@ -176,10 +177,7 @@ fn place_garrison_passenger_at_cell(
     rx: u16,
     ry: u16,
     z: u8,
-    building_rx: u16,
-    building_ry: u16,
-    building_width: u16,
-    building_height: u16,
+    building_id: u64,
     mode: GarrisonEjectMode,
     context: UninitContext<'_>,
 ) -> bool {
@@ -241,10 +239,7 @@ fn place_garrison_passenger_at_cell(
         rules,
         context.registry(),
         passenger_id,
-        building_rx,
-        building_ry,
-        building_width,
-        building_height,
+        building_id,
         context.effects(),
     );
 
@@ -268,6 +263,7 @@ fn place_garrison_passenger_at_cell(
 fn eject_garrison_passengers_at_edges(
     sim: &mut Simulation,
     rules: &RuleSet,
+    building_id: u64,
     rx: u16,
     ry: u16,
     z: u8,
@@ -317,10 +313,7 @@ fn eject_garrison_passengers_at_edges(
                 exit_rx,
                 exit_ry,
                 z,
-                rx,
-                ry,
-                width,
-                height,
+                building_id,
                 mode,
                 uninit_context,
             ) {
@@ -393,6 +386,7 @@ pub(crate) fn eject_destruction_garrison_with_context(
     let ejected = eject_garrison_passengers_at_edges(
         sim,
         rules,
+        event.building_id,
         event.rx,
         event.ry,
         event.z,
@@ -460,6 +454,7 @@ pub(crate) fn sell_building_occupants(
     let ejected = eject_garrison_passengers_at_edges(
         sim,
         rules,
+        building_id,
         rx,
         ry,
         z,
@@ -543,6 +538,24 @@ pub(crate) mod tests {
         let art = IniFile::from_str(&format!("[{type_id}]\nFoundation=2x2\n"));
         RuleSet::from_ini_with_fixed_art_for_test(&ini, &art)
             .expect("garrison edge rules and ART should parse")
+    }
+
+    /// An unrevealed 2x2 building at (10, 10): the GetCoords SellBuilding
+    /// scatters its occupants from.
+    fn insert_garrison_building(sim: &mut Simulation, building_id: u64) {
+        let mut building = GameEntity::test_default_of_category(
+            building_id,
+            "CAGAS01",
+            "Neutral",
+            10,
+            10,
+            EntityCategory::Structure,
+        );
+        building
+            .type_facts
+            .set_foundation_for_test("2x2".to_string());
+        building.set_type_ref_for_test(sim.interner.intern("CAGAS01"));
+        sim.substrate.entities.insert(building);
     }
 
     fn insert_hidden_passenger_with_subcell(
@@ -744,6 +757,8 @@ pub(crate) mod tests {
             sim.substrate.entities.insert(pax);
             give_walk_locomotor(&mut sim, id);
         }
+        let building_id = 9;
+        insert_garrison_building(&mut sim, building_id);
         let before = &row["rng_full_before"];
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(before["scenario"].as_str().unwrap());
@@ -758,10 +773,7 @@ pub(crate) mod tests {
                         &rules,
                         None,
                         id,
-                        10,
-                        10,
-                        2,
-                        2,
+                        building_id,
                         FrameEffects::default(),
                     );
                 }
@@ -1255,6 +1267,12 @@ pub(crate) mod tests {
         let rules = garrison_edge_rules();
         let mut sim = garrison_map(&rules);
         let building_id = 50;
+        insert_garrison_building(&mut sim, building_id);
+        // The fatal prelude ejects from a building still on the map.
+        assert!(matches!(
+            sim.reveal_entity_with_rules(building_id, &rules),
+            RevealOutcome::Revealed { .. }
+        ));
         let passenger_id = insert_hidden_passenger(&mut sim, 51, building_id, "Neutral");
         give_walk_locomotor(&mut sim, passenger_id);
         let mut expected_rng = sim.scenario_rng.clone();

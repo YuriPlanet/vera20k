@@ -367,7 +367,7 @@ pub(crate) fn bind_rules_asset_closure(
 pub(crate) fn startup_crate_anim_remap_keys(
     rules: &RuleSet,
     overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
-) -> HashSet<(String, crate::rules::house_colors::HouseColorIndex)> {
+) -> HashSet<sprite_atlas::AnimRemapKey> {
     [
         rules.crate_rules.wood_crate_img.as_deref(),
         rules.crate_rules.crate_img.as_deref(),
@@ -387,9 +387,13 @@ pub(crate) fn startup_crate_anim_remap_keys(
         let color = u8::try_from(entry)
             .ok()
             .map(crate::rules::house_colors::HouseColorIndex)?;
-        Some((anim.trim().to_ascii_uppercase(), color))
+        Some((
+            anim.trim().to_ascii_uppercase(),
+            sprite_atlas::ShpPaletteContext::SelectedScheme,
+            color,
+        ))
     })
-    .filter(|(anim, _)| !anim.is_empty())
+    .filter(|(anim, _, _)| !anim.is_empty())
     .collect()
 }
 
@@ -815,6 +819,7 @@ mod tests {
             startup_crate_anim_remap_keys(&rules, &overlay_registry),
             HashSet::from([(
                 "CRATE_SPARK".to_string(),
+                crate::render::sprite_atlas::ShpPaletteContext::SelectedScheme,
                 crate::rules::house_colors::HouseColorIndex(1),
             )])
         );
@@ -909,7 +914,7 @@ mod tests {
             crate::util::save_codec::serialize(&sim).expect("serialize terrain AnimClass state");
         let mut restored: Simulation =
             crate::util::save_codec::deserialize(&bytes).expect("deserialize state");
-        restored.rebuild_logic_membership_for_test();
+        restored.rebuild_logic_membership();
         assert_eq!(restored.live_object_order_snapshot(), expected_order);
         assert_eq!(restored.state_hash(), expected_hash);
         assert!(restored.anim(ids[0]).unwrap().use_cell_drawer());

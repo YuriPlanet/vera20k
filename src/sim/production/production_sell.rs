@@ -1,6 +1,8 @@
 //! Building sale: the Selling mission's visits and the refund. The garrison's
 //! ejection is `sim::passenger::garrison_eject`'s. The computer's low-credit
-//! sale is `BuildingClass::UpdateRepairAndPower`'s (`production_repair`).
+//! sale is `BuildingClass::UpdateRepairAndPower`'s (`production_repair`); its
+//! captured-building sale is `BuildingClass::ChangeOwner`'s tail
+//! ([`sell_after_owner_change`], 0x004492D7..0x00449368).
 //!
 //! A sale starts at `BuildingClass::Sell_Back @ 0x00447110` ([`sell_back`];
 //! a Slave Miner refinery's relocation queues the mission itself,
@@ -24,6 +26,9 @@
 //! visits' timing in `route` rows, stage 1 in `crew` rows, the refund in
 //! `refund` rows, the computer's low-credit sale in `ai_sale` rows), replayed
 //! by `sim::building_construction`'s and `building_sale_oracle_tests`'s tests.
+//! The capture tail's gates and immediate upgrade refunds are covered by
+//! `tools/spatial_oracle/captured_building_sale.json` and
+//! `captured_building_sale_tests`.
 //!
 //! RESIDUALS:
 //! - `RegisterDestruction(null)` at the sale (`vt+0xE0`, `0x0044A1F9`, after
@@ -71,6 +76,10 @@ mod pack_voice_tests;
 #[cfg(test)]
 #[path = "building_upgrade_sale_tests.rs"]
 mod building_upgrade_sale_tests;
+
+#[cfg(test)]
+#[path = "captured_building_sale_tests.rs"]
+mod captured_building_sale_tests;
 
 /// `TechnoTypeClass::GetRefund @ 0x00711F60` (type vtable `+0xB8`) for a live
 /// house (`RET 8`), in its x87 order under the chop control word:
@@ -151,8 +160,82 @@ pub enum SellOrder {
     /// follows the event that sets the building's ArchiveTarget.
     Undeploy,
     /// Control 1: the computer's low-credit sale
-    /// (`BuildingClass::UpdateRepairAndPower 0x0045080D`).
+    /// (`BuildingClass::UpdateRepairAndPower 0x0045080D`) or captured-building
+    /// sale (`BuildingClass::ChangeOwner 0x00449368`).
     Computer,
+}
+
+/// Building ChangeOwner's capture-sale tail (4492D7..449368), after its
+/// factory callbacks. Outside campaign, a computer owner sells a building
+/// constructed for another non-passive House. Recapture by its constructor
+/// House and capture of neutral tech structures leave the building in place.
+pub(crate) fn sell_after_owner_change(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) {
+    if !sim.session.game_mode_nonzero() {
+        return;
+    }
+    let Some(building) = sim
+        .substrate
+        .entities
+        .get(id)
+        .filter(|entity| entity.category() == EntityCategory::Structure)
+    else {
+        return;
+    };
+    let owner = building.owner();
+    let initial_owner = building.initial_owner();
+    if owner == initial_owner
+        || sim
+            .houses
+            .get(&owner)
+            .is_none_or(|house| house.is_controlled_by_human(true))
+        || sim
+            .houses
+            .get(&initial_owner)
+            .is_none_or(|house| house.multiplay_passive())
+    {
+        return;
+    }
+
+    loop {
+        let Some(building) = sim.substrate.entities.get(id) else {
+            return;
+        };
+        let upgrades = building.building_upgrades();
+        //44930C/44935E test the signed byte: only positive levels loop.
+        if upgrades.count() <= 0 {
+            break;
+        }
+        let upgrade = usize::try_from(i32::from(upgrades.count()) - 1)
+            .ok()
+            .and_then(|slot| upgrades.types().get(slot))
+            .copied()
+            .flatten()
+            .and_then(|kind| sim.object_type(kind, rules));
+        let (Some(upgrade), Some(house), Some(factors)) = (
+            upgrade,
+            sim.houses.get(&owner),
+            Simulation::house_cost_factors(&sim.houses, owner),
+        ) else {
+            // Native dereferences a malformed top slot. Keep it intact,
+            // without refunding it or starting the host's sale.
+            return;
+        };
+        // 449310..44935D: type GetRefund(owner,1), GiveMoney, then
+        // RemoveLastUpgrade451690 and the owner's power/radar dirty bytes.
+        // Unlike Selling stage0, this constructs no temporary upgrade object.
+        let refund = type_refund(rules, upgrade, house, &factors, true, true);
+        crate::sim::credit_income::add_credits(&mut sim.houses, owner, refund);
+        let _ = sim.power_down_building_upgrade(id, rules);
+        Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, true);
+    }
+    // Literal1 keeps Sell_Back's existing Selling/C4 and Buildup gates.
+    let _ = sell_back(sim, rules, id, SellOrder::Computer, registry, frame_effects);
 }
 
 /// `BuildingClass::Sell_Back @ 0x00447110` (vt+0x1A0). A building whose

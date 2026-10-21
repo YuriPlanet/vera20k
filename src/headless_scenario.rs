@@ -1692,10 +1692,9 @@ mod retail_construction_tests {
                 seeking = members
                     .iter()
                     .find(|&&id| {
-                        sim.entities().get(id).is_some_and(|entity| {
-                            entity.bunker.link()
-                                == crate::sim::docking::bunker_link::BunkerLink::Approaching(bunker)
-                        })
+                        sim.entities()
+                            .get(id)
+                            .is_some_and(|entity| entity.radio_contacts.slot(0) == Some(bunker))
                     })
                     .map(|&id| (frame, id));
             }
@@ -1767,10 +1766,7 @@ mod retail_construction_tests {
                 on_61 = Some((frame, members));
             } else if line.cursor() >= 2 && on_61.is_some() {
                 let held = sim.entities().get(free).is_none_or(|bunker| {
-                    bunker.bunker.occupant().is_some()
-                        || bunker
-                            .bunker_runtime
-                            .is_some_and(|runtime| runtime.installing_unit().is_some())
+                    bunker.bunker.occupant().is_some() || bunker.radio_contacts.slot(0).is_some()
                 });
                 past = Some((frame, members, held));
                 break;

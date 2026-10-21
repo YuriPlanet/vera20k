@@ -498,6 +498,9 @@ impl MinimapRenderer {
         // Trigger/action precedes LogicClass: action 40 clears all, forces the
         // reverse Building tail, then mobiles return on ordinary +0x4A0 visits.
         let projection = self.radar_projection_facts();
+        // One isolated query per pass: radar lookups stamp their own copy
+        // of the fallback Cell, never the simulation's.
+        let cells = resolved_terrain.map(crate::map::resolved_terrain::NativeCellQuery::isolated);
         self.radar_tracker.remove_absent_or_ineligible(entities);
         if self.radar_tracker.take_action40_building_tail_pending() {
             for stable_id in entities.keys_sorted().into_iter().rev() {
@@ -522,7 +525,7 @@ impl MinimapRenderer {
                     interner,
                     projection,
                     self.playfield_bounds,
-                    resolved_terrain,
+                    cells.as_ref(),
                 );
                 if let Some(event) = self.radar_tracker.update_object(update, true) {
                     self.create_enemy_sensed_event(event, sim_tick, rules);
@@ -545,7 +548,7 @@ impl MinimapRenderer {
                 interner,
                 projection,
                 self.playfield_bounds,
-                resolved_terrain,
+                cells.as_ref(),
             );
             if let Some(event) = self.radar_tracker.update_object(update, false) {
                 self.create_enemy_sensed_event(event, sim_tick, rules);
@@ -580,6 +583,7 @@ impl MinimapRenderer {
                 rules,
                 interner,
                 projection,
+                cells.as_ref(),
             )
         });
         let rgba: &mut Vec<u8> = &mut self.rgba_scratch;

@@ -41,7 +41,7 @@ pub(crate) use target_scan::{can_fire_at, weapon_at_index};
 
 use target_scan::{can_acquire_target, passive_acquire_step};
 
-use super::{FrameEffects, ObjectSubstrate, Simulation};
+use super::{FrameEffects, ObjectKind, ObjectSubstrate, Simulation};
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -334,6 +334,186 @@ impl Simulation {
         .is_water(coord)
     }
 
+    /// One Bullet LogicVector slot.
+    fn visit_logic_bullet(
+        &mut self,
+        id: u64,
+        rules: Option<&RuleSet>,
+        ctx: ObjectAiCtx<'_>,
+    ) -> ObjectAiOutcome {
+        let mut outcome = ObjectAiOutcome::visited();
+        let head = self
+            .projectiles
+            .begin_ai_visit(id)
+            .expect("live Bullet has an AI prefix");
+        // Bullet466826..4668B8 constructs at the old Location after its
+        // visual update, before target/floor queries or flight. Registering
+        // an Anim here also preserves the live Logic cursor on impact.
+        if let Some(rules) = rules {
+            let trailer = self
+                .projectiles
+                .get(id)
+                .and_then(|projectile| projectile.payload().projectile_type())
+                .and_then(|type_id| rules.projectile(self.interner.resolve(type_id)))
+                .and_then(|kind| {
+                    self.projectiles
+                        .trailer(&head, kind, self.session.binary_frame())
+                });
+            if let Some((name, position)) = trailer {
+                self.spawn_named_anim(
+                    rules,
+                    name,
+                    crate::sim::anim_class::AnimWorldCoord {
+                        x: position.x,
+                        y: position.y,
+                        z: position.z,
+                    },
+                    1,
+                    0x600,
+                    0,
+                );
+            }
+        }
+        let projectile = self
+            .projectiles
+            .get(id)
+            .expect("Bullet remains registered across its Trailer constructor");
+        // BulletClass::AI @ 0x00467C3C reads the live firer (+0xB0),
+        // then its +0x84 TechnoType receiver and JumpJet (+0xD94).
+        // Do not cache this on launch: PointerExpired can null the firer.
+        let source_is_jumpjet = rules.is_some_and(|rules| {
+            self.substrate
+                .entities
+                .get(projectile.source_id())
+                .is_some_and(|source| {
+                    self.object_type(source.type_ref(), rules)
+                        .is_some_and(|kind| kind.jumpjet)
+                })
+        });
+        // `BulletClass::AI 0x0046699D` reads the GLOBAL frame counter's
+        // parity for the half-rate course-locked acceleration ramp, so the
+        // Logic slot has to hand the flight loop the current frame.
+        let target_is_aircraft = match projectile.target() {
+            crate::sim::projectile::ProjectileTarget::Entity(target) => {
+                self.substrate.entities.get(target).is_some_and(|entity| {
+                    entity.category() == crate::map::entities::EntityCategory::Aircraft
+                })
+            }
+            _ => false,
+        };
+        let binary_frame = self.session.binary_frame();
+        let shared_cell_dummy = self.effective_shared_cell_dummy();
+        let terrain = self.resolved_terrain.as_ref();
+        let overlay_grid = self.overlay_grid.as_ref();
+        let occupancy = &self.substrate.occupancy;
+        let entities = &self.substrate.entities;
+        let interner = &self.interner;
+        let house_alliances = self.house_alliances.as_map();
+        let collision_world = super::projectile_collision::ProjectileCollisionWorld {
+            terrain,
+            dummy: &shared_cell_dummy,
+            occupancy,
+            entities,
+            terrain_objects: self.terrain_objects.objects(),
+            interner,
+            alliances: house_alliances,
+            overlays: overlay_grid,
+            overlay_registry: ctx.overlay_registry,
+            rules,
+            map_size: self.map_size_diamond(),
+        };
+        let nuke_ball_type = || rules.is_some_and(crate::sim::superweapon::nuke::nuke_ball_type);
+        let nuke = rules
+            .map(|_| crate::sim::projectile::NukeImpactContext::new(interner, &nuke_ball_type));
+        let result = self
+            .projectiles
+            .advance_after_head(
+                head,
+                binary_frame,
+                |target, query| collision_world.target_coordinate(target, query),
+                terrain,
+                &shared_cell_dummy,
+                rules.map_or_else(
+                    || crate::rules::ruleset::GeneralRules::default().gravity,
+                    |rules| rules.general.gravity,
+                ),
+                source_is_jumpjet,
+                target_is_aircraft,
+                rules.map_or_else(
+                    || crate::rules::ruleset::GeneralRules::default().safety_altitude,
+                    |rules| rules.general.safety_altitude,
+                ),
+                |projectile, candidate, phase| {
+                    collision_world.collide(projectile, candidate, phase)
+                },
+                nuke.as_ref(),
+            )
+            .expect("projectile remained present for its Logic slot");
+        let terminal = !result.expired.is_empty() || !result.detonations.is_empty();
+        // A rules-less fixture dispatch has no receiver, so its
+        // detonations are not committed.
+        if let Some(rules) = rules {
+            // The rest of a `NUKE` impact precedes the slot's detonations.
+            for &impact in result.nuke_impacts() {
+                crate::sim::superweapon::nuke::impact(self, rules, impact);
+            }
+            outcome.bridge_state_changed |= self.commit_logic_projectile_detonations(
+                rules,
+                ctx.overlay_registry,
+                &result.detonations,
+                ctx.effects,
+            );
+        }
+        if terminal {
+            let retired = self.retire_non_entity_object(
+                id,
+                super::UninitContext::new(rules, ctx.overlay_registry).with_effects(ctx.effects),
+            );
+            debug_assert!(retired);
+        }
+        outcome
+    }
+
+    /// One Wave LogicVector slot.
+    fn visit_logic_wave(
+        &mut self,
+        id: u64,
+        rules: Option<&RuleSet>,
+        ctx: ObjectAiCtx<'_>,
+    ) -> ObjectAiOutcome {
+        let context =
+            self.wave_update_context(self.waves.get(id).expect("represented Wave"), rules);
+        let terrain = self.resolved_terrain.as_ref();
+        let (request, result) = self
+            .waves
+            .advance_one(id, context, terrain)
+            .expect("wave remained present for its Logic slot");
+        // Fade-terminal UnInit dispatches exact pointer expiry before the
+        // stale AI-20 cell vector is damaged on AI-21.
+        if result.uninitialized {
+            self.clear_active_wave_link(id);
+        }
+        // As for a Bullet, a rules-less fixture dispatch commits nothing.
+        if let Some(request) = request
+            && let Some(rules) = rules
+        {
+            self.commit_logic_wave_damage_request(
+                rules,
+                ctx.overlay_registry,
+                &request,
+                ctx.effects,
+            );
+        }
+        if !result.alive {
+            let retired = self.retire_non_entity_object(
+                id,
+                super::UninitContext::new(rules, ctx.overlay_registry).with_effects(ctx.effects),
+            );
+            debug_assert!(retired);
+        }
+        ObjectAiOutcome::visited()
+    }
+
     /// Dispatch one current LogicVector slot. A finishing death sequence calls
     /// UnInit synchronously here, so compacting removal is visible before the
     /// scheduler increments its cursor.
@@ -344,224 +524,61 @@ impl Simulation {
         ctx: ObjectAiCtx<'_>,
     ) -> ObjectAiOutcome {
         let mut outcome = ObjectAiOutcome::visited();
-        if self.substrate.anims.contains_key(id) {
-            if let Some(rules) = rules {
-                outcome.bridge_state_changed =
-                    self.visit_anim(id, rules, ctx.overlay_registry, ctx.effects);
+        match self.classify_object(id) {
+            Some(ObjectKind::Entity) => {}
+            Some(ObjectKind::Anim) => {
+                if let Some(rules) = rules {
+                    outcome.bridge_state_changed =
+                        self.visit_anim(id, rules, ctx.overlay_registry, ctx.effects);
+                }
+                return outcome;
             }
-            return outcome;
-        }
-        if self.substrate.spotlights.contains_key(id) {
-            if let Some(rules) = rules {
-                self.visit_spotlight(
-                    id,
-                    rules,
-                    super::UninitContext::new(Some(rules), ctx.overlay_registry)
-                        .with_effects(ctx.effects),
-                );
-            }
-            return outcome;
-        }
-        if self.substrate.voxel_anims.contains_key(id) {
-            self.visit_voxel_anim(id, rules);
-            return outcome;
-        }
-        if self.substrate.particle_systems.contains_key(id) {
-            if let Some(rules) = rules {
-                crate::sim::particles::system_ai::tick_particle_system(
-                    self,
-                    rules,
-                    id,
-                    super::UninitContext::new(Some(rules), ctx.overlay_registry)
-                        .with_effects(ctx.effects),
-                );
-            }
-            return outcome;
-        }
-        // One stable id allocator numbers every store, so an entity is no
-        // terrain object: its hashed lookup spares the commonest turn the
-        // terrain map's.
-        if !self.substrate.entities.contains(id) && self.terrain_objects.objects().contains_key(&id)
-        {
-            // TerrainClass::AI @ 0x0071C730 calls ObjectClass::AI first
-            // (`0x0071C738`).
-            self.object_ai_sounds(id, rules, ctx.effects);
-            crate::sim::terrain_spawn::tick_terrain_object_ai(
-                self,
-                id,
-                rules,
-                ctx.overlay_registry,
-                ctx.terrain_spawner_cells,
-            );
-            return outcome;
-        }
-        if self.projectiles.get(id).is_some() {
-            let head = self
-                .projectiles
-                .begin_ai_visit(id)
-                .expect("live Bullet has an AI prefix");
-            // Bullet466826..4668B8 constructs at the old Location after its
-            // visual update, before target/floor queries or flight. Registering
-            // an Anim here also preserves the live Logic cursor on impact.
-            if let Some(rules) = rules {
-                let trailer = self
-                    .projectiles
-                    .get(id)
-                    .and_then(|projectile| projectile.payload().projectile_type())
-                    .and_then(|type_id| rules.projectile(self.interner.resolve(type_id)))
-                    .and_then(|kind| {
-                        self.projectiles
-                            .trailer(&head, kind, self.session.binary_frame())
-                    });
-                if let Some((name, position)) = trailer {
-                    self.spawn_named_anim(
+            Some(ObjectKind::Spotlight) => {
+                if let Some(rules) = rules {
+                    self.visit_spotlight(
+                        id,
                         rules,
-                        name,
-                        crate::sim::anim_class::AnimWorldCoord {
-                            x: position.x,
-                            y: position.y,
-                            z: position.z,
-                        },
-                        1,
-                        0x600,
-                        0,
+                        super::UninitContext::new(Some(rules), ctx.overlay_registry)
+                            .with_effects(ctx.effects),
                     );
                 }
+                return outcome;
             }
-            let projectile = self
-                .projectiles
-                .get(id)
-                .expect("Bullet remains registered across its Trailer constructor");
-            // BulletClass::AI @ 0x00467C3C reads the live firer (+0xB0),
-            // then its +0x84 TechnoType receiver and JumpJet (+0xD94).
-            // Do not cache this on launch: PointerExpired can null the firer.
-            let source_is_jumpjet = rules.is_some_and(|rules| {
-                self.substrate
-                    .entities
-                    .get(projectile.source_id())
-                    .is_some_and(|source| {
-                        self.object_type(source.type_ref(), rules)
-                            .is_some_and(|kind| kind.jumpjet)
-                    })
-            });
-            // `BulletClass::AI 0x0046699D` reads the GLOBAL frame counter's
-            // parity for the half-rate course-locked acceleration ramp, so the
-            // Logic slot has to hand the flight loop the current frame.
-            let target_is_aircraft = match projectile.target() {
-                crate::sim::projectile::ProjectileTarget::Entity(target) => {
-                    self.substrate.entities.get(target).is_some_and(|entity| {
-                        entity.category() == crate::map::entities::EntityCategory::Aircraft
-                    })
+            Some(ObjectKind::VoxelAnim) => {
+                self.visit_voxel_anim(id, rules);
+                return outcome;
+            }
+            Some(ObjectKind::ParticleSystem) => {
+                if let Some(rules) = rules {
+                    crate::sim::particles::system_ai::tick_particle_system(
+                        self,
+                        rules,
+                        id,
+                        super::UninitContext::new(Some(rules), ctx.overlay_registry)
+                            .with_effects(ctx.effects),
+                    );
                 }
-                _ => false,
-            };
-            let binary_frame = self.session.binary_frame();
-            let shared_cell_dummy = self.effective_shared_cell_dummy();
-            let terrain = self.resolved_terrain.as_ref();
-            let overlay_grid = self.overlay_grid.as_ref();
-            let occupancy = &self.substrate.occupancy;
-            let entities = &self.substrate.entities;
-            let interner = &self.interner;
-            let house_alliances = self.house_alliances.as_map();
-            let collision_world = super::projectile_collision::ProjectileCollisionWorld {
-                terrain,
-                dummy: &shared_cell_dummy,
-                occupancy,
-                entities,
-                terrain_objects: self.terrain_objects.objects(),
-                interner,
-                alliances: house_alliances,
-                overlays: overlay_grid,
-                overlay_registry: ctx.overlay_registry,
-                rules,
-                map_size: self.map_size_diamond(),
-            };
-            let nuke_ball_type =
-                || rules.is_some_and(crate::sim::superweapon::nuke::nuke_ball_type);
-            let nuke = rules
-                .map(|_| crate::sim::projectile::NukeImpactContext::new(interner, &nuke_ball_type));
-            let result = self
-                .projectiles
-                .advance_after_head(
-                    head,
-                    binary_frame,
-                    |target, query| collision_world.target_coordinate(target, query),
-                    terrain,
-                    &shared_cell_dummy,
-                    rules.map_or_else(
-                        || crate::rules::ruleset::GeneralRules::default().gravity,
-                        |rules| rules.general.gravity,
-                    ),
-                    source_is_jumpjet,
-                    target_is_aircraft,
-                    rules.map_or_else(
-                        || crate::rules::ruleset::GeneralRules::default().safety_altitude,
-                        |rules| rules.general.safety_altitude,
-                    ),
-                    |projectile, candidate, phase| {
-                        collision_world.collide(projectile, candidate, phase)
-                    },
-                    nuke.as_ref(),
-                )
-                .expect("projectile remained present for its Logic slot");
-            let terminal = !result.expired.is_empty() || !result.detonations.is_empty();
-            // A rules-less fixture dispatch has no receiver, so its
-            // detonations are not committed.
-            if let Some(rules) = rules {
-                // The rest of a `NUKE` impact precedes the slot's detonations.
-                for &impact in result.nuke_impacts() {
-                    crate::sim::superweapon::nuke::impact(self, rules, impact);
-                }
-                outcome.bridge_state_changed |= self.commit_logic_projectile_detonations(
+                return outcome;
+            }
+            Some(ObjectKind::Terrain) => {
+                // TerrainClass::AI @ 0x0071C730 calls ObjectClass::AI first
+                // (`0x0071C738`).
+                self.object_ai_sounds(id, rules, ctx.effects);
+                crate::sim::terrain_spawn::tick_terrain_object_ai(
+                    self,
+                    id,
                     rules,
                     ctx.overlay_registry,
-                    &result.detonations,
-                    ctx.effects,
+                    ctx.terrain_spawner_cells,
                 );
+                return outcome;
             }
-            if terminal {
-                let retired = self.retire_non_entity_object(
-                    id,
-                    super::UninitContext::new(rules, ctx.overlay_registry)
-                        .with_effects(ctx.effects),
-                );
-                debug_assert!(retired);
+            Some(ObjectKind::Projectile) => return self.visit_logic_bullet(id, rules, ctx),
+            Some(ObjectKind::Wave) => return self.visit_logic_wave(id, rules, ctx),
+            // Neither joins Logic (`ObjectKind::joins_logic`).
+            Some(ObjectKind::Smudge | ObjectKind::Particle) | None => {
+                return ObjectAiOutcome::default();
             }
-            return outcome;
-        }
-        if self.waves.get(id).is_some() {
-            let context =
-                self.wave_update_context(self.waves.get(id).expect("represented Wave"), rules);
-            let terrain = self.resolved_terrain.as_ref();
-            let (request, result) = self
-                .waves
-                .advance_one(id, context, terrain)
-                .expect("wave remained present for its Logic slot");
-            // Fade-terminal UnInit dispatches exact pointer expiry before the
-            // stale AI-20 cell vector is damaged on AI-21.
-            if result.uninitialized {
-                self.clear_active_wave_link(id);
-            }
-            // As for a Bullet, a rules-less fixture dispatch commits nothing.
-            if let Some(request) = request
-                && let Some(rules) = rules
-            {
-                self.commit_logic_wave_damage_request(
-                    rules,
-                    ctx.overlay_registry,
-                    &request,
-                    ctx.effects,
-                );
-            }
-            if !result.alive {
-                let retired = self.retire_non_entity_object(
-                    id,
-                    super::UninitContext::new(rules, ctx.overlay_registry)
-                        .with_effects(ctx.effects),
-                );
-                debug_assert!(retired);
-            }
-            return outcome;
         }
 
         // Building43FB20 samples its operational edge before delayed Health0
@@ -820,16 +837,9 @@ fn techno_ai_shell(
                 sim.update_building_absorb_anim(id, rules);
                 sim.update_building_storage_anims(id, rules);
             }
-            let airstrike_active = sim.airstrike_tint_active(id);
-            if let Some(entity) = sim.substrate.entities.get_mut(id) {
-                entity.building_art.capture_tint_sample(
-                    sim.session.binary_frame(),
-                    entity.flashing.flashed(),
-                    entity.invulnerability.as_ref(),
-                    &entity.airstrike_tint,
-                    airstrike_active,
-                );
-            }
+            // UpdateAnimation's slot-anim light (`0x00450A47..0x00450A77`).
+            sim.substrate
+                .relight_building_anims(id, sim.session.binary_frame());
             building_missions::update_animation(sim, id, rules);
             // The ready check after UpdateAnimation (`0x0043FE27`).
             building_missions::ready_commence(&sim.session, &mut sim.substrate, id, true);
@@ -868,7 +878,7 @@ fn techno_ai_shell(
                 return;
             }
             // The Gattling block after the Techno AI (`0x0043FE5B..0x0043FF8B`).
-            flash_step(&mut sim.substrate, id);
+            flash_step(&mut sim.substrate, id, sim.session.binary_frame());
             if let Some(rules) = rules {
                 building_missions::gattling_idle(
                     &sim.interner,
@@ -2157,7 +2167,7 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.tick_native_stage(sim.session.binary_frame() as i32);
     }
-    flash_step(&mut sim.substrate, id);
+    flash_step(&mut sim.substrate, id, sim.session.binary_frame());
     let Some(rules) = rules else {
         return;
     };
@@ -2168,11 +2178,19 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
 /// Shared late Techno6FAC31..6FAC79 slot for every represented category.
 /// The countdown owns no RNG or CdTimer. Native redraw virtual+124 is a
 /// presentation dependency; the existing +F0 supplies its phase bits.
-fn flash_step(substrate: &mut ObjectSubstrate, id: u64) {
-    if ai_alive(substrate, id)
-        && let Some(entity) = substrate.entities.get_mut(id)
-    {
-        entity.flashing.tick();
+/// A building whose countdown ran and flipped its flash phase relights its
+/// slot anims (`0x006FAC62..0x006FACC8`).
+fn flash_step(substrate: &mut ObjectSubstrate, id: u64, frame: u32) {
+    if !ai_alive(substrate, id) {
+        return;
+    }
+    let Some(entity) = substrate.entities.get_mut(id) else {
+        return;
+    };
+    let was_flashed = entity.flashing.flashed();
+    let flipped = entity.flashing.tick() && entity.flashing.flashed() != was_flashed;
+    if flipped && entity.category() == EntityCategory::Structure {
+        substrate.relight_building_anims(id, frame);
     }
 }
 
@@ -4197,9 +4215,7 @@ mod tests {
         let base = MissionHandlerInput {
             category: EntityCategory::Infantry,
             mission: Some(MissionType::Attack),
-            depot_dock_state: false,
             refinery_dock_miner: false,
-            entry_adapter: false,
             moving_or_queued: false,
             has_attack_target: false,
             has_destination: false,
@@ -4294,9 +4310,7 @@ mod tests {
         let base = MissionHandlerInput {
             category: EntityCategory::Infantry,
             mission: Some(MissionType::Attack),
-            depot_dock_state: false,
             refinery_dock_miner: false,
-            entry_adapter: false,
             moving_or_queued: false,
             has_attack_target: false,
             has_destination: false,
@@ -5269,12 +5283,7 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);
         let mut restored = GameSnapshot::load(&bytes).expect("load").sim;
-        Simulation::rebuild_logic_membership(
-            &mut restored.terrain_objects,
-            &mut restored.substrate,
-            &mut restored.projectiles,
-            &mut restored.waves,
-        ); // the real post-deserialize step
+        restored.rebuild_logic_membership(); // the real post-deserialize step
         assert_eq!(
             restored.state_hash(),
             hash_before,

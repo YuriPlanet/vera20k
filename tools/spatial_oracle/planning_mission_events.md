@@ -36,10 +36,9 @@ click route:
 retains the mission/tokens, constructs the event and publishes through `637DD0`.
 Committed records use the existing Event receiver `4C71F6..4C74BA`; no separate
 C4, capture, cargo or docking state belongs to the planner. Ordinary and
-planned Enter share the class setters' Enter arms and VERA's bunker adapter.
-The bunker adapter remains a substitute for the unported Unit
-destination-setter bunker/radio arm; these tests do not certify that larger
-mechanism's parity.
+planned Enter share the class setters' Enter arms, including tank-bunker
+destination and radio contact handling. The joined original-code controls in
+[bunker_entry.md](bunker_entry.md) cover that route separately from the planner.
 
 Special-event distinctions:
 

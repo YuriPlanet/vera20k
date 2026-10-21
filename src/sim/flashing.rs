@@ -58,8 +58,8 @@ impl Flashing {
 impl crate::sim::world::Simulation {
     /// vt+0x148 `Flash(frames)` on a represented object. Every Foot class
     /// keeps `TechnoClass::Flash @ 0x006F9DD0`; `BuildingClass::Flash @
-    /// 0x00456E00` wraps the same body in redraw and relit-anim presentation
-    /// ([`crate::sim::game_entity::GameEntity::flash_base`]). TerrainClass's
+    /// 0x00456E00` wraps the same body and relights its slot anims
+    /// ([`ObjectSubstrate::flash_building`]). TerrainClass's
     /// slot (`0x005F4370`) is an empty `RET 4`, so a terrain object needs no
     /// call.
     ///
@@ -82,7 +82,11 @@ impl crate::sim::world::Simulation {
             return;
         };
         match entity.category() {
-            EntityCategory::Structure | EntityCategory::Aircraft => {}
+            EntityCategory::Structure => {
+                substrate.flash_building(id, frames, session.binary_frame());
+                return;
+            }
+            EntityCategory::Aircraft => {}
             EntityCategory::Infantry | EntityCategory::Unit => {
                 let hidden = session.current_house().is_some_and(|player| {
                     entity.disguise_hides_house_from(

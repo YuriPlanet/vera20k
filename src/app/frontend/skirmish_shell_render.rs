@@ -2017,6 +2017,7 @@ pub(crate) use wol_my_info::paint_wol_my_info_children;
 pub(crate) use wol_options::{paint_shell_sound_children, paint_wol_options_children};
 pub(crate) use wol_page::{
     in_match_page_draw, paint_wol_add_buddy, paint_wol_page_dialog, paint_wol_page_received,
+    paint_wol_verify,
 };
 pub(crate) use wol_persona::{paint_wol_auto_login_children, paint_wol_locale_children};
 mod multiplayer_setup;

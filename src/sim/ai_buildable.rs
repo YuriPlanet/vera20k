@@ -102,9 +102,10 @@ pub fn candidate_allowed(
     {
         return false;
     }
-    if !candidate.forbidden_houses.is_empty()
-        && rules.house_type_mask(&candidate.forbidden_houses) & country.actual != 0
-    {
+    // FirstBuildable505259 skips ForbiddenHouses==-1, including a
+    // nonempty authored list whose parsed OR-mask is all bits set.
+    let forbidden = rules.house_type_mask(&candidate.forbidden_houses);
+    if forbidden != u32::MAX && forbidden & country.actual != 0 {
         return false;
     }
     if !candidate.planned_for_side(side_index) {
