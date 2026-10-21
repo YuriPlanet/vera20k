@@ -62,7 +62,9 @@ def execute(case):
         u.mem_write(0x89E7C0, dwords(104))
     u.mem_write(OWNER + 0x2B4, dwords(TARGET if case['has_target'] else 0))
     u.mem_write(OWNER + 0x6C0, dwords(TYPE))
-    u.mem_write(OWNER + 0x6C4, dwords(0x1C if case['deployed'] else 0))
+    u.mem_write(OWNER + 0x6C4, dwords(case.get('current_doing', 0x1C if case['deployed'] else 0)))
+    u.mem_write(OWNER + 0x294, dwords(SCRATCH + 0x9000 if case.get('airstrike_link') else 0))
+    u.mem_write(OWNER + 0xF8, dwords(case.get('initial_stage', 0)))
     u.mem_write(OWNER + 0x6DB, bytes((case['prone'],)))
     u.mem_write(OWNER + 0x68D, bytes((case['pending'],)))
     u.mem_write(TYPE + 0xE3C, dwords(SEQUENCES))
@@ -86,11 +88,14 @@ def execute(case):
     run_checked(u, ENTRY, (AFTER_START, RET_MAGIC), count=20000)
     target, previous, start, _unused, duration, rot = struct.unpack(
         '<6I', u.mem_read(OWNER + 0x388, 24))
-    return dict(case, facing=target & 0xFFFF, previous=previous & 0xFFFF,
+    result = dict(case, facing=target & 0xFFFF, previous=previous & 0xFFFF,
                 start=start, duration=duration, raw_rot=rot,
                 pending_after=u.mem_read(OWNER + 0x68D, 1)[0],
                 action=struct.unpack('<I', u.mem_read(OWNER + 0x6C4, 4))[0],
                 calls=visited)
+    if case.get('airstrike_control'):
+        result['stage_after'] = struct.unpack('<I', u.mem_read(OWNER + 0xF8, 4))[0]
+    return result
 
 
 def generate():
@@ -121,6 +126,17 @@ def generate():
                              source=[1408, 1408], target=[2176, 1408], target_kind='building')))
     rows.append(execute(dict(base, name='ground_cell_center',
                              source=[1447, 1531], target=[8, 5], target_kind='cell')))
+    # The original prefix tests retained Doing before weapon-slot selection.
+    # The link is only tested for NULL; its manager body is outside this probe.
+    for doing in (0, 40, 41, 28):
+        for slot in (0, 1):
+            rows.append(execute(dict(base, name=f'airstrike_doing_{doing}_slot_{slot}',
+                                     airstrike_control=True, airstrike_link=True,
+                                     current_doing=doing, initial_stage=5, weapon_slot=slot)))
+    for doing in (40, 41):
+        rows.append(execute(dict(base, name=f'no_airstrike_doing_{doing}',
+                                 airstrike_control=True, airstrike_link=False,
+                                 current_doing=doing, initial_stage=5)))
     return rows
 
 
@@ -134,5 +150,5 @@ if __name__ == '__main__':
                      'Frame 100; stationary facing plus one active-turn equality case; pending sequence skips the update.',
                      'One 2x3 building target and one flat level-zero cell target exercise their original coordinate getters.'],
         substitutions=['External virtual weapon-slot and fire-error results; DoAction records its argument.'],
-        scope='59 prefix cases: five action families, ten XY deltas, four refusals, pending/absent target, active-turn equality and building/cell targets; no emission or full AI.',
+        scope='69 prefix cases: the original 59 facing controls plus ten retained-action/Airstrike-link controls; no emission or full AI.',
     ))
