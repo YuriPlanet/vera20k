@@ -23,6 +23,8 @@ fn terrain_retained_xyz_projection_and_piece_z_match_original_render() {
         pixel_size: [1.0; 2],
         offset_x: 0.0,
         offset_y: 0.0,
+        draw_point_offset: [0; 2],
+        extended: false,
     };
     for row in rows {
         let draws = row["draws"].as_array().unwrap();

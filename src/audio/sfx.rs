@@ -42,9 +42,10 @@ use crate::audio::arbiter::{
 use crate::audio::events::SoundSource;
 use crate::audio::voice_queue::VoiceQueue;
 use crate::audio::vox::{VoxNode, VoxQueue, VoxRequest};
+#[cfg(test)]
+use crate::rules::sound_ini::EvaSide;
 use crate::rules::sound_ini::{
-    EvaPriority, EvaRegistry, EvaSide, EvaType, SoundEntry, SoundRegistry, VOLUME_SCALE, control,
-    sound_type,
+    EvaPriority, EvaRegistry, EvaType, SoundEntry, SoundRegistry, VOLUME_SCALE, control, sound_type,
 };
 use crate::util::native_x87::X87Chop53;
 
@@ -1892,16 +1893,15 @@ impl SfxPlayer {
     /// priority is always the entry's own. QueueVoice owns the guarded
     /// PlayNextQueued call, including after a duplicate request.
     ///
-    /// `side` is the session column `VoxClass::SetSide @ 0x007534E0` stored;
-    /// an empty column is still queued and fails at the later PlayFile of
+    /// The process Vox owner retains the bound voice selection. The event's
+    /// sample column is read only when PlayNextQueued dequeues its identity.
+    /// An empty column is still queued and fails at the later PlayFile of
     /// `".WAV"`. Returns whether the request entered a queue/pending slot.
     pub fn play_eva(
         &mut self,
         event: &str,
         type_override: Option<EvaType>,
         eva_registry: &EvaRegistry,
-        side: EvaSide,
-        registry: &SoundRegistry,
         assets: &AssetManager,
         audio_index: Option<&crate::assets::audio_bag::AudioIndex>,
     ) -> bool {
@@ -1910,8 +1910,6 @@ impl SfxPlayer {
             type_override,
             None,
             eva_registry,
-            side,
-            registry,
             assets,
             audio_index,
         )
@@ -1928,8 +1926,6 @@ impl SfxPlayer {
         type_override: Option<EvaType>,
         priority_override: Option<EvaPriority>,
         eva_registry: &EvaRegistry,
-        side: EvaSide,
-        registry: &SoundRegistry,
         assets: &AssetManager,
         audio_index: Option<&crate::assets::audio_bag::AudioIndex>,
     ) -> bool {
@@ -1939,7 +1935,6 @@ impl SfxPlayer {
         let effect = self.vox.queue_voice(
             VoxRequest {
                 event: &entry.name,
-                sample: entry.column(side).unwrap_or(""),
                 eva_type: entry.eva_type,
                 priority: entry.priority,
             },
@@ -1952,7 +1947,7 @@ impl SfxPlayer {
             self.stop_eva_stream();
         }
         if effect.advance_queue {
-            self.advance_voice_queue(registry, assets, audio_index);
+            self.advance_voice_queue(eva_registry, assets, audio_index);
         }
         effect.inserted
     }
@@ -2037,6 +2032,12 @@ impl SfxPlayer {
     pub(crate) fn resume_eva(&mut self) {
         self.vox.resume();
     }
+
+    /// InitSideMixFiles534FAC / successful-load67E761 bind the incoming
+    /// Scenario.Side; ordinary requests never infer it from a live House.
+    pub(crate) fn set_eva_side(&mut self, side: i32) {
+        self.vox.set_side(side);
+    }
     pub(crate) fn eva_entry_done(&self, index: i32, registry: &EvaRegistry) -> bool {
         registry
             .entry_by_index(index)
@@ -2070,7 +2071,7 @@ impl SfxPlayer {
     /// (the stock `Dummy` columns of `EVA_PsychicDominatorActivated`).
     pub fn advance_voice_queue(
         &mut self,
-        registry: &SoundRegistry,
+        eva_registry: &EvaRegistry,
         assets: &AssetManager,
         audio_index: Option<&crate::assets::audio_bag::AudioIndex>,
     ) {
@@ -2081,26 +2082,29 @@ impl SfxPlayer {
         let Some(node) = self.vox.take_next(self.now_ms, busy) else {
             return;
         };
-        self.start_eva_node(node, registry, assets, audio_index);
+        self.start_eva_node(node, eva_registry, assets, audio_index);
     }
 
     fn start_eva_node(
         &mut self,
         node: VoxNode,
-        registry: &SoundRegistry,
+        eva_registry: &EvaRegistry,
         assets: &AssetManager,
         audio_index: Option<&crate::assets::audio_bag::AudioIndex>,
     ) {
-        let _ = registry;
         // Native PlayFile(".WAV",1) fails after dequeue for an empty column.
         // It must not prevent QueueVoice from interrupting an existing line.
-        if node.sample.is_empty() {
+        let Some(sample) = self
+            .vox
+            .sample_for(&node, eva_registry)
+            .filter(|sample| !sample.is_empty())
+        else {
             return;
-        }
+        };
         // Vox75295C plays the column's physical filename directly. It does
         // not resolve a Voc entry or consume Main sample-selection draws.
-        let Some(decoded) = load_sfx(&node.sample, assets, audio_index) else {
-            log::debug!("EVA {} has no sample {}", node.event, node.sample);
+        let Some(decoded) = load_sfx(sample, assets, audio_index) else {
+            log::debug!("EVA {} has no sample {}", node.event, sample);
             return;
         };
         // `take_next` only hands out a node once the stream is not playing,
@@ -2200,6 +2204,7 @@ impl SfxPlayer {
         &mut self,
         now_ms: u64,
         registry: &SoundRegistry,
+        eva_registry: &EvaRegistry,
         assets: &AssetManager,
         audio_index: Option<&crate::assets::audio_bag::AudioIndex>,
         rng: &mut PlaybackDraws,
@@ -2260,7 +2265,7 @@ impl SfxPlayer {
         // oracle's UnitReady consumer controls; its single native selector
         // supplies the stock device regression below.
         // PlayEVA and explicit voice wait loops have their own immediate calls.
-        self.advance_voice_queue(registry, assets, audio_index);
+        self.advance_voice_queue(eva_registry, assets, audio_index);
     }
 
     /// Attach the source prepared synchronously in StartPlayback4054A0's
@@ -2508,11 +2513,11 @@ impl SfxPlayer {
     /// remains, mirroring the poll performed inside native exit wait loops.
     pub fn pump_and_check_voices(
         &mut self,
-        registry: &SoundRegistry,
+        eva_registry: &EvaRegistry,
         assets: &AssetManager,
         audio_index: Option<&crate::assets::audio_bag::AudioIndex>,
     ) -> bool {
-        self.advance_voice_queue(registry, assets, audio_index);
+        self.advance_voice_queue(eva_registry, assets, audio_index);
         self.voices_active()
     }
 
@@ -2918,6 +2923,7 @@ mod tests {
             player: &mut SfxPlayer,
             now: u64,
             registry: &SoundRegistry,
+            eva_registry: &EvaRegistry,
             assets: &AssetManager,
             index: Option<&crate::assets::audio_bag::AudioIndex>,
         ) {
@@ -2925,7 +2931,7 @@ mod tests {
             let mut draw = PlaybackDraws::new(move |low, high| main.ranged(low, high));
             player.service_device_outputs(now);
             if self.clock.admit(now) {
-                player.service_events(now, registry, assets, index, &mut draw);
+                player.service_events(now, registry, eva_registry, assets, index, &mut draw);
             }
         }
     }
@@ -3647,11 +3653,8 @@ mod tests {
                     })
                     .sum::<usize>();
             assert!(expected_count <= 1);
-            for (side_index, side) in [
-                (0, EvaSide::Allied),
-                (1, EvaSide::Russian),
-                (2, EvaSide::Yuri),
-            ] {
+            for side_index in 0..3 {
+                player.set_eva_side(side_index);
                 player.stop_all();
                 player.set_paused(false, 1);
                 player.set_paused(true, 1);
@@ -3661,8 +3664,6 @@ mod tests {
                         Some(EvaType::Interrupt),
                         None,
                         definitions.eva(),
-                        side,
-                        definitions.sounds(),
                         &assets,
                         None
                     ),
@@ -3678,8 +3679,6 @@ mod tests {
                     name,
                     Some(EvaType::Interrupt),
                     definitions.eva(),
-                    side,
-                    definitions.sounds(),
                     &assets,
                     None
                 ));
@@ -3697,7 +3696,10 @@ mod tests {
                         row["entry"]["priority"].as_i64().unwrap() as i32
                     );
                     assert_eq!(
-                        node.sample,
+                        player
+                            .vox
+                            .sample_for(&node, definitions.eva())
+                            .unwrap_or(""),
                         row["entry"]["columns"][side_index.to_string()]
                             .as_str()
                             .unwrap()
@@ -3754,16 +3756,15 @@ mod tests {
             .unwrap();
         player.queue_unit_voice(7, "GIMove");
         player.visit_unit_voice(7, definitions.sounds());
-        service.pump(&mut player, now, definitions.sounds(), &assets, index);
-        assert!(player.play_eva(
-            "EVA_UnitReady",
-            None,
-            definitions.eva(),
-            EvaSide::Allied,
+        service.pump(
+            &mut player,
+            now,
             definitions.sounds(),
+            definitions.eva(),
             &assets,
             index,
-        ));
+        );
+        assert!(player.play_eva("EVA_UnitReady", None, definitions.eva(), &assets, index));
         assert_eq!(
             player.eva_player.as_ref().unwrap().player.volume() > 0.0,
             voice_volume > 0.0,
@@ -3832,6 +3833,7 @@ mod tests {
             &mut player,
             now + 1_000,
             definitions.sounds(),
+            definitions.eva(),
             &assets,
             index,
         );
@@ -3893,6 +3895,7 @@ mod tests {
             &mut player,
             1_000,
             definitions.sounds(),
+            definitions.eva(),
             &assets,
             audio_index,
         );
@@ -3900,10 +3903,8 @@ mod tests {
             "EVA_UnitReady",
             None,
             definitions.eva(),
-            EvaSide::Allied,
-            definitions.sounds(),
             &assets,
-            audio_index,
+            audio_index
         ));
         assert!(player.eva_stream_busy());
         let eva_current = player.vox.current().cloned();
@@ -4040,6 +4041,7 @@ mod tests {
                     &mut player,
                     epoch.elapsed().as_millis() as u64,
                     definitions.sounds(),
+                    definitions.eva(),
                     &assets,
                     audio_index,
                 );
@@ -4064,6 +4066,7 @@ mod tests {
                     &mut player,
                     epoch.elapsed().as_millis() as u64,
                     definitions.sounds(),
+                    definitions.eva(),
                     &assets,
                     audio_index,
                 );
@@ -4190,6 +4193,7 @@ mod tests {
                 player,
                 epoch.elapsed().as_millis() as u64,
                 sounds,
+                definitions.eva(),
                 &assets,
                 audio_index,
             );
@@ -4253,7 +4257,7 @@ mod tests {
             assert_eq!(prior["frequency"], 1_000_000);
             prior["counter"].as_u64().unwrap() / 1_000
         };
-        let compare = |player: &SfxPlayer, row: &serde_json::Value| {
+        let compare = |player: &SfxPlayer, row: &serde_json::Value, registry: &EvaRegistry| {
             let after = &row["after"];
             let label = row["label"].as_str().unwrap();
             assert_eq!(
@@ -4283,7 +4287,10 @@ mod tests {
                     current.event,
                     selected["name"].as_str().unwrap().to_ascii_uppercase()
                 );
-                assert_eq!(current.sample, selected["allied"].as_str().unwrap());
+                assert_eq!(
+                    player.vox.sample_for(current, registry).unwrap_or(""),
+                    selected["allied"].as_str().unwrap()
+                );
             }
             // The stream is not a Voc channel: the shared Voc pool stays free.
             assert!(
@@ -4329,22 +4336,21 @@ mod tests {
             "EVA_UnitReady",
             None,
             definitions.eva(),
-            EvaSide::Allied,
-            definitions.sounds(),
             &assets,
-            audio_index,
+            audio_index
         ));
         service.pump(
             &mut player,
             now_ms(paused),
             definitions.sounds(),
+            definitions.eva(),
             &assets,
             audio_index,
         );
-        compare(&player, paused);
+        compare(&player, paused, definitions.eva());
         let unpaused = step("cadence", "original_unpause_keeps_native_pending");
         player.set_paused(false, now_ms(unpaused));
-        compare(&player, unpaused);
+        compare(&player, unpaused, definitions.eva());
         for label in [
             "whole_periodic_service_exact_33ms",
             "whole_periodic_service_34ms_real_stock_wave",
@@ -4354,10 +4360,11 @@ mod tests {
                 &mut player,
                 now_ms(native),
                 definitions.sounds(),
+                definitions.eva(),
                 &assets,
                 audio_index,
             );
-            compare(&player, native);
+            compare(&player, native, definitions.eva());
         }
         // Let the actual stock decoder/mixer queue finish. The controlled
         // wall-clock input2089 matches the native completed-stream witness;
@@ -4373,18 +4380,19 @@ mod tests {
                 &mut player,
                 now_ms(native),
                 definitions.sounds(),
+                definitions.eva(),
                 &assets,
                 audio_index,
             );
-            compare(&player, native);
+            compare(&player, native, definitions.eva());
         }
         // The explicit voice wait-loop caller advances independently of the
         // periodic pass. Native752760 at2590 retires current/state2 even though
         // that is only1ms after the last periodic pass.
         let retired = step("buffer", "original_payload_end_after_gap_queue_visit");
         player.set_paused(false, now_ms(retired));
-        assert!(!player.pump_and_check_voices(definitions.sounds(), &assets, audio_index));
-        compare(&player, retired);
+        assert!(!player.pump_and_check_voices(definitions.eva(), &assets, audio_index));
+        compare(&player, retired, definitions.eva());
         player.stop_all();
         assert_eq!(player.vox.queued_count(), 0);
         assert!(player.vox.current().is_none());

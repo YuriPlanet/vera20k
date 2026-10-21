@@ -161,6 +161,41 @@ impl ShpFile {
         Ok(Self::frame_at(data, index)?.pixels)
     }
 
+    /// `ShapeFile::GetFrameData @ 69E740`: encoded bytes from this frame's
+    /// file offset onward, without RLE decoding or truncation at the next
+    /// frame. The optional depth surface in CC_Draw_Shape uses this view.
+    pub fn encoded_frame_data(data: &[u8], index: usize) -> Result<&[u8], AssetError> {
+        let count = Self::frame_count_from_bytes(data)?;
+        if index >= usize::from(count) {
+            return Err(AssetError::ShpFrameOutOfRange {
+                index: index as u16,
+                count,
+            });
+        }
+        Self::frame_data_at(data, index)
+    }
+
+    fn frame_data_at(data: &[u8], i: usize) -> Result<&[u8], AssetError> {
+        let start = read_u32_le(data, 8 + i * 24 + 20) as usize;
+        if start == 0 {
+            return Err(AssetError::ParseError {
+                format: "SHP".to_string(),
+                detail: format!("Frame {} is nonempty but has a zero data offset", i),
+            });
+        }
+        data.get(start..)
+            .filter(|bytes| !bytes.is_empty())
+            .ok_or_else(|| AssetError::ParseError {
+                format: "SHP".to_string(),
+                detail: format!(
+                    "Frame {} data offset {} is past end of file ({})",
+                    i,
+                    start,
+                    data.len()
+                ),
+            })
+    }
+
     /// Frame `i`'s header and decoded pixels; the caller checked that the
     /// header table holds it.
     fn frame_at(data: &[u8], i: usize) -> Result<ShpFrame, AssetError> {
@@ -180,7 +215,6 @@ impl ShpFile {
             data[hdr_offset + 13],
             data[hdr_offset + 14],
         ];
-        let data_offset: u32 = read_u32_le(data, hdr_offset + 20);
 
         // A frame with zero dimensions has no pixel data (empty frame).
         if frame_width == 0 || frame_height == 0 {
@@ -196,29 +230,8 @@ impl ShpFile {
         }
 
         let pixel_count: usize = frame_width as usize * frame_height as usize;
-        let frame_data_start: usize = data_offset as usize;
-
-        if data_offset == 0 {
-            return Err(AssetError::ParseError {
-                format: "SHP".to_string(),
-                detail: format!("Frame {} is nonempty but has a zero data offset", i),
-            });
-        }
-
-        // Bounds check: make sure data_offset points inside the file.
-        if frame_data_start >= data.len() {
-            return Err(AssetError::ParseError {
-                format: "SHP".to_string(),
-                detail: format!(
-                    "Frame {} data offset {} is past end of file ({})",
-                    i,
-                    frame_data_start,
-                    data.len()
-                ),
-            });
-        }
-
-        let frame_slice: &[u8] = &data[frame_data_start..];
+        let frame_slice = Self::frame_data_at(data, i)?;
+        let frame_data_start = data.len() - frame_slice.len();
         let pixels: Vec<u8> = if format & FORMAT_RLE_ZERO_BIT != 0 {
             decode_rle_frame(frame_slice, frame_width as usize, frame_height as usize)?
         } else {
@@ -364,6 +377,18 @@ mod tests {
         data.truncate(8 + 24);
         data.extend_from_slice(payload);
         data
+    }
+
+    #[test]
+    fn encoded_frame_view_preserves_rle_and_following_file_bytes() {
+        let payload = [4, 0, 0, 2, 4, 0, 7, 8, 0xF1, 0x82];
+        let data = make_test_shp_with_format(3, &payload);
+        assert_eq!(ShpFile::decode_frame(&data, 0).unwrap(), [0, 0, 7, 8]);
+        assert_eq!(ShpFile::encoded_frame_data(&data, 0).unwrap(), payload);
+        assert!(ShpFile::encoded_frame_data(&data, 1).is_err());
+        let mut invalid = data;
+        invalid[28..32].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(ShpFile::encoded_frame_data(&invalid, 0).is_err());
     }
 
     #[test]

@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original non-undeploy sale completion with live Tag callbacks, refund and current-owner payment; stop before Limbo. Separate ALL01 counted-reader/callback prefix stops before action51. Native-only action32 fatal Selling composition is retained without a Rust full-death comparison.",
+  "assumptions": [
+    "Each row uses a fresh runtime VM from the reused physical Engineer joined-reader heap. Original Building construction and GrandOpening execute before the prepared Selling19/status2 boundary. Original45B1C0 initializes the referenced static foundation lists; Object CRT height initializers come from the shared Engineer fixture.",
+    "Map/House admission is supplied: marked/alive/nonlimbo GAPOWR at10,10, clear32x32 cells, TileIndex=-1, declared visible flags/footprint, House building/tracking lists and empty FactoryPlant membership. Original50BF60 computes the neutral FactoryPlant factors. No full House constructor, map load, Unlimbo or preceding Selling frames are claimed.",
+    "Actual constructors/counted readers create TriggerType/TagType/TEvent/TAction definitions. Original FindOrAllocateTag and ObjectReplaceTag attach them. Selected registry capacity excludes existing live Object/Techno arrays. A subclass lifts only the parent Tag=NULL assertion; it does not change registers, stack, EIP, vtables or any native callback result.",
+    "OLD and NEW are human Houses in runtime mode1, OLD player-controlled and NEW not. NEW Country CostBuildingsMult=.75 is read by original511BC1..511BE0. Per-row native_inputs records the measured physical type and country fields. Whole owner mutation, nested RecordKill, Tag firing guards, live Tag reread, refund and AddCredits execute.",
+    "ALL01 selected physical records are attached to the controlled GAPOWR and execution stops before6DD8B0 action51. This is not the complete physical GASPYSAT sale or its map effects. The Rust actual-map integration separately executes ordinary SELL through authored51/18/54.",
+    "Action32 uses original dynamic Techno scan, physical C4/Super factory/read/binding, BuildingReceiveDamage and destruction effects. Before outer Limbo, HP is zero but the original Selling death timer retains Alive. Outer refund/payment continue. Its real debris Anim/RNG/identity effects are native-only evidence, not a claim of a Rust defect or full-death differential comparison.",
+    "Complete Main/Scenario/Mapgen state equality is measured per row; identity/allocation deltas and actual Anim constructor names are observed. The death row intentionally advances RNG. Executable PE sections and declared Building/House vtable spans are compared against original bytes. Measured image digest is provenance, not a build hash gate.",
+    "Static +53C census/save-load discussion is separate from execution: constructor0 and sale-1 execute here; InitManagers/damage-source writers and raw720-byte save/load persistence are static evidence, not a whole native roundtrip."
+  ],
+  "substitutions": [
+    "Existing allocator/free arena transport, TLS/interlocked, OS-audio/clock and COM platform interfaces are inherited. No RecordKill/Tag/Trigger/TAction/ChangeOwner/refund/AddCredits result is substituted.",
+    "Construction presentation leaves451F60(ret8),452170(ret4),456FB0(ret4),705D70(ret0) retain existing declared boundaries. Per-row reached_presentation/reached_platform identify observed entries. Platform arena release retains bytes for bounded observation; no deferred queue drain runs after the sale boundary."
+  ],
+  "entry_points": {
+    "begin": "0x0044A1E8",
+    "end_before_limbo": "0x0044A22C",
+    "building_constructor": "0x0043B740",
+    "foundation_initializer": "0x0045B1C0",
+    "grand_opening": "0x00445F80",
+    "record_kill": "0x00702D40",
+    "tag_event": "0x006E53A0",
+    "trigger_register": "0x007264C0",
+    "trigger_actions": "0x007265C0",
+    "action_dispatch": "0x006DD8B0",
+    "action_change_owner": "0x006E0AA0",
+    "building_change_owner": "0x00448260",
+    "techno_change_owner": "0x007014A0",
+    "refund": "0x0070ADA0",
+    "add_credits": "0x004F9950",
+    "action_destroy_attached": "0x006E2050",
+    "building_receive_damage": "0x00442230",
+    "destruction_effects": "0x004415F0",
+    "country_cost_reader": "0x00511BC1"
+  },
+  "checked_vtable_ranges": [
+    {
+      "start": "0x007E3EBC",
+      "bytes": 1280
+    },
+    {
+      "start": "0x007EA8A0",
+      "bytes": 512
+    }
+  ],
+  "replay_command": "python -m tools.spatial_oracle.building_sale_triggers",
+  "payload_sha256": "3da55eeda952202bebe859ca3318e27378c00d1fed728fab0256f9173623d716"
+}

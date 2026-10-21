@@ -54,6 +54,10 @@ impl NativeTiberiumOverlayRange {
     }
 }
 
+/// Cold-read projection of TiberiumClass::ReadINI721C5C..721CD6.
+/// Native Image2 leaves the previous extra count intact: Image1 then Image2
+/// retains8, whereas constructor then Image2 has0. The existing rules model
+/// retains only the final Image, so layered reread history is not represented.
 fn native_tiberium_overlay_range(image: u8) -> NativeTiberiumOverlayRange {
     match image {
         2 => NativeTiberiumOverlayRange::new(
@@ -529,32 +533,53 @@ impl OverlayTypeRegistry {
         tiberium_types.types().first().map(|ty| ty.id)
     }
 
-    /// Resolve the flat resource image selected for one rendered cell.
+    /// Registered image slots the native resource display can select.
+    /// ReadINI721C5C..721CD6 installs12 primary slots and8 extras, except
+    /// a cold Cruentus (Image2) read, which has no extras. This shares the range owner
+    /// used by OverlayToTiberiumIndex5FDD20 rather than inferring filenames.
+    pub fn tiberium_display_variant_ids(&self, ty: &TiberiumType) -> std::ops::Range<u8> {
+        let range = native_tiberium_overlay_range(ty.image);
+        range.base as u8
+            ..(range.base + range.primary_count + range.extra_count).min(self.names.len()) as u8
+    }
+
+    /// Resolve the resource image selected for one rendered cell.
     ///
     /// The stored overlay identity remains authoritative for resource type and
     /// density. This returns only the display identity; callers keep the Cell
     /// overlay-data byte as the SHP frame.
     ///
     /// Active YR `CellClass__DrawOverlay_Body @ 0x0047F6A0` selects the parsed
-    /// TiberiumClass from the stored overlay, then indexes that type's 12 flat
-    /// images with `((short)rx * (short)ry) % 12`. Preserve the signed native
-    /// intermediates: add the possibly-negative remainder to the signed family
-    /// base ordinal before validating the final registered overlay identity.
-    pub fn flat_tiberium_display_overlay_id(
+    /// TiberiumClass from the stored overlay. Flat47F8D7 uses product%12;
+    /// slope47F888 uses2 extras per slope for the green families. Preserve
+    /// signed coordinate products/remainders before validating the final ID.
+    /// Invalid slopes and cold Cruentus slopes have no valid native draw.
+    pub fn tiberium_display_overlay_id(
         &self,
         tiberium_types: &TiberiumTypeRegistry,
         overlay_id: u8,
         rx: u16,
         ry: u16,
+        slope: u8,
     ) -> Option<u8> {
         let ty = self
             .tiberium_type_for_overlay(tiberium_types, overlay_id)
             .and_then(|id| tiberium_types.get(id))?;
-        let variants = self.flat_tiberium_variant_ids(ty)?;
+        let range = native_tiberium_overlay_range(ty.image);
         let signed_rx = i32::from(rx as i16);
         let signed_ry = i32::from(ry as i16);
-        let variant = signed_rx.wrapping_mul(signed_ry) % TIBERIUM_FLAT_VARIANT_COUNT as i32;
-        let display_ordinal = i32::from(variants[0]).wrapping_add(variant);
+        let product = signed_rx.wrapping_mul(signed_ry);
+        let display_ordinal = if slope == 0 {
+            (range.base as i32).wrapping_add(product % range.primary_count as i32)
+        } else {
+            let per_slope = range.extra_count as i32 / 4;
+            if slope > 4 || per_slope == 0 {
+                return None;
+            }
+            (range.base as i32 + range.primary_count as i32)
+                .wrapping_add((i32::from(slope) - 1) * per_slope)
+                .wrapping_add(product % per_slope)
+        };
         let display_id = u8::try_from(display_ordinal).ok()?;
         self.name(display_id).map(|_| display_id)
     }
@@ -1153,17 +1178,17 @@ Image=5
         let gem01 = overlays.id_for_name("GEM01").expect("GEM01");
 
         assert_eq!(
-            overlays.flat_tiberium_display_overlay_id(&tiberiums, tib12, 4, 7),
+            overlays.tiberium_display_overlay_id(&tiberiums, tib12, 4, 7, 0),
             Some(tib05),
             "4 * 7 % 12 selects the fifth Riparius flat image"
         );
         assert_eq!(
-            overlays.flat_tiberium_display_overlay_id(&tiberiums, gem12, 0, 7),
+            overlays.tiberium_display_overlay_id(&tiberiums, gem12, 0, 7, 0),
             Some(gem01),
             "the stored Cruentus identity selects the GEM flat-image family"
         );
         assert_eq!(
-            overlays.flat_tiberium_display_overlay_id(&tiberiums, tib12, u16::MAX, 1),
+            overlays.tiberium_display_overlay_id(&tiberiums, tib12, u16::MAX, 1, 0),
             tib01.checked_sub(1),
             "(short)0xffff is -1, so the signed family-base addition selects base - 1"
         );

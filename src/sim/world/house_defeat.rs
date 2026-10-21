@@ -9,6 +9,10 @@
 //! defeated (`MPlayer_Defeated @ 0x004FC0B0`, its only caller). With the retail
 //! `ShortGame=yes`, losing the last counted building while no `BaseUnit=` is
 //! tracked destroys the whole remaining army in that one call.
+//! Optional Ares4F8EBD ->10024990 replaces only the admission predicate with
+//! HouseTracking's retained KeepAlive/full BaseUnit/Foot-presence decision.
+//! Executed controls: tools/spatial_oracle/ares_house_survival.md. The existing
+//! Blowup_All and MPlayer_Defeated downstream owners remain shared.
 //!
 //! Blowup_All walks TechnoClass::Array, limbo objects included, re-reading the
 //! count each step. An object whose original owner
@@ -191,19 +195,6 @@ impl Simulation {
         let defeat_gate = defeat_pass
             && self.session.game_mode_nonzero()
             && (self.session.binary_frame() as i32) > 0;
-        // The interner resolves names case-insensitively, as native type
-        // lookups do.
-        let base_units = std::array::from_fn(|slot| {
-            rules
-                .general
-                .base_unit_types
-                .get(slot)
-                .and_then(|name| self.interner.get(name))
-        });
-        let build_refinery_2 = rules
-            .build_refinery_types
-            .get(2)
-            .and_then(|name| self.interner.get(name));
         // Logic55B68D reloads the live House count after each complete body.
         // A House's power/radar and activation must precede its own teams,
         // EVA, defeat and production; no global half-body sweeps intervene.
@@ -242,7 +233,7 @@ impl Simulation {
             crate::sim::ai_team_creation::update_team_creation(self, rules, owner, frame_effects);
             crate::sim::house_eva::update_house_eva(self, rules, owner);
             crate::sim::superweapon::tick_house_superweapon_instances(self, rules, owner);
-            if defeat_gate && self.house_holds_nothing(owner, &base_units, build_refinery_2) {
+            if defeat_gate && self.house_holds_nothing(owner, rules) {
                 self.house_blowup(
                     owner,
                     HouseBlowupSubset::All,
@@ -274,23 +265,45 @@ impl Simulation {
     }
     /// The defeat gate's test (`0x004F8E92..0x004F8F77`): a house neither
     /// defeated nor `MultiplayPassive=` whose counts say it holds nothing.
-    fn house_holds_nothing(
-        &self,
-        owner: InternedId,
-        base_units: &[Option<InternedId>; 3],
-        build_refinery_2: Option<InternedId>,
-    ) -> bool {
+    fn house_holds_nothing(&self, owner: InternedId, rules: &RuleSet) -> bool {
         let Some(house) = self.houses.get(&owner) else {
             return false;
         };
         if house.is_defeated() || house.multiplay_passive() {
             return false;
         }
-        if self.session.game_options().short_game {
-            !house.tracking().short_game_alive(base_units)
-        } else {
-            !house.tracking().normal_game_alive(build_refinery_2)
-        }
+        // Pure lazy type lookups: retail consumes exactly three entries;
+        // Ares100249B7 consumes the full ordered BaseUnit vector, no allocation.
+        let base_units = rules
+            .general
+            .base_unit_types
+            .iter()
+            .map(|name| self.interner.get(name));
+        let build_refinery_2 = rules
+            .build_refinery_types
+            .get(2)
+            .and_then(|name| self.interner.get(name));
+        !house.tracking().game_alive(
+            self.session.game_options().short_game,
+            base_units,
+            build_refinery_2,
+            |category| {
+                // Native scans Unit/Infantry/Aircraft arrays without mutations.
+                // The existing Foot registry has the same candidate set; its
+                // different inter-class order cannot change this pure boolean.
+                (0..self.substrate.entities.foot_registry_len()).any(|index| {
+                    self.substrate
+                        .entities
+                        .foot_registry_at(index)
+                        .and_then(|id| self.substrate.entities.get(id))
+                        .is_some_and(|entity| {
+                            entity.category() == category
+                                && entity.owner() == owner
+                                && (!entity.in_limbo() || entity.parasite.class().is_some())
+                        })
+                })
+            },
+        )
     }
 
     /// `HouseClass::MPlayer_Defeated @ 0x004FC0B0`, the represented part:

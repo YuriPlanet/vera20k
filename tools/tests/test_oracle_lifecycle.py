@@ -25,6 +25,8 @@ PRODUCERS = tuple('tools.projectile_oracle.' + name for name in (
      'tools.spatial_oracle.captured_building_sale',
      'tools.spatial_oracle.anim_translucency',
      'tools.spatial_oracle.building_anim_translucency',
+     'tools.spatial_oracle.building_sale_triggers',
+     'tools.spatial_oracle.campaign_hunt',
      'tools.procedural_drawing_oracle.airstrike_beam')
 HELPERS = ('tools.native_slope', 'tools.projectile_oracle.collision_fixture',
            'tools.spatial_oracle.building_anim_translucency_setup',

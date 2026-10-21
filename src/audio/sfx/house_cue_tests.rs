@@ -143,7 +143,14 @@ fn registered_house_cues_service_main_overlap_and_retirement_match_original() {
                 let mut clock = arbiter::AudioServiceClock::default();
                 let start = history["initial"]["pump_last_ms"].as_u64().unwrap();
                 assert!(clock.admit(start));
-                player.service_events(start, registry, assets, index, &mut retained_draws(&main));
+                player.service_events(
+                    start,
+                    registry,
+                    &crate::rules::sound_ini::EvaRegistry::default(),
+                    assets,
+                    index,
+                    &mut retained_draws(&main),
+                );
                 assert_eq!(
                     main.native_state_hex(),
                     main_hex(native, &history["initial"])
@@ -255,7 +262,14 @@ fn registered_house_cues_service_main_overlap_and_retirement_match_original() {
                                     != boundary["after"]["pump_last_ms"]
                             );
                             if admitted {
-                                player.service_events(now, registry, assets, index, &mut draws);
+                                player.service_events(
+                                    now,
+                                    registry,
+                                    &crate::rules::sound_ini::EvaRegistry::default(),
+                                    assets,
+                                    index,
+                                    &mut draws,
+                                );
                             }
                             for output in player.live.values() {
                                 output.player.pause();

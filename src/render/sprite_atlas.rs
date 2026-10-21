@@ -55,7 +55,9 @@ fn register_effect_anim_frames(
     shadow: bool,
 ) -> u16 {
     let count = available_effect_anim_frame_count(raw_count, scheduler_owned, shadow);
-    for frame in 0..count {
+    // DrawIt selects the shadow from the physical second half of the SHP.
+    // Residency includes that companion without extending animation timing.
+    for frame in 0..raw_count {
         needed.insert(ShpSpriteKey {
             palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
             type_id: anim_type.to_string(),
@@ -104,9 +106,7 @@ fn buildup_shp_candidates(
         .map_or(type_id, |object| object.image.as_str());
     art.resolve_metadata_entry(type_id, rules_image)
         .and_then(|entry| entry.buildup.as_deref())
-        .map(|buildup| {
-            crate::rules::buildup_asset_catalog::buildup_shp_names(buildup, theater_name).to_vec()
-        })
+        .map(|buildup| art_data::building_shp_names(buildup, theater_name).to_vec())
         .unwrap_or_default()
 }
 
@@ -121,8 +121,8 @@ fn find_shp<'a, 'n>(
     })
 }
 
-/// A building animation's usable frame count and the file it was counted in,
-/// resolved as AnimTypeClass loads its image. Only the SHP header is read.
+/// A building animation's usable and physical frame counts and their source
+/// file, resolved as AnimTypeClass loads its image. Only the header is read.
 fn scan_building_anim_frame_count(
     asset_manager: &AssetManager,
     art_reg: &ArtRegistry,
@@ -130,7 +130,7 @@ fn scan_building_anim_frame_count(
     loop_end: u16,
     theater_ext: &str,
     theater_name: &str,
-) -> Option<(u16, String)> {
+) -> Option<(u16, u16, String)> {
     let anim_image: String = art_reg.resolve_anim_image_id(anim_type);
     let candidates: Vec<String> = art_data::anim_shp_candidates(
         Some(art_reg),
@@ -150,7 +150,7 @@ fn scan_building_anim_frame_count(
     } else {
         raw_count
     };
-    Some((count, file.to_string()))
+    Some((count, raw_count, file.to_string()))
 }
 
 /// Register every frame of one building animation (ActiveAnim, IdleAnim and
@@ -159,7 +159,7 @@ fn scan_building_anim_frame_count(
 /// read once per build.
 fn register_building_anim(
     needed: &mut HashSet<ShpSpriteKey>,
-    scanned: &mut HashMap<String, u16>,
+    scanned: &mut HashMap<String, (u16, u16)>,
     shp_files: &mut HashMap<String, String>,
     asset_manager: &AssetManager,
     art: &ArtRegistry,
@@ -171,7 +171,7 @@ fn register_building_anim(
 ) {
     let upper = anim_type.to_ascii_uppercase();
     if !scanned.contains_key(&upper)
-        && let Some((count, file)) = scan_building_anim_frame_count(
+        && let Some((count, raw_count, file)) = scan_building_anim_frame_count(
             asset_manager,
             art,
             anim_type,
@@ -181,16 +181,22 @@ fn register_building_anim(
         )
     {
         log::debug!("Building anim {anim_type}: {count} frames from {file}");
-        scanned.insert(upper.clone(), count);
+        scanned.insert(upper.clone(), (count, raw_count));
         shp_files.insert(upper.clone(), file);
     }
-    let count = scanned.get(&upper).copied().unwrap_or(1);
+    let (count, raw_count) = scanned.get(&upper).copied().unwrap_or((1, 1));
+    let config = art.anim_runtime_config(anim_type);
+    let resident_count = if config.is_some_and(|config| config.shadow) {
+        raw_count
+    } else {
+        count
+    };
     insert_building_anim_frame_keys(
         needed,
         anim_type,
-        count,
+        resident_count,
         house_color,
-        attached_anim_palette_context(art.anim_runtime_config(anim_type)),
+        attached_anim_palette_context(config),
     );
 }
 
@@ -428,8 +434,8 @@ impl ShpPalettes {
 /// map-load build; refreshes reuse them instead of re-reading the rules.
 #[derive(Default)]
 struct EffectRegistry {
-    /// Each registered name as the rules spell it and its frame count, by
-    /// upper-case name. AnimClass colour remaps expand through it.
+    /// Each registered name as the rules spell it and its resident frame count,
+    /// including shadow companions, by upper-case name. Remaps expand through it.
     frames: HashMap<String, (String, u16)>,
     /// Registered names as the rules spell them; they take the effect palette.
     type_ids: HashSet<String>,
@@ -1569,7 +1575,7 @@ pub fn build_sprite_atlas(
     // shadow half included. Map load counts building animations before the
     // effects, so a building on the map at load gets the same frames as one
     // that appears later, and the effect keeps the presentation count.
-    let mut building_anim_counts: HashMap<String, u16> = HashMap::new();
+    let mut building_anim_counts: HashMap<String, (u16, u16)> = HashMap::new();
     if let Some(art_reg) = art {
         for (type_id, house_color) in &new_objects {
             let rules_image: String = rules
@@ -1624,7 +1630,7 @@ pub fn build_sprite_atlas(
             }
         }
     }
-    for (anim_type, count) in building_anim_counts {
+    for (anim_type, (count, _)) in building_anim_counts {
         active_anim_frame_counts.entry(anim_type).or_insert(count);
     }
 
@@ -1755,8 +1761,7 @@ pub fn build_sprite_atlas(
                     let shadow = art
                         .and_then(|registry| registry.anim_runtime_config(name))
                         .is_some_and(|config| config.shadow);
-                    // Keep atlas keys and the presentation-facing count in one
-                    // registration so rendering cannot select an unloaded frame.
+                    // Keep body timing separate from shadow-frame residency.
                     let count = register_effect_anim_frames(
                         &mut needed,
                         &mut active_anim_frame_counts,
@@ -1767,7 +1772,7 @@ pub fn build_sprite_atlas(
                     );
                     registered_effects
                         .frames
-                        .insert(name_upper.clone(), (name.clone(), count));
+                        .insert(name_upper.clone(), (name.clone(), raw_count));
                     registered_effects.type_ids.insert(name.clone());
                     shp_files.insert(name_upper, file.to_string());
                     log::debug!("Effect anim SHP {}: {} frames from {}", name, count, file);
@@ -2153,9 +2158,9 @@ impl<'a> ShpSource<'a> {
 ///
 /// `file` is the file registration counted the type's frames in (animation,
 /// make and parachute SHPs), so frames come from the file they were counted
-/// in. Other types resolve through rules/art `Image=` and the object naming
-/// (with NewTheater substitution), falling back to direct {TYPE_ID}.SHP when
-/// art data is unavailable.
+/// in. Building bodies resolve through
+/// [`art_data::building_body_shp_candidates`]; other bodies keep the object
+/// naming path through rules/art `Image=`.
 fn load_shp_source<'a>(
     asset_manager: &'a AssetManager,
     type_id: &str,
@@ -2176,8 +2181,8 @@ fn load_shp_source<'a>(
                 type_id
             };
             // Resolve image name: type_id → rules.ini Image= → art.ini Image= override.
-            let rules_image: String = rules
-                .and_then(|r| r.object(base_type_id))
+            let object = rules.and_then(|r| r.object(base_type_id));
+            let rules_image: String = object
                 .map(|o| o.image.clone())
                 .unwrap_or_else(|| base_type_id.to_string());
             let image: String = art
@@ -2186,6 +2191,16 @@ fn load_shp_source<'a>(
             if is_make {
                 art.map(|art| buildup_shp_candidates(art, rules, base_type_id, theater_name))
                     .unwrap_or_default()
+            } else if object.is_some_and(|object| {
+                object.category == crate::rules::object_type::ObjectCategory::Building
+            }) {
+                art_data::building_body_shp_candidates(
+                    art,
+                    &rules_image,
+                    &image,
+                    theater_ext,
+                    theater_name,
+                )
             } else {
                 art_data::object_shp_candidates(art, &image, theater_ext, theater_name)
             }

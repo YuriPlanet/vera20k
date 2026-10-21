@@ -420,11 +420,10 @@ impl KillRecord {
 /// live ChangeOwner callback leaves the existing death guard untouched, since
 /// the object remains alive afterwards.
 ///
-/// RESIDUAL: sale completion44A1EF writes Building+53C=-1 before its NULL kill
-/// callback44A1F9, suppressing only BuildingsLost703054. VERA's existing sale
-/// route does not retain that field or call RecordKill; Selling alone is not
-/// its substitute. Live Tag callbacks belong to the world prefix above; the
-/// radar redraw remains a separate presentation residual.
+/// Building+53C=-1 suppresses only BuildingsLost703054, including when a
+/// sale's NULL callback synchronously changes owner or removes the receiver.
+/// Live Tag callbacks belong to the world prefix above; the radar redraw
+/// remains a separate presentation residual.
 fn record_kill_credit(
     victim: &mut crate::sim::game_entity::GameEntity,
     houses: &mut crate::sim::houses::Houses,
@@ -449,7 +448,9 @@ fn record_kill_credit(
         house.economy_mut().add_score(points);
     }
     if !insignificant_building {
-        if let Some(house) = houses.get_mut(&victim.owner()) {
+        if (victim.category() != EntityCategory::Structure || victim.building_loss_index() != -1)
+            && let Some(house) = houses.get_mut(&victim.owner())
+        {
             house.stats_mut().record_loss(victim.category());
         }
         if count_killer
