@@ -153,6 +153,11 @@ pub(crate) fn dispatch_foot_mission(
         );
     let mut infantry_guard_handled = false;
     let evaluation = match (input.category, input.mission) {
+        // Unit vtable+24C -> Mission_Repair740EF0; infantry keeps the base
+        // stub. Map placements can assign Repair through Unit ReadINI743270.
+        (EntityCategory::Unit, Some(MissionType::Repair)) => {
+            MissionHandlerEvaluation::cadence(sim.unit_mission_repair(id, rules, ctx.effects))
+        }
         // Unit vtable7F5C70+224 -> MissionHarvest73E5E0. No other mission
         // can reach this body or interpret its committed handler cursor.
         (EntityCategory::Unit, Some(MissionType::Harvest)) => {

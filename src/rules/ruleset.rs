@@ -3991,6 +3991,8 @@ pub struct RuleSet {
     pub ai_base_spacing: i32,
     /// Source-ordered `[General] Shipyard=` BuildingType identities.
     pub shipyard_types: Vec<String>,
+    /// Retained `[General] RepairBay=` BuildingType identities (Rules+850).
+    pub repair_bay_types: Vec<String>,
     /// Source-ordered resolved `[AI] BuildConst=` BuildingType identities.
     pub build_const_types: Vec<String>,
     /// Source-ordered resolved `[AI] BuildPower=` BuildingType identities.
@@ -5392,6 +5394,7 @@ impl RuleSet {
             // The ordered Rules processor publishes these lists
             // (`rules_type_references`).
             shipyard_types: Vec::new(),
+            repair_bay_types: Vec::new(),
             build_const_types: Vec::new(),
             build_power_types: Vec::new(),
             build_refinery_types: Vec::new(),
@@ -6316,6 +6319,7 @@ impl RuleSet {
             &general.base_unit_types,
             &general.pad_aircraft_types,
             &self.shipyard_types,
+            &self.repair_bay_types,
             &self.harvester_unit_types,
         )
             .hash(&mut hasher);

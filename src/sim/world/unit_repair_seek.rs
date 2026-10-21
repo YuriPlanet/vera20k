@@ -7,6 +7,11 @@
 //! answer, not only ROGER: a Naval Yard answers a land vehicle NEGATORY
 //! (`0x0043C3F3`), so a damaged computer tank near its own Naval Yard takes
 //! that yard as its station.
+//!
+//! The separate `UnitClass::Mission_Repair @ 0x00740EF0` handler, also
+//! accepted by the map placement reader, uses the retained `[General]
+//! `RepairBay=` list. It establishes contact before handing off to Enter;
+//! the existing docking service owns movement, payment, healing and release.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -33,6 +38,79 @@ fn unit_repair_reach() -> i32 {
 }
 
 impl Simulation {
+    /// `UnitClass::Mission_Repair @ 0x00740EF0`: find a free RepairBay,
+    /// introduce the Unit by HELLO, then queue Enter without commencing it.
+    /// A bay found only by the wide scan calls Enter_Idle_Mode(0,1). With no
+    /// accepted HELLO the return is the current mission's unjittered rate;
+    /// an accepted HELLO returns one frame. The existing Enter and depot
+    /// service owners drive, repair and release the Unit after this handoff.
+    /// This handler never assigns a destination: a map-authored Repair with
+    /// none waits in Enter after establishing contact, as the native radio
+    /// and Enter bodies do. A destination-bearing order supplies that leg.
+    pub(crate) fn unit_mission_repair(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) -> i32 {
+        use crate::sim::miner::miner_system::find_docking_bay;
+
+        let bay = find_docking_bay(
+            self,
+            rules,
+            id,
+            &rules.repair_bay_types,
+            false,
+            false,
+            effects,
+        );
+        crate::sim::miner::miner_system::unit_ai_clear_harvesting(&mut self.substrate, id);
+        if let Some(bay) = bay {
+            if transmit(
+                self,
+                id,
+                bay,
+                RadioMessage::Hello,
+                RadioPayload::default(),
+                rules,
+                effects,
+            ) == RadioResponse::Roger
+            {
+                let _ = self.mission_queue_exact(
+                    id,
+                    MissionId::from_known(MissionType::Enter),
+                    0,
+                    self.session.binary_frame(),
+                    &LiveReadyInputProvider { rules },
+                );
+                return 1;
+            }
+        } else if find_docking_bay(
+            self,
+            rules,
+            id,
+            &rules.repair_bay_types,
+            true,
+            false,
+            effects,
+        )
+        .is_some()
+        {
+            self.unit_enter_idle_mode(id, rules, false, effects);
+        }
+        let mission = self
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .mission
+            .current()
+            .known();
+        rules
+            .mission_control
+            .rate_frames(mission.unwrap_or(MissionType::Repair))
+    }
+
     /// `UnitClass::AI`'s repair seek (`0x0073671F..0x00736817`), right after
     /// its second Ready/Commence. On a frame whose counter is a multiple of
     /// 16, a Unit on Guard (5) or AreaGuard (0xB) with nothing queued, whose
