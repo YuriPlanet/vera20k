@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original locomotor hit admission joined to Imbue and Aircraft/Foot/Jumpjet destination; bounded release, restore, aircraft landing gate and terminal impact dispatch/Notice body.",
+  "assumptions": [
+    "Selected physical RULESMD/LANGRULE/MPBattleMD lexical fields pass original class/type/weapon readers; E1 uses common TechnoType reader for the early Infantry refusal.",
+    "Prepared live objects on original vtables, original Drive/Fly/Walk constructors, flat clear supplied map and zone plane; no full object constructor, map loading, shot acquisition, movement Process or full flight is claimed.",
+    "Original CRT initializer48E480 from table812B28 produces the five Infantry placement offsets; original Scenario RNG is seeded1 and each hit history records the next original Random result after its last snapshot.",
+    "Reload-pad row supplies reciprocal contact with a constructed synthetic UnitReload building type.",
+    "Altitude release supplies XYZ.Z after hit. Settled restore supplies only Jumpjet moving=false after ground release; neither is evidence of a complete fall.",
+    "Landing rows enter State5 at its CanEnterCell/wheel-clear join with EDI=installed Jumpjet and ESI=prepared owner cell. Post-hit Foot+6B6 is1 (original Imbue7101CF); cell ground/deck occupation and first member are0. Earlier State5 movement/Mark work is omitted. Terminal impact rows enter the reached-landing tail with original AirTracker initialized; lifted/health/height/credit and damage rules are explicit inputs."
+  ],
+  "substitutions": [
+    "Shared original-reader fixture supplies CRT allocation, TLS, INI cache and optional asset/cache boundaries.",
+    "CoCreateInstance transport enters original Jumpjet COM factory/constructor/QueryInterface; OleRun returns S_OK. Gameplay bodies and original vtables remain unchanged.",
+    "Impact rows supply distinct Rules C4/death-weapon/projectile identities. Bullet Create returns a prepared Bullet-vtable object; its mark, detonation and release are observed no-op leaves. RecordKill and UnInit are observed no-op leaves. No explosion damage propagation, deletion or post-impact map state is claimed."
+  ],
+  "entry_points": {
+    "hit": "0x0046963A",
+    "hit_end": "0x00469AA4",
+    "imbue": "0x00710000",
+    "aircraft_destination": "0x0041AA80",
+    "foot_destination": "0x004D94B0",
+    "jumpjet_move_to": "0x0054B1C0",
+    "release": "0x0070FEE0",
+    "restore_gate": "0x004DAE5F",
+    "landing_gate": "0x0054CE26",
+    "landing_gate_end": "0x0054CE6A",
+    "cell_clear": "0x004834A0",
+    "terminal_impact": "0x0054D045",
+    "aircraft_notice": "0x0041BC30",
+    "notice_return": "0x0054D097",
+    "placement_offsets_init": "0x0048E480",
+    "random": "0x0065C780"
+  },
+  "replay_command": "python -m tools.spatial_oracle.magnetron_aircraft_lift",
+  "payload_sha256": "1bf17d0c7641ee5da3e6ba96f988e37db195c45ab6ace39ab50f2931a05c86ee"
+}

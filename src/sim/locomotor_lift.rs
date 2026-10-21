@@ -1,6 +1,6 @@
 //! The Magnetron's lift: an `IsLocomotor=` warhead installs its `Locomotor=`
-//! class on the ground vehicle it hits, and the firer holds it aloft until it
-//! lets it drop.
+//! class on the ground vehicle or landed aircraft it hits, and the firer
+//! holds it aloft until it lets it drop.
 //!
 //! gamemd-derived (instruction reading; YR 1.001):
 //! - the detonation's locomotor arm, `BulletClass::DetonateAtCoord`
@@ -38,10 +38,16 @@
 //!
 //! Ledger: the arm, Imbue and the release draw no random number of their
 //! own; their callees keep theirs (Jumpjet `Stop_Moving`'s placement draws
-//! nothing for a Unit). Timers: Foot's destination timers through the class
-//! setter, and the mission timers of Imbue's `ResetOrdersToGuard` and queued
-//! missions. Detaches: none; the held object's Stun skips `Detach_All`
-//! (`0x006FCD79`).
+//! nothing for a Unit, while an Aircraft takes its non-Unit arm, which draws
+//! Scenario RNG; the native comparison checks that stream). Timers: Foot's
+//! destination timers through the class setter, and the mission timers of
+//! Imbue's `ResetOrdersToGuard` and queued missions. Detaches: none; the held
+//! object's Stun skips `Detach_All` (`0x006FCD79`).
+//!
+//! Bounded original execution for landed Aircraft, installed-locomotor
+//! destination routing, release and restoration is recorded in
+//! `tools/spatial_oracle/magnetron_aircraft_lift.md`. Its supplied altitude
+//! and settled-state controls do not claim a complete native flight.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;
@@ -267,15 +273,10 @@ impl Simulation {
     /// before the rest are tested: no target object, a Unit target still in
     /// its war factory ([`Self::unit_in_contact_war_factory`]), a target not in the
     /// Ground layer (`vt+0x78`), not a Foot, Iron Curtained (`vt+0x160`), not
-    /// a Unit, already lifted, or one whose type's `Size=` the shot does not
-    /// exceed (`FCOMP` at `0x004696BD`, so equal refuses). Then
+    /// a Unit or Aircraft (`0x0046967E..0x0046969C`), already lifted, or one
+    /// whose type's `Size=` the shot does not exceed (`FCOMP` at `0x004696BD`,
+    /// so equal refuses). Then
     /// [`Self::imbue_locomotor`] (`0x004696FB`).
-    ///
-    /// RESIDUAL: native also admits an Aircraft (`0x00469699`), a landed one
-    /// being in the Ground layer, and imbues it. VERA refuses it: its Jumpjet
-    /// host serves Unit and Infantry owners only. Trigger: a Magnetron firing
-    /// at a landed aircraft. Effect: VERA's shot does nothing; native's lift
-    /// and drop of an aircraft are untraced. Frequency: uncommon.
     ///
     /// Native execution (`gamemd`, FPCW 0x0E3F) confirms
     /// FILD Bullet strength then FCOMP current Type+0x380 Size at `0x004696BD`:
@@ -332,7 +333,10 @@ impl Simulation {
                 victim.invulnerability.as_ref(),
                 frame,
             )
-            && victim.category() == EntityCategory::Unit
+            && matches!(
+                victim.category(),
+                EntityCategory::Unit | EntityCategory::Aircraft
+            )
             && !victim.lift.swap_active()
             && self
                 .object_type(victim.type_ref(), rules)
@@ -990,3 +994,7 @@ impl crate::sim::world::ObjectSubstrate {
 #[cfg(test)]
 #[path = "locomotor_lift_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "locomotor_lift_native_tests.rs"]
+mod native_tests;

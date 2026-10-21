@@ -2086,9 +2086,19 @@ mod tests {
     #[test]
     fn skirmish_start_unit_budget_is_global_but_house_pools_filter_tech_and_mask() {
         let rules = test_starting_unit_rules();
-        let slots = normalized_launch_slots(&test_session());
 
-        assert_eq!(starting_unit_budget(&rules, &slots, 10, 2), 334);
+        assert_eq!(
+            starting_unit_budget(
+                &rules,
+                [
+                    LaunchCountry::America.index(),
+                    LaunchCountry::Russia.index()
+                ],
+                10,
+                2,
+            ),
+            334
+        );
 
         let allied_candidates =
             starting_unit_candidates_for_country(&rules, LaunchCountry::America, 10);

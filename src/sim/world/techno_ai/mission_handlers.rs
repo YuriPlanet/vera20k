@@ -104,7 +104,6 @@ pub(crate) fn dispatch_foot_mission(
                 .entities
                 .get(id)
                 .is_some_and(crate::sim::game_entity::GameEntity::is_harvester);
-        let entry_adapter = entity.bunker.link().approaching().is_some();
         // `FootClass::Mission_Move @ 0x004D4200` keeps its cadence while the
         // NavCom is set (`0x004D4203`) or the locomotor's `Is_Moving` holds
         // (`0x004D422A`); the order itself is not an input.
@@ -113,9 +112,7 @@ pub(crate) fn dispatch_foot_mission(
         MissionHandlerInput {
             category,
             mission,
-            depot_dock_state,
             refinery_dock_miner,
-            entry_adapter,
             moving_or_queued: moving || entity.mission.queued() != MissionId::NONE,
             has_attack_target: entity.attack_target.target().is_some(),
             // The destination slot alone, NOT the wider "is this object in
@@ -266,15 +263,9 @@ pub(crate) fn dispatch_foot_mission(
         }
         // Unit does not override Foot Enter4D9290, and Infantry inherit it
         // too (InfantryClass vt+0x240 is `0x004D9290`). Depot, refinery,
-        // transport and absorber entries use the same body and the one
-        // dispatch timer. Only the tank bunker approach
-        // (`docking::bunker_link::begin_entry`) carries a unit without the
-        // native radio route; while it does, the body is not run. Once it
-        // has let the unit go, the body's no-target arm idles it
-        // (`0x004D9425..0x004D9466`).
-        (EntityCategory::Unit, Some(MissionType::Enter))
-            if input.depot_dock_state || input.refinery_dock_miner || !input.entry_adapter =>
-        {
+        // transport, absorber and tank-bunker entries use the same body
+        // and the one dispatch timer.
+        (EntityCategory::Unit, Some(MissionType::Enter)) => {
             MissionHandlerEvaluation::cadence(crate::sim::mission::enter::mission_enter(
                 sim,
                 rules,
@@ -873,15 +864,9 @@ pub(super) struct MissionHandlerInput {
     /// and every out-of-range id take the switch's default arm rather than
     /// being skipped.
     pub(super) mission: Option<MissionType>,
-    /// The object holds a repair-depot contact or independent pending entry: its Enter dispatch is
-    /// the shared `mission::enter::mission_enter`.
-    pub(super) depot_dock_state: bool,
     /// A harvester on Enter or Unload without a depot contact/entry: its
     /// refinery dock missions (`miner::refinery_dock`).
     pub(super) refinery_dock_miner: bool,
-    /// The tank bunker approach carries the unit's entry, so its Enter
-    /// dispatch does not run the Foot body.
-    pub(super) entry_adapter: bool,
     /// `Mission_Move`'s keep-going test (`0x004D4203..0x004D4238`): a NavCom,
     /// the locomotor's `Is_Moving`, or a queued mission.
     pub(super) moving_or_queued: bool,

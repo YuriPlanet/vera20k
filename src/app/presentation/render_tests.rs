@@ -352,6 +352,7 @@ fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
     );
     friendly.lifecycle.set_in_limbo_for_test(false);
     sim.entities_mut_for_test().insert(friendly);
+    sim.resubmit_entity_display_for_test(10);
     let (friendly_sx, friendly_sy) =
         crate::render::locomotor_visual::screen_position(sim.entities().get(10).expect("friendly"));
 
@@ -371,10 +372,9 @@ fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
     );
     enemy.lifecycle.set_in_limbo_for_test(false);
     sim.entities_mut_for_test().insert(enemy);
+    sim.resubmit_entity_display_for_test(11);
     let (enemy_sx, enemy_sy) =
         crate::render::locomotor_visual::screen_position(sim.entities().get(11).expect("enemy"));
-    // Provide empty height maps — structure picking now uses foundation-based hit testing.
-
     // This test classifies the two objects on open terrain. Reveal the actual
     // clicked cells, including the building anchor's projection, before the
     // shared ProcessClickCoords gate. Shroud rejection is tested separately.

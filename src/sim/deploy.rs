@@ -59,14 +59,6 @@ impl CrushImmunity {
 /// (`+0x418`) and not under EMP (`+0x504`, which nothing writes yet). Then it
 /// sends OVER_OUT to its radio contact 0 (vt+0x274(3), `0x004C77E4`).
 ///
-/// RESIDUAL: natively a bunkered unit's contact 0 is its bunker (the HELLO
-/// from Set_Destination, `0x00742CDB`), so this OVER_OUT reaches the bunker,
-/// whose Receive_Radio idles its body (Begin_Mode(IDLE), `0x0043CD01`) before
-/// Unload empties it. VERA's bunker entry adapter makes no radio contact
-/// (`bunker_link::begin_entry`), so here contact 0 is empty and the bunker
-/// keeps its body mode. Trigger: every deploy out of a bunker. Effect: none
-/// a player sees; the bunker's body is idle between visits. Risk: low.
-///
 /// RESIDUAL: native refuses only an aircraft (`0x004C777E`) and the
 /// Construction/Selling missions below; VERA admits only the Unit kinds whose
 /// Unload arms it ports: an MCV, a simple deployer, a deploy-fire unit and a

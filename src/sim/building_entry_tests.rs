@@ -234,10 +234,13 @@ fn tank_bunker_seek(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
     sim.foot_enter_tank_bunker(id, rules, None, FrameEffects::default())
 }
 
-/// The bunker's install machine state and the unit it holds.
+/// The bunker's native install status and its first radio contact.
 fn install_state(sim: &Simulation, bunker: u64) -> (BunkerState, Option<u64>) {
-    let runtime = entity(sim, bunker).bunker_runtime.unwrap();
-    (runtime.state(), runtime.installing_unit())
+    let building = entity(sim, bunker);
+    (
+        building.bunker_runtime.unwrap().state(),
+        building.radio_contacts.slot(0),
+    )
 }
 
 fn occupants(sim: &Simulation, building: u64) -> Vec<u64> {
@@ -2146,11 +2149,11 @@ fn a_retail_battle_bunker_admits_a_conscript() {
 }
 
 /// EnterTankBunker over its house's tank bunkers (House+0xC8): one held by
-/// its occupant (`+0x2E4`), one held by a unit on its way in (the adapter's
-/// stand-in for the first radio contact, module residual), one with
+/// its occupant (`+0x2E4`), one held by an approaching unit's contact, one with
 /// another radio contact and another house's bunker all stand nearer than
 /// the free bunker that takes the tank. The tank commences Enter, the
-/// bunker holds it as its installing unit, and it heads there.
+/// bunker holds it as its first radio contact, and its object destination
+/// selects the native direction-dependent docking point.
 #[test]
 fn the_nearest_free_own_tank_bunker_takes_the_tank() {
     let rules = rules();
@@ -2177,7 +2180,7 @@ fn the_nearest_free_own_tank_bunker_takes_the_tank() {
     assert!(tank_bunker_seek(&mut sim, &rules, claimer));
     assert_eq!(
         install_state(&sim, claimed),
-        (BunkerState::ArriveWait, Some(claimer))
+        (BunkerState::Idle, Some(claimer))
     );
     let caller = spawn(&mut sim, &rules, "YTNK", "YuriCountry", 4, 16);
     assert_eq!(
@@ -2201,12 +2204,9 @@ fn the_nearest_free_own_tank_bunker_takes_the_tank() {
         foot.mission.current(),
         MissionId::from_known(MissionType::Enter)
     );
-    assert_eq!(foot.bunker.link(), BunkerLink::Approaching(free));
-    assert!(foot.navigation.nav_com().is_some());
-    assert_eq!(
-        install_state(&sim, free),
-        (BunkerState::ArriveWait, Some(tank))
-    );
+    assert_eq!(foot.radio_contacts.slot(0), Some(free));
+    assert_eq!(foot.navigation.nav_com(), Some(NavTargetRef::object(free)));
+    assert_eq!(install_state(&sim, free), (BunkerState::Idle, Some(tank)));
     assert_eq!(install_state(&sim, far), (BunkerState::Idle, None));
 }
 
@@ -2227,6 +2227,7 @@ fn a_refused_foot_or_a_held_tank_bunker_gets_no_order() {
         assert!(!tank_bunker_seek(&mut sim, &rules, id));
         assert_eq!(entity(&sim, id).mission, mission);
         assert_eq!(entity(&sim, id).bunker.link(), BunkerLink::None);
+        assert!(entity(&sim, id).radio_contacts.is_empty());
     }
     assert_eq!(install_state(&sim, bunker), (BunkerState::Idle, None));
 
@@ -2246,6 +2247,7 @@ fn a_refused_foot_or_a_held_tank_bunker_gets_no_order() {
     assert_eq!(foot.mission, mission);
     assert_eq!(foot.navigation.nav_com(), None);
     assert_eq!(foot.bunker.link(), BunkerLink::None);
+    assert!(foot.radio_contacts.is_empty());
 }
 
 /// Equidistant tank bunkers through the production walk: the house's list
@@ -2270,9 +2272,10 @@ fn of_equidistant_tank_bunkers_the_later_built_takes_the_tank() {
 
         assert!(tank_bunker_seek(&mut sim, &rules, tank));
 
+        assert_eq!(entity(&sim, tank).radio_contacts.slot(0), Some(bunkers[1]));
         assert_eq!(
-            entity(&sim, tank).bunker.link(),
-            BunkerLink::Approaching(bunkers[1])
+            entity(&sim, tank).navigation.nav_com(),
+            Some(NavTargetRef::object(bunkers[1]))
         );
     }
 }
@@ -2298,12 +2301,17 @@ fn script_action_61_sends_the_members_a_tank_bunker_takes() {
     assert!(state.advance_pending());
     assert_eq!(sim.team_script_vm.team_for_member(first), None);
     let foot = entity(&sim, first);
-    assert_eq!(foot.bunker.link(), BunkerLink::Approaching(bunker));
+    assert_eq!(foot.radio_contacts.slot(0), Some(bunker));
+    assert_eq!(
+        foot.navigation.nav_com(),
+        Some(NavTargetRef::object(bunker))
+    );
     assert_eq!(
         foot.mission.current(),
         MissionId::from_known(MissionType::Enter)
     );
     assert_eq!(entity(&sim, second).bunker.link(), BunkerLink::None);
+    assert!(entity(&sim, second).radio_contacts.is_empty());
 }
 
 #[test]
@@ -2330,7 +2338,7 @@ fn cancelling_a_manual_bunker_entry_frees_it_for_another_tank() {
         ));
         assert_eq!(
             install_state(&sim, bunker),
-            (BunkerState::ArriveWait, Some(first))
+            (BunkerState::Idle, Some(first))
         );
         assert!(run_until(&mut sim, &rules, &grid, 30, |sim| {
             entity(sim, first).mission.current().known() == Some(MissionType::Enter)
@@ -2345,6 +2353,8 @@ fn cancelling_a_manual_bunker_entry_frees_it_for_another_tank() {
             }
         };
         assert!(sim.apply_command("Americans", &cancel, Some(&rules)));
+        assert!(entity(&sim, first).radio_contacts.is_empty());
+        assert_eq!(install_state(&sim, bunker), (BunkerState::Idle, None));
         assert!(
             sim.apply_command(
                 "Americans",
@@ -2417,15 +2427,13 @@ fn replacing_a_bunker_entry_releases_only_the_previous_bunker() {
                 Some(&rules)
             ));
         }
+        assert_eq!(entity(&sim, first).radio_contacts.slot(0), Some(next));
         assert_eq!(
-            entity(&sim, first).bunker.link(),
-            BunkerLink::Approaching(next)
+            entity(&sim, first).navigation.nav_com(),
+            Some(NavTargetRef::object(next))
         );
         assert_eq!(install_state(&sim, previous), (BunkerState::Idle, None));
-        assert_eq!(
-            install_state(&sim, next),
-            (BunkerState::ArriveWait, Some(first))
-        );
+        assert_eq!(install_state(&sim, next), (BunkerState::Idle, Some(first)));
         assert!(sim.apply_command(
             "Americans",
             &Command::clicked_mission(
@@ -2489,9 +2497,8 @@ fn retail_manual_tank_bunker_entry_installs_from_each_side() {
 }
 
 /// A bunker destroyed while a seeker drives to it, or a seeker destroyed on
-/// its way: the despawn teardown drops the adapter's approach link on the
-/// other side, as an expiry drops a radio contact both ways, so once the
-/// object is deleted a save names nothing gone and loads.
+/// its way: the despawn teardown drops the radio contact on the other
+/// side, so once the object is deleted a save names nothing gone and loads.
 #[test]
 fn a_tank_bunker_approach_ends_with_either_side() {
     let rules = rules();
@@ -2506,6 +2513,7 @@ fn a_tank_bunker_approach_ends_with_either_side() {
 
         if bunker_goes {
             assert_eq!(entity(&sim, tank).bunker.link(), BunkerLink::None);
+            assert!(entity(&sim, tank).radio_contacts.is_empty());
         } else {
             assert_eq!(install_state(&sim, bunker), (BunkerState::Idle, None));
         }
@@ -2554,8 +2562,12 @@ fn a_retail_tank_bunker_admits_the_lasher_and_the_gattling_tank() {
 
     assert!(tank_bunker_seek(&mut sim, rules, admitted[0].1));
     assert_eq!(
-        entity(&sim, admitted[0].1).bunker.link(),
-        BunkerLink::Approaching(bunker)
+        entity(&sim, admitted[0].1).radio_contacts.slot(0),
+        Some(bunker)
+    );
+    assert_eq!(
+        entity(&sim, admitted[0].1).navigation.nav_com(),
+        Some(NavTargetRef::object(bunker))
     );
 }
 

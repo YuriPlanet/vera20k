@@ -69,8 +69,9 @@
 //!   moves a frame and the warp's END up to one; the Drive goes nowhere.
 //! - A landed Aircraft that sinks keeps `+0x3CD` with nothing to end it:
 //!   VERA ports only the Unit's sinking (Unit AI `0x007364A1`); the Aircraft
-//!   AI's handling is not established. Trigger: an airfield's Harriers
-//!   chronoshifted onto water.
+//!   AI's handling is not established. Triggers: an airfield's Harriers
+//!   chronoshifted onto water, or a Magnetron dropping a lifted Aircraft over
+//!   water it is refused (`jumpjet_flight::state5_crash`'s sink).
 
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::NativeCellQuery;

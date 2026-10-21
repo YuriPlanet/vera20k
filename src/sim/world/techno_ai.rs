@@ -4215,9 +4215,7 @@ mod tests {
         let base = MissionHandlerInput {
             category: EntityCategory::Infantry,
             mission: Some(MissionType::Attack),
-            depot_dock_state: false,
             refinery_dock_miner: false,
-            entry_adapter: false,
             moving_or_queued: false,
             has_attack_target: false,
             has_destination: false,
@@ -4312,9 +4310,7 @@ mod tests {
         let base = MissionHandlerInput {
             category: EntityCategory::Infantry,
             mission: Some(MissionType::Attack),
-            depot_dock_state: false,
             refinery_dock_miner: false,
-            entry_adapter: false,
             moving_or_queued: false,
             has_attack_target: false,
             has_destination: false,
