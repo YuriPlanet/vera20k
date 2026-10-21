@@ -61,7 +61,6 @@ def generate():
     original_admission_sha = promotion['results']['admission.json']['frozen_source_sha256']
     return dict(
         schema=1,
-        native_sha256=result['native_sha256'],
         frozen_payload_sha256=original_admission_sha,
         cases=[dict(name=row['row']['name'], calls=row['fnpc']) for row in result['cases']],
     )
@@ -70,8 +69,6 @@ def generate():
 def metadata():
     result = admission.metadata()
     result['scope'] = __doc__
-    result['admission_harness_sha256'] = result['harness_sha256']
-    result['harness_sha256'] = admission.base.proof.sha(Path(__file__).read_bytes())
     result['assumptions'].append(
         'All eleven native outputs are checked exactly against the frozen '
         'admission packet after its declared lexical/path publication projection '

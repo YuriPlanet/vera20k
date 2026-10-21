@@ -484,3 +484,76 @@ fn ctrl_alt_over_a_tree_forces_a_pillbox_that_takes_no_key_rung() {
         LeftRelease::Dispatch
     );
 }
+
+/// Ctrl over a tree in the attack-move mode: each receiver's forced Attack
+/// is promoted by ClickedMission, whose chord test passes on the mode alone
+/// (`0x00731BF0`), so it attack-moves onto the tree.
+#[test]
+fn ctrl_over_a_tree_in_the_attack_move_mode_attack_moves_onto_it() {
+    let Some((retail, registry)) = retail() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, tank, gi, tree) = scene(rules, "TREE01");
+    let dispatch = attack_branch_orders(
+        &sim,
+        rules,
+        &[tank, gi],
+        TargetKind::Entity(tree),
+        true,
+        OrderMode::AttackMove,
+        &registry,
+    );
+    assert_eq!(
+        dispatch.commands,
+        [tank, gi].map(|entity_id| Command::AttackMove {
+            entity_id,
+            target: Some(TargetKind::Entity(tree)),
+            destination: None,
+        })
+    );
+    assert!(sim.apply_command("Americans", &dispatch.commands[0], Some(rules)));
+    assert_eq!(
+        sim.entities().get(tank).unwrap().attack_target.target(),
+        Some(TargetKind::Entity(tree))
+    );
+}
+
+/// Ctrl on bare ground: the forced Attack on the Cell, which ClickedMission
+/// promotes in the attack-move mode as it does any Attack
+/// (`0x006FFC09..0x006FFC1E`), so the tank attack-moves with the Cell as its
+/// target.
+#[test]
+fn ctrl_on_the_ground_in_the_attack_move_mode_attack_moves_onto_the_cell() {
+    let Some((retail, registry)) = retail() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, tank, _, _) = scene(rules, "TREE01");
+    let ground = TargetKind::Cell(16, 13);
+    let dispatch = |sim: &Simulation, mode| {
+        attack_branch_orders(sim, rules, &[tank], ground, true, mode, &registry).commands
+    };
+    assert_eq!(
+        dispatch(&sim, OrderMode::Move),
+        [Command::ForceAttackCell {
+            attacker_id: tank,
+            target_rx: 16,
+            target_ry: 13,
+        }]
+    );
+    let promoted = dispatch(&sim, OrderMode::AttackMove);
+    assert_eq!(
+        promoted,
+        [Command::AttackMove {
+            entity_id: tank,
+            target: Some(ground),
+            destination: None,
+        }]
+    );
+    assert!(sim.apply_command("Americans", &promoted[0], Some(rules)));
+    assert_eq!(
+        sim.entities().get(tank).unwrap().attack_target.target(),
+        Some(ground)
+    );
+}

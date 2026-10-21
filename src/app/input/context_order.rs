@@ -497,9 +497,15 @@ pub(crate) fn attack_action(
     // RESIDUAL: the Unit's Attack reaches 740486 only when vt+0x310
     // (0x00700D10, 74041B..74042E) admits it, and is 0 otherwise. That test
     // refuses a Unit in a tube (Foot +0x684 >= 0) whose vt+0x4E4
-    // (0x00736D50) answers yes, and a Unit under EMP (vt+0x37C), which has
-    // no Rust producer. Not ported: a selected Unit hovering an object from
-    // inside a tube is rare.
+    // (0x00736D50) answers yes, and a Unit whose vt+0x37C (0x00746C90)
+    // answers yes: one under EMP (+0x504 > 0) or one counting down art
+    // `DeathFrames=` (+0x6D8 != -1, set at 0x00737DBF only when UnitType
+    // +0xE20 > 0). Not ported. EMP is UNREACHABLE: EMPulseClass::Apply
+    // (0x004C5718) is reached only from the unreferenced constructor
+    // 0x004C52B0. Neither `DeathFrames=` nor `DeployToFire=` appears in
+    // retail ARTMD/RULESMD, and for a human's Unit CanDeployNow needs
+    // DeployToFire= (its TickTank branch is computer-only), so both other
+    // arms are DORMANT.
     if action == AttackAction::Attack
         && matches!(
             actor.category(),
@@ -958,6 +964,21 @@ fn attack_branch_orders(
             AttackAction::Attack => {
                 consumed_attack_action = true;
                 let payload = match attack_target {
+                    // Under the attack-move chord or mode ClickedMission
+                    // promotes this Attack whatever its target
+                    // (`0x006FFC09..0x006FFC1E`): an attack-move with the
+                    // Cell as its target and no destination, the tokens Foot
+                    // ClickedAction_Cell sends (`0x004D80E9..0x004D80FF`).
+                    TargetKind::Cell(target_rx, target_ry)
+                        if order_mode == OrderMode::AttackMove
+                            && entity_can_attack_move(sim, Some(rules), id) =>
+                    {
+                        Command::AttackMove {
+                            entity_id: id,
+                            target: Some(TargetKind::Cell(target_rx, target_ry)),
+                            destination: None,
+                        }
+                    }
                     TargetKind::Cell(target_rx, target_ry) => Command::ForceAttackCell {
                         attacker_id: id,
                         target_rx,
@@ -990,10 +1011,13 @@ fn attack_branch_orders(
                                 select_fallback = true;
                                 continue;
                             }
-                            _ => Command::Attack {
-                                attacker_id: id,
+                            _ => object_click_payload(
+                                order_mode,
+                                OrderModifier::Normal,
+                                entity_can_attack_move(sim, Some(rules), id),
+                                id,
                                 target_id,
-                            },
+                            ),
                         }
                     }
                 };
@@ -1252,13 +1276,6 @@ fn emit_entity_order_voice(
 /// admitted an event; an empty batch must not fall through to selection clear.
 /// Friendly click-selection and an empty selection never enter this boundary.
 /// Evidence: tools/procedural_drawing_oracle/action_lines.
-/// A click that queued a move (`moved`) ends the sticky attack-move mode.
-fn consume_order_mode(state: &mut AppState, queued: &[CommandEnvelope], moved: bool) {
-    if !queued.is_empty() && moved && state.match_state.input.queued_order_mode != OrderMode::Move {
-        state.match_state.input.queued_order_mode = OrderMode::Move;
-    }
-}
-
 fn finish_order(
     state: &mut AppState,
     queued: Vec<CommandEnvelope>,
@@ -1560,7 +1577,10 @@ fn move_click_command(
 /// type predicate, and the event keeps the clicked object as its target
 /// (`0x004D76B1..0x004D76C1`). `Assign_Target_Command` stores it as MegaTarget
 /// and answers Attack, so the unit attacks it as an attack-mover; a member
-/// whose type refuses attack-move commits the plain attack.
+/// whose type refuses attack-move commits the plain attack. A forced
+/// Attack is promoted too: in the attack-move mode (`0x00B0FE58`, set by
+/// `0x00731AF0`) `Is_Attack_Move_Chord_Active @ 0x00731BF0` passes before
+/// it reads any key, so Ctrl there attack-moves onto the object.
 pub(crate) fn object_click_payload(
     order_mode: OrderMode,
     modifier: OrderModifier,
@@ -1568,12 +1588,6 @@ pub(crate) fn object_click_payload(
     attacker_id: u64,
     target_id: u64,
 ) -> Command {
-    if modifier == OrderModifier::ForceFire {
-        return Command::Attack {
-            attacker_id,
-            target_id,
-        };
-    }
     if modifier == OrderModifier::GuardArea {
         return Command::Guard {
             entity_id: attacker_id,
@@ -1872,7 +1886,6 @@ pub(crate) fn try_queue_context_order_at_screen_point(
         .unwrap_or_default();
 
     let mut queued: Vec<CommandEnvelope> = Vec::new();
-    let mut consumed_order_mode = false;
     // The one object that speaks the order-ack line. Retail lets only the first
     // entry of the selection array speak.
     let mut speaker_id: Option<u64> = None;
@@ -2276,18 +2289,6 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             .filter(|id| !attack_receivers.contains(id))
             .collect();
         if selected_ids.is_empty() {
-            // A move near a Terrain object uses up the sticky mode as a move
-            // on the ground does (below).
-            let moved = terrain_target.is_some()
-                && queued.iter().any(|envelope| {
-                    matches!(
-                        envelope.payload,
-                        Command::Move { .. }
-                            | Command::MoveToObject { .. }
-                            | Command::AttackMove { .. }
-                    )
-                });
-            consume_order_mode(state, &queued, moved);
             let sent = finish_order(state, queued, speaker_id);
             return sent || (consumed_attack_action && !select_fallback);
         }
@@ -2772,18 +2773,9 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 };
                 queued.push(CommandEnvelope::new(owner_id, execute_tick, payload));
             }
-            // A MoveFlash alone is no order: Resolve_Move_Order_Cell can
-            // still refuse every receiver after it.
-            if queued
-                .iter()
-                .any(|envelope| !matches!(envelope.payload, Command::MoveFlash { .. }))
-            {
-                consumed_order_mode = true;
-            }
         }
     }
 
-    consume_order_mode(state, &queued, consumed_order_mode);
     if rally_announce && !state.match_state.input.planning.active() {
         crate::app::input::dispatch::push_local_eva(
             state,
@@ -3124,6 +3116,15 @@ fn self_action(
     if entity.category() == EntityCategory::Unit && entity.bunker.link().installed_in().is_some() {
         return Some(Command::DeployMcv {
             entity_id: target.stable_id,
+        });
+    }
+    // Building447286..4472E7's gap rung precedes its cargo rungs; its Self
+    // click queues Unload443514, which toggles the super-charge. Residual:
+    // a type both GapGenerator= and a factory would also take the primary
+    // tail4472EC and Event17 (44345F); no retail type is both.
+    if let Some(offered) = sim.gap_generator_self_action(target.stable_id, rules) {
+        return offered.then_some(Command::UnloadPassengers {
+            transport_id: target.stable_id,
         });
     }
     if let Some(command) = super::transport_orders::unload_command(entity, obj, Some(local_owner)) {
@@ -3679,9 +3680,10 @@ fn cursor_owner(
 /// `0x004ABDF5` reads `+0x230`, which the constructor clears at
 /// `0x0071DB18`), and the other receivers' orders are dropped.
 ///
-/// RESIDUAL: a map's `Selectable=yes` on a TerrainType (ObjectType ReadINI
-/// `0x005F948C`) would let that 0 select the tree; VERA never selects a
-/// Terrain object. The retail rules set none.
+/// DORMANT: a `Selectable=yes` TerrainType (ObjectType ReadINI `0x005F948C`)
+/// would let that 0 select the tree; VERA never selects a Terrain object.
+/// Neither RULESMD nor any of the 177 stock skirmish maps sets the key on a
+/// TerrainType (census through the production map loader).
 ///
 /// A release that selects hands the click to the selection's click pick,
 /// which asks the same `Tactical::PickObjectAtScreenPoint` port
@@ -3873,7 +3875,10 @@ fn shot_is_illegal(
 
 /// Building4436F0(1/6, cell): prepare archive event1E, then SELL16 for an
 /// UndeploysInto type. A failed FNPC emits no archive but still queues SELL,
-/// retaining an earlier archive. A factory announces only its queued rally.
+/// retaining an earlier archive, except that a Construction Yard archives its
+/// own Cell ([`crate::sim::world::Simulation::factory_rally_cell_input`]). A
+/// factory announces its rally click whether or not the search found a Cell
+/// (`0x00443A7B..0x00443A89` jumps to the announcement at `0x00443A2B`).
 ///
 /// The click loop clamps the Cell to the playfield first
 /// ([`crate::sim::world::Simulation::clamped_click_cell`]), then asks each
@@ -3921,15 +3926,18 @@ fn building_cell_orders(
             continue;
         }
         match sim.factory_rally_cell_input(id, cell, rules) {
-            Ok(Some((rx, ry))) => {
-                orders.push(Command::SetRally {
-                    rx,
-                    ry,
-                    producer_ids: vec![id],
-                });
+            Ok(found) => {
+                if let Some((rx, ry)) = found {
+                    orders.push(Command::SetRally {
+                        rx,
+                        ry,
+                        producer_ids: vec![id],
+                    });
+                }
+                // A missed search still reaches the announcement
+                // (`0x00443977` -> `0x00443A7B` -> `0x00443A2B`).
                 announce |= crate::app::match_runtime::eva_producers::rally_point_announces(object);
             }
-            Ok(None) => {}
             Err(error) => log::warn!("building cell input: {error}"),
         }
         if object.undeploys_into.is_some() {
@@ -4192,15 +4200,18 @@ fn building_object_orders(
             }
         }
         match sim.factory_rally_cell_input(id, cell, rules) {
-            Ok(Some((rx, ry))) => {
-                orders.push(Command::SetRally {
-                    rx,
-                    ry,
-                    producer_ids: vec![id],
-                });
+            Ok(found) => {
+                if let Some((rx, ry)) = found {
+                    orders.push(Command::SetRally {
+                        rx,
+                        ry,
+                        producer_ids: vec![id],
+                    });
+                }
+                // A missed search still reaches the announcement
+                // (`0x00443977` -> `0x00443A7B` -> `0x00443A2B`).
                 announce |= crate::app::match_runtime::eva_producers::rally_point_announces(object);
             }
-            Ok(None) => {}
             Err(error) => log::warn!("building object input: {error}"),
         }
     }
@@ -6044,19 +6055,24 @@ mod tests {
                 target_id: 2,
             }
         );
-        // Plain click, force fire and guard area are untouched by the promotion.
-        assert_eq!(
-            object_click_payload(OrderMode::Move, OrderModifier::Normal, true, 1, 2),
-            Command::Attack {
-                attacker_id: 1,
-                target_id: 2,
-            }
-        );
+        // Plain click and guard area are untouched by the promotion; force
+        // fire is promoted only in the attack-move mode, whose chord test
+        // passes before any key read (`0x00731BF0`).
+        for modifier in [OrderModifier::Normal, OrderModifier::ForceFire] {
+            assert_eq!(
+                object_click_payload(OrderMode::Move, modifier, true, 1, 2),
+                Command::Attack {
+                    attacker_id: 1,
+                    target_id: 2,
+                }
+            );
+        }
         assert_eq!(
             object_click_payload(OrderMode::AttackMove, OrderModifier::ForceFire, true, 1, 2),
-            Command::Attack {
-                attacker_id: 1,
-                target_id: 2,
+            Command::AttackMove {
+                entity_id: 1,
+                target: Some(TargetKind::Entity(2)),
+                destination: None,
             }
         );
         assert_eq!(

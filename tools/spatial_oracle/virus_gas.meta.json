@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -27,5 +26,5 @@
     "constructor": "0x0062B5E0"
   },
   "replay_command": "python -m tools.spatial_oracle.virus_gas",
-  "payload_sha256": "ced4c71c211535e84a27039550a6c12161503bfa96986a19f2c8fc72d605b97e"
+  "payload_sha256": "557d5e197cbd5627398911d22f3efed729c3375b25244239ccfd7d47c3878489"
 }

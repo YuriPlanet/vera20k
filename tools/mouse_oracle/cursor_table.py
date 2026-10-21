@@ -274,7 +274,6 @@ def extract(exe: Path) -> tuple[dict, dict]:
     }
     sidecar = {
         "schema_version": 1,
-        "binary_size": len(data),
         "command": "py -3 -m tools.mouse_oracle.cursor_table --exe <path> --write",
         "scope": (
             "Compiled mouse-cursor descriptor table and the "

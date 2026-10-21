@@ -29,6 +29,8 @@ mod retreat_mission;
 pub(crate) mod spyplane_mission;
 
 #[cfg(test)]
+mod ai_head_tests;
+#[cfg(test)]
 mod dock_cycle_tests;
 #[cfg(test)]
 mod release_tests;
@@ -105,6 +107,60 @@ pub(crate) fn attack_state(entity: &GameEntity) -> Option<u8> {
     (entity.category() == EntityCategory::Aircraft
         && entity.mission.current() == MissionId::from_known(MissionType::Attack))
     .then(|| handler_state(entity))
+}
+
+/// The missions whose `+0x6D2` latch `AircraftClass::AI`'s head keeps: the
+/// zero entries of its byte table `0x004151C0`, indexed by `+0xAC - 1`
+/// (Attack, ParadropOverfly, SpyplaneApproach, SpyplaneOverfly).
+const LATCH_KEEPING_MISSIONS: [MissionType; 4] = [
+    MissionType::Attack,
+    MissionType::ParadropOverfly,
+    MissionType::SpyplaneApproach,
+    MissionType::SpyplaneOverfly,
+];
+
+/// `AircraftClass::AI @ 0x00414BB0`'s head, before its TemporalClass::Update
+/// (`0x00414BDB`): `+0x6D2` clears (`0x00414BD4`) unless the current mission
+/// is one of [`LATCH_KEEPING_MISSIONS`]. The test is `DEC EAX; CMP EAX,0x1E;
+/// JA` on `+0xAC`, so Sleep, NONE and any id past 31 clear too.
+///
+/// Assign_Mission (`0x005B2FD0`), Override_Mission (`0x005B3650`) and
+/// Restore_Mission (`0x004D8F80`) write `+0xAC` without Commence's clear, so a
+/// latched aircraft moved by a damage retaliation or a target expiry's
+/// Restore relies on this clear to become ready (`0x0041B5F0`) again.
+pub(crate) fn ai_head_latch_clear(entity: &mut GameEntity) {
+    if entity.mission_leaf.as_aircraft().is_none() {
+        return;
+    }
+    let keeps = entity
+        .mission
+        .current()
+        .known()
+        .is_some_and(|mission| LATCH_KEEPING_MISSIONS.contains(&mission));
+    if !keeps {
+        entity.mission_leaf.set_aircraft_action_latch(false);
+    }
+}
+
+/// Patrol restarted from its first state: Mission+0xBC 0 and `+0x6D2` clear.
+/// Aircraft Enter_Idle_Mode writes it after restoring Patrol
+/// (`0x00417719..0x00417723`).
+pub(crate) fn restart_patrol(entity: &mut GameEntity) {
+    entity.mission.set_handler_state(0);
+    entity.mission_leaf.set_aircraft_action_latch(false);
+}
+
+/// The aircraft-Patrol arm `TechnoClass` runs after a Restore_Mission (vt+0x1F8)
+/// on a target's detach: an Aircraft (`WhatAmI` vt+0x2C == 2) whose current
+/// mission is now Patrol (0x19) restarts it ([`restart_patrol`]).
+/// PointerExpired's suspended arm (`0x00707A4B..0x00707A6C`) and the detach
+/// sweep (`0x0070D50D..0x0070D532`) share it.
+pub(crate) fn restart_patrol_after_restore(entity: &mut GameEntity) {
+    if entity.category() == EntityCategory::Aircraft
+        && entity.mission.current() == MissionId::from_known(MissionType::Patrol)
+    {
+        restart_patrol(entity);
+    }
 }
 
 /// `MissionClass::AI @ 0x005B3060` for aircraft `id`: an alive aircraft whose

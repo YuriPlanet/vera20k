@@ -12,7 +12,7 @@ import struct
 
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_EIP, UC_X86_REG_ESI, UC_X86_REG_ESP
-from tools.native_oracle import NATIVE_SHA256, run_checked, provenance
+from tools.native_oracle import run_checked, provenance
 from tools.spatial_oracle.map_queries import dwords, packed
 from tools.spatial_oracle.unit_source_scatter import make_source_fixture, CELLS, ENTRY, QUEUE, SET, TABLE
 from tools.spatial_oracle.unit_scatter_state import ACTOR, TYPE, SP
@@ -260,7 +260,7 @@ def generate():
     rows=[execute(row)for row in cases()]
     frozen=json.dumps(rows[:33],sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()
     assert hashlib.sha256(frozen).hexdigest()==FROZEN_FIRST33_SHA256,'historical33 native cases changed'
-    return dict(schema_version=1,native_sha256=NATIVE_SHA256,scope=__doc__,cases=rows)
+    return dict(schema_version=1,scope=__doc__,cases=rows)
 
 
 def metadata():

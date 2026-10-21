@@ -1,8 +1,8 @@
 # House presentation color evidence
 
 `house_color.py/json/meta.json` execute the retail executable for all 21
-physical `RULESMD.INI [Colors]` entries. The sidecar records binary, emulator,
-source and payload identities.
+physical `RULESMD.INI [Colors]` entries. The sidecar records the payload
+identity.
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python -m tools.procedural_drawing_oracle.house_color --check

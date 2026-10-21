@@ -651,13 +651,17 @@ fn gsi_04_05_building_attack_frame_prelude_obeys_object_and_type_gates() {
     assert_eq!(frame(&houses), 42, "alliance and zero damage are not gates");
 
     let null_attacker = EntityDamageEvent::area(2, 10, 0, RAD_NO_ATTACKER, Some(source_owner), wh);
-    apply_building_receive_prelude(
-        &null_attacker,
-        &entities,
-        &rules,
-        &interner,
-        &mut houses,
-        43,
+    assert_eq!(
+        apply_building_receive_prelude(
+            &null_attacker,
+            &entities,
+            &rules,
+            &interner,
+            &mut houses,
+            43,
+        ),
+        BuildingReceivePrelude::Continue,
+        "0x0044227E skips the +0x54DC write and RespondToBaseAttack too"
     );
     assert_eq!(
         frame(&houses),
@@ -704,7 +708,11 @@ fn gsi_04_05_building_attack_frame_prelude_obeys_object_and_type_gates() {
     );
 
     let modded_skip = EntityDamageEvent::area(3, 10, 0, 1, Some(source_owner), wh);
-    apply_building_receive_prelude(&modded_skip, &entities, &rules, &interner, &mut houses, 46);
+    assert_eq!(
+        apply_building_receive_prelude(&modded_skip, &entities, &rules, &interner, &mut houses, 46),
+        BuildingReceivePrelude::Continue,
+        "the vtable +0x80 skip covers +0x54DC and RespondToBaseAttack"
+    );
     assert_eq!(
         frame(&houses),
         45,
@@ -796,6 +804,207 @@ fn gsi_04_05_building_attack_frame_precedes_immune_receiver_exit() {
         77,
         "the House write happens before ObjectClass immunity rejects damage"
     );
+}
+
+/// `BuildingClass::ReceiveDamage @ 0x00442230` skips `House+0x54D8`,
+/// `+0x54DC` and `RespondToBaseAttack @ 0x00708080` for a null attacker
+/// (`0x0044227E`), as BlowUpBridge passes: the victim House keeps its last
+/// attacker index and no Building response runs.
+#[test]
+fn gsi_04_05_null_attacker_building_hit_keeps_the_attacker_index() {
+    let rules = gsi_04_05_attack_frame_rules();
+    let mut entities = EntityStore::new();
+    entities.insert(make_entity_owned(1, "SOURCE", 4, 4, 100, "Enemy"));
+    let mut target = make_entity_owned(2, "NORMAL", 5, 4, 100, "Victim");
+    target.set_category_for_test(EntityCategory::Structure);
+    entities.insert(target);
+    let mut interner = test_interner();
+    let victim_owner = interner.intern("Victim");
+    let source_owner = interner.intern("Enemy");
+    let wh = interner.intern("HITWH");
+    let mut houses = computer_houses(&[victim_owner, source_owner]);
+    let mut trace_hook = FixtureTrace::default();
+
+    commit_hits(
+        &[EntityDamageEvent::area(2, 10, 0, 1, Some(source_owner), wh)],
+        &mut entities,
+        &rules,
+        &mut interner,
+        &mut houses,
+        60,
+        Some(&mut trace_hook),
+    );
+    commit_hits(
+        &[EntityDamageEvent::area(
+            2,
+            10,
+            0,
+            RAD_NO_ATTACKER,
+            Some(source_owner),
+            wh,
+        )],
+        &mut entities,
+        &rules,
+        &mut interner,
+        &mut houses,
+        61,
+        Some(&mut trace_hook),
+    );
+
+    assert_eq!(entities.get(2).unwrap().health.current(), 80);
+    let emergency = houses[&victim_owner].strategy_emergency();
+    assert_eq!(emergency.last_attacker_house_index(), 1);
+    assert_eq!(emergency.last_building_attack_frame(), 60);
+    assert_eq!(
+        trace_hook
+            .entries
+            .iter()
+            .filter(|entry| entry.site == BaseDefenseResponseCallSite::BuildingPrelude)
+            .count(),
+        1,
+        "only the sourced hit runs the Building response"
+    );
+}
+
+/// `BuildingClass::ReceiveDamage @ 0x00442230` returns 0 at `0x004423A3`
+/// for the retail CABHUT (`BridgeRepairHut=yes`, `Immune=yes`) before
+/// `TechnoClass::ReceiveDamage @ 0x00701900`: an ordinary sourced area hit,
+/// even under an Iron Curtain, resolves no receiver outcome (no Techno
+/// gates, impact light, anger or threat tail), and a WaveClass caller's
+/// shared damage stays unchanged (`wave_post_object_damage` is `None`).
+#[test]
+fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
+    use crate::sim::superweapon::invulnerability::{InvulnKind, InvulnerabilityState};
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+        return;
+    };
+    let mut sim = crate::sim::world::Simulation::new();
+    let source = sim
+        .spawn_object("MTNK", "Russians", 4, 4, 0, &rules)
+        .expect("retail MTNK spawns");
+    let source_owner = sim.substrate.entities.get(source).unwrap().owner();
+    let hut = sim
+        .spawn_object("CABHUT", "Neutral", 8, 4, 0, &rules)
+        .expect("retail CABHUT spawns");
+    let strength = rules.object("CABHUT").unwrap().strength;
+    let warhead = sim.interner.intern("AP");
+    assert!(rules.warhead("AP").is_some());
+    let event = EntityDamageEvent::area(hut, 100, 0, source, Some(source_owner), warhead);
+    for iron_curtain in [false, true] {
+        sim.substrate.entities.get_mut(hut).unwrap().invulnerability = iron_curtain.then(|| {
+            InvulnerabilityState::new(
+                crate::sim::timer::CdTimer::started(0, 100),
+                InvulnKind::IronCurtain,
+            )
+        });
+        let resolve = |sim: &crate::sim::world::Simulation| {
+            resolve_receive_damage(
+                &event,
+                &sim.substrate.entities,
+                &rules,
+                &sim.interner,
+                &sim.houses,
+                sim.house_alliances.as_map(),
+                false,
+                0,
+                None,
+            )
+            .is_none()
+        };
+        assert!(resolve(&sim), "IC {iron_curtain}: no receiver outcome");
+        assert_eq!(
+            wave_post_object_damage(
+                &event,
+                &sim.substrate.entities,
+                &rules,
+                &sim.interner,
+                &sim.houses,
+                sim.house_alliances.as_map(),
+                false,
+                0,
+                None,
+            ),
+            None,
+            "IC {iron_curtain}: the Wave packet is untouched"
+        );
+    }
+    sim.commit_noncombat_aoe_hits(
+        &rules,
+        None,
+        &[event],
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(
+        sim.substrate.entities.get(hut).unwrap().health.current(),
+        strength
+    );
+}
+
+/// `0x00442358..0x004423A0`: a `LaserFence=` Building returns 0 before
+/// Techno damage unless ignoreDefenses is set. Dormant in retail.
+#[test]
+fn laser_fence_building_returns_before_techno_damage_without_ignore_defenses() {
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[VehicleTypes]\n0=SOURCE\n[BuildingTypes]\n0=FENCE\n[Warheads]\n0=HITWH\n\
+             [SOURCE]\nStrength=100\nArmor=heavy\n\
+             [FENCE]\nStrength=100\nArmor=wood\nLaserFence=yes\n\
+             [HITWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        ),
+        &IniFile::from_str("[FENCE]\nFoundation=1x1\n"),
+    )
+    .expect("LaserFence rules parse");
+    assert!(rules.object("FENCE").unwrap().laser_fence);
+    let mut entities = EntityStore::new();
+    entities.insert(make_entity_owned(1, "SOURCE", 4, 4, 100, "Enemy"));
+    let mut fence = make_entity_owned(2, "FENCE", 5, 4, 100, "Victim");
+    fence.set_category_for_test(EntityCategory::Structure);
+    entities.insert(fence);
+    let mut interner = test_interner();
+    let victim_owner = interner.intern("Victim");
+    let source_owner = interner.intern("Enemy");
+    let wh = interner.intern("HITWH");
+    let mut houses = computer_houses(&[victim_owner, source_owner]);
+
+    commit_hits(
+        &[EntityDamageEvent::area(2, 10, 0, 1, Some(source_owner), wh)],
+        &mut entities,
+        &rules,
+        &mut interner,
+        &mut houses,
+        70,
+        None,
+    );
+    assert_eq!(entities.get(2).unwrap().health.current(), 100);
+    assert_eq!(
+        houses[&victim_owner]
+            .strategy_emergency()
+            .last_building_attack_frame(),
+        70,
+        "the attacker bookkeeping precedes the gate"
+    );
+
+    commit_hits(
+        &[EntityDamageEvent::direct_receiver(
+            2,
+            10,
+            0,
+            1,
+            Some(source_owner),
+            wh,
+            ReceiverCallFlags {
+                ignore_defenses: true,
+                arg6: false,
+            },
+        )],
+        &mut entities,
+        &rules,
+        &mut interner,
+        &mut houses,
+        71,
+        None,
+    );
+    assert_eq!(entities.get(2).unwrap().health.current(), 90);
 }
 
 #[test]

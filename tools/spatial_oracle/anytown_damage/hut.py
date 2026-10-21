@@ -8,10 +8,10 @@ from pathlib import Path
 import hashlib,struct
 from unicorn.x86_const import *
 
-from tools.native_oracle import NATIVE_SHA256,RET_MAGIC,provenance
+from tools.native_oracle import RET_MAGIC,provenance
 from .hut_publication import finish_vectors
 from tools.spatial_oracle.anytown_damage.anytown_resident import Resident,rules,inputs,identity,sr
-from tools.spatial_oracle.anytown_damage.validate_packet import inputs as validate_inputs, source_provenance
+from tools.spatial_oracle.anytown_damage.validate_packet import inputs as validate_inputs
 from tools.spatial_oracle.shrapnel_repair import retail_inputs as ri
 from tools.rules_oracle.bridge_anim_lists import Lists,TYPE,HEAP
 from tools.projectile_oracle.bridge_render_inputs import lexical
@@ -156,14 +156,14 @@ def generate():
     retail=validate_inputs();t=identity.theater();r,fields=rules();anim,anim_fields=animation_inputs()
     rows=[run_case(hut,stage,t,r,anim) for hut in ([85,58],[89,51])
           for stage in ('healthy','first_damaged','collapsed')]
-    return dict(schema=1,native_sha256=NATIVE_SHA256,retail_inputs=retail,theater=t,
+    return dict(schema=1,retail_inputs=retail,theater=t,
                 rules=fields,animation_inputs=anim_fields,cases=rows,
                 caller_coverage='Actual574000/5749C0/575BA0 on both physical huts. 575870 is the original X-axis alternative; instruction-established only for this Y-axis stock span. Native fallback587180 route is instruction-established only; stock cases retain a primary overlay seed.',
                 boundary='No native physical map/Rules/type load. Current sparse map cells, empty occupants, initial native-seeded0 RNG streams and frame1000 are supplied. Selected original Recalc, lookup, selector, extent, sweep, retries, original primitives, RNG and FTOL execute. Anim421EA0 returns supplied constructor storage at the exact request boundary; graph/presentation callbacks remain inherited seams. No active hut lifecycle, animations, audio, rendering or Rust parity claim.')
 
 
 def metadata():
-    result=provenance(scope=__doc__,assumptions=[
+    return provenance(scope=__doc__,assumptions=[
         'Unmodified stock Anytown map and native-read concrete overlay/TMP bindings from the frozen anytown_damage owner. Both authored huts are supplied directly to original Map574000. First-damaged/collapsed prerequisites are produced by one/two actual57CCF0 calls at87,54, not manufactured overlay writes.',
         'The complete original lookup, primary selection, physical Y-axis bounded sweep, retries and57CCF0 execute. Native future cell reads observe each prior mutation immediately. Both function return EAX and low byte are recorded mechanically; hut root/walker have no declared Boolean return contract.',
         'Actual Lists reader executes BridgeExplosions constructor/read blocks over physical layer strings. Original AnimType constructors and vector storage are copied unchanged into the resident VM. No ART or Anim instance construction is inferred from retained names.',
@@ -179,8 +179,6 @@ def metadata():
                     'scenario_range':0x65C7E0,'animation_request_boundary':0x421EA0,
                     'fallback_dispatch_instruction_only':0x587180,'bridge_explosion_reader':0x66DB93,
                     'map_height_initializer':0x5617E0})
-    result.update(source_provenance(__file__))
-    return result
 
 
 if __name__=='__main__':

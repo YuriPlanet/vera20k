@@ -1390,13 +1390,12 @@ fn raw_infantry_frames_match_whole_original_selector_rows() {
     ))
     .unwrap();
     let receipt = &corpus["infantry_frame_selection_receipt"];
-    assert_eq!(
-        receipt["native_span"]["sha256"],
-        "60ee1cdafdd13ab060a3fc6fc80794476f42f943d933090b63d41ced74714608"
-    );
+    assert_eq!(receipt["native_span"]["address"], "0x00518D80");
+    assert_eq!(receipt["native_span"]["stop"], "0x00518F89");
+    assert_eq!(receipt["native_span"]["length"], 0x209);
     assert_eq!(
         receipt["preserved_payload"]["canonical_sha256"],
-        "54a2a1f2b554a404ed0e6530b4dc2bdea0f666584bf03f1ed8f873bb45a28e91"
+        "94db9dcd2cb08ecbc23867f5e11f09f5cb1b2d1e3db7f29eebf491dbb59a8a09"
     );
     let records = receipt["physical_gi_sequence"]["records"]
         .as_array()

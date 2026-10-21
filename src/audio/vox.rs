@@ -23,7 +23,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use crate::rules::sound_ini::{EvaPriority, EvaRegistry, EvaSide, EvaType};
+use crate::rules::sound_ini::{EvaPriority, EvaRegistry, EvaType};
 
 /// `VoxClass::PlayNextQueued @ 0x00752760`: `0x0075296D MOV [0xB1D4D0],0x1F4`
 /// — the gap installed after a line starts successfully; the next line may
@@ -93,10 +93,24 @@ impl VoxQueue {
         Self::default()
     }
 
-    /// SetSide7534E0: only -1 maps to0; retain every other signed input.
-    /// Native histories: tools/spatial_oracle/eva_selection.json.
-    pub fn set_side(&mut self, side: i32) {
-        self.selected_voice = if side == -1 { 0 } else { side };
+    /// SetSide7534E0 / installed Ares1002FB00 bind the process cache.
+    /// Native stock and Ares histories: spatial_oracle/eva_selection.json
+    /// and ares_eva.json. Missing Side retains the Ares cache; negative
+    /// Scenario.Side clears it. Reading EVA.Tag never calls this binding.
+    pub fn set_side(&mut self, side: i32, rules: &crate::rules::ruleset::RuleSet) {
+        #[cfg(feature = "ares")]
+        {
+            if side < 0 {
+                self.selected_voice = -1;
+            } else if let Some(voice) = rules.side_eva_voice_index(side) {
+                self.selected_voice = voice;
+            }
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            let _ = rules;
+            self.selected_voice = if side == -1 { 0 } else { side };
+        }
     }
 
     pub const fn selected_voice(&self) -> i32 {
@@ -113,7 +127,7 @@ impl VoxQueue {
     ) -> Option<&'a str> {
         registry
             .entry(&node.event)?
-            .column(EvaSide::from_voice_index(self.selected_voice))
+            .column_by_voice(self.selected_voice)
     }
 
     /// `VoxClass::QueueVoice @ 0x00752480`.
@@ -454,7 +468,9 @@ impl VoxQueue {
 #[path = "vox_opening_tests.rs"]
 mod opening_tests;
 
-#[cfg(test)]
+// Original SetSide/GetFilename hooks are replaced in an Ares build. Its
+// own executed selection controls are covered by ares_eva tests.
+#[cfg(all(test, not(feature = "ares")))]
 #[path = "eva_selection_tests.rs"]
 mod selection_tests;
 
@@ -837,3 +853,7 @@ mod tests {
         assert!(q.queue_voice(unit_lost(), None, None).inserted);
     }
 }
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "ares_eva_tests.rs"]
+mod ares_eva_tests;

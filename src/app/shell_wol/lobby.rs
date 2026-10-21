@@ -348,9 +348,11 @@ pub(crate) fn room(state: &AppState) -> crate::app::match_runtime::session::Netw
 /// OnGameStart, so a user parting in between stays listed. The WDT builder
 /// for `[0xA8B244]` 3 (`0x0079546E..0x00795574`) is dormant for custom games.
 pub(crate) fn start_terms(state: &AppState) -> crate::app::match_runtime::session::WolStartTerms {
-    lobby(state)
+    let mut terms = lobby(state)
         .and_then(|lobby| Some(start_terms_for(lobby.current.as_ref()?, &lobby.members)))
-        .unwrap_or_default()
+        .unwrap_or_default();
+    terms.quick_coop = super::quick_match::quick_coop(state);
+    terms
 }
 
 fn start_terms_for(
@@ -376,6 +378,7 @@ fn start_terms_for(
     crate::app::match_runtime::session::WolStartTerms {
         tournament: if clan { 2 } else { current.tournament },
         squad_lists,
+        quick_coop: false,
     }
 }
 
@@ -740,10 +743,12 @@ pub(super) fn quick_match_join_game(state: &mut AppState, channel: WolChannel) {
 
 /// `0x00789B60`'s Quick Match branch (`0x00789BA8..0x00789D60`,
 /// `0x00789EC4..0x00789EEE`): no `0xC3`, two users, no key,
-/// `"%s's_game"`, tournament 1, game flags `0x800` plus `[0xB77DD4]` and no
-/// resolution bits; the leave and the create then run as for Create.
+/// `"%s's_game"`, tournament 1 (Quick Co-op 0, `0x00789EC9`), game flags
+/// `0x800` plus `[0xB77DD4]` and no resolution bits; the leave and the
+/// create then run as for Create.
 pub(super) fn quick_match_create(state: &mut AppState) {
     let nickname = nickname(state);
+    let tournament = i32::from(!super::quick_match::quick_coop(state));
     let (width, _) = options_screen(state);
     let globals = &mut state.frontend.wol_lobby_globals;
     if width >= 1024 {
@@ -752,7 +757,7 @@ pub(super) fn quick_match_create(state: &mut AppState) {
     let channel = WolChannel {
         kind: GAME_CHANNEL,
         max_users: 2,
-        tournament: 1,
+        tournament,
         name: format!("{nickname}'s_game"),
         game_flags: GAME_QUICK_MATCH.wrapping_add(globals.lobby_number as u32),
         ..Default::default()

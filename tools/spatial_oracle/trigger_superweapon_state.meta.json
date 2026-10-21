@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -74,5 +73,5 @@
     }
   ],
   "replay_command": "python -m tools.spatial_oracle.trigger_action_values --superweapon-state",
-  "payload_sha256": "0b5e61be50ced914efcca3630040576dce774f19a1854abde252dc140e681491"
+  "payload_sha256": "bd54c892cc6c06fd6796a215a799fb87ff93b72d7948590afba12151b9b2f07a"
 }

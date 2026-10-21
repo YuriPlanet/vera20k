@@ -66,7 +66,7 @@ Pilarna visar dataflödet:
 
 Du behöver:
 
-- **Rust och Git:** [Rust](https://rustup.rs/) 1.88 eller senare, installerad med rustup, och
+- **Rust och Git:** [Rust](https://rustup.rs/) 1.97 eller senare, installerad med rustup, och
   [Git](https://git-scm.com/).
 - **Byggverktyg:** på Windows Visual Studios C++-byggverktyg, som Rusts installationsprogram
   erbjuder sig att installera; på macOS `xcode-select --install`; på Debian och Ubuntu

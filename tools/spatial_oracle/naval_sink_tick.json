@@ -2425,12 +2425,9 @@
       }
     }
   ],
-  "harness_sha256": "06ee7674c5426e04ccb3517b3647bfab9d0637f9dc05213669e0dea98e2af94e",
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "schema_version": 1,
   "scope": "Original UnitAI sinking suffix on state produced by the actual C4 receiver.\n\nEntry7364A1 is an explicit interior frame after FootAI/TurretAI. No preceding\nor subsequent AI is executed. Ordinary rows stop at7365BB; wake rows stop at\nthe actual Anim constructor entry after the original Scenario jitter; terminal\nrows stop at FootUnInit entry after the actual second RecordKill callback.\n",
   "source_receiver_case": "west_water_head_road_dz0",
-  "source_receiver_harness_sha256": "95979c94da43df23f8d582a662d0269f0151c3f4ce926bae3a8b40167f1b36f5",
   "wake_layers": [
     {
       "file": "RULESMD.INI",

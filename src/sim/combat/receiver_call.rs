@@ -176,9 +176,14 @@ pub(super) enum BuildingReceivePrelude {
 /// Techno receiver.
 ///
 /// gamemd-derived: `BuildingClass__ReceiveDamage @ 0x00442230` returns zero at
-/// `0x00442262` for disallowed self damage. A non-null attacker then writes the
-/// victim owner's `House+0x54D8` at `0x0044229C`, before Building immunity,
-/// the already-dead gate, and `TechnoClass__ReceiveDamage @ 0x00442425`.
+/// `0x00442262` for disallowed self damage. Then, only for a non-null
+/// attacker (`0x0044227E`) on a building whose vt+0x80 (`0x00457620` ->
+/// `BuildingTypeClass__Is1x1WithUndeploy @ 0x00465D40`, `0x00442286`) is
+/// false, it writes the victim owner's `House+0x54D8` (`0x0044229C`) and
+/// `+0x54DC` (`0x004422B4`) and calls `RespondToBaseAttack @ 0x00708080`
+/// (`0x004422BC`); `Respond` asks the caller for the last two. All of it
+/// precedes the LaserFence/hut gates, the already-dead gate, and
+/// `TechnoClass__ReceiveDamage @ 0x00442425`.
 pub(super) fn apply_building_receive_prelude(
     event: &EntityDamageEvent,
     entities: &EntityStore,
@@ -200,10 +205,10 @@ pub(super) fn apply_building_receive_prelude(
     if event.attacker_id == event.target_id && !target_type.damage_self {
         return BuildingReceivePrelude::ReturnZero;
     }
-    if event.attacker_id != RAD_NO_ATTACKER
-        && !target_type.is_1x1_with_undeploy()
-        && let Some(owner) = houses.get_mut(&target.owner())
-    {
+    if event.attacker_id == RAD_NO_ATTACKER || target_type.is_1x1_with_undeploy() {
+        return BuildingReceivePrelude::Continue;
+    }
+    if let Some(owner) = houses.get_mut(&target.owner()) {
         owner
             .strategy_emergency_mut()
             .note_building_attack(current_tick as u32 as i32);
@@ -229,16 +234,41 @@ pub(super) fn resolve_receive_damage(
     let distance_leptons = event.distance_leptons;
     let receiver_flags = event.receiver_flags;
     let target = entities.get(event.target_id)?;
+    let target_type = interner.object_type(target.type_ref(), rules);
+    let target_is_building = target.category() == EntityCategory::Structure;
+    // `BuildingClass::ReceiveDamage @ 0x00442230` returns 0 at two type gates
+    // after the wrapper's attacker bookkeeping and base response (already
+    // executed by commit_entities) and before the Health0 test and
+    // `TechnoClass::ReceiveDamage`. `0x00442358..0x004423A0`: a
+    // `LaserFence=` type (`+0x16BF`, BuildingTypeClass::ReadINI
+    // `0x00460AA9`) without ignoreDefenses (arg5, read at `0x00442368`).
+    // Dormant in retail: no type sets `LaserFence=`.
+    if target_is_building
+        && !receiver_flags.ignore_defenses
+        && target_type.is_some_and(|object| object.laser_fence)
+    {
+        return None;
+    }
+    // `0x004423A3..0x004423E4`: a `BridgeRepairHut=` type (`+0x16B6`) that is
+    // also `Immune=` (`+0x233`). The LaserFence gate is the only reader of
+    // ignoreDefenses before it (the next ones pass it to Techno at
+    // `0x00442425` and to vt+0x4EC at `0x00442665`), so the forced C4 of
+    // BlowUpBridge (`0x0047DDAE`) leaves the hut untouched.
+    if target_is_building
+        && target_type.is_some_and(|object| object.bridge_repair_hut && object.immune)
+    {
+        return None;
+    }
     // Building442230 returns before Techno for Health0, after its wrapper
     // response (already executed by commit_entities). Infantry/Unit instead
     // delegate and can re-enter Techno's fatal tail at zero Health.
-    if target.category() == EntityCategory::Structure && target.health.current() == 0 {
+    if target_is_building && target.health.current() == 0 {
         return None;
     }
     // Residual: a null warhead (the empty name) finds no WarheadType, so the
     // hit is dropped. Native passes it with IgnoreDefenses: Object 5F5390
-    // skips 489180, Building 442230 reads it only in its NowYellow/NowRed
-    // Sparky loop, Unit 737C90 and Aircraft 4165C0 never read it, and Foot
+    // skips 489180, Building 442230 reads the warhead only for its Sparky=
+    // test in the NowYellow/NowRed loop, Unit 737C90 and Aircraft 4165C0 never read it, and Foot
     // 4D7330 and Techno 701BF6 test it, so the target dies; an Infantry death
     // reads its InfDeath (518369) and crashes. Only custom Rules without
     // `[CombatDamage] C4Warhead=`/`CrushWarhead=` reach it (retail and all
@@ -248,7 +278,6 @@ pub(super) fn resolve_receive_damage(
     // death's C4 area damage matches native, which returns on the null
     // warhead (DamageArea 489280 at 4892D7).
     let warhead = rules.warhead(interner.resolve(event.warhead_ref))?;
-    let target_type = interner.object_type(target.type_ref(), rules);
     let source = (event.attacker_id != RAD_NO_ATTACKER)
         .then(|| entities.get(event.attacker_id))
         .flatten();
@@ -279,7 +308,6 @@ pub(super) fn resolve_receive_damage(
     let attacker_is_allied = source_house.is_some_and(|owner| allied(owner, target.owner()));
     let source_house_is_allied = source_house.is_some_and(|owner| allied(target.owner(), owner));
 
-    let target_is_building = target.category() == EntityCategory::Structure;
     let target_view = damage::TargetDamageView {
         current_hp: target.health.current(),
         object_immune: target_type.is_some_and(|object| object.immune),

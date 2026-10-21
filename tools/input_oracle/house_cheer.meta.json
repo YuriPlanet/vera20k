@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -35,5 +34,5 @@
     "constructor_rate_store": "0x00665D92"
   },
   "replay_command": "python -m tools.input_oracle.selection_navigation --house-cheer",
-  "payload_sha256": "5d643c5fb8b2ddfad1041d58170378228885b99fcbd0d80bf5450ad3a2ccdb76"
+  "payload_sha256": "41ec360525548450cfe49eda1e2182ddc2584d2e2429f2120ec54f52b8307649"
 }

@@ -19,9 +19,9 @@
 //! The handlers draw nothing themselves: the Scenario draws are the edge
 //! pick's (`PickCellOnEdge @ 0x004AA440`). They write the mission timer and
 //! detach nothing. `AircraftClass::AI`'s head clears `+0x6D2` in every
-//! mission but 1, 27, 30 and 31 (byte table `0x004151C0`), so the latch
-//! Approach sets holds through Overfly; VERA does not port that clear, which
-//! this plane never reaches.
+//! mission but 1, 27, 30 and 31 (byte table `0x004151C0`,
+//! [`super::ai_head_latch_clear`]), so the latch Approach sets holds through
+//! Overfly.
 
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::NavTargetRef;

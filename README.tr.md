@@ -67,7 +67,7 @@ Oklar veri akışını gösterir:
 
 Gerekenler:
 
-- **Rust ve Git:** rustup ile kurulmuş [Rust](https://rustup.rs/) 1.88 veya üzeri ve
+- **Rust ve Git:** rustup ile kurulmuş [Rust](https://rustup.rs/) 1.97 veya üzeri ve
   [Git](https://git-scm.com/).
 - **Derleme araçları:** Windows'ta, Rust kurulum programının kurmayı önerdiği Visual Studio C++
   derleme araçları; macOS'te `xcode-select --install`; Debian ve Ubuntu'da

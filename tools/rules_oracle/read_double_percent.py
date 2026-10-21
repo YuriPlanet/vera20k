@@ -31,7 +31,7 @@ from unicorn import UC_HOOK_CODE, Uc, UC_ARCH_X86, UC_MODE_32
 from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDI, UC_X86_REG_ESI,
                                UC_X86_REG_ESP, UC_X86_REG_FPCW)
 
-from tools.native_oracle import (NATIVE_SHA256, RET_MAGIC, SCRATCH, STACK_BASE, STACK_SIZE,
+from tools.native_oracle import (RET_MAGIC, SCRATCH, STACK_BASE, STACK_SIZE,
                                  call, finish_vectors, load_image, provenance, run_checked)
 from tools.spatial_oracle.building_body_rules import (ENTRY, INDEX, INI, RAW, SECTION, SP,
                                                        TYPE, Fixture)
@@ -241,7 +241,7 @@ def c4_rows(reader):
 
 def generate():
     reader = Reader()
-    return {'native_sha256': NATIVE_SHA256, 'reader': reader_rows(reader), 'prone': prone_rows(reader),
+    return {'reader': reader_rows(reader), 'prone': prone_rows(reader),
             'c4': c4_rows(reader)}
 
 

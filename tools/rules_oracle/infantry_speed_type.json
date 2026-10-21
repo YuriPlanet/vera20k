@@ -1433,9 +1433,7 @@
       }
     }
   ],
-  "harness_sha256": "4757608944d2a2ef05d6e26fc5b6d8a504159c22b223cfc345204ed2a05fce0a",
   "key": "SpeedType",
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "physical": {
     "constructor": {
       "field_writes": [

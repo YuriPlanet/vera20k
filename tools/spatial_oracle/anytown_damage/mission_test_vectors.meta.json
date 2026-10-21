@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -21,9 +20,8 @@
     "attack": "0x004D4DC0"
   },
   "source_files": {
-    "mission.json.gz": "baf23f248ac724807b76f3102fee89bbf698dfe49dea1677047abc002be2a04f",
-    "mission_counter.json": "699a738930e8936a6544e6a873617246d2453852c88668c46184fe1eeb0a193c"
+    "mission.json.gz": "aee14fed26c792155254fd3e845364fd2794810534bc0cb5bc1c689e8dffdab2",
+    "mission_counter.json": "2687d98a2320e6ed60ffd1a2e2fc6337eb755b7d7856274386db800f75c08219"
   },
-  "projection_source_sha256": "cdd796ded427c8258be5fee51505bdb75992c3a3d5c93f898789248f12afc521",
-  "payload_sha256": "033cf22b4f2eb1ef62d4efdb47ff86e4a540ef70ef57a01872850d8e08774e10"
+  "payload_sha256": "8aa123407e32712c0be65a69986396667bb377751f8732e05bdb8de11da218ca"
 }

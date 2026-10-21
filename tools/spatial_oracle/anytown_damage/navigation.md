@@ -16,7 +16,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python -m tools.spatial_oracle.anytown_da
 
 `--check` is also the default. `--write` is explicit and still rejects any change to the independently frozen original payload. The original and published payload hashes are pinned in `navigation_promotion.json`; its original external receipt is preserved. The shared compressed-publication owner is used with a navigation-specific promotion sidecar, leaving the existing six-witness manifest untouched until its owner refreshes it.
 
-`navigation_inputs.py` uses the package input/theater helpers, the shared MAP pack decoder and the existing sidebar stock MIX reader. Original emulation depends only on repository helpers and explicit local retail inputs. No external research Python import is needed. `navigation_receipt.json` records source and artifact hashes. `navigation.json.gz` is deterministic-gzip canonical JSON; metadata records the payload hash, Unicorn version, boundaries and original entry addresses. Original `.text` is checked after initialization and every bridge stage. No native code is replaced. The payload contains numeric authored input projections and native output tables, not original MAP/TMP/INI file bodies or copied lexical INI dictionaries; the existing shared publication projection is still applied.
+`navigation_inputs.py` uses the package input/theater helpers, the shared MAP pack decoder and the existing sidebar stock MIX reader. Original emulation depends only on repository helpers and explicit local retail inputs. No external research Python import is needed. `navigation_receipt.json` records artifact hashes. `navigation.json.gz` is deterministic-gzip canonical JSON; metadata records the payload hash, Unicorn version, boundaries and original entry addresses. Original `.text` is checked after initialization and every bridge stage. No native code is replaced. The payload contains numeric authored input projections and native output tables, not original MAP/TMP/INI file bodies or copied lexical INI dictionaries; the existing shared publication projection is still applied.
 
 To repeat the saved production comparison after producing compatible exports:
 
@@ -115,7 +115,7 @@ component priors. Actual Cell lighting produces the top scalar; its floor pixels
 are cleared before the separate wall raster. The erased row reuses the existing
 Tactical loop's actual `-1` admission and observes no body/shadow calls; its map
 and visibility transport boundaries remain explicit. This does not claim a whole
-Tactical frame or GPU composition. Sidecars record the binary and reproduction command;
+Tactical frame or GPU composition. Sidecars record the reproduction command;
 validation receipts remain external.
 
 `python -m tools.spatial_oracle.anytown_damage.mtnk_attack --authored-fence-driveover --write`

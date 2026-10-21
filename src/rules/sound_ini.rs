@@ -34,6 +34,8 @@
 use std::collections::HashMap;
 
 use crate::rules::ini_parser::{IniFile, IniSection};
+#[cfg(feature = "ares")]
+use crate::rules::ini_value::truncate_native_bytes;
 use crate::rules::ini_value::{crt_atoi, strtok};
 
 /// `Control=` flag words. gamemd-derived: the `(char*, u32)` table at
@@ -758,6 +760,9 @@ pub enum EvaSide {
     Yuri,
 }
 
+/// Native stock voice indices; Ares extra tags start immediately after these.
+const EVA_STOCK_TAGS: [&str; 3] = ["Allied", "Russian", "Yuri"];
+
 impl EvaSide {
     /// GetFilename753380 and PlayNextQueued7528E8 project the already-bound
     /// voice index. SetSide's -1 normalization belongs to VoxQueue, not here.
@@ -782,6 +787,9 @@ pub struct EvaEntry {
     pub russian: Option<String>,
     /// `Yuri=` column (`+0x2C`).
     pub yuri: Option<String>,
+    /// Ares100639C0's nine-byte slots, in the owning registry's EVATypes order.
+    #[cfg(feature = "ares")]
+    extra_columns: Vec<Option<String>>,
     /// `Type=` (`+0x4C`), default STANDARD.
     pub eva_type: EvaType,
     /// `Priority=` (`+0x48`), default NORMAL.
@@ -800,6 +808,8 @@ impl EvaEntry {
             allied: None,
             russian: None,
             yuri: None,
+            #[cfg(feature = "ares")]
+            extra_columns: Vec::new(),
             eva_type: EvaType::Standard,
             priority: EvaPriority::Normal,
             volume: 1.0,
@@ -842,6 +852,42 @@ impl EvaEntry {
             EvaSide::Yuri => self.yuri.as_deref(),
         }
     }
+
+    /// GetFilename753380, replaced by Ares10063920 when enabled. Ares keeps
+    /// signed invalid indices empty rather than selecting the stock Yuri column.
+    /// Executed controls: tools/spatial_oracle/ares_eva.{json,md}.
+    pub fn column_by_voice(&self, voice: i32) -> Option<&str> {
+        #[cfg(feature = "ares")]
+        {
+            match voice {
+                0 => self.allied.as_deref(),
+                1 => self.russian.as_deref(),
+                2 => self.yuri.as_deref(),
+                _ => self
+                    .extra_columns
+                    .get(usize::try_from(voice.checked_sub(3)?).ok()?)?
+                    .as_deref(),
+            }
+        }
+        #[cfg(not(feature = "ares"))]
+        self.column(EvaSide::from_voice_index(voice))
+    }
+
+    /// Ares100639C0 runs after the stock entry reader: ReadString(capacity16,
+    /// default empty), then bounded copy into char[9]. Each read replaces every
+    /// slot, including a missing/empty key. This is fixed EVAMD data, not a rules
+    /// layer. Native executions: ares_eva.json extra_columns[_reread].
+    #[cfg(feature = "ares")]
+    fn read_extra_columns(&mut self, section: Option<&IniSection>, tags: &[String]) {
+        self.extra_columns = tags
+            .iter()
+            .map(|tag| {
+                section
+                    .and_then(|section| section.read_name(tag, 16))
+                    .map(|value| truncate_native_bytes(value, 8).to_string())
+            })
+            .collect();
+    }
 }
 
 /// The `VoxClass` entry array (`0xB1D4A4`, count `0xB1D4B0`), built by
@@ -860,6 +906,10 @@ pub struct EvaRegistry {
     /// Derived lookup only; built with the entry vector and never mutated
     /// independently. ASCII uppercase implements the original stricmp scan.
     names: HashMap<String, usize>,
+    /// Ares10063660 owns first spelling/order of additional voice tags. Entry
+    /// extra-column slots derive from this same order; neither mutates after init.
+    #[cfg(feature = "ares")]
+    extra_tags: Vec<String>,
 }
 
 impl EvaRegistry {
@@ -867,10 +917,31 @@ impl EvaRegistry {
     pub fn from_ini(ini: &IniFile) -> Self {
         let mut entries = Vec::new();
         let mut names = HashMap::new();
+        // Ares10063660 registers EVATypes before DialogList. ReadString's
+        // capacity200 includes NUL; stock tags and later case variants are
+        // skipped. Evidence: tools/spatial_oracle/ares_eva.{json,md}.
+        #[cfg(feature = "ares")]
+        let extra_tags = {
+            let mut tags: Vec<String> = Vec::new();
+            if let Some(list) = ini.section("EVATypes") {
+                for name in list.keys().filter_map(|key| list.read_name(key, 200)) {
+                    if EVA_STOCK_TAGS
+                        .iter()
+                        .any(|stock| stock.eq_ignore_ascii_case(name))
+                        || tags.iter().any(|tag| tag.eq_ignore_ascii_case(name))
+                    {
+                        continue;
+                    }
+                    tags.push(name.to_string());
+                }
+            }
+            tags
+        };
         if let Some(list) = ini.section("DialogList") {
-            // Each entry name through `ReadString` into `char[200]` (`0x0075304D`).
+            // Stock ReadString char[200] (75304D); Ares10063660 uses char[40].
+            let capacity = if crate::rules::ARES_ENABLED { 40 } else { 200 };
             for key in list.keys() {
-                let Some(name) = list.read_name(key, 0xC8) else {
+                let Some(name) = list.read_name(key, capacity) else {
                     continue;
                 };
                 let id = name.to_ascii_uppercase();
@@ -878,14 +949,53 @@ impl EvaRegistry {
                     continue;
                 }
                 names.insert(id, entries.len());
-                entries.push(EvaEntry::from_section(name, ini.section(name)));
+                let entry = EvaEntry::from_section(name, ini.section(name));
+                #[cfg(feature = "ares")]
+                let entry = {
+                    let mut entry = entry;
+                    entry.read_extra_columns(ini.section(name), &extra_tags);
+                    entry
+                };
+                entries.push(entry);
             }
         }
         log::info!(
             "EvaRegistry: loaded {} EVA event definitions",
             entries.len()
         );
-        Self { entries, names }
+        Self {
+            entries,
+            names,
+            #[cfg(feature = "ares")]
+            extra_tags,
+        }
+    }
+
+    /// Ares1002EC00 resolves stock names to 0/1/2, then registered EVATypes
+    /// to ordinal+3, with case-insensitive comparison and no whitespace trim.
+    /// `none` handling belongs to the retained Side field reader, after lookup.
+    /// Source/executions: tools/spatial_oracle/ares_eva.{json,md}.
+    pub fn voice_index_for_tag(&self, tag: &str) -> Option<i32> {
+        if let Some(index) = EVA_STOCK_TAGS
+            .iter()
+            .position(|stock| stock.eq_ignore_ascii_case(tag))
+        {
+            return Some(index as i32);
+        }
+        #[cfg(feature = "ares")]
+        {
+            self.extra_tags
+                .iter()
+                .position(|name| name.eq_ignore_ascii_case(tag))
+                .map(|index| {
+                    i32::try_from(index)
+                        .expect("EVA voice registry exceeds native i32 count")
+                        .checked_add(3)
+                        .expect("EVA voice registry exceeds native i32 count")
+                })
+        }
+        #[cfg(not(feature = "ares"))]
+        None
     }
 
     /// `VoxClass::PlayEVA`'s `stricmp` scan: the entry for an event name.
@@ -978,6 +1088,10 @@ fn parse_sound_priority(raw: &str) -> u8 {
         .find(|(name, _)| name.eq_ignore_ascii_case(token))
         .map_or(SOUND_PRIORITY_DEFAULT, |&(_, value)| value)
 }
+
+#[cfg(test)]
+#[path = "sound_ini_ares_eva_tests.rs"]
+mod ares_eva_tests;
 
 #[cfg(test)]
 mod tests {

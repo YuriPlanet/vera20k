@@ -56,8 +56,8 @@ be cited when claiming them.
 
 ## Current mechanism evidence
 
-All native corpora use the executable SHA above. A native comparison applies
-only to its declared inputs and boundary; supplied lifecycle, map and scene
+All native corpora use the configured original executable. A native comparison
+applies only to its declared inputs and boundary; supplied lifecycle, map and scene
 state does not establish the unexecuted producers.
 
 | Mechanism and authoritative owner | Native evidence | Current Rust evidence |

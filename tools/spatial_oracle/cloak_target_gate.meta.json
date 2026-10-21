@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -37,5 +36,5 @@
     "warhead_read": "0x0075D3A0"
   },
   "replay_command": "python -m tools.spatial_oracle.cloak_target_gate",
-  "payload_sha256": "89616301f87faee968115b1866bced60a625f8834be47dc9de08f67c0a7dbc79"
+  "payload_sha256": "673807d58008888bd0b8464340182ad221fdd151d0d3e5ae938ca54f59722262"
 }

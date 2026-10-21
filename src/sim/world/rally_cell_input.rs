@@ -20,6 +20,8 @@ impl Simulation {
     /// factory. AircraftType changes them to Winged/Fly; Naval overrides both.
     /// Source zone uses physical Location, and the clicked cell's bridge flag.
     /// Native FNPC selection reads binary frame; it makes no RNG draw.
+    /// Answers the Cell event 0x1E archives, or `None` when the click
+    /// archives nothing.
     pub fn factory_rally_cell_input(
         &self,
         id: u64,
@@ -47,7 +49,7 @@ impl Simulation {
             .map_size_diamond()
             .ok_or("rally input lacks native map dimensions")?;
         let cells = NativeCellQuery::isolated(terrain);
-        resolve_rally_cell_click(
+        let found = resolve_rally_cell_click(
             &cells,
             zones,
             &self.substrate.raw_cell_occupation,
@@ -61,9 +63,30 @@ impl Simulation {
                 factory: object.factory_type(),
                 naval: object.naval,
             },
-        )
-        // A miss sends no rally event and keeps ArchiveTarget. The click
-        // owner still queues the following SELL for an UndeploysInto type.
+        )?;
+        if found.is_some() {
+            return Ok(found);
+        }
+        // FNPC searches only rings 0..31 around the click (`0x0056DCE1`),
+        // so a click with no reachable ground nearby misses. A miss
+        // (`0x0044395E..0x00443977`) sends no event, and an older
+        // ArchiveTarget stays, except for a Construction Yard that passes
+        // the redeploy gates again (`0x00443A7B..0x00443AB8`: ConstructionYard
+        // `Type+0x16B9`, owner IsControlledByHuman, GameMode, the MCV-redeploy
+        // option, not mind-controlled): it archives the Cell under its own
+        // GetCoords (vt+0x48 -> Map565730, `0x00443ABE..0x00443B4B`, event
+        // 0x1E), so the MCV it packs into stays. A yard never announces
+        // (`0x00443A4B` refuses ConstructionYard); any other factory's miss
+        // still reaches the announcement (`0x00443A89` -> `0x00443A2B`),
+        // which the click owner plays. It also queues the following SELL.
+        let redeploy_yard = object.construction_yard
+            && self.session.game_mode_nonzero()
+            && self.construction_yard_redeploy_core_gate(entity);
+        Ok(if redeploy_yard {
+            self.object_coords_cell(id)
+        } else {
+            None
+        })
     }
 }
 

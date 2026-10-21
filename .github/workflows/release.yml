@@ -4,21 +4,26 @@ name: Release
 # project changes too fast for every main commit to be a release, so there are
 # two kinds, both started by hand:
 #
-#   dev build -- dispatch with `promote` empty. Builds all platforms, names every
-#                archive after its build time and the commit it was built from,
-#                tags it v<Cargo.toml version>-<build time>, and lists the
-#                commits since the previous release of either kind. Publishes a
-#                draft pre-release by default, so a bad build is discarded
-#                instead of shipped. Only the newest published dev builds are
-#                kept.
+#   dev build -- dispatch with `promote` empty. Builds all platforms and runs the
+#                library tests on each at the same time; nothing is tagged or
+#                published unless every build and every test run passes (publish
+#                mode `none` runs them too). Names every archive after its build
+#                time and the commit it was built from, tags it v<Cargo.toml
+#                version>-<build time>, and lists the commits since the previous
+#                release of either kind. Publishes a draft pre-release by
+#                default, so a bad build is discarded instead of shipped. Only
+#                the newest published dev builds are kept.
 #   release   -- dispatch with `promote` set to the tag of a published dev build
 #                that testers played. Publishes the same archives as release
 #                v<version>, checked against their checksums and build
 #                provenance and never rebuilt: the stable toolchain can change
-#                between runs. Its notes list the commits since the previous
-#                release. It is a draft, for notes written for players; once
-#                published, it is the repository's Latest release. Then raise the
-#                Cargo.toml version, so later dev builds carry the next one.
+#                between runs. Only their names change, to plain
+#                vera20k-<version>-<platform> ones. Its notes list the commits
+#                since the previous release. It is a draft, for notes written for
+#                players; once published, it is the repository's Latest release.
+#                Then raise the Cargo.toml version, so later dev builds carry the
+#                next one; a dev build refuses to start until it is above every
+#                release.
 #
 # The job that creates a tag also publishes its release: GitHub suppresses
 # `on: push` for refs written with GITHUB_TOKEN, so a tag created by a job can
@@ -54,6 +59,9 @@ env:
   # VCRUNTIME140.dll, which Windows does not ship. x86-64 Windows only.
   CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: rust-lld
   CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+  # The oldest macOS the Mac build runs on, for rustc, for the C code built
+  # with it, and for the app's Info.plist (.github/release/macos/app.sh).
+  MACOSX_DEPLOYMENT_TARGET: '11.0'
 
 jobs:
   # One cheap job decides the names and the publish mode, so all platform jobs
@@ -90,6 +98,16 @@ jobs:
           version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
           if [ -z "$version" ]; then
             echo "No [package] version found in Cargo.toml" >&2
+            exit 1
+          fi
+          # A dev build is a pre-release of its version, which sorts before that
+          # version's release. After a release, a dev build of the same or a
+          # lower version would look older than the release it follows.
+          released="$(git ls-remote --tags --refs origin 'refs/tags/v*' \
+            | sed -n 's|.*refs/tags/v\([0-9]*\.[0-9]*\.[0-9]*\)$|\1|p' | sort -V | tail -n 1)"
+          if [ -n "$released" ] \
+            && [ "$(printf '%s\n' "$released" "$version" | sort -V | tail -n 1)" = "$released" ]; then
+            echo "::error::v$released is released; raise the version in Cargo.toml above $released before the next dev build."
             exit 1
           fi
           # UTC keeps archive names identical for maintainers in any timezone.
@@ -173,18 +191,21 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           STAMP: ${{ needs.prepare.outputs.stamp }}
           SHA7: ${{ needs.prepare.outputs.sha }}
-          TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
           # Name = version + platform + build time + the commit built. The time
           # keeps two builds of one Cargo.toml version apart; the short sha makes
-          # a downloaded archive traceable to its commit.
+          # a downloaded archive traceable to its commit. A release drops both
+          # (the promote job).
           name="vera20k-${VERSION}-${{ matrix.target }}-${STAMP}-${SHA7}"
           mkdir -p "dist/$name"
           echo "name=$name" >> "$GITHUB_OUTPUT"
           cp "target/shipping/${{ matrix.program }}" config.toml.example LICENSE-GPL \
             dist/THIRD_PARTY_LICENSES.html "dist/$name/"
-          sed "s/@VERSION@/${TAG}/" .github/release/README.txt.in > "dist/$name/README.txt"
+          # The README names the version and build, which stay true when a
+          # release republishes this archive.
+          sed -e "s/@VERSION@/${VERSION}/" -e "s/@BUILD@/${STAMP}/" \
+            .github/release/README.txt.in > "dist/$name/README.txt"
 
           # Files sit at the archive root so they can be extracted straight into
           # the game folder.
@@ -201,7 +222,7 @@ jobs:
         shell: pwsh
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
-          TAG: ${{ needs.prepare.outputs.tag }}
+          STAMP: ${{ needs.prepare.outputs.stamp }}
           NAME: ${{ steps.package.outputs.name }}
         run: |
           $ErrorActionPreference = 'Stop'
@@ -209,7 +230,7 @@ jobs:
           $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
           if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
           $dist = (Resolve-Path dist).Path
-          & $iscc "/DAppVersion=$env:VERSION" "/DReleaseTag=$env:TAG" `
+          & $iscc "/DAppVersion=$env:VERSION" "/DBuild=$env:STAMP" `
             "/DPackageDir=$dist\$env:NAME" "/DOutputDir=$dist" `
             "/DOutputBaseFilename=$env:NAME-setup" .github\release\windows\vera20k.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
@@ -292,12 +313,13 @@ jobs:
           if (-not (Test-Path (Join-Path $app 'config.toml'))) { throw 'uninstall removed config.toml' }
           Write-Output 'Installer: refused, installed, upgraded and uninstalled as expected.'
       # macOS also gets the program as VERA20k.app on a disk image: it keeps its
-      # files in ~/Library/Application Support/VERA20k and asks for the Yuri's
-      # Revenge folder on its first launch (.github/release/macos).
+      # files in ~/Library/Application Support/VERA20k and finds or asks for the
+      # Yuri's Revenge folder on its first launch (.github/release/macos).
       - name: macOS app
         if: runner.os == 'macOS'
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
+          STAMP: ${{ needs.prepare.outputs.stamp }}
           NAME: ${{ steps.package.outputs.name }}
         run: bash .github/release/macos/app.sh "dist/$NAME" "dist/$NAME.dmg"
       # Check the image's layout and signature and start the packaged app, so a
@@ -306,6 +328,7 @@ jobs:
         if: runner.os == 'macOS'
         timeout-minutes: 10
         env:
+          STAMP: ${{ needs.prepare.outputs.stamp }}
           NAME: ${{ steps.package.outputs.name }}
         run: |
           set -euo pipefail
@@ -313,14 +336,29 @@ jobs:
           hdiutil attach -nobrowse -readonly -mountpoint "$mount" "dist/$NAME.dmg" > /dev/null
           trap 'hdiutil detach "$mount" > /dev/null || true' EXIT
           app="$mount/VERA20k.app"
+          plist="$app/Contents/Info.plist"
           test -L "$mount/Applications"
-          test -f "$mount/README.txt"
+          # The window's arrow and layout (dmg_settings.py).
+          test -f "$mount/.background.tiff"
+          test -f "$mount/.DS_Store"
+          test -f "$app/Contents/Resources/README.txt"
+          test -f "$app/Contents/Resources/VERA20k.icns"
+          test -f "$app/Contents/Resources/zh-Hans.lproj/InfoPlist.strings"
           codesign --verify --strict --verbose=2 "$app"
+          # About VERA20k tells builds apart, and the program and its
+          # Info.plist name the same oldest macOS.
+          build="$(plutil -extract CFBundleVersion raw "$plist")"
+          test "$build" = "${STAMP/-/.}" || { echo "CFBundleVersion is $build" >&2; exit 1; }
+          for minimum in "$(plutil -extract LSMinimumSystemVersion raw "$plist")" \
+            "$(vtool -show-build "$app/Contents/MacOS/VERA20k" | awk '$1 == "minos" { print $2 }')"; do
+            test "$minimum" = "$MACOSX_DEPLOYMENT_TARGET" \
+              || { echo "oldest macOS $minimum, not $MACOSX_DEPLOYMENT_TARGET" >&2; exit 1; }
+          done
           # Started from the bundle, it works in its data folder: the usage
           # switch logs there and exits before the folder chooser or a window.
           data="$HOME/Library/Application Support/VERA20k"
           rm -rf "$data"
-          (cd / && "$app/Contents/MacOS/vera20k" -h > /dev/null)
+          (cd / && "$app/Contents/MacOS/VERA20k" -h > /dev/null)
           grep -q 'VERA20k .* starting' "$data/logs/ra2.log"
           echo 'macOS app: signed, on the disk image, and starting in its data folder.'
       - uses: actions/upload-artifact@v7
@@ -333,23 +371,45 @@ jobs:
             dist/*.dmg
           if-no-files-found: error
 
+  # The library tests on each platform a dev build ships, from the commit it
+  # builds. No CI runs by itself, so this is where a change first has to pass on
+  # Windows and Linux before it reaches testers. They run beside the builds,
+  # and `publish` needs them. As in the per-platform workflows, there is no
+  # retail game data here: retail-data tests print SKIPPED and pass.
+  test:
+    # A release republishes a tested dev build's files; only a dev build tests.
+    if: inputs.promote == ''
+    strategy:
+      fail-fast: false
+      matrix:
+        # The per-platform workflows' runners. Linux tests on the current Ubuntu,
+        # not the build's 22.04: rust-cache keys on the OS family, not its
+        # version, so a cache saved on the newer image could hand 22.04 build
+        # scripts linked against a glibc it lacks.
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    uses: ./.github/workflows/test.yml
+    with:
+      os: ${{ matrix.os }}
+
   publish:
     name: publish
-    needs: [prepare, build]
+    needs: [prepare, build, test]
     # "none" stops here, with the archives left as workflow artifacts.
     if: needs.prepare.outputs.publish != 'none'
     #
-    # MAINTENANCE DECISION, left to the maintainers: `needs: build` means one
-    # platform failing stops the release. That is deliberate -- a release that
-    # silently lacks macOS is worse than no release -- but hosted runners do
-    # drop jobs ("not acquired by Runner of type hosted"), and then a fully
-    # built Windows and Linux are discarded too.
+    # MAINTENANCE DECISION, left to the maintainers: `needs: [build, test]`
+    # means one platform failing to build or to pass its tests stops the
+    # release. That is deliberate -- a release that silently lacks macOS is
+    # worse than no release -- but hosted runners do drop jobs ("not acquired
+    # by Runner of type hosted"), and then a fully built Windows and Linux are
+    # discarded too.
     #
-    # To publish whatever succeeded instead, add `always()` to the condition
-    # above and assert the expected archives exist before `gh release create`;
-    # the Checksums step already fails on a missing file. The trade-off is that
-    # a capacity failure would ship a release missing a platform, so the
-    # assertion has to name all three.
+    # To publish whatever built instead, make the condition above `always() &&
+    # needs.prepare.outputs.publish != 'none' && needs.test.result ==
+    # 'success'`, so the tests still have to pass, and assert the expected
+    # archives exist before `gh release create`; the Checksums step already
+    # fails on a missing file. The trade-off is that a capacity failure would
+    # ship a release missing a platform, so the assertion has to name all three.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -506,6 +566,22 @@ jobs:
             gh attestation verify "$archive" --repo "$GITHUB_REPOSITORY" > /dev/null
             echo "provenance verified: $archive"
           done
+          # Plain release names: vera20k-<version>-<platform>[-setup].<ext>,
+          # without the dev build's time and commit. Only the names change, so
+          # the checksums are listed again under them, and the provenance,
+          # which is bound to each file's contents, still verifies.
+          version_re="${version//./\\.}"
+          for archive in $listed; do
+            plain="$(sed -E "s/^(vera20k-$version_re-[a-z0-9]+-[a-z0-9]+)-$stamp-[0-9a-f]{7,40}(-setup\.exe|\.zip|\.tar\.gz|\.dmg)$/\1\2/" <<< "$archive")"
+            if [ "$plain" = "$archive" ] || [ -e "$plain" ]; then
+              echo "!! cannot give $archive a plain release name" >&2
+              exit 1
+            fi
+            mv "$archive" "$plain"
+            echo "renamed: $archive -> $plain"
+          done
+          sha256sum vera20k-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
           {
             echo "tag=v$version"
             echo "version=$version"

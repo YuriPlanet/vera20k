@@ -42,7 +42,7 @@ mod trigger_chrono;
 mod type_tech_levels;
 mod unit_repair_seek;
 pub(crate) use frame_channel::FrameChannel;
-pub use frame_effects::{FrameEffects, LocalDefeatBoundary, SoundBoundary};
+pub use frame_effects::{FrameEffects, LocalPlanningBoundary, SoundBoundary};
 pub(crate) use type_tech_levels::TypeTechLevels;
 #[cfg(test)]
 mod unit_unlimbo_tests;
@@ -170,6 +170,8 @@ mod engineer_power_consumer_tests;
 mod fly_height_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod gap_generator_tests;
+#[cfg(test)]
+mod gap_supercharge_tests;
 #[cfg(test)]
 mod gsi_04_18_tests;
 #[cfg(test)]

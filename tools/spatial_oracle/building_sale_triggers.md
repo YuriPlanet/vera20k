@@ -101,11 +101,8 @@ python -m tools.spatial_oracle.building_sale_triggers --check
 
 `--write` is the explicit reference-writing operation. Import and `--help`
 remain inert. Each row checks all executable PE sections against the loaded
-original bytes and the declared Building/House vtable ranges. The measured
-`native_image_sha256` identifies the replay input; it is provenance and is not
-an acceptance gate for a particular build. The metadata also records the
-canonical payload digest. Shared helper source hashes are not persisted as
-acceptance requirements.
+original bytes and the declared Building/House vtable ranges. The metadata
+records the canonical payload digest, and no executable or helper source hash.
 
 The inherited harness answers allocation/free, TLS, interlocked operations,
 OS audio/clock and COM platform services. Construction's presentation leaves

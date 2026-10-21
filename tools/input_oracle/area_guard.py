@@ -20,7 +20,7 @@ from unicorn.x86_const import (
     UC_X86_REG_ESP,
 )
 from tools.native_oracle import (
-    RET_MAGIC, SCRATCH, finish_vectors, image_sha256, provenance, run_checked,
+    RET_MAGIC, SCRATCH, finish_vectors, provenance, run_checked,
 )
 from tools.storage_oracle.keyboard_bindings import KeyboardFixture
 from tools.rules_oracle.bridge_anim_inputs import Reader
@@ -563,7 +563,7 @@ def histories(scatter=False):
 
 
 def generate():
-    result=dict(native_sha256=image_sha256(),constructor_rows=constructor_rows(),
+    result=dict(constructor_rows=constructor_rows(),
                 retail=reader_rows(),histories=histories())
     global coverage
     coverage=dict(constructors=len(result['constructor_rows']),histories=len(result['histories']['rows']),
@@ -611,7 +611,7 @@ def generate_scatter():
         collect(row['boundaries']);collect(row['ordered_calls'])
         row['complete_rng_states'] = {key:source['complete_rng_states'][key] for key in sorted(references)}
         rows.append(row)
-    return dict(native_sha256=image_sha256(),constructor_rows=constructor_rows(scatter=True),
+    return dict(constructor_rows=constructor_rows(scatter=True),
                 command_sound_layers=history['guard_layers'],rows=rows)
 
 

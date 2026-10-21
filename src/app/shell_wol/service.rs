@@ -520,21 +520,6 @@ impl WolVisit {
                 then: WolBoxThen::Leave(-2),
             },
             (Awaiting::Api, WolServiceEvent::Api(WolApiStatus::Available)) => {
-                if !matches!(
-                    self.mode,
-                    Some(
-                        WolMode::CustomMatch
-                            | WolMode::MyInformation
-                            | WolMode::PlayBuddy
-                            | WolMode::QuickMatch
-                    )
-                ) {
-                    log::warn!(
-                        "WOL mode {:?} after WOLAPI creation is not implemented",
-                        self.mode
-                    );
-                    return WolStep::Welcome;
-                }
                 // 0x00786390 creates the object once per visit ([0xB77E75]);
                 // only then does it reset the WOL globals (0x00780110),
                 // including [0xB77AD0], the selected record and the ladder

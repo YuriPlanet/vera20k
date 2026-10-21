@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -36,6 +35,6 @@
     "game_options_ctor": "0x005FA350",
     "speed_normalize": "0x005FB2E0"
   },
-  "payload_sha256": "16b54802742d3200961eafa241b1e69c63f820807d90c5abbf0f60e76401aed2",
+  "payload_sha256": "313fba3044de31e281f961adebb87149e4fbdf0632cf5355fcc7a3aa3a30a019",
   "replay_command": "python -m tools.spatial_oracle.house_power_consumers"
 }

@@ -1,6 +1,6 @@
 //! Comparisons with original gamemd Force_Track4B0C40, its Ship twin 6A0310
 //! and bunker459190..4591C4.
-//! See locomotor_force_track.meta.json for binary identity and supplied state.
+//! See locomotor_force_track.meta.json for supplied state.
 //! Full Force calls use allocated flat, no-overlay cells; the separate crate
 //! continuations supply callback effects, not an implementation of crate AI.
 //! Rust's raw occupation owner retains the native low byte, not the untouched

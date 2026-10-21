@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -19,5 +18,5 @@
     "power_draw": "0x0063FB20",
     "draw_boundary": "0x004AED70"
   },
-  "payload_sha256": "e5d6c4a0dc25d39418dc9ea570c5b113b3335042e237416a3a35ea61e8c131f8"
+  "payload_sha256": "495a6edcdc02fcd765e5e25feda8ac81564cfcac5614e06bc96e20ee8c6c6fb9"
 }

@@ -8,7 +8,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellListInsertion;
 use crate::sim::vision::{assert_native_cell_history, discovery_corpus, native_map_cell_fixture};
-use crate::sim::world::TechnoDiscoveryHistory;
+use crate::sim::world::{FrameEffects, TechnoDiscoveryHistory};
 use crate::util::save_codec;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -1632,4 +1632,81 @@ fn move_east_selected(
         track.selected_over_mapped_ground &= seen;
     }
     tracks
+}
+
+/// The original no-edge MakeEnemy executes both visitors and the real
+/// ReReveal/UpdateReveal methods. Only RTTI/type lookup, anger and map-walk
+/// transport are substituted; the corpus does not execute camera production
+/// or native cells. The retail flight/deploy test covers those Rust producers.
+#[test]
+fn no_edge_make_enemy_matches_native_human_source_controls() {
+    use crate::sim::superweapon::chronosphere_tests::world_with;
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/shroud_current_sight.json",
+    ))
+    .unwrap();
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
+        return;
+    };
+    let controls = corpus["alliance_human_controls"].as_array().unwrap();
+    assert_eq!(controls.len(), 5);
+    for row in controls {
+        let (rules, mut sim, player) = world_with(rules.clone(), 64, &[]);
+        sim.session.set_current_house_for_test(Some(player));
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
+        let computer = sim.interner.get("Russians").unwrap();
+        sim.fog = vision::FogState::new(64, 64);
+        let id = sim
+            .spawn_object("SPYP", "Americans", 40, 40, 0, &rules)
+            .unwrap();
+        assert!(sim.entities().get(id).unwrap().sight.is_zero());
+        // Supplied native camera cache, before its current position changes.
+        sim.refresh_object_sight(id, &rules, 6);
+        assert!(sim.fog.sight_is_latched(id, player));
+        let input = &row["inputs"];
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        entity.position.set_rx_for_test(41);
+        entity
+            .discovery
+            .set_discovered_by_current_house_for_test(input["discovered"].as_bool().unwrap());
+        entity
+            .lifecycle
+            .set_in_limbo_for_test(input["limbo"].as_bool().unwrap());
+        entity.set_in_playfield(input["in_playfield"].as_bool().unwrap());
+        sim.houses
+            .get_mut(&player)
+            .unwrap()
+            .set_multiplay_passive_for_test(input["passive"].as_bool().unwrap());
+        let (_, calls) = trace_reveal_calls(|| {
+            sim.make_enemy(
+                computer,
+                player,
+                &rules,
+                None,
+                FrameEffects::default(),
+                false,
+            );
+        });
+        assert_eq!(
+            u8::from(sim.fog.sight_is_latched(id, player)),
+            row["latch"].as_u64().unwrap() as u8,
+            "{input}"
+        );
+        let cache = sim.fog.sight_admission(id, player).unwrap();
+        assert_eq!(
+            i64::from(cache.radius),
+            row["cached_radius"].as_i64().unwrap()
+        );
+        assert_eq!((cache.origin.0, cache.origin.1), (40, 40));
+        let native_area_calls = row["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| event[0] == "area")
+            .count();
+        assert_eq!(calls.walks.len(), native_area_calls, "{input}");
+        assert!(sim.house_alliances.as_map().is_empty());
+    }
 }

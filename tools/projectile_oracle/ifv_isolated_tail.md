@@ -40,7 +40,7 @@ tools/projectile_oracle/ifv_isolated_tail.py --check
 
 `VERA20K_IFV_NULLIFY_ASSETS` may be omitted when `ironfx.shp` is already in the
 main extracted input directory. Existing asset tooling can extract that file
-without a build. No retail bytes are committed. Metadata pins the executable;
+without a build. No retail bytes are committed. Metadata pins the payload;
 the saved result contains the physical file hashes and reader outputs.
 
 `rows[].input` records receiver mode, authored EMEffect, live/placement XYZ,

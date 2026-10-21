@@ -2964,7 +2964,7 @@ impl Simulation {
         self.construction_yard_redeploy_core_gate(entity)
     }
 
-    fn construction_yard_redeploy_core_gate(&self, entity: &GameEntity) -> bool {
+    pub(super) fn construction_yard_redeploy_core_gate(&self, entity: &GameEntity) -> bool {
         // Building44374F..443778 /44F5F3..44F61C admit existing radio
         // contacts. Selling44AB68/44A2EE notifies and breaks them later.
         if !self.session.game_options().mcv_redeploy {

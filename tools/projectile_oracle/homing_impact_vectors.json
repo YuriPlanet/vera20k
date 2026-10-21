@@ -1,5 +1,4 @@
 {
-  "binary_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "coverage": "admission 0x466DB1..0x466E6B; common impact clamp 0x467BF0..0x467C0C; mode1 final snap 0x467CA9..0x467E53 (near-object flag zero)",
   "admissions": [
     {

@@ -412,12 +412,9 @@ fn mission_construction(
 /// then takes its own arm; the factory arm below uses the shared Techno Door,
 /// Drive track and Unit PerCell owners.
 /// Every other building queues Guard
-/// (`vt+0x1E8(5, 0)` at `0x0044E379`) and returns 1.
-///
-/// Residual: a gap generator (`+0xCD1` and `+0xCD3`) first re-toggles its
-/// gap (`0x0044E2BE..0x0044E365`: vt+0x418, `+0x26C`, vt+0x350), not ported;
-/// its Guard tail is. No retail gap generator takes an Unload order (the app
-/// offers Unload only to `CanBeOccupied=` and loaded `InfantryAbsorb=` types).
+/// (`vt+0x1E8(5, 0)` at `0x0044E379`) and returns 1; a gap generator
+/// first toggles its super-charge (`0x0044E29D..0x0044E36B`,
+/// [`Simulation::toggle_gap_supercharge`]).
 fn mission_unload(
     sim: &mut Simulation,
     id: u64,
@@ -455,6 +452,7 @@ fn mission_unload(
     if object.weapons_factory {
         return Some(mission_factory_unload(sim, id, rules, ctx));
     }
+    sim.toggle_gap_supercharge(id, rules);
     let now = sim.session.binary_frame();
     let readiness = LiveReadyInputProvider { rules };
     let _ = sim.mission_queue_exact(

@@ -7,8 +7,6 @@ Requires cryptography for the encrypted MIX index.
 from pathlib import Path
 import struct,zlib,os
 from functools import lru_cache
-from cryptography.hazmat.primitives.ciphers import Cipher,modes
-from cryptography.hazmat.decrepit.ciphers.algorithms import Blowfish
 from tools.native_oracle import configured_gamemd
 
 def mix_hash(name):
@@ -18,6 +16,9 @@ def mix_hash(name):
 def mix(data):
     marker,flags=struct.unpack_from('<HH',data)
     if marker==0 and flags&2:
+        # Only encrypted indexes need cryptography; importing this module does not.
+        from cryptography.hazmat.primitives.ciphers import Cipher,modes
+        from cryptography.hazmat.decrepit.ciphers.algorithms import Blowfish
         b=data[4:84][::-1];n=int('51bcda086d39fce4565160d651713fa2e8aa54fa6682b04aabdd0e6af8b0c1e6d1fb4f3daa437f15',16)
         key=((pow(int.from_bytes(b[:40],'big'),65537,n)<<312)+pow(int.from_bytes(b[40:],'big'),65537,n)).to_bytes(80,'big')[-56:][::-1]
         def dec(b):return Cipher(Blowfish(key),modes.ECB()).decryptor().update(b)

@@ -83,10 +83,10 @@ pub(crate) fn build(
             rules,
             sim.interner(),
         );
-        //Residual: Mission_Unload44E29D..44E36B's+268/+669 toggle and the
-        //454B91 operational-off reset are a separate gap lifecycle. Stock
-        //GAGAP10/10 makes this range query invariant under that missing flag.
-        let range = object.building_sensor_range(false, weapon.map(|weapon| weapon.range_leptons));
+        let range = object.building_sensor_range(
+            entity.gap_supercharged(),
+            weapon.map(|weapon| weapon.range_leptons),
+        );
         //456768 reads+660, the existing temporal online query;
         //it does NOT sample4555D0 operational/power or a fog predicate.
         if range <= 0 || !entity.building_online() || !sim.house_is_human_player(entity.owner()) {

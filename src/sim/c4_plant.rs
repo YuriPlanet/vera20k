@@ -45,22 +45,53 @@
 //! was entered (event 1, `0x0051A507..0x0051A51C`), before the refusal
 //! tests, as the Engineer and spy arms do.
 //!
-//! RESIDUAL:
-//! - The cell arm that follows (`0x0051A667..0x0051A7F2`): a C4 infantryman
-//!   on Sabotage standing in its NavCom cell damages the area around it
-//!   with `C4Warhead=`, scatters and queues mission 2. Its producer, a
-//!   player's Sabotage order on a cell (a bridge), has no VERA order.
-//!   Trigger: a player's C4 click on a bridge. Effect: a bridge cannot be
-//!   demolished that way, only through its repair hut.
+//! The cell arm that follows (`0x0051A667..0x0051A7F2`,
+//! [`Simulation::infantry_per_cell_c4_cell`]) takes the same Sabotage `C4=`
+//! arrival when the entry cell has no building or one that is not the
+//! NavCom, and fires when the NavCom is the cell the infantryman stands in.
+//! The player's producer is dead: Foot ClickedAction_Cell (`0x004D7D50`)
+//! assigns Sabotage with the cell as destination only for action 16
+//! (`0x004D8182`), and every caller of the cell Active_Click_With slot
+//! (vt+0x140: `0x004AE8C4`, `0x004AE927`, `0x004AE97C`, and
+//! `FootClass::ActivatePlanningWaypoint` `0x004DC8C0` at `0x004DCDCF`,
+//! `0x004DCDFF`) passes the object's own What_Action(cell), whose chain
+//! (Infantry `0x0051F800`, Foot `0x004DDDE0`, Techno `0x00700600`) never
+//! answers 16; Infantry ClickedAction_Cell (`0x0051F250`) passes it on
+//! unchanged. The computer reaches it instead. Guard's and AreaGuard's
+//! demolition arms queue Sabotage without touching the NavCom
+//! (`0x004D529F`, `0x004D6E2E`), and a computer `C4=` infantryman takes
+//! buildings as targets (threat mask `0x20`, `0x0051E34D..0x0051E379`), so
+//! one already walking to a cell keeps walking: AreaGuard's leash walk back
+//! to its post (`0x004D6ECB`, the post being `Map[Location]` archived at
+//! `0x004D6DB9`) and its Approach (`0x004D6F32`, a ring cell) leave a cell
+//! NavCom, and the next scan or retaliation can hand it a building.
+//! Queue_Mission (`0x005B35E0`) and Commence (`0x005B3570`) leave the
+//! NavCom alone,
+//! `TechnoClass::AI`'s illegal-target drop spares Sabotage
+//! (`0x006FA472..0x006FA4CB`), and Mission_Capture keeps an existing NavCom
+//! (`0x004D4B57..0x004D4B5F`, `0x004D4BC7..0x004D4BCF`). The Walk runs
+//! Per_Cell_Process(2) on reaching that cell before it lets the destination
+//! go (`0x0075BE3C`, then `0x0075BEF0..0x0075BF38`), so the arm fires there.
+//! A moving infantryman is not ready to commence (`0x00521B60`) unless on
+//! Guard, Hunt or a targetless Attack, so AreaGuard's queued Sabotage
+//! commits only in Per_Cell_Process's tail Commence (`0x0051A8C5`), after
+//! the C4 arms: queued during the last step, it commits in the NavCom
+//! cell's own visit, the Walk then drops the NavCom (`0x0075BF29`) and the
+//! building route takes over.
 
+use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::rules::terrain_rules::LandType;
 use crate::sim::combat::TargetKind;
-use crate::sim::components::NavTargetRef;
+use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::houses::Houses;
 use crate::sim::intern::StringInterner;
-use crate::sim::mission::MissionType;
+use crate::sim::mission::authority::LiveReadyInputProvider;
+use crate::sim::mission::{MissionId, MissionType};
+use crate::sim::movement::ScatterFlags;
 use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::projectile::ProjectileCoord;
 use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::timer::CdTimer;
@@ -203,6 +234,23 @@ impl C4Detonation {
     }
 }
 
+/// What `InfantryClass::Per_Cell_Process`'s C4 arms leave it to do.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct C4Arrival {
+    /// Per_Cell_Process returns here: after the building arm (`0x0051A65F`),
+    /// or once the cell arm leaves the infantryman dead (`0x0051A7E0` to
+    /// `0x0051AA01`). Otherwise it goes on at `0x0051A7F8`.
+    pub(crate) returns: bool,
+    /// The cell arm's area damage changed a bridge.
+    pub(crate) bridge_state_changed: bool,
+}
+
+/// The building arm's answer: Per_Cell_Process returns.
+const PLANTED: C4Arrival = C4Arrival {
+    returns: true,
+    bridge_state_changed: false,
+};
+
 impl Simulation {
     /// `InfantryClass::Per_Cell_Process`'s C4 arm (`0x0051A4BF..0x0051A664`),
     /// on a reason-2 arrival. An infantryman on Sabotage whose type is `C4=`,
@@ -222,25 +270,27 @@ impl Simulation {
     /// (`0x0051A60B..0x0051A657`). Its rearm is [`Self::rearm_c4_planter`].
     /// Its Scatter, from the building's coordinate
     /// ([`Self::scatter_from_building`]), does not Process, and on a Walk
-    /// arrival refuses a planter that is not `Fraidycat=` (module doc).
+    /// arrival refuses a planter that is not `Fraidycat=` (module doc). This
+    /// arm returns before the Foot body.
     ///
-    /// Answers whether the arm ran; it returns before the Foot body.
+    /// With no building there, or one that is not the NavCom, the cell arm
+    /// runs instead ([`Self::infantry_per_cell_c4_cell`]).
     pub(crate) fn infantry_per_cell_c4(
         &mut self,
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
-    ) -> Result<bool, FrameAdvanceError> {
+    ) -> Result<C4Arrival, FrameAdvanceError> {
         let Some(infantry) = self.substrate.entities.get(id) else {
-            return Ok(false);
+            return Ok(C4Arrival::default());
         };
         if infantry.mission.effective().known() != Some(MissionType::Sabotage)
             || !self
                 .object_type(infantry.type_ref(), rules)
                 .is_some_and(|object| object.c4)
         {
-            return Ok(false);
+            return Ok(C4Arrival::default());
         }
         let heading_for = infantry
             .navigation
@@ -256,7 +306,7 @@ impl Simulation {
             )
             .filter(|&building| heading_for == Some(building))
         else {
-            return Ok(false);
+            return self.infantry_per_cell_c4_cell(id, rules, registry, effects);
         };
         // 0x0051A507..0x0051A51C: the building's Tag hears event 1 with the
         // planter as actor on every arrival, before the refusals below.
@@ -265,7 +315,7 @@ impl Simulation {
         self.dispatch_object_tag_event(building, 1, Some(id), None, context);
         let frame = self.session.binary_frame();
         let Some(target) = self.substrate.entities.get(building) else {
-            return Ok(false);
+            return Ok(C4Arrival::default());
         };
         let refused = target.mission.effective().known() == Some(MissionType::Selling)
             || crate::sim::superweapon::invulnerability::is_invulnerable(
@@ -286,7 +336,7 @@ impl Simulation {
                     rules,
                 );
                 self.scatter_from_building(id, building, rules, registry, effects)?;
-                return Ok(true);
+                return Ok(PLANTED);
             }
             let (flash, fuse) = (rules.c4_flash_frames(), rules.c4_delay_frames());
             self.substrate.flash_building(building, flash, frame);
@@ -309,7 +359,192 @@ impl Simulation {
             rules,
         );
         self.scatter_from_building(id, building, rules, registry, effects)?;
-        Ok(true)
+        Ok(PLANTED)
+    }
+
+    /// The C4 cell arm (`0x0051A667..0x0051A7F2`): when the cell at the
+    /// infantryman's own coordinate (`Map[GetCoords]`, `0x00565730`) is its
+    /// NavCom, in order:
+    /// 1. area damage at its Location (`+0x9C`) of `[CombatDamage]
+    ///    BridgeStrength=` (`Rules+0x1740`) with `C4Warhead=`
+    ///    (`Rules+0xFA8`), itself as the source and no house (`0x00489280`,
+    ///    [`Self::c4_cell_blast`]);
+    /// 2. Stop_Driver (vt+0x500, [`Self::foot_stop_driver`]);
+    /// 3. Scatter(coord, 1, 1) (vt+0x174, [`Self::scatter`]) away from its
+    ///    Location stepped one cell along its body facing's octant
+    ///    (`((Current >> 12) + 1) >> 1 & 7` of `+0x388`, the lepton table
+    ///    `0x0089F6D8`), Z unchanged;
+    /// 4. Queue_Mission(Move, 0) (vt+0x1E8);
+    /// 5. Mark(DOWN) (vt+0x124(1), [`Self::foot_mark_put`]) when it then
+    ///    has no NavCom or its NavCom's cell is Water (`+0xEC == 2`), so
+    ///    the next two blasts find it in its cell's list;
+    /// 6. the same area damage twice with no source;
+    /// 7. Mark(DOWN) again if it is still alive (`+0x90`).
+    ///
+    /// Per_Cell_Process goes on at `0x0051A7F8` when it lives, or when its
+    /// cell is not its NavCom, and returns once it is no longer IsAlive,
+    /// which a killed infantryman stays until its UnInit. On a Walk arrival
+    /// Stop_Driver has stopped the Walk, so the Scatter keeps `forced` and
+    /// goes through: the NavCom becomes a neighbouring cell, step 5 is
+    /// skipped on dry land, and the infantryman, lifted out of its cell's
+    /// list by the Walk, survives all three blasts and leaves on Move,
+    /// dropping its Sabotage. Retail `C4Warhead=Super` sets no `CellSpread=`,
+    /// so the blasts reach only receivers at the point itself (the shared
+    /// area owner's zero-spread rule), the cell's bridge among them.
+    ///
+    /// RNG: whatever the three area damage calls draw (their receivers, and
+    /// `RandomRanged(1, BridgeStrength)` per bridge hit), and Scatter's own
+    /// draws when it goes through. Timers: Stop_Driver's and the queued
+    /// mission's. No detach of its own; the area damage's deaths detach
+    /// through their receivers.
+    pub(crate) fn infantry_per_cell_c4_cell(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> Result<C4Arrival, FrameAdvanceError> {
+        let frame_error = |sim: &Simulation, cause: String| {
+            FrameAdvanceError::new(sim.session.tick(), sim.session.binary_frame(), id, cause)
+        };
+        let Some(infantry) = self.substrate.entities.get(id) else {
+            return Ok(C4Arrival::default());
+        };
+        let location = self
+            .foot_current_coordinate(id)
+            .map_err(|cause| frame_error(self, cause))?;
+        let own_cell = self.resolved_terrain.as_ref().map(|terrain| {
+            let cells = NativeCellQuery::canonical(terrain);
+            cells.coord(cells.lookup_world(location.x, location.y))
+        });
+        let at_nav_com = matches!(
+            (infantry.navigation.nav_com(), own_cell),
+            (Some(NavTargetRef::Cell { rx, ry }), Some(cell)) if (rx as i16, ry as i16) == cell
+        );
+        if !at_nav_com {
+            return Ok(C4Arrival::default());
+        }
+        let mut bridge_state_changed =
+            self.c4_cell_blast(Some(id), location, rules, registry, effects);
+        self.foot_stop_driver(id, rules, registry, effects)
+            .map_err(|cause| frame_error(self, cause))?;
+        // Native re-reads Location (+0x9C) and the facing (+0x388) after the
+        // first blast and Stop_Driver (`0x0051A6D0..0x0051A71D`), and again
+        // before each sourceless blast (`0x0051A76C`, `0x0051A7A3`).
+        let location = self
+            .foot_current_coordinate(id)
+            .map_err(|cause| frame_error(self, cause))?;
+        let frame = self.session.binary_frame();
+        let octant = crate::util::direction_tables::dir_from_facing16(
+            self.substrate
+                .entities
+                .get(id)
+                .map_or(0, |infantry| infantry.body_facing_current(frame)),
+        );
+        let (dx, dy) = crate::util::direction_tables::LEPTON_DELTAS[usize::from(octant)];
+        let away_from = DriveCoord {
+            x: location.x.wrapping_add(dx),
+            y: location.y.wrapping_add(dy),
+            z: location.z,
+        };
+        bridge_state_changed |= self
+            .scatter(
+                id,
+                Some(away_from),
+                ScatterFlags::new(true, true),
+                rules,
+                registry,
+                effects,
+            )
+            .map_err(|cause| frame_error(self, cause))?;
+        let now = self.session.binary_frame();
+        let _ = self.mission_queue_exact(
+            id,
+            MissionId::from_known(MissionType::Move),
+            0,
+            now,
+            &LiveReadyInputProvider { rules },
+        );
+        let nav_com = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|infantry| infantry.navigation.nav_com());
+        let marks = match nav_com {
+            None => true,
+            Some(nav_com) => self.nav_com_cell_is_water(nav_com),
+        };
+        if marks {
+            self.foot_mark_put(id, rules, registry, effects);
+        }
+        for _ in 0..2 {
+            let location = self
+                .foot_current_coordinate(id)
+                .map_err(|cause| frame_error(self, cause))?;
+            bridge_state_changed |= self.c4_cell_blast(None, location, rules, registry, effects);
+        }
+        let alive = self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|infantry| infantry.lifecycle.object_alive());
+        if alive {
+            self.foot_mark_put(id, rules, registry, effects);
+        }
+        Ok(C4Arrival {
+            returns: !alive,
+            bridge_state_changed,
+        })
+    }
+
+    /// The cell arm's `DamageArea(&Location, BridgeStrength, source,
+    /// C4Warhead, 1, NULL)` (`0x00489280`, the shared area damage owner).
+    /// A missing `C4Warhead=` makes it return at once (`0x004892D7`).
+    /// Answers whether a bridge changed.
+    fn c4_cell_blast(
+        &mut self,
+        source: Option<u64>,
+        at: DriveCoord,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let Some(warhead) = rules.warhead(&rules.bridge_warheads.c4_name) else {
+            return false;
+        };
+        let warhead_ref = self.interner.intern(&warhead.id);
+        crate::sim::combat::world_receiver::apply_area_damage(
+            self,
+            rules,
+            registry,
+            ProjectileCoord::new(at.x, at.y, at.z),
+            rules.bridge_rules.strength,
+            warhead,
+            (
+                source.unwrap_or(crate::sim::combat::RAD_NO_ATTACKER),
+                None,
+                warhead_ref,
+            ),
+            effects,
+        )
+    }
+
+    /// `0x0051A738..0x0051A75E`: the land of the NavCom's cell
+    /// (`Map[NavCom->GetCoords()]`, `+0xEC`) is Water.
+    fn nav_com_cell_is_water(&self, nav_com: NavTargetRef) -> bool {
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return false;
+        };
+        let cells = NativeCellQuery::canonical(terrain);
+        let target = match nav_com {
+            NavTargetRef::Cell { rx, ry } => TargetKind::Cell(rx, ry),
+            NavTargetRef::Object { id } => TargetKind::Entity(id),
+        };
+        crate::sim::movement::ground_pose::target_get_coords(target, self, Some(&cells))
+            .is_some_and(|coord| {
+                cells.land_type(cells.lookup_world(coord.x, coord.y))
+                    == i32::from(LandType::Water.as_index())
+            })
     }
 
     /// The planter's `RearmTimer.Start(GetROF(1))` (vt+0x318;

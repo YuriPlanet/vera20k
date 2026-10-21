@@ -82,11 +82,12 @@ pub(crate) fn fired(
     };
     let prism = source.category() == EntityCategory::Structure && rules.is_prism_type(obj);
     let supported = prism && prism_support_count > 0;
-    // RESIDUAL: other non-building house-color callers use width1 vs native2
-    // (6FF571); their stock reachability is unestablished, a cosmetic 1px gap.
+    // FireAt6FF549..6FF571: every non-building firer's house-colour laser is
+    // 2 wide (a LUNR on MoonPatr, which makes it buildable); a non-Prism
+    // building keeps the constructor's 1.
     let width = if prism {
         if supported { 5 } else { 3 }
-    } else if source.category() == EntityCategory::Unit && weapon.is_house_color {
+    } else if source.category() != EntityCategory::Structure && weapon.is_house_color {
         2
     } else {
         1

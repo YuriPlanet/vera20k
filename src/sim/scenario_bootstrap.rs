@@ -650,23 +650,37 @@ pub fn prepare_stock_offline_scenario_prefix_plan(
         &mut scenario_rng,
     )
     .ok_or(PreFillScenarioPrefixPlanError::InvalidMapCellExtent)?;
-    let assignment = match family {
-        StockOfflineStartCallbackFamily::Battle => native_assign_launch_starts_from_preassignment(
+    // 0x0068754B..0x00687581: inside GameMode != 0, WOL Quick Co-op
+    // ([0xA8B244] == 2) runs AssignStartingPoints 0x005EE9D0 in place of the
+    // mode's +0x84, whatever the mode.
+    let assignment = if descriptor.quick_coop_starts {
+        native_assign_quick_coop_starts_from_preassignment(
             session,
             &final_gathered_starts,
             &preassignment,
             &mut scenario_rng,
-        ),
-        StockOfflineStartCallbackFamily::Cooperative => {
-            let human_start_spots = start_header.coop_human_start_spots().max(0) as usize;
-            native_assign_cooperative_starts_from_preassignment(
-                session,
-                &final_gathered_starts,
-                &preassignment,
-                human_start_spots,
-                session.pre_fill_house_roster.nonobserver_human_count(),
-                &mut scenario_rng,
-            )
+        )
+    } else {
+        match family {
+            StockOfflineStartCallbackFamily::Battle => {
+                native_assign_launch_starts_from_preassignment(
+                    session,
+                    &final_gathered_starts,
+                    &preassignment,
+                    &mut scenario_rng,
+                )
+            }
+            StockOfflineStartCallbackFamily::Cooperative => {
+                let human_start_spots = start_header.coop_human_start_spots().max(0) as usize;
+                native_assign_cooperative_starts_from_preassignment(
+                    session,
+                    &final_gathered_starts,
+                    &preassignment,
+                    human_start_spots,
+                    session.pre_fill_house_roster.nonobserver_human_count(),
+                    &mut scenario_rng,
+                )
+            }
         }
     };
     #[cfg(any(test, feature = "test-support"))]
@@ -1038,6 +1052,116 @@ fn native_assign_cooperative_starts_from_preassignment(
     }
 }
 
+/// WOL Quick Co-op's start callback, `ScenarioClass__AssignStartingPoints`
+/// (`0x005EE9D0..0x005EEBAA`). It snapshots `used` from the Scenario start
+/// table once, then makes two passes over the Houses in order: humans
+/// (`+0x1EC`) keep the last table entry naming them or pick with the human
+/// flag; then every AI picks with no table check, so a preset AI start stays
+/// reserved but unused. The `[Basic] Official` argument only reaches Gather,
+/// which never reads it. It writes no node or AI-slot start back.
+fn native_assign_quick_coop_starts_from_preassignment(
+    session: &SkirmishLaunchSession,
+    starts: &[Waypoint],
+    preassignment: &[Option<usize>],
+    rng: &mut SimRng,
+) -> NativeStartAssignment {
+    if starts.is_empty() {
+        return NativeStartAssignment {
+            placements: Vec::new(),
+            start_table: Vec::new(),
+        };
+    }
+
+    assert_eq!(starts.len(), preassignment.len());
+    let slots = normalized_launch_slots(session);
+    let mut start_table = preassignment.to_vec();
+    let mut used: Vec<bool> = start_table.iter().map(Option::is_some).collect();
+    let mut assigned = vec![None; slots.len()];
+
+    for human in [true, false] {
+        for (slot, normalized) in slots.iter().enumerate() {
+            if normalized.is_human != human {
+                continue;
+            }
+            let preset = if human {
+                start_table.iter().rposition(|owner| *owner == Some(slot))
+            } else {
+                None
+            };
+            let start_index = preset.unwrap_or_else(|| {
+                let picked = choose_quick_coop_start(starts, &used, human, rng);
+                used[picked] = true;
+                start_table[picked] = Some(slot);
+                picked
+            });
+            assigned[slot] = Some(starts[start_index]);
+        }
+    }
+
+    NativeStartAssignment {
+        placements: assigned
+            .into_iter()
+            .enumerate()
+            .filter_map(|(slot, start)| start.map(|start| (slot, start)))
+            .collect(),
+        start_table,
+    }
+}
+
+/// AssignStartingPoints' picker `0x005EE6F0`, with `k` the used starts. No
+/// start used: a human draws `RandomRanged(0, N-1)` on the Scenario RNG; an
+/// AI takes the farthest rule, which is the first start. Two used and an AI:
+/// draw `r = RandomRanged(0, N-3)` and take the `(r+1)`-th free start in
+/// index order. One used: the free start nearest the used one. Otherwise the
+/// free start farthest from the used ones; ties keep the lowest index.
+fn choose_quick_coop_start(
+    starts: &[Waypoint],
+    used: &[bool],
+    human: bool,
+    rng: &mut SimRng,
+) -> usize {
+    let used_count = used.iter().filter(|used| **used).count();
+    if used_count == 0 && human {
+        return rng.next_range_u32_inclusive(0, starts.len() as u32 - 1) as usize;
+    }
+    if used_count == 2 && !human {
+        let r = rng.next_range_u32_inclusive(0, starts.len() as u32 - 3) as usize;
+        if let Some(free) = (0..starts.len()).filter(|index| !used[*index]).nth(r) {
+            return free;
+        }
+    }
+    // Each distance is truncated to 16 bits before the 32-bit sum.
+    let distance_sum = |candidate: usize| -> i32 {
+        (0..starts.len())
+            .filter(|other| used[*other])
+            .map(|other| i32::from(native_start_distance(starts[candidate], starts[other]) as i16))
+            .sum()
+    };
+    let free = (0..starts.len()).filter(|index| !used[*index]);
+    let picked = if used_count == 1 {
+        // Strict `<`, so the first minimum wins.
+        free.fold(None::<(usize, i32)>, |best, candidate| {
+            let sum = distance_sum(candidate);
+            match best {
+                Some((_, best_sum)) if sum >= best_sum => best,
+                _ => Some((candidate, sum)),
+            }
+        })
+    } else {
+        // Strict `>` from -1, so ties keep the lowest index.
+        free.fold(None::<(usize, i32)>, |best, candidate| {
+            let sum = distance_sum(candidate);
+            match best {
+                Some((_, best_sum)) if sum <= best_sum => best,
+                _ => Some((candidate, sum)),
+            }
+        })
+    };
+    picked
+        .expect("participant count cannot exceed gathered starts")
+        .0
+}
+
 pub fn choose_battle_automatic_start(
     starts: &[Waypoint],
     occupied: &[bool],
@@ -1123,6 +1247,9 @@ pub struct NormalizedSkirmishSlot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MatchLaunchDescriptor {
     session: SkirmishLaunchSession,
+    /// WOL Quick Co-op (`[0xA8B244] == 2`) at scenario load: the start
+    /// callback is AssignStartingPoints `0x005EE9D0`.
+    quick_coop_starts: bool,
 }
 
 /// A launch slot still carried an unresolved random shell choice.
@@ -1175,7 +1302,16 @@ impl MatchLaunchDescriptor {
                 });
             }
         }
-        Ok(Self { session })
+        Ok(Self {
+            session,
+            quick_coop_starts: false,
+        })
+    }
+
+    /// Assign starts as WOL Quick Co-op does (`0x0068755E`).
+    pub fn with_quick_coop_starts(mut self) -> Self {
+        self.quick_coop_starts = true;
+        self
     }
 
     /// Full_Init6876AC deletes all HouseTypes (6689C3..6689E5), then
@@ -5524,5 +5660,226 @@ mod tests {
             sim.rng_state().scenario,
             SimRng::new(u64::from(seed)).logical_state()
         );
+    }
+
+    /// Two humans then two AIs, in the House order CreateHouses builds.
+    fn quick_coop_session(
+        humans: [LaunchStartPosition; 2],
+        ais: [LaunchStartPosition; 2],
+    ) -> SkirmishLaunchSession {
+        let mut session = one_player_battle_launch("quick-coop.map").session().clone();
+        let mut partner = session.humans[0].clone();
+        partner.raw_slot_index = Some(1);
+        partner.name = "Partner".to_string();
+        partner.slot.color_index = 1;
+        session.humans.push(partner);
+        for (human, start) in session.humans.iter_mut().zip(humans) {
+            human.slot.start_position = start;
+        }
+        session.opponents = ais
+            .into_iter()
+            .enumerate()
+            .map(
+                |(index, start_position)| crate::skirmish_launch::SkirmishAiSlot {
+                    raw_slot_index: index as u8 + 2,
+                    country: LaunchCountry::Russia,
+                    country_random: false,
+                    color_index: index as u8 + 2,
+                    color_random: false,
+                    start_position,
+                    team: LaunchTeam::None,
+                    difficulty: crate::skirmish_launch::AiDifficulty::Easy,
+                },
+            )
+            .collect();
+        session.ai_player_count = 2;
+        use crate::skirmish_launch::{PreFillAiHouseSlot, PreFillHouseRoster, PreFillHumanHouse};
+        session.pre_fill_house_roster = PreFillHouseRoster::new(
+            (0..2)
+                .map(|order| PreFillHumanHouse {
+                    priority: i32::from(order),
+                    source_order: order,
+                    observer: false,
+                })
+                .collect(),
+            (0..8)
+                .map(|slot_index| PreFillAiHouseSlot {
+                    slot_index,
+                    valid: matches!(slot_index, 2 | 3),
+                })
+                .collect(),
+        );
+        session
+    }
+
+    /// Starts on one row at x = 10, 20, 40, 80, 100.
+    fn quick_coop_row() -> Vec<Waypoint> {
+        [10, 20, 40, 80, 100]
+            .into_iter()
+            .enumerate()
+            .map(|(index, rx)| Waypoint {
+                index: index as u32,
+                rx,
+                ry: 10,
+            })
+            .collect()
+    }
+
+    fn quick_coop_assign(session: &SkirmishLaunchSession, rng: &mut SimRng) -> Vec<(u16, usize)> {
+        let starts = quick_coop_row();
+        let preassignment = native_preassign_launch_start_table(session, starts.len());
+        let assignment = native_assign_quick_coop_starts_from_preassignment(
+            session,
+            &starts,
+            &preassignment,
+            rng,
+        );
+        assignment
+            .placements
+            .iter()
+            .map(|(slot, start)| (start.rx, *slot))
+            .collect()
+    }
+
+    #[test]
+    fn quick_coop_starts_seat_humans_first_and_ignore_preset_ai_starts() {
+        use LaunchStartPosition::{Auto, Position};
+        // Human A keeps preset start 2. With 2 and AI 1's preset 4 used,
+        // human B takes the farthest free start (x 10). AI 1 then picks as
+        // if it had no preset: farthest from 10, 40 and 100 is x 80. AI 2
+        // takes the last free start.
+        let session = quick_coop_session([Position(2), Auto], [Position(4), Auto]);
+        let mut rng = SimRng::new(0x5EE9);
+        let before = rng.state();
+        let mut placements = quick_coop_assign(&session, &mut rng);
+        placements.sort_by_key(|(_, slot)| *slot);
+        assert_eq!(placements, vec![(40, 0), (10, 1), (80, 2), (20, 3)]);
+        assert_eq!(rng.state(), before, "no picker branch here draws");
+
+        let starts = quick_coop_row();
+        let preassignment = native_preassign_launch_start_table(&session, starts.len());
+        let assignment = native_assign_quick_coop_starts_from_preassignment(
+            &session,
+            &starts,
+            &preassignment,
+            &mut rng,
+        );
+        assert_eq!(
+            assignment.start_table,
+            vec![Some(1), Some(3), Some(0), Some(2), Some(2)]
+        );
+    }
+
+    #[test]
+    fn quick_coop_starts_draw_for_the_first_human_and_the_first_ai() {
+        use LaunchStartPosition::Auto;
+        let session = quick_coop_session([Auto, Auto], [Auto, Auto]);
+        let nearest = |rx: u16| match rx {
+            10 => 20,
+            20 => 10,
+            40 => 20,
+            80 => 100,
+            100 => 80,
+            _ => unreachable!(),
+        };
+        for seed in 0..32 {
+            let mut rng = SimRng::new(seed);
+            let mut expected = rng.clone();
+            let first = expected.next_range_u32_inclusive(0, 4) as usize;
+            let ai_draw = expected.next_range_u32_inclusive(0, 2) as usize;
+            let placements = quick_coop_assign(&session, &mut rng);
+            assert_eq!(rng.state(), expected.state(), "seed {seed}: two draws");
+
+            let row: Vec<u16> = quick_coop_row().iter().map(|start| start.rx).collect();
+            let start_of = |slot: usize| placements.iter().find(|(_, s)| *s == slot).unwrap().0;
+            assert_eq!(start_of(0), row[first]);
+            assert_eq!(start_of(1), nearest(row[first]));
+            let free: Vec<u16> = row
+                .iter()
+                .copied()
+                .filter(|rx| *rx != start_of(0) && *rx != start_of(1))
+                .collect();
+            assert_eq!(start_of(2), free[ai_draw]);
+        }
+    }
+
+    #[test]
+    fn quick_coop_picker_third_house_of_three_takes_the_last_start_without_a_draw() {
+        // N = 3, k = 2, AI: RandomRanged(0, 0) returns at min == max
+        // (0x0065C7EF) without consuming the stream.
+        let starts = &quick_coop_row()[..3];
+        let mut rng = SimRng::new(9);
+        let before = rng.state();
+        assert_eq!(
+            choose_quick_coop_start(starts, &[true, true, false], false, &mut rng),
+            2
+        );
+        assert_eq!(rng.state(), before);
+    }
+
+    #[test]
+    fn quick_coop_picker_gives_an_ai_on_an_empty_table_the_first_start() {
+        let starts = quick_coop_row();
+        let mut rng = SimRng::new(7);
+        let before = rng.state();
+        assert_eq!(
+            choose_quick_coop_start(&starts, &[false; 5], false, &mut rng),
+            0
+        );
+        assert_eq!(rng.state(), before);
+    }
+
+    #[test]
+    fn quick_coop_starts_replace_the_mode_chooser_in_the_prefix() {
+        use LaunchStartPosition::Auto;
+        let session = quick_coop_session([Auto, Auto], [Auto, Auto]);
+        let row: Vec<Waypoint> = [6, 12, 20, 30, 38]
+            .into_iter()
+            .enumerate()
+            .map(|(index, rx)| Waypoint {
+                index: index as u32,
+                rx,
+                ry: 20,
+            })
+            .collect();
+        let map = prefix_map_with_starts(&row);
+        let battle = MatchLaunchDescriptor::from_resolved(session).unwrap();
+        let quick_coop = battle.clone().with_quick_coop_starts();
+        for seed in 0x5EE0..0x5EF0 {
+            for (launch, partner_nearest) in [(&battle, false), (&quick_coop, true)] {
+                let plan =
+                    prepare_stock_offline_scenario_prefix_plan(launch, &map, &map.waypoints, seed)
+                        .unwrap();
+                let starts = plan.final_gathered_starts();
+                let placements = &plan.projection.assignment.placements;
+                let start_of = |slot: usize| {
+                    placements
+                        .iter()
+                        .find(|(placed, _)| *placed == slot)
+                        .unwrap()
+                        .1
+                };
+                let first = start_of(0);
+                let others = || {
+                    starts
+                        .iter()
+                        .copied()
+                        .filter(move |start| *start != first)
+                        .map(move |start| (native_start_distance(first, start), start))
+                };
+                // Battle seats the second house farthest from the first;
+                // AssignStartingPoints seats the partner nearest.
+                let expected = if partner_nearest {
+                    others().min_by_key(|(distance, _)| *distance)
+                } else {
+                    others().max_by_key(|(distance, _)| *distance)
+                };
+                assert_eq!(
+                    native_start_distance(first, start_of(1)),
+                    expected.unwrap().0,
+                    "seed {seed:#x}, quick co-op {partner_nearest}"
+                );
+            }
+        }
     }
 }

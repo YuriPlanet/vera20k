@@ -36,7 +36,7 @@ def generate():
     first_guard = next(r['state'] for r in source['frames']
                        if r['state']['frame'] > source['collapse_frame']
                        and r['state']['mission'] == 5)
-    return dict(schema=1, native_sha256=source['native_sha256'],
+    return dict(schema=1,
                 original_native_payload_sha256=identity['original_payload_sha256'],
                 published_native_payload_sha256=identity['published_payload_sha256'],
                 seed0=dict(constructor_phase_raw_u16=source['after_ctor']['random_phase_raw_u16'],
@@ -61,8 +61,7 @@ def metadata():
     ], substitutions=[], entry_points={'unit_ai': 0x7360C0, 'commence': 0x5B3570,
                                       'techno_counter': 0x6FA646, 'attack': 0x4D4DC0}) | dict(
         source_files={name: packet_io.digest((HERE / name).read_bytes())
-                      for name in ('mission.json.gz', 'mission_counter.json')},
-        projection_source_sha256=packet_io.digest(Path(__file__).read_bytes()))
+                      for name in ('mission.json.gz', 'mission_counter.json')})
 
 
 if __name__ == '__main__':

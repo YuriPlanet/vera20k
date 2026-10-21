@@ -950,11 +950,20 @@ impl Simulation {
         self.planning.nodes.get(id)
     }
 
-    /// The members that 0x00637840 (Ghidra's "PlayPlanningSelectionVoices")
-    /// Selects after `actor`'s Select (`0x006FC020`): its tail node's members
-    /// in encounter order (node `+0x4`, `+0x10`), whatever their owner. The
-    /// voices come from those members' own Selects.
-    pub fn planning_tail_members(&self, actor: u64) -> Vec<u64> {
+    /// `0x00637840` (Ghidra's "PlayPlanningSelectionVoices"), the last call of
+    /// every successful `TechnoClass::Select` (`0x006FC020`, its only caller):
+    /// in Planning Mode (`0x00AC4CF4`) the members its caller must Select
+    /// (vt+0x14C) after `actor`. They are the members of `actor`'s tail node
+    /// (token `+0x514` via `0x00705D20`, node vector `+0x8` at count-1
+    /// `+0x14`) in encounter order (node `+0x4`, `+0x10`), whatever their
+    /// owner. Native skips a member whose IsSelected `+0x83` is already set,
+    /// and the `0x00AC4CF6` guard keeps the members' own Selects from
+    /// expanding again; each Select owner applies both. The voices come from
+    /// the members' own Selects.
+    pub fn planning_select_partners(&self, actor: u64, planning_mode: bool) -> Vec<u64> {
+        if !planning_mode {
+            return Vec::new();
+        }
         self.planning_tail_node(actor)
             .map(|node| node.live_members.values().copied().collect())
             .unwrap_or_default()

@@ -299,6 +299,11 @@ pub enum WolTarget {
     QmPostmatch,
     /// Then `0x122` Yes: the opponent added, the logged-out `0x10E`.
     QmPostmatchYes,
+    /// Quick Co-op: the host's guest joins; Cooperative `+0x20` replaces
+    /// the matchbot's map, `+0x94` publishes C0; the start reaches loading.
+    QcHostStartLoading,
+    /// Quick Co-op: the host's C0, then its options, accepted at once.
+    QcGuestJoined,
 }
 
 impl WolTarget {
@@ -487,7 +492,14 @@ impl WolTarget {
                 | Self::QmHostStartLoading
                 | Self::QmPostmatch
                 | Self::QmPostmatchYes
+                | Self::QcHostStartLoading
+                | Self::QcGuestJoined
         )
+    }
+
+    /// Welcome's Quick Co-op (`[0xA8B244]` 2) runs the same runner.
+    pub(super) fn quick_coop(self) -> bool {
+        matches!(self, Self::QcHostStartLoading | Self::QcGuestJoined)
     }
 
     /// `0x11E` over `0x10E` after lobby Back.
@@ -686,6 +698,8 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-qm-host-start-loading", WolTarget::QmHostStartLoading),
     ("wol-0x122-postmatch", WolTarget::QmPostmatch),
     ("wol-0x122-yes", WolTarget::QmPostmatchYes),
+    ("wol-qc-host-start-loading", WolTarget::QcHostStartLoading),
+    ("wol-qc-guest-joined", WolTarget::QcGuestJoined),
 ];
 
 /// The controlled guest of the C2 targets, the host of the C9 targets.
@@ -966,7 +980,9 @@ impl WolCapture {
                     self.phase = next;
                     return Ok(());
                 }
-                let (mode_button, mode_name) = if self.target.quick_match() {
+                let (mode_button, mode_name) = if self.target.quick_coop() {
+                    (crate::ui::wol_shell::QUICK_COOP, "Quick Co-op")
+                } else if self.target.quick_match() {
                     (crate::ui::wol_shell::QUICK_MATCH, "Quick Match")
                 } else {
                     (crate::ui::wol_shell::CUSTOM_MATCH, "Custom Match")
@@ -1014,7 +1030,9 @@ impl WolCapture {
                         && requests[applies] == WolServiceRequest::EnsureApi,
                     "the flow did not start with the WOLAPI object: {requests:?}"
                 );
-                let mode = if self.target.quick_match() {
+                let mode = if self.target.quick_coop() {
+                    crate::ui::wol_shell::WolMode::QuickCoop
+                } else if self.target.quick_match() {
                     crate::ui::wol_shell::WolMode::QuickMatch
                 } else {
                     crate::ui::wol_shell::WolMode::CustomMatch

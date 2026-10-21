@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -47,5 +46,5 @@
     "unit_level_height": "0x00735250",
     "unit_bridge_height": "0x007352f0"
   },
-  "payload_sha256": "f7aa3ebf063eca029894472805f4f74763360e0b6cff86b1e6c611f892771fa8"
+  "payload_sha256": "9c9b375d23d19a92d78fd93b455d0ea4b374486e494fa57b8b8e21e91214f12c"
 }

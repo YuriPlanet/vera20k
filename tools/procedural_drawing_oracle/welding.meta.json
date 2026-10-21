@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -66,5 +65,5 @@
     "write": "python -m tools.procedural_drawing_oracle.electric_bolt --welding --welding-map <ordinary-ifv-welding.map> --welding-map <ordinary-ifv-full-health.map> --write"
   },
   "replay_command": "python -m tools.procedural_drawing_oracle.electric_bolt --welding --welding-map target/ordinary-ifv-welding.map --welding-map target/ordinary-ifv-full-health.map",
-  "payload_sha256": "fa6399a78462898aa3f32064def4929896fa246c0a24014f116d7ca4fad5cb1a"
+  "payload_sha256": "c3c822d0a684b78cdc86fd58ab65fdf82b03a2ed11307e8be413c1a3a55de9a1"
 }

@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -18,7 +17,6 @@
     "animation_request": "0x00421EA0"
   },
   "source_file": "hut.json.gz",
-  "source_file_sha256": "624dface5dfb18ce8f517879c0dd1ced7b5cb24881cdbb2702b31899aa62b06f",
-  "projection_source_sha256": "d4bf8a42414b011a27ab778af251bf00b21b1ed80c29ea868cfc6a835db23cf5",
-  "payload_sha256": "964f5f63d29d890cb985eb89faebf59adfb153e3ee2b09473078f7191d1ffb92"
+  "source_file_sha256": "17a323bb9b789eb5ba13538022b66cc8ab4913aadb7e52eaeeb4c38d6aa4728d",
+  "payload_sha256": "98d561c0979135e8a3136927e4932e5b26c876ee24db7d620d587f58f64251f2"
 }

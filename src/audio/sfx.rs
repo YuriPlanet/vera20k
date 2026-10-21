@@ -2035,8 +2035,8 @@ impl SfxPlayer {
 
     /// InitSideMixFiles534FAC / successful-load67E761 bind the incoming
     /// Scenario.Side; ordinary requests never infer it from a live House.
-    pub(crate) fn set_eva_side(&mut self, side: i32) {
-        self.vox.set_side(side);
+    pub(crate) fn set_eva_side(&mut self, side: i32, rules: &crate::rules::ruleset::RuleSet) {
+        self.vox.set_side(side, rules);
     }
     pub(crate) fn eva_entry_done(&self, index: i32, registry: &EvaRegistry) -> bool {
         registry
@@ -3653,8 +3653,14 @@ mod tests {
                     })
                     .sum::<usize>();
             assert!(expected_count <= 1);
+            let rules = crate::rules::ruleset::RuleSet::from_ini(
+                &crate::rules::ini_parser::IniFile::from_str(
+                    "[Sides]\nGDI=ONE\nNod=TWO\nThirdSide=THREE\n",
+                ),
+            )
+            .unwrap();
             for side_index in 0..3 {
-                player.set_eva_side(side_index);
+                player.set_eva_side(side_index, &rules);
                 player.stop_all();
                 player.set_paused(false, 1);
                 player.set_paused(true, 1);

@@ -4,7 +4,6 @@
  "source_pr": 1055,
  "source_head": "e7344434a127ebc7f33d831f7c12115e3ff8068b",
  "original_ledger_sha256": "72a76c943a3c0660e6bfbf4167f124efd0894edf72b05d34fac4126d13afb358",
- "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
  "static_reader_reports_sha256": {
   "native_1/admissions.json": "ec22cd672008b4e2ccf55d21b295d5198646e131791467a6cb051f3345815f72",
   "native_2/admission.json": "e100ea13a02cdc9bad3c8637831ee9d372761fa2279c3080af14d4174e624e7e",
@@ -172,7 +171,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4198400,
@@ -262,7 +260,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4198528,
@@ -361,7 +358,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4198592,
@@ -452,7 +448,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4198800,
@@ -551,7 +546,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4200928,
@@ -650,7 +644,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4203040,
@@ -731,7 +724,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4208496,
@@ -825,7 +817,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4214224,
@@ -905,7 +896,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4214736,
@@ -986,7 +976,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4214848,
@@ -1065,7 +1054,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4217536,
@@ -1152,7 +1140,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4222976,
@@ -1236,7 +1223,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4223232,
@@ -1327,7 +1313,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4223392,
@@ -1418,7 +1403,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4224080,
@@ -1510,7 +1494,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4227632,
@@ -1609,7 +1592,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4233344,
@@ -1705,7 +1687,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4234304,
@@ -1785,7 +1766,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4236096,
@@ -1889,7 +1869,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4237008,
@@ -1995,7 +1974,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4256368,
@@ -2116,7 +2094,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4270192,
@@ -2208,7 +2185,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4273568,
@@ -2334,7 +2310,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4333088,
@@ -2433,7 +2408,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4385760,
@@ -2527,7 +2501,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4390064,
@@ -2623,7 +2596,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4400976,
@@ -2713,7 +2685,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4419728,
@@ -2839,7 +2810,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4429328,
@@ -2938,7 +2908,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4430352,
@@ -3028,7 +2997,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4432048,
@@ -3119,7 +3087,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4432080,
@@ -3210,7 +3177,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4432128,
@@ -3301,7 +3267,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4571904,
@@ -3414,7 +3379,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4581744,
@@ -3480,7 +3444,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4612720,
@@ -3599,7 +3562,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4661136,
@@ -3712,7 +3674,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4678464,
@@ -3825,7 +3786,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4680480,
@@ -3923,7 +3883,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4682816,
@@ -4024,7 +3983,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4719264,
@@ -4137,7 +4095,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4737760,
@@ -4274,7 +4231,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4747504,
@@ -4384,7 +4340,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4747536,
@@ -4497,7 +4452,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4747568,
@@ -4627,7 +4581,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4750352,
@@ -4734,7 +4687,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4750832,
@@ -4830,7 +4782,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4762560,
@@ -4914,7 +4865,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4762848,
@@ -5006,7 +4956,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4775536,
@@ -5103,7 +5052,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4775632,
@@ -5197,7 +5145,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4908112,
@@ -5296,7 +5243,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 4958064,
@@ -5407,7 +5353,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5000944,
@@ -5509,7 +5454,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5006496,
@@ -5600,7 +5544,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5018080,
@@ -5686,7 +5629,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5018736,
@@ -5777,7 +5719,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5018928,
@@ -5876,7 +5817,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5028928,
@@ -5975,7 +5915,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5046656,
@@ -6043,7 +5982,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5047616,
@@ -6156,7 +6094,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5104080,
@@ -6259,7 +6196,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5111936,
@@ -6358,7 +6294,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5125472,
@@ -6429,7 +6364,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5139424,
@@ -6510,7 +6444,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5183664,
@@ -6630,7 +6563,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5197984,
@@ -6737,7 +6669,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5203264,
@@ -6850,7 +6781,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5285008,
@@ -6957,7 +6887,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5298816,
@@ -7043,7 +6972,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5300192,
@@ -7117,7 +7045,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5300208,
@@ -7214,7 +7141,6 @@
    },
    "reason": "The complete body and slave-AI caller establish conditional queuing of mission 10, but this bounded review did not trace the slave object producer to its InfantryClass constructor/type. The InfantryClass prefix is therefore held rather than inferred from the existing annotation.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5385472,
@@ -7309,7 +7235,6 @@
    },
    "reason": "The complete body and slave-AI caller establish queuing of mission 5, but this bounded review did not trace the slave object producer to its InfantryClass constructor/type. The InfantryClass prefix is therefore held rather than inferred from the existing annotation.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5385504,
@@ -7408,7 +7333,6 @@
    },
    "reason": "The original class identifier Wstring is not established by this body or the 8-bit string access/assignment callees; neutral storage-role name avoids implying a wide-character ABI.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5409792,
@@ -7508,7 +7432,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5436960,
@@ -7607,7 +7530,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5459536,
@@ -7708,7 +7630,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5524704,
@@ -7798,7 +7719,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5534256,
@@ -7874,7 +7794,6 @@
    },
    "reason": "Body and initializer table establish diagonal generation/storage, but the inspected consumers are sibling initializers; source Jumpjet-module ownership is not established.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5548592,
@@ -7945,7 +7864,6 @@
    },
    "reason": "Body and original constants establish radians conversion/storage, but source Jumpjet-module ownership is not established by initializer adjacency.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5548736,
@@ -8016,7 +7934,6 @@
    },
    "reason": "Body and original constants establish radians conversion/storage, but source Jumpjet-module ownership is not established by initializer adjacency.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 5548768,
@@ -10146,7 +10063,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 6519232,
@@ -10241,7 +10157,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 6519312,
@@ -10327,7 +10242,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 6520064,
@@ -10434,7 +10348,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 6520320,
@@ -10531,7 +10444,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 6532208,
@@ -10630,7 +10542,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 6532432,
@@ -11969,7 +11880,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 7243648,
@@ -12130,7 +12040,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 7282208,
@@ -12453,7 +12362,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 7356992,
@@ -12623,7 +12531,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 7396448,
@@ -13064,7 +12971,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 7540384,
@@ -13138,7 +13044,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 7543312,
@@ -13219,7 +13124,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 7543376,
@@ -13300,7 +13204,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 7543408,
@@ -13399,7 +13302,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 7544208,
@@ -13543,7 +13445,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 7550656,
@@ -13878,7 +13779,6 @@
    },
    "reason": "Complete original body and the cited native caller, table or receiver-storage evidence support this descriptive role. Plate is shortened to the established reading.",
    "coverage": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "body_ranges": [
      {
       "address": 7630256,

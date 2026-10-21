@@ -1,16 +1,16 @@
 {
   "auxiliary_artifacts": {
     "hut_callsite_bytes.json": {
-      "original_file_sha256": "dd1210b17a429b1fefde113f12ddc74e2d95e23e9c961e5e1998c04fe7cf9bba",
+      "original_file_sha256": "b50c5a48dc7fb4321d7891c83216620be1b46e1de4a1747f4c8cea9aab61aa48",
       "original_path": "anytown-hut-native/callsite_bytes.json",
-      "promoted_file_sha256": "dd1210b17a429b1fefde113f12ddc74e2d95e23e9c961e5e1998c04fe7cf9bba",
+      "promoted_file_sha256": "b50c5a48dc7fb4321d7891c83216620be1b46e1de4a1747f4c8cea9aab61aa48",
       "transformation": "byte-identical"
     },
     "hut_summary.json.gz": {
-      "canonical_payload_sha256": "bd41e93d0cc44d9944bbbf989dbd28eb2d472a017cb2c15f59ce66a505b92f0c",
+      "canonical_payload_sha256": "6ae009922c6ed85fe82d8bfd5a315911ca50b23ef0dfd1e5dd1496db545d269a",
       "original_file_sha256": "7698ea5b8fcbb9574c4bd81a0a557e5b30a340689c696904953a19e5fb93210c",
       "original_path": "anytown-hut-native/summary.json",
-      "promoted_file_sha256": "d35da0044074ffbd6376315540df63a8732ec4523b04b7cf7832cccf069c2a19",
+      "promoted_file_sha256": "ff5eb5a40970493f00f6a4e18a9895fb54d427ddeef313fcae946a280c61090a",
       "transformation": "canonical JSON plus deterministic gzip only"
     }
   },
@@ -29,17 +29,13 @@
         "bytes": 6752,
         "sha256": "9ff8e4de78b27b812c37bdc43ac4c7017ae483d6ef78d37454dd33ef81447a52"
       },
-      "anytown_hut.py": {
-        "bytes": 13528,
-        "sha256": "2c53d82ec3c724b6ee371434562e60ed877ca73ba09b2c2598efd9e89f37eacd"
-      },
       "caller_startup.asm": {
         "bytes": 8407,
         "sha256": "8db6f78087583179a311b5c8e1c408543c58c0906979c3579a361a63382a43fc"
       },
       "callsite_bytes.json": {
-        "bytes": 2728,
-        "sha256": "dd1210b17a429b1fefde113f12ddc74e2d95e23e9c961e5e1998c04fe7cf9bba"
+        "bytes": 2641,
+        "sha256": "b50c5a48dc7fb4321d7891c83216620be1b46e1de4a1747f4c8cea9aab61aa48"
       },
       "check.log": {
         "bytes": 173,
@@ -77,20 +73,16 @@
     "path": "anytown-hut-native/receipt.json",
     "sha256": "a991b9d8e629321dc17c8c1c651421304e8882c4a775eb12484870c6747f724f"
   },
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "results": {
     "hut.json": {
       "original_file_sha256": "046def26dcfe679b585fd8ff1129d266a8025ad09bd604f41ace537f2ac6912a",
       "original_metadata_sha256": "9ff8e4de78b27b812c37bdc43ac4c7017ae483d6ef78d37454dd33ef81447a52",
       "original_path": "anytown-hut-native/anytown_hut.json",
-      "original_payload_sha256": "4b1f825f1300048af10cb3eef0b55e9f5a675d44bb7e49e17b33af9c768b51a3",
-      "original_runner_sha256": "2c53d82ec3c724b6ee371434562e60ed877ca73ba09b2c2598efd9e89f37eacd",
+      "original_payload_sha256": "51a58c909583e7f362c6237257905df5148b4a850ffb03de4fd411f5230bbaa3",
       "projection": [
         "animation_inputs.layers[*].source_lines -> source_lines_sha256"
       ],
-      "promoted_publication_sha256": "ea7f83f536586f6d2e22351af4cdb007ddc707b6698ef3e6dd13e64382fd2c0f",
-      "promoted_runner_sha256": "000950121c307d77867148f5dd1f023b7dcc0236022d142117c82fe923f98435",
-      "published_payload_sha256": "b6a0af36a3d5b945b380e3bb60f805aa632097f70267d56eb711e10970ad9765"
+      "published_payload_sha256": "a15bbe36b40348bbba40dee338cf07e575b64f0650cb8568a23321d076ce20fb"
     }
   },
   "schema": 1

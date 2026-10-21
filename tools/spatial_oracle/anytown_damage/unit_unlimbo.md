@@ -75,7 +75,7 @@ recipes. The metadata records their SHA-256 receipts:
 
 ## Corpus boundaries
 
-`unit_unlimbo.json` has `{schema_version, native_sha256, direct_rows,
+`unit_unlimbo.json` has `{schema_version, direct_rows,
 factory_rows, visceroid_reader_receipt, stage_rows, factory_exit_radio_rows,
 authored_rows, factory_unload_rows, factory_miner_per_cell_rows,
 unit_move_guard_rows, factory_busy_redirect_rows,

@@ -257,8 +257,11 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
     let switches = DiplomacyRules {
         allies_allowed: rules.general.allies_allowed,
         quick_coop: mode == SessionMode::Wol
-            && state.frontend.wol.as_ref().and_then(|visit| visit.mode())
-                == Some(crate::ui::wol_shell::WolMode::QuickCoop),
+            && state
+                .match_state
+                .session
+                .network_wol_start()
+                .is_some_and(|terms| terms.quick_coop),
         local_inactive: sim.local_player_defeated(),
         game_mode_nonzero: mode.is_nonzero(),
         listeners: std::array::from_fn(|index| {

@@ -380,6 +380,74 @@ fn retail_berserk_engineer_ifv_keeps_cursor_but_refuses_click() {
     );
 }
 
+/// A repair IFV being erased by a Chrono Legionnaire keeps the Repair cursor,
+/// and native's click still sends the order: the selection loop
+/// (`0x004AE829..0x004AE844`), Unit ClickedAction_Object (`0x00738890`),
+/// Foot `0x004D74E0`'s Attack case (`0x004D769F`), ClickedMission
+/// (`0x006FFBE0`) and the MEGAMISSION arm of Event::Execute
+/// (`0x004C71F6..0x004C74BA`, with Queue_Mission `0x005B35E0` and SetTarget
+/// `0x006FCDB0`) never read BeingWarpedOut (vt+0x1D4). The event queues
+/// Attack and sets the target; the next frozen Unit AI frame drops it
+/// (`0x00736321..0x00736331`, vt+0x3C8(0)) and returns (`0x0073635A`) before
+/// MissionClass::AI, so the IFV never repairs and Attack stays queued.
+#[test]
+fn retail_warped_engineer_ifv_repair_click_is_accepted_then_dropped() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, ifv, tank) = repair_ifv(rules);
+    sim.entities_mut_for_test()
+        .get_mut(ifv)
+        .unwrap()
+        .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(99));
+    assert!(sim.entities().get(ifv).unwrap().is_warped_out());
+    let hover = HoverTargetKindWithId {
+        kind: HoverTargetKind::FriendlyUnit,
+        stable_id: tank,
+    };
+    let feedback = capability_cursor_for_hover(
+        &sim,
+        &[ifv],
+        Some(ifv),
+        &hover,
+        Some(rules),
+        None,
+        crate::app::input::context_order::OrderModifier::Normal,
+        false,
+        false,
+    );
+    assert_eq!(feedback, CursorFeedbackKind::RepairAction(true));
+    assert_eq!(sim.click_order_receivers(&[ifv]), [ifv]);
+    let command = repair_click(&sim, rules, ifv, tank);
+    assert!(sim.apply_command(OWNER, &command, Some(rules)));
+    let attack =
+        crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Attack);
+    let ifv_state = |sim: &Simulation| {
+        let ifv = sim.entities().get(ifv).unwrap();
+        (ifv.attack_target.target(), ifv.mission.queued())
+    };
+    assert_eq!(ifv_state(&sim), (Some(TargetKind::Entity(tank)), attack));
+    let grid = sim.path_grid_snapshot().unwrap();
+    let before = sim.entities().get(tank).unwrap().health.current();
+    sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+    assert_eq!(
+        ifv_state(&sim),
+        (None, attack),
+        "the frozen prologue drops TarCom; MissionClass::AI never runs"
+    );
+    for _ in 0..120 {
+        sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+    }
+    assert!(sim.entities().get(ifv).unwrap().is_warped_out());
+    assert_eq!(ifv_state(&sim), (None, attack));
+    assert_eq!(
+        sim.entities().get(tank).unwrap().health.current(),
+        before,
+        "a warped-out IFV must not repair"
+    );
+}
+
 /// Shared ordinary input fixture: real boarding, normal repair dispatch and
 /// committed Logic create the first live Welding children. No particle, timer,
 /// Display or effect field is installed by this fixture.

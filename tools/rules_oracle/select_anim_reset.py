@@ -8,7 +8,7 @@ this is not full retail discovery or the complete Full_Init lifecycle.
 import hashlib
 from pathlib import Path
 from unicorn.x86_const import UC_X86_REG_ECX, UC_X86_REG_ESP
-from tools.native_oracle import NATIVE_SHA256, finish_vectors, provenance, run_checked
+from tools.native_oracle import finish_vectors, provenance, run_checked
 from tools.projectile_oracle.bridge_render_inputs import BulletReader, assets_root, lexical
 from tools.rules_oracle.select_anim_inputs import controls, read_general_blocks, state, pointer_name
 from tools.spatial_oracle.building_body_rules import RULES, SP, dwords
@@ -118,7 +118,7 @@ def generate():
     after = state(m, rules, m.read32(rules + 0x17B4))
     assert before == after
     reread.update(before_named=before, after_named=after)
-    return dict(native_sha256=NATIVE_SHA256, retired_references=stale,
+    return dict(retired_references=stale,
                 physical_reread=reread,
                 physical_rules_sha256=hashlib.sha256(raw).hexdigest())
 

@@ -144,7 +144,7 @@ def generate():
 
 
 def metadata():
-    result = provenance(scope=__doc__, assumptions=[
+    return provenance(scope=__doc__, assumptions=[
         'Physical XShrapnel MAP and SNOW Recalc/overlay/land data, original repair570050 and supplied resident MTNK/Drive/House/list state use the unchanged shared Shrapnel repair and Joined occupants owners.',
         'Both authored hut coordinates117,56 and113,62 enter original574C20 after the external hut-death decision. Original574780,575540 and57BAA0 execute. Native active Bomb438720 and Building update call sites43896A/440301 are retained as original instruction bytes; the prefix bodies are not executed.',
         'Native BridgeExplosions constructor/read blocks run over RULESMD, absentLANGRULE, MPBattleMD and XShrapnel before ART reads in this same VM and registry. The shared joined owner executes full original Anim constructor421EA0, Unlimbo, Start and Bouncer initialization, original resident admission/receiver and death cleanup.',
@@ -158,9 +158,6 @@ def metadata():
         physical_y_walker=0x575540, instruction_only_x_walker=0x575220,
         driver=0x57BAA0, occupants=0x487A10, unit_damage=0x737C90,
         anim_constructor=0x421EA0, bridge_explosion_reader=0x66DB93))
-    result.update(source_sha256=occupants.metadata()['source_sha256'],
-                  runner_sha256=occupants.sha(Path(__file__).read_bytes()))
-    return result
 
 
 if __name__ == '__main__':

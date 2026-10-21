@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -9,7 +8,7 @@
   ],
   "scope": "Three original E1 Capture dispatcher cadence controls, using the existing FootMissions owner.",
   "assumptions": [
-    "Replay from the checkout: python -m tools.spatial_oracle.anytown_damage.mission --foot-capture --check (or --write to accept newly executed native outputs). Select the original supported gamemd.exe through VERA20K_GAMEMD_EXE or RA2_DIR. The sidecar pins that binary; no repository source hashes are persisted.",
+    "Replay from the checkout: python -m tools.spatial_oracle.anytown_damage.mission --foot-capture --check (or --write to accept newly executed native outputs). Select the original supported gamemd.exe through VERA20K_GAMEMD_EXE or RA2_DIR. Neither that binary nor repository sources are hashed.",
     "Use the separate physical sparse caches VERA20K_SHRAPNEL_INPUTS and VERA20K_ANYTOWN_INPUTS declared by tools/spatial_oracle/anytown_damage/retail_manifest.json. The former supplies original RULESMD/ARTMD/SOUNDMD/MPBattleMD reader bootstrap; the latter supplies XMP03T4.MAP and the existing physical crop/asset dependencies. Keep LANGRULE absent for these stock controls. layers records actual physical file hashes, selected Capture bytes and native Rate results.",
     "The existing FootMissions VM executes original MissionControl, E1 type, Infantry/Foot/Techno and Walk construction, physical selected readers and successful original E1 Unlimbo/registration, retaining its explicit Ready fixture baseline. An additive Capture reader pass runs the existing original679C92..679CAF MissionControl loop through5B3760 in physical RULESMD, optional LANGRULE, MPBattleMD and XMP03T4 order; older Foot corpora are not generated or rewritten.",
     "Controls supply current mission8, queued-1, status0, NULL Target and nonNULL Building NavCom at retained absolute frame1 after initialization. The Building is a supplied allocated identity with original7E3EBC vtable, not native construction or placement. On this NULL Target/nonNULL NavCom/controlled-human E1 path, original Capture only tests NavCom against NULL and never dereferences its Building identity. Original5B3060 dispatches the unchanged Infantry vtable+214 to4D4B20, including current Rate multiplication/ftol, actual Scenario65C7E0 rejection retries and real timer writes.",
@@ -39,5 +38,5 @@
     "dispatch_timer_duration": "0x005B3324"
   },
   "replay_command": "python -m tools.spatial_oracle.anytown_damage.mission --foot-capture",
-  "payload_sha256": "9b073413ca358805613f13384d15bc5c27907cb0ad797d9760a639895d8a69a6"
+  "payload_sha256": "976d3abbc95a43a6e0ecdde46ce00cbfeaf53948a57d0223bde9a4c348b8e05c"
 }

@@ -438,7 +438,7 @@
         "state_boundaries": 96
       }
     },
-    "native_case_set_sha256": "e922521b766452d23b40cd5e8a697ee6ad60c43abde1d2ff8c0edba35490adfd"
+    "native_case_set_sha256": "dad6e80839b9e0521113268e8704b7cea70cdc3420c167a3471db7078f9909f8"
   },
   "family": "unit-move",
   "final_candidate": true,

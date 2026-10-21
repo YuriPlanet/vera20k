@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -18,8 +17,6 @@
   "entry_points": {
     "in_range": "0x006F7220"
   },
-  "harness_sha256": "078a4fb71b24683aa2c06d9f05a2b68773a6df15099d08247cef6af9cb9b11a0",
-  "owner_sha256": "c6d308ca703f33f9e8d60cf1310bc629a5640f90cea9c445e621c56a1dce1af5",
   "caller_instruction_bytes": {
     "006b7b29": "8b466c3bc17406894668894e6c8b46683bc174268b4e24508b11ff92ac03000084c0750f8bcee85c0000005f5e5d5b83c458c3c7467001000000",
     "006f7780": "538b5c2408568bf157538b3eff97e402000050538bceff97a80300005f5e5bc20400",
@@ -30,5 +27,5 @@
     "3a8": "006f77b0",
     "3ac": "006f7780"
   },
-  "payload_sha256": "ce5911518a45a7974dcfa6d3a825efa136168080326b1ada89bf56db34f9352d"
+  "payload_sha256": "97e4bcded498ab8386ca5558b71c7afd439dc59a0d01c97ae650336d0845e5dd"
 }

@@ -13,26 +13,16 @@ Walk and runtime owners. Six retained caller modules compose those owners;
 composition. No replacement native gameplay function, executable image, retail
 asset or copy of a shared helper is included.
 
-`meta.json` pins P1–P10 seals, original and current caller/support identities,
-four preserved 59-file helper profiles, original instruction/data/vtable spans,
-physical inputs and lossless native projections. Unknown helper versions fail
-with the changed path and observed/expected SHA. Register another profile only
-after comparing the original native controls. The preferred current profile is
-`c60-compatible`, with SHA256
-`d968facdfffc7248fae4d5c91469f30fe8e28e08d2888a92f2e0d2384345c977`.
-The existing `tools/native_inspect.py` instruction observer has its own
-`inspection_owner_files` pin and participates in the import census. It is checked
-separately so the accepted gameplay/helper profiles remain unchanged. Failed
-initial portable runs that lacked this observer pin are retained outside the
-package; their complete native comparisons matched, but their CLI status is FAIL.
+`meta.json` pins P1–P10 seals, original instruction/data/vtable spans, physical
+inputs and lossless native projections. It pins no repository source, so an edit
+to a shared helper or caller fails no check whose native output is unchanged.
 
 ## Configure physical inputs
 
 Use the existing `tools.native_oracle` configuration: set `VERA20K_GAMEMD_EXE`
 to the executable, or `RA2_DIR` to its directory.
-Unlike the other oracles, this sealed packet still requires the original YR 1.001
-file: its sources are pinned by hash, so its file-identity checks stay until the
-packet is next refreshed. Selected instruction/data/vtable spans are checked too.
+Like the other oracles, it accepts any `gamemd.exe` copy. Saved checks compare the
+selected original instruction/data/vtable spans with the loaded image.
 
 Supply an existing extracted input directory with `--assets` or
 `VERA20K_FACTORY_INFANTRY_OUTPUT_ASSETS`. `meta.json:physical_inputs` pins its
@@ -90,11 +80,11 @@ original startup, producer construction/admission/input closure, queue admission
 selected milestones, complete request/advance order, all complete native RNG
 buffers, private Walk/mission/latch/timers and both terminal products. Their pins
 cover the **complete** normalized regenerated primary/private receipts, including
-fields outside the compact selection. Only declared host/source identities in
-`runtime.HOST_KEYS`, runtime metadata at `queue.runtime`, `environment.runtime`
-and `native_environment.runtime`, prior comparison metadata, vtable source path
-and physical-root path prefix are excluded. These identities are recorded or
-checked separately. No gameplay state, timer, call PC or RNG field is excluded.
+fields outside the compact selection. Only the host paths in `runtime.HOST_KEYS`,
+runtime metadata at `queue.runtime`, `environment.runtime` and
+`native_environment.runtime`, prior comparison metadata, vtable source path and
+physical-root path prefix are excluded. No gameplay state, timer, call PC or RNG
+field is excluded.
 
 ## Executed startup and measured schedule
 
@@ -226,43 +216,13 @@ PYTHONDONTWRITEBYTECODE=1 python -m tools.spatial_oracle.factory_infantry_output
 `VERA20K_UNIT_READY_CONSUMER_WAVE` are equivalent explicit inputs. Whole original
 emulation requires normal Python because inherited fixture assertions are part
 of its admitted input closure; normal/optimized saved checks use explicit
-exceptions. The authoring-only `--candidate-helper-profile` flag exposes a
-pinned, **unregistered** helper candidate. It cannot register compatibility.
-The historical 59-file maps stay unchanged. A new compatible map requires
-complete four-control native comparisons and both initialized movement
-comparisons, not changed golden gameplay values.
-The additive `unit-ready-compatible` 59-file map records those six completed
-comparisons at source base `f1783f83d6e9d9b9df5046d7b3d83478115a278b`.
-A later changed helper version is rejected until its own complete comparison;
-the existing maps are retained.
-
-The additive `c60-compatible` map records fresh comparisons at source base
-`c60d196d548800cec5494ab1d48f5e022719bb81`. It preserves the three earlier maps.
-The c60 integration changes none of its 59 helper files or the separate
-inspection owner relative to the 9bee candidate. Relative to the f178 accepted
-map, only `anim_bouncer_launch.py`, `building_construction.py` and
-`building_slot_replacement.py` differ; their exact identities and bounded
-reader audit are in `consumer-meta.json:candidate_profile_audit`.
-
-The complete initialized no-rally and rally controls, four original consumer
-controls and full PCM observation match their sealed counterparts. The first
-combined consumer receipt remains **FAIL**: its device control timed out inside
-the original decoder. Its successful cadence, buffer/PCM and radar controls
-are retained, and only the failed device control was repeated with unchanged
-inputs and the inherited 10-second/2-million-instruction limits. That complete
-retry passes. The profile records those selected results and their raw receipt
-hashes; it does not relabel the failed combined receipt or broaden coverage to
-unreached helper branches. Registration changes support metadata, with every
-golden and both Rust exports unchanged.
+exceptions.
 
 The native source packet is sealed by manifest SHA256
 `ee7444412ea59b8db7b37ab4b045a68050345597c2b1f3f70c2daf7f2e81addb`.
-Its historical58-source profile differs from the current owners in seven files;
-those identities and source references remain explicit. Comparisons remove
-only declared host driver/AST/import provenance. Every native state field,
-PC/order, complete three RNG buffers, timer, queue, channel/backend/device
-bytes and file payload stays in the complete normalized observation hash.
-The historical 59-file profiles and controls are never rewritten.
+Every native state field, PC/order, complete three RNG buffers, timer, queue,
+channel/backend/device bytes and file payload stays in the complete observation
+hash; nothing is removed before hashing.
 
 `fixture.py::unit_ready_consumer` is the sole mechanical selector. Its full
 export is `fixtures/unit-ready-consumer.json.gz`; `lean=True` serializes the
@@ -339,7 +299,7 @@ PYTHONDONTWRITEBYTECODE=1 python -m tools.spatial_oracle.factory_infantry_output
   --replay infantry_unlimbo_gate --output /tmp/vera-infantry-gate.native.json.gz
 ```
 
-This control needs the configured exact executable and existing Python native
+This control needs the configured retail executable and existing Python native
 runtime, without a physical asset-directory argument. Its native ReadBool uses
 the literal Gate key and prepared cached INI values from the retained production
 query receipt `inputs/infantry-unlimbo-gate-retail.json`. RULESMD authors Gate=yes;
@@ -348,31 +308,18 @@ The original constructor XOR/store slices establish default false. The query's
 retail hashes and historical path are provenance; the path is never opened as a
 fallback. The query is supplied reader input, not a freshly executed app loader.
 
-`gate-meta.json` separately pins the historical14 imported native owners and
-the additive `c60-gate-compatible`14 profile, SHA256
-`7a27d92ec5c767f61f3078d24093a6e59a2b104c7a2756b1c6ed292bd2e191d1`.
-Two complete public original replays match all18 historical controls; their
-raw receipt identities are retained in the profile registration. Unknown
-helper/caller versions fail. Authoring-only
-`--candidate-gate-helper-profile` admits that pinned candidate for comparison
-without registering compatibility. It is restricted to Gate operations. The
-four accepted factory/consumer59 maps, their exports and the original receipts
-stay unchanged.
-
 The retained complete native receipt is deterministic gzip at
 `accepted/infantry-unlimbo-gate.native.json.gz`, from manifest SHA256
 `68c0abc23dc667a0de7f7ad7538365d00b8beba32c4d7b44674b0b982ad1f828`.
-All18 complete original controls are compared after removing only the two
-top-level source identities `driver_sha256` and `imports`. All native bytes,
-calls, order, map/object priors, RNG requests and three full1012-byte RNG buffers
-remain in the comparison. Original executable sections are checked before and
+All18 complete original controls are compared in full: all native bytes,
+calls, order, map/object priors, RNG requests and three full1012-byte RNG buffers. Original executable sections are checked before and
 after each row. Replays preserve the complete regenerated receipt, source map,
 mechanical selection, comparison and any fault; output creation is exclusive.
 
 `fixture.py::infantry_unlimbo_gate` is the single selector for
 `src/sim/world/world_spawn/fixtures/infantry_unlimbo_gate_native.json`. Saved
-normal/-O checks require exact source identity, original spans, retained receipt
-and selector equality. The fixture includes17 inputs representable by Rust's
+normal/-O checks require original spans, retained receipt and selector
+equality. The fixture includes17 inputs representable by Rust's
 position authority and one oversized negative linear alias as native-only range
 evidence. It also preserves positive linear alias and -1/-128 lookup versus
 placement-origin observations; the selector computes no expected gameplay.
@@ -412,14 +359,14 @@ PYTHONDONTWRITEBYTECODE=1 python -m unittest tools.tests.test_factory_infantry_o
 ```
 
 The source packet is sealed by manifest SHA256
-`a0416992e1d4536b0961c742619c9aa183604126bc5294e0e78c99c3cb4e7856`.
-Its two complete original receipts are copied byte-for-byte into
+`086d168158b545ccf9b16344aa94f5a1b9d33788a21c876a4a780675fe82dafd`.
+Its two complete original receipts are retained, without their source and
+executable identity fields, in
 `accepted/publication-phase-native-{before,after}-strip-attempt-1.json.gz`.
-The pinned physical/source closure and26 original instruction spans are under
-`inputs/publication-phase-*`. No new shared-helper profile is introduced;
-the existing `c60-compatible`59 map is preserved. `meta.json:publication_phase`
-pins the original driver/selector, initialized parent seal, complete normalized
-observations and the complete pre-input startup/opening/input/round prefix.
+The pinned physical input closure and26 original instruction spans are under
+`inputs/publication-phase-*`. `meta.json:publication_phase` pins the initialized
+parent seal, complete normalized observations and the complete pre-input
+startup/opening/input/round prefix.
 Both controls match every field in all216 original P10 rounds52..267.
 
 Whole original Building WhatAction447540 returns action1. Its vt1404436F0
@@ -436,7 +383,7 @@ the complete original successor-constructor draw and three buffers are retained.
 selector for `src/sim/world/fixtures/factory_infantry_publication_native.json`.
 Saved normal/-O checks require both semantic and exact serialization equality
 with its6,322-byte sealed local selection. Replays compare every original
-observation using the existing, explicit host/source-path normalization;
+observation using the existing, explicit host-path normalization;
 arrays, event bytes, returns, prior state, native route and RNG stay literal.
 The focused Python guards reject altered event order, missing native returns,
 changed executable guards, incomplete RNG and changes outside the local selector.
@@ -449,16 +396,14 @@ window/pixel discovery or whole MainTick. The inherited restricted loop is
 Strip→delivered Infantry→Factory→localEvents, not a whole-world equivalence
 claim. Both phase controls stop after firstPLACE268, before the next InfantryAI.
 Networking, full event-ring capacity, other actors and later movement retain
-their existing separate bounds. All older corpora/goldens/helper maps and
-initialized terminal controls remain unchanged.
+their existing separate bounds. All older corpora/goldens and initialized
+terminal controls remain unchanged.
 
 Cell subcell startup is also inherited explicitly: `factory.py:45` calls
-the pinned `building_death_anims.joined_fixture`, which reads CRT812B28 and
+`building_death_anims.joined_fixture`, which reads CRT812B28 and
 executes original48E480 before construction. That owner records all60 bytes
 at89E9F0 before/after and the complete three unchanged RNG streams in
-`f.subcell_startup`; it supplies no subcell offset answer. The phase input
-closure pins that helper at SHA256
-`2c411ebe503db16d01c3a799cb3f227d901ee2c3bc488ecb442fd90cfedcd303`.
+`f.subcell_startup`; it supplies no subcell offset answer.
 The phase primary does not separately export `f.subcell_startup`: execution
-coverage here rests on the unchanged caller/source owner, rather than an
-inference from the nonzero placed coordinates or a fresh60-byte phase readback.
+coverage here rests on that caller and owner, rather than an inference from the
+nonzero placed coordinates or a fresh60-byte phase readback.

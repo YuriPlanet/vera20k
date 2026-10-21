@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -33,5 +32,5 @@
     "random_seed": "0x0065C6D0"
   },
   "replay_command": "python -m tools.can_build_oracle --produced-history",
-  "payload_sha256": "d6a2b996a5f91c586b03055de76fc9292eb7c34028ef16c5120988a775d9c359"
+  "payload_sha256": "e351d037ec868ac974dd85ca2587125dd788f8bf373c4c1c212d6d22d8b0e3ee"
 }

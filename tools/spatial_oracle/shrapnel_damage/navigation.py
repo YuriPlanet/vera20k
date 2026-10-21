@@ -17,7 +17,6 @@ from tools.spatial_oracle.shrapnel_repair.zone_composition import BASE,PLANE
 from tools.spatial_oracle.bridge_rim import GLOBALS
 
 HERE=Path(__file__).resolve().parent
-REPO=Path(__import__('tools.native_oracle',fromlist=['x']).__file__).resolve().parents[1]
 LOW={0x57BAA0:'damage_selector',0x57BCF0:'ns_root',0x57C2B0:'ew_root',
      0x57DD50:'ns_leaf',0x57E2A0:'ew_leaf',0x57B870:'ns_classifier',
      0x57B990:'ew_classifier',0x57C990:'ns_endpoints',0x57C870:'ew_endpoints',0x575EE0:'notification'}
@@ -99,7 +98,7 @@ def generate():
 
 
 def metadata():
- data=provenance(scope=__doc__,assumptions=[
+ return provenance(scope=__doc__,assumptions=[
   'Original Full_Init687631..68764F reads Map/Theater through475870/528A10 and48DBE0, storing Scenario+1258. The derived1 is transplanted into this VM before Terrain71C110 and Cell483DDF consume it.',
   'Physical XShrapnel.MAP diamond fields, original scalar/type readers and physical SNOWMD/primary TMP bytes; original Cell constructors and Recalc derive all class/slope/height inputs. No VERA planes, graph IDs or crop state supplied.',
   'Original Terrain constructors and direct Place_Down follow physical source order; complete ordinary building class gates must independently read false. Initial/final full Cell sweeps and all13 movement rows/all3 graphs are retained.',
@@ -112,14 +111,6 @@ def metadata():
   'Screen/radar/dirty rectangles are shared sinks. Ordinary mobiles/buildings omitted from class-neutral memberships; bridge occupants are empty and no CellTags exist.',
   'No outer area-damage/strength RNG, projectile/firing, Engineer prefix/suffix, save/load or native raster output claimed.',
  ],entry_points={'cell_ctor':0x47BBF0,'terrain_ctor':0x71BB90,'terrain_place':0x5683C0,'recalc':0x47D2B0,'zone':0x483C80,'final_init':0x568BB0,'connectivity':0x56C510,'hierarchy':0x581F90,'batch':0x586990,'damage':0x57BAA0,'repair':0x570050,'unit_can_enter':0x73F0A0})
- deps={}
- for module in list(sys.modules.values()):
-  p=getattr(module,'__file__',None)
-  if p:
-   p=Path(p).resolve()
-   if p.suffix=='.py' and p.is_relative_to(REPO/'tools'):deps[p.relative_to(REPO).as_posix()]=sha(p.read_bytes())
- data['source_sha256']=dict(sorted(deps.items()));data['runner_sha256']=sha(Path(__file__).read_bytes())
- return data
 
 
 if __name__=='__main__':

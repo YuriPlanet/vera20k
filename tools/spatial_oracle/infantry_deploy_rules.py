@@ -10,7 +10,7 @@ from unicorn.x86_const import *
 from tools.native_oracle import run_checked, finish_vectors, provenance
 from tools.spatial_oracle.map_queries import dwords
 from tools.spatial_oracle.building_body_rules import Fixture, INI, RULES, SP, TYPE
-from tools.native_oracle import SCRATCH
+from tools.native_oracle import SCRATCH, STACK_BASE
 
 HEAP=0x20100000
 ALLOC,FREE,LOCK,CURSOR=[SCRATCH+x for x in (0xD000,0xD100,0xD200,0xD300)]
@@ -20,8 +20,8 @@ SPANS=[(0x670232,0x67026C),(0x475D70,0x475F29),
 
 
 class VectorFixture(Fixture):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *, stack_base=STACK_BASE):
+        super().__init__(stack_base=stack_base)
         u=self.u
         u.mem_map(HEAP,0x100000)
         for a,v in ((0x87C584,0),(0xB78B94,0),(0xB78B98,0),
@@ -47,11 +47,11 @@ class VectorFixture(Fixture):
         self.write(CURSOR,HEAP+0x1000)
         u.mem_write(HEAP,dwords(*prior))
         u.mem_write(RULES+0xE2C,dwords(0x7E4DD8,HEAP,len(prior),0x101,len(prior),10,0))
-        u.reg_write(UC_X86_REG_ESP,SP)
+        u.reg_write(UC_X86_REG_ESP,self.sp)
         u.reg_write(UC_X86_REG_ESI,RULES)
         u.reg_write(UC_X86_REG_EDI,INI)
         run_checked(u,0x670232,0x67026C,count=2000000)
-        assert u.reg_read(UC_X86_REG_ESP)==SP
+        assert u.reg_read(UC_X86_REG_ESP)==self.sp
         p,count=struct.unpack('<I',u.mem_read(RULES+0xE30,4))[0],struct.unpack('<i',u.mem_read(RULES+0xE3C,4))[0]
         assert 0<=count<512
         output=list(struct.unpack('<'+'i'*count,u.mem_read(p,count*4))) if count else []

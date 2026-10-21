@@ -24,14 +24,14 @@ points; the exhaustive oracle/tool inventory remains tracked in issue #746.
 | Reproduce Unit Foot Z selectors/composition and prepare a cliff comparison map | [checked Foot Z oracle](render_depth_oracle.md) |
 | Reproduce ground-height setters and Unit/Infantry placement leaves | [checked ramp-height oracle](ramp_height_oracle.md) |
 | Reproduce native animation boundary decisions and stores | [checked Anim boundary oracle](anim_oracle/README.md) |
-| Refresh Anytown packet source provenance after helper maintenance | [checked native replay and receipt refresh](spatial_oracle/anytown_damage/README.md) |
+| Replay the Anytown packet's native witnesses and check its receipt | [checked native replay and receipt](spatial_oracle/anytown_damage/README.md) |
 | Compare empty-IFV bridge pursuit, missiles, collapse, Stop and restoration | [conditional native continuation and input provenance](spatial_oracle/fv_cell_attack/README.md) |
 | Read/disassemble native VAs; scan callers, fields and bytes | [native inspection](native_inspect.md), `python -m tools.native_inspect` |
 | Refresh the compiled mouse-cursor descriptor and action-to-row tables | [mouse cursor tables](mouse_oracle/cursor_table.md), `python -m tools.mouse_oracle.cursor_table` |
 | Compare Ghidra decompiles, callers and native stack frames | [Ghidra comparisons](ghidra_compare.md), `python -m tools.ghidra_compare` |
 | Replay a recorded annotation pass onto another copy of the Ghidra database | [Ghidra annotation passes](ghidra_pass.md), `ApplyGhidraPass.java` |
 | Reproduce Foot coordinates and bridge source-layer / reachability queries | [checked Foot bridge-layer oracle](spatial_oracle/foot_bridge_layer.md) |
-| Run pinned native executable comparisons | [native oracle runner](native_oracle.md) |
+| Run native executable comparisons | [native oracle runner](native_oracle.md) |
 | Reproduce occupied-Building weapon/foundation queries and the scan-bound slice | [garrison queries](garrison_oracle/weapon_range.py), with JSON goldens and coverage sidecar |
 | Preserve failed native execution context and diagnose timeouts | [native failure reports](native_oracle.md#investigating-a-failed-native-run) |
 | Compare shell captures | `python -m tools.shell_capture_diff --help` |
@@ -252,8 +252,8 @@ nonzero on inspection/deletion errors. The opt-in compiled checks run with
 Saved builds have a separate, explicit lifecycle. Default to unlabelled iteration;
 preserve only binaries needed for active comparisons, captures or debugging.
 Prefer `fast` binaries for ordinary captures and label debug tests selectively.
-Evidence should reference the shared label, manifest, source/binary hashes and
-results instead of creating additional executable copies.
+Evidence should reference the shared label, manifest, binary hash and results
+instead of creating additional executable copies.
 
 Run retirement, including its dry run, only to retire owned labels or to investigate
 disk pressure; preserve required binaries, dependencies and evidence.

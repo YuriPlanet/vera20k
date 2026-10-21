@@ -107,7 +107,7 @@ def generate():
     assert not q.pending, q.pending
     text_hash = packet_io.digest(bytes(q.u.mem_read(0x401000, 0x3E0000)))
     assert text_hash == q.resident.code_hash
-    return dict(schema=1, native_sha256=owner.NATIVE_SHA256, text_sha256=text_hash,
+    return dict(schema=1, text_sha256=text_hash,
                 input_sha256=INPUT_SHA256, boundary=boundary, frames=frames,
                 snapshots=snapshots, shots=q.shots, impacts=q.impacts,
                 effects=[r for r in q.events if r.get('frame', 0) >= 1 and r['kind'] in

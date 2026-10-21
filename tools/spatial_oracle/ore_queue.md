@@ -1,6 +1,6 @@
 # Ore queues and natural spread comparison
 
-`ore_queue.py` executes the pinned retail `gamemd.exe` through the existing
+`ore_queue.py` executes the retail `gamemd.exe` through the existing
 [`harvest_field` fixture](harvest_field.py) and, for natural spread, the
 [`TIBTRE` fixture](tibtre.py) with original Overlay construction. It supplies prior map/queue state;
 the enqueue, rebuild, Cell predicates, iterator, heap operations and Scenario RNG

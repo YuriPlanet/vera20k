@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -71,11 +70,9 @@
   ],
   "shared_owner_extensions": {
     "tools/spatial_oracle/engineer_repair_admission.py": {
-      "source_before_normalized_lf_sha256": "7a4cc38f9ab1d9b1483dc1b61782e2a74fab878df7e99818363e5c5aff6e889c",
       "purpose": "Explicit pinned absent prepared-file input at existing immutable RawFile OS seam; original reader and failure branch remain active"
     },
     "tools/spatial_oracle/_factory_infantry_output/pcm.py": {
-      "source_before_normalized_lf_sha256": "b66d26e739d9504d1844736078db5b92e3cf014aaa10889a6fbf5c73298418a2",
       "purpose": "Opt-in observation of original409D90 raw copy/REP writes; default IMA-only observation and old corpus projection retained"
     }
   },

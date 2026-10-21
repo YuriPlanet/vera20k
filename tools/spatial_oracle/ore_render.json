@@ -5955,7 +5955,6 @@
       }
     ]
   },
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "radar": {
     "depletion": {
       "boundary": "Full480A80/47D2B0/LAT/6551C0/655250/47C060/6547C0 in the shared ore VM. Sparse Cell/TMP registry, empty-overlay neighbors and raw radar geometry supplied; only Tactical dirtiness remains a sink. No online-radar/viewer, normal harvester or whole-map bounds/bootstrap claim.",

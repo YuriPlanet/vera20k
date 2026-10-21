@@ -5,7 +5,7 @@ import hashlib,struct
 from pathlib import Path
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import *
-from tools.native_oracle import NATIVE_SHA256,RET_MAGIC,run_checked,finish_vectors,provenance
+from tools.native_oracle import RET_MAGIC,run_checked,finish_vectors,provenance
 from tools.projectile_oracle import ifv_impact as impact
 from tools.spatial_oracle.building_body_rules import SP,INI,dwords
 from tools.rmg_oracle.gen_rng_vectors import seeded_struct
@@ -73,7 +73,7 @@ def generate():
   u.mem_write(0xabdc50+0xec,dwords(land));u.mem_write(q,dwords(999999,-1,0));p=m.invoke(0x565730,0x87f7e8,(q,))
   dummy.append(dict(phase='lookup_miss',supplied_land=land,is_dummy=p==0xabdc50,land=impact.i32(u,p+0xec),coord=list(struct.unpack('<2h',u.mem_read(p+0x24,4)))))
  m.invoke(0x47bbf0,0xabdc50);dummy.append(dict(phase='reconstruct',land=impact.i32(u,0xabdc50+0xec)))
- return dict(native_sha256=NATIVE_SHA256,initial=initial,rows=rows,dummy_land_controls=dummy)
+ return dict(initial=initial,rows=rows,dummy_land_controls=dummy)
 
 def metadata():
  return provenance(scope='Original physical HE SelectAnim and Bullet caller controls for damage bands, retained coordinates, height, water, bridge and building gates',assumptions=[

@@ -11,7 +11,7 @@ use crate::audio::events::SoundEventQueue;
 use crate::audio::sfx::SfxPlayer;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::selection::SelectionState;
-use crate::sim::world::{LocalDefeatBoundary, SimSoundEvent, Simulation, SoundBoundary};
+use crate::sim::world::{LocalPlanningBoundary, SimSoundEvent, Simulation, SoundBoundary};
 
 #[cfg(test)]
 #[path = "planning_defeat_tests.rs"]
@@ -61,7 +61,7 @@ impl<'a> FrameClientBoundary<'a> {
     }
 }
 
-impl LocalDefeatBoundary for FrameClientBoundary<'_> {
+impl LocalPlanningBoundary for FrameClientBoundary<'_> {
     fn leave_planning(
         &self,
         sim: &Simulation,
@@ -76,6 +76,12 @@ impl LocalDefeatBoundary for FrameClientBoundary<'_> {
             selection,
             &mut self.output.borrow_mut(),
         )
+    }
+
+    fn planning_active(&self) -> bool {
+        self.planning
+            .as_ref()
+            .is_some_and(|input| input.borrow().0.active())
     }
 }
 

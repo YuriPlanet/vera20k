@@ -522,10 +522,22 @@ mod tests {
         )
     }
 
+    // A registered Country without a read section keeps the constructor's empty
+    // ParentCountry, which matches no Owner (`RuleSet::country_owner_mask`). A
+    // section whose values are all empty is skipped like a missing one
+    // (tools/rules_oracle/session_country_parent.json), so each Country here
+    // names itself as its parent.
     const ORDERED_COUNTRY_SIDE_INI: &str = "[Countries]\n\
              0=Americans\n1=Alliance\n2=French\n3=Germans\n4=British\n\
              5=Africans\n6=Arabs\n7=Confederation\n8=Russians\n9=YuriCountry\n\
              10=GDI\n11=Nod\n12=Neutral\n13=Special\n\
+             [Americans]\nParentCountry=Americans\n[Alliance]\nParentCountry=Alliance\n\
+             [French]\nParentCountry=French\n[Germans]\nParentCountry=Germans\n\
+             [British]\nParentCountry=British\n[Africans]\nParentCountry=Africans\n\
+             [Arabs]\nParentCountry=Arabs\n[Confederation]\nParentCountry=Confederation\n\
+             [Russians]\nParentCountry=Russians\n[YuriCountry]\nParentCountry=YuriCountry\n\
+             [GDI]\nParentCountry=GDI\n[Nod]\nParentCountry=Nod\n\
+             [Neutral]\nParentCountry=Neutral\n[Special]\nParentCountry=Special\n\
              [Sides]\n\
              GDI=British,French,Germans,Americans,Alliance\n\
              Nod=Russians,Africans,Confederation,Arabs\n\
@@ -764,9 +776,10 @@ mod tests {
 
     #[test]
     fn launch_color_map_initializes_neutral_houses_and_uses_session_slots() {
-        let schemes = crate::rules::color_scheme::parse_color_schemes(&IniFile::from_str(
-            crate::test_fixture::text("ini/rulesmd.ini"),
-        ));
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let schemes = crate::rules::color_scheme::parse_color_schemes(&rules);
         let colors = house_color_map_for_launch_session(
             &test_session(),
             &roster_with_neutral_and_playable(),
@@ -786,9 +799,10 @@ mod tests {
 
     #[test]
     fn launch_color_map_remaps_neutral_oil_without_authored_houses() {
-        let schemes = crate::rules::color_scheme::parse_color_schemes(&IniFile::from_str(
-            crate::test_fixture::text("ini/rulesmd.ini"),
-        ));
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let schemes = crate::rules::color_scheme::parse_color_schemes(&rules);
         // Ordinary multiplayer maps, including Storm, have neutral structures
         // but no campaign-style [Houses] roster.
         let map = IniFile::from_str("[Structures]\n0=Neutral,CAOILD,256,168,78,64,None,0,0,0\n");
@@ -821,9 +835,10 @@ mod tests {
 
     #[test]
     fn current_house_collision_preserves_launch_label_and_distinct_colors() {
-        let schemes = crate::rules::color_scheme::parse_color_schemes(&IniFile::from_str(
-            crate::test_fixture::text("ini/rulesmd.ini"),
-        ));
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let schemes = crate::rules::color_scheme::parse_color_schemes(&rules);
         for (handle, expected_key) in [
             ("Neutral", "Player"),
             (" Neutral ", "Player"),

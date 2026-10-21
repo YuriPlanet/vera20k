@@ -63,7 +63,7 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 
 你需要：
 
-- **Rust 和 Git：** 通过 rustup 安装的 [Rust](https://rustup.rs/) 1.88 或更高版本，以及
+- **Rust 和 Git：** 通过 rustup 安装的 [Rust](https://rustup.rs/) 1.97 或更高版本，以及
   [Git](https://git-scm.com/)。
 - **构建工具：** Windows 上需要 Visual Studio 的 C++ 生成工具，Rust 安装程序会提示安装；macOS 上运行
   `xcode-select --install`；Debian 和 Ubuntu 上运行 `sudo apt install build-essential libasound2-dev pkg-config`。

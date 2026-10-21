@@ -216,7 +216,7 @@ def publication_projection(data):
 
 def metadata():
     result = occupants.metadata()
-    result.update(scope=__doc__, runner_sha256=occupants.sha(Path(__file__).read_bytes()))
+    result['scope'] = __doc__
     result['assumptions'] += [
         'All seven supplied actor/head/mission cases and the native repaired crop are unchanged from the hash-pinned request-boundary packet. Joined two-member setup also supplies House+5574 total2 alongside its per-type item2; this is not a replay of original actor admission.',
         'Original AnimType factories and427D00 read all native MetallicDebris/MTNK Explosion names from physical ARTMD and full original SHPs. Original7510D0 extends the selected sound registry with physical Report entries; indices are fixture-relative. No Rust values initialize types.',

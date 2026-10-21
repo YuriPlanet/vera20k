@@ -1,5 +1,4 @@
 {
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "rows": [
     {
       "after": {
@@ -1468,5 +1467,5 @@
     }
   ],
   "source": "pursuit.json.gz",
-  "source_sha256": "ad5df3fbdff5b1888b713f33aa233f8c30ade70db64080de63cb91c30e1a65ff"
+  "source_sha256": "a5b1ca7758825e05277090649990b0f7a5692acdd0b58043cf72c6314539edb1"
 }

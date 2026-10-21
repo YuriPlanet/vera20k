@@ -68,12 +68,13 @@ fn fixture_rules(input: &Value) -> RuleSet {
     };
     let rules_ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[General]\nPrismType=ATESLA\nPrismSupportDuration={support_duration}\nPrismSupportDelay=45\n\
-         [VehicleTypes]\n0=UNIT\n1=TARGET\n\
+         [VehicleTypes]\n0=UNIT\n1=TARGET\n[InfantryTypes]\n0=INF\n\
          [BuildingTypes]\n0=ATESLA\n1=OTHER\n2=GAPOWR\n\
          [ATESLA]\nImage=GAPRIS\nStrength=600\nTurret=no\nPrimary={primary}\nSecondary=LaserProbe\n\
          [OTHER]\nImage=OTHERART\nStrength=600\nTurret=no\nPrimary={primary}\nSecondary=LaserProbe\n\
          [GAPOWR]\nStrength=750\n\
          [UNIT]\nImage=UNITART\nStrength=600\nPrimary=LaserProbe\n\
+         [INF]\nStrength=125\nPrimary=LaserProbe\n\
          [TARGET]\nStrength=1000\n{selected}{current}"
     ));
     let art_ini = IniFile::from_str(
@@ -264,6 +265,43 @@ fn admitted_laser_births_match_original_building_and_unit_callers() {
         compared += 1;
     }
     assert_eq!(compared, 27);
+}
+
+/// FireAt `0x006FF549..0x006FF571`: an infantryman's (LUNR's) house-colour
+/// laser is 2 wide like a Unit's; an explicit-colour one keeps 1.
+#[test]
+fn an_infantry_house_color_laser_is_two_wide() {
+    for (house_color, width) in [(true, 2), (false, 1)] {
+        let rules = fixture_rules(&json!({ "house_color": house_color }));
+        let mut sim = Simulation::new();
+        sim.session.set_binary_frame_for_test(200);
+        place(
+            &mut sim,
+            1,
+            "INF",
+            EntityCategory::Infantry,
+            [3200, 3200, 0],
+        );
+        place(&mut sim, 2, "TARGET", EntityCategory::Unit, [640, 640, 0]);
+        laser::fired(
+            &mut sim,
+            &rules,
+            1,
+            TargetKind::Entity(2),
+            0,
+            rules.weapon("LaserProbe").unwrap(),
+            0,
+        );
+        let widths = sim
+            .lifecycle_outputs
+            .iter()
+            .filter_map(|output| match output {
+                LifecycleOutput::LaserCreated(birth) => Some(birth.width),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(widths, [width], "house colour {house_color}");
+    }
 }
 
 #[test]

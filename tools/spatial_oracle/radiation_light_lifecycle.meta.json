@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -41,5 +40,5 @@
     "tint_integer_end": "0x0065B89E"
   },
   "replay_command": "python -m tools.spatial_oracle.radiation_damage_boundary --light-lifecycle --light-cell 33,88",
-  "payload_sha256": "1aee220d06bca896c2044061a0b03bb1fd820497e5d6ad9035c7c3f1e5f24f18"
+  "payload_sha256": "c8d9c04fd55f55433a3b9eb6cc6f68c695df2cd7ddf2e69778c13d01709ff3dc"
 }

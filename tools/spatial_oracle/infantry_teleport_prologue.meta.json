@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -25,5 +24,5 @@
     "clear_warping_in": "0x00719C15"
   },
   "replay_command": "python -m tools.spatial_oracle.infantry_scatter_destination --teleport-prologue",
-  "payload_sha256": "24897c23627600e41a7f72c274cb3b88d30241aaf04a0b275ee14c0e4bc4af72"
+  "payload_sha256": "627fa66b537417986862957fc16553cd45ff3502050f01bb1fee10cb78a5a94a"
 }

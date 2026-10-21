@@ -34,11 +34,9 @@ def metadata():
     return dict(
         schema_version=1,
         scope=__doc__,
-        native_sha256=source_meta['native_sha256'],
         source='tools/spatial_oracle/shrapnel_damage/scalar.json.gz',
         source_sha256=hashlib.sha256(SOURCE.read_bytes()).hexdigest(),
         source_payload_sha256=source_meta['payload_sha256'],
-        runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         transformation='Select original input fields and returned/trace/final/dummy; no derived expectations',
     )
 

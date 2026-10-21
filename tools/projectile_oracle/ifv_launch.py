@@ -8,7 +8,7 @@ import json,struct,sys,hashlib
 from pathlib import Path
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import *
-from tools.native_oracle import NATIVE_SHA256,NATIVE_FPCW,RET_MAGIC,run_checked,finish_vectors,provenance
+from tools.native_oracle import NATIVE_FPCW,RET_MAGIC,run_checked,finish_vectors,provenance
 from tools.projectile_oracle.bridge_render_inputs import assets_root,lexical
 from tools.spatial_oracle.building_body_rules import RULES,SP,dwords
 
@@ -125,7 +125,7 @@ def launch(origin=(2688,5248,1030),bridge=True):
  finally:u.hook_del(h)
  assert u.reg_read(UC_X86_REG_EIP)==0x6ff01a,hex(u.reg_read(UC_X86_REG_EIP))
  b=bullet[0]
- result=dict(native_sha256=NATIVE_SHA256,initial=initial,supplied=dict(origin=list(origin),source_heading=0x3fff,source_flags=0,weapon_slot=0,target_cell=[16,20],live_bridge_cell=[10,20] if bridge else None,binary_frame=0),launch=dict(position=xyz(u,b+0x9c),target=target_xyz,velocity=vec(u,b+0xe8),**scalars,maximum_speed=i32(u,b+0x110),pitch=m.read32(SP+0x80)&0xffff,unique_id=i32(u,b+0x10),scenario_id_before=id_before,scenario_id_after=i32(u,scenario+0x214),course_locked=bool(u.mem_read(b+0x105,1)[0]),course_frames=i32(u,b+0x108),detector=dict(first_timer_start=i32(u,b+0xb8),first_timer_duration=i32(u,b+0xc0),arm_start=i32(u,b+0xc4),arm_duration=i32(u,b+0xcc),reference=xyz(u,b+0xd0),distance_watermark=i32(u,b+0xdc)),warhead=m.string(m.read32(b+0x128)+0x24),calls=sorted(visited),supplied_calls=events))
+ result=dict(initial=initial,supplied=dict(origin=list(origin),source_heading=0x3fff,source_flags=0,weapon_slot=0,target_cell=[16,20],live_bridge_cell=[10,20] if bridge else None,binary_frame=0),launch=dict(position=xyz(u,b+0x9c),target=target_xyz,velocity=vec(u,b+0xe8),**scalars,maximum_speed=i32(u,b+0x110),pitch=m.read32(SP+0x80)&0xffff,unique_id=i32(u,b+0x10),scenario_id_before=id_before,scenario_id_after=i32(u,scenario+0x214),course_locked=bool(u.mem_read(b+0x105,1)[0]),course_frames=i32(u,b+0x108),detector=dict(first_timer_start=i32(u,b+0xb8),first_timer_duration=i32(u,b+0xc0),arm_start=i32(u,b+0xc4),arm_duration=i32(u,b+0xcc),reference=xyz(u,b+0xd0),distance_watermark=i32(u,b+0xdc)),warhead=m.string(m.read32(b+0x128)+0x24),calls=sorted(visited),supplied_calls=events))
  return m,b,cells,result
 
 def flight(bridge,origin=(2688,5248,1030),bridge_band=None,changes=()):
@@ -163,7 +163,7 @@ def flight(bridge,origin=(2688,5248,1030),bridge_band=None,changes=()):
 
 def generate():
  band=[(x,20) for x in range(12,16)]
- return dict(native_sha256=NATIVE_SHA256,scope='Physical FV selected empty-Gunner slot and original contiguous FireAt6FE4F2 through native factory/launch, then full Bullet AI and impact resolution to AreaDamage489280 entry; supplied source lifecycle/FLH/placement/Display admission/map cells and flag changes. No AreaDamage effects, native bridge collapse/repair driver or retirement execution.',cases=[flight(True),flight(False),flight(False,origin=(2688,5248,1250),bridge_band=band),flight(False,origin=(2688,5248,1250),bridge_band=band,changes=((16,False),)),flight(False,origin=(2688,5248,1250),bridge_band=band,changes=((16,False),(24,True)))])
+ return dict(scope='Physical FV selected empty-Gunner slot and original contiguous FireAt6FE4F2 through native factory/launch, then full Bullet AI and impact resolution to AreaDamage489280 entry; supplied source lifecycle/FLH/placement/Display admission/map cells and flag changes. No AreaDamage effects, native bridge collapse/repair driver or retirement execution.',cases=[flight(True),flight(False),flight(False,origin=(2688,5248,1250),bridge_band=band),flight(False,origin=(2688,5248,1250),bridge_band=band,changes=((16,False),)),flight(False,origin=(2688,5248,1250),bridge_band=band,changes=((16,False),(24,True)))])
 def metadata():
  out=provenance(scope='Five original FV guided launches and125 full Bullet AI visits through AreaDamage489280 entry',entry_points={'select_weapon':0x6f3330,'set_empty_gunner':0x70dc70,'fireat_launch':0x6fe4f2,'com_factory':0x6c5090,'bullet_ctor':0x466380,'bullet_ai':0x4666e0,'area_damage_entry':0x489280},assumptions=[
   'Physical HoverMissile and AAHeatSeeker2 full type readers and selected partial FV rules fields; source lifecycle, FLH/pose and fixed launch coordinates supplied',

@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -45,5 +44,5 @@
     "VERA20K_ANYTOWN_INPUTS": "existing physical Anytown map/shot assets plus all55 crop TMPs from retail ra2.mix/isotemp.mix"
   },
   "replay_command": "python -m tools.spatial_oracle.trigger_action_values --chrono-reinforcement",
-  "payload_sha256": "b2e3c3797b9ec162be5b482a71ba57217fa18ffb1f6481b8be3a73c62893d7c4"
+  "payload_sha256": "9569288e5c2ba87e949d03e613072e37a30a87dabe72bac967bc84ea0e299abb"
 }

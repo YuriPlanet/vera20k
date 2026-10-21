@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -81,5 +80,5 @@
     "house_power": "0x00508C30",
     "building_power_output": "0x0044E7B0"
   },
-  "payload_sha256": "903d6f0a7e485f78c95777048fdee30fc2aeca346485400eb67da73fde016932"
+  "payload_sha256": "5b929285bab3750fddd65060bfa506d2b5895246616918a9967708d0f8b9783f"
 }

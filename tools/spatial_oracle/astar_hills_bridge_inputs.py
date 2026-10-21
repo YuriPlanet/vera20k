@@ -12,7 +12,7 @@ import struct
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_ESP, UC_X86_REG_ESI
 
-from tools.native_oracle import NATIVE_SHA256, provenance, run_checked
+from tools.native_oracle import provenance, run_checked
 from tools.projectile_oracle.bridge_render_inputs import assets_root
 from tools.spatial_oracle import astar_mtnk_inputs, bridge_constructor, map_queries
 from tools.spatial_oracle.astar_mtnk_inputs import RecordedInputs, type_state
@@ -171,7 +171,7 @@ def establish():
                             returns_dummy=pointer == navigation.DUMMY,
                             retained_coord=m.coord(pointer)))
     assert after_actor == rng(m)
-    receipt = dict(schema_version=1, native_sha256=NATIVE_SHA256, scope=__doc__,
+    receipt = dict(schema_version=1, scope=__doc__,
                 physical=m.physical_receipt, theater=theater, assets=assets,
                 archive_activation_evidence=archive_activation_evidence(u), native_map_lookups=lookups,
                 native_type=type_state(reader), scalar_layers=reader.receipts,

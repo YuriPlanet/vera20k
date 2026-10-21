@@ -162,8 +162,13 @@ impl FreshScenarioLoadContextDescriptor {
             }
             LoadingStartup::Campaign(_) => unreachable!("campaign admitted above"),
         };
-        let launch = MatchLaunchDescriptor::from_resolved(session.clone())
+        let mut launch = MatchLaunchDescriptor::from_resolved(session.clone())
             .map_err(|err| anyhow::anyhow!("fresh stock-offline launch is unresolved: {err}"))?;
+        if let LoadingStartup::Network(prepared) = startup
+            && prepared.wol_start().quick_coop
+        {
+            launch = launch.with_quick_coop_starts();
+        }
         let selected_map = session
             .selected_map_file
             .as_deref()

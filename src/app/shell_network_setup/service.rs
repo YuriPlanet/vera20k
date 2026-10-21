@@ -181,6 +181,11 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 }
             }
             if dialog.host {
+                // 0x7A6E5A: 0x5E2FA0, the mode's +94 (Cooperative's C0)
+                // before the observer row, names and options.
+                super::cooperative::guest_joined(state)?;
+            }
+            if dialog.host {
                 // 0x7A6E7D..9E: observer row, slot names, options, pings,
                 // then the refreshed advertisement (0x78F000, skipped in
                 // modes 1-3 at 0x7A6B0D).
@@ -379,7 +384,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .ok_or_else(|| anyhow::anyhow!("no admitted setup"))?
                 .clone();
             // 0x5E5411..0x5E541D: the current mode's +24 on every parse.
-            if !dialog.wol() && super::cooperative::current(state) {
+            if super::cooperative::current(state) {
                 state
                     .frontend
                     .multiplayer_shell_runtime
@@ -452,8 +457,8 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 map_changed,
             )?;
             // 0x5E542B..0x5E5466: a changed mode's +9C/+20, then +7C.
-            if !dialog.wol() && mode_changed {
-                super::cooperative::guest_mode_entered(state)?;
+            if mode_changed {
+                super::cooperative::mode_entered(state)?;
             }
             if let Some(admission) = map_admission {
                 apply_local_map_admission(state, admission)?;

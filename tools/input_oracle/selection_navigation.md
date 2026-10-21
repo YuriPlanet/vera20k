@@ -279,8 +279,8 @@ or an assertion about EventClass's separate dispatch phase.
 
 Original executable bytes for Infantry vtable7EB058 pin +DC/+14C/+150 to
 4D9720/6FBFA0/5F44A0, and registered P's Execute slot7EB9AC to5367F0. These source
-identities and ordering addresses use the sidecar's original gamemd.exe identity;
-Ghidra reads explicitly select `gamemd.exe`. No Ghidra annotation is the source of
+identities and ordering addresses come from the original `gamemd.exe`; Ghidra
+reads explicitly select `gamemd.exe`. No Ghidra annotation is the source of
 the expected selection/RNG values: those come from the unchanged original bodies.
 
 ## IsSelectableCombatant type inputs

@@ -41,9 +41,10 @@ Audio stops at request `7509E0`, excluding device/Main audio RNG. Native type
 VXL loaders are presentation boundaries; selected Image/ART/FLH readers run.
 
 `mission_promotion.json` guards original canonical payload SHA256
-`4ed67aaa9f8e125502ab35a5bada35fd7d4a76a329ef8d20b746ffc02a62b733`
-and the original class AST. Only copied lexical INI content is projected to
-hashes before deterministic compression. Native observations are unchanged.
+`a4ccbe7f7cb286481045b0527d217fb4455d59d5c7534611a492b9dfdbed7528`
+and records that the original Mission class AST is unchanged. Only copied
+lexical INI content is projected to hashes before deterministic compression.
+Native observations are unchanged.
 
 ## Counter ordering and the historical v7 boundary
 

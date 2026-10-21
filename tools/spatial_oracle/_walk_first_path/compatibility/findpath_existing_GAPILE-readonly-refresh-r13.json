@@ -2,28 +2,26 @@
   "status": "PASS",
   "prior": {
     "path": "accepted/findpath_existing_GAPILE-r8.json.gz",
-    "bytes": 152217,
-    "sha256": "e7caefb57ce2e6e965c4ca146aa94911a52cb20d6fd318a5475fb707a7be8b51",
-    "uncompressed_bytes": 3616154,
-    "uncompressed_sha256": "6147f555e6d77d9cd7c14836124342e7d6fbe57a4126c1b79854516d90fe496b",
+    "bytes": 151662,
+    "sha256": "05dca22d633e0e3dc37656c8c756df58da2070aea225834868ca10642d09515b",
+    "uncompressed_bytes": 3615167,
+    "uncompressed_sha256": "65baf4c29a1ace57011b39605ce5aabb945da0220b60ad2f2493524fcb87d266",
     "name": "findpath_existing_GAPILE",
-    "source_boundary": "as-run-r8",
-    "projected_sha256": "b2c33fb1f954fb11c958f749af6a56529cd35e419ca2f1e61806db05702bb52c"
+    "projected_sha256": "401592227e3474e4f2012a03163ee2e3bbc9978f030f25db03518c503a69b18c"
   },
   "observed": {
     "path": "accepted/findpath_existing_GAPILE-r13.json.gz",
-    "bytes": 156665,
-    "sha256": "02de97b7b628807c8686480b49e0c1d7e565857d1309d327be3b9ecf584172eb",
-    "uncompressed_bytes": 3642647,
-    "uncompressed_sha256": "f55fb220e1365d3428e11008954fd5ea880935a9575e632a38a921637b4de71e",
+    "bytes": 156126,
+    "sha256": "4c281294c01fc316bb8725753d344a559cd3fdc19f49b5f90d8c868875a4ca0b",
+    "uncompressed_bytes": 3641660,
+    "uncompressed_sha256": "22b1bf2b71f94f1c1262031718332559a68433616fe64e01235f0c9dd08067cb",
     "name": "findpath_existing_GAPILE",
-    "source_boundary": "as-run-r13",
-    "projected_sha256": "f999d87aafaf5d17859e15c792d0f304fe9a0af58a63166eb7766b8a8d0ad8bc"
+    "projected_sha256": "83932450de1dec7e74d1cf98ff8bd457b9dac20a458aefc4f42c50767d3cf1b4"
   },
   "new_readonly_fields": [
     "ambient",
     "input_context"
   ],
   "first_prior_native_field_difference": null,
-  "prior_fields_sha256": "b2c33fb1f954fb11c958f749af6a56529cd35e419ca2f1e61806db05702bb52c"
+  "prior_fields_sha256": "401592227e3474e4f2012a03163ee2e3bbc9978f030f25db03518c503a69b18c"
 }

@@ -166,7 +166,7 @@ if __name__ == "__main__":
             "Pre-match shell: the network-session predicate 69BBE0 returns false",
             "The parent dialog's record is found by the original lookup loop in a supplied one-bucket table; record fields other than HWND, next and dialog id stay zero",
             "Values are the getters' returns; which statics a dialog creates, their painting and message order are established separately by instruction reading",
-            "The reference was regenerated with the supported Steam image 3e81a617...; its code addresses and file-backed section contents match the historical 1cdd1180... image (tools/native_oracle.md), and the pre-existing cases' values are unchanged",
+            "The reference was regenerated with another gamemd.exe build, and the pre-existing cases' values are unchanged",
         ],
         substitutions=[
             "Record-table hash function pointer [AC1B18] returns bucket 0",

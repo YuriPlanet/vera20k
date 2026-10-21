@@ -7,8 +7,7 @@
       "source": {
         "head": "148b97431597661997c50082af16c5bd45b60406",
         "branch": "feature/checked-ramp-height",
-        "status": "",
-        "source_sha256": "6659e786e28e7571db24e4d06a9a9c612a150eb0dcc2b4bb43518ce73fee8095"
+        "status": ""
       },
       "command": [
         "cargo",
@@ -27,8 +26,7 @@
       "source": {
         "head": "28bf8adccb559f7880e18fa2aeb1a536a5f1689a",
         "branch": "feature/atlas-observation-owner",
-        "status": "M Cargo.toml\n M src/app/diagnostics/tactical_capture/map_observation.rs\n D src/bin/bridge-oracle-compare.rs\n D src/bin/measure-atlas.rs\n M src/render/atlas_refresh_retail_tests.rs\n M src/render/unit_atlas.rs\n M tools/README.md\n M tools/map_observation.md\n M tools/map_observation.py\n M tools/tests/test_map_observation.py",
-        "source_sha256": "ab130ce22579517590e29ce21314b061eca4d4a79a164554fb7a3d0f51073eba"
+        "status": "M Cargo.toml\n M src/app/diagnostics/tactical_capture/map_observation.rs\n D src/bin/bridge-oracle-compare.rs\n D src/bin/measure-atlas.rs\n M src/render/atlas_refresh_retail_tests.rs\n M src/render/unit_atlas.rs\n M tools/README.md\n M tools/map_observation.md\n M tools/map_observation.py\n M tools/tests/test_map_observation.py"
       },
       "command": [
         "cargo",
@@ -46,12 +44,10 @@
   },
   "retired_tools": {
     "measure-atlas": {
-      "reason": "Hardcoded roster/cardinality/tile-size estimate, never constructed an atlas. Replaced by actual UnitAtlas descriptors and counts in production capture.",
-      "old_source_sha256": "8d1cfb132abab74bedefb1f053265d4918127acfaa65df2c52ffb816e7bb68e8"
+      "reason": "Hardcoded roster/cardinality/tile-size estimate, never constructed an atlas. Replaced by actual UnitAtlas descriptors and counts in production capture."
     },
     "bridge-oracle-compare": {
-      "reason": "No repository producer/caller for required astar_steps/runtime_ticks/scenario.activation_proof schema; returned success even with FAIL/UNCHECKED verdicts. Five bin-local synthetic schema tests retired with it; no active bridge library regressions or native packets removed.",
-      "old_source_sha256": "07912deb42dd224a091d11827db9bdbb6875701181cac826de4f7eb9ec9bfca0"
+      "reason": "No repository producer/caller for required astar_steps/runtime_ticks/scenario.activation_proof schema; returned success even with FAIL/UNCHECKED verdicts. Five bin-local synthetic schema tests retired with it; no active bridge library regressions or native packets removed."
     }
   },
   "rust_validation": [

@@ -1056,7 +1056,7 @@ fn advance_one_simulation_frame(
                     &due_commands,
                     SIM_TICK_MS,
                     tick_lane,
-                    FrameEffects::for_sound(&boundary).with_local_defeat(&boundary),
+                    FrameEffects::for_sound(&boundary).with_local_planning(&boundary),
                 )
                 .expect("simulation frame failed; prior world mutations remain")
             };

@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -50,6 +49,6 @@
     "drive_constructor": "0x004AF540",
     "ship_constructor": "0x0069EC50"
   },
-  "payload_sha256": "950ce3a835d08f8a84172656744ee64f421e4e618c99dd18fcec06322684700a",
+  "payload_sha256": "67276816c9a524b5bfde5389b589d629554234f8bb86602d40e36331c0541a25",
   "replay_command": "python -m tools.spatial_oracle.foot_navigation_coordinate --bridge-layers"
 }

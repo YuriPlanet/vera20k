@@ -2,7 +2,6 @@
 from pathlib import Path
 import gzip
 import functools
-import contextlib
 import hashlib
 import importlib.util
 import json
@@ -12,14 +11,10 @@ import sys
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[2]
 _ASSETS = None
-# These are host/driver identities, checked separately. Every other receipt
-# field, including all PCs, calls, timer words, code guards and RNG bytes, is
-# retained in the comparison. No gameplay field is removed by key or value.
-HOST_KEYS = frozenset(('driver_sha256', 'derive_ast_sha256', 'queue_ast_sha256',
-    'derived_queue_ast_sha256', 'setup_ast_sha256', 'derived_caller_ast_sha256',
-    'derived_observer_ast_sha256', 'immutable_drivers', 'construction_driver_sha256',
-    'parent_driver_sha256', 'frozen_owner_files', 'source_frozen', 'assets_reference',
-    'native_path'))
+# These are host paths. Every other receipt field, including all PCs, calls,
+# timer words, code guards and RNG bytes, is retained in the comparison. No
+# gameplay field is removed by key or value.
+HOST_KEYS = frozenset(('source_frozen', 'assets_reference', 'native_path'))
 
 
 def require(ok, message):
@@ -37,24 +32,12 @@ def canonical_sha(value):
 
 @functools.cache
 def metadata():
-    return json.loads((HERE / 'meta.json').read_text())
-
-
-def caller_sha(name):
-    return metadata()['caller_files'][name]['sha256']
-
-
-def verify_callers():
-    for name, row in metadata()['caller_files'].items():
-        path = HERE / name
-        require(path.is_file() and sha(path) == row['sha256'],
-                'Portable caller changed: ' + name + '; refresh after original native comparison')
+    return json.loads((HERE / 'meta.json').read_text(encoding='utf-8'))
 
 
 def load_module(name, path):
     path = Path(path).resolve()
     require(path.parent == HERE, 'Caller outside factory_infantry_output package: ' + str(path))
-    verify_callers()
     # A package-qualified module name preserves relative imports in the six
     # retained caller adapters without inserting any machine-local sys.path.
     spec = importlib.util.spec_from_file_location(__package__ + '.' + name, path)
@@ -153,68 +136,6 @@ def compare_primary(control, actual):
         exclusions=sorted(HOST_KEYS)+['queue.runtime', 'environment.runtime',
             'native_environment.runtime', '$.primary_comparison',
             'original_infantry_vtable.source', 'physical-root pathname prefix'])
-
-
-def verify_helpers():
-    inspections = {}
-    for name, row in metadata()['inspection_owner_files'].items():
-        path = REPO_ROOT / name
-        observed = sha(path) if path.is_file() else None
-        require(observed == row['sha256'] and path.stat().st_size == row['bytes'],
-                'Unsupported inspection-owner version: ' + name +
-                ' observed=' + str(observed) + ' expected=' + row['sha256'])
-        inspections[name] = observed
-    profiles = metadata()['helper_profiles']
-    paths = set().union(*(set(p['files']) for p in profiles.values()))
-    actual = {name: sha(REPO_ROOT/name) if (REPO_ROOT/name).is_file() else None for name in paths}
-    for name, profile in profiles.items():
-        if actual == profile['files']:
-            return dict(profile=name, imported_owner_files=len(actual),
-                profile_sha256=canonical_sha(actual), status=profile['status'],
-                inspection_owner_files=len(inspections),
-                inspection_owner_sha256=canonical_sha(inspections))
-    candidates = []
-    for name, profile in profiles.items():
-        changes = [(path, actual[path], profile['files'].get(path)) for path in sorted(paths)
-                   if actual[path] != profile['files'].get(path)]
-        candidates.append((len(changes), name, changes))
-    _, name, changes = min(candidates)
-    require(False, 'Unsupported shared-helper version (nearest profile ' + name + '): ' +
-        '; '.join(path + ' observed=' + str(observed) + ' expected=' + str(expected)
-                  for path, observed, expected in changes) +
-        '. Re-execute the original native controls before registering a new compatibility profile.')
-
-
-@contextlib.contextmanager
-def candidate_helper_profile():
-    """Explicit comparison-only helper map; never register compatibility here.
-
-    The unchanged verification/census owners still check every imported byte.
-    Complete original primary/private comparisons must pass before an on-disk
-    compatibility profile may refer to this map. Default callers cannot use it.
-    """
-    meta = metadata()
-    name = 'unregistered-initialized-candidate'
-    require(name not in meta['helper_profiles'], 'Candidate helper context already active')
-    files = meta.get('initialized_candidate_helper_files')
-    require(files and all(sha(REPO_ROOT/path) == digest for path, digest in files.items()),
-            'Explicit initialized candidate helper bytes changed')
-    callers = meta.get('initialized_candidate_caller_files', {})
-    require(set(callers) <= {'runtime.py', 'initialized.py'}, 'Unsupported candidate caller')
-    original_callers = {path: meta['caller_files'][path] for path in callers}
-    for path, row in callers.items():
-        source = HERE/path
-        require(source.is_file() and source.stat().st_size == row['bytes'] and sha(source) == row['sha256'],
-                'Explicit initialized candidate caller bytes changed: '+path)
-    for path, row in callers.items():
-        meta['caller_files'][path] = dict(original_callers[path], **row)
-    meta['helper_profiles'][name] = dict(files=files,
-        status='candidate native comparison only; not registered compatibility')
-    try:
-        yield verify_helpers()
-    finally:
-        del meta['helper_profiles'][name]
-        meta['caller_files'].update(original_callers)
 
 
 def write_new(path, value):

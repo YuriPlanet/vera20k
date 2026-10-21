@@ -209,25 +209,11 @@ Every `gamemd.exe` build is the same game, so references record what the executa
 computes, never which build ran it; `replay_command` records how the payload was
 made. `finish_vectors` refuses, under `--check` and `--write` alike, output that would
 publish a `gamemd.exe` hash: the configured executable's SHA-256 anywhere in the
-payload, its sidecars or the raw archive, or the `NATIVE_SHA256` label at a JSON path
-where the existing reference does not already carry it. It recognizes only those two
-digests, so record no other hash of the executable or its sections either. Producers
-with their own writers bypass the check; new comparisons use `finish_vectors`.
-
-Older evidence keeps its label fields as inert history until its producer drops them.
-The `homing_impact`, `ordinary_collision` and `shared_collision` projectile producers
-still hash the executable into such a field, so on another build they stop with this
-refusal instead of a payload mismatch.
-`--check` ignores a legacy `native_sha256` in an older sidecar and `--write` drops it.
-`image_sha256()` returns `NATIVE_SHA256`, a fixed label that older payload schemas
-carry; it is not a hash of the selected file. To compare two releases' code, use
-`python -m tools.native_inspect sections`.
-Ghidra annotation ledgers replay on any `gamemd.exe` program; a legacy
-`program_sha256` in an older ledger is ignored.
-
-The factory packet's registered helper profiles and inspection-owner seal are
-unchanged. Only the explicitly unregistered candidate helper
-map is refreshed for the changed shared sources; it is not a compatibility verdict.
+payload, its sidecars or the raw archive. It recognizes only that digest, so record
+no other hash of the executable or its sections either. Producers with their own
+writers bypass the check; new comparisons use `finish_vectors`. To compare two
+releases' code, use `python -m tools.native_inspect sections`.
+Ghidra annotation ledgers replay on any `gamemd.exe` program.
 Saved-receipt unit tests validate retained profile claims against the sealed
 registration independently of today's source admission. Native factory controls
 have not been replayed or rebaselined by this change.
@@ -455,23 +441,20 @@ PerCell (`0x54C8CB..0x54C8F0`), then calls the class NULL setter unconditionally
 The no-target production regression is in `world/per_cell_object_turn_tests.rs`;
 the shared NULL corpus provides the timer arithmetic comparison.
 
-Sidecars identify the Unicorn Python binding and native core versions,
-entries, fixture assumptions, substitutions, coverage, and canonical payload hash.
-Metadata changes fail checks even if outputs match, prompting review of the changed
-environment. Existing references without sidecars remain checkable, with an explicit
-message that their historical environment is unknown. Regeneration can record the
-current environment; it cannot recover historical provenance.
+Sidecars record entries, fixture assumptions, substitutions, coverage and the
+canonical payload hash, plus the Unicorn Python binding and native core versions that
+ran the replay. Evidence metadata changes fail checks even if outputs match.
+`oracle_sources.evidence` leaves out `replay_command` and those runtime versions, and
+a raw archive is compared by its content rather than its zlib-dependent compressed
+bytes, so another environment that reproduces the output passes. Existing references
+without sidecars remain checkable, with an explicit message that their historical
+environment is unknown. Regeneration can record the current environment; it cannot
+recover historical provenance.
 
-Sidecars pin no hashes of repository sources (AGENTS.md), so an edit to a shared
-helper fails no `finish_vectors` check whose native output is unchanged. The runner
-still hashes the sources a producer declares in `source_paths` and refuses to compare
-or publish if one changed while it ran. `replay_command` records how the payload was
-made; it is not evidence. A sidecar from another branch that still carries the old
-`source_normalized_lf_sha256` pin passes; `--write` drops the field.
-
-Some older producers still keep source hashes in fields of their own, such as
-`harness_sha256`, `sources` or `source_pins`, and compare their whole sidecar. An edit
-to such a source fails their `--check` until those fields are removed (#1137).
+Sidecars and payloads pin no hashes of repository sources (AGENTS.md), so an edit to
+a shared helper fails no check whose native output is unchanged. The runner still
+hashes the sources a producer declares in `source_paths` and refuses to compare or
+publish if one changed while it ran; it records nothing.
 
 ## Add a comparison
 
@@ -498,12 +481,12 @@ branches and boundaries. Avoid a second Python implementation of the algorithm.
   Pass `source_paths={label: Path(...)}` for the producer and its relevant helpers:
   the shared publisher hashes them before generation and refuses to compare or
   publish if one changed through metadata construction. This is a run consistency
-  check; nothing is recorded. Do not hash sources into metadata fields: sidecars
-  pin no repository sources, and `--check` compares every field but
-  `replay_command`. Do not list the Rust consumers either: the native run executes
+  check; nothing is recorded. Do not hash sources into the payload or metadata:
+  `--check` compares every evidence field, so a source hash would fail it after any
+  unrelated edit. Do not list the Rust consumers either: the native run executes
   no Rust, and their own tests compare them with the corpus.
-* Record no hash of `gamemd.exe` in the payload or provenance: not `image_sha256()`,
-  `NATIVE_SHA256` or a digest of `image_bytes()` (see Evidence identity).
+* Record no hash of `gamemd.exe` in the payload or provenance, such as a digest of
+  `image_bytes()` (see Evidence identity).
 * Consume native outputs in a focused Rust test of the actual production function.
   Assert case identity/coverage as well as output equality, and review the connection
   to callers independently. The HSV example checks 2,304 inputs, not all 256³ inputs
@@ -607,7 +590,7 @@ python -m unittest tools.test_native_oracle -v
 
 These test runner behavior, not retail behavior. The tests cover limits, faults,
 premature stops, alternate exits, missing paths, fresh state, FSTP completion,
-executable selection, legacy `native_sha256` handling, executable-hash refusal,
+executable selection, executable-hash refusal,
 reference preservation, provenance mismatches, and diagnostics.
 
 ## Saved-map browser comparisons

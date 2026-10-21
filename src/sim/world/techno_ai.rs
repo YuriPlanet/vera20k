@@ -699,6 +699,13 @@ fn techno_ai_shell(
     ctx: ObjectAiCtx<'_>,
     outcome: &mut ObjectAiOutcome,
 ) {
+    // AircraftClass::AI's first act, ahead of its TemporalClass::Update
+    // (`0x00414BB9..0x00414BD4`): the `+0x6D2` latch clear.
+    if category == EntityCategory::Aircraft
+        && let Some(entity) = sim.substrate.entities.get_mut(id)
+    {
+        crate::sim::aircraft::ai_head_latch_clear(entity);
+    }
     // Each leaf runs its chain head's TemporalClass::Update first (Unit
     // 0x00736204, Infantry 0x0051BB6E, Aircraft 0x00414BDB; a Building after
     // its damage fire at 0x0043FC39, 0x0043FCF9) and a warped object returns

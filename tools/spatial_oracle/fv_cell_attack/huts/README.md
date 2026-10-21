@@ -69,7 +69,7 @@ publication owner and retains every executed state, RNG value and ordered trace.
 `projection.py` reuses the paid projection's raw decoders and selects literal
 native fields without recomputing gameplay.
 
-`original_execution.meta.json` preserves the completed external fresh write
-and independent fresh check's original source identities. Current corrected source pins are in `hut_joined_drive_crt.meta.json`.
+`original_execution.meta.json` preserves the original execution's scope,
+boundaries and payload identity.
 The previous `hut_joined.meta.json` and `receipt.json` remain historical records
 of the original relocation, not validation of corrected Drive startup.

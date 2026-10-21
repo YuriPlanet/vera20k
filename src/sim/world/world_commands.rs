@@ -1612,7 +1612,7 @@ impl Simulation {
                     owner,
                     other,
                 ) {
-                    self.make_enemy(owner, other, rules, true);
+                    self.make_enemy(owner, other, rules, overlay_registry, frame_effects, true);
                 } else {
                     self.make_ally(owner, other, rules, overlay_registry, frame_effects, true);
                 }
@@ -1671,7 +1671,17 @@ impl Simulation {
                     .get(*transport_id)
                     .and_then(|t| t.passenger_role.cargo())
                     .is_some_and(|c| !c.is_empty());
-                if !has_passengers {
+                // A gap generator's self click sends the same Unload
+                // (`0x004434FF..0x00443514`) with no cargo; its mission
+                // toggles the super-charge.
+                let gap_generator = self
+                    .substrate
+                    .entities
+                    .get(*transport_id)
+                    .filter(|t| t.category() == crate::map::entities::EntityCategory::Structure)
+                    .and_then(|t| self.interner.object_type(t.type_ref(), rules))
+                    .is_some_and(|object| object.gap_generator);
+                if !has_passengers && !gap_generator {
                     return false;
                 }
                 let category = self
@@ -2199,13 +2209,46 @@ impl Simulation {
     /// the tag event ([`Self::try_select_object`]); then, for a human
     /// player's or passive house's object while the selection-voice latch
     /// `0x00822CF2` is set (`0x006FBFF4..0x006FC018`), VoiceSelect (vt+0x360)
-    /// through [`Self::selection_voice_request`].
+    /// through [`Self::selection_voice_request`]; last, the planning-node add
+    /// (`0x006FC020` -> `0x00637840`, [`Self::planning_select_partners`]):
+    /// in the local player's Planning Mode, read through the frame's
+    /// [`super::LocalPlanningBoundary`], each tail-node partner gets this
+    /// Select too, without expanding again (the `0x00AC4CF6` guard). A
+    /// passenger or parasite keeps its path through Limbo, so a reselected
+    /// escapee or released parasite pulls in its node's partners.
     ///
-    /// RESIDUAL: the planning-node selection add (`0x00637840`) runs in the
-    /// app's selection resolver, since planning mode is local; these logic
-    /// Selects skip it. It differs only when a reselected crewman, escapee or
-    /// parasite still holds a path while the local player is in planning mode.
+    /// RESIDUALS:
+    /// - Native adds each partner to the selection vector right after this
+    ///   object, in node order; the app admits sim-selected objects in
+    ///   entity-store order. Effect: the vector's order (Tab cycling, first
+    ///   entry) can differ. Frequency: planning-mode logic reselects only.
+    /// - Native's guard covers the whole partner loop, so a Select started by
+    ///   a partner's Selected tag event (33) does not expand; here the guard
+    ///   is structural and such a nested Select would expand. Trigger: a
+    ///   partner's Selected trigger whose action frees a path-holding
+    ///   passenger. Frequency: not measured; needs map triggers.
     pub(crate) fn techno_select(
+        &mut self,
+        stable_id: u64,
+        voice_latch: bool,
+        context: super::UninitContext<'_>,
+    ) -> bool {
+        if !self.techno_select_once(stable_id, voice_latch, context) {
+            return false;
+        }
+        let planning_mode = context.effects().local_planning_active();
+        for member in self.planning_select_partners(stable_id, planning_mode) {
+            // An already-selected member makes no Select call (+0x83); the
+            // admission refuses it before any effect.
+            self.techno_select_once(member, voice_latch, context);
+        }
+        true
+    }
+
+    /// `0x006FBFA0..0x006FC01E`: [`Self::techno_select`] up to its
+    /// planning-node add, which the `0x00AC4CF6` guard skips for the nested
+    /// partner Selects.
+    fn techno_select_once(
         &mut self,
         stable_id: u64,
         voice_latch: bool,

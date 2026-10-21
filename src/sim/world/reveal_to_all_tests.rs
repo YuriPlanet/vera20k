@@ -541,3 +541,51 @@ fn native_action51_keeps_null_house241_and_gates_foreign_map_changes() {
         assert!(row["rng_calls"].as_array().unwrap().is_empty());
     }
 }
+
+///4ADCD0's nonhuman RevealToAll branch has no4ADEE0 sight release;
+/// a no-edge MakeEnemy still reaches it. Ordinary lifecycle cleanup keeps
+/// its existing source owner; this does not certify wholeFogOfWar drawing.
+#[test]
+fn no_edge_make_enemy_counts_reveal_to_all_sight_again() {
+    let Some((rules, mut sim, player)) = world() else {
+        return;
+    };
+    let id = sim
+        .spawn_object("NAIRON", "Russians", SITE.0, SITE.1, 0, &rules)
+        .unwrap();
+    let cells = alternate_cells(&sim, id, player);
+    let before: Vec<_> = cells
+        .iter()
+        .map(|&cell| counter(&sim, player, cell))
+        .collect();
+    let computer = sim.interner.get("Russians").unwrap();
+    for _ in 0..2 {
+        sim.make_enemy(
+            computer,
+            player,
+            &rules,
+            None,
+            FrameEffects::default(),
+            false,
+        );
+    }
+    assert!(sim.house_alliances.as_map().is_empty());
+    for (&cell, old) in cells.iter().zip(&before) {
+        assert_eq!(counter(&sim, player, cell), old - 2, "{cell:?}");
+    }
+    // The two ordinary lifecycle releases do not undo extra map-bracket
+    //admissions. Keep the native cell counter distinct from source indexes.
+    sim.building_destruction_effects(&rules, id, false, &mut Vec::new(), |_, _| {});
+    sim.techno_limbo_with_context(id, UninitContext::with_rules(&rules));
+    assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
+    let config = sim.sight_reveal_config(&rules);
+    sim.refresh_fog(&config, &rules);
+    for (&cell, old) in cells.iter().zip(before) {
+        assert_eq!(
+            counter(&sim, player, cell),
+            old,
+            "retained counter at{cell:?}"
+        );
+        assert!(sim.fog.is_cell_revealed(player, cell.0, cell.1));
+    }
+}

@@ -4,8 +4,6 @@ This projection executes no game code and computes no expected gameplay result.
 It copies fields from the independently executed native packets and preserves
 both complete RNG states and the numeric candidate-geometry observations.
 """
-from pathlib import Path
-
 from tools.native_oracle import finish_vectors, provenance
 from tools.spatial_oracle.fv_cell_attack.publication import HERE
 from tools.spatial_oracle.shrapnel_repair.packet_io import digest, read_result
@@ -83,9 +81,7 @@ def project_row(row, group):
 
 def generate():
     packets = {group: read_result(source) for group, source in SOURCES.items()}
-    native_sha256 = packets['candidates']['native_sha256']
     result = dict(
-        native_sha256=native_sha256,
         sources={source.name: digest(source.read_bytes()) for source in SOURCES.values()},
         numeric=packets['candidates']['numeric'],
         original_constants=packets['candidates']['original_constants'],
@@ -126,7 +122,6 @@ def metadata():
     result['sources'] = {
         source.name: digest(source.read_bytes()) for source in SOURCES.values()
     }
-    result['harness_sha256'] = digest(Path(__file__).read_bytes())
     return result
 
 

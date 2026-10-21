@@ -412,7 +412,10 @@ impl Simulation {
         // renderer rebuilds from the vision owner.
         if object.reveal_to_all && !self.house_is_human_player(owner) {
             if !captured {
-                self.reveal_sight_to_current_house(id, rules);
+                self.reveal_sight_to_current_house(
+                    id,
+                    crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+                );
             }
             self.sound_events
                 .emit(crate::sim::world::SimSoundEvent::RadarEvent {

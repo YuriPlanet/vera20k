@@ -471,11 +471,8 @@ impl IdleHost for WorldIdle<'_> {
         self.entity().mission.current()
     }
 
-    /// No aircraft Patrol handler is ported, so nothing holds its
-    /// Mission+0xBC; the latch is the aircraft leaf's.
     fn restart_patrol(&mut self) {
-        let entity = self.sim.substrate.entities.get_mut(self.id).unwrap();
-        entity.mission_leaf.set_aircraft_action_latch(false);
+        super::restart_patrol(self.sim.substrate.entities.get_mut(self.id).unwrap());
     }
 
     fn commence(&mut self) {

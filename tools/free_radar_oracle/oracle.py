@@ -1,7 +1,7 @@
 """Replay original FreeRadar parser/reset and House decision against recorded cases.
 
 Run from the repository root: python -m tools.free_radar_oracle.oracle.
-The pinned executable is supplied through VERA20K_GAMEMD_EXE or RA2_DIR.
+The retail executable is supplied through VERA20K_GAMEMD_EXE or RA2_DIR.
 No native calls are patched or substituted. The fixture keeps all blackout
 cases, although Rust acceptance currently covers only inactive radar blackout.
 """
@@ -120,7 +120,7 @@ def collect():
 if __name__ == '__main__':
     path = Path(__file__).parent / 'fixtures/native-free-radar.json'
     raw = path.read_bytes()
-    assert hashlib.sha256(raw).hexdigest() == 'f434e555f94f9f68cbcd8247a000fdf93bf661df79611152d251045d8930ef4d'
+    assert hashlib.sha256(raw).hexdigest() == 'f40f4e4befe6ba2bbcb1511ab11470cbc18323fed537bd8014d2c87039b62cb8'
     expected = json.loads(raw)
     actual = json.loads(json.dumps(collect()))
     for key, value in actual.items():

@@ -2,7 +2,7 @@
 from pathlib import Path
 import json, struct, hashlib, gzip, sys
 from unicorn import UC_HOOK_CODE
-from tools.native_oracle import finish_vectors, provenance, NATIVE_SHA256
+from tools.native_oracle import finish_vectors, provenance
 from tools.spatial_oracle.building_body_rules import dwords
 HERE=Path(__file__).resolve().parent
 from . import pursuit
@@ -61,12 +61,12 @@ def generate():
   before_rng={k:pursuit.proof.state(q.m,v)for k,v in q.resident.rngs.items()};actor=bytes(q.u.mem_read(q.src,0x1000));answer=q.m.invoke(0x42D170,0x87E8B8,(p,p+4,q.src,int(sb),int(gb),mz));q.flow_pending.clear()
   assert before_rng=={k:pursuit.proof.state(q.m,v)for k,v in q.resident.rngs.items()};assert actor==bytes(q.u.mem_read(q.src,0x1000));assert '00585f40' not in reached
   row=dict(name=name,source=[87,49],target=[87,54],source_bridge=sb,target_bridge=gb,movement_zone=mz,source_id=start,target_id=goal,graphs=graphs,returned=answer,flow=q.flow,hierarchy=q.hierarchy,reached=reached.copy(),threat_scalar_bytes=actor[0x530:0x538].hex(),team_pointer=struct.unpack_from('<I',actor,0x5D4)[0]);out.append(row);print('PASS',name,answer,[f.get('paths')for f in q.flow if f['kind']=='hierarchy_preflight'],flush=True)
- q.close();return dict(schema=1,native_sha256=NATIVE_SHA256,controls=out)
+ q.close();return dict(schema=1,controls=out)
 
 
 def metadata():
  d=provenance(scope=__doc__,assumptions=['Original FV constructor, complete physical Anytown setup, OS seams, hierarchy constructors and scratch initialization are reused from the independently checked pursuit owner.','Tiny ordered graph inputs replace only constructed node type,parent,edge fields and the two endpoint hierarchy IDs. These are synthetic controls, not claims about physical graph production.','FV Foot+530=0 and Team=NULL are checked; direct entry uses supplied movement row0. Original function instructions, projection, precheck, heap and float stores execute unmodified.'],substitutions=['Supplied graph and endpoint inputs; no returned admission,cost,path,heap,RNG or timer value is substituted.'],entry_points={'cost':0x42D170,'precheck':0x42C290})
- d['harness_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest();d['pursuit_owner_sha256']=hashlib.sha256(Path(pursuit.__file__).read_bytes()).hexdigest();return d
+ return d
 
 def project_vectors(check=False):
  """Lossless native record/result projection for Rust's JSON-only test reader."""
@@ -91,7 +91,7 @@ def project_vectors(check=False):
     src=call['from_cell'];dst=call['to_cell'];events=groups[call_index];call_index+=1
     width=row['plane_input']['width']
     cases.append(dict(name=row['row']['name']+':'+str(call_index),graph=known[digest],source=src,target=dst,source_ids=[g['ids'][src[1]*width+src[0]]for g in original],target_ids=[g['ids'][dst[1]*width+dst[0]]for g in original],source_bridge=bool(call['args'][3]),target_bridge=bool(call['args'][4]),cost=call['returned_signed'],preflight=preflight,hierarchy=events))
- data=dict(schema=1,native_sha256=source['native_sha256'],source_sha256={str(p.relative_to(pursuit.proof.REPO)):hashlib.sha256(p.read_bytes()).hexdigest()for p in paths},graphs=graph_sets,cases=cases)
+ data=dict(schema=1,source_sha256={str(p.relative_to(pursuit.proof.REPO)):hashlib.sha256(p.read_bytes()).hexdigest()for p in paths},graphs=graph_sets,cases=cases)
  out=HERE/'zone_cost_vectors.json'
  if check:
   assert json.loads(out.read_text())==data

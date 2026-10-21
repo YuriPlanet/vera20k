@@ -1635,7 +1635,6 @@ def post_drain_smudge_put(f, stock):
 
 def joined_generate(*, stock_smudges=False):
     import hashlib, json, os
-    from tools.native_oracle import NATIVE_SHA256
     root = Path(os.environ['VERA20K_BUILDING_DEATH_ASSETS'])
     # One reader owner, two explicit configurations. Full FIRE inputs and
     # whole target AI are required by the ordinary shot. The historical
@@ -1648,7 +1647,7 @@ def joined_generate(*, stock_smudges=False):
              for p in sorted(root.iterdir()) if p.is_file() and p.suffix.lower() != '.json']
     stock_context = (dict(native_stock_smudge_inputs=m.stock_smudge_inputs,
         native_stock_theater_inputs=m.stock_theater_inputs) if stock_smudges else {})
-    return dict(schema_version=1, source='unicorn/gamemd.exe', native_sha256=NATIVE_SHA256,
+    return dict(schema_version=1, source='unicorn/gamemd.exe',
         **stock_context, retail_files=files,
         extraction_receipts=[{k:v for k,v in row.items() if k in
             ('asset','source_archive','entry_id','size','sha256','catalog_lookup_only')} for row in receipts],
@@ -1830,10 +1829,9 @@ def damage_sound_receiver_controls(inputs):
 def damage_sound_generate(*, profile='all'):
     """Selected ordinary DamageSound path on the existing joined world."""
     import hashlib, os
-    from tools.native_oracle import NATIVE_SHA256
     root = Path(os.environ['VERA20K_BUILDING_DEATH_ASSETS'])
     inputs = joined_inputs(root, damage_fires=True, damage_sound=True)
-    result = dict(schema_version=1, source='unicorn/gamemd.exe', native_sha256=NATIVE_SHA256,
+    result = dict(schema_version=1, source='unicorn/gamemd.exe',
         selected_profile=profile,
         retail_files=[dict(name=p.name, size=p.stat().st_size,
             sha256=hashlib.sha256(p.read_bytes()).hexdigest())
@@ -2228,12 +2226,11 @@ def constructed_cancellation_execute(inputs, mode):
 
 def constructed_cancellation_generate():
     import hashlib,json,os
-    from tools.native_oracle import NATIVE_SHA256
     root=Path(os.environ['VERA20K_BUILDING_DEATH_ASSETS'])
     inputs=joined_inputs(root,damage_fires=True)
     receipts_path=root/'receipts.json'
     receipts=json.loads(receipts_path.read_text()) if receipts_path.is_file() else []
-    return dict(schema_version=1,source='unicorn/gamemd.exe',native_sha256=NATIVE_SHA256,
+    return dict(schema_version=1,source='unicorn/gamemd.exe',
         retail_files=[dict(name=p.name,size=p.stat().st_size,
             sha256=hashlib.sha256(p.read_bytes()).hexdigest())
             for p in sorted(root.iterdir()) if p.is_file() and p.suffix.lower()!='.json'],
@@ -2787,7 +2784,7 @@ def wall_autofill_project(raw):
                 value=w['value'], before=w['before']) for w in control['house_dirty_writes']],
             original_executable_sections_unchanged=control['original_executable_sections_unchanged'],
             observation_gaps=[] if 'wall_owner_globals' in incoming else ['wall_owner_globals']))
-    return dict(schema_version=2, native_sha256=raw['native_sha256'], source=raw['source'],
+    return dict(schema_version=2, source=raw['source'],
         retail_files=raw['retail_files'], type=raw['type'], physical_art=raw['physical_art'],
         native_theater_inputs=raw['native_theater_inputs'],
         native_wall_image_assets=raw['native_wall_image_assets'],
@@ -2806,13 +2803,12 @@ def wall_autofill_project(raw):
 
 def wall_autofill_generate(*, detail=False):
     import hashlib, os
-    from tools.native_oracle import NATIVE_SHA256
     root = Path(os.environ['VERA20K_BUILDING_DEATH_ASSETS'])
     inputs = joined_inputs(root, wall_autofill=True)
     p, u = inputs.types['GAWALL'], inputs.u
     signed = lambda offset: struct.unpack('<i', u.mem_read(p + offset, 4))[0]
     overlay = inputs.read32(p + 0xE54)
-    raw = dict(schema_version=1, source='unicorn/gamemd.exe', native_sha256=NATIVE_SHA256,
+    raw = dict(schema_version=1, source='unicorn/gamemd.exe',
         retail_files=[dict(name=path.name, bytes=path.stat().st_size,
             sha256=hashlib.sha256(path.read_bytes()).hexdigest())
             for path in sorted(root.iterdir()) if path.is_file() and path.suffix.lower() != '.json'],
@@ -2969,7 +2965,7 @@ def typed_debris_generate():
             display_layers=[i for i in range(5) if member(p,0x8A0360+24*i)],observation='receiver_return')
     assert [v['native_id'] for v in voxels]==[cursor+1,cursor+2]
     assert [a['type'] for a in anims]==['S_BRNL58'] and anims[0]['native_id']==cursor+3
-    return dict(native_sha256=native.NATIVE_SHA256,sound_sha256=hashlib.sha256((root/'SOUNDMD.INI').read_bytes()).hexdigest(),rows=[dict(
+    return dict(sound_sha256=hashlib.sha256((root/'SOUNDMD.INI').read_bytes()).hexdigest(),rows=[dict(
         input=dict(name='fatal_mtnk_typed_then_death_anim',seed=1,damage=1000,distance=0,warhead=f.string(m.warhead+0x24),
             ignore_defenses=True,prevent_passenger_escape=False,attacker_is_null=True,source_house_is_null=True,
             binary_frame=read(bc.FRAME),debris_types=['TIRE'],debris_maximums=[4],minimum=1,maximum=3),

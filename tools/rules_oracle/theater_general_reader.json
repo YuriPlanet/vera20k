@@ -2109,7 +2109,6 @@
       }
     }
   ],
-  "harness_sha256": "a466f2d5d94e5f4d8908bed0a97c69cf2aeb2d9356694d0af107491349e7afbd",
   "instruction_spans": [
     {
       "begin": "0x545535",
@@ -2127,7 +2126,6 @@
       "sha256": "e4dc878ba2d6f69291b34c5037b351e0d78d6d408d6a42d71e134b17024c7f48"
     }
   ],
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "physical": [
     {
       "bytes": 25269,

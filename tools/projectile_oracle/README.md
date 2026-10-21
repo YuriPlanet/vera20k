@@ -1,6 +1,6 @@
 # Projectile native comparisons
 
-These tools execute the pinned retail `gamemd.exe` under Unicorn. See the
+These tools execute the retail `gamemd.exe` under Unicorn. See the
 [shared native runner](../native_oracle.md) for installation and executable
 identity. This page indexes the consolidated FireAt-tail, load-timer and collision
 fixtures; other projectile families still need their own inventory.

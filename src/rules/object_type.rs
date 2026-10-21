@@ -555,12 +555,10 @@ pub struct ObjectType {
     /// negated consumption.
     /// Source: building_power_status.json reader_controls.
     pub power: i32,
-    /// Extra power bonus per occupant for `InfantryAbsorb`/`UnitAbsorb`
-    /// buildings. Parsed from `ExtraPower=` (signed i32). Only contributes
-    /// when the building has `InfantryAbsorb=yes` or `UnitAbsorb=yes` and
-    /// at least one passenger is garrisoned. Stock YR: YAPOWR Bio-Reactor
-    /// uses `ExtraPower=100` × up to 5 garrisoned infantry.
-    pub extra_power: i32,
+    /// BuildingType `ExtraPower=` output `+0xEE8` and drain `+0xEEC`, the
+    /// ordered Rules processor's retained reader result (stock YAPOWR
+    /// Bio-Reactor output 100, GAGAP drain 9000).
+    pub extra_power: crate::rules::building_extra_power::BuildingExtraPower,
     /// Building foundation footprint (e.g., "3x2", "1x1"). Buildings only.
     pub foundation: String,
     /// Pixel offset for health bar / selection bracket Y position.
@@ -2053,8 +2051,9 @@ pub struct ObjectType {
     /// TechnoType+CD2: ReadInt713FBC stores AL without a clamp;4566EC
     /// sign-extends it. The constructor's default is zero, not General.GapRadius.
     pub gap_radius_in_cells: i8,
-    /// `SuperGapRadiusInCells=` — oversized gap radius applied during
-    /// specific game states.
+    /// TechnoType+CD3 `SuperGapRadiusInCells=`: the gap radius while
+    /// super-charged. Mission_Unload's gap arm needs it nonzero
+    /// (`0x0044E2B0`) and caches it in `+0x26C` (`0x0044E2DC`).
     pub super_gap_radius_in_cells: i8,
     /// BuildingType+170C: signed ReadInt460C41, current default zero.
     pub psychic_detection_radius: i32,
@@ -2840,7 +2839,9 @@ impl ObjectType {
             // Constructor value; only the ordered Process owner reads it.
             image: id.to_owned(),
             power: section.read_int("Power", 0),
-            extra_power: section.read_int("ExtraPower", 0),
+            // Only the ordered Rules processor reads it: a later layer's
+            // non-negative value keeps an earlier drain.
+            extra_power: Default::default(),
             // Building ctor45DF13 initializes +EF0=0 (1x1). ReadINI461225
             // reads Foundation from ART only, never this RULES section.
             // Pass processing projects the shared reader; ART binding does not.

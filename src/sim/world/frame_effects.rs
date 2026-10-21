@@ -19,18 +19,21 @@ pub trait SoundBoundary {
     fn delivered(&self) -> usize;
 }
 
-/// House4FC1EE leaves the local planner before the defeat announcement.
-/// Input state stays with the client; its event joins the frame's existing
-/// post-Logic dispatcher. Headless/replay visits have no local input to leave.
-pub trait LocalDefeatBoundary {
+/// The local player's Planning Mode (`0x00AC4CF4`), owned by client input.
+/// House4FC1EE leaves it before the defeat announcement; its event joins the
+/// frame's existing post-Logic dispatcher. TechnoClass::Select's planning-node
+/// add (`0x00637840`) reads it. Headless/replay visits have no local planner:
+/// Planning Mode is off and there is nothing to leave.
+pub trait LocalPlanningBoundary {
     fn leave_planning(&self, sim: &Simulation, rules: &RuleSet) -> Option<CommandEnvelope>;
+    fn planning_active(&self) -> bool;
 }
 
 /// Stack-scoped process effects accompanying this simulation visit.
 #[derive(Clone, Copy, Default)]
 pub struct FrameEffects<'a> {
     sound: Option<&'a dyn SoundBoundary>,
-    local_defeat: Option<&'a dyn LocalDefeatBoundary>,
+    local_planning: Option<&'a dyn LocalPlanningBoundary>,
     overlay_registry: Option<&'a OverlayTypeRegistry>,
 }
 
@@ -38,7 +41,7 @@ impl<'a> FrameEffects<'a> {
     pub const fn empty() -> Self {
         Self {
             sound: None,
-            local_defeat: None,
+            local_planning: None,
             overlay_registry: None,
         }
     }
@@ -46,14 +49,14 @@ impl<'a> FrameEffects<'a> {
     pub fn for_sound(sound: &'a dyn SoundBoundary) -> Self {
         Self {
             sound: Some(sound),
-            local_defeat: None,
+            local_planning: None,
             overlay_registry: None,
         }
     }
 
-    pub fn with_local_defeat(self, boundary: &'a dyn LocalDefeatBoundary) -> Self {
+    pub fn with_local_planning(self, boundary: &'a dyn LocalPlanningBoundary) -> Self {
         Self {
-            local_defeat: Some(boundary),
+            local_planning: Some(boundary),
             ..self
         }
     }
@@ -63,8 +66,14 @@ impl<'a> FrameEffects<'a> {
         sim: &Simulation,
         rules: &RuleSet,
     ) -> Option<CommandEnvelope> {
-        self.local_defeat
+        self.local_planning
             .and_then(|boundary| boundary.leave_planning(sim, rules))
+    }
+
+    /// Planning Mode byte `0x00AC4CF4`; off without a local planner.
+    pub(crate) fn local_planning_active(self) -> bool {
+        self.local_planning
+            .is_some_and(LocalPlanningBoundary::planning_active)
     }
 
     /// Bind the match's OverlayTypeClass table for receivers the frame reaches

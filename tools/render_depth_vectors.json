@@ -5088,7 +5088,6 @@
     "near_bridge": "00703b10",
     "tunnel_multiplier": "00704000"
   },
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "region_sha256": {
     "base_z_adjust": "7a41d36a76e68163c49649cc7af7fea89fbc8eee251ead67fbac0a3fc5c477f9",
     "cliff_multiplier": "3dbcb6b0d2cd0f682d7ae352240c827fa22a37fb09b73130285e952cd25e2579",

@@ -478,7 +478,9 @@ pub(crate) fn commit_map_selection(
         }
         queue(state, NetworkSetupRequest::Advertise);
     }
-    // Use Map (`0x005E7160`) runs the mode's slots on LAN and WOL alike.
+    // Use Map (`0x005E7160`) writes `[0xA8B254]` (0x005E7370), then runs
+    // the mode's slots on LAN and WOL alike.
+    super::note_scenario(state);
     super::cooperative::map_used(state, mode_changed, row.unwrap_or(0))?;
     queue(state, NetworkSetupRequest::PublishOptions);
     Ok(())

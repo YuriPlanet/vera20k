@@ -40,8 +40,8 @@ oracles, scripts) until steps 1 and 2 are clean.
      compares, fields read and written, gates, and any RNG, timer or detach calls
      against the Rust. Ghidra names and the PR's prose are leads, not proof.
    - Any `gamemd.exe` release is the same game: sidecars record the replay
-     command, not the executable's hash. A legacy `native_sha256` in an older
-     sidecar is inert history, not something to check.
+     command, not the executable's hash. Reject a hash of `gamemd.exe` or of a
+     repository source in a payload, sidecar or receipt.
    - INI claims must use the native readers in `src/rules/ini_value.rs` and check
      the retail values in every layer.
    - Goldens must come from native execution or retail bytes and run through

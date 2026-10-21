@@ -747,7 +747,9 @@ pub enum Command {
     /// Attack-move: the MEGAMISSION event with mission 29 that ClickedMission
     /// (`0x006FFBE0`) promotes a Move or Attack click to. Its tokens are the
     /// click's: an attack click's object as `target` (`0x004D76B1..0x004D76C1`),
-    /// a Move click's Cell or object as `destination` (`0x004D7C76`).
+    /// an Attack on a Cell's Cell as `target` with no destination (Foot
+    /// ClickedAction_Cell `0x004D80E9..0x004D80FF`), and a Move click's Cell or
+    /// object as `destination` (`0x004D7C76`).
     /// `Assign_Target_Command` stores them as MegaTarget and MegaDestination.
     AttackMove {
         entity_id: u64,

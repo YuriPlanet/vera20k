@@ -144,7 +144,7 @@ def generate():
   r['supplied']['target_cell']=[10,20];r['supplied']['scenario_rng_seed']=seed
   assert r['after_drain']['queue_count']==0 and r['after_drain']['bullet_count']==0
   rows.append(r)
- return dict(native_sha256=impact.NATIVE_SHA256,scope='Original physical selected FV guided launch/flight into stock scalar bridge topology; rejected/damaged/primed-collapse controls through full AreaDamage, bridge body/perpendicular/rim/fallout, original retained graph disconnection/raw connectivity rebuild, physical effect creation and actual Bullet queue drain. Retained graph/base classifiers, map crop, source lifecycle, launch admission and independent hit seed are supplied. No native map loader, full Rules Process, wholematch native IDs, rendering or post-impact Anim scheduler proof.',rows=rows)
+ return dict(scope='Original physical selected FV guided launch/flight into stock scalar bridge topology; rejected/damaged/primed-collapse controls through full AreaDamage, bridge body/perpendicular/rim/fallout, original retained graph disconnection/raw connectivity rebuild, physical effect creation and actual Bullet queue drain. Retained graph/base classifiers, map crop, source lifecycle, launch admission and independent hit seed are supplied. No native map loader, full Rules Process, wholematch native IDs, rendering or post-impact Anim scheduler proof.',rows=rows)
 
 def metadata():
  return provenance(scope='Three original guided hits: rejected, damaged and primed-collapse through bridge effects, retained connectivity and Bullet retirement',assumptions=[

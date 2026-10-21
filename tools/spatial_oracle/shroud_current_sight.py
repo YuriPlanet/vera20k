@@ -74,8 +74,61 @@ def timer_cases():
   out.append(dict(start=start,duration=duration,frame=frame,due=stop==0x4DA6EF))
  return out
 
+
+# Full original no-edge MakeEnemy and its Human virtual reveal methods.
+# Inputs supply a camera cache/type identity; map walks and anger are recorded
+# transport boundaries. See provenance, not a whole FogOfWar comparison.
+def alliance_human_control(discovered=True,limbo=False,in_playfield=True,passive=False):
+ from tools.ai_base_building_oracle import Emu,FAKE,STUBS
+ SOURCE=FAKE+0x500000
+ VTABLE=FAKE+0x502000
+ TYPE=FAKE+0x504000
+ HUMAN=FAKE+0x506000
+ COMPUTER=FAKE+0x50E000
+ HUMAN_TYPE=FAKE+0x516000
+ COMPUTER_TYPE=FAKE+0x518000
+ ARRAY=FAKE+0x51A000
+ e=Emu()
+ e.write32(0xA8B238,1)
+ e.write32(0xA83D4C,HUMAN)
+ e.write32(0xA8EC7C,ARRAY)
+ e.write32(0xA8EC88,1)
+ e.write32(ARRAY,SOURCE)
+ for house,typ,index in [(HUMAN,HUMAN_TYPE,1),(COMPUTER,COMPUTER_TYPE,0)]:
+  e.write32(house+0x34,typ)
+  e.write32(house+0x30,index)
+  e.uc.mem_write(typ+0x1A6,bytes([int(passive and house==HUMAN)]))
+ e.write32(SOURCE,VTABLE)
+ e.write32(SOURCE+0x21C,HUMAN)
+ e.uc.mem_write(SOURCE+0x81,bytes([int(limbo)]))
+ e.uc.mem_write(SOURCE+0x41B,bytes([int(discovered)]))
+ e.uc.mem_write(SOURCE+0x3D5,bytes([int(in_playfield)]))
+ e.uc.mem_write(SOURCE+0x250,b'\x01')
+ e.uc.mem_write(SOURCE+0x254,struct.pack('<iii',10240,10240,0))
+ e.uc.mem_write(SOURCE+0x9C,struct.pack('<iii',10496,10240,0))
+ e.write32(SOURCE+0x260,6)
+ e.write32(TYPE+0x5E8,0)
+ for slot,func in [(0x2C,STUBS+0x200),(0x84,STUBS+0x210),(0x48C,0x70B1D0),(0x488,0x70AF50)]:e.write32(VTABLE+slot,func)
+ e.hook(STUBS+0x200,lambda _:1,0)
+ e.hook(STUBS+0x210,lambda _:TYPE,0)
+ def area(x):
+  e.events.append(['area',list(struct.unpack('<iii',e.uc.mem_read(x.arg(0),12))),*[x.arg(i) for i in range(1,8)]])
+  return 0
+ def border(x):
+  e.events.append(['border',list(struct.unpack('<iii',e.uc.mem_read(x.arg(0),12))),*[x.arg(i) for i in range(1,4)]])
+  return 0
+ def anger(x):
+  e.events.append(['anger',x.uc.reg_read(UC_X86_REG_ECX),x.arg(0),x.arg(1)])
+  return 0
+ e.hook(0x5678E0,area,32)
+ e.hook(0x567DA0,border,16)
+ e.hook(0x504790,anger,8)
+ for a in [0x4ADEE0,0x4ADCD0,0x70B1D0,0x70AF50]:e.mark(a,['entry',hex(a)])
+ e.invoke(0x4F9F90,ecx=COMPUTER,args=[HUMAN,0],required=[0x4F9F90])
+ return dict(inputs=dict(discovered=discovered,limbo=limbo,in_playfield=in_playfield,passive=passive),events=e.events,latch=e.uc.mem_read(SOURCE+0x250,1)[0],cached_radius=e.read_i32(SOURCE+0x260),ally_bits=e.read32(COMPUTER+0x5788))
+
 if __name__=='__main__':
- finish_vectors(lambda:{'cases':[execute(*s) for s in scenarios],'timer_cases':timer_cases()},Path(__file__).with_suffix('.json'),provenance=lambda:provenance(
+ finish_vectors(lambda:{'cases':[execute(*s) for s in scenarios],'timer_cases':timer_cases(),'alliance_human_controls':[alliance_human_control(),alliance_human_control(discovered=False),alliance_human_control(limbo=True),alliance_human_control(in_playfield=False),alliance_human_control(passive=True)]},Path(__file__).with_suffix('.json'),provenance=lambda:provenance(
   scope='Original ordinary-cell current-sight versus hostile gap shroud observations',
   assumptions=['Constructor-derived Cell fields supplied:130=1,134=0,120/121=-2; complete Size12x12 allocated diamond, selected3x3 real-cell neighborhood',
    'Original MapCell4A9CA0 executes toreturn with real neighbor-cache and notify leaves; frame0,emptyobjectlists,scenarioFogOfWarclear',
@@ -86,5 +139,6 @@ if __name__=='__main__':
    'Foot timer4DA6C8 executes after admitted moving/high-flight/direct-ally gates to due4DA6EF or rejected4DA7B0 boundary; no reveal call is stubbed or executed by this timer fragment',
    'Original577EBF..577EE9 and577B3C..577B6C bulk stores execute on the selected Cell; source/gap brackets compose existing original leaves with supplied object registration order, not full callback dispatch',
    'Legacy remove_mapclear case label refers to actual House577A SpySatActive, not byte241 MapIsClear',
+   'Alliance controls execute full original no-edge4F9F90, visitors4ADEE0/4ADCD0, House50B6F0 and source70B1D0/70AF50; supplied current-player Sight0 camera cache radius6,41B/limbo/playfield/passive gates',
    'No renderer pixels, complete reveal traversal, optionalfogrecords or fullGapGenerator lifecycle comparison'],
-  substitutions=[],entry_points={'map_cell':0x4A9CA0,'unshroud':0x4876F0,'hostile_gap_cell':0x6FB2F7,'hostile_remove_cell':0x6FB5E1,'is_shrouded':0x586360,'periodic_logic':0x55B29A,'recalc_shroud':0x578100,'foot_timer_gate':0x4DA6C8,'map_reveal_bulk':0x577EBF,'map_reset_bulk':0x577B3C}))
+  substitutions=['Alliance-only virtual RTTI/type lookup return declared fixture identities; Map5678E0 and border567DA0 record arguments and return without cells; anger504790 records arguments and returns'],entry_points={'make_enemy':0x4F9F90,'alliance_release':0x4ADEE0,'alliance_readmit':0x4ADCD0,'source_release':0x70B1D0,'source_update':0x70AF50,'map_cell':0x4A9CA0,'unshroud':0x4876F0,'hostile_gap_cell':0x6FB2F7,'hostile_remove_cell':0x6FB5E1,'is_shrouded':0x586360,'periodic_logic':0x55B29A,'recalc_shroud':0x578100,'foot_timer_gate':0x4DA6C8,'map_reveal_bulk':0x577EBF,'map_reset_bulk':0x577B3C}))

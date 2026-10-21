@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -36,12 +35,7 @@
     "level_default_inverse": "0x0068A93F"
   },
   "checked_at_utc": "2026-09-27T23:55:16.768216+00:00",
-  "sources": {
-    "tools/palette_oracle/oracle.py": "12f63f378e77070f5278912d71eb9fcc09d247b4680c785e838ee4997ecd1a90",
-    "tools/palette_oracle/check.py": "170fb88e9dac60b0060269ac666da48bc00a899607c4aeca5430b556214c7542",
-    "tools/native_oracle.py": "f3f58e1a15a4fd3be9e3bc2030819f079ab9155bdb08833e228c1c661445e51e"
-  },
-  "historical_provenance_sha256": "4116a6b72640fb4e7aea91edf32eb17549c4b938d5cd5402c8a2b1783f4b27ef",
+  "historical_provenance_sha256": "4596960cba99b5a8d0ab0dfc2762f2494498486b3bc0671e2e818785d656a61d",
   "fixtures_reproduced": {
     "base-scales-0-2000.bin": "a83bd8109d43cdc2b25443c6582a5dbf954899716637153ca839275fc47b5ee6",
     "intensity-27.bin": "5f7086b93e0beb713f4d1059c51971cbcb11abd40444202b8bcc9f251f304dee",

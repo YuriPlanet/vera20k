@@ -8,7 +8,7 @@ import hashlib, struct
 from pathlib import Path
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_READ
 from unicorn.x86_const import UC_X86_REG_ESP, UC_X86_REG_EAX, UC_X86_REG_EIP, UC_X86_REG_EBP, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_ESI
-from tools.native_oracle import NATIVE_SHA256, provenance
+from tools.native_oracle import provenance
 from . import zone_cost, pursuit
 from tools.spatial_oracle.building_body_rules import dwords
 
@@ -110,7 +110,7 @@ def generate():
                           grid=grid,graphs=graphs,source_id=1,target_id=4,returned_al=answer&255,
                           flow=q.flow,hierarchy=q.hierarchy,events=events.copy(),reads=reads.copy()))
     print('PASS precheck',level,bits,answer&255,len(events),flush=True)
-  return dict(schema=1,native_sha256=NATIVE_SHA256,corners=corners,sample_pairs=samples,
+  return dict(schema=1,corners=corners,sample_pairs=samples,
               producer_indices=producer_indices,producer_writes=producer_writes,helpers=helpers,prechecks=prechecks,
               rng_unchanged=True,actor_unchanged=True,text_unchanged=True)
  finally:q.close()

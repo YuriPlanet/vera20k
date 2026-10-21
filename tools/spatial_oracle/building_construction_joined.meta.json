@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -71,5 +70,5 @@
     "sound_watch": "0x00750D40",
     "sound_release": "0x00406060"
   },
-  "payload_sha256": "62e31e63c49350afa9be3ffefafe158a7ae4423a898c3614e80b0506b7889ae3"
+  "payload_sha256": "19d8c02d24280f08b424bec1308c9358f430fd9c058072ba02accb458c6c9bcd"
 }

@@ -17,7 +17,7 @@ from unicorn.x86_const import (
     UC_X86_REG_EDI, UC_X86_REG_EDX, UC_X86_REG_EIP, UC_X86_REG_ESI, UC_X86_REG_ESP,
     UC_X86_REG_FPCW,
 )
-from tools.native_oracle import NATIVE_SHA256, finish_vectors, provenance, run_checked
+from tools.native_oracle import finish_vectors, provenance, run_checked
 from tools.rules_oracle.bridge_anim_inputs import Reader, read_types
 from tools.rules_oracle.bridge_child_sound import sections
 from tools.spatial_oracle.building_body_rules import INI, TYPE as READER_TYPE, SP as READER_SP
@@ -644,7 +644,7 @@ def jumpjet_landing():
 
 def generate():
     art = retail_art()
-    return dict(schema_version=1, native_sha256=NATIVE_SHA256, retail_art=art,
+    return dict(schema_version=1, retail_art=art,
                 readers=readers(), lifecycle=lifecycle(art['result']),
                 mission_timelines=mission_timelines(art['result']), jumpjet=jumpjet_landing(),
                 ownership=ownership_and_admission(art['result']), draw_frames=draw_frames(art),

@@ -1,5 +1,5 @@
 //! Bounded comparisons with original gamemd entry and turn-latch execution.
-//! The corpus metadata records executable SHA and callback substitutions.
+//! The corpus metadata records callback substitutions.
 //! The 120 sampler rows establish the latch transition, including the state
 //! visible before reason0. Supplied callback mutations are not Rust world
 //! parity: this production corridor has no callback-observation seam yet.

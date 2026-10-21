@@ -8,7 +8,7 @@ rows stop at FootUnInit entry after the actual second RecordKill callback.
 from pathlib import Path
 import struct
 from unicorn.x86_const import *
-from tools.native_oracle import run_checked,finish_vectors,provenance,NATIVE_SHA256
+from tools.native_oracle import run_checked,finish_vectors,provenance
 from naval_occupants import Native,inputs,SP,RULES,INI,RULE_BLOCKS,dwords,signed,sha
 
 HERE=Path(__file__).resolve().parent
@@ -99,8 +99,8 @@ def generate():
     rows=[];m=None
     for case in tick_inputs():
         m=Sink(case);rows.append(dict(input=case,output=m.run_tick()))
-    return dict(schema_version=1,native_sha256=NATIVE_SHA256,scope=__doc__,source_receiver_case='west_water_head_road_dz0',
-        source_receiver_harness_sha256=sha((HERE/'naval_occupants.py').read_bytes()),wake_layers=m.wake_layers,cases=rows,harness_sha256=sha(Path(__file__).read_bytes()))
+    return dict(schema_version=1,scope=__doc__,source_receiver_case='west_water_head_road_dz0',
+        wake_layers=m.wake_layers,cases=rows)
 
 def metadata():
     m=Sink(next(tick_inputs()))
@@ -113,7 +113,6 @@ def metadata():
         'Same setup allocator/free/TLS and measured OS Interlocked boundaries as naval_occupants. During measured wake branch only, operator_new returns zero-initialized bump storage of requested456bytes, permitting actual call argument preparation; original allocator and animation constructor are excluded.'],
         entry_points={'unit_ai_suffix':0x7364A1,'set_coords':0x4DB810,'get_height':0x5F5F40,'range':0x65C7E0,'raw_rng':0x65C780,'wake_constructor_boundary':0x421EA0,'record_kill':0x744720,'uninit_boundary':0x4DE5D0})
     p['original_slices']=[dict(start=hex(a),end_exclusive=hex(b),hex=raw.hex(),sha256=sha(raw)) for (a,b),raw in zip(SPANS,m.original)]
-    p['harness_sha256']=sha(Path(__file__).read_bytes())
     return p
 
 if __name__=='__main__':finish_vectors(generate,HERE/'naval_sink_tick.json',provenance=metadata)

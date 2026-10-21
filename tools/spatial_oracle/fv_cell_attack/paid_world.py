@@ -4,7 +4,7 @@ Reuse Navigation for physical TMP/type/Cell/Terrain/graph initialization and
 Mission for actual FV constructor, Unlimbo, command and live object pass.
 """
 from pathlib import Path
-import json, gzip, struct, sys
+import json, gzip, struct
 from types import MethodType
 from unicorn import UC_HOOK_MEM_WRITE
 from unicorn.x86_const import *
@@ -13,7 +13,7 @@ from . import pursuit as frozen
 from .publication import finish_vectors
 from tools.native_oracle import provenance
 from tools.spatial_oracle.anytown_damage.inputs import ASSETS
-from tools.native_oracle import run_checked, NATIVE_SHA256, first_difference, _canonical
+from tools.native_oracle import run_checked, first_difference, _canonical
 from tools.spatial_oracle.anytown_damage import mission as mission_owner
 from tools.spatial_oracle.anytown_damage.navigation import Navigation, Inputs, extract_tiles, identity, sr
 from tools.spatial_oracle.naval_head_producer import Head
@@ -24,9 +24,6 @@ OUTPUT=HERE/'paid_world_drive_crt.json.gz'
 sha=frozen.proof.sha
 WORLD_GLOBALS=[(0x87F7E8,0x200),(0xC00000,0x100000),(0xABDC50,0x200),(0x89EA40,12*36),(0xA8ED28,24),(0xA83D80,24),(0xA8E318,24),(0x8B4150,24),(0xB0F4E8,24),(0xB0EDC0,0x1000),(0xB0F670,24),(0xA8E988,24),(0x87E8B8,0xD00)]
 
-def sources():
- return {str(p.relative_to(frozen.proof.REPO)):sha(p.read_bytes())for module in tuple(sys.modules.values())if(name:=getattr(module,'__file__',None))and(p:=Path(name).resolve()).is_relative_to(frozen.proof.REPO/'tools')and p.suffix=='.py'}
-
 def native_worlds():
  """Execute the shared physical owner; retain only original native snapshots."""
  t=identity.theater();r=Inputs(t);tiles,assets=extract_tiles(t);n=Navigation(r,t,tiles,create_actor=False)
@@ -36,7 +33,7 @@ def native_worlds():
  def capture(name,index):
   state=n.state()
   for key in('cells','navigation','graphs'):assert state[key]==reference[index][key],(name,key,first_difference(reference[index][key],state[key]))
-  worlds.append(dict(stage=name,native_sha256=NATIVE_SHA256,initial=state,case=n.case,ptrs=n.ptrs,theater=t,assets=assets,readers=r.snapshot(),regions=[(a,b-a+1,perms,bytes(n.uc.mem_read(a,b-a+1)))for a,b,perms in n.uc.mem_regions()if a==0x24000000 or a>=0x40000000],globals=[(a,bytes(n.uc.mem_read(a,size)))for a,size in global_ranges],code_hash=n.code_hash,rules_cliff=bytes(n.uc.mem_read(r.rules+0x664,1)),sweeps=n.sweeps))
+  worlds.append(dict(stage=name,initial=state,case=n.case,ptrs=n.ptrs,theater=t,assets=assets,readers=r.snapshot(),regions=[(a,b-a+1,perms,bytes(n.uc.mem_read(a,b-a+1)))for a,b,perms in n.uc.mem_regions()if a==0x24000000 or a>=0x40000000],globals=[(a,bytes(n.uc.mem_read(a,size)))for a,size in global_ranges],code_hash=n.code_hash,rules_cliff=bytes(n.uc.mem_read(r.rules+0x664,1)),sweeps=n.sweeps))
   print('PASS native physical world',name,'matches all frozen cells/planes/graphs',flush=True)
  capture('healthy',0)
  for index,(name,fn,coord)in enumerate([('damaged',0x57CCF0,n.case['impact']),('collapsed',0x57CCF0,n.case['impact']),('repaired',0x573540,n.case['start'])],1):
@@ -272,7 +269,7 @@ def run(world,frames=60):
  finally:
   if q:q.close()
   lists_owner.HEAP,reader_owner.HEAP=original_heaps
- result=dict(schema=1,failure=failure,source_pins=sources(),states=states,world=getattr(q,'world',None),inputs=getattr(q,'inputs',None),events=q.events if q else [],extra=q.extra if q else [],timeline=q.timeline if q else [],writes=q.memwrites if q else [],queries=q.physical_queries if q else [],flow=q.flow if q else [],candidates=q.candidates if q else [],geometry=q.geometry if q else [],hierarchy=q.hierarchy if q else [],frames=q.frames if q else [],shots=q.shots if q else [],last=q.full_state()if q and q.src else None)
+ result=dict(schema=1,failure=failure,states=states,world=getattr(q,'world',None),inputs=getattr(q,'inputs',None),events=q.events if q else [],extra=q.extra if q else [],timeline=q.timeline if q else [],writes=q.memwrites if q else [],queries=q.physical_queries if q else [],flow=q.flow if q else [],candidates=q.candidates if q else [],geometry=q.geometry if q else [],hierarchy=q.hierarchy if q else [],frames=q.frames if q else [],shots=q.shots if q else [],last=q.full_state()if q and q.src else None)
  result.update(lifecycle=q.lifecycle if q else [],navigation_setup=q.navigation_setup if q else None,impacts=q.impacts if q else [],command_bytes=getattr(q,'command_bytes',None),before_command=getattr(q,'before_command',None),after_command=getattr(q,'after_command',None))
  print('RESULT',failure,flush=True)
  if q:assert sha(bytes(q.u.mem_read(0x401000,0x3E0000)))==world['code_hash']
@@ -285,10 +282,8 @@ def generate():
   assert result['failure'] is None,(world['stage'],result['failure'])
   assert len(result['shots'])>=2 and len(result['impacts'])>=2,(world['stage'],'first burst did not impact')
   assert not result['last']['bullet_count'] and not result['last']['anim_count'],(world['stage'],'native burst did not finish in the declared bound')
-  # Source census belongs to the current replay metadata. Every actual native
-  # field and observed heap digest remains protected by the frozen publisher.
-  result.pop('source_pins');rows.append(dict(stage=world['stage'],result=result))
- return dict(schema=1,native_sha256=NATIVE_SHA256,cases=rows)
+  rows.append(dict(stage=world['stage'],result=result))
+ return dict(schema=1,cases=rows)
 
 def metadata():
  result=provenance(scope=__doc__,entry_points={'unit_ctor':0x7353C0,'unit_unlimbo':0x737BA0,'command':0x4C6CB0,'live_logic':0x55B5FF,'unit_ai':0x7360C0,'foot_ai':0x4DA530,'mission_attack':0x4D4DC0,'approach':0x4D5690,'drive_process':0x4B0500,'drive_paid_points':0x4B0F20,'firing_update':0x736DF0,'facing_update':0x736990,'bullet_ai':0x4666E0,'area_damage':0x489280,'concrete_damage':0x57CCF0,'retirement':0x725C70},assumptions=[
@@ -301,7 +296,7 @@ def metadata():
   'Existing bounded native fixture owners provide OS string/CLSID/COM transport, bump allocation and deallocation, selected native INI cache entries and physical SHP transport. Actual Drive/Bullet COM factories execute. Existing setup-only wall-clock and type-visual sinks, radar and sound boundaries are retained and reported as events.',
   'Whole physical-world native heap/global snapshots are supplied inputs; source constructor clock is reset to frame0 before the new lifetime. The existing Mission setup then runs original base connectivity again; the packet distinguishes unchanged native live base labels from exact native post-load rebuilt labels, while retaining the donor live hierarchy.',
   'No original gameplay code or native return values are patched. VM wall-clock allowance for the unchanged Mission-owned loop is60seconds with the original instruction-count guard, to accommodate tracing and concurrent independent replay.'])
- result.update(source_pins=sources(),harness_sha256=sha(Path(__file__).read_bytes()),frozen_source_sha256=json.loads((HERE/'promotion.json').read_bytes())['results']['paid_world_drive_crt.json']['frozen_source_sha256'],supersedes='paid_world.json.gz',publication_changes=['Imported-source census moves to this metadata; the external pickle transport hash is omitted. The original Drive CRT table now executes before construction; the previous image-zero packet is preserved as superseded evidence.','The shared publisher replaces copied lexical INI entries with hashes. The portable native generator must match the original frozen canonical projection even under --write.'])
+ result.update(frozen_source_sha256=json.loads((HERE/'promotion.json').read_bytes())['results']['paid_world_drive_crt.json']['frozen_source_sha256'],supersedes='paid_world.json.gz',publication_changes=['The imported-source census and the external pickle transport hash are omitted. The original Drive CRT table now executes before construction; the previous image-zero packet is preserved as superseded evidence.','The shared publisher replaces copied lexical INI entries with hashes. The portable native generator must match the original frozen canonical projection even under --write.'])
  return result
 
 

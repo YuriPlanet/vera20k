@@ -46,96 +46,26 @@
   ],
   "finalized_utc": "2026-09-27T20:00:02.943777+00:00",
   "frozen_utc": "2026-09-27T19:25:52.965493+00:00",
-  "imported_sources": {
-    "tools/native_oracle.py": "f3f58e1a15a4fd3be9e3bc2030819f079ab9155bdb08833e228c1c661445e51e",
-    "tools/projectile_oracle/bridge_render_inputs.py": "4bfc6d80d7cd0d75f3db0123bb646011b6706f9195a8c1137e0f397941bff9e4",
-    "tools/projectile_oracle/flat_art.py": "2f663fbb2b8c88925dd8aa46e8be9216d580ec033bac3e08a138bcd0b272b7c6",
-    "tools/rmg_oracle/gen_rng_vectors.py": "bac5dde765d07d3f522b7281a21a8527869f5d4da59eb385e7f9fed7493775a2",
-    "tools/rules_oracle/bridge_anim_inputs.py": "f7f2941e11bbede50ffab19554a789e4e3e42f4969b04ad4e9697973e659d316",
-    "tools/rules_oracle/bridge_anim_lists.py": "2a7a96ea1e24f1129161e8fe5608c0ab69ac584ee6ad78fa91c43bd3ad072045",
-    "tools/rules_oracle/bridge_child_sound.py": "ea32c11dbb9f1ee1aeb3cdc1069605658ca100d864e90dacb3cd5bfe8f01c350",
-    "tools/rules_oracle/theater_general_reader.py": "a466f2d5d94e5f4d8908bed0a97c69cf2aeb2d9356694d0af107491349e7afbd",
-    "tools/spatial_oracle/__init__.py": "d2b8761741eec0f99f145b6b84c9efbe5e91a8d08b59b83ef67bef54c75f0415",
-    "tools/spatial_oracle/anytown_damage/__init__.py": "5cca8aa87d9e3c1c8ff349b7a2c105a2bdfbce58bb13acae9fbda5645ef8c66a",
-    "tools/spatial_oracle/anytown_damage/anytown_geometry.py": "012d148f0299bfa6aee589070fb87bfb8ad14ebd09cdc30c3b22bf11df562e69",
-    "tools/spatial_oracle/anytown_damage/anytown_resident.py": "a3fd84ea7a7d038014fac37ebda4e72609f06662619506722fd11318b9d7f285",
-    "tools/spatial_oracle/anytown_damage/hut.py": "000950121c307d77867148f5dd1f023b7dcc0236022d142117c82fe923f98435",
-    "tools/spatial_oracle/anytown_damage/hut_publication.py": "ea7f83f536586f6d2e22351af4cdb007ddc707b6698ef3e6dd13e64382fd2c0f",
-    "tools/spatial_oracle/anytown_damage/inputs.py": "c3e1732837e85deb628f04862aaab8cf72dc3e8ba2804ce55db5dc46f2a68f25",
-    "tools/spatial_oracle/anytown_damage/next_family_native.py": "b5545ca21bc1b678335dfe74f0eda02b3af4f013d37a965529243c0d170b8881",
-    "tools/spatial_oracle/anytown_damage/publication.py": "9331a5cc2c46ff487774b898918f267df740347dcb1745b23364703f9e24d650",
-    "tools/spatial_oracle/anytown_damage/validate_packet.py": "cec57a1afbc65fb05ce2f3c8059ceb7d5c66c5315f616db7bfc834cc93e6b6f0",
-    "tools/spatial_oracle/bridge_rim.py": "4227c24dcd27ea44a2de55a866057b1accffee8106c5029dedf0171b776fa32b",
-    "tools/spatial_oracle/building_body_rules.py": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
-    "tools/spatial_oracle/map_queries.py": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305",
-    "tools/spatial_oracle/mapgen_range.py": "df39b5ab3a2450c98dfa749a67826d5cb87f9d73086dc2511ff3261906724eef",
-    "tools/spatial_oracle/shrapnel_repair/__init__.py": "181c307c7f2f1767bee7fc8812eb72698df94241d26c669526254bf13084e003",
-    "tools/spatial_oracle/shrapnel_repair/map_facts.py": "8fec739ee85c0110096180ae7c7712ad96e5191752ec9362dc3d9eb21e5d6768",
-    "tools/spatial_oracle/shrapnel_repair/packet_io.py": "80d7a5dd328c47c9fe453d0048c5ae116feef741220537f1d1dc4e587387b865",
-    "tools/spatial_oracle/shrapnel_repair/production_inputs.py": "0e29a8c5bac7eb2f6f8819e6d54b2959045f3205e4930c162e96e479bef76289",
-    "tools/spatial_oracle/shrapnel_repair/retail_inputs.py": "5386be531deb221b2abf0a06cf46371937a3134fd4fdde142a7d20fc97691400",
-    "tools/spatial_oracle/shrapnel_repair/shrapnel_repair.py": "766d30e22188ef36c66a940eb4546ad52e025fa80e80c864a9644a1a4662b27c",
-    "tools/spatial_oracle/shrapnel_repair/validate_packet.py": "52ec7ec8d9b126b5d4bde9055b18618165240c39d27420c56d458fc7cc5260d4"
-  },
   "inputs": "Existing retail_manifest roots; separate RA2_DIR archive_roots belong to navigation and are not added to the hut payload.",
   "mission_registration": {
     "compressed_native_result_byte_identical": true,
     "prior_receipt_sha256": "09b512140a661d4b8cf52fc632745672862cc977d2e6c8f17239a0b4c8c54592"
   },
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
-  "original_payload_sha256": "4b1f825f1300048af10cb3eef0b55e9f5a675d44bb7e49e17b33af9c768b51a3",
+  "original_payload_sha256": "51a58c909583e7f362c6237257905df5148b4a850ffb03de4fd411f5230bbaa3",
   "original_receipt": "anytown-hut-native/receipt.json",
   "original_receipt_sha256": "a991b9d8e629321dc17c8c1c651421304e8882c4a775eb12484870c6747f724f",
   "owned": {
-    "hut.json.gz": "624dface5dfb18ce8f517879c0dd1ced7b5cb24881cdbb2702b31899aa62b06f",
-    "hut.md": "114367c3c27e04fb79a2f12dbbbeef4292aef76fcb3264df8b8b18b24c4fa23c",
+    "hut.json.gz": "17a323bb9b789eb5ba13538022b66cc8ab4913aadb7e52eaeeb4c38d6aa4728d",
     "hut.meta.json": "0d57ea0a8e9664db005748a6c28fc3d581c16eeae1dca60ddd44d06a42196ae8",
-    "hut.py": "000950121c307d77867148f5dd1f023b7dcc0236022d142117c82fe923f98435",
-    "hut_callsite_bytes.json": "dd1210b17a429b1fefde113f12ddc74e2d95e23e9c961e5e1998c04fe7cf9bba",
-    "hut_promotion.json": "8519a2f8335746a09d83bfdf11a35d80cd80d7d0d824d6551f44c864feb7a98f",
-    "hut_publication.py": "ea7f83f536586f6d2e22351af4cdb007ddc707b6698ef3e6dd13e64382fd2c0f",
-    "hut_summary.json.gz": "d35da0044074ffbd6376315540df63a8732ec4523b04b7cf7832cccf069c2a19",
-    "hut_test_vectors.json": "b9f7fd6921bb04fd4bc29f54babf9ef04a7560dff1c6c1c632f2a0274aacfab4",
-    "hut_test_vectors.meta.json": "bd082a1ac67599f6ceee78876352ee2b512920057fa967f23bea8b3fd319a2d2",
-    "hut_test_vectors.py": "d4bf8a42414b011a27ab778af251bf00b21b1ed80c29ea868cfc6a835db23cf5"
+    "hut_callsite_bytes.json": "b50c5a48dc7fb4321d7891c83216620be1b46e1de4a1747f4c8cea9aab61aa48",
+    "hut_promotion.json": "9b6bbbfc28cef65808a29a6f1ab1860e7743dcee0b1a67ffeebca73bd76aa888",
+    "hut_summary.json.gz": "ff5eb5a40970493f00f6a4e18a9895fb54d427ddeef313fcae946a280c61090a",
+    "hut_test_vectors.json": "d759c132c069a2561d26b1c9410ec2b14419b07713c0f27d47f5cba5de1095d6",
+    "hut_test_vectors.meta.json": "32d65c0a032be12c9e3f6765d8b62a8b4d7c1293f26a3706e996c6f127b83ad4"
   },
-  "published_payload_sha256": "b6a0af36a3d5b945b380e3bb60f805aa632097f70267d56eb711e10970ad9765",
-  "resident_selection_compatibility_refresh": {
-    "all_31_frozen_payload_inputs_and_evidence_byte_identical": true,
-    "change": "ResidentRepair accepts an optional physical resident_cells selection for the joined Shrapnel hut witness. Omission preserves the original nine cells and native binding/Recalc order. No Anytown owner or gameplay body changed.",
-    "historical_bridge_concrete_validation_unchanged": true,
-    "native_replays": [
-      {
-        "check_log_sha256": "6c90ea7ca1d29926b4c91b2918cd3d2cac6656bfbdb00697676539e42383275a",
-        "module": "tools.spatial_oracle.anytown_damage.hut",
-        "native_gzip_byte_identical": true,
-        "native_gzip_sha256": "624dface5dfb18ce8f517879c0dd1ced7b5cb24881cdbb2702b31899aa62b06f",
-        "write_and_independent_check_exit_codes": [
-          0,
-          0
-        ],
-        "write_log_sha256": "b125f196cf8547a11821627325c6490d3fc2743aa65b8b9d9a016e44a172382c"
-      },
-      {
-        "check_log_sha256": "4c667b5efceb4d801adcf69486e73b2bdee14a894be62e94368d5d56fd1a8c4d",
-        "module": "tools.spatial_oracle.anytown_damage.hut_cursor",
-        "native_gzip_byte_identical": true,
-        "native_gzip_sha256": "6b98261d5685e82bdd103cbfcd1b000dda37cf534bf172d0620fe96fa31d9aa4",
-        "write_and_independent_check_exit_codes": [
-          0,
-          0
-        ],
-        "write_log_sha256": "fb33ff574009231b18ca204066357906dd4d0755876d7d94f99dd3aed19caebf"
-      }
-    ],
-    "new_sha256": "766d30e22188ef36c66a940eb4546ad52e025fa80e80c864a9644a1a4662b27c",
-    "old_sha256": "5f510f31b235acd1749aee6da2f512fbf3381892355b45fd7c5b9bccd472d347",
-    "other_import_pins": "Navigation and mission import the changed module but do not call the extended ResidentRepair constructor. Their import hashes are a compatibility refresh; this record claims no new navigation or mission execution.",
-    "path": "tools/spatial_oracle/shrapnel_repair/shrapnel_repair.py",
-    "recorded_at_utc": "2026-09-27T22:44:37.139783+00:00"
-  },
+  "published_payload_sha256": "a15bbe36b40348bbba40dee338cf07e575b64f0650cb8568a23321d076ce20fb",
   "rust_projection": {
-    "canonical_payload_sha256": "964f5f63d29d890cb985eb89faebf59adfb153e3ee2b09473078f7191d1ffb92",
+    "canonical_payload_sha256": "98d561c0979135e8a3136927e4932e5b26c876ee24db7d620d587f58f64251f2",
     "file": "hut_test_vectors.json",
     "keys": [
       "cases[*].hut",
@@ -153,38 +83,6 @@
     ]
   },
   "schema": 1,
-  "source_changes": [
-    {
-      "new_sha256": "000950121c307d77867148f5dd1f023b7dcc0236022d142117c82fe923f98435",
-      "old_sha256": "2c53d82ec3c724b6ee371434562e60ed877ca73ba09b2c2598efd9e89f37eacd",
-      "path": "anytown_hut.py -> hut.py",
-      "reason": "Packaging imports, repository-root derivation and compressed output path only; all function/class ASTs unchanged."
-    },
-    {
-      "new_sha256": "b5fa98187d9d2644800290ff833ef47bb0ea6a7fed86d1314817afc0b2200cb3",
-      "old_sha256": "ad06758cd5a0435a82f9ef710305398ab8d1b8eb982052797abe222c0d6d2a74",
-      "path": "tools/spatial_oracle/anytown_damage/validate_packet.py",
-      "reason": "Common validator integrates frozen navigation/hut runners and separate archive inputs; default inputs() return remains exact, proven by original hut payload hash."
-    },
-    {
-      "new_sha256": "3b73ea582f5a468c612f9ab214fdfac30377dbfb1114c604bc85a3cab8da515d",
-      "old_sha256": "b5fa98187d9d2644800290ff833ef47bb0ea6a7fed86d1314817afc0b2200cb3",
-      "path": "tools/spatial_oracle/anytown_damage/validate_packet.py",
-      "reason": "Registers the separate eight-case cursor runner/receipt plus pure Rust projection; default physical inputs and six-case native payload remain unchanged. Hut was independently rewritten/checked solely to refresh metadata source identities."
-    },
-    {
-      "new_sha256": "218f7bdd8d1491062fc9bdc8d5610334857d7b9cd6e1c6c346b8b127f33b56fb",
-      "old_sha256": "8ccb07aff4a93ad2adebf3599e9accb4a6413f4042c1174afacc1bd5a9f297af",
-      "path": "hut.meta.json",
-      "reason": "Register mission/counter/interleaving and mission Rust projection in common validator; physical inputs() and original native compressed payload remain unchanged. Metadata source identity refresh only."
-    },
-    {
-      "new_sha256": "cec57a1afbc65fb05ce2f3c8059ceb7d5c66c5315f616db7bfc834cc93e6b6f0",
-      "old_sha256": "3b73ea582f5a468c612f9ab214fdfac30377dbfb1114c604bc85a3cab8da515d",
-      "path": "tools/spatial_oracle/anytown_damage/validate_packet.py",
-      "reason": "Register mission/counter/interleaving and mission Rust projection in common validator; physical inputs() and original native compressed payload remain unchanged. Metadata source identity refresh only."
-    }
-  ],
   "validation": {
     "all_original_function_and_class_asts_unchanged": true,
     "callsite_bytes_identical": true,
@@ -195,15 +93,5 @@
     "native_trace_and_rng_outputs_unchanged": true,
     "original_external_files_unchanged": 14,
     "summary_projection_canonicalized_only": true
-  },
-  "loader_compatibility_refresh": {
-    "kind": "Pinned loader source-provenance compatibility; no game-function replay",
-    "original_execution_source_sha256": "dd5dbf5f3532b0eb20d761b8637c18ca8033317b67e99481f633c45dec6b2de3",
-    "compatible_current_source_sha256": "f3f58e1a15a4fd3be9e3bc2030819f079ab9155bdb08833e228c1c661445e51e",
-    "evidence": "tools/spatial_oracle/shrapnel_damage/loader_compatibility.json",
-    "evidence_sha256": "c7050e54e7abe3bfb532bbb523f3ed2ea95ee6ffe603a6353f88dd17d64c2227",
-    "receipt": "tools/spatial_oracle/shrapnel_damage/loader_compatibility_receipt.json",
-    "native_payloads_unchanged": true,
-    "historical_execution_and_compatibility_records_preserved": true
   }
 }
