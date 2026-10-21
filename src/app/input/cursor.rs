@@ -2366,7 +2366,18 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                         .unwrap();
                 let feedback =
                     force_fire_feedback(&sim, actor, &target, selected_count, Some(&rules), None)
-                        .unwrap();
+                        .unwrap_or_else(|| {
+                            Some(empty_cell_cursor(
+                                &sim,
+                                Some(&rules),
+                                None,
+                                sim.session().current_house(),
+                                Some(actor),
+                                (x, 2),
+                                super::super::context_order::OrderModifier::ForceFire,
+                                crate::app::types::OrderMode::Move,
+                            ))
+                        });
                 let cursor = feedback
                     .and_then(super::cursor_id_for_feedback)
                     .unwrap_or(CursorId::Default);
@@ -2419,9 +2430,23 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                 Some(Some(CursorFeedbackKind::EnemyUnit)),
                 "stationary actor's in-range ground uses the red attack cursor"
             );
+            let feedback =
+                force_fire_feedback(&sim, actor, &TargetKind::Cell(20, y), 1, Some(&rules), None)
+                    .unwrap_or_else(|| {
+                        Some(empty_cell_cursor(
+                            &sim,
+                            Some(&rules),
+                            None,
+                            sim.session().current_house(),
+                            Some(actor),
+                            (20, y),
+                            super::super::context_order::OrderModifier::ForceFire,
+                            crate::app::types::OrderMode::Move,
+                        ))
+                    });
             assert_eq!(
-                force_fire_feedback(&sim, actor, &TargetKind::Cell(20, y), 1, Some(&rules), None),
-                Some(None),
+                feedback,
+                Some(CursorFeedbackKind::Default),
                 "stationary actor's out-of-range action retains the default arrow"
             );
         }

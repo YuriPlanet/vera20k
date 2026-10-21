@@ -6757,7 +6757,20 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         );
         assert!(mixed.consumed);
         assert!(!mixed.select_fallback);
-        assert_eq!(mixed.receivers, [stationary, mobile].into_iter().collect());
+        assert_eq!(mixed.receivers, [mobile].into_iter().collect());
+        assert_eq!(
+            crate::app::input::commands::ordinary_cell_move_goal(
+                &sim,
+                &rules,
+                Some(&registry),
+                house.unwrap(),
+                stationary,
+                (20, 2),
+                false,
+            ),
+            None,
+            "the remaining stationary receiver cannot commit a Cell move"
+        );
         assert_eq!(mixed.commands.len(), 1);
         assert!(
             matches!(mixed.commands[0], Command::ForceAttackCell { attacker_id, .. } if attacker_id==mobile)

@@ -197,6 +197,20 @@ fn ares_no_manual_fire_object_click_keeps_native_movement_fallback() {
                 !dispatch.receivers.contains(&actor),
                 "rejected attack keeps the ordinary Cell-move receiver"
             );
+            let owner = sim.entities().get(actor).unwrap().owner();
+            assert_eq!(
+                crate::app::input::commands::ordinary_cell_move_goal(
+                    &sim,
+                    &battle.rules,
+                    Some(&overlays),
+                    owner,
+                    actor,
+                    (12, 10),
+                    false,
+                ),
+                Some((12, 10)),
+                "the production clicked-Cell resolver supplies the ordinary Move destination"
+            );
         }
     }
 }
