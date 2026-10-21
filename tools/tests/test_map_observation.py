@@ -4093,6 +4093,40 @@ class MapObservationTests(unittest.TestCase):
                          ['payload']['LaunchSuperWeapon']['sw_type_id'], 'IronCurtainSpecial')
         self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
 
+    def test_tracked_production_profiles_bind_named_types_after_interner_reordering(self):
+        # Synthetic child witnesses exercise the production profile/binding
+        # validators; they do not establish successful in-game production.
+        registry = [
+            {'type_id': 'GAPOWR', 'interned_id': 907, 'category': 'Structure'},
+            {'type_id': 'GAPILE', 'interned_id': 1203, 'category': 'Structure'},
+            {'type_id': 'E1', 'interned_id': 55, 'category': 'Infantry'},
+        ]
+        for name in ('barracks-output', 'building-opening', 'barracks-interframe-rally'):
+            with self.subTest(profile=name):
+                path = observation.ROOT / f'tools/map_observation.{name}.example.json'
+                profile = json.loads(path.read_text())
+                observation._profile_extensions(profile)
+                commands = [row for row in profile['commands']
+                            if next(iter(row['payload'])) in ('QueueProduction', 'PlaceReadyBuilding')]
+                expected = ['GAPOWR', 'GAPOWR', 'GAPILE', 'GAPILE', 'E1']
+                if name != 'building-opening':
+                    expected.append('E1')
+                self.assertEqual([next(iter(row['payload'].values()))['type_id']
+                                  for row in commands], expected)
+                self.assertEqual(profile['schema_version'], observation.PROFILE_V3)
+                for ordinal, request in enumerate(commands):
+                    variant, arguments = next(iter(request['payload'].items()))
+                    binding = next(row for row in registry if row['type_id'] == arguments['type_id'])
+                    receipt = deepcopy(request)
+                    receipt['payload'][variant]['type_id'] = binding['interned_id']
+                    receipt['bindings'] = {f'/{variant}/type_id': deepcopy(binding)}
+                    label = f'{name}.commands[{ordinal}]'
+                    self.assertEqual(observation._command_bindings(
+                        receipt, request, registry, label), 1)
+                    receipt['payload'][variant]['type_id'] += 1
+                    with self.assertRaises(ValidationError):
+                        observation._command_bindings(receipt, request, registry, label)
+
     def test_symbolic_receipts_reject_wrong_binding_or_unbound_argument_changes(self):
         self.symbolic_profile()
         mutations = [
