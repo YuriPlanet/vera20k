@@ -298,7 +298,7 @@ impl MinimapRenderer {
         } else {
             // A stale/restore reconcile is not itself an action-40 firing.
             self.radar_tracker.reset_for_load_or_view();
-            self.radar_events.reset_for_load_or_view();
+            self.radar_events.restart_tracker_baseline();
         }
 
         gpu.queue.write_texture(
@@ -348,8 +348,21 @@ impl MinimapRenderer {
         self.last_radar_terrain_dirty_generation = u64::MAX;
         self.installed_playfield_authority = None;
         self.radar_tracker.reset_for_load_or_view();
-        self.radar_events.reset_for_load_or_view();
+        self.radar_events.restart_tracker_baseline();
         self.viewport_state.reset_for_rebuild();
+    }
+
+    pub(crate) fn saved_radar_events(
+        &self,
+    ) -> crate::sim::snapshot::saved_local_view::SavedRadarEvents {
+        self.radar_events.saved()
+    }
+
+    /// Successful Load660840/PostLoad660C50 replaces the live alert array,
+    /// retaining animation while the already-prepared owner has an empty
+    /// review ring and a fresh sighting baseline.
+    pub(crate) fn restore_radar_events(&mut self, events: ClientRadarEvents) {
+        self.radar_events = events;
     }
 
     /// Update the minimap texture with unit dot overlays from the ECS world.
@@ -413,7 +426,7 @@ impl MinimapRenderer {
             // view-owner switch must rebuild, not reuse the other client's
             // ordered tracker.
             self.radar_tracker.reset_for_load_or_view();
-            self.radar_events.reset_for_load_or_view();
+            self.radar_events.reset_for_view_change();
         }
         let size: u32 = MINIMAP_WIDTH;
         {

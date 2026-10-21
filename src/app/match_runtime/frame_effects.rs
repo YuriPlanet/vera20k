@@ -207,6 +207,58 @@ impl SoundBoundary for FrameClientBoundary<'_> {
 }
 
 #[cfg(test)]
+mod radar_persistence_tests {
+    use super::*;
+    use crate::render::radar::{ClientRadarEvents, saved_radar_fixture};
+    use crate::sim::radar::{RadarEventRequest, RadarEventType};
+
+    #[test]
+    fn same_frame_admission_does_not_tick_restored_alerts_twice() {
+        let saved = saved_radar_fixture();
+        let retained_count = saved.events.len();
+        let mut restored = ClientRadarEvents::from_saved(saved.clone()).unwrap();
+        let mut uninterrupted = ClientRadarEvents::from_saved(saved).unwrap();
+        let mut sim = Simulation::with_seed(73);
+        sim.session_mut_for_test().set_tick_for_test(100);
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+            return;
+        };
+        let mut sounds = SoundEventQueue::new();
+        {
+            let mut admit = |request, frame, rules: &RuleSet| {
+                restored.admit(
+                    request,
+                    frame,
+                    Some(((50, 50), (140, 108))),
+                    &rules.radar_event_config,
+                )
+            };
+            let boundary = FrameClientBoundary::new(None, None, &mut sounds, &mut admit);
+            // Action55 flushes this boundary before complete_tick increments
+            // the simulation frame, which may already have been presented.
+            boundary.consume(
+                &sim,
+                &rules,
+                &[SimSoundEvent::RadarEvent {
+                    radar: RadarEventRequest::new(RadarEventType::Noncombat, 147, 99),
+                }],
+            );
+            assert_eq!(boundary.delivered(), 1);
+        }
+        restored.advance_to_frame(101, &rules.radar_event_config);
+        uninterrupted.advance_to_frame(101, &rules.radar_event_config);
+        let after = restored.saved();
+        assert_eq!(after.events.len(), retained_count + 1);
+        assert_eq!(
+            after.events[..retained_count],
+            uninterrupted.saved().events,
+            "a later alert must not replay a retained alert's previous animation frame"
+        );
+        assert_eq!(after.last_advanced_frame, Some(101));
+    }
+}
+
+#[cfg(test)]
 mod network_command_tests {
     use super::*;
     use crate::sim::house_state::HouseState;

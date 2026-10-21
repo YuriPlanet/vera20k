@@ -127,6 +127,9 @@ impl CampaignStartTarget {
     fn explicit_scenario(self) -> Option<&'static str> {
         match self {
             Self::ExplicitFirstLive(scenario) => Some(scenario),
+            Self::Opening(OpeningTarget::RadarAlert | OpeningTarget::RadarRestored) => {
+                Some("SOV02SMD.MAP")
+            }
             Self::Restart(RestartTarget::ObjectiveExpiry) => Some("SOV02SMD.MAP"),
             _ => None,
         }

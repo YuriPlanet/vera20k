@@ -188,6 +188,7 @@ pub(crate) fn commit_prepared_load(
     }
     if let Some(minimap) = state.match_state.match_presentation.minimap.as_mut() {
         minimap.mark_stale();
+        minimap.restore_radar_events(committed.radar_events);
     }
     // Replaces every outgoing cursor mode, including the targeting and
     // Repair/Sell modes, with the saved Display's.

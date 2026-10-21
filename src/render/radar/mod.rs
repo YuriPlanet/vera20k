@@ -5,6 +5,9 @@
 pub mod anim;
 mod current_cell;
 mod events;
+#[cfg(test)]
+pub(crate) use events::saved_radar_fixture;
+pub(crate) use events::{ClientRadarEvents, SavedRadarEventsError};
 pub(super) mod geometry;
 mod helpers;
 mod interaction;

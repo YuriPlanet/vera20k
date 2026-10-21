@@ -639,6 +639,12 @@ impl ShellCaptureCheckpoint {
             "campaign-sov1-opening-timer-expired" => {
                 Ok(Self::CampaignOpening(movies::OpeningTarget::TimerExpired))
             }
+            "campaign-sov2-radar-alert" => {
+                Ok(Self::CampaignOpening(movies::OpeningTarget::RadarAlert))
+            }
+            "campaign-sov2-radar-restored" => {
+                Ok(Self::CampaignOpening(movies::OpeningTarget::RadarRestored))
+            }
             CHECKPOINT_CAMPAIGN_SOV1_OPENING_RESTORE_UNLOCKED => Ok(Self::CampaignOpening(
                 movies::OpeningTarget::RestoreUnlocked,
             )),
@@ -802,6 +808,10 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignOpening(movies::OpeningTarget::TimerExpired) => {
                 "campaign-sov1-opening-timer-expired"
+            }
+            Self::CampaignOpening(movies::OpeningTarget::RadarAlert) => "campaign-sov2-radar-alert",
+            Self::CampaignOpening(movies::OpeningTarget::RadarRestored) => {
+                "campaign-sov2-radar-restored"
             }
             Self::CampaignBackReturn => CHECKPOINT_CAMPAIGN_BACK_RETURN,
             Self::LoadSavedGame0xB7Steady => CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY,
@@ -2790,6 +2800,16 @@ mod tests {
             (
                 "campaign-sov1-opening-timer-expired",
                 movies::OpeningTarget::TimerExpired,
+                Soviet,
+            ),
+            (
+                "campaign-sov2-radar-alert",
+                movies::OpeningTarget::RadarAlert,
+                Soviet,
+            ),
+            (
+                "campaign-sov2-radar-restored",
+                movies::OpeningTarget::RadarRestored,
                 Soviet,
             ),
             (

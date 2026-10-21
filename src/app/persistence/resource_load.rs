@@ -48,6 +48,7 @@ struct PreparedSavedResources {
     map: SavedMapMetadata,
     local_view: PreparedSavedLocalView,
     power_bar_anim: PowerBarAnimState,
+    radar_events: crate::render::radar::ClientRadarEvents,
     tile_cache: TileVariantSelectorCache,
     theater: theater::TheaterData,
     elapsed_clock: crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
@@ -59,6 +60,7 @@ pub(crate) struct CommittedSavedGame {
     pub(crate) terrain_grid: Option<TerrainGrid>,
     pub(crate) local_view: PreparedSavedLocalView,
     pub(crate) power_bar_anim: PowerBarAnimState,
+    pub(crate) radar_events: crate::render::radar::ClientRadarEvents,
     pub(crate) details: CommittedLoadPresentation,
     pub(crate) elapsed_clock: crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
 }
@@ -101,6 +103,11 @@ impl PreparedSavedGame {
         let power_bar_anim = PowerBarAnimState::from_saved(saved_view.take_power_bar().ok_or(
             crate::sim::snapshot::saved_local_view::SavedLocalViewError::MissingPowerBar,
         )?)?;
+        let radar_events = crate::render::radar::ClientRadarEvents::from_saved(
+            saved_view
+                .take_radar_events()
+                .ok_or(crate::render::radar::SavedRadarEventsError::Missing)?,
+        )?;
         if saved.fixed_art_hash() != view.rules_owner.fixed_art().content_hash() {
             return Err(PreparedLoadError::Resources(
                 "fixed ARTMD differs from the saved game".into(),
@@ -230,6 +237,7 @@ impl PreparedSavedGame {
             map,
             local_view,
             power_bar_anim,
+            radar_events,
             tile_cache,
             theater,
             elapsed_clock,
@@ -347,6 +355,7 @@ impl PreparedSavedGame {
             map,
             local_view,
             power_bar_anim,
+            radar_events,
             tile_cache,
             elapsed_clock,
             ..
@@ -378,6 +387,7 @@ impl PreparedSavedGame {
             terrain_grid: self.terrain_grid,
             local_view,
             power_bar_anim,
+            radar_events,
             details,
             elapsed_clock,
         }

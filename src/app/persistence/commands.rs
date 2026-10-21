@@ -209,6 +209,10 @@ fn prepare_save<'a>(
         &presentation.sidebar_gadget_state,
     )?;
     local_view.set_power_bar(presentation.power_bar_anim.saved());
+    local_view.set_radar_events(presentation.minimap.as_ref().map_or_else(
+        Default::default,
+        crate::render::radar::minimap::MinimapRenderer::saved_radar_events,
+    ));
     log::debug!(
         "Save: captured Power at {}ms: {:?}",
         state.radar_presentation_ms(),
@@ -468,6 +472,7 @@ fn log_prepared_load_error(
         PreparedLoadError::Resources(_)
         | PreparedLoadError::Rules(_)
         | PreparedLoadError::Terrain(_)
+        | PreparedLoadError::RadarEvents(_)
         | PreparedLoadError::LocalView(_) => {
             log::error!("Load: {error}")
         }

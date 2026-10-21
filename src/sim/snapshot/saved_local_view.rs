@@ -29,6 +29,33 @@ pub struct SavedPowerBar {
     pub animating: bool,
 }
 
+/// Neutral transport for the client-owned RadarEvent array. Native
+/// Save6607D0/Load660840 copy live records; PostLoad6851DF->660C50 clears
+/// the separate Spacebar ring, so that ring is deliberately absent here.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedRadarEvents {
+    pub events: Vec<SavedRadarEvent>,
+    pub last_advanced_frame: Option<u64>,
+}
+
+/// Animation scalars retain their binary32 bits without moving presentation
+/// decisions into sim. The render owner validates and hydrates this record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedRadarEvent {
+    pub event_type: crate::sim::radar::RadarEventType,
+    pub cell: (u16, u16),
+    pub radar_pixel: (i32, i32),
+    pub created_frame: u64,
+    pub radius: u32,
+    pub rotation: u32,
+    pub rotation_speed: u32,
+    pub fade: u32,
+    pub fade_speed: u32,
+    pub expanding: bool,
+    pub needs_draw: bool,
+    pub phase_started_frame: Option<u64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SavedLocalView {
     /// Raw signed CellStruct words preserved in the app's u16 bit-pattern form.
@@ -43,6 +70,7 @@ pub struct SavedLocalView {
     /// The save coordinator attaches the Power owner's projection after the
     /// input owner supplies its own facts. App loads require this payload.
     power_bar: Option<SavedPowerBar>,
+    radar_events: Option<SavedRadarEvents>,
 }
 
 /// The Display's armed cursor modes. MouseLoad5BDF70 reads the whole Display
@@ -106,6 +134,7 @@ impl SavedLocalView {
             follow_target,
             modes,
             power_bar: None,
+            radar_events: None,
         };
         saved.validate_structure()?;
         Ok(saved)
@@ -160,6 +189,14 @@ impl SavedLocalView {
 
     pub fn take_power_bar(&mut self) -> Option<SavedPowerBar> {
         self.power_bar.take()
+    }
+
+    pub fn set_radar_events(&mut self, radar_events: SavedRadarEvents) {
+        self.radar_events = Some(radar_events);
+    }
+
+    pub fn take_radar_events(&mut self) -> Option<SavedRadarEvents> {
+        self.radar_events.take()
     }
 
     pub fn into_local_input(

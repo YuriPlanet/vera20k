@@ -120,6 +120,8 @@ pub(crate) enum PreparedLoadError {
     Terrain(#[from] crate::map::resolved_terrain::SavedTerrainError),
     #[error(transparent)]
     LocalView(#[from] crate::sim::snapshot::saved_local_view::SavedLocalViewError),
+    #[error(transparent)]
+    RadarEvents(#[from] crate::render::radar::SavedRadarEventsError),
 }
 
 /// Fully validated, cache-rebuilt replacement state ready for one infallible commit.

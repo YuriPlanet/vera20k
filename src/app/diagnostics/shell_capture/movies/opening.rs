@@ -28,6 +28,10 @@ pub enum OpeningTarget {
     /// SOV01 timer actions replayed after opening unlock, then ordinary expiry.
     TimerRunning,
     TimerExpired,
+    /// SOV02's ordinary briefing Action55 creates a type-5 alert.
+    RadarAlert,
+    /// Save/load that naturally created alert, then present the restored radar.
+    RadarRestored,
 }
 
 impl OpeningTarget {
@@ -44,6 +48,8 @@ impl OpeningTarget {
             Self::AlliedTick(_) => "opening-allied-tick",
             Self::TimerRunning => "opening-timer-running",
             Self::TimerExpired => "opening-timer-expired",
+            Self::RadarAlert => "radar-alert",
+            Self::RadarRestored => "radar-restored",
         }
     }
 
@@ -91,6 +97,7 @@ pub(super) struct OpeningCapture {
     steps_after_load: u32,
     /// The (tick, binary frame) a load installed, until the next step.
     loaded_frame: Option<(u64, u32)>,
+    saved_radar: Option<crate::sim::snapshot::saved_local_view::SavedRadarEvents>,
 }
 
 impl OpeningCapture {
@@ -117,6 +124,7 @@ impl OpeningCapture {
             load_while_locked: None,
             steps_after_load: 0,
             loaded_frame: None,
+            saved_radar: None,
         }
     }
 
@@ -129,6 +137,39 @@ impl OpeningCapture {
     }
 
     pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
+        if matches!(
+            self.target,
+            OpeningTarget::RadarAlert | OpeningTarget::RadarRestored
+        ) {
+            let Some(expected) = self.saved_radar.as_ref() else {
+                return Ok(false);
+            };
+            let radar = state
+                .match_state
+                .match_presentation
+                .minimap
+                .as_ref()
+                .context("restored radar")?;
+            let actual = radar.saved_radar_events();
+            // after_present may have just resumed the first gameplay frame
+            // after load. Wait for its minimap draw before comparing it.
+            if actual.last_advanced_frame < expected.last_advanced_frame {
+                return Ok(false);
+            }
+            ensure!(
+                actual == *expected,
+                "first radar redraw changed the retained alert state: actual={actual:?}, expected={expected:?}"
+            );
+            let visible = state
+                .match_state
+                .match_presentation
+                .radar_anim
+                .as_ref()
+                .is_none_or(|radar| radar.is_minimap_visible());
+            return Ok(
+                visible && (self.target == OpeningTarget::RadarAlert || self.restored.is_some())
+            );
+        }
         let sim = &state
             .match_state
             .sim_runtime
@@ -160,6 +201,7 @@ impl OpeningCapture {
                 OpeningTarget::TimerExpired => {
                     self.saw_countdown && sim.session().scenario_timer_view().is_none()
                 }
+                OpeningTarget::RadarAlert | OpeningTarget::RadarRestored => unreachable!(),
             })
     }
 
@@ -178,18 +220,43 @@ impl OpeningCapture {
             });
             // A real pointer press before the first authored lock. Action46
             // must cancel its capture while preserving physical button state.
-            crate::app::input::dispatch::handle_mouse_input(
-                state,
-                MouseButton::Left,
-                ElementState::Pressed,
-            );
+            if !matches!(
+                self.target,
+                OpeningTarget::RadarAlert | OpeningTarget::RadarRestored
+            ) {
+                crate::app::input::dispatch::handle_mouse_input(
+                    state,
+                    MouseButton::Left,
+                    ElementState::Pressed,
+                );
+            }
         }
         self.observe(state)?;
+        if matches!(
+            self.target,
+            OpeningTarget::RadarAlert | OpeningTarget::RadarRestored
+        ) {
+            self.capture_radar_load(state)?;
+            if self.saved_radar.is_some() {
+                return Ok(());
+            }
+        }
         let locked = crate::app::input::campaign_input::is_locked(state);
-        if locked && self.lock_probe.is_none() {
+        if !matches!(
+            self.target,
+            OpeningTarget::RadarAlert | OpeningTarget::RadarRestored
+        ) && locked
+            && self.lock_probe.is_none()
+        {
             self.lock_probe = Some(probe_arrow_edge(state, true)?);
             self.locked_mouse_probe = Some(probe_locked_mouse_edges(state)?);
-        } else if self.saw_unlock && !locked && self.unlock_probe.is_none() {
+        } else if !matches!(
+            self.target,
+            OpeningTarget::RadarAlert | OpeningTarget::RadarRestored
+        ) && self.saw_unlock
+            && !locked
+            && self.unlock_probe.is_none()
+        {
             self.unlock_probe = Some(probe_arrow_edge(state, false)?);
             self.unlocked_mouse_probe = Some(probe_unlocked_mouse_edges(state)?);
         }
@@ -281,6 +348,83 @@ impl OpeningCapture {
         }
         self.steps.push(receipt);
         self.observe(state)?;
+        Ok(())
+    }
+
+    fn capture_radar_load(&mut self, state: &mut AppState) -> Result<()> {
+        if self.saved_radar.is_some() {
+            return Ok(());
+        }
+        let Some(minimap) = state.match_state.match_presentation.minimap.as_ref() else {
+            return Ok(());
+        };
+        let before = minimap.saved_radar_events();
+        // SOV02's ordinary briefing: Action55 type5 at waypoint1=(80,58).
+        // No radar request or gameplay order is injected by this capture.
+        if !before.events.iter().any(|event| {
+            event.event_type == crate::sim::radar::RadarEventType::EnemyObjectSensed
+                && event.cell == (80, 58)
+                && event.needs_draw
+        }) {
+            return Ok(());
+        }
+        self.saved_radar = Some(before.clone());
+        if self.target == OpeningTarget::RadarAlert {
+            return Ok(());
+        }
+        state
+            .persistence
+            .isolate_capture_saves(&self.save_directory)?;
+        let ring_before = state
+            .match_state
+            .match_presentation
+            .minimap
+            .as_mut()
+            .unwrap()
+            .cycle_radar_event(Instant::now());
+        ensure!(
+            ring_before.is_some(),
+            "authored alert did not enter the review ring"
+        );
+        let path =
+            crate::app::persistence::commands::save_game(state, "SOV02 live radar alert", None)?;
+        crate::app::persistence::commands::try_load_save_file(state, &path)?;
+        let minimap = state
+            .match_state
+            .match_presentation
+            .minimap
+            .as_mut()
+            .context("incoming saved radar")?;
+        let after = minimap.saved_radar_events();
+        ensure!(
+            before == after,
+            "ordinary load discarded saved radar alerts"
+        );
+        ensure!(
+            minimap.cycle_radar_event(Instant::now()).is_none(),
+            "load retained outgoing Spacebar history"
+        );
+        // The ordinary post-load frame refreshes House-derived radar
+        // availability. Freezing before it leaves the newly installed radar
+        // housing offline, even though its live alert array loaded correctly.
+        let receipt =
+            crate::app::match_runtime::sim_tick::advance_in_game_runtime_exact_step(state)?;
+        let mut expected = crate::render::radar::ClientRadarEvents::from_saved(before.clone())?;
+        expected.advance_to_frame(
+            receipt.tick_after,
+            &state
+                .rules()
+                .context("restored radar rules")?
+                .radar_event_config,
+        );
+        self.saved_radar = Some(expected.saved());
+        self.steps.push(receipt);
+        self.restored = Some(
+            json!({"path":path,"radar_before":before,"radar_after_load":after,
+            "ring_before":ring_before,"ring_after":null,
+            "first_resumed_frame":receipt,
+            "scope":"ordinary SOV02 briefing Action55 type5 at waypoint1; explicit campaign admission, no preceding mission completion; normal VERA save/load; first radar redraw checked separately"}),
+        );
         Ok(())
     }
 
@@ -474,6 +618,10 @@ impl OpeningCapture {
             "locked_mouse_probe": self.locked_mouse_probe,
             "unlocked_mouse_probe": self.unlocked_mouse_probe,
             "save_restore": self.restored, "current": opening_observation(state)?,
+            "retained_radar": self.saved_radar,
+            "radar_display": state.match_state.match_presentation.radar_anim.as_ref()
+                .map(|radar| json!({"phase": format!("{:?}", radar.phase()),
+                    "minimap_visible": radar.is_minimap_visible()})),
             "pre_lock_save": self.pre_lock_save, "unlocked_save": self.unlocked_save,
             "load_while_locked": self.load_while_locked,
             "requested_tick": match self.target { OpeningTarget::AlliedTick(tick) => Some(tick), _ => None },

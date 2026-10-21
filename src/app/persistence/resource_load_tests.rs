@@ -203,6 +203,19 @@ fn native_saved_power() -> SavedPowerBar {
     }
 }
 
+fn saved_radar_for_fixture() -> crate::sim::snapshot::saved_local_view::SavedRadarEvents {
+    let mut saved = crate::render::radar::saved_radar_fixture();
+    // Keep this resource fixture's distinct logical/native clocks (91/92).
+    // Shift the live alert fixture's timeline with the restored world.
+    let offset = saved.last_advanced_frame.unwrap() - 91;
+    saved.last_advanced_frame = Some(91);
+    for event in &mut saved.events {
+        event.created_frame -= offset;
+        event.phase_started_frame = event.phase_started_frame.map(|frame| frame - offset);
+    }
+    saved
+}
+
 fn snapshot_bytes(
     runtime: &SimRuntime,
     owner: &NativeRulesProcessOwner,
@@ -234,6 +247,7 @@ fn snapshot_bytes(
     )
     .unwrap();
     view.set_power_bar(native_saved_power());
+    view.set_radar_events(saved_radar_for_fixture());
     GameSnapshot::save_validated_with_presentation(
         &runtime.simulation,
         map.map_hash(),
@@ -267,6 +281,11 @@ fn assert_incoming_resources(
         prepared.power_bar_anim.saved(),
         native_saved_power(),
         "incoming retained Power wins on warm and cold preparation"
+    );
+    assert_eq!(
+        prepared.radar_events.saved(),
+        saved_radar_for_fixture(),
+        "both warm and cold loads transport incoming live alerts"
     );
     let sim = &prepared.world.simulation;
     assert_eq!(
