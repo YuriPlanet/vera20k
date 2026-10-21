@@ -1464,7 +1464,7 @@ fn hunt_march_on_player(
     let _ = sim.assign_destination_represented(
         id,
         Some(crate::sim::components::NavTargetRef::cell(rx, ry)),
-        Some(rules),
+        rules,
         ctx.overlay_registry,
         ctx.effects,
     );
