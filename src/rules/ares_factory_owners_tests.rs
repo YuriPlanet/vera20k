@@ -71,7 +71,7 @@ fn shared_ares_country_find_matches_native_controls_and_rules_projection() {
             .country_veterancy
             .ares
             .buildings = vec!["CONTROL".to_owned()];
-        reader.process_ares_country_veterancy(child, &IniFile::empty());
+        reader.process_ares_country(child, &IniFile::empty(), false);
         let state = &reader.families[&RulesTypeFamily::Country][child]
             .country_veterancy
             .ares;
