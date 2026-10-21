@@ -7,9 +7,9 @@
 //! - unless the type is `Insignificant=` (`+0x232`) or 1x1 with
 //!   `UndeploysInto=` (vt+0x80, `0x00465D40`), the owner's
 //!   `HouseClass::NotifyUnderAttack` (`0x004F93E0`);
-//! - `+0x53C` takes the source house's index (`0x00442980`). A CRC fold and a
-//!   `!= -1` test (`0x0070304D`, `0x007033C3`) are its only readers, and a
-//!   house index never meets that test, so VERA keeps no copy;
+//! - `+0x53C` takes the source house's index (`0x00442980..0x0044298B`),
+//!   before the retaliation gates. RecordKill tests it against -1 to suppress
+//!   a sale's building-loss accounting (`0x0070304D`, `0x007033C3`);
 //! - nothing more when the raw mission (`+0xAC`) is Selling, the owner is
 //!   allied with the source (`0x004F9A90`), weapon 0 cannot aim
 //!   ([`building_weapon0_aims`]), or TarCom is in range of the weapon
@@ -103,12 +103,23 @@ impl Simulation {
             owner: building.owner(),
             victim_type: building.type_ref(),
         });
+        let source_owner = source_entity.owner();
+        let source_category = source_entity.category();
+        //442980..44298B runs for every nonzero receiver result, including
+        // Dead while IsAlive remains set. Insignificant and undeploy only
+        // gate the earlier ping, not this retained House-index write.
+        if let Some(index) = self.houses.index_of(source_owner)
+            && let Some(building) = self.substrate.entities.get_mut(id)
+        {
+            building.record_building_damage_house_index(index as i32);
+        }
+        let building = self.substrate.entities.get(id)?;
         if building.mission.current().known() == Some(MissionType::Selling)
             || is_ally_by_object(
                 Some(self.house_alliances.as_map()),
                 &self.interner,
                 building.owner(),
-                source_entity.owner(),
+                source_owner,
             )
             || !building_weapon0_aims(self, rules, id)
             || building.attack_target.target().is_some_and(|attack| {
@@ -119,7 +130,7 @@ impl Simulation {
             return ping;
         }
         let human = self.owner_is_human(building.owner());
-        if source_entity.category() == EntityCategory::Aircraft
+        if source_category == EntityCategory::Aircraft
             || (human && !rules.general.player_return_fire)
         {
             let frame = self.session.binary_frame();
