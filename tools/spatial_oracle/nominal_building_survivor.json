@@ -1,0 +1,2399 @@
+{
+  "count_histories": [
+    {
+      "initial": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          }
+        },
+        "nominal": 0,
+        "owner": "old"
+      },
+      "input": {
+        "name": "ordinary",
+        "operations": [
+          "add",
+          "remove",
+          "add",
+          "remove"
+        ]
+      },
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_calls": [],
+      "steps": [
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 1,
+                "total": 1
+              }
+            },
+            "nominal": 0,
+            "owner": "old"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 0,
+            "owner": "old"
+          },
+          "counter_calls": [
+            "increment",
+            "increment_slot",
+            "increment_total"
+          ],
+          "operation": "add",
+          "receiver": "old",
+          "stop": "00502C7F"
+        },
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 0,
+            "owner": "old"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 1,
+                "total": 1
+              }
+            },
+            "nominal": 0,
+            "owner": "old"
+          },
+          "counter_calls": [
+            "decrement",
+            "decrement_slot",
+            "decrement_total"
+          ],
+          "operation": "remove",
+          "receiver": "old",
+          "stop": "005029B2"
+        },
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 1,
+                "total": 1
+              }
+            },
+            "nominal": 0,
+            "owner": "old"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 0,
+            "owner": "old"
+          },
+          "counter_calls": [
+            "increment",
+            "increment_slot",
+            "increment_total"
+          ],
+          "operation": "add",
+          "receiver": "old",
+          "stop": "00502C7F"
+        },
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 0,
+            "owner": "old"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 1,
+                "total": 1
+              }
+            },
+            "nominal": 0,
+            "owner": "old"
+          },
+          "counter_calls": [
+            "decrement",
+            "decrement_slot",
+            "decrement_total"
+          ],
+          "operation": "remove",
+          "receiver": "old",
+          "stop": "005029B2"
+        }
+      ]
+    },
+    {
+      "initial": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          }
+        },
+        "nominal": 1,
+        "owner": "old"
+      },
+      "input": {
+        "name": "marked",
+        "nominal": true,
+        "operations": [
+          "add",
+          "remove",
+          "add",
+          "remove"
+        ]
+      },
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_calls": [],
+      "steps": [
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 1,
+            "owner": "old"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 1,
+            "owner": "old"
+          },
+          "counter_calls": [],
+          "operation": "add",
+          "receiver": "old",
+          "stop": "00502D04"
+        },
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": -1,
+                "total": -1
+              }
+            },
+            "nominal": 1,
+            "owner": "old"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 1,
+            "owner": "old"
+          },
+          "counter_calls": [
+            "decrement",
+            "decrement_slot",
+            "decrement_total"
+          ],
+          "operation": "remove",
+          "receiver": "old",
+          "stop": "005029B2"
+        },
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": -1,
+                "total": -1
+              }
+            },
+            "nominal": 1,
+            "owner": "old"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": -1,
+                "total": -1
+              }
+            },
+            "nominal": 1,
+            "owner": "old"
+          },
+          "counter_calls": [],
+          "operation": "add",
+          "receiver": "old",
+          "stop": "00502D04"
+        },
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": -2,
+                "total": -2
+              }
+            },
+            "nominal": 1,
+            "owner": "old"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": -1,
+                "total": -1
+              }
+            },
+            "nominal": 1,
+            "owner": "old"
+          },
+          "counter_calls": [
+            "decrement",
+            "decrement_slot",
+            "decrement_total"
+          ],
+          "operation": "remove",
+          "receiver": "old",
+          "stop": "005029B2"
+        }
+      ]
+    },
+    {
+      "initial": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          }
+        },
+        "nominal": 0,
+        "owner": "old"
+      },
+      "input": {
+        "dont_score": true,
+        "name": "ordinary_dont_score",
+        "operations": [
+          "add",
+          "remove"
+        ]
+      },
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_calls": [],
+      "steps": [
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 0,
+            "owner": "old"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 0,
+            "owner": "old"
+          },
+          "counter_calls": [],
+          "operation": "add",
+          "receiver": "old",
+          "stop": "00502D04"
+        },
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 0,
+            "owner": "old"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 0,
+            "owner": "old"
+          },
+          "counter_calls": [],
+          "operation": "remove",
+          "receiver": "old",
+          "stop": "00502A4C"
+        }
+      ]
+    },
+    {
+      "initial": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          }
+        },
+        "nominal": 1,
+        "owner": "old"
+      },
+      "input": {
+        "dont_score": true,
+        "name": "marked_dont_score",
+        "nominal": true,
+        "operations": [
+          "add",
+          "remove"
+        ]
+      },
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_calls": [],
+      "steps": [
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 1,
+            "owner": "old"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 1,
+            "owner": "old"
+          },
+          "counter_calls": [],
+          "operation": "add",
+          "receiver": "old",
+          "stop": "00502D04"
+        },
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 1,
+            "owner": "old"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 1,
+            "owner": "old"
+          },
+          "counter_calls": [],
+          "operation": "remove",
+          "receiver": "old",
+          "stop": "00502A4C"
+        }
+      ]
+    },
+    {
+      "initial": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 2147483647,
+            "total": 2147483647
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 2147483647,
+            "total": 2147483647
+          }
+        },
+        "nominal": 0,
+        "owner": "old"
+      },
+      "input": {
+        "name": "increment_wrap",
+        "operations": [
+          "add"
+        ],
+        "start": 2147483647
+      },
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_calls": [],
+      "steps": [
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 2147483647,
+                "total": 2147483647
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": -2147483648,
+                "total": -2147483648
+              }
+            },
+            "nominal": 0,
+            "owner": "old"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 2147483647,
+                "total": 2147483647
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 2147483647,
+                "total": 2147483647
+              }
+            },
+            "nominal": 0,
+            "owner": "old"
+          },
+          "counter_calls": [
+            "increment",
+            "increment_slot",
+            "increment_total"
+          ],
+          "operation": "add",
+          "receiver": "old",
+          "stop": "00502C7F"
+        }
+      ]
+    },
+    {
+      "initial": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": -2147483648,
+            "total": -2147483648
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": -2147483648,
+            "total": -2147483648
+          }
+        },
+        "nominal": 0,
+        "owner": "old"
+      },
+      "input": {
+        "name": "decrement_wrap",
+        "operations": [
+          "remove"
+        ],
+        "start": -2147483648
+      },
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_calls": [],
+      "steps": [
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": -2147483648,
+                "total": -2147483648
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 2147483647,
+                "total": 2147483647
+              }
+            },
+            "nominal": 0,
+            "owner": "old"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": -2147483648,
+                "total": -2147483648
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": -2147483648,
+                "total": -2147483648
+              }
+            },
+            "nominal": 0,
+            "owner": "old"
+          },
+          "counter_calls": [
+            "decrement",
+            "decrement_slot",
+            "decrement_total"
+          ],
+          "operation": "remove",
+          "receiver": "old",
+          "stop": "005029B2"
+        }
+      ]
+    },
+    {
+      "initial": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          }
+        },
+        "nominal": 1,
+        "owner": "old"
+      },
+      "input": {
+        "name": "on_map_capture",
+        "nominal": true,
+        "operations": [
+          "add",
+          "capture_on_map",
+          "remove_new"
+        ]
+      },
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_calls": [],
+      "steps": [
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 1,
+            "owner": "old"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 1,
+            "owner": "old"
+          },
+          "counter_calls": [],
+          "operation": "add",
+          "receiver": "old",
+          "stop": "00502D04"
+        },
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": -1,
+                "total": -1
+              }
+            },
+            "nominal": 1,
+            "owner": "new"
+          },
+          "guard_stops": [
+            "005025F0",
+            "00502A80"
+          ],
+          "operation": "capture_on_map",
+          "phases": [
+            {
+              "after": {
+                "houses": {
+                  "new": {
+                    "force_values": [
+                      37,
+                      -91,
+                      55
+                    ],
+                    "slot": 0,
+                    "total": 0
+                  },
+                  "old": {
+                    "force_values": [
+                      37,
+                      -91,
+                      55
+                    ],
+                    "slot": -1,
+                    "total": -1
+                  }
+                },
+                "nominal": 1,
+                "owner": "old"
+              },
+              "before": {
+                "houses": {
+                  "new": {
+                    "force_values": [
+                      37,
+                      -91,
+                      55
+                    ],
+                    "slot": 0,
+                    "total": 0
+                  },
+                  "old": {
+                    "force_values": [
+                      37,
+                      -91,
+                      55
+                    ],
+                    "slot": 0,
+                    "total": 0
+                  }
+                },
+                "nominal": 1,
+                "owner": "old"
+              },
+              "counter_calls": [
+                "decrement",
+                "decrement_slot",
+                "decrement_total"
+              ],
+              "operation": "remove",
+              "receiver": "old",
+              "stop": "005029B2"
+            },
+            {
+              "after": {
+                "houses": {
+                  "new": {
+                    "force_values": [
+                      37,
+                      -91,
+                      55
+                    ],
+                    "slot": 0,
+                    "total": 0
+                  },
+                  "old": {
+                    "force_values": [
+                      37,
+                      -91,
+                      55
+                    ],
+                    "slot": -1,
+                    "total": -1
+                  }
+                },
+                "nominal": 1,
+                "owner": "new"
+              },
+              "before": {
+                "houses": {
+                  "new": {
+                    "force_values": [
+                      37,
+                      -91,
+                      55
+                    ],
+                    "slot": 0,
+                    "total": 0
+                  },
+                  "old": {
+                    "force_values": [
+                      37,
+                      -91,
+                      55
+                    ],
+                    "slot": -1,
+                    "total": -1
+                  }
+                },
+                "nominal": 1,
+                "owner": "new"
+              },
+              "counter_calls": [],
+              "operation": "add",
+              "receiver": "new",
+              "stop": "00502D04"
+            }
+          ]
+        },
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": -1,
+                "total": -1
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": -1,
+                "total": -1
+              }
+            },
+            "nominal": 1,
+            "owner": "new"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": -1,
+                "total": -1
+              }
+            },
+            "nominal": 1,
+            "owner": "new"
+          },
+          "counter_calls": [
+            "decrement",
+            "decrement_slot",
+            "decrement_total"
+          ],
+          "operation": "remove",
+          "receiver": "new",
+          "stop": "005029B2"
+        }
+      ]
+    },
+    {
+      "initial": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          }
+        },
+        "nominal": 1,
+        "owner": "old"
+      },
+      "input": {
+        "name": "limbo_capture",
+        "nominal": true,
+        "operations": [
+          "capture_limbo",
+          "add_new",
+          "remove_new"
+        ]
+      },
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_calls": [],
+      "steps": [
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 1,
+            "owner": "new"
+          },
+          "guard_stops": [
+            "007015A2",
+            "00701793"
+          ],
+          "operation": "capture_limbo",
+          "phases": []
+        },
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 1,
+            "owner": "new"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 1,
+            "owner": "new"
+          },
+          "counter_calls": [],
+          "operation": "add",
+          "receiver": "new",
+          "stop": "00502D04"
+        },
+        {
+          "after": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": -1,
+                "total": -1
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 1,
+            "owner": "new"
+          },
+          "before": {
+            "houses": {
+              "new": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              },
+              "old": {
+                "force_values": [
+                  37,
+                  -91,
+                  55
+                ],
+                "slot": 0,
+                "total": 0
+              }
+            },
+            "nominal": 1,
+            "owner": "new"
+          },
+          "counter_calls": [
+            "decrement",
+            "decrement_slot",
+            "decrement_total"
+          ],
+          "operation": "remove",
+          "receiver": "new",
+          "stop": "005029B2"
+        }
+      ]
+    }
+  ],
+  "producer_rows": [
+    {
+      "active_admission": {
+        "after": {
+          "houses": {
+            "new": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 0,
+              "total": 0
+            },
+            "old": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 0,
+              "total": 0
+            }
+          },
+          "nominal": 1,
+          "owner": "old"
+        },
+        "before": {
+          "houses": {
+            "new": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 0,
+              "total": 0
+            },
+            "old": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 0,
+              "total": 0
+            }
+          },
+          "nominal": 1,
+          "owner": "old"
+        },
+        "counter_calls": [],
+        "operation": "add",
+        "receiver": "old",
+        "stop": "00502D04"
+      },
+      "after": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          }
+        },
+        "nominal": 1,
+        "owner": "old"
+      },
+      "before": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          }
+        },
+        "nominal": 0,
+        "owner": "old"
+      },
+      "constructor_default": 0,
+      "input": {
+        "buildup": true,
+        "route": "death",
+        "type_nominal": true,
+        "unlimbo_admitted": true
+      },
+      "nominal_at_unlimbo": 1,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_calls": []
+    },
+    {
+      "active_admission": {
+        "after": {
+          "houses": {
+            "new": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 0,
+              "total": 0
+            },
+            "old": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 1,
+              "total": 1
+            }
+          },
+          "nominal": 0,
+          "owner": "old"
+        },
+        "before": {
+          "houses": {
+            "new": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 0,
+              "total": 0
+            },
+            "old": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 0,
+              "total": 0
+            }
+          },
+          "nominal": 0,
+          "owner": "old"
+        },
+        "counter_calls": [
+          "increment",
+          "increment_slot",
+          "increment_total"
+        ],
+        "operation": "add",
+        "receiver": "old",
+        "stop": "00502C7F"
+      },
+      "after": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 1,
+            "total": 1
+          }
+        },
+        "nominal": 0,
+        "owner": "old"
+      },
+      "before": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          }
+        },
+        "nominal": 0,
+        "owner": "old"
+      },
+      "constructor_default": 0,
+      "input": {
+        "buildup": false,
+        "route": "death",
+        "type_nominal": true,
+        "unlimbo_admitted": true
+      },
+      "nominal_at_unlimbo": 0,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_calls": []
+    },
+    {
+      "active_admission": {
+        "after": {
+          "houses": {
+            "new": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 0,
+              "total": 0
+            },
+            "old": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 1,
+              "total": 1
+            }
+          },
+          "nominal": 0,
+          "owner": "old"
+        },
+        "before": {
+          "houses": {
+            "new": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 0,
+              "total": 0
+            },
+            "old": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 0,
+              "total": 0
+            }
+          },
+          "nominal": 0,
+          "owner": "old"
+        },
+        "counter_calls": [
+          "increment",
+          "increment_slot",
+          "increment_total"
+        ],
+        "operation": "add",
+        "receiver": "old",
+        "stop": "00502C7F"
+      },
+      "after": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 1,
+            "total": 1
+          }
+        },
+        "nominal": 0,
+        "owner": "old"
+      },
+      "before": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          }
+        },
+        "nominal": 0,
+        "owner": "old"
+      },
+      "constructor_default": 0,
+      "input": {
+        "buildup": true,
+        "route": "death",
+        "type_nominal": false,
+        "unlimbo_admitted": true
+      },
+      "nominal_at_unlimbo": 0,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_calls": []
+    },
+    {
+      "active_admission": null,
+      "after": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          }
+        },
+        "nominal": 1,
+        "owner": "old"
+      },
+      "before": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          }
+        },
+        "nominal": 0,
+        "owner": "old"
+      },
+      "constructor_default": 0,
+      "input": {
+        "buildup": true,
+        "route": "death",
+        "type_nominal": true,
+        "unlimbo_admitted": false
+      },
+      "nominal_at_unlimbo": 1,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_calls": []
+    },
+    {
+      "active_admission": {
+        "after": {
+          "houses": {
+            "new": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 0,
+              "total": 0
+            },
+            "old": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 1,
+              "total": 1
+            }
+          },
+          "nominal": 0,
+          "owner": "old"
+        },
+        "before": {
+          "houses": {
+            "new": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 0,
+              "total": 0
+            },
+            "old": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 0,
+              "total": 0
+            }
+          },
+          "nominal": 0,
+          "owner": "old"
+        },
+        "counter_calls": [
+          "increment",
+          "increment_slot",
+          "increment_total"
+        ],
+        "operation": "add",
+        "receiver": "old",
+        "stop": "00502C7F"
+      },
+      "after": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 1,
+            "total": 1
+          }
+        },
+        "nominal": 1,
+        "owner": "old"
+      },
+      "before": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          }
+        },
+        "nominal": 0,
+        "owner": "old"
+      },
+      "constructor_default": 0,
+      "input": {
+        "buildup": true,
+        "route": "sale",
+        "type_nominal": true,
+        "unlimbo_admitted": true
+      },
+      "nominal_at_unlimbo": 0,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_calls": []
+    },
+    {
+      "active_admission": {
+        "after": {
+          "houses": {
+            "new": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 0,
+              "total": 0
+            },
+            "old": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 1,
+              "total": 1
+            }
+          },
+          "nominal": 0,
+          "owner": "old"
+        },
+        "before": {
+          "houses": {
+            "new": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 0,
+              "total": 0
+            },
+            "old": {
+              "force_values": [
+                37,
+                -91,
+                55
+              ],
+              "slot": 0,
+              "total": 0
+            }
+          },
+          "nominal": 0,
+          "owner": "old"
+        },
+        "counter_calls": [
+          "increment",
+          "increment_slot",
+          "increment_total"
+        ],
+        "operation": "add",
+        "receiver": "old",
+        "stop": "00502C7F"
+      },
+      "after": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 1,
+            "total": 1
+          }
+        },
+        "nominal": 0,
+        "owner": "old"
+      },
+      "before": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          }
+        },
+        "nominal": 0,
+        "owner": "old"
+      },
+      "constructor_default": 0,
+      "input": {
+        "buildup": true,
+        "route": "sale",
+        "type_nominal": false,
+        "unlimbo_admitted": true
+      },
+      "nominal_at_unlimbo": 0,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_calls": []
+    },
+    {
+      "active_admission": null,
+      "after": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          }
+        },
+        "nominal": 0,
+        "owner": "old"
+      },
+      "before": {
+        "houses": {
+          "new": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          },
+          "old": {
+            "force_values": [
+              37,
+              -91,
+              55
+            ],
+            "slot": 0,
+            "total": 0
+          }
+        },
+        "nominal": 0,
+        "owner": "old"
+      },
+      "constructor_default": 0,
+      "input": {
+        "buildup": true,
+        "route": "sale",
+        "type_nominal": true,
+        "unlimbo_admitted": false
+      },
+      "nominal_at_unlimbo": 0,
+      "rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "rng_calls": []
+    }
+  ],
+  "reader_history": {
+    "constructor_default": 0,
+    "rows": [
+      {
+        "after": 1,
+        "before": 0,
+        "file": "RULESMD.INI",
+        "physical_ini": "[CONTROL]\nNominal=yes\n"
+      },
+      {
+        "after": 1,
+        "before": 1,
+        "file": "LANGRULE.INI",
+        "physical_ini": "[CONTROL]\nName=present\n"
+      },
+      {
+        "after": 1,
+        "before": 1,
+        "file": "MODE.INI",
+        "physical_ini": "[CONTROL]\nNominal=on\n"
+      },
+      {
+        "after": 0,
+        "before": 1,
+        "file": "MAP.MAP",
+        "physical_ini": "[CONTROL]\nNominal=no\n"
+      },
+      {
+        "after": 0,
+        "before": 0,
+        "file": "KEYCASE.INI",
+        "physical_ini": "[CONTROL]\nNOMINAL=yes\n"
+      },
+      {
+        "after": 0,
+        "before": 0,
+        "file": "EMPTY.INI",
+        "physical_ini": "[CONTROL]\nName=present\nNominal=\n"
+      },
+      {
+        "after": 0,
+        "before": 0,
+        "file": "OTHER.INI",
+        "physical_ini": "[OTHER]\nNominal=yes\n"
+      },
+      {
+        "after": 1,
+        "before": 0,
+        "file": "TRIM.INI",
+        "physical_ini": "[CONTROL]\nNominal= \tyeSplease \t\n"
+      }
+    ]
+  }
+}

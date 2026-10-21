@@ -1249,7 +1249,13 @@ use crate::util::save_codec;
 // type lists in processed Rules records.
 // 469 -> 470: ScenarioSession retains the WOL tournament value, the clan
 // lists and FixedAlliance.
-const SNAPSHOT_VERSION: u32 = 470;
+// 470 -> 471: retained Type.Nominal and Infantry+6D9 building-survivor flag.
+// 471 -> 472: ScenarioSession saves the independent signed Scenario.Side
+// (+34B8), used to rebind EVA after successful restoration. The process Vox
+// cache and ordinary queue nodes are not native saved state.
+// 472 -> 473: Ares HouseTracking retains its signed KeepAlive event count;
+// constructor-bound TrackingFacts retains each object's removal admission.
+const SNAPSHOT_VERSION: u32 = 473;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4705,6 +4711,48 @@ mod tests {
             sim.restore_after_snapshot_load(),
             Err(SnapshotRestoreError::InvalidCurrentHouse { owner: missing })
         );
+    }
+
+    #[test]
+    fn scenario_side_snapshot_matches_original_signed_retention() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/eva_selection.json",
+        ))
+        .unwrap();
+        // Native Scenario Load reseeds its saved RNG to0. Isolate Side
+        // persistence from that independently established load behavior.
+        let mut sim = Simulation::with_seed(0);
+        let owner = sim.intern("DifferentHouseSide");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 2, None, true, 0, 1,
+            ));
+        sim.session.install_current_house(Some(owner));
+        let hash = sim.state_hash();
+        let rng = sim.rng_state();
+        for row in corpus["scenario_round_trips"].as_array().unwrap() {
+            sim.session
+                .install_scenario_side(row["input_side"].as_i64().unwrap() as i32);
+            assert_eq!(sim.state_hash(), hash);
+            assert_eq!(sim.rng_state(), rng);
+            let bytes = GameSnapshot::save(&sim, 0, 0, "scenario-side", 0);
+            sim.session
+                .install_scenario_side(row["overwritten_before_load"].as_i64().unwrap() as i32);
+            let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+            restored.restore_after_snapshot_load().unwrap();
+            assert_eq!(
+                restored.session.scenario_side(),
+                row["restored_side"].as_i64().unwrap() as i32
+            );
+            assert_eq!(restored.session.current_house(), Some(owner));
+            assert_eq!(restored.houses[&owner].side_index(), 2);
+            assert_eq!(
+                restored.state_hash(),
+                hash,
+                "client presentation input is not shared CRC state"
+            );
+            assert_eq!(restored.rng_state(), rng);
+        }
     }
 
     #[test]
@@ -10250,6 +10298,9 @@ mod tests {
         // 467 -> 468: retained Country ParentCountry+98.
         // 468 -> 469: retained Country starting-veterancy lists.
         // 469 -> 470: WOL tournament value, clan lists and FixedAlliance.
-        assert_eq!(super::SNAPSHOT_VERSION, 470);
+        // 470 -> 471: retained Type.Nominal and Infantry survivor marker.
+        // 471 -> 472: independent saved Scenario.Side.
+        // 472 -> 473: retained Ares KeepAlive count and per-object input.
+        assert_eq!(super::SNAPSHOT_VERSION, 473);
     }
 }

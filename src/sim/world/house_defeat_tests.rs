@@ -352,6 +352,7 @@ fn native_house_result_zero_and_allow_win_heads() {
 }
 
 #[derive(serde::Deserialize)]
+#[cfg(not(feature = "ares"))]
 struct NativeGateCase {
     input: serde_json::Value,
     events: Vec<String>,
@@ -365,6 +366,7 @@ struct NativeGateCase {
 /// (a cancelling sum defeats; BuildRefinery's third type counts only when
 /// set).
 #[test]
+#[cfg(not(feature = "ares"))]
 fn native_defeat_gate_corpus() {
     let cases: Vec<NativeGateCase> = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/house_defeat_gate.json",
@@ -435,6 +437,117 @@ fn native_defeat_gate_corpus() {
             !was_defeated && sim.houses[&house].is_defeated(),
             native_defeats,
             "{name}"
+        );
+    }
+}
+
+/// Regression for the observed fourth-side opening: construction-to-destruction
+/// MCV tracking, even in limbo, reaches the real House rung. Retail deliberately
+/// considers only the first three BaseUnit slots; Ares considers the fourth too.
+#[test]
+fn fourth_base_unit_survival_reaches_the_production_defeat_gate() {
+    let mut rules = rules(3);
+    rules.general.base_unit_types.push("TANK".into());
+    let (mut sim, houses) = sim_with_houses(&[0]);
+    let owner = houses[0];
+    sim.session.game_options_mut_for_test().short_game = true;
+    let extra_mcv = sim
+        .spawn_object_limbo_at_height("TANK", "house0", 10, 10, 0, 0, &rules)
+        .unwrap();
+    sim.check_defeat(Some(&rules), None);
+    assert_eq!(
+        sim.houses[&owner].is_defeated(),
+        !crate::rules::ARES_ENABLED
+    );
+    if crate::rules::ARES_ENABLED {
+        sim.uninit_with_rules(extra_mcv, &rules);
+        sim.flush_pending_delete();
+        sim.check_defeat(Some(&rules), None);
+        assert!(sim.houses[&owner].is_defeated());
+    }
+}
+
+/// An explicit false on a building must override Ares's building default in
+/// both modes; the retail binary ignores the extension and keeps the building.
+#[test]
+fn explicit_keep_alive_false_reaches_both_production_mode_arms() {
+    for short_game in [false, true] {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=MARKER\n[MARKER]\nStrength=100\nKeepAlive=no\n",
+        ))
+        .unwrap();
+        let (mut sim, houses) = sim_with_houses(&[0]);
+        sim.session.game_options_mut_for_test().short_game = short_game;
+        sim.spawn_object_limbo_at_height("MARKER", "house0", 10, 10, 0, 0, &rules)
+            .unwrap();
+        sim.check_defeat(Some(&rules), None);
+        assert_eq!(
+            sim.houses[&houses[0]].is_defeated(),
+            crate::rules::ARES_ENABLED
+        );
+    }
+}
+
+/// Rebuild only the native gate's supplied counter/object boundary, then use
+/// the real World presence query and House rung. Parasite input is an allocated
+/// class, not a victim/eater link; this is not a whole parasite lifecycle test.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_normal_defeat_gate_matches_executed_object_array_controls() {
+    let corpus = crate::test_fixture::json("tools/spatial_oracle/ares_house_survival.json");
+    for row in corpus["survival_cases"].as_array().unwrap() {
+        let input = &row["input"];
+        if input["short_game"] != false || input["keep_alive_count"] != 0 {
+            continue;
+        }
+        let rules = rules(3);
+        let (mut sim, houses) = sim_with_houses(&[0, 1]);
+        sim.houses
+            .get_mut(&houses[1])
+            .unwrap()
+            .set_multiplay_passive_for_test(true);
+        sim.session.game_options_mut_for_test().short_game = false;
+        for (class, kind) in [("unit", "TANK"), ("infantry", "CLEG"), ("aircraft", "AIR")] {
+            for object in input["objects"][class].as_array().unwrap() {
+                let owner = if object["owner"] == "ours" {
+                    "house0"
+                } else {
+                    "house1"
+                };
+                let id = sim
+                    .spawn_object_limbo_at_height(kind, owner, 10, 10, 0, 0, &rules)
+                    .unwrap();
+                let entity = sim.substrate.entities.get_mut(id).unwrap();
+                entity
+                    .lifecycle
+                    .set_in_limbo_for_test(object["limbo"].as_bool().unwrap());
+                if object["parasite"] == true {
+                    entity.parasite.allocate_class(100);
+                }
+            }
+        }
+        let int = |key: &str| input[key].as_i64().unwrap_or(0) as i32;
+        let refinery = sim.interner.intern("YAREFN");
+        sim.houses
+            .get_mut(&houses[0])
+            .unwrap()
+            .tracking_mut()
+            .set_for_test(
+                int("buildings"),
+                &[],
+                (
+                    int("active_units"),
+                    int("active_infantry"),
+                    int("active_aircraft"),
+                ),
+                &[(refinery, int("active_yarefn"))],
+            );
+        sim.check_defeat(Some(&rules), None);
+        assert_eq!(
+            sim.houses[&houses[0]].is_defeated(),
+            !row["events"].as_array().unwrap().is_empty(),
+            "{}",
+            input["name"]
         );
     }
 }

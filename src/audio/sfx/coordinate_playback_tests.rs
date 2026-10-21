@@ -59,7 +59,14 @@ fn service(
     let (mut draws, ranges) = recorded_draws(main);
     let (_, raw) = trace_draws(|| {
         if admitted {
-            player.service_events(milliseconds, registry, assets, index, &mut draws);
+            player.service_events(
+                milliseconds,
+                registry,
+                &crate::rules::sound_ini::EvaRegistry::default(),
+                assets,
+                index,
+                &mut draws,
+            );
         }
     });
     for output in player.live.values() {
@@ -223,7 +230,14 @@ fn coordinate_real_sample_service_gate_main_and_explicit_endpoint_cleanup_match_
             .as_u64()
             .unwrap();
         assert!(clock.admit(start));
-        player.service_events(start, registry, assets, index, &mut retained_draws(&main));
+        player.service_events(
+            start,
+            registry,
+            &crate::rules::sound_ini::EvaRegistry::default(),
+            assets,
+            index,
+            &mut retained_draws(&main),
+        );
         player
             .observe_pcm(PcmObservationConfig {
                 sound_ids: vec![cue("sound_index").to_owned()],
@@ -409,7 +423,14 @@ fn coordinate_limit_two_and_current_listener_redrive_match_original_service_orde
             .as_u64()
             .unwrap();
         assert!(clock.admit(start));
-        player.service_events(start, registry, assets, index, &mut retained_draws(&main));
+        player.service_events(
+            start,
+            registry,
+            &crate::rules::sound_ini::EvaRegistry::default(),
+            assets,
+            index,
+            &mut retained_draws(&main),
+        );
         let owners: Vec<_> = (0..3)
             .map(|ordinal| {
                 admit_request(

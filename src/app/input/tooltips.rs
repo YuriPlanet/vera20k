@@ -242,9 +242,8 @@ fn tactical_world_tip_text_sampled(
     // Building459ED0 returns Type+60. Infantry51F2C0's ordinary arm does too:
     // ownerHouse4F9A50(currentHouse) is true for identity even when disguised.
     // Source: `tools.native_inspect disasm 0x51F2C0 --bytes 0x65`.
-    // Residual: Nominal crew's runtime+6D9 is not represented (crew_survival);
-    // its earlier TXT_TECHNICIAN return requires the shared crew/House-count
-    // mechanism. This covers constructor-default own infantry, including E2.
+    // The shared crew marker also reaches Infantry51F2C0's earlier
+    // TXT_TECHNICIAN return; Type.Nominal alone must not select that name.
     let own = entity.owner() == viewer;
     if !own && entity.category() != EntityCategory::Unit {
         return String::new();
@@ -260,6 +259,12 @@ fn tactical_world_tip_text_sampled(
         return String::new();
     }
     match entity.category() {
+        EntityCategory::Infantry if entity.is_nominal_survivor() => {
+            return csf.map_or_else(
+                || "TXT_TECHNICIAN".to_owned(),
+                |csf| csf.text("TXT_TECHNICIAN").into_owned(),
+            );
+        }
         EntityCategory::Structure | EntityCategory::Infantry => {}
         // Aircraft41C1D0 returns its actual Type+60 directly, without a
         // disguise, dock or flight-state name branch. Keep the same picker
@@ -827,6 +832,57 @@ mod tests {
             "Russians",
             "Russians",
             "Infantry51F2C0 flag-zero own-House arm",
+        );
+    }
+
+    #[test]
+    fn nominal_survivor_tip_uses_shared_runtime_marker() {
+        let patch =
+            crate::rules::ini_parser::IniFile::from_str("[CTECH]\nNominal=yes\nUIName=Name:E2\n");
+        let Some(MappedTipFixture {
+            mut runtime,
+            csf,
+            entity_id,
+            world,
+        }) = mapped_tip_fixture("CTECH", "Russians", "Russians", Some(&patch))
+        else {
+            return;
+        };
+        assert!(runtime.resources.rules.object("CTECH").unwrap().nominal());
+        let normal = tactical_world_tip_text(
+            runtime.view(),
+            &runtime.resources.rules,
+            Some(&csf),
+            world,
+            false,
+        );
+        let technician = csf.text("TXT_TECHNICIAN").into_owned();
+        assert_eq!(normal, csf.text("Name:E2"));
+        assert_ne!(
+            normal, technician,
+            "the two physical labels must distinguish the arms"
+        );
+        runtime
+            .simulation
+            .entities_mut_for_test()
+            .get_mut(entity_id)
+            .unwrap()
+            .mark_nominal_survivor_for_test();
+        let hash = runtime.simulation.state_hash();
+        assert_eq!(
+            tactical_world_tip_text(
+                runtime.view(),
+                &runtime.resources.rules,
+                Some(&csf),
+                world,
+                false,
+            ),
+            technician
+        );
+        assert_eq!(
+            runtime.simulation.state_hash(),
+            hash,
+            "UI lookup is read-only"
         );
     }
 

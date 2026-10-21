@@ -1552,6 +1552,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         // that outlived its killing blow.
         0x6e0_u32.hash(hasher);
     }
+    if entity.is_nominal_survivor() {
+        //Infantry CRC521CE5..521CEE includes its retained6D9 byte.
+        0x6d9_u32.hash(hasher);
+    }
     if let Some(production) = entity.secret_lab_fallback() {
         b"building-secret-production-v382".hash(hasher);
         production.hash(hasher);
@@ -1594,7 +1598,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         // Naval/Passengers admission as construction, even while in limbo.
         b"naval-tracking-eligibility-v1".hash(hasher);
     }
-    entity.tracking_facts.hash_storage_capacity(hasher);
+    entity.tracking_facts.hash_retained_inputs(hasher);
     if latches != Default::default() {
         b"house-tracking-infantry-latches-v1".hash(hasher);
         latches.hash(hasher);

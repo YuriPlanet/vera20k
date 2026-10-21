@@ -49,7 +49,6 @@ pub(crate) struct SoundPlaybackInputs<'a> {
     pub(crate) assets: &'a crate::assets::asset_manager::AssetManager,
     pub(crate) catalog: &'a crate::app::process_assets::ProcessAudioCatalog,
     pub(crate) listener: crate::audio::sfx::SpatialListener,
-    pub(crate) eva_side: crate::rules::sound_ini::EvaSide,
 }
 
 struct SoundSpatialContext<'a> {
@@ -138,7 +137,6 @@ impl SoundPlaybackInputs<'_> {
         let audio_indices = self.catalog.index();
         let eva_registry = self.catalog.eva();
         let assets = self.assets;
-        let eva_side = self.eva_side;
         let spatial = self.spatial_context(sim, local_owner);
         let gain_for = |sound_id: &str, source| spatial.gain_for(sound_id, source);
         for event in events {
@@ -167,8 +165,6 @@ impl SoundPlaybackInputs<'_> {
                         eva_event,
                         *type_override,
                         eva_registry,
-                        eva_side,
-                        registry,
                         assets,
                         audio_indices,
                     );
@@ -179,8 +175,6 @@ impl SoundPlaybackInputs<'_> {
                         Some(crate::rules::sound_ini::EvaType::Interrupt),
                         None,
                         eva_registry,
-                        eva_side,
-                        registry,
                         assets,
                         audio_indices,
                     );
@@ -309,15 +303,7 @@ impl SoundPlaybackInputs<'_> {
                     // `VoxClass::PlayEVA(name, -1)` at every `SuperClass::Launch`
                     // site: the entry's own `Type=`/`Priority=` route it.
                     if let Some(eva_event) = eva_event.as_deref().filter(|s| !s.is_empty()) {
-                        let _ = sfx.play_eva(
-                            eva_event,
-                            None,
-                            eva_registry,
-                            eva_side,
-                            registry,
-                            assets,
-                            audio_indices,
-                        );
+                        let _ = sfx.play_eva(eva_event, None, eva_registry, assets, audio_indices);
                     }
                 }
                 GameSoundEvent::BridgeRepaired {
@@ -331,15 +317,7 @@ impl SoundPlaybackInputs<'_> {
                         sfx.play_sound_spatial(sound_id, gain, registry);
                     }
                     if let Some(eva_event) = eva_event.as_deref().filter(|s| !s.is_empty()) {
-                        let _ = sfx.play_eva(
-                            eva_event,
-                            None,
-                            eva_registry,
-                            eva_side,
-                            registry,
-                            assets,
-                            audio_indices,
-                        );
+                        let _ = sfx.play_eva(eva_event, None, eva_registry, assets, audio_indices);
                     }
                 }
                 // Spatial events — distance volume and pan from the sound's
@@ -435,29 +413,6 @@ pub(crate) fn update_radar_state(state: &mut AppState) {
     }
 }
 
-/// The EVA voice column for this session — `VoxClass::SetSide @ 0x007534E0`.
-///
-/// Native stores it once per scenario: `ScenarioClass::Full_Init`
-/// (`0x00687801..0x00687807`) passes `Houses[PlayerIndex]->Type(+0x34)->Side
-/// (+0xBC)` — the local country's `Side=` index — to `InitSideMixFiles @
-/// 0x00534FA0`, which calls `SetSide` first (before its own `2 -> 1` MIX
-/// remap, so a Yuri country keeps the Yuri column). A `PlayerIndex` of `-1`
-/// or out of range passes 0. `EvaSide::from_side_index` is the column select
-/// of `PlayNextQueued` (`0x007528E8..0x007528FE`).
-///
-/// VERA resolves the same value from the local house's `side_index`
-/// (`HouseState`, from `rules.country_side_index`) at consume time; the
-/// local owner is fixed for the match, so this equals a once-stored side.
-pub(crate) fn local_eva_side(state: &AppState) -> crate::rules::sound_ini::EvaSide {
-    use crate::rules::sound_ini::EvaSide;
-    let side_index = preferred_local_owner_name(state).and_then(|owner| {
-        let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
-        crate::sim::house_state::house_state_for_owner(sim.houses(), &owner, sim.interner())
-            .map(|house| i32::from(house.side_index()))
-    });
-    EvaSide::from_side_index(side_index.unwrap_or(0))
-}
-
 /// Drain pending sound events from the queue and play them through the SFX player.
 ///
 /// Voice events (VoiceSelect, VoiceMove, VoiceAttack, VoiceCapture, ...) are
@@ -498,7 +453,6 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
         .sim_runtime
         .as_ref()
         .map(|rt| &rt.simulation);
-    let eva_side = local_eva_side(state);
     let ticking_sound = state
         .rules()
         .and_then(|rules| rules.general.bomb_ticking_sound.clone());
@@ -512,14 +466,13 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
     let registry = catalog.sounds();
     let audio_indices = catalog.index();
     if redrive_owners {
-        sfx.advance_voice_queue(registry, assets, audio_indices);
+        sfx.advance_voice_queue(catalog.eva(), assets, audio_indices);
     }
 
     let inputs = SoundPlaybackInputs {
         assets,
         catalog,
         listener,
-        eva_side,
     };
     inputs.consume(sfx, &events, sim, local_owner.as_deref());
     let spatial = inputs.spatial_context(sim, local_owner.as_deref());
