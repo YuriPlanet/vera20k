@@ -2417,10 +2417,10 @@ fn guard_queues_sabotage(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
 /// key, so `AircraftClass`'s Guard path through `0x004D5070` leaves it
 /// dormant.
 ///
-/// RESIDUAL: when the search finds no cell, native assigns `Map[(0, 0)]`,
-/// the shared Dummy cell when (0, 0) is outside the map; VERA assigns
-/// nothing. Trigger: no passable cell in reach. Effect: the native object
-/// takes that cell as its destination. Rare (a boxed-in carrier).
+/// A failed NearbyLocation still returns packed Empty(0,0). Both callers
+/// freshly look up that cell before passing the nonnull receiver to the
+/// concrete destination setter (4D4DFF/4D5217). The Jumpjet then owns its
+/// own placement search, NavCom rewrite and moving byte.
 fn hover_attack_reanchor(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -2441,9 +2441,12 @@ fn hover_attack_reanchor(
     {
         return;
     }
-    let Some((rx, ry)) = sim.techno_nearby_location(id, Some(id), rules) else {
-        return;
-    };
+    let (rx, ry) = sim
+        .techno_nearby_location(id, Some(id), rules)
+        .unwrap_or((0, 0));
+    if let Some(terrain) = sim.resolved_terrain.as_ref() {
+        terrain.native_cell_identity((rx, ry));
+    }
     if let Err(error) = sim.assign_destination_represented(
         id,
         Some(crate::sim::components::NavTargetRef::cell(
