@@ -100,3 +100,118 @@ fn failed_overwrite_publish_preserves_original_and_removes_staged_file() {
     drop(held);
     std::fs::remove_dir_all(repository.directory()).unwrap();
 }
+
+#[test]
+fn initial_campaign_slot_is_visible_and_replaced_without_touching_user_saves() {
+    let repository = fixture("initial-campaign");
+    let user = repository
+        .write_named("user.bin", &snapshot("user", 1))
+        .unwrap();
+    let initial = repository
+        .write_initial_campaign("ALL01UMD.sav", &snapshot("[Allied 01 - Time Lapse]", 2))
+        .unwrap();
+    assert_eq!(repository.browser_entries().len(), 2);
+    repository
+        .write_initial_campaign("ALL01UMD.sav", &snapshot("[new attempt]", 3))
+        .unwrap();
+    assert_eq!(repository.browser_entries().len(), 2);
+    assert_eq!(
+        GameSnapshot::read_header(&repository.read(&initial).unwrap())
+            .unwrap()
+            .description,
+        "[new attempt]"
+    );
+    assert_eq!(
+        GameSnapshot::read_header(&repository.read(&user).unwrap())
+            .unwrap()
+            .description,
+        "user"
+    );
+    repository
+        .overwrite_existing(&initial, &snapshot("user renamed initial save", 4))
+        .unwrap();
+    assert_eq!(
+        GameSnapshot::read_header(&repository.read(&initial).unwrap())
+            .unwrap()
+            .description,
+        "user renamed initial save"
+    );
+    std::fs::remove_dir_all(repository.directory()).unwrap();
+}
+
+#[test]
+fn initial_campaign_attempt_is_process_owned_and_rearmed_only_by_its_callers() {
+    let mut state = PersistenceState::new(Default::default());
+    assert!(!state.take_initial_campaign_save(false));
+    assert!(state.take_initial_campaign_save(true));
+    // A failed IO attempt and a same-mission restart do not clear the latch.
+    assert!(!state.take_initial_campaign_save(true));
+    state.arm_initial_campaign_save();
+    assert!(state.take_initial_campaign_save(true));
+    state.arm_initial_campaign_save();
+    state.loaded_campaign();
+    assert!(!state.take_initial_campaign_save(true));
+}
+
+#[test]
+fn initial_campaign_attempt_admission_matches_original_main_tick() {
+    let native = crate::test_fixture::json("tools/input_oracle/campaign_mission_titles.json");
+    for row in native["initial_save_rows"].as_array().unwrap() {
+        let mut state = PersistenceState::new(Default::default());
+        state.initial_campaign_save_attempted = row["incoming_latch"].as_u64().unwrap() != 0;
+        let admitted = state.take_initial_campaign_save(row["game_mode"].as_u64().unwrap() == 0);
+        assert_eq!(admitted, row["filename"].is_string(), "{}", row["name"]);
+        assert_eq!(
+            u64::from(state.initial_campaign_save_attempted),
+            row["outgoing_latch"].as_u64().unwrap(),
+            "{}",
+            row["name"]
+        );
+    }
+}
+
+#[test]
+fn initial_campaign_paths_preserve_parent_and_fail_without_creating_it() {
+    let repository = fixture("initial-campaign-paths");
+    let bytes = snapshot("[initial]", 1);
+    assert!(
+        repository
+            .write_initial_campaign("missing/ALL01UMD.sav", &bytes)
+            .is_err()
+    );
+    assert!(!repository.directory().join("missing").exists());
+    std::fs::create_dir(repository.directory().join("missions")).unwrap();
+    let relative = repository
+        .write_initial_campaign("missions/ALL01UMD.sav", &bytes)
+        .unwrap();
+    assert_eq!(
+        relative,
+        repository.directory().join("missions/ALL01UMD.sav")
+    );
+    let absolute = repository.directory().join("absolute.sav");
+    std::fs::write(&absolute, snapshot("older automatic slot", 0)).unwrap();
+    assert_eq!(
+        repository
+            .write_initial_campaign(absolute.to_str().unwrap(), &bytes)
+            .unwrap(),
+        absolute
+    );
+    assert_eq!(repository.read(&absolute).unwrap(), bytes);
+    std::fs::remove_dir_all(repository.directory()).unwrap();
+}
+
+#[test]
+fn initial_campaign_preserves_foreign_saved_game_bytes() {
+    let repository = fixture("foreign-initial-save");
+    std::fs::create_dir_all(repository.directory()).unwrap();
+    let path = repository.directory().join("ALL01UMD.sav");
+    let foreign = b"original native or other foreign save";
+    std::fs::write(&path, foreign).unwrap();
+    assert!(
+        repository
+            .write_initial_campaign("ALL01UMD.sav", &snapshot("new", 1))
+            .is_err()
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), foreign);
+    std::fs::remove_dir_all(repository.directory()).unwrap();
+}

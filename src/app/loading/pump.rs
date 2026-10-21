@@ -588,6 +588,7 @@ pub(crate) struct NativeLoadingScreenState {
     pub atlas: Option<LoadingScreenAtlas>,
     pub composition: Option<LoadingCompositionSnapshot>,
     pub campaign_presentation: Option<super::campaign_presentation::CampaignLoadingPresentation>,
+    campaign_names: Option<crate::rules::campaign_loading::CampaignScenarioNames>,
     /// Native constructs two runtime ColorScheme objects per current `[Colors]`
     /// entry. Capture that pre-load count before the later rules reset.
     runtime_color_scheme_count: usize,
@@ -630,6 +631,7 @@ impl NativeLoadingScreenState {
             atlas: None,
             composition: None,
             campaign_presentation: None,
+            campaign_names: None,
             runtime_color_scheme_count: 0,
             progress_cadence,
         }
@@ -655,6 +657,7 @@ impl NativeLoadingScreenState {
             atlas: None,
             composition: None,
             campaign_presentation: None,
+            campaign_names: None,
             runtime_color_scheme_count: 0,
             progress_cadence: NativeLoadingProgressCadence::SelectedMap,
         }
@@ -1406,6 +1409,7 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
         match load_result {
             Ok(mut result) => {
                 if let Some(native) = native.as_mut() {
+                    result.scenario.campaign_names = native.campaign_names.take();
                     let terminal_raw_percent = native.progress_cadence.terminal_raw_percent();
                     advance_and_present_native_progress(
                         &state.renderer.gpu,
@@ -1983,6 +1987,10 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         let assets = loading_asset_manager(session)
             .ok_or_else(|| anyhow::anyhow!("campaign loading lost its asset manager"))?;
         let mut metadata = crate::rules::campaign_loading::CampaignLoadingMetadata::default();
+        let mut names = state.match_state.campaign_names.clone();
+        let csf = state.process_assets.csf.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("campaign loading requires the initialized CSF table")
+        })?;
         // Original Full_Init686D46 opens MISSIONMD for the current filename.
         // Missing keys retain SetDefaults' zero/empty values. Missing metadata
         // suppresses DrawLoading552D60 without inventing a generic screen.
@@ -1998,10 +2006,8 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
                 .expect("campaign loading owns a campaign startup")
                 .scenario();
             metadata.apply_ini(&selected.ini, scenario);
+            names.apply_ini(&selected.ini, scenario, csf);
         }
-        let csf = state.process_assets.csf.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("campaign loading requires the initialized CSF table")
-        })?;
         let presentation = super::campaign_presentation::CampaignLoadingPresentation::new(
             &metadata,
             csf,
@@ -2032,6 +2038,7 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
             .and_then(|session| session.native.as_mut())
             .expect("campaign native session");
         native.campaign_presentation = Some(presentation);
+        native.campaign_names = Some(names);
         native.atlas = atlas;
         log::info!("Native campaign loading atlas ready");
         return Ok(());

@@ -1579,6 +1579,7 @@ mod map_wall_owner_candidate_tests {
 /// sim runtime and match view facts consume. The constructed Simulation
 /// already holds the trigger runtime's definitions.
 pub struct ScenarioLoadInputs {
+    pub(crate) campaign_names: Option<crate::rules::campaign_loading::CampaignScenarioNames>,
     pub(crate) startup: LoadingStartup,
     pub(crate) map_source: LoadedMapSource,
     /// Digest of the parsed source map INI used for strict save compatibility.
@@ -3625,6 +3626,7 @@ pub(crate) fn load_map_from_initial(
     let theater_name = map_data.header.theater;
     Ok(MapLoadResult {
         scenario: ScenarioLoadInputs {
+            campaign_names: None,
             startup,
             map_source,
             map_hash,

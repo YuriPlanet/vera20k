@@ -115,6 +115,7 @@ pub(super) enum MoviesTarget {
 pub(super) enum CampaignStartTarget {
     LoadingFirst,
     FirstLive,
+    InitialSaved,
     /// Explicit-map CnCNet admission, without playing preceding missions.
     ExplicitFirstLive(&'static str),
     AbortReturn,
@@ -151,6 +152,7 @@ enum Phase {
     /// The emblem press has been presented; the next frame releases it.
     CampaignPressed,
     CampaignStarting,
+    CampaignInitialSaved,
     CampaignReturning,
     CampaignAbortMenu,
     CampaignLeaving,
@@ -189,6 +191,7 @@ pub(super) struct MoviesCapture {
     abort_input: Option<abort_return::AbortReturnInput>,
     restart: Option<campaign_restart::RestartCapture>,
     restart_save_directory: PathBuf,
+    saves_isolated: bool,
     opening: Option<opening::OpeningCapture>,
     lan: Option<lan::LanCapture>,
     wol: Option<wol::WolCapture>,
@@ -215,7 +218,20 @@ impl MoviesCapture {
             observed_exit_cascade: false,
             abort_input: None,
             restart: None,
-            restart_save_directory: output.with_extension("restart-saves"),
+            restart_save_directory: output.with_extension(
+                if matches!(
+                    target,
+                    MoviesTarget::CampaignStart {
+                        target: CampaignStartTarget::Opening(_),
+                        ..
+                    }
+                ) {
+                    "opening-saves"
+                } else {
+                    "restart-saves"
+                },
+            ),
+            saves_isolated: false,
             opening: match target {
                 MoviesTarget::CampaignStart {
                     target: CampaignStartTarget::Opening(target),
@@ -264,6 +280,12 @@ impl MoviesCapture {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
+        if matches!(self.target, MoviesTarget::CampaignStart { .. }) && !self.saves_isolated {
+            state
+                .persistence
+                .isolate_capture_saves(&self.restart_save_directory)?;
+            self.saves_isolated = true;
+        }
         if let Some(lan) = self.lan.as_mut() {
             return lan.after_present(state, rendered, frame);
         }
@@ -272,6 +294,53 @@ impl MoviesCapture {
         }
         if let Some(restart) = self.restart.as_mut() {
             return restart.after_present(state, rendered, &mut self.route, frame);
+        }
+        if matches!(
+            self.target,
+            MoviesTarget::CampaignStart {
+                target: CampaignStartTarget::InitialSaved,
+                ..
+            }
+        ) && self.phase == Phase::CampaignStarting
+            && state.frontend.screen == GameScreen::InGame
+        {
+            self.observed_campaign_runtime = Some(campaign_runtime_receipt(state)?);
+            let owner = crate::app::input::commands::preferred_local_owner_name(state)
+                .context("initial save control has no local player")?;
+            // The ordinary Options producer queues this before the admitted
+            // frame. The automatic file must contain its consumed value.
+            crate::app::input::commands::schedule_command(
+                state,
+                &owner,
+                crate::sim::command::Command::SetGameSpeed { speed: 2 },
+            );
+            crate::app::match_runtime::sim_tick::advance_in_game_runtime_exact_step(state)?;
+            self.route.push(
+                json!({"frame": frame, "action": "initial campaign Logic step",
+                "input": "ordinary Options SetGameSpeed producer", "speed": 2}),
+            );
+            let entries = state.persistence.repository.browser_entries();
+            ensure!(entries.len() == 1, "initial save did not create one slot");
+            let path = entries[0].0.path.clone();
+            let bytes = state.persistence.repository.read(&path)?;
+            let modified = std::fs::metadata(&path)?.modified()?;
+            crate::app::persistence::commands::try_load_save_file(state, &path)
+                .context("load the initial automatic save through the ordinary loader")?;
+            crate::app::match_runtime::sim_tick::advance_in_game_runtime_exact_step(state)?;
+            ensure!(
+                state.persistence.repository.read(&path)? == bytes
+                    && std::fs::metadata(&path)?.modified()? == modified,
+                "loading the initial save rewrote it on the next Logic step"
+            );
+            self.route.push(
+                json!({"frame": frame, "action": "initial save loaded and resumed",
+                "save_file_unchanged": true}),
+            );
+            self.phase = Phase::CampaignInitialSaved;
+            return Ok(());
+        }
+        if self.phase == Phase::CampaignInitialSaved {
+            return Ok(());
         }
         let starting_campaign = matches!(self.target, MoviesTarget::CampaignStart { .. })
             && self.phase == Phase::CampaignStarting;
@@ -1196,6 +1265,12 @@ impl MoviesCapture {
             return restart.ready(state);
         }
         if let MoviesTarget::CampaignStart { side, target } = self.target {
+            if target == CampaignStartTarget::InitialSaved
+                && self.phase == Phase::CampaignInitialSaved
+            {
+                initial_save_receipt(state, &self.restart_save_directory)?;
+                return Ok(true);
+            }
             if self.phase != Phase::CampaignStarting {
                 return Ok(false);
             }
@@ -1234,6 +1309,7 @@ impl MoviesCapture {
                     campaign_runtime_receipt(state)?;
                     Ok(true)
                 }
+                CampaignStartTarget::InitialSaved => Ok(false),
                 CampaignStartTarget::Opening(_) => {
                     if state.frontend.screen != GameScreen::InGame {
                         return Ok(false);
@@ -1460,6 +1536,7 @@ impl MoviesCapture {
                     crate::app::loading::pump::loading_map_source(state)
                 }
                 CampaignStartTarget::FirstLive
+                | CampaignStartTarget::InitialSaved
                 | CampaignStartTarget::ExplicitFirstLive(_)
                 | CampaignStartTarget::AbortReturn
                 | CampaignStartTarget::Opening(_)
@@ -1485,6 +1562,7 @@ impl MoviesCapture {
             manifest["checkpoint_phase"] = json!(match target {
                 CampaignStartTarget::LoadingFirst => "loading-first-frame",
                 CampaignStartTarget::FirstLive => "first-live-frame",
+                CampaignStartTarget::InitialSaved => "initial-save",
                 CampaignStartTarget::ExplicitFirstLive(_) => "explicit-first-live-frame",
                 CampaignStartTarget::AbortReturn => "abort-return",
                 CampaignStartTarget::Opening(target) => target.phase(),
@@ -1505,6 +1583,7 @@ impl MoviesCapture {
                 CampaignStartTarget::FirstLive | CampaignStartTarget::ExplicitFirstLive(_) => {
                     campaign_runtime_receipt(state)?
                 }
+                CampaignStartTarget::InitialSaved => installed_campaign_runtime_receipt(state)?,
                 CampaignStartTarget::AbortReturn | CampaignStartTarget::Restart(_) => self
                     .observed_campaign_runtime
                     .clone()
@@ -1526,6 +1605,10 @@ impl MoviesCapture {
             if target == CampaignStartTarget::AbortReturn {
                 manifest["runtime_observation"] = json!("first-live-frame-before-Escape-press");
                 manifest["cleanup"] = campaign_abort_cleanup_receipt(state)?;
+            }
+            if target == CampaignStartTarget::InitialSaved {
+                manifest["initial_save"] =
+                    initial_save_receipt(state, &self.restart_save_directory)?;
             }
             manifest["coverage"] = json!({
                 "loading_readback": "first presented loading screen only; later synchronous milestones are not captured",
@@ -1594,14 +1677,17 @@ impl MoviesCapture {
             self.target,
             MoviesTarget::CampaignStart {
                 target: CampaignStartTarget::FirstLive
+                    | CampaignStartTarget::InitialSaved
                     | CampaignStartTarget::ExplicitFirstLive(_)
                     | CampaignStartTarget::AbortReturn
                     | CampaignStartTarget::Opening(_)
                     | CampaignStartTarget::Restart(_),
                 ..
             }
-        ) && self.phase == Phase::CampaignStarting
-            && state.frontend.screen == GameScreen::InGame
+        ) && matches!(
+            self.phase,
+            Phase::CampaignStarting | Phase::CampaignInitialSaved
+        ) && state.frontend.screen == GameScreen::InGame
     }
 }
 
@@ -1736,6 +1822,67 @@ fn campaign_runtime_receipt(state: &AppState) -> Result<Value> {
     installed_campaign_runtime_receipt(state)
 }
 
+fn initial_save_receipt(state: &AppState, directory: &Path) -> Result<Value> {
+    let runtime = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .context("initial save has no world")?;
+    ensure!(
+        runtime.simulation.session().tick() == 1,
+        "initial save capture passed its first Logic step"
+    );
+    let entries = state.persistence.repository.browser_entries();
+    ensure!(
+        entries.len() == 1,
+        "initial save capture expected one automatic file, got {}",
+        entries.len()
+    );
+    let entry = &entries[0].0;
+    ensure!(
+        entry.path.parent() == Some(directory),
+        "initial save escaped capture directory"
+    );
+    ensure!(
+        entry.header.tick == 0,
+        "automatic save was written after Logic"
+    );
+    let saved = crate::sim::snapshot::GameSnapshot::load_with_resources(
+        &state.persistence.repository.read(&entry.path)?,
+    )?;
+    ensure!(
+        saved.sim.session().game_options().game_speed == 2,
+        "automatic save preceded the Options input"
+    );
+    let pending_speed = saved.sim.pending_command_snapshot().iter().any(|command| {
+        matches!(
+            command.payload,
+            crate::sim::command::Command::SetGameSpeed { .. }
+        )
+    });
+    ensure!(
+        !pending_speed,
+        "automatic save retained already-consumed Options input"
+    );
+    let browser =
+        App::open_saved_game_rows(state, crate::ui::skirmish_shell::SavedSeedMode::Save, 8);
+    ensure!(
+        browser
+            .selected_entry()
+            .is_some_and(|row| row.file_name.is_none()),
+        "Save did not select its new slot"
+    );
+    Ok(json!({
+        "filename": entry.path.file_name().unwrap().to_string_lossy(),
+        "description": entry.header.description, "tick": entry.header.tick,
+        "map_name": entry.header.map_name,
+        "game_speed": saved.sim.session().game_options().game_speed,
+        "pending_speed_input": pending_speed,
+        "new_save_description": browser.description_edit.display_text(),
+        "observation": "ordinary save browser model; dialog not opened",
+    }))
+}
+
 fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
     let runtime = state
         .match_state
@@ -1824,6 +1971,10 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
             "simulation_config_hash": format!("{:016x}", rules.simulation_config_hash()),
             "domain": "parsed Rules projection and semantic config; not retail byte SHA256"},
         "house_roster": roster,
+        "campaign_names": {"name_utf16": state.match_state.campaign_names.name_units(),
+            "ui_name": state.match_state.campaign_names.ui_name(),
+            "save_title_utf16": state.match_state.campaign_names.save_title_units(),
+            "save_title": state.match_state.campaign_names.save_title()},
         "player_buildings": player_buildings,
         "scalar_difficulty_order": ["Firepower", "Groundspeed", "Airspeed", "Armor", "ROF", "Cost", "BuildTime", "RepairDelay", "BuildDelay"],
         "native_identity_cursor": sim.native_identity_cursor(),

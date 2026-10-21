@@ -28,6 +28,9 @@ const DEFAULT_SAVES_DIRECTORY: &str = "saves";
 
 /// Process-lifetime save-game state owned by the app persistence domain.
 pub(crate) struct PersistenceState {
+    /// MainTick55DBCD's process-global ABCE08. It is deliberately outside
+    /// the saved Scenario and survives a same-mission restart.
+    initial_campaign_save_attempted: bool,
     /// The process-lifetime retail Options/Video/Audio profile. UI, window,
     /// render, and audio state are projections of this single retained value.
     pub(crate) options_profile: options_profile::RetailOptionsProfile,
@@ -37,14 +40,41 @@ pub(crate) struct PersistenceState {
 impl PersistenceState {
     pub(crate) fn new(options_profile: options_profile::RetailOptionsProfile) -> Self {
         Self {
+            initial_campaign_save_attempted: false,
             options_profile,
             repository: SaveRepository::new(),
         }
     }
 
+    /// CampaignDialog52F28B and successful MapSelect5AE126 arm one attempt.
+    pub(crate) fn arm_initial_campaign_save(&mut self) {
+        self.initial_campaign_save_attempted = false;
+    }
+
+    /// Successful campaign content load67F7C1 suppresses a new initial save.
+    pub(crate) fn loaded_campaign(&mut self) {
+        self.initial_campaign_save_attempted = true;
+    }
+
+    /// 55DBCD..55DC92 stores the latch before IO; failure must not retry each frame.
+    fn take_initial_campaign_save(&mut self, campaign: bool) -> bool {
+        if !campaign || self.initial_campaign_save_attempted {
+            return false;
+        }
+        self.initial_campaign_save_attempted = true;
+        true
+    }
+
+    fn initial_campaign_save_pending(&self, campaign: bool) -> bool {
+        campaign && !self.initial_campaign_save_attempted
+    }
+
     /// A one-shot production capture uses its own new directory, so the
     /// ordinary save command cannot replace a player's existing saves.
     pub(crate) fn isolate_capture_saves(&mut self, directory: &Path) -> std::io::Result<()> {
+        if self.repository.directory == directory {
+            return Ok(());
+        }
         std::fs::create_dir(directory)?;
         self.repository = SaveRepository::at(directory);
         Ok(())
@@ -453,23 +483,32 @@ impl SaveRepository {
         bytes: &[u8],
     ) -> Result<(), SaveWriteError> {
         if path.parent() != Some(self.directory.as_path())
-            || path.extension().and_then(|ext| ext.to_str()) != Some("bin")
+            || !Self::is_save_file(path)
         {
             return Err(SaveWriteError::write_file(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "overwrite target is not a save in this repository",
             )));
         }
+        self.validate_existing_save(path)?;
+        self.replace_file(path, bytes)
+    }
+
+    fn validate_existing_save(&self, path: &Path) -> Result<(), SaveWriteError> {
         let previous = self.read(path).map_err(SaveWriteError::write_file)?;
         GameSnapshot::read_header(&previous).map_err(|error| {
             SaveWriteError::write_file(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
         })?;
+        Ok(())
+    }
+
+    fn replace_file(&self, path: &Path, bytes: &[u8]) -> Result<(), SaveWriteError> {
         static NEXT_STAGE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let directory = path.parent().filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
         let stage = loop {
             let id = NEXT_STAGE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let stage = self
-                .directory
-                .join(format!(".save-{}-{id}.tmp", std::process::id()));
+            let stage = directory.join(format!(".save-{}-{id}.tmp", std::process::id()));
             match self.create_new_file(&stage, bytes) {
                 Ok(()) => break stage,
                 Err(error) if error.source.kind() == std::io::ErrorKind::AlreadyExists => continue,
@@ -481,6 +520,49 @@ impl SaveRepository {
             let _ = std::fs::remove_file(&stage);
         }
         result.map_err(SaveWriteError::write_file)
+    }
+
+    /// The game's one retained initial save per mission. Native67CF13..67CF42
+    /// forwards the entire filename to StgCreateDocfile(CREATE). Relative paths
+    /// use VERA's save root; absolute paths retain their selected location.
+    /// Missing subdirectories fail, and an existing VERA automatic slot is replaced.
+    /// The Rust-format boundary preserves foreign/native SAV files rather than
+    /// replacing them with an incompatible snapshot. The attempt still consumes
+    /// the native latch; this does not claim native SAV compatibility.
+    /// User saves keep their separate create-new/explicit-overwrite policy.
+    pub(crate) fn write_initial_campaign(
+        &self,
+        filename: &str,
+        bytes: &[u8],
+    ) -> Result<PathBuf, SaveWriteError> {
+        let file = Path::new(filename);
+        if file.file_name().is_none()
+            || file.extension().and_then(|ext| ext.to_str()) != Some("sav")
+        {
+            return Err(SaveWriteError::write_file(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "initial campaign save must name a .sav file",
+            )));
+        }
+        if file.is_relative() {
+            std::fs::create_dir_all(&self.directory).map_err(|source| SaveWriteError {
+                #[cfg(any(feature = "dev-overlays", test))]
+                stage: SaveWriteStage::CreateDirectory,
+                source,
+            })?;
+        }
+        let path = self.directory.join(file);
+        if path.exists() {
+            self.validate_existing_save(&path)?;
+            self.replace_file(&path, bytes)?;
+        } else {
+            self.create_new_file(&path, bytes)?;
+        }
+        Ok(path)
+    }
+
+    fn is_save_file(path: &Path) -> bool {
+        matches!(path.extension().and_then(|ext| ext.to_str()), Some("bin" | "sav"))
     }
 
     pub(crate) fn delete(&self, path: &Path) -> std::io::Result<()> {
@@ -513,7 +595,7 @@ impl SaveRepository {
             .filter_map(|item| {
                 let item = item.ok()?;
                 let path = item.path();
-                if path.extension().and_then(|extension| extension.to_str()) != Some("bin") {
+                if !Self::is_save_file(&path) {
                     return None;
                 }
                 let metadata = item.metadata().ok()?;
@@ -537,7 +619,7 @@ impl SaveRepository {
         newest_modified_path(directory.filter_map(|item| {
             let item = item.ok()?;
             let path = item.path();
-            if path.extension().and_then(|extension| extension.to_str()) != Some("bin") {
+            if !Self::is_save_file(&path) {
                 return None;
             }
             Some((path, item.metadata().ok()?.modified().ok()?))

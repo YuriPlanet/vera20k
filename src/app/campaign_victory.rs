@@ -294,10 +294,16 @@ impl App {
                 state,
                 crate::app::frontend::credits_roll::CreditsReturn::MainMenu,
             ),
-            VictoryEnd::NextMission(startup) => Self::start_campaign_scenario(
-                state,
-                crate::app::loading::pump::LoadingRequest::campaign(*startup),
-            ),
+            VictoryEnd::NextMission(startup) => {
+                // This supported route completed MapSelect5AE100, whose
+                // successful Init rearms ABCE08 at5AE126. Same-map Restart
+                // and the separate SkipMapSelect path do not make this write.
+                state.persistence.arm_initial_campaign_save();
+                Self::start_campaign_scenario(
+                    state,
+                    crate::app::loading::pump::LoadingRequest::campaign(*startup),
+                );
+            }
         }
     }
 }

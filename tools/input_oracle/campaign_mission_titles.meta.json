@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Scenario mission Name/UIName/Sav reads and MainTick initial-save admission/arguments; no save IO or complete frame.",
+  "assumptions": [
+    "Selected exact-case physical MISSIONMD sections come from the existing local_file archive selector. Lexical extraction and the existing ordered INI cache supply bytes; no native archive/file parser is executed. Stock rows retain complete selected sections, but the unrelated Briefing block between the two name blocks is excluded.",
+    "The file_exists_return gate supplies AL0/1 as an explicit prior at the return of Exists473C50. The original TEST/JZ executes; absent-file rows reach6873AB without either name block. This does not claim file lookup or successful loading.",
+    "Scenario prior Name, Sav and UIName are supplied declared inputs. Name/Sav output and expected fallback/truncation come solely from original instructions. UTF16 arrays preserve embedded NUL visibility and lone surrogate output without a host string conversion.",
+    "CSF records use the existing table transport with selected physical Name/Sav values plus declared synthetic prefix/length controls. Original734E60 executes successful and missing-label lookup and formatting. No localized name result is supplied.",
+    "Initial-save rows enter with MainTick EDI0 and explicit GameMode/latch/Scenario filename/title. They stop at original67CEF0 entry or55DC99 bypass; no save result, disk IO, complete MainTick, pause/modal loop or autosave persistence is claimed.",
+    "All three complete0x3F4 RNG buffers are compared after every row and retained once before/after the run. Every executable section remains unchanged. These slices contain no timer or detach calls; full startup/save effects are excluded.",
+    "The directory-dot control observes literal strrchr over the full supplied name; it is not a claim that stock mission names contain paths. Windows64-WCHAR save-filename conversion and longer path failure behavior remain outside the boundary."
+  ],
+  "substitutions": [
+    "Existing CampaignReader/BulletReader VM, ordered INI cache, bounded allocator/inert delete and original CRT TLS/atomic transport. No alternate VM or gameplay return is introduced.",
+    "File-exists AL return, decoded physical INI/CSF bytes, synthetic CSF strings, prior buffers and mode/latch are explicit boundary inputs. Save_Game_To_File is observed before executing its entry instruction, never replaced with success."
+  ],
+  "entry_points": {
+    "file_exists_return_gate": "0x00686D64",
+    "absent_file_boundary": "0x006873AB",
+    "legacy_name_begin": "0x00686D7F",
+    "legacy_name_end": "0x00686DEC",
+    "localized_names_begin": "0x00686EAB",
+    "localized_names_end": "0x00687000",
+    "comma_hex_utf16": "0x00528F00",
+    "read_string": "0x00528A10",
+    "csf_lookup": "0x00734E60",
+    "initial_save_begin": "0x0055DBCD",
+    "save_io_boundary": "0x0067CEF0",
+    "logic_boundary": "0x0055DC99"
+  },
+  "replay_command": "python -m tools.input_oracle.campaign_start --mission-titles",
+  "payload_sha256": "765e29208e5762e3084b744c15cef6a1b5daf479020f2e8c551ca6f48b2bab29"
+}

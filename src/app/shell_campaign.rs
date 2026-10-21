@@ -228,6 +228,8 @@ impl App {
         };
         let difficulty = campaign.difficulty();
         let voice = campaign.take_selection_voice();
+        // CampaignDialog52F28B rearms the process's initial-save attempt.
+        state.persistence.arm_initial_campaign_save();
         state.persistence.options_profile.difficulty = difficulty;
         if let Some(voice) = voice {
             Self::play_campaign_voice(state, voice);

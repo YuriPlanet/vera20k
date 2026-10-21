@@ -102,11 +102,23 @@ fn bound_saved_world(
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let lighting = crate::map::lighting::parse_lighting(&map.ini);
+    // A nonempty retained title makes both warm and cold resource restoration
+    // prove that saved names survive without consulting the current CSF.
+    let mut campaign_names = crate::rules::campaign_loading::CampaignScenarioNames::default();
+    campaign_names.apply_ini(
+        &IniFile::from_str("[saved.map]\nUIName=NAME:SAVED\n"),
+        "saved.map",
+        &crate::assets::csf_file::test_csf(&[
+            ("NAME:SAVED", "Retained mission name"),
+            ("NAME:SAVEDSav", "Retained save title"),
+        ]),
+    );
     let metadata = SavedMapMetadata::capture(
         map.ini.content_hash(),
         &loaded.source,
         &map.basic,
         &map.ranking,
+        &campaign_names,
         &map.terrain_objects,
         &roster,
         &roster.color_map(),
@@ -295,6 +307,10 @@ fn assert_incoming_resources(
     assert_eq!(
         serde_json::to_value(&prepared.map).unwrap(),
         serde_json::to_value(map).unwrap()
+    );
+    assert_eq!(
+        prepared.map.campaign_names().save_title(),
+        "Retained save title"
     );
     assert_eq!(
         save_codec::serialize(

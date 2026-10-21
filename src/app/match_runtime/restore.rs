@@ -79,6 +79,10 @@ pub(crate) fn commit_prepared_load(
         .simulation
         .session()
         .game_mode();
+    if game_mode == crate::sim::scenario_session::ScenarioGameMode::Campaign {
+        // Successful ContentLoad67F7C1 suppresses a new initial save.
+        state.persistence.loaded_campaign();
+    }
     state
         .match_state
         .session
@@ -109,6 +113,7 @@ pub(crate) fn commit_prepared_load(
     let theater_ext = crate::app::loading::init_helpers::theater_ext_for(&theater_name).to_owned();
     let binary_frame = runtime.simulation.session().binary_frame();
     let map = crate::app::loading::transitions::MapPresentationInputs {
+        campaign_names: Some(committed.map.campaign_names().clone()),
         basic: committed.map.basic().clone(),
         ranking: committed.map.ranking().clone(),
         source: committed.map.source().clone(),

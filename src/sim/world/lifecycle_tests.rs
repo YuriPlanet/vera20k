@@ -9349,6 +9349,63 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
 }
 
 #[test]
+fn pre_logic_save_observes_input_and_ground_order_before_first_tick() {
+    use super::{FrameEffects, TickLane, display_layers::DisplayLayer};
+    use crate::sim::command::{Command, CommandEnvelope};
+
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("Player");
+    sim.houses
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
+    for id in 1..=4 {
+        insert_entity(&mut sim, id, EntityCategory::Unit);
+        assert!(matches!(
+            sim.try_reveal_entity(id, common_raw_request(2 + id as u16, 3, 0, 128, 128)),
+            RevealOutcome::Revealed { .. }
+        ));
+    }
+    assert_eq!(
+        sim.substrate.display.members(DisplayLayer::GROUND),
+        [1, 2, 3, 4]
+    );
+    for id in 1..=4 {
+        sim.remove_entity_occupancy(id);
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .position
+            .set_rx_for_test(7 - id as u16);
+        sim.add_entity_occupancy(id);
+    }
+    let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
+    let saved = std::cell::RefCell::new(None);
+    let save = |sim: &Simulation| {
+        *saved.borrow_mut() = Some(GameSnapshot::save_validated(sim, 0, 0, "initial", 0));
+    };
+    runtime
+        .advance_frame(
+            &[CommandEnvelope::new(
+                owner,
+                1,
+                Command::SetGameSpeed { speed: 2 },
+            )],
+            67,
+            TickLane::Ordinary,
+            FrameEffects::default().with_before_logic(&save),
+        )
+        .unwrap();
+    let loaded = GameSnapshot::load(&saved.into_inner().expect("reached pre-Logic save")).unwrap();
+    assert_eq!(loaded.sim.session().tick(), 0);
+    assert_eq!(loaded.sim.session().game_options().game_speed, 2);
+    assert_eq!(
+        loaded.sim.substrate.display.members(DisplayLayer::GROUND),
+        [2, 3, 4, 1]
+    );
+    assert_eq!(runtime.simulation.session().tick(), 1);
+}
+
+#[test]
 fn display_lifecycle_is_independent_of_logic_and_survives_production_save() {
     use super::display_layers::DisplayLayer;
     let mut sim = Simulation::new();

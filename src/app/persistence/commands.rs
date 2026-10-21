@@ -25,7 +25,7 @@ pub(crate) enum SaveCommandError {
 
 #[cfg(feature = "dev-overlays")]
 pub(crate) fn quicksave(state: &mut AppState) {
-    log_save_result("Quicksave", save(state, None, None));
+    log_save_result("Quicksave", save(state, None, SaveDestination::New));
 }
 
 /// UI save/create/explicit overwrite request. A new timestamp-name collision
@@ -36,14 +36,123 @@ pub(crate) fn save_game(
     description: &str,
     overwrite: Option<&Path>,
 ) -> Result<PathBuf, SaveCommandError> {
-    save(state, Some(description), overwrite)
+    save(
+        state,
+        Some(description),
+        overwrite.map_or(SaveDestination::New, SaveDestination::Existing),
+    )
+}
+
+enum SaveDestination<'a> {
+    New,
+    Existing(&'a Path),
+    InitialCampaign(&'a str),
+}
+
+/// Gather immutable app projections without snapshotting the live Simulation.
+/// Only the process Rules borrow escapes; this lets the frame mutate its world
+/// before the exact MainTick55DBCD save boundary.
+pub(crate) fn prepare_initial_campaign_save<'a>(
+    state: &AppState,
+    rules_owner: Option<&'a crate::rules::process_owner::NativeRulesProcessOwner>,
+) -> Option<Result<PreparedSave<'a>, SaveCommandError>> {
+    let campaign = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .is_some_and(|runtime| !runtime.simulation.session().game_mode_nonzero());
+    state
+        .persistence
+        .initial_campaign_save_pending(campaign)
+        .then(|| {
+            prepare_save(
+                state,
+                Some(&format!(
+                    "[{}]",
+                    state.match_state.campaign_names.save_title()
+                )),
+                rules_owner,
+            )
+        })
+}
+
+/// Called only by the frame's post-input, post-Ground, pre-Logic boundary.
+/// The same writer serves manual and automatic saves; the process latch is
+/// consumed here before either a preparation error or an IO attempt.
+pub(crate) fn initial_campaign_save(
+    prepared: Option<Result<PreparedSave<'_>, SaveCommandError>>,
+    sim: &crate::sim::world::Simulation,
+    persistence: &mut super::PersistenceState,
+    clock: &mut crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
+) {
+    let Some(prepared) = prepared else {
+        return;
+    };
+    if !persistence.take_initial_campaign_save(!sim.session().game_mode_nonzero()) {
+        return;
+    }
+    let filename = initial_campaign_filename(sim.session().map_name());
+    let result = prepared.and_then(|prepared| {
+        prepared.write(
+            sim,
+            &persistence.repository,
+            clock,
+            SaveDestination::InitialCampaign(&filename),
+        )
+    });
+    match result {
+        Ok(path) => log::info!("Initial campaign save: {}", path.display()),
+        Err(error) => log::warn!("Initial campaign save failed: {error}"),
+    }
+}
+
+/// Native strrchr scans the whole stored Scenario filename, then appends .sav.
+/// The repository separately admits the path it can own; do not sanitize or
+/// turn this into Path::file_stem, which treats a dot in a directory differently.
+fn initial_campaign_filename(scenario: &str) -> String {
+    let stem = scenario.rsplit_once('.').map_or(scenario, |(stem, _)| stem);
+    format!("{stem}.sav")
 }
 
 fn save(
     state: &mut AppState,
     name: Option<&str>,
-    overwrite: Option<&Path>,
+    destination: SaveDestination<'_>,
 ) -> Result<PathBuf, SaveCommandError> {
+    let prepared = prepare_save(state, name, state.process_assets.native_rules())?;
+    prepared.write(
+        &state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .ok_or(SaveCommandError::MissingSimulation)?
+            .simulation,
+        &state.persistence.repository,
+        &mut state.match_state.scenario_elapsed_clock,
+        destination,
+    )
+}
+
+/// App-owned projections frozen for one synchronous save. Simulation remains
+/// borrowed only at write(), after the frame's input and Ground owners ran.
+pub(crate) struct PreparedSave<'a> {
+    map_hash: u64,
+    rules_hash: u64,
+    description: String,
+    sanitized: Option<String>,
+    timestamp: u64,
+    sinking_waterlines: Vec<(u64, i16)>,
+    sidebar_order: Option<crate::sim::snapshot::SavedSidebarOrder>,
+    tactical_view: crate::sim::snapshot::SavedTacticalView,
+    local_view: crate::sim::snapshot::saved_local_view::SavedLocalView,
+    resources: crate::sim::snapshot::scenario_resources::SavedScenarioResourcesRef<'a>,
+}
+
+fn prepare_save<'a>(
+    state: &AppState,
+    name: Option<&str>,
+    rules_owner: Option<&'a crate::rules::process_owner::NativeRulesProcessOwner>,
+) -> Result<PreparedSave<'a>, SaveCommandError> {
     let sanitized = name.map(sanitize_save_name);
     if sanitized.as_deref() == Some("") {
         return Err(SaveCommandError::EmptyDescription);
@@ -75,10 +184,7 @@ fn save(
         .sidebar_projection
         .saved_order();
     let tactical_view = crate::app::input::camera::saved_tactical_view(state);
-    let rules_owner = state
-        .process_assets
-        .native_rules()
-        .ok_or(SaveCommandError::MissingResources("process rules"))?;
+    let rules_owner = rules_owner.ok_or(SaveCommandError::MissingResources("process rules"))?;
     let processed =
         rules_owner
             .saved_scenario_rules()
@@ -108,21 +214,17 @@ fn save(
         state.radar_presentation_ms(),
         presentation.power_bar_anim,
     );
-    let clock_now = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    let clock_save = state
-        .match_state
-        .scenario_elapsed_clock
-        .begin_save(clock_now);
     let map = crate::sim::snapshot::scenario_resources::SavedMapMetadata::capture(
         map_hash,
         source,
         &state.match_state.map_basic,
         &state.match_state.map_ranking,
+        &state.match_state.campaign_names,
         &presentation.terrain_objects,
         &presentation.house_roster,
         &presentation.house_color_map,
         presentation.lighting.saved_config(),
-        clock_save.accumulated_buckets(),
+        0, // Patched from the authoritative clock at the actual save boundary.
         state.match_state.session.local_player_name(),
         state.audio.theme.saved_slots(),
         presentation.radar_movies.scenario_hold(),
@@ -134,40 +236,66 @@ fn save(
         terrain,
         map,
     );
-    let bytes = crate::sim::snapshot::GameSnapshot::save_validated_with_presentation(
-        sim,
+    Ok(PreparedSave {
         map_hash,
-        runtime.resources.rules.simulation_config_hash(),
-        name.unwrap_or(&sim.session().map_name()),
-        now,
-        &sinking_waterlines,
-        sidebar_order.as_ref(),
-        Some(&tactical_view),
-        Some(&local_view),
-        Some(&resources),
-    );
-    let tick = sim.session().tick();
-    let result = if let Some(path) = overwrite {
-        state
-            .persistence
-            .repository
-            .overwrite_existing(path, &bytes)
-            .map(|()| path.to_path_buf())
-    } else {
-        let filename = match sanitized {
-            Some(name) => format!("save_{name}_tick{tick}_{now}.bin"),
-            None => format!("save_tick{tick}_{now}.bin"),
+        rules_hash: runtime.resources.rules.simulation_config_hash(),
+        description: name.unwrap_or(sim.session().map_name()).to_owned(),
+        sanitized,
+        timestamp: now,
+        sinking_waterlines,
+        sidebar_order,
+        tactical_view,
+        local_view,
+        resources,
+    })
+}
+
+impl PreparedSave<'_> {
+    fn write(
+        mut self,
+        sim: &crate::sim::world::Simulation,
+        repository: &super::SaveRepository,
+        clock: &mut crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
+        destination: SaveDestination<'_>,
+    ) -> Result<PathBuf, SaveCommandError> {
+        let clock_save = clock.begin_save(crate::app::match_runtime::frame_pacer::wall_clock_ms());
+        self.resources
+            .set_elapsed_buckets(clock_save.accumulated_buckets());
+        let bytes = crate::sim::snapshot::GameSnapshot::save_validated_with_presentation(
+            sim,
+            self.map_hash,
+            self.rules_hash,
+            &self.description,
+            self.timestamp,
+            &self.sinking_waterlines,
+            self.sidebar_order.as_ref(),
+            Some(&self.tactical_view),
+            Some(&self.local_view),
+            Some(&self.resources),
+        );
+        let tick = sim.session().tick();
+        let result = match destination {
+            SaveDestination::Existing(path) => repository
+                .overwrite_existing(path, &bytes)
+                .map(|()| path.to_path_buf()),
+            SaveDestination::InitialCampaign(filename) => {
+                repository.write_initial_campaign(filename, &bytes)
+            }
+            SaveDestination::New => {
+                let filename = match self.sanitized {
+                    Some(name) => format!("save_{name}_tick{tick}_{}.bin", self.timestamp),
+                    None => format!("save_tick{tick}_{}.bin", self.timestamp),
+                };
+                repository.write_named(&filename, &bytes)
+            }
         };
-        state.persistence.repository.write_named(&filename, &bytes)
-    };
-    // Keep I/O dwell out of the source clock. VERA also resumes on a failed
-    // write, preserving its live-match failure policy.
-    let clock_now = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    state
-        .match_state
-        .scenario_elapsed_clock
-        .finish_save(clock_save, clock_now);
-    result.map_err(Into::into)
+        // Keep synchronous IO dwell out of the source clock, including failure.
+        clock.finish_save(
+            clock_save,
+            crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+        );
+        result.map_err(Into::into)
+    }
 }
 
 #[cfg(feature = "dev-overlays")]
@@ -382,5 +510,25 @@ mod save_name_tests {
         let bytes = GameSnapshot::save_validated(&sim, 1, 2, &raw_description, 3);
         let header = GameSnapshot::read_header(&bytes).expect("current VERA header");
         assert_eq!(header.description, raw_description);
+    }
+}
+
+#[cfg(test)]
+mod initial_save_tests {
+    use super::initial_campaign_filename;
+
+    #[test]
+    fn initial_campaign_filenames_match_original_main_tick() {
+        let native = crate::test_fixture::json("tools/input_oracle/campaign_mission_titles.json");
+        for row in native["initial_save_rows"].as_array().unwrap() {
+            if let Some(expected) = row["filename"].as_str() {
+                assert_eq!(
+                    initial_campaign_filename(row["logical_filename"].as_str().unwrap()),
+                    expected,
+                    "{}",
+                    row["name"]
+                );
+            }
+        }
     }
 }

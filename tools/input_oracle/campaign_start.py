@@ -244,8 +244,8 @@ class CampaignReader(BulletReader):
         return values
 
 
-def install_csf(m, names):
-    physical, source_hash = stock_csf()
+def install_csf(m, names, *, entries=None):
+    physical, source_hash = stock_csf() if entries is None else (entries, None)
     names = sorted(names)
     records, values, extras = m.alloc(len(names) * 0x28), m.alloc(len(names) * 4), m.alloc(len(names) * 4)
     for i, name in enumerate(names):
@@ -1654,6 +1654,166 @@ def generate_scenario_names():
         u.hook_del(write_hook)
 
 
+def generate_mission_titles():
+    """Original mission title readers and initial-save argument admission.
+
+    The file-exists return is an explicit boundary input. Present-file rows
+    execute the two original name blocks around the unrelated Briefing block;
+    absent-file rows execute its real bypass. Save rows stop at original
+    Save_Game_To_File entry, before any IO or supplied return.
+    """
+    from tools.sidebar_oracle.stock import local_file
+
+    source, mission_raw = local_file("MISSIONMD.INI")
+    filenames = ("ALL01UMD.MAP", "ALL02UMD.MAP", "SOV01UMD.MAP")
+    physical_sections, _ = lexical(mission_raw, set(filenames))
+    physical_csf, _ = stock_csf()
+    labels = {physical_sections[name]["UIName"].upper() for name in filenames}
+    labels |= {name + "SAV" for name in labels}
+    csf = {name: physical_csf[name] for name in sorted(labels)}
+    csf.update({
+        "NAME:FIXTURE": "Localized name", "NAME:FIXTURESAV": "Localized save name",
+        "NAME:ONLY": "Name without a Sav entry",
+        "NAME:UPPER": "Upper fallback name", "NAME:UPPERSAV": "MISSING:Custom save",
+        "NAME:LOWER": "Lower literal name", "NAME:LOWERSAV": "missing:Literal save",
+        "NAME:SHORT": "Short prefix name", "NAME:SHORTSAV": "MISSING",
+        "NAME:LONG": "A" * 43 + "\U0001F600" + "Z" * 20,
+        "NAME:LONGSAV": "B" * 43 + "\U0001F600" + "Z" * 20,
+    })
+    m = CampaignReader(Path("/nonexistent-scenario-native-no-files"))
+    install_csf(m, csf, entries=csf)
+    m.seed_streams(31)
+    before = m.rng_state()
+
+    def encoded(value):
+        raw = value.encode("utf-16-le")
+        return list(struct.unpack("<" + "H" * (len(raw) // 2), raw))
+
+    def wide(pointer):
+        units = []
+        while value := struct.unpack("<H", m.u.mem_read(pointer + len(units) * 2, 2))[0]:
+            units.append(value)
+            assert len(units) < 512
+        return units
+
+    def retain_check():
+        assert m.rng_state() == before
+        m.check_code()
+
+    prior_name = encoded("Prior name")
+    prior_save = encoded("Prior saved title")
+    cases = [("stock_" + name[:5].lower(), name, True,
+              {name: physical_sections[name]}) for name in filenames]
+    cases += [(name, "TEST.MAP", present, values) for name, present, values in (
+        ("missing_file", False, {}),
+        ("absent_section", True, {}),
+        ("empty_section", True, {"TEST.MAP": {}}),
+        ("legacy_name", True, {"TEST.MAP": {"Name": "41,42,43"}}),
+        ("empty_ui_name", True, {"TEST.MAP": {"Name": "41,42,43", "UIName": ""}}),
+        ("legacy_blank", True, {"TEST.MAP": {"Name": " \t "}}),
+        ("legacy_hex_tokens", True, {"TEST.MAP": {"Name": "41,,0042,0x43,+44,45junk"}}),
+        ("legacy_nul", True, {"TEST.MAP": {"Name": "41,0,42"}}),
+        ("legacy_45_units", True, {"TEST.MAP": {"Name": ",".join(["41"] * 45)}}),
+        ("legacy_46_units", True, {"TEST.MAP": {"Name": ",".join(["41"] * 46)}}),
+        ("ui_override", True, {"TEST.MAP": {"Name": "41", "UIName": "Name:Fixture"}}),
+        ("missing_sav", True, {"TEST.MAP": {"UIName": "Name:Only"}}),
+        ("missing_both_labels", True, {"TEST.MAP": {"UIName": "Name:DoesNotExist"}}),
+        ("uppercase_missing_prefix", True, {"TEST.MAP": {"UIName": "Name:Upper"}}),
+        ("lowercase_missing_prefix", True, {"TEST.MAP": {"UIName": "Name:Lower"}}),
+        ("short_missing_prefix", True, {"TEST.MAP": {"UIName": "Name:Short"}}),
+        ("utf16_cutoff", True, {"TEST.MAP": {"UIName": "Name:Long"}}),
+        ("key_cutoff", True, {"TEST.MAP": {"UIName": "X" * 48}}),
+        ("wrong_key_case", True, {"TEST.MAP": {"uiname": "Name:Fixture"}}),
+        ("wrong_section_case", True, {"test.map": {"UIName": "Name:Fixture"}}),
+    )]
+    name_rows = []
+    for name, filename, present, values in cases:
+        m.u.mem_write(m.scenario + 0x1360, bytes(0xF0))
+        m.u.mem_write(m.scenario + 0x1360, struct.pack("<" + "H" * len(prior_name), *prior_name))
+        m.u.mem_write(m.scenario + 0x13DA, struct.pack("<" + "H" * len(prior_save), *prior_save))
+        m.u.mem_write(m.scenario + 0x13BA, b"Prior key\0")
+        m.u.mem_write(m.scenario + 0x125C, filename.encode("ascii") + b"\0")
+        m.ordered_ini(values)
+        m.u.mem_write(SP + 0x1C, bytes(m.u.mem_read(INI, 0x40)))
+        m.u.reg_write(UC_X86_REG_EBX, 0)
+        # Starts at the return boundary of Exists473C50, not at a fabricated
+        # file/INI loader return. The actual TEST and conditional jump execute.
+        m.u.reg_write(UC_X86_REG_EAX, int(present))
+        m.region(0x686D64, (0x686D6C, 0x6873AB), context={"case": name})
+        file_gate_stop = m.u.reg_read(UC_X86_REG_EIP)
+        if present:
+            assert file_gate_stop == 0x686D6C
+            m.region(0x686D7F, 0x686DEC, context={"case": name, "part": "legacy_name"})
+            m.region(0x686EAB, 0x687000, context={"case": name, "part": "localized_names"})
+        else:
+            assert file_gate_stop == 0x6873AB
+        retain_check()
+        row = dict(name=name, filename=filename, mission_file_exists=present, sections=values,
+            prior_name_utf16=prior_name, prior_save_title_utf16=prior_save,
+            prior_ui_name="Prior key", file_gate_stop=f"{file_gate_stop:08X}",
+            name_utf16=wide(m.scenario + 0x1360),
+            save_title_utf16=wide(m.scenario + 0x13DA), ui_name=m.string(m.scenario + 0x13BA))
+        name_rows.append(row)
+
+    save_rows = []
+    stock = {row["filename"]: row for row in name_rows[:3]}
+    save_cases = [("mode_latch_" + str(mode) + "_" + str(latch), "ALL01UMD.MAP", mode, latch,
+                   stock["ALL01UMD.MAP"]["save_title_utf16"])
+                  for mode, latch in ((0, 0), (0, 1), (5, 0), (5, 1))]
+    save_cases += [("stock_" + name[:5].lower(), name, 0, 0, stock[name]["save_title_utf16"])
+                   for name in filenames[1:]]
+    save_cases += [(name, filename, 0, 0, stock["ALL01UMD.MAP"]["save_title_utf16"])
+                   for name, filename in (
+                       ("no_extension", "ALL01UMD"),
+                       ("windows_path", "C:\\MISSIONS\\ALL01UMD.MAP"),
+                       ("slash_path", "maps/ALL01UMD.MAP"),
+                       ("directory_dot_only", "mods.v1/ALL01UMD"),
+                       ("multiple_dots", "ALL01UMD.custom.map"))]
+    for name, filename, mode, latch, title in save_cases:
+        m.u.mem_write(m.scenario + 0x125C, filename.encode("ascii") + b"\0")
+        m.u.mem_write(m.scenario + 0x13DA, struct.pack("<" + "H" * (len(title) + 1), *title, 0))
+        m.u.mem_write(0xA8B238, dwords(mode))
+        m.u.mem_write(0xABCE08, bytes([latch]))
+        m.u.reg_write(UC_X86_REG_EDI, 0)
+        m.region(0x55DBCD, (0x67CEF0, 0x55DC99), context={"case": name})
+        reached = m.u.reg_read(UC_X86_REG_EIP)
+        row = dict(name=name, logical_filename=filename, game_mode=mode, incoming_latch=latch,
+            save_title_utf16=title, reached_pc=f"{reached:08X}",
+            outgoing_latch=m.u.mem_read(0xABCE08, 1)[0])
+        if reached == 0x67CEF0:
+            row.update(filename=m.string(m.u.reg_read(UC_X86_REG_ECX)),
+                description_utf16=wide(m.u.reg_read(UC_X86_REG_EDX)),
+                stack_arg=m.read32(m.u.reg_read(UC_X86_REG_ESP) + 4))
+        retain_check()
+        save_rows.append(row)
+    return dict(schema_version=1, mission_source=source, csf_entries=csf,
+        name_rows=name_rows, initial_save_rows=save_rows,
+        rng_before=before, rng_after=m.rng_state(),
+        execution_checks=dict(all_three_rng_buffers_unchanged_after_every_row=True,
+            original_executable_bytes_unchanged=True, save_io_executed=False))
+
+
+def mission_titles_metadata():
+    return provenance(
+        scope="Original Scenario mission Name/UIName/Sav reads and MainTick initial-save admission/arguments; no save IO or complete frame.",
+        entry_points=dict(file_exists_return_gate=0x686D64, absent_file_boundary=0x6873AB,
+            legacy_name_begin=0x686D7F, legacy_name_end=0x686DEC,
+            localized_names_begin=0x686EAB, localized_names_end=0x687000,
+            comma_hex_utf16=0x528F00, read_string=0x528A10, csf_lookup=0x734E60,
+            initial_save_begin=0x55DBCD, save_io_boundary=0x67CEF0, logic_boundary=0x55DC99),
+        assumptions=[
+            "Selected exact-case physical MISSIONMD sections come from the existing local_file archive selector. Lexical extraction and the existing ordered INI cache supply bytes; no native archive/file parser is executed. Stock rows retain complete selected sections, but the unrelated Briefing block between the two name blocks is excluded.",
+            "The file_exists_return gate supplies AL0/1 as an explicit prior at the return of Exists473C50. The original TEST/JZ executes; absent-file rows reach6873AB without either name block. This does not claim file lookup or successful loading.",
+            "Scenario prior Name, Sav and UIName are supplied declared inputs. Name/Sav output and expected fallback/truncation come solely from original instructions. UTF16 arrays preserve embedded NUL visibility and lone surrogate output without a host string conversion.",
+            "CSF records use the existing table transport with selected physical Name/Sav values plus declared synthetic prefix/length controls. Original734E60 executes successful and missing-label lookup and formatting. No localized name result is supplied.",
+            "Initial-save rows enter with MainTick EDI0 and explicit GameMode/latch/Scenario filename/title. They stop at original67CEF0 entry or55DC99 bypass; no save result, disk IO, complete MainTick, pause/modal loop or autosave persistence is claimed.",
+            "All three complete0x3F4 RNG buffers are compared after every row and retained once before/after the run. Every executable section remains unchanged. These slices contain no timer or detach calls; full startup/save effects are excluded.",
+            "The directory-dot control observes literal strrchr over the full supplied name; it is not a claim that stock mission names contain paths. Windows64-WCHAR save-filename conversion and longer path failure behavior remain outside the boundary."],
+        substitutions=[
+            "Existing CampaignReader/BulletReader VM, ordered INI cache, bounded allocator/inert delete and original CRT TLS/atomic transport. No alternate VM or gameplay return is introduced.",
+            "File-exists AL return, decoded physical INI/CSF bytes, synthetic CSF strings, prior buffers and mode/latch are explicit boundary inputs. Save_Game_To_File is observed before executing its entry instruction, never replaced with success."])
+
+
 def scenario_names_metadata():
     return provenance(
         scope="Original generated House name copies, whole50C170 and authored Building44F820 admission to before allocation or real rejection return.",
@@ -1820,6 +1980,7 @@ if __name__ == "__main__":
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--houses", action="store_true")
     selection.add_argument("--scenario-names", action="store_true")
+    selection.add_argument("--mission-titles", action="store_true")
     selection.add_argument("--start-prefix", action="store_true")
     selection.add_argument("--ares-allies", action="store_true")
     parser.add_argument("--ares-dll", type=Path, default=os.environ.get("VERA20K_ARES_DLL"))
@@ -1834,9 +1995,9 @@ if __name__ == "__main__":
         finish_vectors(lambda: generate_ares_allies(ares), HERE / "ares_allies_reader.json",
                        provenance=ares_allies_metadata, argv=remaining, source_paths=paths)
     else:
-        generator = generate_start_prefix if args.start_prefix else generate_scenario_names if args.scenario_names else generate_houses if args.houses else generate
-        filename = "campaign_start_prefix.json" if args.start_prefix else "campaign_house_names.json" if args.scenario_names else "campaign_start_houses.json" if args.houses else "campaign_start.json"
-        evidence = start_prefix_metadata if args.start_prefix else scenario_names_metadata if args.scenario_names else lambda: metadata(houses=args.houses)
+        generator = generate_mission_titles if args.mission_titles else generate_start_prefix if args.start_prefix else generate_scenario_names if args.scenario_names else generate_houses if args.houses else generate
+        filename = "campaign_mission_titles.json" if args.mission_titles else "campaign_start_prefix.json" if args.start_prefix else "campaign_house_names.json" if args.scenario_names else "campaign_start_houses.json" if args.houses else "campaign_start.json"
+        evidence = mission_titles_metadata if args.mission_titles else start_prefix_metadata if args.start_prefix else scenario_names_metadata if args.scenario_names else lambda: metadata(houses=args.houses)
         finish_vectors(generator, HERE / filename,
                        provenance=evidence, argv=remaining,
                        source_paths=source_paths())

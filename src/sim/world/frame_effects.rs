@@ -79,6 +79,7 @@ pub struct FrameEffects<'a> {
     local_planning: Option<&'a dyn LocalPlanningBoundary>,
     network_commands: Option<&'a dyn NetworkCommandBoundary>,
     overlay_registry: Option<&'a OverlayTypeRegistry>,
+    before_logic: Option<&'a dyn Fn(&Simulation)>,
 }
 
 impl<'a> FrameEffects<'a> {
@@ -88,6 +89,7 @@ impl<'a> FrameEffects<'a> {
             local_planning: None,
             network_commands: None,
             overlay_registry: None,
+            before_logic: None,
         }
     }
 
@@ -97,6 +99,7 @@ impl<'a> FrameEffects<'a> {
             local_planning: None,
             network_commands: None,
             overlay_registry: None,
+            before_logic: None,
         }
     }
 
@@ -110,6 +113,16 @@ impl<'a> FrameEffects<'a> {
     pub fn with_network_commands(self, boundary: &'a dyn NetworkCommandBoundary) -> Self {
         Self {
             network_commands: Some(boundary),
+            ..self
+        }
+    }
+
+    /// MainTick55DBCD's process-owned save runs after local input and Ground
+    /// sorting, before Logic55DC9E. The callback may observe, never mutate,
+    /// this exact world. It is borrowed for this frame and is not retained.
+    pub fn with_before_logic(self, boundary: &'a dyn Fn(&Simulation)) -> Self {
+        Self {
+            before_logic: Some(boundary),
             ..self
         }
     }
@@ -132,6 +145,12 @@ impl<'a> FrameEffects<'a> {
                 )
             })?
             .compare_frame_info(record, current_frame)
+    }
+
+    pub(crate) fn before_logic(self, sim: &Simulation) {
+        if let Some(boundary) = self.before_logic {
+            boundary(sim);
+        }
     }
 
     pub(crate) fn leave_local_planning(

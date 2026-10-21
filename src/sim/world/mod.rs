@@ -7760,6 +7760,8 @@ impl Simulation {
             &mut self.substrate,
             rules,
         );
+        // MainTick55DBCD saves the post-input, post-sort world before Logic.
+        effects.before_logic(self);
 
         self.lifecycle_outputs.emit(LifecycleOutput::LogicVisit);
         profile_phase!(COMMANDS_ADMIT);

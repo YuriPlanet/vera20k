@@ -125,6 +125,13 @@ impl AbortReturnInput {
             },
             false,
         );
+        // Queue_Options647040 publishes an OPTIONS event. Its ordinary
+        // EventClass tail, rather than the key edge, requests the modal.
+        if state.match_state.match_presentation.in_game_menu
+            != crate::ui::pause_menu::InGameMenuState::Menu
+        {
+            crate::app::match_runtime::sim_tick::advance_in_game_runtime_exact_step(state)?;
+        }
         ensure!(
             state.match_state.match_presentation.in_game_menu
                 == crate::ui::pause_menu::InGameMenuState::Menu,

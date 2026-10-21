@@ -612,6 +612,7 @@ impl App {
                 capture_dimensions.map(|(w, h)| PhysicalSize::new(w, h)),
             ),
             match_state: crate::app::match_runtime::state::MatchState {
+                campaign_names: Default::default(),
                 session: Default::default(),
                 network_wait: Default::default(),
                 network_failure: None,

@@ -1014,6 +1014,12 @@ fn advance_one_simulation_frame(
         // Cache local owner name before mutable sim borrow (avoids borrow conflict).
         let local_owner_name = crate::app::input::commands::preferred_local_owner_name(state);
         let sound_listener = crate::app::presentation::building_anim::sound_listener(state);
+        let rules_owner = state.process_assets.native_rules();
+        let initial_save = if !resume_network_failure && tick_lane == TickLane::Ordinary {
+            crate::app::persistence::commands::prepare_initial_campaign_save(state, rules_owner)
+        } else {
+            None
+        };
         let mut drained_fire_events: Vec<SimFireEvent> = Vec::new();
         let mut drained_lifecycle_outputs: Vec<LifecycleOutput> = Vec::new();
         let mut drained_combat_lights = Vec::new();
@@ -1052,6 +1058,21 @@ fn advance_one_simulation_frame(
             // F07: the runtime is the one production frame API — bound
             // resources, no caller-substitutable inputs.
             let mut output = {
+                let initial_save = std::cell::RefCell::new((
+                    initial_save,
+                    &mut state.persistence,
+                    &mut state.match_state.scenario_elapsed_clock,
+                ));
+                let before_logic = |sim: &crate::sim::world::Simulation| {
+                    let mut save = initial_save.borrow_mut();
+                    let (prepared, persistence, clock) = &mut *save;
+                    crate::app::persistence::commands::initial_campaign_save(
+                        prepared.take(),
+                        sim,
+                        persistence,
+                        clock,
+                    );
+                };
                 let playback = match (
                     state.audio.sfx_player.as_mut(),
                     state.process_assets.manager(),
@@ -1086,7 +1107,8 @@ fn advance_one_simulation_frame(
                 .with_network_session(&mut state.match_state.session);
                 let effects = FrameEffects::for_sound(&boundary)
                     .with_local_planning(&boundary)
-                    .with_network_commands(&boundary);
+                    .with_network_commands(&boundary)
+                    .with_before_logic(&before_logic);
                 if resume_network_failure {
                     rt.resume_after_network_failure(effects)
                 } else {

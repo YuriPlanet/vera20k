@@ -54,6 +54,8 @@ for checkpoint in EXPLICIT_CAMPAIGN_MAPS:
     # The native external-start owner retains catalog record0 even when an
     # explicit filename selects a mission from the other campaign.
     CAMPAIGN_CHECKPOINTS[checkpoint] = ("all1", "explicit-first-live-frame")
+CAMPAIGN_CHECKPOINTS["campaign-all1-initial-save"] = ("all1", "initial-save")
+CAMPAIGN_CHECKPOINTS["campaign-sov1-initial-save"] = ("sov1", "initial-save")
 for phase in ("opening-locked", "opening-pan", "opening-flash", "opening-arrows",
               "opening-unlocked", "opening-restore-unlocked",
               "opening-timer-running", "opening-timer-expired"):
@@ -195,7 +197,8 @@ def validate_campaign_capture(manifest):
     else:
         opening_phase = phase.startswith("opening-")
         _require(isinstance(runtime, dict) and _integer(runtime.get("tick"))
-                 and (runtime["tick"] > 0 if opening_phase else runtime["tick"] == 0)
+                 and (runtime["tick"] > 0 if opening_phase else
+                      runtime["tick"] == (1 if phase == "initial-save" else 0))
                  and runtime.get("game_mode_nonzero") is False,
                  "campaign capture is outside its admitted runtime frame domain")
         _require(_integer(runtime["campaign_mission_counter"]), "campaign counter missing")
@@ -231,6 +234,16 @@ def validate_campaign_capture(manifest):
                  "campaign camera/bookmark receipt missing")
         if opening_phase:
             _validate_campaign_opening(manifest, phase, runtime)
+        if phase == "initial-save":
+            saved = manifest.get("initial_save", {})
+            _require(saved.get("game_speed") == 2 and saved.get("pending_speed_input") is False,
+                     "initial save preceded the consumed Options input")
+            title = {"all1": "Allied 01 - Time Lapse", "sov1": "Soviet 01 - Time Shift"}[campaign_id]
+            expected_filename = scenario_name.rsplit(".", 1)[0] + ".sav"
+            _require(saved.get("filename", "").lower() == expected_filename
+                     and saved.get("description") == f"[{title}]" and saved.get("tick") == 0
+                     and saved.get("new_save_description") == title,
+                     "initial campaign save/title does not match native startup")
     if phase == "abort-return":
         _require(manifest.get("runtime_observation") == "first-live-frame-before-Escape-press",
                  "abort return has no pre-Escape installed-runtime observation")

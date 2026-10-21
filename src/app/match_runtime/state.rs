@@ -46,6 +46,9 @@ pub(crate) struct MatchState {
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) telemetry_tick_rate: super::telemetry::TickRateMeter,
     pub(crate) map_basic: BasicSection,
+    /// Resolved Full_Init mission strings; retained independently of the
+    /// current CSF and outside deterministic simulation state.
+    pub(crate) campaign_names: crate::rules::campaign_loading::CampaignScenarioNames,
     /// Parsed `[Ranking]` values used by the campaign victory page.
     pub(crate) map_ranking: crate::map::ranking::RankingSection,
     /// Exact source whose bytes produced the active parsed map.

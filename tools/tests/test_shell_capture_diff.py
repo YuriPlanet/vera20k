@@ -371,6 +371,26 @@ class CampaignReceiptTests(unittest.TestCase):
                     self.assertEqual(report["campaign"]["phase"], phase)
                     self.assertEqual(report["parity_certification"], "NONE")
 
+    def test_initial_campaign_save_has_native_title_and_pre_logic_tick(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for campaign, title in (("all1", "Allied 01 - Time Lapse"),
+                                    ("sov1", "Soviet 01 - Time Shift")):
+                receipt = campaign_bundle(Path(temp), campaign)
+                scenario = receipt["startup"]["campaign"]["scenario"]
+                receipt.update(checkpoint=f"campaign-{campaign}-initial-save",
+                               checkpoint_phase="initial-save")
+                receipt["runtime"]["tick"] = 1
+                receipt["initial_save"] = {
+                    "filename": scenario.rsplit(".", 1)[0] + ".sav",
+                    "description": f"[{title}]", "tick": 0,
+                    "new_save_description": title,
+                    "game_speed": 2, "pending_speed_input": False,
+                }
+                diff.validate_campaign_capture(receipt)
+                receipt["initial_save"]["tick"] = 1
+                with self.assertRaises(diff.InputError):
+                    diff.validate_campaign_capture(receipt)
+
     def test_explicit_campaign_capture_keeps_the_selected_map(self):
         with tempfile.TemporaryDirectory() as temp:
             for checkpoint, scenario in diff.EXPLICIT_CAMPAIGN_MAPS.items():

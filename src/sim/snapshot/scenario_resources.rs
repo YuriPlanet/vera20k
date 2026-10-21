@@ -43,7 +43,7 @@ impl<'a> SavedScenarioResourcesRef<'a> {
     }
 
     pub fn capture(
-        resources: &'a SimResources,
+        resources: &SimResources,
         processed_rules: &'a ProcessedRulesLayers,
         fixed_art_hash: u64,
         terrain: SavedTerrainTemplate,
@@ -62,6 +62,12 @@ impl<'a> SavedScenarioResourcesRef<'a> {
             terrain,
             map,
         }
+    }
+
+    /// ScenarioSave stops/accumulates its source clock at the actual save
+    /// boundary, after these immutable resource inputs have been gathered.
+    pub fn set_elapsed_buckets(&mut self, elapsed_buckets: u32) {
+        self.map.elapsed_buckets = elapsed_buckets;
     }
 }
 
@@ -118,6 +124,8 @@ pub struct SavedMapMetadata {
     source: crate::map::source::LoadedMapSource,
     basic: crate::map::basic::BasicSection,
     ranking: crate::map::ranking::RankingSection,
+    /// ScenarioSave689310 retains Full_Init's resolved +1360/+13DA names.
+    campaign_names: crate::rules::campaign_loading::CampaignScenarioNames,
     terrain_objects: Vec<crate::map::overlay::TerrainObject>,
     house_roster: crate::map::houses::HouseRoster,
     house_colors: crate::map::houses::HouseColorMap,
@@ -144,6 +152,7 @@ impl SavedMapMetadata {
         source: &crate::map::source::LoadedMapSource,
         basic: &crate::map::basic::BasicSection,
         ranking: &crate::map::ranking::RankingSection,
+        campaign_names: &crate::rules::campaign_loading::CampaignScenarioNames,
         terrain_objects: &[crate::map::overlay::TerrainObject],
         house_roster: &crate::map::houses::HouseRoster,
         house_colors: &crate::map::houses::HouseColorMap,
@@ -158,6 +167,7 @@ impl SavedMapMetadata {
             source: source.clone(),
             basic: basic.clone(),
             ranking: ranking.clone(),
+            campaign_names: campaign_names.clone(),
             terrain_objects: terrain_objects.to_vec(),
             house_roster: house_roster.clone(),
             house_colors: house_colors.clone(),
@@ -180,6 +190,9 @@ impl SavedMapMetadata {
     }
     pub fn ranking(&self) -> &crate::map::ranking::RankingSection {
         &self.ranking
+    }
+    pub fn campaign_names(&self) -> &crate::rules::campaign_loading::CampaignScenarioNames {
+        &self.campaign_names
     }
     pub fn terrain_objects(&self) -> &[crate::map::overlay::TerrainObject] {
         &self.terrain_objects
@@ -281,6 +294,7 @@ mod tests {
             SavedMapMetadata::capture(
                 123,
                 &source,
+                &Default::default(),
                 &Default::default(),
                 &Default::default(),
                 &[],
