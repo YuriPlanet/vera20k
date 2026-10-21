@@ -197,6 +197,419 @@ fn retail_magnetron_pulls_a_tank_beside_itself_and_lets_go() {
     assert_eq!(entity(&sim, tank).health.current(), health);
 }
 
+/// A stock aircraft first spends its ammunition and returns to an actual
+/// airfield through its ordinary missions. The Magnetron then attacks that
+/// landed aircraft: Detonate46967E..46969C admits Aircraft as well as Unit,
+/// and Imbue710326 calls Aircraft41AA80 -> Foot4D94B0 -> the installed
+/// Jumpjet's Move_To. The save/resume and continued clear-cell landing are
+/// Rust composition regressions; the native oracle covers bounded calls,
+/// not the entire aircraft flight or the snapshot format.
+#[test]
+#[ignore = "physical retail map, rules and art (RA2_DIR)"]
+fn retail_magnetron_lifts_a_docked_aircraft_through_its_attack_order() {
+    use crate::rules::locomotor_type::{MovementZone, SpeedType};
+    use crate::sim::cell_rect::{CellPassabilityArgs, canonical_cell_ref, check_cell_passability};
+    use crate::sim::components::{DriveCoord, NavTargetRef};
+    use crate::sim::movement::air_movement;
+
+    let retail = std::path::PathBuf::from(std::env::var_os("RA2_DIR").expect("RA2_DIR"));
+    for aircraft_type in ["ORCA", "BEAG"] {
+        let crate::sim::arena_fixture::RetailHarrierDockScene {
+            mut runtime,
+            player,
+            airfield,
+            harriers,
+            target: rhino,
+        } = crate::sim::arena_fixture::retail_harrier_dock_scene(&retail)
+            .expect("retail airfield scene");
+        // Headless loading retains only the live map, not the app's separate
+        // terrain_template. Keep its production-loaded terrain before command
+        // frames; saved overlay/bridge authority is reapplied during restore.
+        let restore_terrain = runtime
+            .simulation
+            .resolved_terrain
+            .as_ref()
+            .expect("loaded retail terrain")
+            .clone();
+        let aircraft = if aircraft_type == "ORCA" {
+            harriers[0]
+        } else {
+            let initial = entity(&runtime.simulation, harriers[0]);
+            let cell = (initial.position.rx(), initial.position.ry());
+            spawn_retail_lift_participant(&mut runtime, aircraft_type, player, cell, 1, 4)
+        };
+        let strike = CommandEnvelope::new(
+            player,
+            runtime.simulation.session.tick() + 1,
+            Command::Attack {
+                attacker_id: aircraft,
+                target_id: rhino,
+            },
+        );
+        let mut fired = false;
+        let mut entered = false;
+        let mut guarding_frames = 0;
+        for frame in 0..9000 {
+            let commands = if frame == 0 {
+                std::slice::from_ref(&strike)
+            } else {
+                &[]
+            };
+            runtime
+                .advance_frame_for_tooling(commands, crate::headless_scenario::SIM_TICK_MS)
+                .expect("aircraft strike/return frame");
+            let sim = &runtime.simulation;
+            let plane = entity(sim, aircraft);
+            let ammo = plane.ammo().expect("stock aircraft ammunition");
+            fired |= ammo.current() < ammo.max();
+            entered |= fired && plane.mission.current().known() == Some(MissionType::Enter);
+            let on_pad = plane.radio_contacts.contains(airfield)
+                && entity(sim, airfield).radio_contacts.contains(aircraft)
+                && air_movement::current_fly_height(plane, sim.resolved_terrain.as_ref()) == 0;
+            if entered
+                && on_pad
+                && ammo.current() == ammo.max()
+                && plane.mission.current().known() == Some(MissionType::Guard)
+                && crate::sim::movement::motion_query::is_moving(plane) == Some(false)
+            {
+                guarding_frames += 1;
+                if guarding_frames == 30 {
+                    break;
+                }
+            } else {
+                guarding_frames = 0;
+            }
+        }
+        assert!(
+            fired && entered,
+            "{aircraft_type} fires and returns through Enter"
+        );
+        assert_eq!(
+            guarding_frames, 30,
+            "{aircraft_type} reloads and guards on its pad"
+        );
+        let plane = entity(&runtime.simulation, aircraft);
+        assert_eq!(
+            plane.locomotor.as_ref().unwrap().active_kind(),
+            LocomotorKind::Fly
+        );
+        assert!(!plane.lift.swap_active());
+        let health = plane.health.current();
+        let pad_cell = (plane.position.rx(), plane.position.ry());
+        let pad_coordinate =
+            crate::sim::movement::ground_pose::position_world_coord(&plane.position);
+        let enemy = entity(&runtime.simulation, rhino).owner();
+        let magnetron = spawn_retail_lift_participant(&mut runtime, "TELE", enemy, pad_cell, 6, 8);
+        let attack = CommandEnvelope::new(
+            enemy,
+            runtime.simulation.session.tick() + 1,
+            Command::Attack {
+                attacker_id: magnetron,
+                target_id: aircraft,
+            },
+        );
+        let mut lifted = false;
+        for frame in 0..240 {
+            let commands = if frame == 0 {
+                std::slice::from_ref(&attack)
+            } else {
+                &[]
+            };
+            runtime
+                .advance_frame_for_tooling(commands, crate::headless_scenario::SIM_TICK_MS)
+                .expect("Magnetron attack frame");
+            if entity(&runtime.simulation, aircraft).lift.swap_active() {
+                lifted = true;
+                break;
+            }
+        }
+        let sim = &runtime.simulation;
+        assert!(
+            lifted,
+            "the ordinary TELE attack lifts docked {aircraft_type}: attacker mission {:?}, target {:?}, nav {:?}; aircraft mission {:?}, health {}",
+            entity(sim, magnetron).mission.current(),
+            entity(sim, magnetron).attack_target.target(),
+            entity(sim, magnetron).navigation.nav_com(),
+            entity(sim, aircraft).mission.current(),
+            entity(sim, aircraft).health.current(),
+        );
+        let plane = entity(sim, aircraft);
+        assert_eq!(
+            plane.health.current(),
+            health,
+            "{aircraft_type}: the beam does no damage"
+        );
+        assert_eq!(
+            plane.lift.source(),
+            Some(magnetron),
+            "{aircraft_type}: victim link"
+        );
+        assert_eq!(
+            entity(sim, magnetron).lift.target(),
+            Some(aircraft),
+            "{aircraft_type}: firer link"
+        );
+        let active = plane.locomotor.as_ref().unwrap();
+        assert_eq!(
+            active.active_kind(),
+            LocomotorKind::Jumpjet,
+            "{aircraft_type}: installed locomotor"
+        );
+        assert_eq!(
+            active
+                .piggyback()
+                .as_ref()
+                .expect("suspended aircraft locomotor")
+                .active_kind(),
+            LocomotorKind::Fly,
+            "{aircraft_type}: the original Fly is suspended"
+        );
+        let jumpjet = active.jumpjet_runtime().expect("installed Jumpjet");
+        assert!(
+            jumpjet.moving(),
+            "{aircraft_type}: Move_To reached the installed Jumpjet"
+        );
+        assert_ne!(jumpjet.destination(), DriveCoord { x: 0, y: 0, z: 0 });
+        // Aircraft/Foot first receives the firer object; the installed
+        // Jumpjet's Move_To54B43D..54B44B then publishes its chosen Cell.
+        let destination = jumpjet.destination();
+        assert_eq!(
+            plane.navigation.nav_com(),
+            Some(NavTargetRef::cell(
+                (destination.x / 256) as u16,
+                (destination.y / 256) as u16,
+            )),
+            "{aircraft_type}: NavCom follows the Jumpjet's chosen destination cell"
+        );
+        let terrain = sim.resolved_terrain.as_ref().unwrap();
+        assert!(
+            check_cell_passability(
+                &canonical_cell_ref(
+                    terrain,
+                    terrain.native_cell_identity((
+                        (destination.x / 256) as i16,
+                        (destination.y / 256) as i16,
+                    )),
+                ),
+                CellPassabilityArgs {
+                    speed_type: SpeedType::Wheel,
+                    ignore_infantry: true,
+                    ignore_vehicles: true,
+                    zone: None,
+                    movement_zone: MovementZone::Normal,
+                    level: None,
+                    is_bridge: true,
+                },
+                &sim.cell_passability_map(),
+            )
+            .admits(),
+            "{aircraft_type}: chosen landing cell meets Aircraft State5's Wheel gate"
+        );
+        assert!(
+            !plane.radio_contacts.contains(airfield),
+            "{aircraft_type}: aircraft leaves pad contact"
+        );
+        assert!(
+            !entity(sim, airfield).radio_contacts.contains(aircraft),
+            "{aircraft_type}: airfield releases its dock"
+        );
+
+        let mut moved = false;
+        for _ in 0..240 {
+            runtime
+                .advance_frame_for_tooling(&[], crate::headless_scenario::SIM_TICK_MS)
+                .expect("lifted aircraft movement frame");
+            let plane = entity(&runtime.simulation, aircraft);
+            let at = crate::sim::movement::ground_pose::position_world_coord(&plane.position);
+            if plane.lift.source() == Some(magnetron)
+                && at.z > pad_coordinate.z
+                && (at.x, at.y) != (pad_coordinate.x, pad_coordinate.y)
+            {
+                moved = true;
+                break;
+            }
+        }
+        assert!(
+            moved,
+            "{aircraft_type}: ordinary frames lift and pull the aircraft off its pad"
+        );
+
+        // Preserve the entire installed Jumpjet and its boxed Fly, not just
+        // their class tags. A Scenario load restarts its RNG from Seed0, so
+        // compare the retained gameplay state rather than the world hash.
+        let held_state = |sim: &Simulation| {
+            let plane = entity(sim, aircraft);
+            (
+                plane.locomotor.clone(),
+                plane.lift,
+                plane.drop_credit,
+                plane.navigation.nav_com(),
+                plane.radio_contacts.clone(),
+                crate::sim::movement::ground_pose::position_world_coord(&plane.position),
+            )
+        };
+        let saved_state = held_state(&runtime.simulation);
+        let saved_holder_lift = entity(&runtime.simulation, magnetron).lift;
+        let saved_pad_contacts = entity(&runtime.simulation, airfield).radio_contacts.clone();
+        let saved =
+            crate::sim::snapshot::GameSnapshot::save(&runtime.simulation, 0, 0, "held aircraft", 0);
+        let mut restored = crate::sim::snapshot::GameSnapshot::load(&saved)
+            .expect("held aircraft snapshot")
+            .sim;
+        restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(
+            &runtime.simulation,
+        ));
+        restored.bind_shared_cell_dummy(crate::map::resolved_terrain::SharedCellDummy::fresh());
+        restored.reconstruct_cellclass_dummy_for_map_resize();
+        restored
+            .restore_after_snapshot_load()
+            .expect("restore held aircraft owners");
+        crate::sim::production::validate_restored_factory_state(
+            &restored,
+            &runtime.resources.rules,
+        )
+        .expect("restore production identities");
+        restored.rebuild_caches_after_load(
+            restore_terrain,
+            runtime.simulation.terrain_speed_config().clone(),
+            &runtime.resources.rules,
+        );
+        restored
+            .restore_map_authority_after_snapshot_load(
+                &runtime.resources.rules,
+                &runtime.resources.overlay_registry,
+                None,
+            )
+            .expect("restore retail map authority");
+        restored.intern_rule_type_ids(&runtime.resources.rules);
+        restored.resolve_type_handles(&runtime.resources.rules);
+        restored.rebuild_lighting_sources_after_load(&runtime.resources.rules);
+        // Commit the same process identities as PreparedLoad: retained tile
+        // catalogs may share Main and the live fallback Cell with the map.
+        let live_dummy = runtime.simulation.effective_shared_cell_dummy();
+        live_dummy.adopt_prepared_load_state(&restored.effective_shared_cell_dummy());
+        restored.bind_shared_cell_dummy(live_dummy);
+        restored.install_fresh_process_main(runtime.simulation.main_rng());
+        restored.publish_scenario_started();
+        runtime.replace_simulation(restored);
+        assert_eq!(
+            held_state(&runtime.simulation),
+            saved_state,
+            "{aircraft_type}: save/load retains the complete held aircraft state"
+        );
+        assert_eq!(
+            entity(&runtime.simulation, magnetron).lift,
+            saved_holder_lift
+        );
+        assert_eq!(
+            entity(&runtime.simulation, airfield).radio_contacts,
+            saved_pad_contacts
+        );
+        eprintln!(
+            "{aircraft_type}: resumed held aircraft at frame {}, position {:?}",
+            runtime.simulation.session.tick(),
+            saved_state.5
+        );
+
+        // Leave the attack running: the installed Jumpjet reaches the free
+        // cell chosen beside the Magnetron and its own State3 arrival lets
+        // go. No test setter supplies release, touchdown, or End_Piggyback.
+        let mut released = false;
+        let mut restored_fly = false;
+        for _ in 0..600 {
+            runtime
+                .advance_frame_for_tooling(&[], crate::headless_scenario::SIM_TICK_MS)
+                .expect("resumed aircraft pull/release frame");
+            let sim = &runtime.simulation;
+            let plane = sim.substrate.entities.get(aircraft).unwrap_or_else(|| {
+                panic!("{aircraft_type}: clear-cell pull must not destroy the aircraft")
+            });
+            if !released && plane.lift.source().is_none() {
+                released = true;
+                assert_eq!(entity(sim, magnetron).lift.target(), None);
+                assert!(plane.drop_credit.being_manipulated());
+                assert_eq!(plane.drop_credit.manipulated_by(), Some(magnetron));
+                assert_eq!(plane.drop_credit.warped_by_house(), Some(enemy));
+                let active = plane.locomotor.as_ref().unwrap();
+                assert_eq!(active.active_kind(), LocomotorKind::Jumpjet);
+                assert!(active.jumpjet_runtime().unwrap().moving());
+                assert_eq!(
+                    active.piggyback().as_ref().unwrap().active_kind(),
+                    LocomotorKind::Fly,
+                    "{aircraft_type}: release alone does not restore Fly"
+                );
+                eprintln!(
+                    "{aircraft_type}: released at frame {}, position {:?}",
+                    sim.session.tick(),
+                    crate::sim::movement::ground_pose::position_world_coord(&plane.position)
+                );
+            }
+            if released && !plane.lift.swap_active() {
+                restored_fly = true;
+                break;
+            }
+        }
+        assert!(
+            released,
+            "{aircraft_type}: natural arrival releases the lift"
+        );
+        assert!(
+            restored_fly,
+            "{aircraft_type}: resumed ordinary frames settle and restore Fly; state {:?}",
+            held_state(&runtime.simulation)
+        );
+        let plane = entity(&runtime.simulation, aircraft);
+        assert_eq!(
+            plane.health.current(),
+            health,
+            "{aircraft_type}: clear landing is harmless"
+        );
+        let active = plane.locomotor.as_ref().unwrap();
+        assert_eq!(active.active_kind(), LocomotorKind::Fly);
+        assert!(active.piggyback().is_none());
+        assert_eq!(
+            air_movement::current_fly_height(plane, runtime.simulation.resolved_terrain.as_ref()),
+            0,
+            "{aircraft_type}: Fly is restored after touchdown"
+        );
+    }
+}
+
+/// Choose a real admitted map cell in the requested distance band. Placement
+/// supplies only the initial scene; subsequent orders, docking and lift state
+/// are produced by the normal runtime.
+fn spawn_retail_lift_participant(
+    runtime: &mut crate::sim::runtime::SimRuntime,
+    kind: &str,
+    owner: crate::sim::intern::InternedId,
+    around: (u16, u16),
+    minimum: i32,
+    maximum: i32,
+) -> u64 {
+    let distance = |(x, y): (u16, u16)| {
+        (i32::from(x) - i32::from(around.0)).pow(2) + (i32::from(y) - i32::from(around.1)).pow(2)
+    };
+    let mut cells: Vec<_> = runtime
+        .simulation
+        .resolved_terrain
+        .iter()
+        .flat_map(|terrain| terrain.iter().map(|cell| (cell.rx, cell.ry)))
+        .filter(|&cell| (minimum * minimum..=maximum * maximum).contains(&distance(cell)))
+        .collect();
+    cells.sort_by_key(|&cell| (distance(cell), cell));
+    let owner = runtime.simulation.interner.resolve(owner).to_owned();
+    for (rx, ry) in cells {
+        if let Some(id) =
+            runtime
+                .simulation
+                .spawn_object(kind, &owner, rx, ry, 0, &runtime.resources.rules)
+        {
+            return id;
+        }
+    }
+    panic!("no admitted retail cell for {kind} near {around:?}");
+}
+
 /// Let go over another object, the tank is centred on that cell and falls
 /// onto it: a Unit below crashes it (`0x0054CC47`), and its falling damage
 /// (`0x00746209`) destroys it and hurts the Unit below. Its death counts

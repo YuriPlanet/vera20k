@@ -10,7 +10,8 @@
 //! terrain painting, scene timing, shroud composition or an independent RGB oracle.
 //! The opt-in starting-MTNK test additionally consumes low_concrete_bridge_render.json
 //! for independent body/shadow/composite RGB565/Z controls and checks live A.
-use super::{CellOverlayInputs, build_cell_overlay_instances};
+use super::{CellOverlayInputs, build_cell_overlay_bodies};
+use crate::app::presentation::instances::{CellBodyDraw, submit_cell_body_sweep};
 use crate::app::presentation::lighting::MatchLighting;
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::assets::pal_file::Palette;
@@ -326,7 +327,7 @@ impl Probe {
         scene: &HeadlessScenario,
         entries: &[OverlayEntry],
         camera_pos: [f32; 2],
-    ) -> (Vec<SpriteInstance>, Vec<RenderZPolicy>) {
+    ) -> (Vec<SpriteInstance>, Vec<CellBodyDraw>) {
         let mut view = camera(self.size);
         view.camera_pos = camera_pos;
         view.world_origin_y = 0.0;
@@ -339,11 +340,9 @@ impl Probe {
         scene: &HeadlessScenario,
         entries: &[OverlayEntry],
         view: &CameraUniform,
-    ) -> (Vec<SpriteInstance>, Vec<RenderZPolicy>) {
-        let mut instances = Vec::new();
-        let mut policies = Vec::new();
-
-        build_cell_overlay_instances(
+    ) -> (Vec<SpriteInstance>, Vec<CellBodyDraw>) {
+        let mut bodies = Vec::new();
+        build_cell_overlay_bodies(
             &CellOverlayInputs {
                 // Keep the initial map identities throughout; the production
                 // owner must select the live grid's changed identity and data.
@@ -363,10 +362,11 @@ impl Probe {
                 origin_y: view.world_origin_y,
                 world_height: view.world_height,
             },
-            &mut instances,
-            &mut policies,
+            &mut bodies,
         );
-        (instances, policies)
+        let (mut instances, mut draws) = (Vec::new(), Vec::new());
+        submit_cell_body_sweep(bodies, &mut instances, &mut draws);
+        (instances, draws)
     }
 
     fn observe(&mut self, phase: &str, scene: &HeadlessScenario) {
@@ -509,16 +509,16 @@ impl Probe {
                 .is_empty(),
             "camera rejection uses production admission"
         );
-        let (instances, policies) = self.instances(scene, &entries, self.camera);
+        let (instances, draws) = self.instances(scene, &entries, self.camera);
         assert_eq!(
             instances.len(),
             usize::from(visible),
             "{phase}: only center frame1 owns art, independently of anchor exploration"
         );
         assert!(
-            policies
+            draws
                 .iter()
-                .all(|policy| *policy == RenderZPolicy::ReadWrite)
+                .all(|draw| draw.render_z == RenderZPolicy::ReadWrite)
         );
         // Common 180x120 body canvas, centered on the cell. Keep each row at its
         // actual map offset in the shared camera rather than recentering it.
@@ -545,7 +545,7 @@ impl Probe {
         }
         let mut view = camera(SIZE);
         view.camera_pos = self.camera;
-        let output = self.render(&instances, &policies, view, None);
+        let output = self.render(&instances, &draws, view, None);
         let mut opaque = 0usize;
         for y in 0..SIZE[1] as usize {
             for x in 0..SIZE[0] as usize {
@@ -621,7 +621,7 @@ impl Probe {
     fn render(
         &mut self,
         instances: &[SpriteInstance],
-        policies: &[RenderZPolicy],
+        draws: &[CellBodyDraw],
         view: CameraUniform,
         shadows: Option<&[SpriteInstance]>,
     ) -> Vec<Vec<u8>> {
@@ -673,13 +673,14 @@ impl Probe {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-            crate::app::presentation::render::draw_pooled_overlay_bodies(
+            crate::app::presentation::render::draw_pooled_cell_bodies(
                 &mut pass,
                 &self.batch,
                 &pool,
                 Some(&self.atlas),
+                None,
                 "overlay",
-                policies,
+                draws,
             );
         }
         if let Some(shadows) = shadows {
@@ -802,7 +803,7 @@ impl Probe {
                 .all(|pixel| (pixel[0] * 255.0).round() as u8 == expected_a)
         );
         self.batch.bind_shroud(&self.gpu.device, Some(source));
-        let (instances, policies) = self.instances_in_view(scene, entries, &view);
+        let (instances, draws) = self.instances_in_view(scene, entries, &view);
         let mut shadows = Vec::new();
         crate::app::presentation::instances::bridges::build_bridge_shadow_instances_inner(
             terrain,
@@ -831,7 +832,7 @@ impl Probe {
         ] {
             let output = self.render(
                 if body { &instances } else { &[] },
-                if body { &policies } else { &[] },
+                if body { &draws } else { &[] },
                 view,
                 shadow.then_some(shadows.as_slice()),
             );
@@ -1204,9 +1205,8 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
             &rubble_arts,
         )
         .expect("physical rubble shadow atlas and overlay proxy");
-        let mut instances = Vec::new();
-        let mut policies = Vec::new();
-        build_cell_overlay_instances(
+        let mut bodies = Vec::new();
+        build_cell_overlay_bodies(
             &CellOverlayInputs {
                 entries: &entries,
                 atlas: &atlas,
@@ -1224,11 +1224,12 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
                 origin_y: view.world_origin_y,
                 world_height: view.world_height,
             },
-            &mut instances,
-            &mut policies,
+            &mut bodies,
         );
+        let (mut instances, mut draws) = (Vec::new(), Vec::new());
+        submit_cell_body_sweep(bodies, &mut instances, &mut draws);
         assert_eq!(instances.len(), 1, "one live Cell publishes body art");
-        assert_eq!(policies, [RenderZPolicy::ReadWrite]);
+        assert_eq!(draws[0].render_z, RenderZPolicy::ReadWrite);
         let mut shadows = Vec::new();
         crate::app::presentation::instances::bridges::build_bridge_shadow_instances_inner(
             terrain,
@@ -1276,13 +1277,14 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
                 &dv,
             );
             pass.set_scissor_rect(clip[0], clip[1], clip[2], clip[3]);
-            crate::app::presentation::render::draw_pooled_overlay_bodies(
+            crate::app::presentation::render::draw_pooled_cell_bodies(
                 &mut pass,
                 &batch,
                 &pool,
                 Some(&atlas),
+                None,
                 "overlay",
-                &policies,
+                &draws,
             );
         }
         // Copies are encoded before the shadow edits the SAME attachments.

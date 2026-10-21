@@ -28,6 +28,7 @@ pub(crate) enum PresentedShell {
     WolAutoLoginQuery,
     WolLocale,
     WolMyInformation,
+    WolBuddyList,
     Score,
 }
 

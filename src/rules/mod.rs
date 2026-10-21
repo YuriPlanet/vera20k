@@ -106,6 +106,8 @@ pub mod airstrike;
 /// Whether this binary includes the supported Ares extensions. INIs cannot change it.
 pub const ARES_ENABLED: bool = cfg!(feature = "ares");
 pub(crate) mod ares_prerequisites;
+pub(crate) mod ares_armor;
+pub mod armor;
 pub mod compatibility;
 pub mod animation_sequence;
 pub mod art_data;
@@ -122,6 +124,8 @@ pub mod color_add;
 pub mod color_scheme;
 pub mod combat_damage;
 pub mod crate_rules;
+#[cfg(test)]
+mod country_parent_tests;
 #[cfg(test)]
 mod country_veterancy_tests;
 pub mod effect_asset_catalog;
@@ -173,7 +177,7 @@ pub mod voxel_anim_type;
 pub mod voxel_asset_catalog;
 pub mod voxel_frame_catalog;
 pub mod warhead_type;
-#[cfg(test)]
+#[cfg(all(test, not(feature = "ares")))]
 mod warhead_verses_tests;
 pub mod weapon_type;
 

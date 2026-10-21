@@ -452,6 +452,7 @@ mod tests {
                 constructor_reverse: false,
                 inactive: false,
                 paused: false,
+                temporal_paused: false,
             },
         );
         anim.set_owner_entity_for_test(owner);

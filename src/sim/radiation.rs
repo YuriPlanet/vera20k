@@ -26,7 +26,6 @@ use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RadiationRules;
 use crate::sim::light_sources::{LightingEvent, LightingSources};
 use crate::sim::timer::CdTimer;
-use crate::util::lepton::{UnsupportedGroundSlope, ground_height_leptons};
 use crate::util::native_x87::sqrt_approx_length;
 use crate::util::native_x87::{
     MaskedX87Chop53 as X87, MaskedX87Ordering, MaskedX87Value, NativeF64Bits,
@@ -242,40 +241,26 @@ pub struct RadDetonation {
     pub spread: i32,
 }
 
-/// Ground height of a cell center in leptons. Flat 0 when no terrain grid or
-/// cell is loaded; unsupported raw slope bytes stay explicit.
-fn cell_height_leptons(
-    terrain: Option<&ResolvedTerrainGrid>,
-    rx: u16,
-    ry: u16,
-) -> Result<i32, UnsupportedGroundSlope> {
-    let Some(cell) = terrain.and_then(|t| t.cell(rx, ry)) else {
-        return Ok(0);
-    };
-    let world_x = i32::from(rx).wrapping_mul(256).wrapping_add(128);
-    let world_y = i32::from(ry).wrapping_mul(256).wrapping_add(128);
-    ground_height_leptons(cell.level, cell.slope_type, world_x, world_y)
-}
-
 /// The distance a radiation site measures from its centre cell to a cell
 /// (`RadSiteClass::GetRadLevelAt`, `SetCellRadLevels`,
 /// `DecreaseCellRadLevels` and `DecayCellRadLevels` at `0x0065B93E`,
-/// `0x0065BA6C`, `0x0065BC19`, `0x0065BDAC`): the centre's cell coordinate
-/// less the cell's, as `(dx² + dz²) + dy²` through `Sqrt_Approx` and
-/// `Math::ftol` ([`sqrt_approx_length`]).
+/// `0x0065BA6C`, `0x0065BC19`, `0x0065BDAC`): the centre's GetCoords
+/// (`0x00486840`) less the cell's, as `(dx² + dz²) + dy²` through
+/// `Sqrt_Approx` and `Math::ftol` ([`sqrt_approx_length`]). Both cells are
+/// looked up before either is read (`0x0065B902`, `0x0065B913`, then vt+0x48
+/// at `0x0065B925`, `0x0065B93B`), so with both off the map the one fallback
+/// CellClass carries the second stamp for both.
 fn cell_distance_leptons(
     terrain: Option<&ResolvedTerrainGrid>,
     centre: (u16, u16),
     cell: (u16, u16),
-) -> Result<i32, UnsupportedGroundSlope> {
-    let across = |from: u16, to: u16| (i32::from(from) - i32::from(to)) * LEPTONS_PER_CELL;
-    let dz = cell_height_leptons(terrain, centre.0, centre.1)?
-        - cell_height_leptons(terrain, cell.0, cell.1)?;
-    Ok(sqrt_approx_length([
-        across(centre.0, cell.0),
-        dz,
-        across(centre.1, cell.1),
-    ]))
+) -> i32 {
+    let lookup = |(rx, ry): (u16, u16)| {
+        crate::sim::cell_rect::get_cellclass_fallback(terrain, i32::from(rx), i32::from(ry))
+    };
+    let (from, to) = (lookup(centre), lookup(cell));
+    let (from, to) = (from.get_coords(), to.get_coords());
+    sqrt_approx_length([from.x - to.x, from.z - to.z, from.y - to.y])
 }
 
 /// Linear falloff contribution of `site` at `cell`:
@@ -284,21 +269,21 @@ fn falloff_at(
     site: &RadSite,
     terrain: Option<&ResolvedTerrainGrid>,
     cell: (u16, u16),
-) -> Result<MaskedX87Value, UnsupportedGroundSlope> {
-    let dist = cell_distance_leptons(terrain, site.center, cell)?;
+) -> MaskedX87Value {
+    let dist = cell_distance_leptons(terrain, site.center, cell);
     let radius = site.radius_leptons;
     if dist <= radius {
         // 65BAE2..65BAEA / 65BC87..65BC8F / 65BE1A..65BE22.
         // Keep the register value: removal divides it again before storing.
-        Ok(X87::mul(
+        X87::mul(
             X87::div(
                 X87::load_i32(radius.wrapping_sub(dist)),
                 X87::load_i32(radius),
             ),
             X87::load_i32(site.level),
-        ))
+        )
     } else {
-        Ok(X87::load_i32(0))
+        X87::load_i32(0)
     }
 }
 
@@ -472,10 +457,8 @@ impl RadiationState {
             .map(|t| (t.width(), t.height()))
             .unwrap_or(FALLBACK_BOUNDS);
         for_each_square_cell(site.center, site.spread, bounds, |cell| {
-            if let Ok(amount) = falloff_at(&site, terrain, cell) {
-                let stored = X87::store_f64_masked_chop(amount);
-                self.add_cell(cell, f64::from_bits(stored.bits()));
-            }
+            let stored = X87::store_f64_masked_chop(falloff_at(&site, terrain, cell));
+            self.add_cell(cell, f64::from_bits(stored.bits()));
         });
     }
 
@@ -498,9 +481,7 @@ impl RadiationState {
             .unwrap_or(FALLBACK_BOUNDS);
         let steps_ahead = X87::load_i32((site.remaining / rules.level_delay).wrapping_add(1));
         for_each_square_cell(site.center, site.spread, bounds, |cell| {
-            let Ok(falloff) = falloff_at(&site, terrain, cell) else {
-                return;
-            };
+            let falloff = falloff_at(&site, terrain, cell);
             // 65BC92..65BCA3: divide and multiply the still-live falloff
             // register, then store once before the Cell subtraction call.
             let amount = X87::mul(
@@ -683,9 +664,7 @@ impl RadiationState {
             .map(|t| (t.width(), t.height()))
             .unwrap_or(FALLBACK_BOUNDS);
         for_each_square_cell(site.center, site.spread, bounds, |cell| {
-            let Ok(falloff) = falloff_at(&site, terrain, cell) else {
-                return;
-            };
+            let falloff = falloff_at(&site, terrain, cell);
             // 65BE25..65BE32: no intermediate binary64 falloff spill.
             let amount = X87::div(falloff, X87::load_i32(site.level_steps));
             self.sub_cell(
@@ -703,6 +682,13 @@ mod native_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The Z of a cell's GetCoords, looked up as radiation does.
+    fn cell_height_leptons(terrain: &ResolvedTerrainGrid, rx: u16, ry: u16) -> i32 {
+        crate::sim::cell_rect::get_cellclass_fallback(Some(terrain), i32::from(rx), i32::from(ry))
+            .get_coords()
+            .z
+    }
 
     fn terrain_cell(
         rx: u16,
@@ -726,12 +712,9 @@ mod tests {
             1,
             vec![terrain_cell(0, 0, 0xff, 0), terrain_cell(1, 0, 0, 1)],
         );
-        assert_eq!(cell_height_leptons(Some(&terrain), 0, 0), Ok(-103));
-        assert_eq!(cell_height_leptons(Some(&terrain), 1, 0), Ok(52));
-        assert_eq!(
-            cell_distance_leptons(Some(&terrain), (0, 0), (1, 0)),
-            Ok(299)
-        );
+        assert_eq!(cell_height_leptons(&terrain, 0, 0), -103);
+        assert_eq!(cell_height_leptons(&terrain, 1, 0), 52);
+        assert_eq!(cell_distance_leptons(Some(&terrain), (0, 0), (1, 0)), 299);
     }
 
     /// `RadSiteClass::GetRadLevelAt` (`0x0065B93E..0x0065B98F`) executed on
@@ -762,11 +745,11 @@ mod tests {
             let terrain = ResolvedTerrainGrid::from_cells(8, 8, cells);
             for coord in coords {
                 let (rx, ry) = cell_of(coord);
-                assert_eq!(cell_height_leptons(Some(&terrain), rx, ry), Ok(coord[2]));
+                assert_eq!(cell_height_leptons(&terrain, rx, ry), coord[2]);
             }
             assert_eq!(
                 cell_distance_leptons(Some(&terrain), cell_of(coords[0]), cell_of(coords[1])),
-                Ok(row["expected"].as_i64().unwrap() as i32),
+                row["expected"].as_i64().unwrap() as i32,
                 "{}",
                 row["name"]
             );

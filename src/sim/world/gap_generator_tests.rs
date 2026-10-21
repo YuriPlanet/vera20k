@@ -382,6 +382,35 @@ fn gap_operational_spy_sat_rechecks_live_candidates_per_viewer() {
     assert_eq!(sim.fog.gap_sources()[&a].len(), 1);
 }
 
+/// A lost Spy Sat's gap re-entry asks from the generator's house whether the
+/// viewer is its ally, as the add does (`0x006FB2CF`): the viewer's own
+/// one-way alliance with it still takes the gap.
+#[test]
+fn spy_sat_gap_reentry_asks_the_generators_house_about_the_viewer() {
+    for (asker, other, receipts) in [("SOVIET", "AMERICANS", 0), ("AMERICANS", "SOVIET", 1)] {
+        let (mut sim, rules, a, owner, _) = fixture();
+        *sim.house_alliances_mut_for_test() =
+            HouseAllianceMap::from([(asker.into(), [other.into()].into())]);
+        insert(&mut sim, 1, owner, "GAGAP", 12, 12);
+        sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
+        power(&mut sim, &rules);
+        insert(&mut sim, 2, a, "GASPYSAT", 1, 1);
+        sim.reconcile_active_vision_structures(&rules);
+        insert(&mut sim, 3, owner, "POWER", 25, 25);
+        power(&mut sim, &rules);
+        sim.uninit(2);
+        sim.reconcile_active_vision_structures(&rules);
+        assert_eq!(
+            sim.fog
+                .gap_sources()
+                .get(&a)
+                .map_or(0, |sources| sources.len()),
+            receipts,
+            "{asker} allies {other}"
+        );
+    }
+}
+
 #[test]
 fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes() {
     let (mut sim, rules, a, owner, _) = fixture();

@@ -127,6 +127,8 @@ pub(crate) enum WolServiceRequest {
     JoinChannel { channel: WolChannel, key: String },
     /// API+0x24: leave the current channel.
     LeaveChannel,
+    /// API+0x34 from the logout `0x00785EA0`.
+    Logout,
     /// `0x00789B60`: API+0x1C with the new game channel's record and its
     /// key at `+0xD7`.
     CreateChannel { channel: WolChannel, key: String },
@@ -140,6 +142,37 @@ pub(crate) enum WolServiceRequest {
     SetLangFilter(i32),
     /// `0x0077E110`: API+0x68 with AllowFind and AllowPage.
     SetFindPage { find: i32, page: i32 },
+    /// API+0xDC: the buddy list (`0x116`'s init, the lobby runner's entry
+    /// `0x00787BC8`); the answer is [`WolServiceEvent::Buddies`].
+    ListBuddies,
+    /// API+0xE0 with the name (at most 9 bytes at `+0x24`): Add Buddy
+    /// `0x0079DFE0`. Its result sink `+0x98` ignores the answer.
+    AddBuddy(String),
+    /// API+0xE4: Remove `0x0079CBA0`; its sink `+0x9C` ignores the answer.
+    RemoveBuddy(String),
+    /// API+0x60 for one buddy of the locate queue `0xB76980`; the find sink
+    /// answers with [`WolServiceEvent::Located`].
+    Locate(String),
+    /// `0x0079D110`: the ladder API `[0xAC1170]` vt+0x14/+0x38 for up to
+    /// ten names; the answer is [`WolServiceEvent::Ladder`].
+    LadderRecords(Vec<String>),
+}
+
+/// One ladder record (`0x6C` bytes) of the ladder sink
+/// `CNetUtilEventSink+0x10` (`0x007A3100`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct WolLadderRecord {
+    pub(crate) name: String,
+    /// `+0x08`.
+    pub(crate) wins: i32,
+    /// `+0x0C`.
+    pub(crate) losses: i32,
+    /// `+0x10`.
+    pub(crate) points: i32,
+    /// `+0x1C`.
+    pub(crate) rank: i32,
+    /// `+0x20`.
+    pub(crate) disconnects: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,6 +208,25 @@ pub(crate) enum WolServiceEvent {
     UserLeft(String),
     /// OnPart for this user: `[0xB77DD0]` cleared.
     ChannelLeft,
+    /// The private game-options sink `+0x54` (`0x007A8260`): a guest's
+    /// `R` choices, decoded (the observer flag is country -3).
+    PlayerChoices {
+        from: String,
+        slot: crate::skirmish_launch::SkirmishLocalSlot,
+        observer: bool,
+    },
+    /// The public game-options sink `+0x58` (`0x007A7EA0`): a user's
+    /// `A<n>` readiness.
+    PlayerReady {
+        from: String,
+        value: i32,
+    },
+    /// The same sink's `K<n>` map status (`0x005E4C39`): `K1` 1, `K2` 2,
+    /// anything else 0.
+    MapStatus {
+        from: String,
+        status: u8,
+    },
     /// The create result and the channel's users.
     Created(Result<Vec<WolMember>, u32>),
     /// The page sinks: `ansi` for `0x007A9200`, otherwise the UTF-16
@@ -199,12 +251,12 @@ pub(crate) enum WolServiceEvent {
     /// The find sink `0x007A9970`: the channel the located user is in, or
     /// the result code.
     Located(Result<WolChannel, u32>),
-    /// A user's ladder rank (`CNetUtilEventSink+0x10`, the table
-    /// `[0xB77E0C]`).
-    LadderRank {
-        name: String,
-        rank: i32,
-    },
+    /// The ladder sink `CNetUtilEventSink+0x10` (`0x007A3100`): records
+    /// for the table `[0xB77E0C]`.
+    Ladder(Vec<WolLadderRecord>),
+    /// The buddy-list sink `CChatEventSink+0x94` (`0x007AC220`): the
+    /// users of the list, or a negative result.
+    Buddies(Result<Vec<String>, u32>),
     /// `CChatEventSink+0x84` (`0x007AB8E0`): the users' locales for the
     /// table `0xB76530`, or a failed result (only logged).
     UserLocales(Result<Vec<(String, i32)>, u32>),
@@ -438,7 +490,7 @@ impl WolVisit {
             (Awaiting::Api, WolServiceEvent::Api(WolApiStatus::Available)) => {
                 if !matches!(
                     self.mode,
-                    Some(WolMode::CustomMatch | WolMode::MyInformation)
+                    Some(WolMode::CustomMatch | WolMode::MyInformation | WolMode::PlayBuddy)
                 ) {
                     log::warn!(
                         "WOL mode {:?} after WOLAPI creation is not implemented",
@@ -455,7 +507,7 @@ impl WolVisit {
                     self.api = true;
                     self.last_error = None;
                     self.selected_server = 0;
-                    self.ladder_ranks.clear();
+                    self.ladder.clear();
                     self.locales.clear();
                     self.connected = false;
                 }
@@ -762,9 +814,12 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             super::lobby::channel_ban(state, &name, banned);
             return;
         }
-        WolServiceEvent::LadderRank { name, rank } => {
-            let visit = state.frontend.wol.as_mut().expect("checked");
-            visit.ladder_ranks.insert(name.to_ascii_lowercase(), rank);
+        WolServiceEvent::Ladder(records) => {
+            super::buddies::ladder_received(state, records);
+            return;
+        }
+        WolServiceEvent::Buddies(result) => {
+            super::buddies::buddy_list_received(state, result);
             return;
         }
         WolServiceEvent::UserLocales(result) => {
@@ -793,6 +848,9 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         | WolServiceEvent::UserJoined(_)
         | WolServiceEvent::UserLeft(_)
         | WolServiceEvent::ChannelLeft
+        | WolServiceEvent::PlayerChoices { .. }
+        | WolServiceEvent::PlayerReady { .. }
+        | WolServiceEvent::MapStatus { .. }
         | WolServiceEvent::Created(_)) => {
             super::lobby::service_event(state, event);
             answer_unavailable(state);

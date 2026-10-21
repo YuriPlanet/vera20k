@@ -143,7 +143,7 @@ owner separately compares all 39 probability and four constructor controls.
 The production rules reader compares eight selected native type inputs.
 
 Separate normal-frame composition tests follow actual emitted ore through the
-existing growth scheduler, player `HarvestCell`, `MinerReturn` and refinery
+existing growth scheduler, the player's MEGAMISSION Harvest and Enter orders and refinery
 credit deposit. Active animation survives the existing snapshot restore policy;
 limbo clears its animation index. The renderer compares all 126 original draw
 argument rows; the explicit retail atlas check decodes all 18 theater/type

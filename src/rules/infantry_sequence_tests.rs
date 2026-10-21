@@ -552,3 +552,142 @@ fn corrected_action_ids_give_the_native_frame_delays() {
         assert_eq!(action_timing(kind), (delay, normalized), "{kind:?} timing");
     }
 }
+
+#[test]
+fn sequence_sound_reader_takes_frame_name_pairs_in_action_order() {
+    let art = IniFile::from_str(
+        "[GI]\nSequence=GISeq\n\
+         [GISeq]\nFireUpSounds= 2 SlaveAttack,5\tOther, 7\nReadySounds=x First\n\
+         WalkSounds=1 ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\n",
+    );
+    let read = |action: u8, frame: i32, name: &str| SequenceSoundRead {
+        action,
+        frame,
+        name: name.to_owned(),
+    };
+    assert_eq!(
+        read_sequence_sounds(&art, "GI"),
+        [
+            // atoi of a non-number is 0.
+            read(0, 0, "First"),
+            // ReadString capacity 0x20 keeps 31 bytes.
+            read(3, 1, "ABCDEFGHIJKLMNOPQRSTUVWXYZ012"),
+            // A trailing frame with no name ends the list.
+            read(4, 2, "SlaveAttack"),
+            read(4, 5, "Other"),
+        ]
+    );
+    assert!(read_sequence_sounds(&art, "Missing").is_empty());
+    assert!(read_sequence_sounds(&IniFile::from_str("[GI]\nCrawls=yes\n"), "GI").is_empty());
+}
+
+#[test]
+fn bound_sequence_sounds_keep_two_resolved_pairs_per_record() {
+    let read = |action: u8, frame: i32, name: &str| SequenceSoundRead {
+        action,
+        frame,
+        name: name.to_owned(),
+    };
+    let reads = [
+        read(4, 1, "Missing"),
+        read(4, 2, "a"),
+        read(0, 9, "b"),
+        read(4, 3, "b"),
+        read(4, 4, "a"),
+    ];
+    let sounds = bind_sequence_sounds(&reads, |name| {
+        ["A", "B"]
+            .into_iter()
+            .find(|id| id.eq_ignore_ascii_case(name))
+            .map(str::to_owned)
+    });
+    let sound = |action: u8, frame: i32, id: &str| SequenceSound {
+        action,
+        frame,
+        sound_id: id.to_owned(),
+    };
+    assert_eq!(
+        sounds,
+        [sound(4, 2, "A"), sound(0, 9, "B"), sound(4, 3, "B")],
+        "an unresolved name takes no slot; a third resolved pair is dropped"
+    );
+}
+
+/// ReadSequenceData runs at the end of every reached InfantryType ReadINI
+/// (`0x0052473A`) and appends without resetting the record's sounds.
+#[test]
+fn every_reached_infantry_pass_appends_its_sequence_sounds() {
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+    use crate::rules::ruleset::RuleSet;
+    let art = IniFile::from_str(
+        "[GI]\nSequence=GISeq\n[GISeq]\nFireUp=164,8,8\nFireUpSounds= 2 SlaveAttack\n",
+    );
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=SlaveAttack\n",
+    ));
+    let fire_up = |layers: &RulesLayerStack| {
+        let processed = layers.process_with_fixed_art(&art).unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        rules.bind_type_sound_references(processed.ini(), &sounds);
+        rules
+            .object("E1")
+            .unwrap()
+            .sequence_sounds(4)
+            .map(|sound| (sound.frame, sound.sound_id.clone()))
+            .collect::<Vec<_>>()
+    };
+    let slave_attack = (2, "SlaveAttack".to_owned());
+    let mut layers =
+        RulesLayerStack::new(IniFile::from_str("[InfantryTypes]\n0=E1\n[E1]\nImage=GI\n"));
+    assert_eq!(fire_up(&layers), [slave_attack.clone()]);
+    layers.push(RulesLayerKind::Scenario, IniFile::from_str("[General]\n"));
+    assert_eq!(fire_up(&layers), [slave_attack.clone()], "no [E1], no read");
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[E1]\nStrength=90\n"),
+    );
+    assert_eq!(
+        fire_up(&layers),
+        [slave_attack.clone(), slave_attack.clone()]
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[E1]\nStrength=80\n"),
+    );
+    assert_eq!(fire_up(&layers), [slave_attack.clone(), slave_attack]);
+}
+
+/// Retail's sequence sounds: `[SlaveSequence] FireUpSounds= 2 SlaveAttack` and
+/// `[TrexSequence]`'s five, each read once because only RULESMD declares
+/// `[SLAV]` and `[DNOA]` (Rush Hour places a T-Rex).
+#[test]
+fn retail_slave_and_trex_are_the_sequence_sound_types() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let sounds = |id: &str| -> Vec<(u8, i32, String)> {
+        let object = retail.rules.object(id).unwrap();
+        (0..42)
+            .flat_map(|action| object.sequence_sounds(action))
+            .map(|sound| (sound.action, sound.frame, sound.sound_id.clone()))
+            .collect()
+    };
+    let with_sounds: Vec<&str> = retail
+        .rules
+        .all_objects()
+        .filter(|object| !sounds(&object.id).is_empty())
+        .map(|object| object.id.as_str())
+        .collect();
+    assert_eq!(with_sounds, ["DNOA", "SLAV"]);
+    assert_eq!(sounds("SLAV"), [(4, 2, "SlaveAttack".to_owned())]);
+    assert_eq!(
+        sounds("DNOA"),
+        [
+            (3, 2, "TrexFoot".to_owned()),
+            (6, 2, "TrexFoot".to_owned()),
+            (10, 6, "TrexRoar".to_owned()),
+            (11, 9, "TrexDie".to_owned()),
+            (12, 9, "TrexDie".to_owned()),
+        ]
+    );
+}

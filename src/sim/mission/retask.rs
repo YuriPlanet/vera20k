@@ -62,7 +62,6 @@ impl Simulation {
                 .is_some_and(|object| object.dock_unload);
         if !tethered || break_tether {
             radio::transmit_to_contact(self, id, RadioMessage::Break, rules, frame_effects);
-            crate::sim::docking::bunker_link::cancel_approach(self, id);
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             if break_tether {
@@ -154,7 +153,7 @@ impl Simulation {
     /// store to `+0x2B8` or `+0x5A8`. Clearing there would leave a unit parked
     /// after a Stop where retail resumes its archived move on the next Restore.
     ///
-    /// HarvestCell also uses this funnel, retaining its unload-latch reset
+    /// A Harvest order also uses this funnel, retaining its unload-latch reset
     /// after radio Break. EjectBunker and dormant aircraft passenger Unload
     /// still bypass the prefix. These
     /// pre-existing command routes can Restore a cancelled archive; their

@@ -11,9 +11,7 @@ use crate::sim::movement::locomotor::MovementLayer;
 #[path = "path_finishing.rs"]
 mod path_finishing;
 use crate::sim::pathfinding::zone_search;
-use crate::sim::pathfinding::{
-    LayeredPath, MAX_PATH_SEGMENT_STEPS, SearchMarkerOverlay, truncate_layered_path,
-};
+use crate::sim::pathfinding::{LayeredPath, SearchMarkerOverlay};
 
 use super::PathfindingContext;
 
@@ -73,15 +71,11 @@ pub(super) fn find_move_path(
         goal,
         path.len(),
     );
-    let (coords, layers) = path_finishing::finish(path, ctx, grid, foot_entry, marker_overlay)
-        .map_err(|cause| {
-            MovePathFailure::Search(zone_search::PathSearchFailure::CellEntryUnavailable(cause))
-        })?;
-    Ok(truncate_layered_path(
-        coords,
-        layers,
-        MAX_PATH_SEGMENT_STEPS,
-    ))
+    // The whole route: Find_Path's copy (`FootPathQueue::install`) owns the
+    // window.
+    path_finishing::finish(path, ctx, grid, foot_entry, marker_overlay).map_err(|cause| {
+        MovePathFailure::Search(zone_search::PathSearchFailure::CellEntryUnavailable(cause))
+    })
 }
 
 #[cfg(test)]

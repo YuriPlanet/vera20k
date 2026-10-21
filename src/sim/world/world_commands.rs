@@ -11,7 +11,6 @@ use std::collections::BTreeSet;
 
 use super::{SimSoundEvent, Simulation, SimulationWallRuntimeHost};
 use crate::map::entities::EntityCategory;
-use crate::map::houses::are_houses_friendly;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::canonical_cell_coord;
@@ -30,7 +29,6 @@ use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::overlay_grid::{
     OverlayRecalcOutcome, RecomputeResult, runtime_wall_cleanup_visit_at,
 };
-use crate::sim::passenger;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::zone_incremental::ZoneRepairKind;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
@@ -336,59 +334,6 @@ impl Simulation {
                     target: MegaMissionTarget::Null,
                     mission: MissionType::Capture,
                     destination: token(Some(combat::TargetKind::Entity(target_building_id)))?,
-                },
-            ),
-            Command::EnterTransport {
-                passenger_id,
-                transport_id,
-            } => (
-                passenger_id,
-                MegaMissionOrder::Mission {
-                    target: MegaMissionTarget::Null,
-                    mission: MissionType::Enter,
-                    destination: token(Some(combat::TargetKind::Entity(transport_id)))?,
-                },
-            ),
-            Command::EnterBunker { unit_id, bunker_id } => (
-                unit_id,
-                MegaMissionOrder::Mission {
-                    target: MegaMissionTarget::Null,
-                    mission: MissionType::Enter,
-                    destination: token(Some(combat::TargetKind::Entity(bunker_id)))?,
-                },
-            ),
-            Command::RepairAtDepot {
-                entity_id,
-                depot_id,
-            } => (
-                entity_id,
-                MegaMissionOrder::Mission {
-                    target: MegaMissionTarget::Null,
-                    mission: MissionType::Enter,
-                    destination: token(Some(combat::TargetKind::Entity(depot_id)))?,
-                },
-            ),
-            Command::MinerReturn {
-                entity_id,
-                target_refinery_id: Some(refinery_id),
-            } => (
-                entity_id,
-                MegaMissionOrder::Mission {
-                    target: MegaMissionTarget::Null,
-                    mission: MissionType::Enter,
-                    destination: token(Some(combat::TargetKind::Entity(refinery_id)))?,
-                },
-            ),
-            Command::HarvestCell {
-                entity_id,
-                target_rx,
-                target_ry,
-            } => (
-                entity_id,
-                MegaMissionOrder::Mission {
-                    target: MegaMissionTarget::Null,
-                    mission: MissionType::Harvest,
-                    destination: token(Some(combat::TargetKind::Cell(target_rx, target_ry)))?,
                 },
             ),
             Command::UnloadPassengers { transport_id } => (
@@ -1234,7 +1179,6 @@ impl Simulation {
                 // at4C75E0), before NULL destination4C75ED/target4C75F8.
                 // Unlike MEGAMISSION it never clears Foot pending-entry+500.
                 crate::sim::radio::broadcast_break(self, *entity_id, rules, frame_effects);
-                crate::sim::docking::bunker_link::cancel_approach(self, *entity_id);
                 // `0x004C75ED`: the class setter's null destination, which
                 // reaches the active locomotor's Stop_Moving (a Teleport's
                 // drops only an armed warp, a moving Jumpjet's re-targets the
@@ -1729,167 +1673,6 @@ impl Simulation {
                     )
                 })
             }
-            Command::MinerReturn {
-                entity_id,
-                target_refinery_id,
-            } => {
-                // A miner clicked onto its refinery: `UnitClass::What_Action`
-                // asks the refinery CAN_LOAD (`0x0F`) and, answered ROGER,
-                // gives Enter (`0x0073FD50`). `FootClass::ClickedAction`'s
-                // Enter arm (`0x004D74E0`) sends the MEGAMISSION Enter with no
-                // Target and the refinery as Destination, as for a depot.
-                let Some(rules) = rules else { return false };
-                let Some(refinery_id) = *target_refinery_id else {
-                    return false;
-                };
-                if !self.entity_owned_by_id(command_owner, *entity_id) {
-                    return false;
-                }
-                if self
-                    .substrate
-                    .entities
-                    .get(*entity_id)
-                    .is_some_and(|e| e.is_deployed())
-                {
-                    return false;
-                }
-                if !self.valid_explicit_miner_refinery(
-                    command_owner,
-                    *entity_id,
-                    refinery_id,
-                    rules,
-                ) {
-                    return false;
-                }
-                // Event4C747C: the Unit class setter with the refinery,
-                // whose Enter and Dock arms dock or queue the miner.
-                self.apply_megamission_command(
-                    *entity_id,
-                    MissionType::Enter,
-                    None,
-                    Some(combat::TargetKind::Entity(refinery_id)),
-                    Some(rules),
-                    overlay_registry,
-                    frame_effects,
-                )
-                .accepted()
-            }
-            Command::RepairAtDepot {
-                entity_id,
-                depot_id,
-            } => {
-                let Some(rules) = rules else { return false };
-                if !self.entity_owned_by_id(command_owner, *entity_id) {
-                    return false;
-                }
-                if self
-                    .substrate
-                    .entities
-                    .get(*entity_id)
-                    .is_some_and(|e| e.is_deployed())
-                {
-                    return false;
-                }
-                // Validate depot exists, is friendly, and has UnitRepair=yes.
-                let depot_ok = self.substrate.entities.get(*depot_id).is_some_and(|depot| {
-                    command_owner.eq_ignore_ascii_case(self.interner.resolve(depot.owner()))
-                        && self
-                            .object_type(depot.type_ref(), rules)
-                            .is_some_and(|obj| obj.unit_repair)
-                });
-                if !depot_ok {
-                    return false;
-                }
-                // A damaged vehicle: the player's click issues the order only
-                // for Units (`input::context_order`), and the depot's CAN_LOAD
-                // refuses any sender but a Unit or an Aircraft (Building
-                // Receive_Radio 0x0F, UnitRepair arm).
-                let entity_ok = self.substrate.entities.get(*entity_id).is_some_and(|e| {
-                    e.category() == crate::map::entities::EntityCategory::Unit
-                        && self
-                            .object_type(e.type_ref(), rules)
-                            .is_some_and(|object| e.health.current() < object.strength)
-                        && !e.death.is_dying()
-                });
-                if !entity_ok {
-                    return false;
-                }
-                // Event4C747C: the Unit class setter with the depot, which
-                // owns depot admission and contact changes.
-                self.apply_megamission_command(
-                    *entity_id,
-                    MissionType::Enter,
-                    None,
-                    Some(combat::TargetKind::Entity(*depot_id)),
-                    Some(rules),
-                    overlay_registry,
-                    frame_effects,
-                )
-                .accepted()
-            }
-            Command::EnterTransport {
-                passenger_id,
-                transport_id,
-            } => {
-                let Some(rules) = rules else { return false };
-                if !self.entity_owned_by_id(command_owner, *passenger_id) {
-                    return false;
-                }
-                if self
-                    .substrate
-                    .entities
-                    .get(*passenger_id)
-                    .is_some_and(|e| e.is_deployed())
-                {
-                    return false;
-                }
-                // Validate transport exists and has cargo capacity.
-                // CanBeOccupiedBy is also the cursor's garrison predicate,
-                // but that action sends Capture8, never this Enter7 payload
-                // (Infantry51E6A8 -> Foot4D7716).
-                let carrier = self.substrate.entities.get(*transport_id).is_some_and(|t| {
-                    t.passenger_role.cargo().is_some()
-                        && !(t.category() == crate::map::entities::EntityCategory::Structure
-                            && self
-                                .object_type(t.type_ref(), rules)
-                                .is_some_and(|object| object.can_be_occupied))
-                });
-                if !carrier {
-                    return false;
-                }
-                // Shared carrier admission owner (Unit0F and building Enter).
-                if !passenger::can_enter_transport(self, rules, *passenger_id, *transport_id) {
-                    return false;
-                }
-                // Infantry51F190 -> Foot4D76F8 ->6FFBE0 carries the clicked
-                // object as Destination for Enter7, as Unit738902 does
-                // (Steam gamemd): Enter7, NULL Target. Event4C747C hands it
-                // to the class setter, which samples its live +4C through the
-                // shared coordinate owner after its prelude
-                // (foot_navigation_coordinate corpus). An object without that
-                // coordinate refuses the order before it is queued.
-                if crate::sim::movement::nav_target_coordinate(
-                    crate::sim::components::NavTargetRef::object(*transport_id),
-                    Some(*passenger_id),
-                    self,
-                    self.resolved_terrain.as_ref(),
-                    Some((rules, &self.interner)),
-                )
-                .is_err()
-                {
-                    return false;
-                }
-                self.apply_megamission_command(
-                    *passenger_id,
-                    MissionType::Enter,
-                    None,
-                    Some(combat::TargetKind::Entity(*transport_id)),
-                    Some(rules),
-                    overlay_registry,
-                    frame_effects,
-                )
-                .accepted()
-            }
             Command::UnloadPassengers { transport_id } => {
                 if !self.entity_owned_by_id(command_owner, *transport_id) {
                     return false;
@@ -2022,41 +1805,6 @@ impl Simulation {
                     _ => false,
                 }
             }
-            Command::HarvestCell {
-                entity_id,
-                target_rx,
-                target_ry,
-            } => {
-                if !self.entity_owned_by_id(command_owner, *entity_id) {
-                    return false;
-                }
-                if self
-                    .substrate
-                    .entities
-                    .get(*entity_id)
-                    .is_some_and(|e| e.is_deployed())
-                {
-                    return false;
-                }
-                if self
-                    .substrate
-                    .entities
-                    .get(*entity_id)
-                    .is_none_or(|e| e.miner.is_none())
-                {
-                    return false;
-                }
-                self.apply_megamission_command(
-                    *entity_id,
-                    MissionType::Harvest,
-                    None,
-                    Some(combat::TargetKind::Cell(*target_rx, *target_ry)),
-                    rules,
-                    overlay_registry,
-                    frame_effects,
-                )
-                .accepted()
-            }
             Command::PlantC4 {
                 attacker_id,
                 target_building_id,
@@ -2120,8 +1868,13 @@ impl Simulation {
                 let Some(target_owner) = target_info else {
                     return false;
                 };
-                // Enemy-only.
-                if crate::map::houses::are_houses_friendly(
+                // RESIDUAL: enemy-only, as the actor's house asks it. Native
+                // has no such gate: a Ctrl+click passes What_Action's ally
+                // test (`0x007003C4`), and neither the Sabotage click arm
+                // (`0x004D7788`) nor the arrival (`0x0051A4BF..0x0051A664`)
+                // tests an alliance, so a forced charge goes on an allied or
+                // own CanC4 building.
+                if crate::map::houses::is_allied_with(
                     self.house_alliances.as_map(),
                     command_owner,
                     self.interner.resolve(target_owner),
@@ -2263,39 +2016,6 @@ impl Simulation {
                     false,
                     Some(*selection),
                 )
-            }
-            Command::EnterBunker { unit_id, bunker_id } => {
-                let Some(rules) = rules else { return false };
-                if !self.entity_owned_by_id(command_owner, *unit_id) {
-                    return false;
-                }
-                if self
-                    .substrate
-                    .entities
-                    .get(*unit_id)
-                    .is_some_and(|e| e.is_deployed())
-                {
-                    return false;
-                }
-                // Target must be an own tank bunker (seeded `bunker_runtime`).
-                let is_bunker = self
-                    .substrate
-                    .entities
-                    .get(*bunker_id)
-                    .is_some_and(|b| b.bunker_runtime.is_some());
-                if !is_bunker || !self.entity_owned_by_id(command_owner, *bunker_id) {
-                    return false;
-                }
-                self.apply_megamission_command(
-                    *unit_id,
-                    MissionType::Enter,
-                    None,
-                    Some(combat::TargetKind::Entity(*bunker_id)),
-                    Some(rules),
-                    overlay_registry,
-                    frame_effects,
-                )
-                .accepted()
             }
             Command::EjectBunker { bunker_id } => {
                 let Some(rules) = rules else { return false };
@@ -2615,8 +2335,14 @@ impl Simulation {
     /// Structures never take this branch (it is gated on the Foot bit), and the
     /// link tested is contact slot 0, the same slot the original reads.
     /// `EventClass::Execute @ 0x004C6CB0`, MEGAMISSION `0x004C729F..0x004C72E2`: an Enter event,
-    /// `+0xAC` Enter, the Foot bit, a Building, and contact slot 0 (`+0xE4`, `0x0065AD30`).
-    pub(crate) fn duplicate_enter_is_noop(&self, receiver_id: u64, destination_id: u64) -> bool {
+    /// `+0xAC` Enter, the Foot bit, then the destination token converted
+    /// (`0x004C72BF`, which stamps the fallback CellClass for a Cell off the
+    /// map), a Building, and contact slot 0 (`+0xE4`, `0x0065AD30`).
+    pub(crate) fn duplicate_enter_is_noop(
+        &self,
+        receiver_id: u64,
+        destination: Option<combat::TargetKind>,
+    ) -> bool {
         let Some(receiver) = self.substrate.entities.get(receiver_id) else {
             return false;
         };
@@ -2628,6 +2354,11 @@ impl Simulation {
         {
             return false;
         }
+        let Some(combat::TargetKind::Entity(destination_id)) =
+            self.resolve_event_token(destination)
+        else {
+            return false;
+        };
         let destination_is_building = self
             .substrate
             .entities
@@ -2639,54 +2370,38 @@ impl Simulation {
         receiver.radio_contacts.slot(0) == Some(destination_id)
     }
 
-    /// Validate an explicit refinery selected by a player miner-return order.
-    /// VERA-only: re-checks at execution the refinery that `UnitClass::What_Action`'s CAN_LOAD
-    /// (`0x0F`, Enter at `0x0073FD50`) admitted at click, from the store and `Refinery=`/`Dock=`.
-    fn valid_explicit_miner_refinery(
-        &self,
-        command_owner: &str,
-        miner_id: u64,
-        refinery_id: u64,
-        rules: &RuleSet,
-    ) -> bool {
-        let Some(miner) = self.substrate.entities.get(miner_id) else {
-            return false;
+    /// TargetClass `0x006E6FF0`: the object an event token names, while it
+    /// is still present. A Cell names none and is not looked up.
+    pub(crate) fn event_token_object(&self, token: Option<combat::TargetKind>) -> Option<u64> {
+        let combat::TargetKind::Entity(id) = token? else {
+            return None;
         };
-        if miner.miner.is_none() {
-            return false;
-        }
-        let harvester_type = self.interner.resolve(miner.type_ref());
-        let Some(refinery) = self.substrate.entities.get(refinery_id) else {
-            return false;
-        };
-        if refinery.category() != crate::map::entities::EntityCategory::Structure {
-            return false;
-        }
-        if refinery.health.current() == 0 || refinery.death.is_dying() || refinery.building_up() {
-            return false;
-        }
-        let refinery_owner = self.interner.resolve(refinery.owner());
-        if !are_houses_friendly(self.house_alliances.as_map(), command_owner, refinery_owner) {
-            return false;
-        }
-        let refinery_type = self.interner.resolve(refinery.type_ref());
-        rules.is_refinery_type(refinery_type)
-            && rules.harvester_can_dock_at(harvester_type, refinery_type)
+        (self.substrate.entities.contains(id) || self.terrain_objects.objects().contains_key(&id))
+            .then_some(id)
     }
 
     /// TargetClass `0x006E6E20`: what an event token resolves to. An object
-    /// no longer present resolves to NULL; a Cell always resolves.
+    /// no longer present resolves to NULL. A Cell always resolves, through
+    /// `MapClass::Get_CellClass` (`0x006E6F05`), which stamps the shared
+    /// fallback CellClass with a cell off the map: a Cell TarCom then reads
+    /// that CellClass as it stands ([`combat::TargetKind::cell_identity`]).
     pub(crate) fn resolve_event_token(
         &self,
         token: Option<combat::TargetKind>,
     ) -> Option<combat::TargetKind> {
-        token.filter(|token| match *token {
-            combat::TargetKind::Entity(id) => {
-                self.substrate.entities.contains(id)
-                    || self.terrain_objects.objects().contains_key(&id)
+        match token? {
+            combat::TargetKind::Entity(_) => self
+                .event_token_object(token)
+                .map(combat::TargetKind::Entity),
+            combat::TargetKind::Cell(x, y) => {
+                crate::sim::cell_rect::get_cellclass_fallback(
+                    self.resolved_terrain.as_ref(),
+                    i32::from(x),
+                    i32::from(y),
+                );
+                token
             }
-            combat::TargetKind::Cell(..) => true,
-        })
+        }
     }
 
     /// The MEGAMISSION event's flash (`0x004C7385..0x004C739F`): vt+0x148
@@ -2737,8 +2452,8 @@ impl Simulation {
     /// `0x004C71F6..0x004C74BA`) and its one port. Move, Attack (Ctrl and
     /// Cell clicks included), attack-move (mission 29), Area Guard, a vehicle
     /// transport's Unload and Enter, Capture and Sabotage onto their object
-    /// and Harvest run here. EnterBunker uses its existing reservation adapter
-    /// within this owner; the native Unit setter's Bunker arm remains unported.
+    /// and Harvest run here. A tank bunker's Enter uses the same destination
+    /// and radio owners.
     /// A garrison's ordinary Unload (one command
     /// for the self-click and the deploy key's DEPLOY event) and the dormant
     /// aircraft Unload retain their adapters. In native order:
@@ -2803,75 +2518,14 @@ impl Simulation {
             return MegaMissionExecution::Refused;
         }
         for token in [target, destination] {
-            if let Some(combat::TargetKind::Entity(id)) = self.resolve_event_token(token)
+            if let Some(id) = self.event_token_object(token)
                 && !self.order_object_token_admits(id)
             {
                 return MegaMissionExecution::Refused;
             }
         }
-        if mission == MissionType::Enter
-            && let Some(combat::TargetKind::Entity(id)) = self.resolve_event_token(destination)
-            && self.duplicate_enter_is_noop(entity_id, id)
-        {
+        if mission == MissionType::Enter && self.duplicate_enter_is_noop(entity_id, destination) {
             return MegaMissionExecution::RepeatedEnter;
-        }
-        // The existing bunker adapter represents the unported Unit741D49
-        // setter arm. Keep it in this event owner so a planned Enter has the
-        // same reservation/approach lifecycle as an ordinary bunker click.
-        if mission == MissionType::Enter
-            && let Some(combat::TargetKind::Entity(bunker)) = self.resolve_event_token(destination)
-            && self
-                .substrate
-                .entities
-                .get(bunker)
-                .is_some_and(|target| target.bunker_runtime.is_some())
-        {
-            let Some(rules) = rules else {
-                return MegaMissionExecution::Refused;
-            };
-            Self::flash_order_object(
-                &self.interner,
-                &self.session,
-                &self.fog,
-                &self.house_alliances,
-                &mut self.substrate,
-                entity_id,
-                target,
-                destination,
-            );
-            if !crate::sim::docking::bunker_link::can_auto_deploy_here(self, entity_id, rules) {
-                return MegaMissionExecution::Refused;
-            }
-            let entered = crate::sim::docking::bunker_link::begin_entry(
-                self,
-                entity_id,
-                bunker,
-                rules,
-                overlay_registry,
-                frame_effects,
-                |sim| {
-                    sim.queue_megamission(
-                        entity_id,
-                        MissionType::Enter,
-                        None,
-                        None,
-                        Some(rules),
-                        frame_effects,
-                    );
-                    let _ = sim.assign_target_represented(
-                        entity_id,
-                        None,
-                        Some(rules),
-                        overlay_registry,
-                        frame_effects,
-                    );
-                },
-            );
-            return if entered {
-                MegaMissionExecution::Executed
-            } else {
-                MegaMissionExecution::Refused
-            };
         }
         // Assign_Target_Command reads the event tokens only for mission 29.
         // The destination/radio owners handle any existing dock contact.
@@ -2893,11 +2547,8 @@ impl Simulation {
             target,
             destination,
         );
-        // The setters take what the tokens resolve to.
-        let (target, destination) = (
-            self.resolve_event_token(target),
-            self.resolve_event_token(destination),
-        );
+        // Each setter takes what its token resolves to, converted just before
+        // it: a Cell's lookup can restamp the fallback CellClass.
         let foot = self
             .substrate
             .entities
@@ -2906,9 +2557,12 @@ impl Simulation {
         if mission == MissionType::AreaGuard && foot {
             self.assign_target_represented(entity_id, None, rules, overlay_registry, frame_effects)
                 .unwrap_or_else(|cause| panic!("Area Guard order target: {cause}"));
+            // The target token, converted at `0x004C7418` for the
+            // destination and again at `0x004C7428` for the archive.
+            let post = self.resolve_event_token(target);
             self.assign_destination_represented(
                 entity_id,
-                target.map(Into::into),
+                post.map(Into::into),
                 rules,
                 overlay_registry,
                 frame_effects,
@@ -2916,13 +2570,16 @@ impl Simulation {
             .unwrap_or_else(|cause| panic!("Area Guard order destination: {cause}"));
             // The archive write follows the virtual destination call even
             // when that class setter refuses its request.
+            let archive = self.resolve_event_token(target);
             self.substrate
                 .entities
                 .get_mut(entity_id)
                 .unwrap()
-                .set_archive_target(target);
+                .set_archive_target(archive);
             return MegaMissionExecution::Executed;
         }
+        // `0x004C745B`, then the target setter.
+        let target = self.resolve_event_token(target);
         // Its changed-null path6FCF5B also resets retained burst state;
         // dropping Target alone cannot.
         let _ = self.assign_target_represented(
@@ -2932,12 +2589,13 @@ impl Simulation {
             overlay_registry,
             frame_effects,
         );
-        // Unit741970, Infantry51AA40, Aircraft41AA80 or Building455D50,
-        // whatever the locomotor. Each owns its same-NavCom return,
-        // preprocessing and queue clearing. Native: track_destination.json
-        // Unit rows, replayed by
-        // command_move_destinations_match_native_unit_setter; original
+        // `0x004C7474`, then the destination setter: Unit741970,
+        // Infantry51AA40, Aircraft41AA80 or Building455D50, whatever the
+        // locomotor. Each owns its same-NavCom return, preprocessing and
+        // queue clearing. Native: track_destination.json Unit rows, replayed
+        // by command_move_destinations_match_native_unit_setter; original
         // delayed 6E0 MTNK: walk_first_path.json.
+        let destination = self.resolve_event_token(destination);
         if let Err(cause) = self.assign_destination_represented(
             entity_id,
             destination.map(Into::into),
@@ -3167,6 +2825,16 @@ mod tests {
             5,
             true,
         );
+        // The native Unit setter dispatches through an installed locomotor.
+        ge.locomotor = Some(
+            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Drive,
+            ),
+        );
+        ge.locomotor
+            .as_mut()
+            .unwrap()
+            .ensure_installed_track_state();
         // Revealed object: order admission reads the limbo byte.
         ge.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(ge);
@@ -3226,10 +2894,11 @@ mod tests {
         }
     }
 
-    /// An unarmed unit (no Primary, so CanAutoDeployHere rejects it) and an
-    /// enemy bunker each refuse admission and leave the machine idle.
+    /// What_Action's CAN_LOAD query refuses an unarmed unit (no Primary,
+    /// so CanAutoDeployHere rejects it) and an enemy bunker. This is input
+    /// admission; the MEGAMISSION event does not repeat the query.
     #[test]
-    fn enter_bunker_rejects_an_unarmed_unit_or_an_enemy_bunker() {
+    fn bunker_click_query_rejects_an_unarmed_unit_or_an_enemy_bunker() {
         use crate::sim::docking::bunker_install::BunkerState;
         use crate::sim::docking::bunker_link::BunkerLink;
         let rules = bunker_rules();
@@ -3238,16 +2907,11 @@ mod tests {
             spawn_bunker_struct(&mut sim, 2, bunker_owner, 10, 10);
             spawn_bunkerable(&mut sim, 1, "Americans", unit_type, 14, 14);
 
-            let applied = sim.apply_command(
-                "Americans",
-                &Command::EnterBunker {
-                    unit_id: 1,
-                    bunker_id: 2,
-                },
-                Some(&rules),
+            assert_ne!(
+                crate::sim::radio::receive::can_load_query(&sim, 2, 1, &rules),
+                crate::sim::radio::RadioResponse::Roger,
+                "{bunker_owner} bunker, {unit_type}"
             );
-
-            assert!(!applied, "{bunker_owner} bunker, {unit_type}");
             assert_eq!(
                 sim.substrate.entities.get(1).unwrap().bunker.link(),
                 BunkerLink::None
@@ -3267,13 +2931,12 @@ mod tests {
     }
 
     /// CAN_LOAD refuses a bunker under Construction or being sold
-    /// (`0x0043C326..0x0043C346`) before the adapter releases the tank's
-    /// current seek or sends DOCK_NOW, so the bunker's buildup is not cut
-    /// short by DOCK_NOW's ready latch and the tank keeps its seek.
+    /// (`0x0043C326..0x0043C346`) without mutating the tank's current seek
+    /// or the target's ready latch. This compares the query only; no
+    /// replacement event or UI click is executed.
     #[test]
-    fn enter_bunker_refuses_a_bunker_building_up_or_being_sold() {
+    fn bunker_click_query_preserves_seek_while_target_builds_up_or_is_sold() {
         use crate::sim::docking::bunker_install::BunkerState;
-        use crate::sim::docking::bunker_link::BunkerLink;
         let rules = bunker_rules();
         for mission in [MissionType::Construction, MissionType::Selling] {
             let mut sim = Simulation::new();
@@ -3283,10 +2946,7 @@ mod tests {
             spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 13, 14);
             assert!(sim.apply_command(
                 "Americans",
-                &Command::EnterBunker {
-                    unit_id: 1,
-                    bunker_id: 3,
-                },
+                &Command::clicked_mission(1, MissionType::Enter, combat::TargetKind::Entity(3)),
                 Some(&rules),
             ));
             sim.substrate
@@ -3296,16 +2956,11 @@ mod tests {
                 .mission
                 .set_current_for_test(MissionId::from_known(mission), 1);
 
-            let applied = sim.apply_command(
-                "Americans",
-                &Command::EnterBunker {
-                    unit_id: 1,
-                    bunker_id: 2,
-                },
-                Some(&rules),
+            assert_eq!(
+                crate::sim::radio::receive::can_load_query(&sim, 2, 1, &rules),
+                crate::sim::radio::RadioResponse::Negatory,
+                "{mission:?}"
             );
-
-            assert!(!applied, "{mission:?}");
             let building = sim.substrate.entities.get(2).unwrap();
             assert_eq!(building.building_ready_latch(), 0, "{mission:?}");
             assert_eq!(building.mission.queued(), MissionId::NONE, "{mission:?}");
@@ -3315,8 +2970,13 @@ mod tests {
                 "{mission:?}"
             );
             assert_eq!(
-                sim.substrate.entities.get(1).unwrap().bunker.link(),
-                BunkerLink::Approaching(3),
+                sim.substrate
+                    .entities
+                    .get(1)
+                    .unwrap()
+                    .radio_contacts
+                    .slot(0),
+                Some(3),
                 "{mission:?} keeps the current seek"
             );
             assert_eq!(
@@ -3324,9 +2984,8 @@ mod tests {
                     .entities
                     .get(3)
                     .unwrap()
-                    .bunker_runtime
-                    .unwrap()
-                    .installing_unit(),
+                    .radio_contacts
+                    .slot(0),
                 Some(1),
                 "{mission:?}"
             );
@@ -3395,28 +3054,37 @@ mod tests {
             crate::sim::world::RevealOutcome::Revealed { .. }
         ));
 
-        // 1) Enter, after the approach: CAN_LOAD's IS_OCCUPIED (0x0043C526)
-        // refuses an order from inside the foundation, so the fixture starts
-        // where the adapter leaves an arrived tank. The bunker's production
-        // DOCK_NOW starts the install; the tank keeps its approach link.
-        assert_eq!(
-            crate::sim::radio::transmit(
-                &mut sim,
-                1,
-                2,
-                crate::sim::radio::RadioMessage::DockNow,
-                crate::sim::radio::RadioPayload::default(),
-                Some(&rules),
-                crate::sim::world::FrameEffects::default(),
-            ),
-            crate::sim::radio::RadioResponse::Roger
-        );
+        // The supplied arrival retains Enter, object NavCom and contact
+        // zero, as in the original bunker_entry history. Run its real
+        // PerCell receiver to queue Repair and power off the Drive.
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        unit.mission
+            .set_current_for_test(MissionId::from_known(MissionType::Enter), 0);
+        unit.navigation
+            .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::object(2)));
+        unit.radio_contacts.set_slot(0, 2);
         sim.substrate
             .entities
-            .get_mut(1)
+            .get_mut(2)
             .unwrap()
-            .bunker
-            .set_bunker_link_for_test(BunkerLink::Approaching(2));
+            .radio_contacts
+            .set_slot(0, 1);
+        assert!(sim.unit_dock_now(1, &rules, None, FrameEffects::default()));
+        // This fixture starts at a completed, stopped arrival. Give the
+        // building its first visit before a new Drive Process: a fresh
+        // Process with Enter/NavCom but no retained destination re-aims the
+        // Drive (4B0971..4B09A6), so it is no longer this stopped boundary.
+        update_bunker(&mut sim, &rules, None, 2, FrameEffects::default());
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(2)
+                .unwrap()
+                .bunker_runtime
+                .unwrap()
+                .state(),
+            BunkerState::ClearWait,
+        );
         // Prepared same-cell arrival, then the real production locomotor
         // corridor and installer, in their production order, one frame at a
         // time. No head/position writes or Facing::Snap complete the motion.

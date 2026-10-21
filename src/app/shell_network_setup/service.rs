@@ -2,7 +2,7 @@
 //! boundaries without implementing transport, file transfer or peers.
 
 use super::*;
-use crate::skirmish_launch::{LaunchHumanRole, SkirmishLaunchSession, SkirmishLocalSlot};
+use crate::skirmish_launch::{SkirmishLaunchSession, SkirmishLocalSlot};
 use crate::ui::lan_shell::LanChatLine;
 use crate::ui::skirmish_shell::SkirmishValidationModalState;
 use std::time::Instant;
@@ -12,14 +12,11 @@ pub(crate) enum NetworkSetupEvent {
     ParticipantLeft {
         index: usize,
     },
-    #[expect(
-        dead_code,
-        reason = "the network transport, outside this change, delivers these packets"
-    )]
+    /// A WOL guest's `R` to the host (`0x007A8260`).
     PlayerChoices {
         index: usize,
         choices: SkirmishLocalSlot,
-        role: LaunchHumanRole,
+        observer: bool,
     },
     PlayerReady {
         index: usize,
@@ -88,13 +85,25 @@ pub(crate) enum NetworkSetupEvent {
         users: Vec<super::WolStartUser>,
         pings: [i32; 8],
     },
+    /// WOL Start Game Now's verify `0x7947B0` began; with connection pairs
+    /// it checks node 0 (`0x00794809`).
+    VerifyStarted {
+        pairs: bool,
+    },
+    /// A peer's verify reply (`0x00793D20`): `node` in the start order.
+    PeerConnected {
+        node: usize,
+    },
+    /// The scenario negotiation `0x795CD0`'s result: 0 goes on to the
+    /// match, 1 aborts silently, 2 aborts behind "Scenarios don't match".
+    Negotiated {
+        result: u8,
+    },
     /// A WOL ping result for one user (`007A0EA0`).
     Ping {
         name: String,
         ping: i32,
     },
-    /// WOL leave/part of the game channel: C9 Back completes on this.
-    ChannelLeft,
 }
 
 pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> anyhow::Result<()> {
@@ -129,7 +138,10 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 event,
                 NetworkSetupEvent::GameStarted { .. }
                     | NetworkSetupEvent::Ping { .. }
-                    | NetworkSetupEvent::ChannelLeft
+                    | NetworkSetupEvent::PlayerChoices { .. }
+                    | NetworkSetupEvent::VerifyStarted { .. }
+                    | NetworkSetupEvent::PeerConnected { .. }
+                    | NetworkSetupEvent::Negotiated { .. }
             ),
         "WOL setup event in a LAN setup"
     );
@@ -185,7 +197,8 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .session
                 .remove_network_participant(index)?;
             if dialog.wol() {
-                // The WOL part sink calls no 0x750920 PlayerLeft (lead).
+                // The part sink 0x785740 played PlayerLeft and clears the
+                // acceptances itself (super::wol::user_left).
                 clear_cooperative_partners(state);
                 state.platform.window.request_redraw();
                 return Ok(());
@@ -205,12 +218,37 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         NetworkSetupEvent::PlayerChoices {
             index,
             choices,
-            role,
+            observer,
         } => {
-            state
-                .match_state
-                .session
-                .accept_network_player_choices(index, choices, role)?;
+            // Cooperative's mode +0x1C (0x5C17B0) admits its campaign's
+            // countries; the other modes' (0x5D67A0) admit any.
+            let countries = state
+                .frontend
+                .multiplayer_shell_runtime
+                .cooperative_player_countries();
+            let change = state.match_state.session.accept_network_peer_choices(
+                index,
+                choices,
+                observer,
+                countries.as_deref(),
+            )?;
+            // 0x5EC9F0's advertisement 0x78F000, 0x77DB90's slot names,
+            // then 0x5E32D0's options and the repaint 0x783C80.
+            let protocol = state
+                .frontend
+                .network_setup_protocol
+                .as_mut()
+                .expect("setup owns protocol");
+            if change.roster {
+                protocol.requests.extend([
+                    NetworkSetupRequest::Advertise,
+                    NetworkSetupRequest::PublishRoster,
+                ]);
+            }
+            if change.options {
+                protocol.requests.push(NetworkSetupRequest::PublishOptions);
+            }
+            state.platform.window.request_redraw();
         }
         NetworkSetupEvent::PlayerReady { index, accepted } => {
             state
@@ -220,11 +258,51 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             // Native never automatically restarts when the last A1 arrives.
         }
         NetworkSetupEvent::MapStatus { index, status } => {
+            // 0x5E39C0 (the K arm, 0x5E4C39): only the host screens C2/BC
+            // take it (0x5E4C3D..0x5E4C57); the local node always holds its
+            // map; K0 and K2 print the sender and map name.
             anyhow::ensure!(status <= 2, "unknown native K status");
+            if !state.match_state.session.host() {
+                return Ok(());
+            }
+            let launch = state
+                .match_state
+                .session
+                .network_setup()
+                .ok_or_else(|| anyhow::anyhow!("no admitted setup"))?;
+            let status = if index == launch.local_player_index {
+                1
+            } else {
+                status
+            };
+            let name = launch
+                .humans
+                .get(index)
+                .ok_or_else(|| anyhow::anyhow!("no participant {index}"))?
+                .name
+                .clone();
             state
                 .match_state
                 .session
                 .set_network_map_status(index, status)?;
+            let key = match status {
+                0 => Some("GUI:HostNoMap"),
+                2 => Some("GUI:HostMapTransfer"),
+                _ => None,
+            };
+            if let Some(key) = key {
+                let map = super::map_display_name(state)
+                    .unwrap_or_default()
+                    .to_owned();
+                super::chat_notice(
+                    state,
+                    key,
+                    &[
+                        crate::assets::csf_file::CsfArg::Str(&name),
+                        crate::assets::csf_file::CsfArg::Str(&map),
+                    ],
+                );
+            }
         }
         NetworkSetupEvent::HostSetup {
             launch,
@@ -234,6 +312,13 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             cooperative_difficulty,
             seed,
         } => {
+            // 0x5E3E73..0x5E3E90: a WOL parse drops every option text while
+            // the game runs ([0xB77DC1]) or a StartGame is pending ([0xB77E28]).
+            if dialog.wol()
+                && (crate::app::shell_wol::in_match(state) || super::wol::start_pending(state))
+            {
+                return Ok(());
+            }
             let before = state
                 .match_state
                 .session
@@ -600,13 +685,13 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             super::wol::game_started(state, users, pings)?;
         }
         NetworkSetupEvent::Ping { name, ping } => super::wol::ping(state, name, ping)?,
-        NetworkSetupEvent::ChannelLeft => {
-            anyhow::ensure!(!dialog.host, "the C2 host closes on its own Back");
-            App::leave_shell_dialog(
-                state,
-                shell_transition::ShellExitThen::NetworkSetupBack(dialog),
-            );
+        NetworkSetupEvent::VerifyStarted { pairs } => {
+            if pairs {
+                super::wol::verify_connected(state, 0)?;
+            }
         }
+        NetworkSetupEvent::PeerConnected { node } => super::wol::verify_connected(state, node)?,
+        NetworkSetupEvent::Negotiated { result } => super::wol::negotiated(state, result)?,
     }
     state.platform.window.request_redraw();
     Ok(())

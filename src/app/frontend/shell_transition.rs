@@ -80,6 +80,8 @@ pub(crate) enum ShellSlideKind {
     WolLocale,
     /// Dialog 0x114 — WOL My Information.
     WolMyInformation,
+    /// Dialog 0x116 — the WOL Buddy List.
+    WolBuddyList,
     /// Dialog 0xA3 — Options' Keyboard page (front-end parent only).
     Keyboard,
     /// Dialog D7, Options' Network child.
@@ -119,6 +121,7 @@ impl ShellSlideKind {
             ShellSlideKind::WolAutoLoginQuery => 0x0112,
             ShellSlideKind::WolLocale => 0x00FE,
             ShellSlideKind::WolMyInformation => 0x0114,
+            ShellSlideKind::WolBuddyList => 0x0116,
             ShellSlideKind::Keyboard => 0x00A3,
             ShellSlideKind::NetworkOptions => 0x00D7,
             ShellSlideKind::LanLobby => 0xBB,
@@ -256,6 +259,9 @@ pub(crate) enum ShellExitThen {
     WolLoginClose(u16),
     /// `0x113` Back (`0x686`): the runner leaves its channel and returns 0.
     WolLobbyBack,
+    /// `0x113` Buddy List (`0x689`): the runner ends as for Back, with mode
+    /// 5 and return mode 4.
+    WolLobbyBuddy,
     /// A game join was requested (`0x0078C281`): `0x113` slides out and hides.
     WolLobbyHide,
     /// The create succeeded: `0x113` slides out and hides, then C2 opens.
@@ -276,6 +282,8 @@ pub(crate) enum ShellExitThen {
     WolLocaleClose(i32),
     /// `0x114` closed with this button.
     WolMyInformationClose(u16),
+    /// `0x116` ended with Create, Join or Back.
+    WolBuddyClose(u16),
 }
 
 impl ShellExitThen {
@@ -313,6 +321,7 @@ impl ShellExitThen {
             Self::WolBack | Self::WolAction(_) => ShellSlideKind::WolWelcome,
             Self::WolLoginClose(_) => ShellSlideKind::WolLogin,
             Self::WolLobbyBack
+            | Self::WolLobbyBuddy
             | Self::WolLobbyHide
             | Self::WolCreateAccepted { .. }
             | Self::WolOptionsOpen => ShellSlideKind::WolLobby,
@@ -321,6 +330,7 @@ impl ShellExitThen {
             Self::WolAutoLoginClose(_) => ShellSlideKind::WolAutoLoginQuery,
             Self::WolLocaleClose(_) => ShellSlideKind::WolLocale,
             Self::WolMyInformationClose(_) => ShellSlideKind::WolMyInformation,
+            Self::WolBuddyClose(_) => ShellSlideKind::WolBuddyList,
             Self::ScoreContinue => ShellSlideKind::Score,
             Self::CampaignScoreContinue => ShellSlideKind::CampaignScore,
         }
@@ -600,6 +610,7 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::WolAutoLoginQuery
             | ShellSlideKind::WolLocale
             | ShellSlideKind::WolMyInformation
+            | ShellSlideKind::WolBuddyList
             | ShellSlideKind::Keyboard
             | ShellSlideKind::NetworkOptions
             | ShellSlideKind::LanLobby => ShellWaveCompletion::MenuPage,
@@ -830,6 +841,7 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
             Some(crate::app::shell_wol::WolPage::MyInformation(_)) => {
                 ShellSlideKind::WolMyInformation
             }
+            Some(crate::app::shell_wol::WolPage::Buddy(_)) => ShellSlideKind::WolBuddyList,
             _ => return None,
         }
     } else if state.frontend.shell_route.wol_lobby() {
@@ -1043,7 +1055,8 @@ pub(crate) fn render_shell_first_paint_slide(
         | ShellSlideKind::WolSoundOptions
         | ShellSlideKind::WolAutoLoginQuery
         | ShellSlideKind::WolLocale
-        | ShellSlideKind::WolMyInformation => {
+        | ShellSlideKind::WolMyInformation
+        | ShellSlideKind::WolBuddyList => {
             crate::app::frontend::wol_welcome_render::render_wol_page(state, encoder, destination)?
         }
         ShellSlideKind::Options | ShellSlideKind::VeraOptions => {

@@ -27,7 +27,9 @@ pub struct TerrainObjectType {
     /// Native ReadDouble/FSTP-float result, preserved without micros quantization.
     pub animation_probability: NativeF32Bits,
     /// Inherited `Armor=`. TerrainTypeClass constructor defaults to Wood.
+    /// Kept as authored text for diagnostics; gameplay uses `armor_id()`.
     pub armor: String,
+    armor_id: crate::rules::armor::ArmorId,
     /// Inherited `Strength=`. The constructor value and explicit -1 resolve
     /// through `[General] TreeStrength` after successful ObjectType ReadINI.
     pub strength: i32,
@@ -66,6 +68,10 @@ impl TerrainObjectType {
         section: &IniSection,
         tree_strength: i32,
     ) -> Self {
+        let armor = section
+            .read_name("Armor", 0x80)
+            .unwrap_or("wood")
+            .to_ascii_lowercase();
         // ReadDouble -> `FSTP dword [ESI+0x2A4]` (`0x0071E073`) over the
         // constructor's zero (`0x0071DACD`).
         let animation_probability =
@@ -85,10 +91,8 @@ impl TerrainObjectType {
             animation_probability,
             // ObjectType `Armor=` (`0x005F94C8`): ReadString 0x80 ahead of the
             // armor-name lookup, over the constructor's Wood (`0x0071DBB6`).
-            armor: section
-                .read_name("Armor", 0x80)
-                .unwrap_or("wood")
-                .to_ascii_lowercase(),
+            armor_id: crate::rules::armor::armor_index(&armor),
+            armor,
             strength: if strength == -1 {
                 tree_strength
             } else {
@@ -109,6 +113,14 @@ impl TerrainObjectType {
 
     pub fn merge_art_foundation(&mut self, foundation_name: &str) {
         self.foundation = foundation::foundation_name(foundation_name).to_string();
+    }
+
+    pub fn armor_id(&self) -> crate::rules::armor::ArmorId {
+        self.armor_id
+    }
+
+    pub(crate) fn bind_armor(&mut self, armor: crate::rules::armor::ArmorId) {
+        self.armor_id = armor;
     }
 }
 

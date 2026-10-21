@@ -259,7 +259,35 @@ impl DrawState {
         remap_row: u32,
         observer: ObserverDrawContext,
     ) -> DrawDecision {
-        let (warp_out, warp_in) = (entity.is_warped_out(), entity.is_warping_in());
+        Self::entity_decision(entity, current_frame, remap_row, observer, true)
+    }
+
+    /// A building's material for its slot anims: [`Self::for_entity`]
+    /// without the warp arm. `AnimClass::DrawIt` never reads its building's
+    /// `+0x270`; an erased building's anims take their translucency from
+    /// their own `+0x119` (`0x004521C0`), and one created during the erase
+    /// draws opaque (`0x00451B25`).
+    pub(crate) fn for_building_slot_anims(
+        building: &GameEntity,
+        current_frame: u32,
+        remap_row: u32,
+        observer: ObserverDrawContext,
+    ) -> DrawDecision {
+        Self::entity_decision(building, current_frame, remap_row, observer, false)
+    }
+
+    fn entity_decision(
+        entity: &GameEntity,
+        current_frame: u32,
+        remap_row: u32,
+        observer: ObserverDrawContext,
+        warp: bool,
+    ) -> DrawDecision {
+        let (warp_out, warp_in) = if warp {
+            (entity.is_warped_out(), entity.is_warping_in())
+        } else {
+            (false, false)
+        };
         let character = entity.visual_character(
             observer.cloaking_stages,
             observer.invisible,
@@ -501,6 +529,22 @@ mod tests {
         assert_eq!(decision.state.fx_flags, FX_CLOAK | FX_WARP | FX_DISGUISE);
         assert_eq!(decision.state.fx_params[0], 0.25);
         assert_eq!(decision.state.fx_params[1], 6.0);
+    }
+
+    /// An erased building draws at 50% (`FX_WARP`); its slot anims take no
+    /// part of that and draw by their own `+0x119`.
+    #[test]
+    fn building_slot_anims_take_no_warp_from_their_building() {
+        let mut building = entity();
+        building.set_category_for_test(EntityCategory::Structure);
+        building.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(9);
+        assert!(building.is_warped_out());
+        let body = DrawState::for_entity(&building, 0, 3, ObserverDrawContext::default()).state;
+        assert_eq!((body.fx_flags, body.fx_params[0]), (FX_WARP, 0.5));
+        let anims =
+            DrawState::for_building_slot_anims(&building, 0, 3, ObserverDrawContext::default())
+                .state;
+        assert_eq!((anims.fx_flags, anims.fx_params[0]), (0, 1.0));
     }
 
     #[test]

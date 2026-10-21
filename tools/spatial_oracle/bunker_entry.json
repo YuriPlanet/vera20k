@@ -1,0 +1,3797 @@
+{
+  "cases": [
+    {
+      "before": {
+        "archive": null,
+        "bunker_contact": null,
+        "bunker_mission": 5,
+        "bunker_occupant": null,
+        "bunker_queued": -1,
+        "bunker_state": 0,
+        "bunker_tether": 0,
+        "drive_cursor": -1,
+        "drive_destination": [
+          0,
+          0,
+          0
+        ],
+        "drive_head": [
+          0,
+          0,
+          0
+        ],
+        "drive_power": 1,
+        "drive_track": -1,
+        "mega_mission": -1,
+        "nav_aux": null,
+        "other_contact": null,
+        "path": [
+          -1,
+          0,
+          0,
+          0
+        ],
+        "pending_entry": null,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "second_contact": null,
+        "second_nav": null,
+        "unit_bunker": null,
+        "unit_contact": null,
+        "unit_coord": [
+          3712,
+          3712,
+          0
+        ],
+        "unit_mission": 7,
+        "unit_nav": null,
+        "unit_queued": -1,
+        "unit_tether": 0
+      },
+      "input": {
+        "human": true,
+        "mission": 7,
+        "name": "far_enter_then_supplied_arrival",
+        "unarmed": false,
+        "unit_cell": [
+          14,
+          14
+        ]
+      },
+      "original_text_and_vtables_unchanged": true,
+      "steps": [
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": null,
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": null,
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 33,
+          "op": "set_destination",
+          "radio": [
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 2,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            },
+            {
+              "message": 19,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            },
+            {
+              "message": 2,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 19,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            }
+          ],
+          "reached": [
+            "0x43c2d0",
+            "0x447ac0",
+            "0x447b20",
+            "0x4afb80",
+            "0x4afd40",
+            "0x4d94b0",
+            "0x65a970",
+            "0x65acb0",
+            "0x70fb50",
+            "0x737430",
+            "0x741970"
+          ],
+          "required_reached": [
+            "0x741970",
+            "0x4d94b0"
+          ]
+        },
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              1,
+              104
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 5,
+          "op": "enter",
+          "radio": [
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 19,
+              "recipient": "unit",
+              "reply": 10,
+              "sender": "bunker"
+            }
+          ],
+          "reached": [
+            "0x43c2d0",
+            "0x447ac0",
+            "0x4afb80",
+            "0x4d9290",
+            "0x65a970",
+            "0x65c7e0",
+            "0x70fb50",
+            "0x737430"
+          ],
+          "required_reached": [
+            "0x4d9290",
+            "0x65c7e0"
+          ],
+          "return_value": 15
+        },
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              1,
+              104
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              1,
+              104
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "coordinate": [
+            2432,
+            2432,
+            0
+          ],
+          "native_write_count": 3,
+          "op": "dock_coordinate",
+          "radio": [],
+          "reached": [
+            "0x447ac0",
+            "0x447b20"
+          ],
+          "required_reached": [
+            "0x447b20"
+          ]
+        },
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              1,
+              104
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              1,
+              104
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 0,
+          "op": "per_cell",
+          "radio": [],
+          "reached": [
+            "0x447ac0",
+            "0x447b20"
+          ],
+          "required_reached": [
+            "0x73a31f",
+            "0x447b20"
+          ]
+        },
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              1,
+              104
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              2432,
+              2432,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              1,
+              104
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "coordinate": [
+            2432,
+            2432,
+            0
+          ],
+          "native_write_count": 0,
+          "op": "supply_arrival",
+          "radio": [],
+          "reached": [],
+          "required_reached": []
+        },
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": 20,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 0,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              1,
+              104
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              2432,
+              2432,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              1,
+              104
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              2432,
+              2432,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 10,
+          "op": "per_cell",
+          "radio": [
+            {
+              "message": 21,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            }
+          ],
+          "reached": [
+            "0x43c2d0",
+            "0x447ac0",
+            "0x447b20",
+            "0x4d85d0",
+            "0x55a910",
+            "0x5b35e0",
+            "0x65a970",
+            "0x65acb0"
+          ],
+          "required_reached": [
+            "0x73a31f",
+            "0x447b20"
+          ]
+        }
+      ]
+    },
+    {
+      "before": {
+        "archive": null,
+        "bunker_contact": null,
+        "bunker_mission": 5,
+        "bunker_occupant": null,
+        "bunker_queued": -1,
+        "bunker_state": 0,
+        "bunker_tether": 0,
+        "drive_cursor": -1,
+        "drive_destination": [
+          0,
+          0,
+          0
+        ],
+        "drive_head": [
+          0,
+          0,
+          0
+        ],
+        "drive_power": 1,
+        "drive_track": -1,
+        "mega_mission": -1,
+        "nav_aux": null,
+        "other_contact": null,
+        "path": [
+          -1,
+          0,
+          0,
+          0
+        ],
+        "pending_entry": null,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "second_contact": null,
+        "second_nav": null,
+        "unit_bunker": null,
+        "unit_contact": null,
+        "unit_coord": [
+          3712,
+          3712,
+          0
+        ],
+        "unit_mission": 7,
+        "unit_nav": null,
+        "unit_queued": -1,
+        "unit_tether": 0
+      },
+      "input": {
+        "human": true,
+        "mission": 7,
+        "name": "busy_claim_from_original_second_setter",
+        "unarmed": false,
+        "unit_cell": [
+          14,
+          14
+        ]
+      },
+      "original_text_and_vtables_unchanged": true,
+      "steps": [
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "second_unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": "bunker",
+            "second_nav": "bunker",
+            "unit_bunker": null,
+            "unit_contact": null,
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": null,
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": null,
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 33,
+          "op": "other_set_destination",
+          "radio": [
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "second_unit"
+            },
+            {
+              "message": 2,
+              "recipient": "second_unit",
+              "reply": 1,
+              "sender": "bunker"
+            },
+            {
+              "message": 19,
+              "recipient": "second_unit",
+              "reply": 1,
+              "sender": "bunker"
+            },
+            {
+              "message": 2,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "second_unit"
+            },
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "second_unit"
+            },
+            {
+              "message": 19,
+              "recipient": "second_unit",
+              "reply": 1,
+              "sender": "bunker"
+            }
+          ],
+          "reached": [
+            "0x43c2d0",
+            "0x447ac0",
+            "0x447b20",
+            "0x4afb80",
+            "0x4afd40",
+            "0x4d94b0",
+            "0x65a970",
+            "0x65acb0",
+            "0x70fb50",
+            "0x737430",
+            "0x741970"
+          ],
+          "required_reached": [
+            "0x741970",
+            "0x65a970",
+            "0x43c2d0",
+            "0x4d94b0",
+            "0x4afd40"
+          ]
+        },
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "second_unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": "bunker",
+            "second_nav": "bunker",
+            "unit_bunker": null,
+            "unit_contact": null,
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": "second_unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": "bunker",
+            "second_nav": "bunker",
+            "unit_bunker": null,
+            "unit_contact": null,
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 18,
+          "op": "set_destination",
+          "radio": [],
+          "reached": [
+            "0x4afe00",
+            "0x4d94b0",
+            "0x65acb0",
+            "0x741970"
+          ],
+          "required_reached": [
+            "0x741970",
+            "0x4d94b0"
+          ]
+        }
+      ]
+    },
+    {
+      "before": {
+        "archive": null,
+        "bunker_contact": null,
+        "bunker_mission": 5,
+        "bunker_occupant": null,
+        "bunker_queued": -1,
+        "bunker_state": 0,
+        "bunker_tether": 0,
+        "drive_cursor": -1,
+        "drive_destination": [
+          0,
+          0,
+          0
+        ],
+        "drive_head": [
+          0,
+          0,
+          0
+        ],
+        "drive_power": 1,
+        "drive_track": -1,
+        "mega_mission": -1,
+        "nav_aux": null,
+        "other_contact": null,
+        "path": [
+          -1,
+          0,
+          0,
+          0
+        ],
+        "pending_entry": null,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "second_contact": null,
+        "second_nav": null,
+        "unit_bunker": null,
+        "unit_contact": null,
+        "unit_coord": [
+          3712,
+          3712,
+          0
+        ],
+        "unit_mission": 7,
+        "unit_nav": null,
+        "unit_queued": -1,
+        "unit_tether": 0
+      },
+      "input": {
+        "human": true,
+        "mission": 7,
+        "name": "admitted_idle_event_releases_claim",
+        "unarmed": false,
+        "unit_cell": [
+          14,
+          14
+        ]
+      },
+      "original_text_and_vtables_unchanged": true,
+      "steps": [
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": null,
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": null,
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 33,
+          "op": "set_destination",
+          "radio": [
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 2,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            },
+            {
+              "message": 19,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            },
+            {
+              "message": 2,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 19,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            }
+          ],
+          "reached": [
+            "0x43c2d0",
+            "0x447ac0",
+            "0x447b20",
+            "0x4afb80",
+            "0x4afd40",
+            "0x4d94b0",
+            "0x65a970",
+            "0x65acb0",
+            "0x70fb50",
+            "0x737430",
+            "0x741970"
+          ],
+          "required_reached": [
+            "0x741970",
+            "0x4d94b0"
+          ]
+        },
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": null,
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": null,
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 25,
+          "op": "idle_event_calls",
+          "radio": [
+            {
+              "message": 3,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            }
+          ],
+          "reached": [
+            "0x43c2d0",
+            "0x4afe00",
+            "0x4d94b0",
+            "0x65a970",
+            "0x741970"
+          ],
+          "required_reached": [
+            "0x4c75e0",
+            "0x741970",
+            "0x4c75f8"
+          ]
+        },
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": null,
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": null,
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": null,
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": null,
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 1,
+          "op": "update_bunker",
+          "radio": [],
+          "reached": [
+            "0x458e50",
+            "0x5b35e0"
+          ],
+          "required_reached": [
+            "0x458e50"
+          ]
+        },
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "second_unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": "bunker",
+            "second_nav": "bunker",
+            "unit_bunker": null,
+            "unit_contact": null,
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": null,
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": null,
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 33,
+          "op": "other_set_destination",
+          "radio": [
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "second_unit"
+            },
+            {
+              "message": 2,
+              "recipient": "second_unit",
+              "reply": 1,
+              "sender": "bunker"
+            },
+            {
+              "message": 19,
+              "recipient": "second_unit",
+              "reply": 1,
+              "sender": "bunker"
+            },
+            {
+              "message": 2,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "second_unit"
+            },
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "second_unit"
+            },
+            {
+              "message": 19,
+              "recipient": "second_unit",
+              "reply": 1,
+              "sender": "bunker"
+            }
+          ],
+          "reached": [
+            "0x43c2d0",
+            "0x447ac0",
+            "0x447b20",
+            "0x4afb80",
+            "0x4afd40",
+            "0x4d94b0",
+            "0x65a970",
+            "0x65acb0",
+            "0x70fb50",
+            "0x737430",
+            "0x741970"
+          ],
+          "required_reached": [
+            "0x741970",
+            "0x65a970",
+            "0x43c2d0",
+            "0x4d94b0",
+            "0x4afd40"
+          ]
+        }
+      ]
+    },
+    {
+      "before": {
+        "archive": null,
+        "bunker_contact": null,
+        "bunker_mission": 5,
+        "bunker_occupant": null,
+        "bunker_queued": -1,
+        "bunker_state": 0,
+        "bunker_tether": 0,
+        "drive_cursor": -1,
+        "drive_destination": [
+          0,
+          0,
+          0
+        ],
+        "drive_head": [
+          0,
+          0,
+          0
+        ],
+        "drive_power": 1,
+        "drive_track": -1,
+        "mega_mission": -1,
+        "nav_aux": null,
+        "other_contact": null,
+        "path": [
+          -1,
+          0,
+          0,
+          0
+        ],
+        "pending_entry": null,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "second_contact": null,
+        "second_nav": null,
+        "unit_bunker": null,
+        "unit_contact": null,
+        "unit_coord": [
+          3712,
+          3712,
+          0
+        ],
+        "unit_mission": 7,
+        "unit_nav": null,
+        "unit_queued": -1,
+        "unit_tether": 0
+      },
+      "input": {
+        "human": true,
+        "mission": 7,
+        "name": "replace_bunker_destination",
+        "unarmed": false,
+        "unit_cell": [
+          14,
+          14
+        ]
+      },
+      "original_text_and_vtables_unchanged": true,
+      "steps": [
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": null,
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": null,
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 33,
+          "op": "set_destination",
+          "radio": [
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 2,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            },
+            {
+              "message": 19,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            },
+            {
+              "message": 2,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 19,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            }
+          ],
+          "reached": [
+            "0x43c2d0",
+            "0x447ac0",
+            "0x447b20",
+            "0x4afb80",
+            "0x4afd40",
+            "0x4d94b0",
+            "0x65a970",
+            "0x65acb0",
+            "0x70fb50",
+            "0x737430",
+            "0x741970"
+          ],
+          "required_reached": [
+            "0x741970",
+            "0x4d94b0"
+          ]
+        },
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": null,
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              5248,
+              5248,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": "unit",
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "other",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "other",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 36,
+          "op": "replace_destination",
+          "radio": [
+            {
+              "message": 2,
+              "recipient": "other",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 3,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 14,
+              "recipient": "other",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 19,
+              "recipient": "unit",
+              "reply": 10,
+              "sender": "other"
+            }
+          ],
+          "reached": [
+            "0x43c2d0",
+            "0x447ac0",
+            "0x447b20",
+            "0x4afb80",
+            "0x4afd40",
+            "0x4d94b0",
+            "0x65a970",
+            "0x65acb0",
+            "0x70fb50",
+            "0x737430",
+            "0x741970"
+          ],
+          "required_reached": [
+            "0x741970",
+            "0x65a970",
+            "0x43c2d0",
+            "0x4d94b0",
+            "0x4afd40"
+          ]
+        }
+      ]
+    },
+    {
+      "before": {
+        "archive": null,
+        "bunker_contact": null,
+        "bunker_mission": 5,
+        "bunker_occupant": null,
+        "bunker_queued": -1,
+        "bunker_state": 0,
+        "bunker_tether": 0,
+        "drive_cursor": -1,
+        "drive_destination": [
+          0,
+          0,
+          0
+        ],
+        "drive_head": [
+          0,
+          0,
+          0
+        ],
+        "drive_power": 1,
+        "drive_track": -1,
+        "mega_mission": -1,
+        "nav_aux": null,
+        "other_contact": null,
+        "path": [
+          -1,
+          0,
+          0,
+          0
+        ],
+        "pending_entry": null,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "second_contact": null,
+        "second_nav": null,
+        "unit_bunker": null,
+        "unit_contact": null,
+        "unit_coord": [
+          3712,
+          3712,
+          0
+        ],
+        "unit_mission": 7,
+        "unit_nav": null,
+        "unit_queued": -1,
+        "unit_tether": 0
+      },
+      "input": {
+        "human": true,
+        "mission": 7,
+        "name": "unarmed_fresh_then_contacted_docking",
+        "unarmed": true,
+        "unit_cell": [
+          14,
+          14
+        ]
+      },
+      "original_text_and_vtables_unchanged": true,
+      "steps": [
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": null,
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": null,
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 10,
+          "op": "radio_docking",
+          "radio": [
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 2,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            },
+            {
+              "message": 19,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            }
+          ],
+          "reached": [
+            "0x43c2d0",
+            "0x447ac0",
+            "0x65a970",
+            "0x737430"
+          ],
+          "required_reached": [
+            "0x65a970",
+            "0x43c2d0"
+          ],
+          "return_value": 1
+        },
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 0,
+          "op": "radio_docking",
+          "radio": [
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 10,
+              "sender": "unit"
+            }
+          ],
+          "reached": [
+            "0x43c2d0",
+            "0x65a970",
+            "0x70fb50"
+          ],
+          "required_reached": [
+            "0x65a970",
+            "0x43c2d0"
+          ],
+          "return_value": 10
+        }
+      ]
+    },
+    {
+      "before": {
+        "archive": null,
+        "bunker_contact": null,
+        "bunker_mission": 5,
+        "bunker_occupant": null,
+        "bunker_queued": -1,
+        "bunker_state": 0,
+        "bunker_tether": 0,
+        "drive_cursor": -1,
+        "drive_destination": [
+          0,
+          0,
+          0
+        ],
+        "drive_head": [
+          0,
+          0,
+          0
+        ],
+        "drive_power": 1,
+        "drive_track": -1,
+        "mega_mission": -1,
+        "nav_aux": null,
+        "other_contact": null,
+        "path": [
+          -1,
+          0,
+          0,
+          0
+        ],
+        "pending_entry": null,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "second_contact": null,
+        "second_nav": null,
+        "unit_bunker": null,
+        "unit_contact": null,
+        "unit_coord": [
+          3712,
+          3712,
+          0
+        ],
+        "unit_mission": 5,
+        "unit_nav": null,
+        "unit_queued": -1,
+        "unit_tether": 0
+      },
+      "input": {
+        "human": false,
+        "mission": 5,
+        "name": "ai_seek_nearest_free",
+        "unarmed": false,
+        "unit_cell": [
+          14,
+          14
+        ]
+      },
+      "original_text_and_vtables_unchanged": true,
+      "steps": [
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": null,
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": null,
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 5,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 43,
+          "op": "seek_bunker",
+          "radio": [
+            {
+              "message": 2,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 19,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            },
+            {
+              "message": 2,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            }
+          ],
+          "reached": [
+            "0x43c2d0",
+            "0x447ac0",
+            "0x447b20",
+            "0x4afb80",
+            "0x4afd40",
+            "0x4d94b0",
+            "0x4dff40",
+            "0x5b3570",
+            "0x5b35e0",
+            "0x65a970",
+            "0x65acb0",
+            "0x70fb50",
+            "0x737430",
+            "0x741970"
+          ],
+          "required_reached": [
+            "0x4dff40",
+            "0x70fb50",
+            "0x741970",
+            "0x65a970",
+            "0x5b35e0"
+          ],
+          "return_value": 1
+        },
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              1,
+              104
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 5,
+          "op": "enter",
+          "radio": [
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 19,
+              "recipient": "unit",
+              "reply": 10,
+              "sender": "bunker"
+            }
+          ],
+          "reached": [
+            "0x43c2d0",
+            "0x447ac0",
+            "0x4afb80",
+            "0x4d9290",
+            "0x65a970",
+            "0x65c7e0",
+            "0x70fb50",
+            "0x737430"
+          ],
+          "required_reached": [
+            "0x4d9290",
+            "0x65c7e0"
+          ],
+          "return_value": 15
+        }
+      ]
+    },
+    {
+      "before": {
+        "archive": null,
+        "bunker_contact": null,
+        "bunker_mission": 5,
+        "bunker_occupant": null,
+        "bunker_queued": -1,
+        "bunker_state": 0,
+        "bunker_tether": 0,
+        "drive_cursor": -1,
+        "drive_destination": [
+          0,
+          0,
+          0
+        ],
+        "drive_head": [
+          0,
+          0,
+          0
+        ],
+        "drive_power": 1,
+        "drive_track": -1,
+        "mega_mission": -1,
+        "nav_aux": null,
+        "other_contact": null,
+        "path": [
+          -1,
+          0,
+          0,
+          0
+        ],
+        "pending_entry": null,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "second_contact": null,
+        "second_nav": null,
+        "unit_bunker": null,
+        "unit_contact": null,
+        "unit_coord": [
+          3712,
+          3712,
+          0
+        ],
+        "unit_mission": 7,
+        "unit_nav": null,
+        "unit_queued": -1,
+        "unit_tether": 0
+      },
+      "input": {
+        "human": true,
+        "mission": 7,
+        "name": "null_destination_retains_radio_contact",
+        "unarmed": false,
+        "unit_cell": [
+          14,
+          14
+        ]
+      },
+      "original_text_and_vtables_unchanged": true,
+      "steps": [
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": null,
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": null,
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 33,
+          "op": "set_destination",
+          "radio": [
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 2,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            },
+            {
+              "message": 19,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            },
+            {
+              "message": 2,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 19,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            }
+          ],
+          "reached": [
+            "0x43c2d0",
+            "0x447ac0",
+            "0x447b20",
+            "0x4afb80",
+            "0x4afd40",
+            "0x4d94b0",
+            "0x65a970",
+            "0x65acb0",
+            "0x70fb50",
+            "0x737430",
+            "0x741970"
+          ],
+          "required_reached": [
+            "0x741970",
+            "0x4d94b0"
+          ]
+        },
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 19,
+          "op": "cancel_destination",
+          "radio": [],
+          "reached": [
+            "0x4afe00",
+            "0x4d94b0",
+            "0x741970"
+          ],
+          "required_reached": [
+            "0x741970",
+            "0x4d94b0"
+          ]
+        }
+      ]
+    },
+    {
+      "before": {
+        "archive": null,
+        "bunker_contact": null,
+        "bunker_mission": 5,
+        "bunker_occupant": null,
+        "bunker_queued": -1,
+        "bunker_state": 0,
+        "bunker_tether": 0,
+        "drive_cursor": -1,
+        "drive_destination": [
+          0,
+          0,
+          0
+        ],
+        "drive_head": [
+          0,
+          0,
+          0
+        ],
+        "drive_power": 1,
+        "drive_track": -1,
+        "mega_mission": -1,
+        "nav_aux": null,
+        "other_contact": null,
+        "path": [
+          -1,
+          0,
+          0,
+          0
+        ],
+        "pending_entry": null,
+        "rng_indices": [
+          0,
+          103
+        ],
+        "second_contact": null,
+        "second_nav": null,
+        "unit_bunker": null,
+        "unit_contact": null,
+        "unit_coord": [
+          3712,
+          3712,
+          0
+        ],
+        "unit_mission": 7,
+        "unit_nav": null,
+        "unit_queued": -1,
+        "unit_tether": 0
+      },
+      "input": {
+        "human": true,
+        "mission": 7,
+        "name": "prepared_state3_live_drive_destination",
+        "unarmed": false,
+        "unit_cell": [
+          14,
+          14
+        ]
+      },
+      "original_text_and_vtables_unchanged": true,
+      "steps": [
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": null,
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": null,
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 33,
+          "op": "set_destination",
+          "radio": [
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 2,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            },
+            {
+              "message": 19,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            },
+            {
+              "message": 2,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 14,
+              "recipient": "bunker",
+              "reply": 1,
+              "sender": "unit"
+            },
+            {
+              "message": 19,
+              "recipient": "unit",
+              "reply": 1,
+              "sender": "bunker"
+            }
+          ],
+          "reached": [
+            "0x43c2d0",
+            "0x447ac0",
+            "0x447b20",
+            "0x4afb80",
+            "0x4afd40",
+            "0x4d94b0",
+            "0x65a970",
+            "0x65acb0",
+            "0x70fb50",
+            "0x737430",
+            "0x741970"
+          ],
+          "required_reached": [
+            "0x741970",
+            "0x4d94b0"
+          ]
+        },
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2432,
+              2432,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": "bunker",
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 19,
+          "op": "cancel_destination",
+          "radio": [],
+          "reached": [
+            "0x4afe00",
+            "0x4d94b0",
+            "0x741970"
+          ],
+          "required_reached": [
+            "0x741970",
+            "0x4d94b0"
+          ]
+        },
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 3,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2304,
+              2304,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              2304,
+              2304,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 0,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              3712,
+              3712,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "coordinate": [
+            2304,
+            2304,
+            0
+          ],
+          "native_write_count": 3,
+          "op": "prepare_state3_destination",
+          "radio": [],
+          "reached": [
+            "0x447ac0"
+          ],
+          "required_reached": []
+        },
+        {
+          "after": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 3,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2304,
+              2304,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              2304,
+              2304,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "before": {
+            "archive": null,
+            "bunker_contact": "unit",
+            "bunker_mission": 5,
+            "bunker_occupant": null,
+            "bunker_queued": -1,
+            "bunker_state": 3,
+            "bunker_tether": 0,
+            "drive_cursor": -1,
+            "drive_destination": [
+              2304,
+              2304,
+              0
+            ],
+            "drive_head": [
+              0,
+              0,
+              0
+            ],
+            "drive_power": 1,
+            "drive_track": -1,
+            "mega_mission": -1,
+            "nav_aux": null,
+            "other_contact": null,
+            "path": [
+              -1,
+              0,
+              0,
+              0
+            ],
+            "pending_entry": null,
+            "rng_indices": [
+              0,
+              103
+            ],
+            "second_contact": null,
+            "second_nav": null,
+            "unit_bunker": null,
+            "unit_contact": "bunker",
+            "unit_coord": [
+              2304,
+              2304,
+              0
+            ],
+            "unit_mission": 7,
+            "unit_nav": null,
+            "unit_queued": -1,
+            "unit_tether": 0
+          },
+          "native_write_count": 0,
+          "op": "update_bunker",
+          "radio": [],
+          "reached": [
+            "0x458e50",
+            "0x4afb80"
+          ],
+          "required_reached": [
+            "0x458e50",
+            "0x4591d6",
+            "0x4afb80",
+            "0x459210"
+          ]
+        }
+      ]
+    }
+  ],
+  "inputs": {
+    "bunker": {
+      "bunker": true,
+      "dimensions": [
+        2,
+        2
+      ],
+      "docks": 1,
+      "foundation": 3,
+      "location": [
+        8,
+        8
+      ],
+      "other_location": [
+        20,
+        20
+      ],
+      "strength": 900,
+      "type": "PreparedBunker"
+    },
+    "map": {
+      "allocated": [
+        32,
+        32
+      ],
+      "clear_speed_rows": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "level": 0,
+      "local": [
+        -16,
+        -16,
+        64,
+        64
+      ],
+      "supplied_building_cell_lists": true,
+      "units_in_cell_lists": false,
+      "water_speed_rows": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "width": 16
+    },
+    "mission_rate_conversions": {
+      "enter": {
+        "begin": "0x4d946c",
+        "frames": 14,
+        "rate_bits": "fca9f1d24d62903f",
+        "rng_unchanged": true,
+        "stop": "0x4d9481"
+      },
+      "guard": {
+        "begin": "0x4d946c",
+        "frames": 26,
+        "rate_bits": "b81e85eb51b89e3f",
+        "rng_unchanged": true,
+        "stop": "0x4d9481"
+      }
+    },
+    "mission_rates": {
+      "enter": 0.016,
+      "guard": 0.03
+    },
+    "scenario": {
+      "frame": 200,
+      "game_mode": 1,
+      "seed": 1
+    },
+    "unit": {
+      "bunkerable": true,
+      "class_id": 1,
+      "facing": 49152,
+      "mega_mission": -1,
+      "movement_zone": 0,
+      "nav_aux": null,
+      "nav_queue_count": 0,
+      "path": [
+        -1,
+        0,
+        0,
+        0
+      ],
+      "rot": 5,
+      "speed_type": 1,
+      "speed_type_name": "Track",
+      "strength": 150,
+      "turret": true,
+      "type": "PreparedTank",
+      "weapon_slot0": true
+    }
+  },
+  "schema": 1
+}

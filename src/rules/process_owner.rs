@@ -276,7 +276,7 @@ impl NativeRulesProcessOwner {
             .expect("Rules transition reentered")
             .registry_state()
             .country_projection()
-            .map(|(id, body, _, _, _)| (id, body.read_name("Name", 0x31)))
+            .map(|(id, body, ..)| (id, body.read_name("Name", 0x31)))
     }
 
     pub fn country_name(&self, index: i32) -> Option<&str> {

@@ -27,7 +27,8 @@ use crate::rules::error::RulesError;
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::mission_data::MissionControl;
 use crate::rules::native_processing::{
-    CountryVeterancyLists, ProcessedRulesLayers, RulesLayerStack, house_type_index_of_name,
+    CountryProjection, CountryVeterancyLists, ProcessedRulesLayers, RulesLayerStack,
+    house_type_index_of_name,
 };
 use crate::rules::object_type::{BuildCategory, FactoryType, ObjectCategory, ObjectType};
 use crate::rules::particle_system_type::{ParticleSystemType, ParticleSystemTypeId};
@@ -63,6 +64,8 @@ mod multiplayer_rules_tests;
 /// Country-level fields needed by gameplay systems.
 #[derive(Debug, Clone)]
 pub struct CountryRules {
+    /// Immutable projection of retained HouseType+98, never merged-text inheritance.
+    parent_country: String,
     /// Retained HouseType+14C/+168/+184 lists projected by their process owner.
     veteran_types: CountryVeterancyLists,
     /// Native HouseType+C0, initialized0 at51141C and read through
@@ -171,6 +174,7 @@ impl Default for CountryRules {
         Self {
             veteran_types: CountryVeterancyLists::default(),
             color_scheme: 0,
+            parent_country: String::new(),
             multiplay: false,
             multiplay_passive: false,
             wall_owner: true,
@@ -203,6 +207,7 @@ impl CountryRules {
             // nor earlier Color strings are re-resolved against final catalogs.
             veteran_types: CountryVeterancyLists::default(),
             color_scheme: 0,
+            parent_country: String::new(),
             multiplay: section.read_bool("Multiplay", Self::default().multiplay),
             multiplay_passive: section.read_bool("MultiplayPassive", false),
             wall_owner: section.read_bool("WallOwner", true),
@@ -4043,6 +4048,8 @@ pub struct RuleSet {
     prerequisite_lists: [Vec<Prerequisite>; 6],
     /// Immutable gameplay projection of the retained Rules registry catalog.
     ares_prerequisites: Option<GenericPrerequisites>,
+    /// Immutable projection of NativeRulesRegistryState's ordered armor catalog.
+    ares_armors: Option<crate::rules::ares_armor::ArmorCatalog>,
     /// Derived type-membership index for the lifecycle hooks; rebuilt together
     /// with the RuleSet after every load/reset/pass. The catalog above is its
     /// only source of truth. This cache is not serialized or hashed separately.
@@ -4142,6 +4149,12 @@ pub struct RuleSet {
     /// active AssetManager with effect assets. Gameplay and rendering share
     /// the GPU-independent physical model loader.
     voxel_assets: crate::rules::voxel_asset_catalog::VoxelAssetCatalog,
+    /// The one TechnoType custom palette name (art `Palette=`, lowercase,
+    /// without theater suffix or `.pal`). gamemd keeps one generated palette
+    /// per name and exits when a second exists ("only one extra building
+    /// palette", `0x00715857..0x00715871`), so every type with
+    /// `ObjectType::custom_palette` shares it. Projected from ART.
+    extra_building_palette: Option<String>,
     /// Every building type's construction control from its Buildup SHP,
     /// bound once from the active assets (`bind_building_buildup_assets`).
     buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog,
@@ -4297,7 +4310,7 @@ impl RuleSet {
         rules.combat_damage.splash_list = splash.to_vec();
         rules.combat_damage.death_weapon =
             processed.combat_damage_death_weapon().map(str::to_owned);
-        for (name, conventional, em_effect, anim_list, debris_types, verses) in
+        for (name, conventional, em_effect, anim_list, debris_types, verses, ares_verses) in
             processed.warhead_read_states()
         {
             if let Some(warhead) = rules
@@ -4310,6 +4323,23 @@ impl RuleSet {
                 warhead.anim_list = anim_list.to_vec();
                 warhead.debris_types = debris_types.to_vec();
                 warhead.verses_f64 = verses.map(|value| f64::from_bits(value.bits()));
+                warhead.install_ares_verses(ares_verses);
+            }
+        }
+        for (category, name, armor) in processed.object_armor_states() {
+            if let Some(category) = category {
+                if let Some(handle) = rules
+                    .object_category_index
+                    .get(&(category, name.to_ascii_uppercase()))
+                    .copied()
+                {
+                    rules.object_list[handle.0 as usize].bind_armor(armor);
+                }
+            } else if let Some(terrain) = rules
+                .terrain_object_types
+                .get_mut(&name.to_ascii_uppercase())
+            {
+                terrain.bind_armor(armor);
             }
         }
         (
@@ -4448,6 +4478,15 @@ impl RuleSet {
                 .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
             {
                 object.project_infantry_pips(pips);
+            }
+        }
+        for (name, reads) in processed.infantry_sequence_sound_reads() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
+            {
+                object.project_sequence_sound_reads(reads);
             }
         }
         for (name, flags) in processed.infantry_infiltration_states() {
@@ -4856,6 +4895,9 @@ impl RuleSet {
                     .and_then(|section| sounds.read_rules_reference(section, "EnterWaterSound"));
                 object.leave_water_sound = section
                     .and_then(|section| sounds.read_rules_reference(section, "LeaveWaterSound"));
+                // ReadSequenceData (`0x0052403F`) resolves each pair through
+                // VocClass::FindByName (`0x007514D0`, first _strcmpi match).
+                object.bind_sequence_sounds(|name| sounds.get(name).map(|entry| entry.id.clone()));
             }
         }
     }
@@ -5312,6 +5354,7 @@ impl RuleSet {
             factory_map,
             prerequisite_lists: Default::default(),
             ares_prerequisites: None,
+            ares_armors: processed.ares_armors().cloned(),
             ares_prerequisite_alternates: HashSet::new(),
             terrain_rules,
             tiberium_types,
@@ -5349,6 +5392,7 @@ impl RuleSet {
                 .collect(),
             effect_assets: crate::rules::effect_asset_catalog::EffectAssetCatalog::default(),
             voxel_assets: crate::rules::voxel_asset_catalog::VoxelAssetCatalog::default(),
+            extra_building_palette: None,
             buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog::default(),
             rubble_assets: crate::rules::building_rubble::RubbleAssetCatalog::default(),
             terrain_spawner_assets:
@@ -5714,16 +5758,36 @@ impl RuleSet {
         self.source_ini_hash
     }
 
+    /// The one TechnoType custom palette name, lowercase, without theater
+    /// suffix or `.pal`; every type with `ObjectType::custom_palette` draws
+    /// from it (`TechnoClass::GetRemapColour @ 0x00705D70`).
+    pub fn extra_building_palette(&self) -> Option<&str> {
+        self.extra_building_palette.as_deref()
+    }
+
     /// Compatibility identity for processed rules plus the resolved animation,
-    /// effect-frame, terrain-spawner frame, smudge-selection and projectile
-    /// launch ART inputs bound to this ruleset.
+    /// effect-frame, terrain-spawner frame, smudge-selection, projectile
+    /// launch and TechnoType `CanBeHidden=` and `Palette=` ART inputs bound to
+    /// this ruleset.
     /// Other asset-derived simulation inputs are added by later ownership
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        // v31: retain Country starting-veterancy type membership across Rules passes.
-        b"rules-simulation-config-v31".hash(&mut hasher);
+        // v34: retain Country starting-veterancy type membership across Rules passes.
+        b"rules-simulation-config-v34".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        b"country-parent-v1".hash(&mut hasher);
+        // The native parent lookup scans registration order and checks Name
+        // aliases as well as IDs. These retained inputs can differ after an
+        // identical later pass, even when source_ini_hash is the same.
+        self.country_ids
+            .iter()
+            .map(|id| {
+                let country = &self.countries[id];
+                (id, &country.name, &country.parent_country)
+            })
+            .collect::<Vec<_>>()
+            .hash(&mut hasher);
         b"country-starting-veterancy-v1".hash(&mut hasher);
         self.countries
             .iter()
@@ -5743,6 +5807,29 @@ impl RuleSet {
         crate::rules::ARES_ENABLED.hash(&mut hasher);
         // Equal flattened INIs may have different retained group lists.
         self.ares_prerequisites.hash(&mut hasher);
+        b"retained-armor-bindings-and-ares-versus-v1".hash(&mut hasher);
+        self.ares_armors.hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    object.armor_id(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
+        self.terrain_object_types
+            .iter()
+            .map(|(name, terrain)| (name.to_ascii_uppercase(), terrain.armor_id()))
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
+        self.warheads
+            .iter()
+            .map(|(name, warhead)| (name.to_ascii_uppercase(), warhead.ares_verses_hash_state()))
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
+
         // UnitType747734 retains CarriesCrate across later absent/invalid
         // keys; equal current source text can still mean different cargo.
         self.object_list
@@ -5821,6 +5908,22 @@ impl RuleSet {
             b"behind-anim-v1".hash(&mut hasher);
             self.general.behind.hash(&mut hasher);
         }
+        // CanBeHidden is read from ART (0x007121EB), outside the source INI
+        // hash; it decides which objects construct the Behind anim.
+        self.object_list
+            .iter()
+            .map(|o| (&o.id, o.can_be_hidden))
+            .collect::<Vec<_>>()
+            .hash(&mut hasher);
+        // So is Palette= (0x0071582B); DestructionEffects gives a custom
+        // palette type's DestroyAnim its scheme (0x00441D2F).
+        self.object_list
+            .iter()
+            .filter(|o| o.custom_palette)
+            .map(|o| &o.id)
+            .collect::<Vec<_>>()
+            .hash(&mut hasher);
+        self.extra_building_palette.hash(&mut hasher);
         self.general.default_mirage_disguises.hash(&mut hasher);
         self.general.infantry_disguises.hash(&mut hasher);
         if self
@@ -6483,7 +6586,7 @@ impl RuleSet {
     /// localized UIName; the app catalog owns that presentation check.
     pub(crate) fn refresh_country_side_projection<'a>(
         &mut self,
-        countries: impl Iterator<Item = (&'a str, &'a IniSection, i32, i32, &'a CountryVeterancyLists)>,
+        countries: impl Iterator<Item = CountryProjection<'a>>,
         sides: impl Iterator<Item = &'a str>,
     ) {
         let projection = project_country_side_registry(countries, sides);
@@ -6591,6 +6694,40 @@ impl RuleSet {
             return NativeF32Bits::ONE;
         };
         country.build_time_mults[object.factor_slot()]
+    }
+
+    /// Native Country+98 as retained by511850. An unread registered Country
+    /// has an empty parent; a missing key in a reached section defaults to its ID.
+    pub fn country_parent_name(&self, country: &str) -> Option<&str> {
+        self.country_rules(country)
+            .map(|fields| fields.parent_country.as_str())
+    }
+
+    /// Owner-side bit used by FirstOwnable505316, FirstBuildable5051E9,
+    /// Recalc5054E2 and the AI economy/defense choosers. Reuse the native
+    /// alias-before-ID5117D0 scan: <random> is -2/bit30, unknown is -1/bit31.
+    /// RequiredHouses/ForbiddenHouses instead use the actual Country index.
+    pub fn country_owner_mask(&self, country: &str) -> u32 {
+        let parent = self.country_parent_name(country).unwrap_or(country);
+        let index = house_type_index_of_name(parent, self.country_lookup_members());
+        1u32.wrapping_shl(index as u32)
+    }
+
+    /// The token/OR tail of INI ReadOwners4750D0 through48DEB0. Only -1
+    /// is rejected; <random> (-2) contributes bit30. Trigger's <none> ->0
+    /// override does not apply. The production list reader owns capacity
+    /// and tokenization; the retained Country registry owns name lookup.
+    /// Native controls: tools/rules_oracle/session_country_starting_ownership.json
+    /// and tools/rules_oracle/session_country_parent.json.
+    pub fn house_type_mask(&self, tokens: &[String]) -> u32 {
+        tokens.iter().fold(0u32, |mask, token| {
+            let index = house_type_index_of_name(token, self.country_lookup_members());
+            if index == -1 {
+                mask
+            } else {
+                mask | 1u32.wrapping_shl(index as u32)
+            }
+        })
     }
 
     /// Resolve a country name to its stable `[Countries]` registration index.
@@ -6845,11 +6982,6 @@ impl RuleSet {
             .is_some_and(|handle| self.ares_prerequisite_alternates.contains(handle))
     }
 
-    /// Whether a structure type is marked as a refinery in rules.ini.
-    pub fn is_refinery_type(&self, structure_id: &str) -> bool {
-        self.object(structure_id).is_some_and(|obj| obj.refinery)
-    }
-
     /// Resolve BuildingType FreeUnit, read by Grand_Opening446AA9. The native
     /// tail does not require Refinery; the type reader has already allocated
     /// a referenced UnitType, including names absent from VehicleTypes.
@@ -6896,11 +7028,29 @@ impl RuleSet {
         let mut buildings_checked: u32 = 0;
         let mut infantry_checked: u32 = 0;
         let mut crawls_patched: u32 = 0;
+        self.extra_building_palette = None;
         for obj in self.object_list.iter_mut() {
             // Resolve the art.ini section: use Image= override if present,
             // otherwise fall back to the object ID itself.
             let art_key: &str = &obj.image;
             let entry = art.get(art_key).or_else(|| art.get(&obj.id));
+            // Every TechnoType's ReadINI reads CanBeHidden from the ART
+            // section of its own ID (0x007121EB); art is not layered.
+            obj.can_be_hidden = art.can_be_hidden(&obj.id);
+            // ...and Palette= from its ImageFile's section (0x0071582B).
+            let palette = art.techno_palette(art_key);
+            obj.custom_palette = palette.is_some();
+            if let Some(name) = palette {
+                match &self.extra_building_palette {
+                    None => self.extra_building_palette = Some(name.to_owned()),
+                    Some(first) if first != name => log::error!(
+                        "[{}] Palette={name}: gamemd allows one extra building palette \
+                         and exits; Palette={first} is kept",
+                        obj.id
+                    ),
+                    Some(_) => {}
+                }
+            }
             if obj.category == crate::rules::object_type::ObjectCategory::Infantry {
                 infantry_checked += 1;
                 if let Some(entry) = entry {
@@ -7465,7 +7615,7 @@ struct ProjectedCountrySideRegistry {
 /// reached-pass order; reconstructing those decisions from merged text would
 /// invent Countries, lose prior Side vectors and change allocation chronology.
 fn project_country_side_registry<'a>(
-    countries: impl Iterator<Item = (&'a str, &'a IniSection, i32, i32, &'a CountryVeterancyLists)>,
+    countries: impl Iterator<Item = CountryProjection<'a>>,
     sides: impl Iterator<Item = &'a str>,
 ) -> ProjectedCountrySideRegistry {
     let side_ids: Vec<String> = sides.map(str::to_owned).collect();
@@ -7481,7 +7631,7 @@ fn project_country_side_registry<'a>(
     let mut country_indices = HashMap::new();
     let mut country_sides = Vec::new();
     let mut rules = HashMap::new();
-    for (id, section, color, side, veteran) in countries {
+    for (id, section, color, side, parent, veteran) in countries {
         let index = CountryIdx(
             u16::try_from(country_ids.len()).expect("[Countries] exceeds u16 identity space"),
         );
@@ -7497,6 +7647,7 @@ fn project_country_side_registry<'a>(
         rules.entry(id.to_owned()).or_insert_with(|| {
             let mut fields = CountryRules::from_ini_section(section);
             fields.color_scheme = color;
+            fields.parent_country = parent.to_owned();
             fields.veteran_types = veteran.clone();
             fields
         });
@@ -9131,11 +9282,33 @@ MutateWarhead=MyMutate\n\
 
         // Warheads referenced by weapons should be loaded.
         let sa: &WarheadType = rules.warhead("SA").expect("SA exists");
-        assert!((sa.verses_f64[0] - 1.0).abs() < 1e-9); // none: 100%
-        assert!((sa.verses_f64[5] - 0.25).abs() < 1e-9); // heavy: 25%
+        assert_eq!(
+            f64::from_bits(
+                sa.interaction(crate::rules::armor::armor_index("none"))
+                    .multiplier()
+                    .bits()
+            ),
+            1.0
+        );
+        assert_eq!(
+            f64::from_bits(
+                sa.interaction(crate::rules::armor::armor_index("heavy"))
+                    .multiplier()
+                    .bits()
+            ),
+            0.25
+        );
 
         let ap: &WarheadType = rules.warhead("AP").expect("AP exists");
-        assert!((ap.verses_f64[6] - 0.6).abs() < 1e-9); // wood: 60%
+        assert!(
+            (f64::from_bits(
+                ap.interaction(crate::rules::armor::armor_index("wood"))
+                    .multiplier()
+                    .bits()
+            ) - 0.6)
+                .abs()
+                < 1e-9
+        );
     }
 
     #[test]
@@ -9171,7 +9344,16 @@ MutateWarhead=MyMutate\n\
         assert_eq!(lower.id, "RegistryOnlyWH");
         assert_eq!(lower.percent_at_max_f64, 0.5);
         let expected = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0];
-        for (actual, expected) in lower.verses_f64.iter().zip(expected) {
+        for (name, expected) in crate::rules::armor::RETAIL_ARMOR_NAMES
+            .into_iter()
+            .zip(expected)
+        {
+            let actual = f64::from_bits(
+                lower
+                    .interaction(crate::rules::armor::armor_index(name))
+                    .multiplier()
+                    .bits(),
+            );
             assert!((actual - expected).abs() < 1e-9);
         }
     }
@@ -9197,8 +9379,8 @@ MutateWarhead=MyMutate\n\
         );
         let rules = RuleSet::from_ini(&ini).expect("Should parse");
 
-        assert!(rules.is_refinery_type("modproc"));
-        assert!(!rules.is_refinery_type("FAKEREF"));
+        assert!(rules.object("modproc").is_some_and(|obj| obj.refinery));
+        assert!(!rules.object("FAKEREF").is_some_and(|obj| obj.refinery));
         assert_eq!(rules.building_free_unit("MODPROC"), Some("MODHARV"));
         assert!(rules.harvester_can_dock_at("modharv", "MODPROC"));
         assert!(!rules.harvester_can_dock_at("modharv", "GAREFN"));
@@ -9222,7 +9404,7 @@ MutateWarhead=MyMutate\n\
         );
         let rules = RuleSet::from_ini(&ini).expect("Should parse");
 
-        assert!(rules.is_refinery_type("MODPROC"));
+        assert!(rules.object("MODPROC").is_some_and(|obj| obj.refinery));
         assert_eq!(rules.building_free_unit("MODPROC"), Some("UNKNOWN"));
         assert!(
             rules.type_handle("UNKNOWN").is_some(),

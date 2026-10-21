@@ -402,7 +402,7 @@ pub(super) fn minimap_entity_visible(
     owner: InternedId,
 ) -> bool {
     let interner = crate::sim::intern::test_interner();
-    crate::map::houses::are_houses_friendly(
+    crate::map::houses::is_allied_with(
         alliances,
         interner.resolve(local_owner),
         interner.resolve(owner),

@@ -2512,10 +2512,7 @@ mod tests {
     fn order_repair(sim: &mut Simulation, rules: &RuleSet, tank: u64) -> bool {
         sim.apply_command(
             "Americans",
-            &Command::RepairAtDepot {
-                entity_id: tank,
-                depot_id: DEPOT,
-            },
+            &Command::clicked_mission(tank, MissionType::Enter, TargetKind::Entity(DEPOT)),
             Some(rules),
         )
     }
@@ -2608,7 +2605,7 @@ mod tests {
         (e.position.rx(), e.position.ry())
     }
 
-    /// Production path: the RepairAtDepot command queues Enter and runs the
+    /// Production path: the MEGAMISSION Enter onto the depot queues Enter and runs the
     /// Unit setter with the depot. The first order finds the depot free: its
     /// DOCKING links it (`0x00741DD6`, `0x0043C8A4..C8C3`) and it drives for
     /// the pad. The later two find a contact held (`0x00741D22`): each takes

@@ -175,3 +175,40 @@ fn neither_a_computer_apocalypse_nor_the_players_rhino_draws_a_laser() {
         );
     }
 }
+
+/// An infantryman's selected Attack line starts at its gun: InfantryClass's
+/// +300 (`0x00521D30`) is GetFLH(0), the coordinate its primary shot leaves
+/// from (retail GI `PrimaryFireFLH=80,0,105`), not its feet.
+#[test]
+fn an_infantry_attack_line_starts_where_its_shot_leaves() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, gi, rhino) = duel(rules, "E1", "Americans");
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Attack {
+            attacker_id: gi,
+            target_id: rhino,
+        },
+        Some(rules),
+    ));
+    let mut muzzle = None;
+    for _ in 0..300 {
+        sim.advance_tick(&[], Some(rules), None, None, 67);
+        if let Some(shot) = sim.fire_events().iter().find(|shot| shot.attacker_id == gi) {
+            muzzle = Some(shot.fire_coord);
+            break;
+        }
+    }
+    let muzzle = muzzle.expect("the GI fires at the Rhino");
+    let entity = sim.entities().get(gi).unwrap();
+    let [start, _] = attack_line_points(entity, &sim, rules).unwrap();
+    let at = |x, y, z| -> ScreenPoint {
+        crate::util::lepton::absolute_leptons_to_screen(x, y, z).into()
+    };
+    assert_eq!(start, at(muzzle.x, muzzle.y, muzzle.z));
+    let feet = crate::sim::movement::ground_pose::object_location(entity, sim.resolved_terrain());
+    assert_ne!(start, at(feet.x, feet.y, feet.z));
+}

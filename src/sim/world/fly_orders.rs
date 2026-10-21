@@ -8,6 +8,7 @@ use std::ops::ControlFlow;
 use super::Simulation;
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::{DriveCoord, NavTargetRef};
@@ -35,11 +36,12 @@ impl Simulation {
     ///   on (`0x0053A130` is the native false stub) and, when it is contact 0
     ///   and not the destination, gets OVER_OUT (vt+0x274).
     ///
-    /// The Foot setter's NULL arm is the shared gate (`0x004D9672`,
-    /// [`Simulation::foot_null_destination`]). RESIDUAL: its other work
-    /// (linked-lift detach +2AC/+2B0, the retained fire particle +304 and the
-    /// Unit-produced +6AC latch) has no aircraft port; none of it applies to
-    /// a retail aircraft's destinations.
+    /// Both Foot branches use the shared lifted-owner gates and linked-lift
+    /// detach owners. The non-null branch calls the installed locomotor's
+    /// Move_To (`0x004D965D`), including Jumpjet during Magnetron Imbue
+    /// (`0x00710326`, before the lifted latch is set at `0x00710352`).
+    /// RESIDUAL: the retained fire particle +304 and Unit-produced +6AC
+    /// latch are not represented for aircraft destinations.
     pub(crate) fn assign_aircraft_destination(
         &mut self,
         id: u64,
@@ -104,16 +106,7 @@ impl Simulation {
             Some((rules, &self.interner)),
         )
         .expect("live aircraft NavCom coordinate");
-        Self::aircraft_locomotor_move_to(
-            &mut self.interner,
-            &self.session,
-            &mut self.substrate,
-            &mut self.sound_events,
-            &self.resolved_terrain,
-            id,
-            coord,
-            rules,
-        );
+        self.aircraft_locomotor_move_to(id, coord, rules);
         // Accepted Foot setter resets both timers even when Fly MoveTo refuses
         // (e.g. powered off). Retry count is preserved.
         DestinationTiming::from_rules(self.session.binary_frame(), Some(rules))
@@ -347,37 +340,49 @@ impl Simulation {
     }
 
     /// An aircraft's `ILocomotion::Move_To` (`+0x44`), as Foot4D94B0 and
-    /// Mission_Move state 1 call it: a spawned missile's Rocket
-    /// (`0x006632E0`), every other aircraft's Fly (`0x004CCC80`).
+    /// Mission_Move state 1 call it: the installed Jumpjet (`0x0054B1C0`)
+    /// during a lift, a spawned missile's Rocket (`0x006632E0`), or the
+    /// aircraft's Fly (`0x004CCC80`). Imbue calls this before +6AD is set,
+    /// so the active locomotor, not the lifted latch, selects the owner.
     pub(crate) fn aircraft_locomotor_move_to(
-        interner: &mut StringInterner,
-        session: &ScenarioSession,
-        substrate: &mut ObjectSubstrate,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
-        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        &mut self,
         id: u64,
         coord: DriveCoord,
         rules: &RuleSet,
     ) {
-        let entity = substrate.entities.get(id).unwrap();
-        if entity
+        let kind = self
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
             .locomotor
             .as_ref()
-            .is_some_and(|locomotor| locomotor.rocket_runtime().is_some())
-        {
-            Self::rocket_move_to(&*interner, session, substrate, id, coord, rules);
-        } else {
-            Self::move_air_coordinate(
-                interner,
-                session,
-                substrate,
-                sound_events,
-                resolved_terrain,
+            .map(|locomotor| locomotor.active_kind());
+        match kind {
+            Some(LocomotorKind::Jumpjet) => {
+                self.jumpjet_move_to(id, coord, Some(rules));
+            }
+            Some(LocomotorKind::Rocket) => Self::rocket_move_to(
+                &self.interner,
+                &self.session,
+                &mut self.substrate,
                 id,
                 coord,
-                None,
-                Some(rules),
-            );
+                rules,
+            ),
+            _ => {
+                Self::move_air_coordinate(
+                    &mut self.interner,
+                    &self.session,
+                    &mut self.substrate,
+                    &mut self.sound_events,
+                    &self.resolved_terrain,
+                    id,
+                    coord,
+                    None,
+                    Some(rules),
+                );
+            }
         }
     }
 

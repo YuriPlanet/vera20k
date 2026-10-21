@@ -59,7 +59,6 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::ai_base_building::{choose_building, find_node, node_building, node_satisfied};
 use crate::sim::ai_buildable::{
     first_buildable_from_array, first_owner_compatible, first_owner_compatible_harvester,
-    house_country_bit,
 };
 use crate::sim::ai_unit_choice::UnitChoiceKind;
 use crate::sim::base_plan::{BasePlanNode, unpack_base_plan_cell};
@@ -108,7 +107,7 @@ impl<'r> EconomyTypes<'r> {
                 house.side_index(),
                 super_weapons,
             ),
-            harvester: first_owner_compatible_harvester(rules, house_country_bit(rules, country)),
+            harvester: first_owner_compatible_harvester(rules, rules.country_owner_mask(country)),
         }
     }
 }
@@ -136,7 +135,7 @@ fn can_make_money(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> bool 
     let destinations = tracking.resource_destinations() > 0;
     let gatherers = tracking.resource_gatherers() > 0;
     let war_factories = tracking.war_factories() > 0;
-    let country_bit = house_country_bit(rules, sim.interner.resolve(house.house_type_id()));
+    let country_bit = rules.country_owner_mask(sim.interner.resolve(house.house_type_id()));
     let base = !house.build_const_order().is_empty()
         || first_owner_compatible(
             rules,

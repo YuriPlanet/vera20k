@@ -677,9 +677,11 @@ impl MapCaptureProfile {
                         | Command::CaptureBuilding { .. }
                         | Command::PlantC4 { .. }
                         | Command::ToggleRepair { .. }
-                        | Command::EnterTransport { .. }
+                        | Command::MegaMission {
+                            mission: crate::sim::mission::MissionType::Enter,
+                            ..
+                        }
                         | Command::UnloadPassengers { .. }
-                        | Command::RepairAtDepot { .. }
                         | Command::SellBuilding { .. }
                         | Command::LaunchSuperWeapon { .. }
                         | Command::TogglePrimaryFactory { .. }
@@ -4826,6 +4828,29 @@ mod tests {
             "tools/map_observation.example.json",
         ))
         .unwrap()
+    }
+
+    /// Every example profile parses into the one Command schema and passes
+    /// admission, so retiring a Command variant cannot strand a profile.
+    #[test]
+    fn every_example_profile_parses_and_validates() {
+        let tools = crate::test_fixture::checkout_root().join("tools");
+        let mut checked = 0;
+        for entry in std::fs::read_dir(&tools).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            if !(name.starts_with("map_observation") && name.ends_with(".example.json")) {
+                continue;
+            }
+            let profile: MapCaptureProfile =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap())
+                    .unwrap_or_else(|error| panic!("{name}: {error}"));
+            profile
+                .validate()
+                .unwrap_or_else(|error| panic!("{name}: {error:#}"));
+            checked += 1;
+        }
+        assert!(checked > 1, "found {checked} example profiles");
     }
 
     #[test]

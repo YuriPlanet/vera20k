@@ -31,7 +31,8 @@ receipt shapes are unchanged. In a v3 command payload:
 - `sw_type_id` accepts the SuperWeapon section, such as `"IronCurtainSpecial"`.
 - Actor ID fields accept `{"type_id":"HTNK","owner":"VERA-OBSERVER"}`,
   optionally with `"cell":[44,54]` to disambiguate. `Select.entity_ids` and
-  `SetRally.producer_ids` can mix numeric IDs and selectors.
+  `SetRally.producer_ids` can mix numeric IDs and selectors, and a
+  `MegaMission` destination takes one as `{"Entity": <selector>}`.
 
 Names are case sensitive, nonempty, and at most 256 UTF-8 bytes. Actor selectors
 resolve **at the command's `issue_after_step` boundary**, using the current living,
@@ -2057,7 +2058,7 @@ while spent credits stayed at 2,600. Both complete compact receipts are about
 
 [The depot profile](map_observation.depot-repair.example.json) uses stock
 Russia/Battle/AnyTown and ordinary Deploy, Build, Attack, Stop,
-RepairAtDepot and SellBuilding commands. It damages one starting HTNK, spends
+MegaMission Enter and SellBuilding commands. It damages one starting HTNK, spends
 the initial 5900 credits on prerequisites, stops the produced HARV before it
 harvests, orders repair, then sells the barracks to fund the retained occupant.
 No administrative health, wallet or contact edits are used.
@@ -2226,9 +2227,10 @@ probes. Command payloads are the existing Rust serde `Command`, with no separate
 order translator. Supported orders are Move, Stop, Attack, Guard,
 DeployMcv, ForceAttackCell, QueueProduction, PlaceReadyBuilding and
 CaptureBuilding (the resolved Engineer repair/capture mission), ToggleRepair,
-EnterTransport, UnloadPassengers, RepairAtDepot and SellBuilding. RepairAtDepot
-uses the ordinary damaged-vehicle order with `entity_id` and `depot_id` stable
-handles. SellBuilding uses `entity_id` and the production sale lifecycle; it can
+MegaMission Enter, UnloadPassengers and SellBuilding. MegaMission Enter is the
+event a click into a depot, refinery, bunker or transport sends:
+`{"MegaMission": {"entity_id": 1375, "mission": "Enter", "target": null,
+"destination": {"Entity": 1811}}}`. SellBuilding uses `entity_id` and the production sale lifecycle; it can
 restore funds for a repair experiment without writing a House wallet.
 Rust rejects
 ignored payload fields or argument

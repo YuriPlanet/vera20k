@@ -1,0 +1,3348 @@
+{
+  "schema_version": 1,
+  "identity": {
+    "ares": {
+      "file": "Ares.dll",
+      "length": 875520,
+      "sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83"
+    }
+  },
+  "fpcw": "0x0e7f",
+  "scope": "Bounded original instruction controls; all CRT numeric inputs and INI reads are supplied fixture boundaries.",
+  "cases": [
+    {
+      "name": "parse_0%",
+      "fixture": {
+        "token": "0%"
+      },
+      "result": {
+        "multiplier": 0.0,
+        "multiplier_bits": "0000000000000000",
+        "force_fire": false,
+        "retaliate": false,
+        "passive_acquire": false
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "0%",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "name": "parse_1%",
+      "fixture": {
+        "token": "1%"
+      },
+      "result": {
+        "multiplier": 0.01,
+        "multiplier_bits": "3f847ae147ae147b",
+        "force_fire": true,
+        "retaliate": false,
+        "passive_acquire": false
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "1%",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "name": "parse_2%",
+      "fixture": {
+        "token": "2%"
+      },
+      "result": {
+        "multiplier": 0.02,
+        "multiplier_bits": "3f947ae147ae147b",
+        "force_fire": true,
+        "retaliate": true,
+        "passive_acquire": false
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "2%",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "name": "parse_3%",
+      "fixture": {
+        "token": "3%"
+      },
+      "result": {
+        "multiplier": 0.03,
+        "multiplier_bits": "3f9eb851eb851eb8",
+        "force_fire": true,
+        "retaliate": true,
+        "passive_acquire": true
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "3%",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "name": "parse_00%",
+      "fixture": {
+        "token": "00%"
+      },
+      "result": {
+        "multiplier": 0.0,
+        "multiplier_bits": "0000000000000000",
+        "force_fire": true,
+        "retaliate": true,
+        "passive_acquire": true
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "00%",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "name": "parse_1.5%",
+      "fixture": {
+        "token": "1.5%"
+      },
+      "result": {
+        "multiplier": 0.01,
+        "multiplier_bits": "3f847ae147ae147b",
+        "force_fire": true,
+        "retaliate": true,
+        "passive_acquire": true
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "1.5%",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "name": "parse_0.5%",
+      "fixture": {
+        "token": "0.5%"
+      },
+      "result": {
+        "multiplier": 0.0,
+        "multiplier_bits": "0000000000000000",
+        "force_fire": true,
+        "retaliate": true,
+        "passive_acquire": true
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "0.5%",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "name": "parse_-1%",
+      "fixture": {
+        "token": "-1%"
+      },
+      "result": {
+        "multiplier": -0.01,
+        "multiplier_bits": "bf847ae147ae147b",
+        "force_fire": true,
+        "retaliate": true,
+        "passive_acquire": true
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "-1%",
+          "value": -1
+        }
+      ]
+    },
+    {
+      "name": "parse_0",
+      "fixture": {
+        "token": "0"
+      },
+      "result": {
+        "multiplier": 0.0,
+        "multiplier_bits": "0000000000000000",
+        "force_fire": false,
+        "retaliate": false,
+        "passive_acquire": false
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atof",
+          "text": "0",
+          "value": 0.0
+        }
+      ]
+    },
+    {
+      "name": "parse_0.001",
+      "fixture": {
+        "token": "0.001"
+      },
+      "result": {
+        "multiplier": 0.001,
+        "multiplier_bits": "3f50624dd2f1a9fc",
+        "force_fire": false,
+        "retaliate": false,
+        "passive_acquire": false
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atof",
+          "text": "0.001",
+          "value": 0.001
+        }
+      ]
+    },
+    {
+      "name": "parse_0.002",
+      "fixture": {
+        "token": "0.002"
+      },
+      "result": {
+        "multiplier": 0.002,
+        "multiplier_bits": "3f60624dd2f1a9fc",
+        "force_fire": true,
+        "retaliate": false,
+        "passive_acquire": false
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atof",
+          "text": "0.002",
+          "value": 0.002
+        }
+      ]
+    },
+    {
+      "name": "parse_0.01",
+      "fixture": {
+        "token": "0.01"
+      },
+      "result": {
+        "multiplier": 0.01,
+        "multiplier_bits": "3f847ae147ae147b",
+        "force_fire": true,
+        "retaliate": false,
+        "passive_acquire": false
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atof",
+          "text": "0.01",
+          "value": 0.01
+        }
+      ]
+    },
+    {
+      "name": "parse_0.011",
+      "fixture": {
+        "token": "0.011"
+      },
+      "result": {
+        "multiplier": 0.011,
+        "multiplier_bits": "3f86872b020c49ba",
+        "force_fire": true,
+        "retaliate": false,
+        "passive_acquire": false
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atof",
+          "text": "0.011",
+          "value": 0.011
+        }
+      ]
+    },
+    {
+      "name": "parse_0.012",
+      "fixture": {
+        "token": "0.012"
+      },
+      "result": {
+        "multiplier": 0.012,
+        "multiplier_bits": "3f889374bc6a7efa",
+        "force_fire": true,
+        "retaliate": true,
+        "passive_acquire": false
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atof",
+          "text": "0.012",
+          "value": 0.012
+        }
+      ]
+    },
+    {
+      "name": "parse_0.02",
+      "fixture": {
+        "token": "0.02"
+      },
+      "result": {
+        "multiplier": 0.02,
+        "multiplier_bits": "3f947ae147ae147b",
+        "force_fire": true,
+        "retaliate": true,
+        "passive_acquire": false
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atof",
+          "text": "0.02",
+          "value": 0.02
+        }
+      ]
+    },
+    {
+      "name": "parse_0.021",
+      "fixture": {
+        "token": "0.021"
+      },
+      "result": {
+        "multiplier": 0.021,
+        "multiplier_bits": "3f95810624dd2f1b",
+        "force_fire": true,
+        "retaliate": true,
+        "passive_acquire": true
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atof",
+          "text": "0.021",
+          "value": 0.021
+        }
+      ]
+    },
+    {
+      "name": "parse_0.022",
+      "fixture": {
+        "token": "0.022"
+      },
+      "result": {
+        "multiplier": 0.022,
+        "multiplier_bits": "3f96872b020c49ba",
+        "force_fire": true,
+        "retaliate": true,
+        "passive_acquire": true
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atof",
+          "text": "0.022",
+          "value": 0.022
+        }
+      ]
+    },
+    {
+      "name": "parse_-0.5",
+      "fixture": {
+        "token": "-0.5"
+      },
+      "result": {
+        "multiplier": -0.5,
+        "multiplier_bits": "bfe0000000000000",
+        "force_fire": false,
+        "retaliate": false,
+        "passive_acquire": false
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atof",
+          "text": "-0.5",
+          "value": -0.5
+        }
+      ]
+    },
+    {
+      "name": "parse_0.5",
+      "fixture": {
+        "token": "0.5"
+      },
+      "result": {
+        "multiplier": 0.5,
+        "multiplier_bits": "3fe0000000000000",
+        "force_fire": true,
+        "retaliate": true,
+        "passive_acquire": true
+      },
+      "events": [
+        {
+          "service": "supplied_CRT_atof",
+          "text": "0.5",
+          "value": 0.5
+        }
+      ]
+    },
+    {
+      "name": "registry_paper",
+      "default_index": 7,
+      "default_verses": {
+        "multiplier": 0.0,
+        "multiplier_bits": "0000000000000000",
+        "force_fire": false,
+        "retaliate": false,
+        "passive_acquire": false
+      },
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "ArmorTypes",
+          "key": "paper",
+          "value": "steel",
+          "capacity": 64
+        },
+        {
+          "service": "supplied_CRT_atof",
+          "text": "steel",
+          "value": 0.0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "ArmorTypes",
+          "key": "later",
+          "value": "magic",
+          "capacity": 64
+        },
+        {
+          "service": "supplied_CRT_atof",
+          "text": "magic",
+          "value": 0.0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "ArmorTypes",
+          "key": "magic",
+          "value": "11%",
+          "capacity": 64
+        },
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "11%",
+          "value": 11
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.none",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_operator_new",
+          "bytes": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.none.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.none.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.none.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.flak",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.flak.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.flak.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.flak.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.plate",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.plate.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.plate.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.plate.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.light",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.light.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.light.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.light.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.medium",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.medium.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.medium.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.medium.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.heavy",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.heavy.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.heavy.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.heavy.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.wood",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.wood.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.wood.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.wood.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.steel",
+          "value": "25%",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "25%",
+          "value": 25
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.steel.ForceFire",
+          "fallback": 1,
+          "value": "no",
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.steel.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.steel.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.concrete",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.concrete.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.concrete.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.concrete.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.special_1",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_1.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_1.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_1.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.special_2",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_2.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_2.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_2.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.paper",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.paper.ForceFire",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.paper.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.paper.PassiveAcquire",
+          "fallback": 1,
+          "value": "no",
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.later",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.later.ForceFire",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.later.Retaliate",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.later.PassiveAcquire",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.magic",
+          "value": "50%",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "50%",
+          "value": 50
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.magic.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.magic.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.magic.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_operator_delete",
+          "bytes": 32
+        }
+      ]
+    },
+    {
+      "name": "registry_later",
+      "default_index": 13,
+      "default_verses": {
+        "multiplier": 0.0,
+        "multiplier_bits": "0000000000000000",
+        "force_fire": false,
+        "retaliate": false,
+        "passive_acquire": false
+      },
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "ArmorTypes",
+          "key": "paper",
+          "value": "steel",
+          "capacity": 64
+        },
+        {
+          "service": "supplied_CRT_atof",
+          "text": "steel",
+          "value": 0.0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "ArmorTypes",
+          "key": "later",
+          "value": "magic",
+          "capacity": 64
+        },
+        {
+          "service": "supplied_CRT_atof",
+          "text": "magic",
+          "value": 0.0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "ArmorTypes",
+          "key": "magic",
+          "value": "11%",
+          "capacity": 64
+        },
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "11%",
+          "value": 11
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.none",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_operator_new",
+          "bytes": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.none.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.none.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.none.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.flak",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.flak.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.flak.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.flak.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.plate",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.plate.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.plate.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.plate.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.light",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.light.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.light.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.light.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.medium",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.medium.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.medium.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.medium.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.heavy",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.heavy.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.heavy.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.heavy.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.wood",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.wood.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.wood.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.wood.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.steel",
+          "value": "25%",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "25%",
+          "value": 25
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.steel.ForceFire",
+          "fallback": 1,
+          "value": "no",
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.steel.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.steel.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.concrete",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.concrete.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.concrete.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.concrete.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.special_1",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_1.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_1.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_1.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.special_2",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_2.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_2.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_2.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.paper",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.paper.ForceFire",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.paper.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.paper.PassiveAcquire",
+          "fallback": 1,
+          "value": "no",
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.later",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.later.ForceFire",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.later.Retaliate",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.later.PassiveAcquire",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.magic",
+          "value": "50%",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "50%",
+          "value": 50
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.magic.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.magic.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.magic.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_operator_delete",
+          "bytes": 32
+        }
+      ]
+    },
+    {
+      "name": "registry_magic",
+      "default_index": -1,
+      "default_verses": {
+        "multiplier": 0.11,
+        "multiplier_bits": "3fbc28f5c28f5c29",
+        "force_fire": true,
+        "retaliate": true,
+        "passive_acquire": true
+      },
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "ArmorTypes",
+          "key": "paper",
+          "value": "steel",
+          "capacity": 64
+        },
+        {
+          "service": "supplied_CRT_atof",
+          "text": "steel",
+          "value": 0.0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "ArmorTypes",
+          "key": "later",
+          "value": "magic",
+          "capacity": 64
+        },
+        {
+          "service": "supplied_CRT_atof",
+          "text": "magic",
+          "value": 0.0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "ArmorTypes",
+          "key": "magic",
+          "value": "11%",
+          "capacity": 64
+        },
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "11%",
+          "value": 11
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.none",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_operator_new",
+          "bytes": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.none.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.none.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.none.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.flak",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.flak.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.flak.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.flak.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.plate",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.plate.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.plate.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.plate.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.light",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.light.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.light.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.light.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.medium",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.medium.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.medium.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.medium.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.heavy",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.heavy.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.heavy.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.heavy.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.wood",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.wood.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.wood.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.wood.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.steel",
+          "value": "25%",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "25%",
+          "value": 25
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.steel.ForceFire",
+          "fallback": 1,
+          "value": "no",
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.steel.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.steel.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.concrete",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.concrete.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.concrete.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.concrete.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.special_1",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_1.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_1.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_1.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.special_2",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_2.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_2.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_2.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.paper",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.paper.ForceFire",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.paper.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.paper.PassiveAcquire",
+          "fallback": 1,
+          "value": "no",
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.later",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.later.ForceFire",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.later.Retaliate",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.later.PassiveAcquire",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.magic",
+          "value": "50%",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "50%",
+          "value": 50
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.magic.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.magic.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.magic.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_operator_delete",
+          "bytes": 32
+        }
+      ]
+    },
+    {
+      "name": "warhead_inline_inheritance",
+      "result": {
+        "none": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "flak": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "plate": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "light": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "medium": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "heavy": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "wood": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "steel": {
+          "multiplier": 0.25,
+          "multiplier_bits": "3fd0000000000000",
+          "force_fire": false,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "concrete": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "special_1": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "special_2": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "paper": {
+          "multiplier": 0.25,
+          "multiplier_bits": "3fd0000000000000",
+          "force_fire": false,
+          "retaliate": true,
+          "passive_acquire": false
+        },
+        "later": {
+          "multiplier": 0.0,
+          "multiplier_bits": "0000000000000000",
+          "force_fire": false,
+          "retaliate": false,
+          "passive_acquire": false
+        },
+        "magic": {
+          "multiplier": 0.5,
+          "multiplier_bits": "3fe0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        }
+      },
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "ArmorTypes",
+          "key": "paper",
+          "value": "steel",
+          "capacity": 64
+        },
+        {
+          "service": "supplied_CRT_atof",
+          "text": "steel",
+          "value": 0.0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "ArmorTypes",
+          "key": "later",
+          "value": "magic",
+          "capacity": 64
+        },
+        {
+          "service": "supplied_CRT_atof",
+          "text": "magic",
+          "value": 0.0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "ArmorTypes",
+          "key": "magic",
+          "value": "11%",
+          "capacity": 64
+        },
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "11%",
+          "value": 11
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.none",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_operator_new",
+          "bytes": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.none.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.none.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.none.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.flak",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.flak.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.flak.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.flak.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.plate",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.plate.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.plate.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.plate.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.light",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.light.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.light.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.light.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.medium",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.medium.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.medium.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.medium.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.heavy",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.heavy.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.heavy.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.heavy.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.wood",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.wood.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.wood.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.wood.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.steel",
+          "value": "25%",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "25%",
+          "value": 25
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.steel.ForceFire",
+          "fallback": 1,
+          "value": "no",
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.steel.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.steel.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.concrete",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.concrete.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.concrete.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.concrete.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.special_1",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_1.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_1.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_1.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.special_2",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_2.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_2.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_2.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.paper",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.paper.ForceFire",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.paper.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.paper.PassiveAcquire",
+          "fallback": 1,
+          "value": "no",
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.later",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.later.ForceFire",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.later.Retaliate",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.later.PassiveAcquire",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.magic",
+          "value": "50%",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "50%",
+          "value": 50
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.magic.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.magic.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.magic.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_operator_delete",
+          "bytes": 32
+        }
+      ]
+    },
+    {
+      "name": "warhead_reread_retains_custom",
+      "result": {
+        "none": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "flak": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "plate": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "light": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "medium": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "heavy": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "wood": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "steel": {
+          "multiplier": 0.75,
+          "multiplier_bits": "3fe8000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "concrete": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "special_1": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "special_2": {
+          "multiplier": 1.0,
+          "multiplier_bits": "3ff0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        },
+        "paper": {
+          "multiplier": 0.25,
+          "multiplier_bits": "3fd0000000000000",
+          "force_fire": false,
+          "retaliate": true,
+          "passive_acquire": false
+        },
+        "later": {
+          "multiplier": 0.0,
+          "multiplier_bits": "0000000000000000",
+          "force_fire": false,
+          "retaliate": false,
+          "passive_acquire": false
+        },
+        "magic": {
+          "multiplier": 0.5,
+          "multiplier_bits": "3fe0000000000000",
+          "force_fire": true,
+          "retaliate": true,
+          "passive_acquire": true
+        }
+      },
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.none",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_operator_new",
+          "bytes": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.none.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.none.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.none.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.flak",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.flak.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.flak.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.flak.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.plate",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.plate.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.plate.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.plate.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.light",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.light.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.light.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.light.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.medium",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.medium.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.medium.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.medium.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.heavy",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.heavy.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.heavy.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.heavy.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.wood",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.wood.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.wood.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.wood.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.steel",
+          "value": "75%",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_CRT_atoi",
+          "text": "75%",
+          "value": 75
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.steel.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.steel.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.steel.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.concrete",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.concrete.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.concrete.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.concrete.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.special_1",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_1.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_1.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_1.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.special_2",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_2.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_2.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.special_2.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.paper",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.paper.ForceFire",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.paper.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.paper.PassiveAcquire",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.later",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.later.ForceFire",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.later.Retaliate",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.later.PassiveAcquire",
+          "fallback": 0,
+          "value": null,
+          "result": 0
+        },
+        {
+          "service": "supplied_ReadString",
+          "section": "TestWH",
+          "key": "Versus.magic",
+          "value": "",
+          "capacity": 32
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.magic.ForceFire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.magic.Retaliate",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_ReadBool",
+          "section": "TestWH",
+          "key": "Versus.magic.PassiveAcquire",
+          "fallback": 1,
+          "value": null,
+          "result": 1
+        },
+        {
+          "service": "supplied_operator_delete",
+          "bytes": 32
+        }
+      ]
+    },
+    {
+      "name": "can_fire_0_False",
+      "return_address": "0x6fcb7e",
+      "accepted": false,
+      "events": []
+    },
+    {
+      "name": "can_fire_0_True",
+      "return_address": "0x6fcb8d",
+      "accepted": true,
+      "events": []
+    },
+    {
+      "name": "can_fire_1_False",
+      "return_address": "0x6fcb8d",
+      "accepted": true,
+      "events": []
+    },
+    {
+      "name": "can_fire_-1_False",
+      "return_address": "0x6fcb8d",
+      "accepted": true,
+      "events": []
+    },
+    {
+      "name": "can_fire_nan_false",
+      "fixture": {
+        "multiplier_bits": "7ff8000000000000",
+        "force_fire": false
+      },
+      "return_address": "0x6fcb8d",
+      "accepted": true,
+      "events": []
+    },
+    {
+      "name": "admit_10054270_False",
+      "return_address": "0x6f894f",
+      "accepted": false,
+      "events": []
+    },
+    {
+      "name": "admit_100543e0_False",
+      "return_address": "0x708b17",
+      "accepted": false,
+      "events": []
+    },
+    {
+      "name": "admit_10054270_True",
+      "return_address": "0x6f7d55",
+      "accepted": true,
+      "events": []
+    },
+    {
+      "name": "admit_100543e0_True",
+      "return_address": "0x708b0b",
+      "accepted": true,
+      "events": []
+    },
+    {
+      "name": "damage_101_0.25",
+      "result": 25,
+      "return_address": "0x489249",
+      "events": []
+    },
+    {
+      "name": "damage_-101_0.25",
+      "result": -25,
+      "return_address": "0x489249",
+      "events": []
+    },
+    {
+      "name": "damage_3_0.5",
+      "result": 1,
+      "return_address": "0x489249",
+      "events": []
+    },
+    {
+      "name": "damage_-3_0.5",
+      "result": -1,
+      "return_address": "0x489249",
+      "events": []
+    },
+    {
+      "name": "damage_123_0",
+      "result": 0,
+      "return_address": "0x489249",
+      "events": []
+    },
+    {
+      "name": "damage_123_-0.5",
+      "result": -61,
+      "return_address": "0x489249",
+      "events": []
+    },
+    {
+      "name": "weapon_select_secondary0_primary1",
+      "return_address": "0x6f37ad",
+      "fixture": {
+        "primary_multiplier": 1,
+        "secondary_multiplier": 0
+      },
+      "events": []
+    },
+    {
+      "name": "weapon_select_secondary1_primary0",
+      "return_address": "0x6f3745",
+      "fixture": {
+        "primary_multiplier": 0,
+        "secondary_multiplier": 1
+      },
+      "events": []
+    },
+    {
+      "name": "weapon_select_secondary1_primary1",
+      "return_address": "0x6f3754",
+      "fixture": {
+        "primary_multiplier": 1,
+        "secondary_multiplier": 1
+      },
+      "events": []
+    },
+    {
+      "name": "weapon_select_secondary0_primary0",
+      "return_address": "0x6f37ad",
+      "fixture": {
+        "primary_multiplier": 0,
+        "secondary_multiplier": 0
+      },
+      "events": []
+    },
+    {
+      "name": "weapon_select_secondary-1_primary1",
+      "return_address": "0x6f3754",
+      "fixture": {
+        "primary_multiplier": 1,
+        "secondary_multiplier": -1
+      },
+      "events": []
+    },
+    {
+      "name": "total_damage_101_0.25_11_10000",
+      "result": 25,
+      "fixture": {
+        "armor": 11,
+        "damage": 101,
+        "multiplier": 0.25,
+        "max_damage": 10000,
+        "distance": 0
+      },
+      "events": []
+    },
+    {
+      "name": "total_damage_3_0.5_11_10000",
+      "result": 1,
+      "fixture": {
+        "armor": 11,
+        "damage": 3,
+        "multiplier": 0.5,
+        "max_damage": 10000,
+        "distance": 0
+      },
+      "events": []
+    },
+    {
+      "name": "total_damage_-101_0.25_11_10000",
+      "result": -101,
+      "fixture": {
+        "armor": 11,
+        "damage": -101,
+        "multiplier": 0.25,
+        "max_damage": 10000,
+        "distance": 0
+      },
+      "events": []
+    },
+    {
+      "name": "total_damage_-101_0.25_7_10000",
+      "result": -101,
+      "fixture": {
+        "armor": 7,
+        "damage": -101,
+        "multiplier": 0.25,
+        "max_damage": 10000,
+        "distance": 0
+      },
+      "events": []
+    },
+    {
+      "name": "total_damage_123_-0.5_11_10000",
+      "result": -61,
+      "fixture": {
+        "armor": 11,
+        "damage": 123,
+        "multiplier": -0.5,
+        "max_damage": 10000,
+        "distance": 0
+      },
+      "events": []
+    },
+    {
+      "name": "total_damage_123_10_11_300",
+      "result": 300,
+      "fixture": {
+        "armor": 11,
+        "damage": 123,
+        "multiplier": 10,
+        "max_damage": 300,
+        "distance": 0
+      },
+      "events": []
+    },
+    {
+      "name": "total_damage_1_0.01_11_10000",
+      "result": 0,
+      "fixture": {
+        "armor": 11,
+        "damage": 1,
+        "multiplier": 0.01,
+        "max_damage": 10000,
+        "distance": 0
+      },
+      "events": []
+    },
+    {
+      "name": "total_damage_123_0_11_10000",
+      "result": 0,
+      "fixture": {
+        "armor": 11,
+        "damage": 123,
+        "multiplier": 0,
+        "max_damage": 10000,
+        "distance": 0
+      },
+      "events": []
+    },
+    {
+      "name": "read_armor_None_7",
+      "result": 7,
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "Target",
+          "key": "Armor",
+          "value": "",
+          "capacity": 32
+        }
+      ]
+    },
+    {
+      "name": "read_armor__7",
+      "result": 7,
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "Target",
+          "key": "Armor",
+          "value": "",
+          "capacity": 32
+        }
+      ]
+    },
+    {
+      "name": "read_armor_PAPER_7",
+      "result": 11,
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "Target",
+          "key": "Armor",
+          "value": "PAPER",
+          "capacity": 32
+        }
+      ]
+    },
+    {
+      "name": "read_armor_missing_7",
+      "result": 0,
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "Target",
+          "key": "Armor",
+          "value": "missing",
+          "capacity": 32
+        },
+        {
+          "service": "suppressed_DebugINIParseFailed",
+          "section": "Target",
+          "key": "Armor",
+          "token": "missing"
+        }
+      ]
+    },
+    {
+      "name": "read_armor_None_999",
+      "result": 999,
+      "events": [
+        {
+          "service": "supplied_ReadString",
+          "section": "Target",
+          "key": "Armor",
+          "value": "",
+          "capacity": 32
+        }
+      ]
+    }
+  ]
+}

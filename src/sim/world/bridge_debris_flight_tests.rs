@@ -104,7 +104,13 @@ fn assert_native_landing_inputs(rules: &RuleSet) {
                 f32::from_bits(u32::from_str_radix(expected[key].as_str().unwrap(), 16).unwrap());
             assert_eq!(value.to_bits(), f64::from(native).to_bits(), "{name}/{key}");
         }
-        for (index, value) in actual.verses_f64.iter().enumerate() {
+        for index in 0..11 {
+            let value = f64::from_bits(
+                actual
+                    .interaction(crate::rules::armor::ArmorId::from_index(index))
+                    .multiplier()
+                    .bits(),
+            );
             let native =
                 u64::from_str_radix(expected["verses_bits"][index].as_str().unwrap(), 16).unwrap();
             assert_eq!(value.to_bits(), native, "{name}/armor{index}");
@@ -163,8 +169,8 @@ fn assert_native_landing_inputs(rules: &RuleSet) {
             row["damage"].as_i64().unwrap() as i32,
             he.cell_spread_f64,
             he.percent_at_max_f64,
-            &he.verses_f64,
-            crate::sim::combat::damage::ArmorClass(armor),
+            he.interaction(crate::rules::armor::ArmorId::from_index(usize::from(armor)))
+                .multiplier(),
             row["distance"].as_i64().unwrap() as i32,
             false,
             rules.combat_damage.max_damage,

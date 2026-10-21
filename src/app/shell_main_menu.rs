@@ -1402,6 +1402,7 @@ Details: {details}"
             ShellExitThen::WolAction(mode) => Self::commit_wol_action(state, mode),
             ShellExitThen::WolLoginClose(result) => Self::commit_wol_login_close(state, result),
             ShellExitThen::WolLobbyBack => crate::app::shell_wol::lobby::commit_back(state),
+            ShellExitThen::WolLobbyBuddy => crate::app::shell_wol::lobby::commit_buddy(state),
             ShellExitThen::WolLobbyHide => crate::app::shell_wol::lobby::commit_hide(state),
             ShellExitThen::WolCreateAccepted { observe } => {
                 crate::app::shell_wol::lobby::commit_create(state, observe)
@@ -1424,6 +1425,9 @@ Details: {details}"
             }
             ShellExitThen::WolMyInformationClose(control) => {
                 crate::app::shell_wol::my_info::commit_close(state, control)
+            }
+            ShellExitThen::WolBuddyClose(control) => {
+                crate::app::shell_wol::buddy::commit_close(state, control)
             }
         }
     }

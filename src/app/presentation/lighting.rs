@@ -139,24 +139,22 @@ pub(crate) fn aircraft_extra_light(
     extra_aircraft_light.wrapping_add(levels.wrapping_mul(level))
 }
 
-/// Ordinary building DrawBody 0043D812..0043D85F; buildup 0043D644;
-/// TerrainPalette overrides both scalar and Convert in 00705EC7..00705F52.
+/// Building DrawBody's body and bib (`0x0043D812..0x0043D85F`), whichever
+/// image GetImage returned, Buildup included; TerrainPalette overrides both
+/// scalar and Convert in 00705EC7..00705F52. Only the gate branch
+/// (`0x0043D644`, Mission Open while its UnloadTimer runs) omits
+/// ExtraLight; VERA does not draw that branch.
 pub(crate) fn building_palette_light(
     grid: &CellLightGrid,
     cell: (u16, u16),
     art: Option<&crate::rules::art_data::ArtEntry>,
-    buildup: bool,
 ) -> crate::render::palette_light::PaletteLight {
     use crate::render::palette_light::PaletteLight;
     if art.is_some_and(|a| a.terrain_palette) {
         return PaletteLight::cell(grid, cell, false);
     }
     let top = grid.cell_light_at(cell).map_or(1000, |l| l.top_scalar);
-    let extra = if buildup {
-        0
-    } else {
-        art.map_or(0, |a| i32::from(a.extra_light as i16))
-    };
+    let extra = art.map_or(0, |a| i32::from(a.extra_light as i16));
     PaletteLight::color_scheme(
         grid.palette_rgb(grid.profiles().default_profile_id()),
         top.wrapping_add(extra),

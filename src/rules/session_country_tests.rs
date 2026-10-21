@@ -19,7 +19,7 @@ fn snapshot(owner: &NativeRulesProcessOwner) -> Value {
         state
             .country_projection()
             .enumerate()
-            .map(|(index, (id, body, _, _, _))| {
+            .map(|(index, (id, body, ..))| {
                 json!({"index":index,"id":id,"name":body.read_name("Name",0x31).unwrap_or(id),
                             "multiplay":u8::from(body.read_bool("Multiplay",false))
                 })

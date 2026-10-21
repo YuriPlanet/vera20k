@@ -35,7 +35,11 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 .as_ref()
                 .is_some_and(|protocol| !protocol.locked)
             {
-                queue(state, NetworkSetupRequest::Leave);
+                // WOL C2 Back's leave (0x7900B8) goes to the lobby's
+                // service once C2 has closed (commit_back).
+                if !(dialog.wol() && dialog.host) {
+                    queue(state, NetworkSetupRequest::Leave);
+                }
                 // C9 Back (0x791E4A..5F) closes only when the leave call
                 // fails; otherwise the channel-left event closes it.
                 if !(dialog.wol() && !dialog.host) {
