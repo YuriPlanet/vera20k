@@ -842,6 +842,10 @@ pub struct ObjectType {
     /// retaliation and script-issued missions retain their existing owners.
     #[cfg(feature = "ares")]
     no_manual_fire: bool,
+    /// Ares3.0 TypeExt+646/+647. Unset uses the class/score default at the
+    /// Add/Remove_Tracking owner; an explicit false is a distinct retained input.
+    #[cfg(feature = "ares")]
+    keep_alive: Option<bool>,
     /// TechnoType+D33, read by Foot Approach_Target4D5690. Constructor
     /// 71152A sets true; ReadINI7144AF uses native ReadBool with the current
     /// value as its default. Attack still searches when this flag is false.
@@ -2118,6 +2122,18 @@ impl ObjectType {
         }
     }
 
+    /// Optional Ares tracking override (reader1003F47C, constructor1003CF8E).
+    pub const fn keep_alive(&self) -> Option<bool> {
+        #[cfg(feature = "ares")]
+        {
+            self.keep_alive
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            None
+        }
+    }
+
     pub fn armor_id(&self) -> crate::rules::armor::ArmorId {
         self.armor_id
     }
@@ -2929,6 +2945,8 @@ impl ObjectType {
             can_retaliate: section.read_bool("CanRetaliate", true),
             #[cfg(feature = "ares")]
             no_manual_fire: section.read_ares_bool("NoManualFire", false),
+            #[cfg(feature = "ares")]
+            keep_alive: section.read_ares_nullable_bool("KeepAlive", None),
             // ReadINI7144AF then7144C9. The shared bool reader folds only
             // post-allocation passes retained by native_processing, preserving
             // an earlier false when a later key is missing or malformed.

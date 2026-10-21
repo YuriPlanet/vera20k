@@ -5831,6 +5831,17 @@ impl RuleSet {
                 })
                 .collect::<BTreeMap<_, _>>()
                 .hash(&mut hasher);
+            b"ares-keep-alive-v1".hash(&mut hasher);
+            self.object_list
+                .iter()
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.keep_alive(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+                .hash(&mut hasher);
         }
         // Equal flattened INIs may have different retained group lists.
         self.ares_prerequisites.hash(&mut hasher);

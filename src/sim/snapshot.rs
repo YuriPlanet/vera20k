@@ -1247,7 +1247,9 @@ use crate::util::save_codec;
 // 467 -> 468: retained Country ParentCountry+98 in processed Rules records.
 // 468 -> 469: retained Country VeteranInfantry/VeteranUnits/VeteranAircraft
 // type lists in processed Rules records.
-const SNAPSHOT_VERSION: u32 = 469;
+// 469 -> 470: Ares HouseTracking retains its signed KeepAlive event count;
+// constructor-bound TrackingFacts retains each object's removal admission.
+const SNAPSHOT_VERSION: u32 = 470;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -10247,6 +10249,7 @@ mod tests {
         // 466 -> 467: remove duplicate bunker approach state.
         // 467 -> 468: retained Country ParentCountry+98.
         // 468 -> 469: retained Country starting-veterancy lists.
-        assert_eq!(super::SNAPSHOT_VERSION, 469);
+        // 469 -> 470: retained Ares KeepAlive count and per-object input.
+        assert_eq!(super::SNAPSHOT_VERSION, 470);
     }
 }
