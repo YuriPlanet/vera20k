@@ -1155,28 +1155,33 @@ fn force_fire_feedback(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> Option<Option<CursorFeedbackKind>> {
     use super::context_order::{AttackAction, armed_action};
-    Some(
-        match armed_action(sim, rules?, actor_id, target, true, overlay_registry)? {
-            AttackAction::None => None,
-            AttackAction::NoMove => Some(CursorFeedbackKind::Invalid),
-            AttackAction::Rally | AttackAction::Move => Some(CursorFeedbackKind::Move),
-            AttackAction::Select => Some(CursorFeedbackKind::FriendlyUnit),
-            AttackAction::Attack => Some(
-                if attack_cursor_is_in_range(
-                    sim,
-                    actor_id,
-                    target,
-                    selected_count,
-                    rules,
-                    overlay_registry,
-                ) {
-                    CursorFeedbackKind::EnemyUnit
-                } else {
-                    CursorFeedbackKind::EnemyOutOfRange
-                },
-            ),
-        },
-    )
+    let action = armed_action(sim, rules?, actor_id, target, true, overlay_registry)?;
+    if action == AttackAction::None && matches!(target, combat::TargetKind::Cell(..)) {
+        // The rejected attack rung still reaches the Cell movement owner.
+        // Techno700AB7..700C08 returns Move for mouse_over=true; the
+        // caller resolves that tail, separately from the clicked query.
+        return None;
+    }
+    Some(match action {
+        AttackAction::None => None,
+        AttackAction::NoMove => Some(CursorFeedbackKind::Invalid),
+        AttackAction::Rally | AttackAction::Move => Some(CursorFeedbackKind::Move),
+        AttackAction::Select => Some(CursorFeedbackKind::FriendlyUnit),
+        AttackAction::Attack => Some(
+            if attack_cursor_is_in_range(
+                sim,
+                actor_id,
+                target,
+                selected_count,
+                rules,
+                overlay_registry,
+            ) {
+                CursorFeedbackKind::EnemyUnit
+            } else {
+                CursorFeedbackKind::EnemyOutOfRange
+            },
+        ),
+    })
 }
 
 /// What the object resolver measures its candidates' distance to.

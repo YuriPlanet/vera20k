@@ -5778,6 +5778,22 @@ impl RuleSet {
         // the selected INIs contain no extension keys.
         b"rules-build-compatibility-v1".hash(&mut hasher);
         crate::rules::ARES_ENABLED.hash(&mut hasher);
+        #[cfg(feature = "ares")]
+        {
+            // A previous Process can retain this manual-action policy even
+            // when the current source stack contains only invalid tokens.
+            b"ares-no-manual-fire-v1".hash(&mut hasher);
+            self.object_list
+                .iter()
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.no_manual_fire(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+                .hash(&mut hasher);
+        }
         // Equal flattened INIs may have different retained group lists.
         self.ares_prerequisites.hash(&mut hasher);
         b"retained-armor-bindings-and-ares-versus-v1".hash(&mut hasher);

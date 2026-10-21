@@ -837,6 +837,11 @@ pub struct ObjectType {
     /// `CanRetaliate=` — when false, the unit does not fire back when hit
     /// (suppresses the damage-triggered retaliation acquisition). Default yes.
     pub can_retaliate: bool,
+    /// Ares3.0 TypeExt+4C6, constructor false. Manual object/cell action
+    /// hooks1004A460/1004A430 leave the attack rung; automatic targeting,
+    /// retaliation and script-issued missions retain their existing owners.
+    #[cfg(feature = "ares")]
+    no_manual_fire: bool,
     /// TechnoType+D33, read by Foot Approach_Target4D5690. Constructor
     /// 71152A sets true; ReadINI7144AF uses native ReadBool with the current
     /// value as its default. Attack still searches when this flag is false.
@@ -2099,6 +2104,20 @@ fn native_minutes_to_ticks(value: f64) -> u32 {
 }
 
 impl ObjectType {
+    /// The optional Ares manual-action restriction, shared by cursor and
+    /// click through the existing action owner. INIs cannot enable it in a
+    /// retail-only build.
+    pub const fn no_manual_fire(&self) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            self.no_manual_fire
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            false
+        }
+    }
+
     pub fn armor_id(&self) -> crate::rules::armor::ArmorId {
         self.armor_id
     }
@@ -2908,6 +2927,8 @@ impl ObjectType {
             opportunity_fire: section.read_bool("OpportunityFire", false),
             // Default yes (retaliation allowed unless the type opts out).
             can_retaliate: section.read_bool("CanRetaliate", true),
+            #[cfg(feature = "ares")]
+            no_manual_fire: section.read_ares_bool("NoManualFire", false),
             // ReadINI7144AF then7144C9. The shared bool reader folds only
             // post-allocation passes retained by native_processing, preserving
             // an earlier false when a later key is missing or malformed.

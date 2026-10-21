@@ -247,6 +247,12 @@ pub(crate) fn attack_action(
                 Some(target),
             ))
         && (forced || !shot_is_illegal(sim, rules, actor_id, target, overlay_registry))
+        // Ares3.0 hooks700536/7008D4 ->1004A460/1004A430 leave
+        // this rung for NoManualFire. Keep the original selection/Foot
+        // fallback below; a Unit's rejected object attack becomes NoMove,
+        // whose click still moves near the object. Do not gate CanFire or
+        // received simulation missions: auto-targeting/scripts bypass UI.
+        && !kind.no_manual_fire()
     {
         AttackAction::Attack
     } else if let TargetKind::Entity(target_id) = *target
@@ -692,6 +698,12 @@ fn attack_branch_orders(
             continue;
         };
         if action == AttackAction::Rally {
+            continue;
+        }
+        if action == AttackAction::None && matches!(attack_target, TargetKind::Cell(..)) {
+            // Rejection of the attack rung still reaches Techno's Cell
+            // movement tail700AB7..700C08. Leave this receiver to the
+            // existing cell-move/harvest path below, including under Ctrl.
             continue;
         }
         attack_receivers.insert(id);

@@ -22,6 +22,118 @@ fn arena(rules: &RuleSet) -> Simulation {
 }
 
 #[test]
+fn ares_no_manual_fire_native_modifier_cursors_use_the_shared_action() {
+    let corpus = crate::test_fixture::json("tools/spatial_oracle/no_manual_fire.json");
+    let rows = corpus["rows"].as_array().unwrap();
+    for setting in [false, true] {
+        let patch = crate::rules::ini_parser::IniFile::from_str(&format!(
+            "[MTNK]\nNoManualFire={}\n",
+            if setting { "yes" } else { "no" },
+        ));
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "XMP03T4.MAP",
+            &patch,
+        ) else {
+            return;
+        };
+        for row in rows
+            .iter()
+            .filter(|row| row["no_manual_fire_native_reader_value"] == u64::from(setting))
+        {
+            let case = &row["input"];
+            // The same authored key is ignored by the default build. Its
+            // expected result is the actual DLL control with the flag off.
+            let expected = if crate::rules::ARES_ENABLED {
+                row
+            } else {
+                rows.iter()
+                    .find(|other| {
+                        other["input"] == *case && other["no_manual_fire_native_reader_value"] == 0
+                    })
+                    .unwrap()
+            };
+            let mut sim = arena(&retail.rules);
+            let actor = sim
+                .spawn_object("MTNK", "Americans", 16, 16, 64, &retail.rules)
+                .unwrap();
+            let target = sim
+                .spawn_object("MTNK", "Russians", 17, 16, 64, &retail.rules)
+                .unwrap();
+            let alt = case["alt"].as_bool().unwrap();
+            let modifier = crate::app::input::context_order::resolve_order_modifiers(
+                case["ctrl"].as_bool().unwrap(),
+                case["shift"].as_bool().unwrap(),
+                alt,
+            );
+            let before = sim.state_hash();
+            let feedback = if case["route"] == "object" {
+                promote_attack_move_feedback(
+                    capability_cursor_for_hover(
+                        &sim,
+                        &[actor],
+                        Some(actor),
+                        &HoverTargetKindWithId {
+                            stable_id: target,
+                            kind: HoverTargetKind::EnemyUnit,
+                        },
+                        Some(&retail.rules),
+                        None,
+                        modifier,
+                        alt,
+                        false,
+                    ),
+                    modifier == OrderModifier::AttackMove,
+                )
+            } else {
+                let forced = (modifier == OrderModifier::ForceFire)
+                    .then(|| {
+                        force_fire_feedback(
+                            &sim,
+                            actor,
+                            &combat::TargetKind::Cell(17, 16),
+                            1,
+                            Some(&retail.rules),
+                            None,
+                        )
+                    })
+                    .flatten();
+                forced
+                    .map(|kind| kind.unwrap_or(CursorFeedbackKind::Default))
+                    .unwrap_or_else(|| {
+                        empty_cell_cursor(
+                            &sim,
+                            Some(&retail.rules),
+                            None,
+                            sim.session().current_house(),
+                            Some(actor),
+                            (17, 16),
+                            modifier,
+                            crate::app::types::OrderMode::Move,
+                        )
+                    })
+            };
+            let native_cursor = match expected["cursor_row"].as_u64().unwrap() {
+                0 => CursorId::Default,
+                17 => CursorId::Select,
+                18 => CursorId::Move,
+                19 => CursorId::NoMove,
+                20 => CursorId::Attack,
+                21 => CursorId::AttackOutOfRange,
+                22 => CursorId::GuardArea,
+                71 => CursorId::AttackMove,
+                other => panic!("unexpected native cursor {other}"),
+            };
+            assert_eq!(
+                cursor_id_for_feedback(feedback),
+                Some(native_cursor),
+                "{setting} {case}"
+            );
+            assert_eq!(sim.state_hash(), before, "hover cannot mutate gameplay/RNG");
+        }
+    }
+}
+
+#[test]
 fn retail_weapon_cursor_overrides_survive_distance() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;

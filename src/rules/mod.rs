@@ -108,6 +108,8 @@ pub const ARES_ENABLED: bool = cfg!(feature = "ares");
 pub(crate) mod ares_prerequisites;
 pub(crate) mod ares_armor;
 pub mod armor;
+#[cfg(test)]
+mod ares_manual_control_tests;
 pub mod compatibility;
 pub mod animation_sequence;
 pub mod art_data;
