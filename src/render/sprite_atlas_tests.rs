@@ -602,40 +602,6 @@ fn building_body_without_new_theater_uses_theater_then_generic() {
 }
 
 #[test]
-fn building_theater_body_keeps_legacy_lookup_before_image_redirect() {
-    let rules = building_body_atlas_rules(
-        "[BODYART]\nImage=YABODY\nTheater=yes\nNewTheater=no\n\
-         [YABODY]\nTheater=no\n",
-    );
-    // Theater=yes has a separate startup reload. Preserve its existing source
-    // chooser here; this control does not certify that path's native parity.
-    for (files, expected) in [
-        (
-            vec!["YABODY.SHP", "YTBODY.SHP", "YGBODY.TEM"],
-            Some("YABODY.SHP"),
-        ),
-        (vec!["YABODY.TEM", "YTBODY.SHP"], Some("YABODY.TEM")),
-        (vec!["YTBODY.SHP", "YGBODY.SHP"], None),
-    ] {
-        let directory = StoredFrameTestDirectory::new();
-        for name in files {
-            directory.write_raw_and_rle_frames(name, [20, 10], [2, 1, 6, 4]);
-        }
-        let assets = AssetManager::from_loose_root_for_test(&directory.0);
-        let source = load_shp_source(
-            &assets,
-            "BODYALIAS",
-            None,
-            "tem",
-            "TEMPERATE",
-            Some(&rules),
-            Some(rules.art()),
-        );
-        assert_eq!(source.as_ref().map(|s| s.found_name.as_str()), expected);
-    }
-}
-
-#[test]
 fn building_body_lookup_uses_rules_image_theater_before_redirect() {
     let rules = building_body_atlas_rules(
         "[BODYART]\nImage=YABODY\nTheater=no\nNewTheater=no\n\

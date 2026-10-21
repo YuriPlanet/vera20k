@@ -2392,6 +2392,40 @@ pub fn theater_shp_names(upper_name: &str, theater_name: &str) -> [String; 2] {
     [first, apply_generic_letter(upper_name)]
 }
 
+/// The two files `BuildingTypeClass::LoadVisualAssets @ 0x0045F230` tries for
+/// a building SHP, both for its `Buildup=` (`0x0045F24A..`) and for a
+/// Theater=no body (`0x0045F934..0x0045FA70`): the name plus `.SHP` through
+/// the theater lookup ([`theater_shp_names`]).
+pub fn building_shp_names(name: &str, theater_name: &str) -> [String; 2] {
+    theater_shp_names(&name.to_ascii_uppercase(), theater_name).map(|name| format!("{name}.SHP"))
+}
+
+/// The files a building type's body image (`vt+0x9C`) loads from, shared by
+/// every consumer of that image (the sprite atlas and the rubble catalog).
+/// ObjectType reads `Theater=` from the rules `Image=`'s ART section
+/// (`0x005F95E9`), before BuildingType's ART `Image=` redirect selects
+/// `image_id`. A Theater=no body takes `0x0045F230`'s final pass
+/// ([`building_shp_names`]); NewTheater does not gate it. A Theater=yes body is
+/// reloaded later by `InitTheater @ 0x0045E970`, which is not ported: it keeps
+/// the object naming path ([`object_shp_candidates`]).
+pub fn building_body_shp_candidates(
+    art: Option<&ArtRegistry>,
+    rules_image: &str,
+    image_id: &str,
+    theater_ext: &str,
+    theater_name: &str,
+) -> Vec<String> {
+    if art
+        .and_then(|art| art.get(rules_image))
+        .is_some_and(|entry| entry.theater)
+    {
+        return object_shp_candidates(art, image_id, theater_ext, theater_name);
+    }
+    let mut candidates = building_shp_names(image_id, theater_name).to_vec();
+    candidates.dedup();
+    candidates
+}
+
 /// Replace the 2nd character of a filename with the generic letter `G`.
 fn apply_generic_letter(name: &str) -> String {
     if name.len() < 2 {
