@@ -660,26 +660,9 @@ impl App {
             .expect("scenario exit remains present")
             .tick(wall_ms, voices_active);
 
-        if let Some(scale) = tick.master_output_scale {
-            state.audio.set_master_output_scale(scale);
-        }
-        if tick.stop_audio {
-            state.audio.stop_theme();
-            if let Some(player) = state.audio.sfx_player.as_mut() {
-                player.stop_all();
-            }
-            state.audio.set_master_output_scale(1.0);
-        }
-        // ScoreDialog__WndProc @ 0x005C9B10 resolves the literal SCORE theme
-        // and starts it immediately on WM_INITDIALOG. Keep this after the
-        // hard stop and output-scale restoration so ScoreX begins audible.
-        if let Some(crate::app::match_runtime::scenario_exit::ScenarioExitAudioAction::PlayTheme(
-            theme,
-        )) = tick.after_stop
-            && let Some(assets) = state.process_assets.manager()
-        {
-            let _ = state.audio.play_theme(theme, assets, wall_ms);
-        }
+        state
+            .audio
+            .apply_scenario_exit_tick(tick, state.process_assets.manager(), wall_ms);
         if !tick.finished {
             return;
         }

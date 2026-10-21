@@ -396,6 +396,37 @@ impl AppAudioRuntime {
         self.apply_theme_action(action);
     }
 
+    /// GameExit Victory685670/Defeat685DC0/Abort686570 clear speech and
+    /// kind-1 sound channels (406E80), then restore master87E758. Theme streams
+    /// are kind0x1000 (4078C1 -> 4036D8 -> 402449), so this cleanup preserves
+    /// them. Abort already requested its own Theme fade; destination owners
+    /// select SCORE, INTRO or the next scenario. Source: original instructions.
+    pub(crate) fn apply_scenario_exit_tick(
+        &mut self,
+        tick: crate::app::match_runtime::scenario_exit::ScenarioExitTick,
+        assets: Option<&AssetManager>,
+        wall_ms: u64,
+    ) {
+        if let Some(scale) = tick.master_output_scale {
+            self.set_master_output_scale(scale);
+        }
+        if tick.clear_sounds {
+            if let Some(player) = self.sfx_player.as_mut() {
+                player.stop_all();
+            }
+            self.set_master_output_scale(1.0);
+        }
+        // Score dialogs explicitly select SCORE after the master is restored:
+        // 5C9B10 (multiplayer) / 6C9357 (campaign), original gamemd.exe.
+        if let Some(crate::app::match_runtime::scenario_exit::ScenarioExitAudioAction::PlayTheme(
+            theme,
+        )) = tick.after_cleanup
+            && let Some(assets) = assets
+        {
+            let _ = self.play_theme(theme, assets, wall_ms);
+        }
+    }
+
     /// `ThemeClass::Stop(fade=1)`: Theme ramps its own stream to silence and
     /// Theme AI stops it when the ramp ends.
     pub(crate) fn fade_out_theme(&mut self, wall_ms: u64) {
@@ -616,6 +647,85 @@ mod tests {
             runtime.service_clock.admit(134),
             "the denied call did not reset the gate"
         );
+    }
+
+    #[test]
+    fn defeat_audio_cleanup_preserves_theme_until_the_next_destination_requests_one() {
+        use crate::app::match_runtime::scenario_exit::{
+            ScenarioExitCascade, ScenarioExitDestination,
+        };
+        let root =
+            std::env::temp_dir().join(format!("vera20k-defeat-theme-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("thememd.ini"),
+            "[Themes]\n0=Battle\n1=INTRO\n2=SCORE\n[Battle]\nSound=Battle\n[INTRO]\nSound=Drok\nNormal=no\n[SCORE]\nSound=ScoreX\nNormal=no\n",
+        )
+        .unwrap();
+        // One stereo PCM frame is a transport fixture, not a retail sound.
+        std::fs::write(
+            root.join("Battle.wav"),
+            b"RIFF\x28\0\0\0WAVEfmt \x10\0\0\0\x01\0\x02\0\x22\x56\0\0\x88\x58\x01\0\x04\0\x10\0data\x04\0\0\0\0\0\0\0",
+        )
+        .unwrap();
+        let assets = AssetManager::from_loose_root_for_test(&root);
+        let mut runtime = AppAudioRuntime {
+            theme: ThemeRuntime::default(),
+            service_clock: AudioServiceClock::default(),
+            music_player: None,
+            sfx_player: None,
+            launcher_audio_available: true,
+            theme_startup_suppressed: false,
+            movie_audio: Default::default(),
+        };
+        runtime.initialize_theme(&assets);
+        // Restore through the production Theme owner with an admitted stream;
+        // a device-less restore leaves active=-1 and cannot expose this bug.
+        let gates = runtime.theme_gates();
+        runtime.theme.restore_saved_slots(
+            [0, -1],
+            true,
+            &assets,
+            gates,
+            MusicOutputState::Idle,
+            0,
+            |_| MusicOutputState::Playing,
+        );
+        assert_eq!(runtime.theme.slots().active, 0);
+        let before = runtime.theme.saved_slots();
+        assert_eq!(before, [0, -1]);
+        let mut exit = ScenarioExitCascade::start(0, ScenarioExitDestination::CampaignDefeat);
+        runtime.apply_scenario_exit_tick(exit.tick(500, false), Some(&assets), 500);
+        assert_eq!(runtime.movie_audio.lifecycle_scale, 0.5);
+        assert_eq!(runtime.theme.saved_slots(), before);
+        runtime.apply_scenario_exit_tick(exit.tick(1_000, false), Some(&assets), 1_000);
+        assert_eq!(runtime.movie_audio.lifecycle_scale, 1.0);
+        assert_eq!(
+            runtime.theme.saved_slots(),
+            before,
+            "GameExit cleanup preserves Theme"
+        );
+        runtime.maintain_main_menu_theme(&assets, 1_001);
+        assert_eq!(
+            runtime.theme.current_song(),
+            1,
+            "PrepareSession selects INTRO on shell return"
+        );
+        let mut score = ScenarioExitCascade::start(
+            2_000,
+            ScenarioExitDestination::Score {
+                title: String::new(),
+                detail: String::new(),
+                model: crate::ui::score_shell::ScoreScreenModel::default(),
+            },
+        );
+        runtime.apply_scenario_exit_tick(score.tick(3_000, false), Some(&assets), 3_000);
+        assert_eq!(
+            runtime.theme.current_song(),
+            2,
+            "score explicitly selects SCORE"
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

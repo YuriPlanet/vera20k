@@ -1473,6 +1473,20 @@ Details: {details}"
         if state.frontend.credits_roll.is_some() {
             return;
         }
+        // GameExit::Defeat6860E5's replay prompt is still inside Main_Game.
+        // Its modal pump services the retained Theme; PrepareSession52D9BF
+        // selects INTRO only after No leaves the game. Yes uses StartScenario.
+        // Source: original gamemd.exe 6860EA..686296, 48CFAA, 52D9A0.
+        if matches!(
+            state
+                .frontend
+                .shell_message_box
+                .as_ref()
+                .map(|message| &message.purpose),
+            Some(crate::app::frontend::state::ShellMessageBoxPurpose::CampaignReplay(_))
+        ) {
+            return;
+        }
         if state.frontend.shell_route.wol_visit() {
             return;
         }

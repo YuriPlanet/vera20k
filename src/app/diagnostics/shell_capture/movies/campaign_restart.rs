@@ -15,6 +15,8 @@ pub enum RestartTarget {
     DefeatPrompt,
     /// Yes on that box; the restarted mission's first live frame.
     DefeatReplayed,
+    /// No on that box; the ordinary shell and its INTRO theme.
+    DefeatReturned,
     /// The sidebar 0xF2 tab pressed and released: the restate briefing 0x10C.
     Restate,
     /// Save/load in game, then press the restored campaign Restart.
@@ -38,9 +40,12 @@ impl RestartTarget {
 enum Step {
     Abort,
     Settling(u32),
+    AwaitBattleTheme,
     AwaitDefeatPrompt,
+    HoldDefeatPrompt(u32),
     AwaitVictoryScore,
-    YesPressed,
+    ReplayPressed,
+    AwaitShellReturn,
     AwaitRestartedLive,
     Done,
 }
@@ -107,6 +112,8 @@ pub(super) struct RestartCapture {
     after: Option<Mission>,
     observed_restart_loading: Option<Value>,
     restored: Option<Value>,
+    battle_theme: Option<i32>,
+    theme_observations: Vec<Value>,
 }
 
 impl RestartCapture {
@@ -164,6 +171,8 @@ impl RestartCapture {
             after: None,
             observed_restart_loading: None,
             restored,
+            battle_theme: None,
+            theme_observations: Vec::new(),
         };
         match target {
             RestartTarget::AbortShown
@@ -177,14 +186,9 @@ impl RestartCapture {
             }
             RestartTarget::DefeatPrompt
             | RestartTarget::DefeatReplayed
+            | RestartTarget::DefeatReturned
             | RestartTarget::MenuDefeatReplayed => {
-                Self::complete_current_house(
-                    state,
-                    route,
-                    frame,
-                    crate::sim::house_state::HouseOutcomeKind::Defeat,
-                )?;
-                capture.step = Step::AwaitDefeatPrompt;
+                capture.step = Step::AwaitBattleTheme;
             }
             RestartTarget::SavedVictory => {
                 Self::complete_current_house(
@@ -324,6 +328,28 @@ impl RestartCapture {
                 self.step = Step::Settling(remaining - 1);
             }
             Step::Settling(_) | Step::Done => {}
+            Step::AwaitBattleTheme => {
+                let theme = state.audio.theme.current_song();
+                let playing = state.audio.music_player.as_ref().is_some_and(|player| {
+                    player.state() == crate::audio::theme::MusicOutputState::Playing
+                });
+                if playing
+                    && usize::try_from(theme)
+                        .ok()
+                        .and_then(|index| state.audio.theme.entries().get(index))
+                        .is_some_and(|entry| entry.normal)
+                {
+                    self.battle_theme = Some(theme);
+                    self.observe_theme(state, "before defeat");
+                    Self::complete_current_house(
+                        state,
+                        route,
+                        frame,
+                        crate::sim::house_state::HouseOutcomeKind::Defeat,
+                    )?;
+                    self.step = Step::AwaitDefeatPrompt;
+                }
+            }
             Step::AwaitVictoryScore => {
                 if rendered == PresentedShell::Score
                     && App::campaign_score_shell_active(state)
@@ -355,38 +381,82 @@ impl RestartCapture {
                     route.push(
                         json!({"frame": frame, "action": "TXT_TO_REPLAY shown", "dialog": 0x120}),
                     );
+                    self.check_retained_battle_theme(state)?;
+                    self.observe_theme(state, "replay prompt entered");
+                    self.step = Step::HoldDefeatPrompt(SETTLE_FRAMES);
+                }
+            }
+            Step::HoldDefeatPrompt(remaining) => {
+                self.check_retained_battle_theme(state)?;
+                if remaining > 0 {
+                    self.step = Step::HoldDefeatPrompt(remaining - 1);
+                } else {
+                    self.observe_theme(state, "replay prompt serviced");
                     if self.target == RestartTarget::DefeatPrompt {
                         Self::restore_pointer(state);
-                        self.step = Step::Settling(SETTLE_FRAMES);
+                        self.step = Step::Settling(0);
                     } else {
+                        let answer_no = self.target == RestartTarget::DefeatReturned;
                         let layout = crate::ui::shell::modal::quit_confirm_layout(
                             state.renderer.gpu.config.width as i32,
                             state.renderer.gpu.config.height as i32,
                         );
-                        let point = set_window_pointer_to_rect_center(state, layout.ok);
+                        let point = set_window_pointer_to_rect_center(
+                            state,
+                            if answer_no { layout.cancel } else { layout.ok },
+                        );
                         App::handle_shell_message_box_mouse_down(state);
                         ensure!(
                             state.frontend.shell_controller.pressed()
-                                == Some(crate::ui::shell::modal::control::OK),
-                            "physical Yes press missed its loaded control"
+                                == Some(if answer_no {
+                                    crate::ui::shell::modal::control::CANCEL
+                                } else {
+                                    crate::ui::shell::modal::control::OK
+                                }),
+                            "physical replay answer press missed its loaded control"
                         );
                         route.push(
-                            json!({"frame": frame, "action": "Yes press", "dialog": 0x120,
+                            json!({"frame": frame, "action": if answer_no { "No press" } else { "Yes press" }, "dialog": 0x120,
                             "point": point}),
                         );
-                        self.step = Step::YesPressed;
+                        self.step = Step::ReplayPressed;
                     }
                 }
             }
-            Step::YesPressed => {
+            Step::ReplayPressed => {
+                self.check_retained_battle_theme(state)?;
                 App::handle_shell_message_box_mouse_up(state);
                 ensure!(
                     state.frontend.shell_message_box.is_none(),
-                    "physical Yes release did not answer the box"
+                    "physical replay answer release did not answer the box"
                 );
-                route.push(json!({"frame": frame, "action": "Yes release", "dialog": 0x120}));
+                let answer_no = self.target == RestartTarget::DefeatReturned;
+                route.push(json!({"frame": frame, "action": if answer_no { "No release" } else { "Yes release" }, "dialog": 0x120}));
                 Self::restore_pointer(state);
-                self.step = Step::AwaitRestartedLive;
+                self.step = if answer_no {
+                    Step::AwaitShellReturn
+                } else {
+                    Step::AwaitRestartedLive
+                };
+            }
+            Step::AwaitShellReturn => {
+                if state.frontend.screen == GameScreen::MainMenu
+                    && state.frontend.shell_message_box.is_none()
+                    && state.audio.theme.current_song() == state.audio.theme.from_name("INTRO")
+                {
+                    ensure!(
+                        state
+                            .audio
+                            .music_player
+                            .as_ref()
+                            .is_some_and(|player| player.state()
+                                == crate::audio::theme::MusicOutputState::Playing),
+                        "the returned shell's INTRO is not physically playing"
+                    );
+                    self.observe_theme(state, "shell after No");
+                    route.push(json!({"frame": frame, "action": "shell resumed after No"}));
+                    self.step = Step::Done;
+                }
             }
             Step::AwaitRestartedLive => {
                 if let Some(startup) = crate::app::loading::pump::loading_campaign_startup(state)
@@ -433,6 +503,7 @@ impl RestartCapture {
                         "mission": after.receipt()}),
                     );
                     self.after = Some(after);
+                    self.observe_theme(state, "restarted first live frame");
                     self.step = Step::Done;
                 }
             }
@@ -442,6 +513,31 @@ impl RestartCapture {
 
     fn restore_pointer(state: &mut AppState) {
         MoviesCapture::restore_neutral_pointer(state);
+    }
+
+    fn check_retained_battle_theme(&self, state: &AppState) -> Result<()> {
+        ensure!(
+            Some(state.audio.theme.current_song()) == self.battle_theme,
+            "the replay prompt replaced the retained battlefield Theme"
+        );
+        ensure!(
+            state.audio.music_player.as_ref().is_some_and(
+                |player| player.state() == crate::audio::theme::MusicOutputState::Playing
+            ),
+            "the replay prompt stopped physical battlefield music"
+        );
+        Ok(())
+    }
+
+    fn observe_theme(&mut self, state: &AppState, phase: &str) {
+        let current = state.audio.theme.current_song();
+        let entry = usize::try_from(current)
+            .ok()
+            .and_then(|index| state.audio.theme.entries().get(index));
+        self.theme_observations.push(json!({"phase": phase, "current": current,
+            "key": entry.map(|entry| &entry.key), "sound": entry.map(|entry| &entry.sound),
+            "saved_slots": state.audio.theme.saved_slots(),
+            "physical": state.audio.music_player.as_ref().map(|player| format!("{:?}", player.state()))}));
     }
 
     pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
@@ -455,6 +551,9 @@ impl RestartCapture {
             }
             RestartTarget::DefeatPrompt => {
                 self.step == Step::Settling(0) && state.frontend.shell_message_box.is_some()
+            }
+            RestartTarget::DefeatReturned => {
+                self.step == Step::Done && state.frontend.screen == GameScreen::MainMenu
             }
             RestartTarget::Restate => {
                 self.step == Step::Settling(0)
@@ -474,6 +573,6 @@ impl RestartCapture {
     pub(super) fn receipt(&self) -> Value {
         json!({"target": format!("{:?}", self.target), "before": self.before.receipt(),
             "restart_loading": self.observed_restart_loading, "restored": self.restored,
-            "after": self.after.as_ref().map(Mission::receipt)})
+            "after": self.after.as_ref().map(Mission::receipt), "theme_observations": self.theme_observations})
     }
 }

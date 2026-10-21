@@ -210,10 +210,10 @@ pub(crate) struct ScenarioExitTick {
     /// The audio master's multiplier over live music, SFX and voices. On abort
     /// the music also carries Theme's own fade, which the Theme owner runs.
     pub master_output_scale: Option<f64>,
-    /// One-shot hard-stop/queue-clear edge before committing the destination.
-    pub stop_audio: bool,
-    /// One-shot audio action issued after hard-stop and scale restoration.
-    pub after_stop: Option<ScenarioExitAudioAction>,
+    /// One-shot speech/SFX stop and queue clear; Theme keeps its own lifecycle.
+    pub clear_sounds: bool,
+    /// One-shot audio action after speech/SFX cleanup and master restoration.
+    pub after_cleanup: Option<ScenarioExitAudioAction>,
     pub finished: bool,
 }
 
@@ -265,7 +265,7 @@ impl ScenarioExitCascade {
 
     /// gamemd provenance: ordinary offline scenario exit; verified
     /// `0x00685670` and `0x00685DC0` both run master target-zero + wait, then
-    /// pump voices for at most 300 16-ms buckets, then stop audio before the
+    /// pump voices for at most 300 16-ms buckets, then clear speech/SFX before the
     /// score dialog. `0x00686570` first starts Theme's own fade
     /// (`ThemeClass::Stop(1)` @ `0x006865FA`, which the route entry hands to
     /// the Theme owner) and then this independent master fade
@@ -307,8 +307,8 @@ impl ScenarioExitCascade {
             self.phase = ScenarioExitPhase::Done;
             ScenarioExitTick {
                 master_output_scale: Some(0.0),
-                stop_audio: true,
-                after_stop: matches!(
+                clear_sounds: true,
+                after_cleanup: matches!(
                     self.destination.as_ref(),
                     Some(
                         ScenarioExitDestination::Score { .. }
@@ -472,18 +472,18 @@ mod tests {
 
         let half = exit.tick(515, false);
         assert_eq!(half.master_output_scale, Some(0.5));
-        assert!(!half.stop_audio && !half.finished);
+        assert!(!half.clear_sounds && !half.finished);
         assert!(exit.take_destination().is_none());
 
         let fade_edge = exit.tick(1_015, true);
         assert_eq!(fade_edge.master_output_scale, Some(0.0));
-        assert!(!fade_edge.stop_audio && !fade_edge.finished);
+        assert!(!fade_edge.clear_sounds && !fade_edge.finished);
         assert!(exit.take_destination().is_none());
 
         let voice_done = exit.tick(1_016, false);
-        assert!(voice_done.stop_audio && voice_done.finished);
+        assert!(voice_done.clear_sounds && voice_done.finished);
         assert_eq!(
-            voice_done.after_stop,
+            voice_done.after_cleanup,
             Some(ScenarioExitAudioAction::PlayTheme("SCORE"))
         );
         assert!(matches!(
@@ -510,14 +510,14 @@ mod tests {
 
         // Fade completion is observed in absolute bucket 63.
         let fade_edge = exit.tick(1_015, true);
-        assert!(!fade_edge.stop_audio && !fade_edge.finished);
+        assert!(!fade_edge.clear_sounds && !fade_edge.finished);
 
         let before_ceiling = exit.tick(5_807, true); // bucket 362, delta 299
-        assert!(!before_ceiling.stop_audio && !before_ceiling.finished);
+        assert!(!before_ceiling.clear_sounds && !before_ceiling.finished);
 
         let ceiling = exit.tick(5_808, true); // bucket 363, delta 300
-        assert!(ceiling.stop_audio && ceiling.finished);
-        assert_eq!(ceiling.after_stop, None);
+        assert!(ceiling.clear_sounds && ceiling.finished);
+        assert_eq!(ceiling.after_cleanup, None);
         assert!(matches!(
             exit.take_destination(),
             Some(ScenarioExitDestination::MainMenu)
@@ -540,6 +540,6 @@ mod tests {
         assert!(!before_fresh_ceiling.finished);
 
         let fresh_ceiling = exit.tick(7_808, true); // bucket 488
-        assert!(fresh_ceiling.stop_audio && fresh_ceiling.finished);
+        assert!(fresh_ceiling.clear_sounds && fresh_ceiling.finished);
     }
 }

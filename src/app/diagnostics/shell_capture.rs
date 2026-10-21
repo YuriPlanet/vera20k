@@ -57,6 +57,7 @@ const CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART_SHOWN: &str = "campaign-all1-abort-
 const CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART: &str = "campaign-all1-abort-restart";
 const CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_PROMPT: &str = "campaign-all1-defeat-replay-prompt";
 const CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_YES: &str = "campaign-all1-defeat-replay-yes";
+const CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_NO: &str = "campaign-all1-defeat-replay-no";
 const CHECKPOINT_CAMPAIGN_ALL1_SAVED_VICTORY: &str = "campaign-all1-saved-victory";
 const CHECKPOINT_CAMPAIGN_ALL1_SAVED_RESTART: &str = "campaign-all1-saved-restart";
 const CHECKPOINT_CAMPAIGN_ALL1_MENU_REPLAY: &str = "campaign-all1-menu-replay";
@@ -581,6 +582,9 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_PROMPT => {
                 Ok(Self::CampaignRestart(movies::RestartTarget::DefeatPrompt))
             }
+            CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_NO => {
+                Ok(Self::CampaignRestart(movies::RestartTarget::DefeatReturned))
+            }
             CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_YES => {
                 Ok(Self::CampaignRestart(movies::RestartTarget::DefeatReplayed))
             }
@@ -714,6 +718,9 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignRestart(movies::RestartTarget::DefeatPrompt) => {
                 CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_PROMPT
+            }
+            Self::CampaignRestart(movies::RestartTarget::DefeatReturned) => {
+                CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_NO
             }
             Self::CampaignRestart(movies::RestartTarget::DefeatReplayed) => {
                 CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_YES
@@ -2519,6 +2526,15 @@ mod tests {
                     side: Allied,
                     target: movies::CampaignStartTarget::Restart(
                         movies::RestartTarget::DefeatPrompt,
+                    ),
+                },
+            ),
+            (
+                CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_NO,
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::DefeatReturned,
                     ),
                 },
             ),
