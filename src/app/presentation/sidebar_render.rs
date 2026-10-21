@@ -341,17 +341,28 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         .sidebar_cameo_atlas
         .as_ref()
     {
-        let house = state
+        let simulation = state
             .match_state
             .sim_runtime
             .as_ref()
-            .and_then(|rt| rt.simulation.houses().get(&owner));
+            .map(|rt| &rt.simulation);
+        let house = simulation.and_then(|sim| sim.houses().get(&owner));
         let rules = state.rules();
         for item in &mut view.items {
             item.alt_cameo = house.is_some_and(|house| {
-                rules
-                    .and_then(|rules| rules.object(&item.type_id))
-                    .is_some_and(|obj| shows_alt_cameo(house, obj))
+                rules.is_some_and(|rules| {
+                    rules.object(&item.type_id).is_some_and(|obj| {
+                        let country = simulation
+                            .map_or("", |sim| sim.interner().resolve(house.house_type_id()));
+                        shows_alt_cameo(
+                            house,
+                            obj,
+                            rules,
+                            country,
+                            atlas.has_alternate(&item.type_id),
+                        )
+                    })
+                })
             });
             item.has_cameo_art = atlas.cameo(&item.type_id, item.alt_cameo).is_some();
         }
@@ -431,12 +442,39 @@ pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
 /// and for buildings that undeploy). [`SidebarCameoAtlas::cameo`] keeps the
 /// plain cameo when no alternate image loaded.
 ///
+/// Ares1003D800 additionally admits the current Country's retained lists.
+/// An undeploying Building uses the Unit-list branch, comparing its own
+/// BuildingType pointer, not UndeploysInto; that cannot match an INI-produced
+/// UnitType list. New Ares SpyEffect.Custom House gains are a separate chain;
+/// this selector reads the stock spy flags currently represented by HouseState.
+///
 /// [`SidebarCameoAtlas::cameo`]: crate::render::sidebar_cameo_atlas::SidebarCameoAtlas::cameo
 fn shows_alt_cameo(
     house: &crate::sim::house_state::HouseState,
     obj: &crate::rules::object_type::ObjectType,
+    rules: &crate::rules::ruleset::RuleSet,
+    country: &str,
+    has_alternate: bool,
 ) -> bool {
     use crate::rules::object_type::ObjectCategory;
+    if !has_alternate {
+        return false;
+    }
+    if crate::rules::ARES_ENABLED {
+        if obj.category == ObjectCategory::Building && obj.undeploys_into.is_some() {
+            return false;
+        }
+        if rules.country_starts_veteran(country, obj) {
+            return true;
+        }
+        return obj.trainable
+            && !obj.naval
+            && match obj.category {
+                ObjectCategory::Infantry => house.veteran_infantry(),
+                ObjectCategory::Vehicle => house.veteran_units(),
+                ObjectCategory::Aircraft | ObjectCategory::Building => false,
+            };
+    }
     obj.trainable
         && match obj.category {
             ObjectCategory::Infantry => house.veteran_infantry(),
@@ -1027,7 +1065,13 @@ mod tests {
         let rules = &retail.rules;
         let id = crate::sim::intern::InternedId::default();
         let shows = |house: &HouseState, kind: &str| {
-            shows_alt_cameo(house, rules.object(kind).expect("a retail type"))
+            shows_alt_cameo(
+                house,
+                rules.object(kind).expect("a retail type"),
+                rules,
+                "",
+                true,
+            )
         };
         let mut barracks = HouseState::new(id, 0, None, true, 0, 10);
         barracks.grant_veteran_infantry();
@@ -1037,7 +1081,11 @@ mod tests {
         let mut war_factory = HouseState::new(id, 0, None, true, 0, 10);
         war_factory.grant_veteran_units();
         assert!(shows(&war_factory, "MTNK"));
-        assert!(shows(&war_factory, "DEST"), "GetCameo does not ask Naval=");
+        assert_eq!(
+            shows(&war_factory, "DEST"),
+            !crate::rules::ARES_ENABLED,
+            "stock GetCameo uses the ground spy flag for ships; Ares separates naval gains"
+        );
         assert!(!shows(&war_factory, "ORCA"));
         assert!(!shows(&war_factory, "E1"));
 
@@ -1052,5 +1100,76 @@ mod tests {
             Some("FALCUICO"),
             "declared, but GetCameo never draws an aircraft's"
         );
+    }
+
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_country_alternate_cameos_match_native_category_and_art_gates() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        let corpus = crate::test_fixture::json("tools/rules_oracle/ares_country_veterancy.json");
+        for row in corpus["cameo_country"].as_array().unwrap() {
+            if row["unit_list_self"].as_bool().unwrap() {
+                // This native pointer-comparison witness places a BuildingType
+                // in a UnitType-only vector, outside normal INI-produced state.
+                assert!(row["input_limit"].as_str().is_some());
+                continue;
+            }
+            let (registry, key) = match row["category"].as_str().unwrap() {
+                "infantry" => ("InfantryTypes", "VeteranInfantry"),
+                "unit" => ("VehicleTypes", "VeteranUnits"),
+                "aircraft" => ("AircraftTypes", "VeteranAircraft"),
+                "building" => ("BuildingTypes", "VeteranBuildings"),
+                other => panic!("unknown native category {other}"),
+            };
+            let undeploys = row["undeploys"].as_bool().unwrap();
+            let target_list = if row["unit_list_undeploy_target"].as_bool().unwrap() {
+                "VeteranUnits=UNDEPLOY_TARGET\n"
+            } else {
+                ""
+            };
+            let registries = if registry == "VehicleTypes" {
+                "[VehicleTypes]\n0=SUBJECT\n99=UNDEPLOY_TARGET\n".to_owned()
+            } else {
+                format!("[{registry}]\n0=SUBJECT\n[VehicleTypes]\n99=UNDEPLOY_TARGET\n")
+            };
+            let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[Countries]\n0=SYNTHCOUNTRY\n[SYNTHCOUNTRY]\n{key}={}\n{target_list}\
+                 {registries}\
+                 [UNDEPLOY_TARGET]\nStrength=100\n[SUBJECT]\nStrength=100\nTrainable={}\n{}",
+                if row["member"].as_bool().unwrap() {
+                    "SUBJECT"
+                } else {
+                    "none"
+                },
+                if row["trainable"].as_bool().unwrap() {
+                    "yes"
+                } else {
+                    "no"
+                },
+                if undeploys {
+                    "UndeploysInto=UNDEPLOY_TARGET\n"
+                } else {
+                    ""
+                },
+            )))
+            .unwrap();
+            let mut interner = StringInterner::default();
+            let owner = interner.intern("HOUSE");
+            let country = interner.intern("SYNTHCOUNTRY");
+            let house = HouseState::new(owner, 0, Some(country), true, 0, 10);
+            assert_eq!(
+                shows_alt_cameo(
+                    &house,
+                    rules.object("SUBJECT").unwrap(),
+                    &rules,
+                    "SYNTHCOUNTRY",
+                    row["alt_art"].as_bool().unwrap()
+                ),
+                row["eligible"].as_bool().unwrap(),
+                "{}",
+                row["name"]
+            );
+        }
     }
 }

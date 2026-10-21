@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ares Country three-list replacement, retained VeteranBuildings/one-shot inheritance, country-only initial building rank and alternate-cameo eligibility, and bounded list/flag persistence.",
+  "assumptions": [
+    "Supplied synthetic Country/type registries, stored IDs, retained vectors, extension phase and spare capacities; no type construction or physical INI ingestion is certified.",
+    "Actual Ares Country Find, sentinel handling, original CRT comparisons, parent copy, tokenizer, list Find and vector writes execute. Common CountryExt reader uses a non-primary-Rules INI pointer; GUI-specific reader is excluded.",
+    "Original Country511850 failure plus installed suffix body are connected by a synthetic ABI frame; no whole executable hook installer or startup schedule is executed.",
+    "Country reader supplied lexical values include empty strings; physical parser omission of empty/whitespace lines belongs to the production INI owner.",
+    "Constructor control executes literal stores1001B85F..1001B8DA only. Reader phase0/negative/>2 controls operate on explicit prior values, not fully constructed game objects.",
+    "Building creation executes100236D0 with spy flagfalse; Academy10020750 is an observed sink. Alternate-cameo controls execute1003D800 with all spy flagsfalse and a supplied alternate SHP field. A positive Building self pointer in a UnitType-only list is a structural diagnostic, not normal INI-produced reachability.",
+    "Persistence executes actual ByteBuffer helpers, complete vector save/load helpers and isolated parent-flag slices, reusing ScenarioFixture IStream. Swizzle registration is recorded without relocation, and whole extension/save framing, failure paths and game startup remain excluded.",
+    "Selected controls reject observed RNG entries65C6D0/65C780/65C7E0 and detach7258D0; they establish no draw/detach on the bounded selected paths, not full initialization timing or unrelated effects."
+  ],
+  "substitutions": [
+    "Public ares_prerequisites.Probe owns native image mapping/arena/call execution; prerequisite-specific services are disabled for these reader controls.",
+    "ReadString lexical-value transport, parse diagnostics, missing-section preparse/IsPresent, and Academy callback boundaries; no parent decision or membership result is supplied.",
+    "Existing Probe new/delete backing is retained only for ByteBuffer storage. ScenarioFixture.hook supplies exact in-memory IStream bytes; pointer-swizzle registration returns success without resolving pointers."
+  ],
+  "entry_points": {
+    "country_lists": "0x1005BE70",
+    "country_base": "0x00511850",
+    "extension_suffix": "0x1001D110",
+    "extension_read": "0x1001C530",
+    "extension_common": "0x1001C5D0",
+    "parent_copy": "0x1001BDC0",
+    "parent_find": "0x1001BA90",
+    "building_list": "0x10010850",
+    "building_creation": "0x100236D0",
+    "cameo_eligibility": "0x1003D800",
+    "vector_save": "0x1000F0F0",
+    "vector_load": "0x1000DAA0",
+    "flag_save": "0x1001B378",
+    "flag_load": "0x1001B1C3",
+    "buffer_save": "0x1006B7D0",
+    "buffer_load": "0x1006B5C0"
+  },
+  "replay_command": "python -m tools.rules_oracle.ares_country_veterancy",
+  "payload_sha256": "f5fb07e47e1a3e28916b8e7fcaa5a1867a6197f0096f6a2c2d6932b90dd16fab"
+}

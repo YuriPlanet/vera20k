@@ -27,7 +27,7 @@ use crate::rules::error::RulesError;
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::mission_data::MissionControl;
 use crate::rules::native_processing::{
-    CountryProjection, CountryVeterancyLists, ProcessedRulesLayers, RulesLayerStack,
+    CountryProjection, CountryVeterancyState, ProcessedRulesLayers, RulesLayerStack,
     house_type_index_of_name,
 };
 use crate::rules::object_type::{BuildCategory, FactoryType, ObjectCategory, ObjectType};
@@ -67,7 +67,7 @@ pub struct CountryRules {
     /// Immutable projection of retained HouseType+98, never merged-text inheritance.
     parent_country: String,
     /// Retained HouseType+14C/+168/+184 lists projected by their process owner.
-    veteran_types: CountryVeterancyLists,
+    veteran_types: CountryVeterancyState,
     /// Native HouseType+C0, initialized0 at51141C and read through
     /// ReadColor474A90 at51193D with the current index as default. The
     /// Process owner supplies the typed value from each actual catalog pass.
@@ -172,7 +172,7 @@ impl Default for CountryRules {
         // wipe out all ore income for any house built from the default. The neutral 1.0
         // multiplier is `INCOME_PPM_SCALE`, not 0.
         Self {
-            veteran_types: CountryVeterancyLists::default(),
+            veteran_types: CountryVeterancyState::default(),
             color_scheme: 0,
             parent_country: String::new(),
             multiplay: false,
@@ -205,7 +205,7 @@ impl CountryRules {
         Self {
             // Filled from the typed Process receipt; neither veteran lists
             // nor earlier Color strings are re-resolved against final catalogs.
-            veteran_types: CountryVeterancyLists::default(),
+            veteran_types: CountryVeterancyState::default(),
             color_scheme: 0,
             parent_country: String::new(),
             multiplay: section.read_bool("Multiplay", Self::default().multiplay),
@@ -6628,7 +6628,8 @@ impl RuleSet {
     /// Native Country veteran-list membership uses the current HouseType,
     /// not ParentCountry, and is independent of Trainable/Naval/spy state.
     /// Starting-rank callers: Infantry517CE7, Unit735604/746827,
-    /// Aircraft413F98. Building construction reads no such list.
+    /// Aircraft413F98. With Ares, Building Init_Managers442D1B reaches
+    ///100236D0 and its retained VeteranBuildings list with the same gates.
     pub fn country_starts_veteran(&self, country: &str, object: &ObjectType) -> bool {
         self.country_rules(country)
             .is_some_and(|rules| rules.veteran_types.contains(object.category, &object.id))

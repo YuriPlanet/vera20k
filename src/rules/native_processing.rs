@@ -597,7 +597,7 @@ impl ProcessedRulesLayers {
             for member in members {
                 let veteran = &member.country_veterancy;
                 if family != RulesTypeFamily::Country
-                    && *veteran != CountryVeterancyLists::default()
+                    && *veteran != CountryVeterancyState::default()
                 {
                     return Err(RulesError::InvalidSavedState(
                         "country veterancy stored on another type family",
@@ -619,6 +619,21 @@ impl ProcessedRulesLayers {
                             "country veteran reference is outside its type registry",
                         ));
                     }
+                }
+                #[cfg(feature = "ares")]
+                if veteran.ares.buildings.iter().any(|id| {
+                    !registry
+                        .families
+                        .get(&RulesTypeFamily::Building)
+                        .is_some_and(|types| {
+                            types
+                                .iter()
+                                .any(|entry| entry.native_stored_id.eq_ignore_ascii_case(id))
+                        })
+                }) {
+                    return Err(RulesError::InvalidSavedState(
+                        "country veteran building is outside its type registry",
+                    ));
                 }
             }
         }
@@ -1743,7 +1758,7 @@ pub(crate) type CountryProjection<'a> = (
     i32,
     i32,
     &'a str,
-    &'a CountryVeterancyLists,
+    &'a CountryVeterancyState,
 );
 
 /// The process registry owns resolved stored IDs; RuleSet clones an immutable view.
@@ -1753,19 +1768,42 @@ pub(crate) type CountryProjection<'a> = (
 /// drives Infantry517CE7, Unit735604/746827 and Aircraft413F98 starting rank.
 /// Native evidence: tools/rules_oracle/country_veterancy.md.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) struct CountryVeterancyLists {
+pub(crate) struct CountryVeterancyState {
     infantry: Vec<String>,
     units: Vec<String>,
     aircraft: Vec<String>,
+    #[cfg(feature = "ares")]
+    ares: AresCountryVeterancy,
 }
 
-impl CountryVeterancyLists {
+/// The reached CountryExt reader state needed by the starting-rank chain.
+/// Constructor1001B85F/1001B87C/1001B8D0 starts phase0, an empty building
+/// list and an unconsumed parent attempt. This state shares the existing
+/// Country owner, persistence and immutable RuleSet projection.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+struct AresCountryVeterancy {
+    phase: i32,
+    parent_initialized: bool,
+    buildings: Vec<String>,
+}
+
+impl CountryVeterancyState {
     pub(crate) fn contains(&self, category: ObjectCategory, type_id: &str) -> bool {
         let members = match category {
             ObjectCategory::Infantry => &self.infantry,
             ObjectCategory::Vehicle => &self.units,
             ObjectCategory::Aircraft => &self.aircraft,
-            ObjectCategory::Building => return false,
+            ObjectCategory::Building => {
+                #[cfg(feature = "ares")]
+                {
+                    &self.ares.buildings
+                }
+                #[cfg(not(feature = "ares"))]
+                {
+                    return false;
+                }
+            }
         };
         members.iter().any(|id| id.eq_ignore_ascii_case(type_id))
     }
@@ -2364,7 +2402,7 @@ struct ProcessedType {
     /// Country+98: ctor511404 clears its first byte; reached5118CF reads
     /// ParentCountry with current ID default, capacity25.
     country_parent: String,
-    country_veterancy: CountryVeterancyLists,
+    country_veterancy: CountryVeterancyState,
     /// Side+9C ordered Country indexes. ReadHouses4767C0 retains the prior
     /// vector on count0 and otherwise replaces it without deduplication.
     /// Signed entries preserve `<random>`=-2 before the full-reader boundary.
@@ -2775,7 +2813,7 @@ impl ProcessedType {
             country_color_scheme: 0,
             country_side_index: -1,
             country_parent: String::new(),
-            country_veterancy: CountryVeterancyLists::default(),
+            country_veterancy: CountryVeterancyState::default(),
             side_country_members: Vec::new(),
             anim_art_read: false,
             building_foundation: 0,
@@ -3253,6 +3291,7 @@ impl RulesPassProcessor {
             section
                 .read_list(key, capacity)?
                 .into_iter()
+                .filter(|token| !is_native_none_type_name(token))
                 .filter_map(|token| {
                     self.find_existing(family, token)
                         .map(|index| self.families[&family][index].native_stored_id.clone())
@@ -3757,16 +3796,20 @@ impl RulesPassProcessor {
                     member.country_color_scheme,
                     self.colors.iter().map(|(name, _)| name.as_str()),
                 );
-                // HouseType511D16/511E20/511F56: each reached nonempty
-                // ReadString128 replaces its vector after FindOrAllocate;
-                // missing or cached-empty input retains it. Keep the original
-                // Infantry -> Unit -> Aircraft constructor allocation order.
+                // Original511D16/511E20/511F56: ReadString128 followed by
+                // FindOrAllocate. Ares replaces511D16 with1005BE70: the
+                // same three lists use2048 and Find-only, in the same order.
+                // Missing/cached-empty input retains either reader's list.
                 for (key, family) in [
                     ("VeteranInfantry", RulesTypeFamily::Infantry),
                     ("VeteranUnits", RulesTypeFamily::Vehicle),
                     ("VeteranAircraft", RulesTypeFamily::Aircraft),
                 ] {
-                    if let Some(resolved) = self.resolve_list_from(&raw, key, family, 0x80) {
+                    #[cfg(feature = "ares")]
+                    let resolved = self.resolve_existing_list_from(&raw, key, family, 0x800);
+                    #[cfg(not(feature = "ares"))]
+                    let resolved = self.resolve_list_from(&raw, key, family, 0x80);
+                    if let Some(resolved) = resolved {
                         let veteran =
                             &mut self.family_mut(RulesTypeFamily::Country)[index].country_veterancy;
                         match family {
@@ -3783,8 +3826,82 @@ impl RulesPassProcessor {
                     self.change_country_side(index, side);
                 }
             }
+            // Both original success51214F and failed-section51215A enter
+            // Ares1001D110 ->1001C530. Do not put this suffix inside the
+            // original section-admission branch or use final merged text.
+            #[cfg(feature = "ares")]
+            self.process_ares_country_veterancy(index, pass);
             index += 1;
         }
+    }
+
+    /// CountryExt1001C530/1001C5D0: first-attempt parent copy precedes this
+    /// pass's VeteranBuildings read1001C6DE/10010850. Actual parent Find
+    ///1001BA90 uses stored ID, not the original Country Name alias. The
+    /// native controls live in tools/rules_oracle/ares_country_veterancy.*.
+    #[cfg(feature = "ares")]
+    fn process_ares_country_veterancy(&mut self, index: usize, pass: &IniFile) {
+        let country = &self.families[&RulesTypeFamily::Country][index];
+        let phase = country.country_veterancy.ares.phase;
+        if !(0..=2).contains(&phase) {
+            return;
+        }
+        let id = country.native_stored_id.clone();
+        let parent = country.country_parent.clone();
+        let inherit = !country.country_veterancy.ares.parent_initialized
+            && !parent.is_empty()
+            && !parent.eq_ignore_ascii_case(&id);
+        if phase == 0 {
+            //1001C549..1001C59A initializes unrelated side defaults, then
+            // enters1. It does not reset the selected list or parent flag.
+            self.family_mut(RulesTypeFamily::Country)[index]
+                .country_veterancy
+                .ares
+                .phase = 1;
+        }
+        if inherit {
+            let inherited = if is_native_none_type_name(&parent) {
+                None
+            } else {
+                self.find_existing(RulesTypeFamily::Country, &parent)
+                    .map(|index| {
+                        self.families[&RulesTypeFamily::Country][index]
+                            .country_veterancy
+                            .ares
+                            .buildings
+                            .clone()
+                    })
+            };
+            if let Some(inherited) = inherited {
+                self.family_mut(RulesTypeFamily::Country)[index]
+                    .country_veterancy
+                    .ares
+                    .buildings = inherited;
+            }
+            //1001C0CB consumes the attempt even when Find failed. Empty
+            // and case-insensitive self references above do not consume it.
+            self.family_mut(RulesTypeFamily::Country)[index]
+                .country_veterancy
+                .ares
+                .parent_initialized = true;
+        }
+        if let Some(resolved) = pass.section(&id).and_then(|section| {
+            self.resolve_existing_list_from(
+                section,
+                "VeteranBuildings",
+                RulesTypeFamily::Building,
+                0x800,
+            )
+        }) {
+            self.family_mut(RulesTypeFamily::Country)[index]
+                .country_veterancy
+                .ares
+                .buildings = resolved;
+        }
+        self.family_mut(RulesTypeFamily::Country)[index]
+            .country_veterancy
+            .ares
+            .phase = 2;
     }
 
     /// HouseType ReadINI51208C..512162 stores BC, then updates Side vectors
@@ -5048,6 +5165,10 @@ impl RulesPassProcessor {
 #[cfg(test)]
 #[path = "native_processing_tests.rs"]
 mod tests;
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "ares_country_veterancy_tests.rs"]
+mod ares_country_veterancy_tests;
 
 #[cfg(test)]
 #[path = "side_registry_tests.rs"]

@@ -1249,7 +1249,9 @@ use crate::util::save_codec;
 // type lists in processed Rules records.
 // 469 -> 470: ScenarioSession retains the WOL tournament value, the clan
 // lists and FixedAlliance.
-const SNAPSHOT_VERSION: u32 = 470;
+// 470 -> 471: Ares Country starting-rank state retains the extension read
+// phase, first-attempt parent flag and VeteranBuildings list with its rules.
+const SNAPSHOT_VERSION: u32 = 471;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -10250,6 +10252,7 @@ mod tests {
         // 467 -> 468: retained Country ParentCountry+98.
         // 468 -> 469: retained Country starting-veterancy lists.
         // 469 -> 470: WOL tournament value, clan lists and FixedAlliance.
-        assert_eq!(super::SNAPSHOT_VERSION, 470);
+        // 470 -> 471: Ares Country extension starting-rank state.
+        assert_eq!(super::SNAPSHOT_VERSION, 471);
     }
 }
