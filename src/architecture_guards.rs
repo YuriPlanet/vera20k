@@ -1400,6 +1400,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "Techno+334, replaced by Drive (0x004B19F7)",
         ),
         (
+            "sim/scenario_session.rs",
+            "set_fixed_alliance",
+            "Scenario flag 0x400: Apply_Squad_Alliances clears it in GameMode 4 (0x0069B19B) \
+             and sets it after the squad alliances (0x0069B4E2)",
+        ),
+        (
             "sim/stage.rs",
             "set_value",
             "the unload resets the dump counter without restarting its clock (0x0073E3xx)",

@@ -251,11 +251,12 @@ impl Simulation {
         // 0x0073AC52..0x0073ACAE: ReReveal then UpdateReveal and the
         // current-XYZ/cached-radius+3 Map567DA0 border, after clearance and
         // before Ready/Commence. Evidence: shroud_frontier_moving.json.
-        // RESIDUAL: native returns
-        // before them from Guard's map exit (`0x0073AC0E..0x0073AC4F`), which
-        // VERA runs elsewhere. Trigger: a unit arriving to leave the map.
-        // Effect: VERA reveals one more footprint at that cell, which stays
-        // revealed.
+        // Not ported: Guard's map exit (`0x0073ABD6..0x0073AC4F`) returns
+        // before them for a unit on Guard whose coordinates fail
+        // `0x00568350` with +0x3D5 set (Team+0x82 latch, vt+0x3A0, UnInit).
+        // UNREACHABLE: `0x00568350` tests the Size diamond (+0xF4/+0xF8)
+        // that `MapClass::Resize` (`0x00565C10`) allocates cells over, so no
+        // arrival in a real cell fails it.
         if reason == PerCellReason::Arrival && self.per_cell_owner_alive(id) {
             self.refresh_object_sight(id, rules, 0);
             self.refresh_object_sight_border(id, UninitContext::new(rules, registry));
@@ -541,7 +542,9 @@ impl Simulation {
             // VERA returns here, leaving the departure to the dock owners.
             // Trigger: a tethered Unit's arrival in a Cell away from its dock.
             // Effect: none of this arm's Harvest, archive send or Scatter.
-            // Frequency: harvester and service-depot departures; not measured.
+            // Frequency: rare. No depot or bunker reply reaches it, and a
+            // refinery's miner untethers before it moves, so it needs a miner
+            // still tethered on arrival away from its dock.
             // Risk: a Unit left standing on a building with no orders stays
             // put where native would scatter it.
             return;
