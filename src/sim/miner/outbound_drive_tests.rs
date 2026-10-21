@@ -347,6 +347,7 @@ fn arm_full_ore_return(sim: &mut Simulation, entity_id: u64, config: &MinerConfi
     let miner = entity.miner.as_mut().expect("miner component");
     miner.cargo = (0..miner.capacity_bales)
         .map(|_| CargoBale {
+            tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(0),
             resource_type: ResourceType::Ore,
             value: config.ore_bale_value,
         })

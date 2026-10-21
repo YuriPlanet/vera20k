@@ -293,6 +293,10 @@ fn a_slave_shows_the_load_it_carries() {
         (2, 2, [5, 5, 2]),
     ] {
         let bale = |resource_type| CargoBale {
+            tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(match resource_type {
+                ResourceType::Ore => 0,
+                ResourceType::Gem => 1,
+            }),
             resource_type,
             value: 0,
         };

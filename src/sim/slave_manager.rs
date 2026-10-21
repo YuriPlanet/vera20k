@@ -92,7 +92,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
-use crate::sim::miner::{CargoBale, MinerConfig, ResourceType};
+use crate::sim::miner::CargoBale;
 use crate::sim::mission::authority::queue_entity_mission_deferred;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::bump_crush;
@@ -1497,7 +1497,6 @@ impl Simulation {
                 self.slave_do_action(slave, DO_SHOVEL, rules, frame_effects);
             }
             // ftol(min(1.0, Storage - total)): one level while not full.
-            let config = MinerConfig::from_rules(rules);
             if let Some(bale) = crate::sim::miner::extract_bale(
                 &self.terrain_objects,
                 &self.ore_growth_config,
@@ -1511,7 +1510,6 @@ impl Simulation {
                 rules,
                 registry,
                 cell,
-                &config,
             ) && let Some(entity) = self.substrate.entities.get_mut(slave)
             {
                 entity.slave.cargo.push(bale);
@@ -1537,12 +1535,12 @@ impl Simulation {
     }
 
     /// The slave's deposit (`InfantryClass 0x00522D50` with the master as its
-    /// argument): each non-empty Storage slot in order (ore, then gems) leaves
+    /// argument): each non-empty Storage slot in native type order leaves
     /// whole and is paid to the master's house, the base amount and then the
     /// purifier bonus ([`crate::sim::miner::pay_refinery_owner`]); any payment
     /// ends with the master's `vt+0x468` (a building's refinery smoke).
     pub(crate) fn slave_deposit(&mut self, slave: u64, master: u64, rules: &RuleSet) {
-        let Some(cargo) = self
+        let Some(mut cargo) = self
             .substrate
             .entities
             .get_mut(slave)
@@ -1551,16 +1549,8 @@ impl Simulation {
             return;
         };
         let mut paid = false;
-        for kind in [ResourceType::Ore, ResourceType::Gem] {
-            let slot: Vec<&CargoBale> = cargo
-                .iter()
-                .filter(|bale| bale.resource_type == kind)
-                .collect();
-            if slot.is_empty() {
-                continue;
-            }
-            let value: i32 = slot.iter().map(|bale| i32::from(bale.value)).sum();
-            crate::sim::miner::pay_refinery_owner(self, rules, master, value, slot.len() as i32);
+        while let Some((value, bales)) = crate::sim::miner::drain_first_slot(&mut cargo) {
+            crate::sim::miner::pay_refinery_owner(self, rules, master, value, bales);
             paid = true;
         }
         if paid

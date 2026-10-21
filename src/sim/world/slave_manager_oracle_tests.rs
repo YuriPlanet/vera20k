@@ -412,6 +412,7 @@ fn place_slave(
         let count = storage.map_or(0, |s| s[slot].as_f64().unwrap() as usize);
         for _ in 0..count {
             cargo.push(CargoBale {
+                tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(slot as u8),
                 resource_type: kind,
                 value,
             });

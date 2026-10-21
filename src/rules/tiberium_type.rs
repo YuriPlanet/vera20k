@@ -12,7 +12,9 @@ pub const TIBERIUM_DENSITY_LEVELS: u8 = 12;
 const CTOR_PERCENTAGE: f64 = 0.1;
 
 /// Index into the parsed `[Tiberiums]` list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct TiberiumTypeId(pub u8);
 
 /// Per-`TiberiumClass` rules data needed by growth/spread and placement.

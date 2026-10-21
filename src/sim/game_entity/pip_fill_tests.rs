@@ -91,6 +91,7 @@ fn check_fill(row: &serde_json::Value, rules: &RuleSet) {
         );
         let bales = vec![
             CargoBale {
+                tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(0),
                 resource_type: ResourceType::Ore,
                 value: 25
             };

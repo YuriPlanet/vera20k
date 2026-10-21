@@ -35,13 +35,13 @@ mod refinery_reach_tests;
 pub(crate) use self::harvest_mission::mission_harvest;
 pub(crate) use self::miner_system::extract_bale;
 pub(crate) use self::refinery_dock::{
-    clear_unload_anim_for_destination, clear_unload_latch, mission_unload, pay_refinery_owner,
-    per_cell_release_dock_contact,
+    clear_unload_anim_for_destination, clear_unload_latch, drain_first_slot, mission_unload,
+    pay_refinery_owner, per_cell_release_dock_contact,
 };
 
 use crate::rules::object_type::ObjectType;
 
-/// Which kind of resource a map cell or cargo bale contains.
+/// Ore/gem presentation classification; not a native TiberiumClass identity.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -129,8 +129,35 @@ impl MinerState {
 /// pushes it into the miner's cargo hold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CargoBale {
+    /// Native StorageClass slot. Grouping and payment use this identity;
+    /// multiple types can have the same ore/gem presentation classification.
+    pub tiberium_type: crate::rules::tiberium_type::TiberiumTypeId,
+    /// Presentation only, derived from the harvested type's Image.
     pub resource_type: ResourceType,
     pub value: u16,
+}
+
+impl CargoBale {
+    /// Unit Harvest_Ore_Tick73D450 and Infantry Harvest522E70 preserve the
+    /// Cell's native Tiberium index when storing the reduction. Value comes
+    /// from that TiberiumClass, not the many-to-one Image classification.
+    /// Native executions: spatial_oracle/harvest_field.json ore_tick rows.
+    fn from_reduction(
+        reduction: crate::sim::tiberium::ReduceTiberiumOutcome,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Option<Self> {
+        if reduction.removed_amount == 0 {
+            return None;
+        }
+        let tiberium_type = reduction.tiberium_type?;
+        let ty = rules.tiberium_types.get(tiberium_type)?;
+        Some(Self {
+            tiberium_type,
+            resource_type: reduction.resource_type?,
+            // Retain the existing whole-bale/u16 credit representation.
+            value: ty.value.clamp(0, i32::from(u16::MAX)) as u16,
+        })
+    }
 }
 
 /// Tunable configuration for the miner/refinery/resource system.
@@ -139,9 +166,10 @@ pub struct CargoBale {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MinerConfig {
     // -- Bale values --
-    /// Credits per ore bale.
+    /// First type's bale value for explicit arena/fixture cargo. Production
+    /// harvesting reads the actual type through `CargoBale::from_reduction`.
     pub ore_bale_value: u16,
-    /// Credits per gem bale.
+    /// Second type's bale value for explicit arena/fixture cargo.
     pub gem_bale_value: u16,
 
     // -- Cargo capacities (in bales) --

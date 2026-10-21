@@ -53,16 +53,8 @@ pub(crate) fn mission_harvest(
     if !entity.is_harvester() {
         return Some(450);
     }
-    let config = super::MinerConfig::from_rules(rules);
     let mut snap = build_miner_snapshot(sim, id)?;
-    harvest_mission_step(
-        sim,
-        rules,
-        &config,
-        overlay_registry,
-        &mut snap,
-        frame_effects,
-    );
+    harvest_mission_step(sim, rules, overlay_registry, &mut snap, frame_effects);
     commit_miner_snapshot(&mut sim.substrate, &snap);
     Some(snap.dispatch_delay)
 }
@@ -70,7 +62,6 @@ pub(crate) fn mission_harvest(
 fn harvest_mission_step(
     sim: &mut Simulation,
     rules: &RuleSet,
-    config: &super::MinerConfig,
     overlay_registry: Option<&OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
     frame_effects: FrameEffects<'_>,
@@ -90,5 +81,5 @@ fn harvest_mission_step(
         );
     }
 
-    process_miner(sim, rules, config, overlay_registry, snap, frame_effects);
+    process_miner(sim, rules, overlay_registry, snap, frame_effects);
 }

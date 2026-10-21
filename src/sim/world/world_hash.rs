@@ -1613,6 +1613,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         entity.slave.owner().hash(hasher);
         entity.slave.cargo().len().hash(hasher);
         for bale in entity.slave.cargo() {
+            bale.tiberium_type.0.hash(hasher);
             (bale.resource_type as u8).hash(hasher);
             bale.value.hash(hasher);
         }
@@ -2069,6 +2070,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         (miner.kind() as u8).hash(hasher);
         (miner.cargo().len() as u16).hash(hasher);
         for bale in miner.cargo() {
+            bale.tiberium_type.0.hash(hasher);
             (bale.resource_type as u8).hash(hasher);
             bale.value.hash(hasher);
         }

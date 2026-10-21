@@ -780,6 +780,7 @@ fn retail_full_slaves_remap_walk_before_fear_and_keep_the_action_clock_on_refusa
             owner.then_some(123),
             vec![
                 CargoBale {
+                    tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(0),
                     resource_type: ResourceType::Ore,
                     value: 25,
                 };

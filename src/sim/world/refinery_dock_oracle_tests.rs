@@ -49,9 +49,9 @@ pub(super) const RULES: &str = "[VehicleTypes]\n0=HARV\n1=MTNK\n\
     NumberImpassableRows=3\n\
     [GAREFX]\nStrength=900\nRefinery=yes\nNumberOfDocks=1\nNumberImpassableRows=3\n\
     [GAOREP]\nStrength=1000\nOrePurifier=yes\n\
-    [Tiberiums]\n0=Riparius\n1=Cruentus\n\
+    [Tiberiums]\n0=Riparius\n1=Cruentus\n2=Vinifera\n3=Aboreus\n\
     [Riparius]\nImage=1\nValue=25\n[Cruentus]\nImage=2\nValue=50\n\
-    [General]\nHarvesterTooFarDistance=5\nChronoHarvTooFarDistance=50\n\
+    [Vinifera]\nImage=3\nValue=25\n[Aboreus]\nImage=4\nValue=25\n[General]\nHarvesterTooFarDistance=5\nChronoHarvTooFarDistance=50\n\
     PurifierBonus=.25\nAIVirtualPurifiers=4,2,0\n\
     [AudioVisual]\nConditionYellow=50%\n\
     [Guard]\nRate=.030\n[Enter]\nRate=.016\n[Harvest]\nRate=.016\n[Unload]\nRate=.016\n";
@@ -442,24 +442,27 @@ fn dress(mut s: Scene, input: &Value) -> Scene {
         if let Some(miner_state) = entity.miner.as_mut() {
             miner_state.set_unload_active_for_test(input["unloading"] == true);
             if let Some(storage) = input["storage"].as_array() {
-                let ore = storage[0].as_f64().unwrap() as usize;
-                let gems = storage[1].as_f64().unwrap() as usize;
                 miner_state.set_cargo_for_test(
-                    std::iter::repeat_n(
-                        CargoBale {
-                            resource_type: ResourceType::Ore,
-                            value: 25,
-                        },
-                        ore,
-                    )
-                    .chain(std::iter::repeat_n(
-                        CargoBale {
-                            resource_type: ResourceType::Gem,
-                            value: 50,
-                        },
-                        gems,
-                    ))
-                    .collect(),
+                    storage
+                        .iter()
+                        .enumerate()
+                        .flat_map(|(slot, amount)| {
+                            let tiberium_type =
+                                crate::rules::tiberium_type::TiberiumTypeId(slot as u8);
+                            let ty = s.rules.tiberium_types.get(tiberium_type).unwrap();
+                            std::iter::repeat_n(
+                                CargoBale {
+                                    tiberium_type,
+                                    resource_type:
+                                        crate::sim::tiberium::resource_type_for_tiberium_image(
+                                            ty.image,
+                                        ),
+                                    value: ty.value as u16,
+                                },
+                                amount.as_f64().unwrap() as usize,
+                            )
+                        })
+                        .collect(),
                 );
             }
         }
@@ -611,26 +614,18 @@ fn compare_unload(s: &Scene, row: &Value, context: &str) {
         expected["stage"][0].as_i64().unwrap(),
         "{context}: stage value"
     );
-    let ore = state
-        .cargo()
-        .iter()
-        .filter(|b| b.resource_type == ResourceType::Ore)
-        .count() as f64;
-    let gems = state
-        .cargo()
-        .iter()
-        .filter(|b| b.resource_type == ResourceType::Gem)
-        .count() as f64;
-    assert_eq!(
-        ore,
-        expected["storage"][0].as_f64().unwrap(),
-        "{context}: ore"
-    );
-    assert_eq!(
-        gems,
-        expected["storage"][1].as_f64().unwrap(),
-        "{context}: gems"
-    );
+    for slot in 0..4 {
+        let amount = state
+            .cargo()
+            .iter()
+            .filter(|bale| usize::from(bale.tiberium_type.0) == slot)
+            .count() as f64;
+        assert_eq!(
+            amount,
+            expected["storage"][slot].as_f64().unwrap(),
+            "{context}: native slot{slot}"
+        );
+    }
     let house = s
         .sim
         .houses
@@ -827,6 +822,7 @@ fn mission_harvest_states_two_and_three_match_the_original_dispatch() {
             let miner = entity.miner.as_mut().unwrap();
             miner.set_cargo_for_test(vec![
                 CargoBale {
+                    tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(0),
                     resource_type: ResourceType::Ore,
                     value: 25,
                 };
@@ -1013,7 +1009,7 @@ fn replay_covers_every_row() {
     assert_eq!(count("radio"), 18);
     assert_eq!(count("mission_enter"), 9);
     assert_eq!(count("mission_harvest"), 9);
-    assert_eq!(count("mission_unload"), 30);
+    assert_eq!(count("mission_unload"), 34);
     assert_eq!(count("per_cell"), 6);
     assert_eq!(count("per_cell_release"), 13);
     assert_eq!(count("stage_tick"), 3);

@@ -325,6 +325,7 @@ pub fn install_status_miner_cargo(
     miner.set_cargo_for_test(
         std::iter::repeat_n(
             CargoBale {
+                tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(0),
                 resource_type: ResourceType::Ore,
                 value: config.ore_bale_value,
             },
@@ -332,6 +333,7 @@ pub fn install_status_miner_cargo(
         )
         .chain(std::iter::repeat_n(
             CargoBale {
+                tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(1),
                 resource_type: ResourceType::Gem,
                 value: config.gem_bale_value,
             },

@@ -871,6 +871,7 @@ fn fill(s: &mut Scene, status: u64) {
     if status != 0 {
         miner.set_cargo_for_test(vec![
             CargoBale {
+                tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(0),
                 resource_type: ResourceType::Ore,
                 value: 25,
             };

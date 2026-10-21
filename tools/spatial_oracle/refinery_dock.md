@@ -3,6 +3,13 @@
 `refinery_dock.py` retains the original 107 rows, 57 continuation controls and
 three War Miner histories. Separate additions contain nine actual-slot admission
 controls and four Building contact-constructor controls.
+Four further unload controls distinguish native slots 0/2 and 2/3, including
+Vinifera and Aboreus alone. Each starts at a declared payout gate with integer
+amounts; it executes the original slot selection, removal and payment. The
+paired Rust retail test harvests Vinifera before Riparius from XMP17T6 overlay
+identities, saves/loads the mixed hold, then reaches two production Unload gates.
+Its flat world, pad pose and stage gates are supplied test boundaries; this is
+not a full retail match or a float-storage comparison.
 Unicorn 2.1.4 executes unchanged original text and Unit/Building vtables.
 The JSON contains native outputs, not values calculated by Rust or the harness.
 The sidecar records the payload hash.
