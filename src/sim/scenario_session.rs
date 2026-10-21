@@ -1188,15 +1188,16 @@ impl ScenarioSession {
     /// unset valid slot is (0,0); reading outside its702-slot allocation is
     /// not a deterministic malformed-map contract and is rejected here.
     pub fn waypoint_cell(&self, index: i32) -> Option<(i16, i16)> {
-        let index = u32::try_from(index).ok()?;
-        (index < crate::map::waypoints::WAYPOINT_SLOT_COUNT)
-            .then(|| self.waypoints.get(&index).copied().unwrap_or((0, 0)))
+        let index = crate::map::waypoints::waypoint_slot(index)?;
+        Some(self.waypoints.get(&index).copied().unwrap_or((0, 0)))
     }
 
     /// Scenario IsWaypointValid68BD80: a bounded slot whose packed pair is
     /// different from the initialized empty cell B05458=(0,0).
     pub(crate) fn waypoint_is_valid(&self, index: i32) -> bool {
-        self.waypoint_cell(index).is_some_and(|cell| cell != (0, 0))
+        crate::map::waypoints::waypoint_is_defined(index, |index| {
+            self.waypoints.get(&index).copied()
+        })
     }
 
     pub fn first_multiplayer_start(&self) -> Option<crate::map::waypoints::Waypoint> {

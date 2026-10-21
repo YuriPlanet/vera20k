@@ -50,6 +50,26 @@ pub fn skirmish_player_capacity(ini: &IniFile) -> i32 {
 /// `"701"`. Anything numbered at or above this is never read.
 pub(crate) const WAYPOINT_SLOT_COUNT: u32 = 0x2BE;
 
+/// Portable bound for Scenario's fixed waypoint allocation. Native raw
+/// accessors outside it address other fields rather than a waypoint.
+pub(crate) fn waypoint_slot(index: i32) -> Option<u32> {
+    u32::try_from(index)
+        .ok()
+        .filter(|&index| index < WAYPOINT_SLOT_COUNT)
+}
+
+/// IsDefinedWaypoint68BD80: a valid slot differs from empty B05458=(0,0).
+/// Both the live Scenario table and authored-map initialization use this
+/// decision; their different containers only supply the coordinate lookup.
+pub(crate) fn waypoint_is_defined(
+    index: i32,
+    cell: impl FnOnce(u32) -> Option<(i16, i16)>,
+) -> bool {
+    waypoint_slot(index)
+        .and_then(cell)
+        .is_some_and(|cell| cell != (0, 0))
+}
+
 /// Packing divisor for a waypoint value: `rx = value % 1000`, `ry = value / 1000`.
 ///
 /// The scenario reader applies this unconditionally — there is no

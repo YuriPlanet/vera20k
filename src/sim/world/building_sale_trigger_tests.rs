@@ -24,13 +24,21 @@ const TAG: &str = "0BE0AB4C";
 const TRIGGER: &str = "061FF03C";
 const WAYPOINT: (u16, u16) = (53, 69);
 
-fn campaign_scene(map_name: &str) -> HeadlessScenario {
+fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
     let (root, mut assets) = crate::rules::retail_ini_fixture::retail_assets()
         .expect("run with RA2_DIR and VERA20K_REQUIRE_RETAIL_ASSETS=1");
     let mut map =
         crate::map::source::load_map_by_name_or_path_with_assets(&root, map_name, &assets)
             .expect("physical campaign map")
             .map;
+    if remove_home {
+        let home = map.basic.home_cell.unwrap_or(699);
+        map.ini = map
+            .ini
+            .without_entry_for_test("Waypoints", &home.to_string());
+        map.waypoints = crate::map::waypoints::parse_waypoints(&map.ini);
+        assert!(!map.waypoints.contains_key(&(home as u32)));
+    }
     let audio = crate::rules::audio_sources::AudioDefinitions::select(&assets);
     let mut native_rules = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
     let named = assets
@@ -188,6 +196,10 @@ fn campaign_scene(map_name: &str) -> HeadlessScenario {
         None,
     );
     assert!(post.navigation_published && sim.path_grid().is_some());
+    if remove_home {
+        assert_eq!((map.header.width, map.header.height), (65, 120));
+        assert_eq!(post.opening_view_cell, Some((92, 92)));
+    }
     sim.session.publish_started();
     sim.hash_state_every(std::num::NonZeroU64::new(10_000).unwrap());
     HeadlessScenario {
@@ -203,10 +215,35 @@ fn campaign_scene(map_name: &str) -> HeadlessScenario {
     }
 }
 
+/// The common authored finalizer must publish the fallback into the same
+/// waypoint table used by the opening view, trigger coordinates and saves.
+#[test]
+#[ignore = "physical retail ALL01 campaign and missing-Home map variant"]
+fn campaign_missing_home_reaches_opening_and_waypoint_consumers() {
+    let original = campaign_scene(MAP, false);
+    let missing = campaign_scene(MAP, true);
+    assert_eq!(original.sim().session().waypoint_cell(14), Some((100, 110)));
+    let waypoint = missing.map.waypoints.get(&14).unwrap();
+    assert_eq!((waypoint.rx, waypoint.ry), (92, 92));
+    assert_eq!(missing.sim().session().waypoint_cell(14), Some((92, 92)));
+    assert_eq!(
+        &missing.sim().trigger_waypoint_ground_coord(14).unwrap()[..2],
+        &[23680, 23680]
+    );
+    assert_eq!(
+        missing.sim().rng_state(),
+        original.sim().rng_state(),
+        "the missing-Home fallback must not draw from any simulation RNG"
+    );
+    let bytes = crate::sim::snapshot::GameSnapshot::save_validated(missing.sim(), 0, 0, "home", 0);
+    let loaded = crate::sim::snapshot::GameSnapshot::load(&bytes).unwrap();
+    assert_eq!(loaded.sim.session().waypoint_cell(14), Some((92, 92)));
+}
+
 #[test]
 #[ignore = "physical retail ALL01 campaign, authored SpySat_Boom and complete sale"]
 fn stock_all01_spy_satellite_sale_reshrouds_then_reveals_waypoint() {
-    let mut scene = campaign_scene(MAP);
+    let mut scene = campaign_scene(MAP, false);
     let authored = scene
         .map
         .entities
@@ -400,7 +437,7 @@ fn stock_all01_spy_satellite_sale_reshrouds_then_reveals_waypoint() {
 #[test]
 #[ignore = "physical retail ALL02 campaign load and discovery"]
 fn stock_all02_hidden_player_flak_waits_for_discovery() {
-    let mut scene = campaign_scene("ALL02UMD.MAP");
+    let mut scene = campaign_scene("ALL02UMD.MAP", false);
     let player = scene.sim().session.current_house().unwrap();
     let flak_type = scene.runtime.resources.rules.object("NAFLAK").unwrap();
     assert!(flak_type.has_turret);

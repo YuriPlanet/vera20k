@@ -948,6 +948,10 @@ pub fn finalize_and_populate_staged_authored_scenario<F>(
 where
     F: FnOnce(&mut Simulation, &RuleSet),
 {
+    // ReadMap4AD0C5 materializes Home only after the earlier start-slot pass.
+    // The updated map feeds the single Scenario waypoint table, camera and
+    // later trigger/Team consumers below. Generated and saved worlds bypass it.
+    map_data.initialize_authored_home_waypoint();
     // Immutable load parameters, never republished as runtime owners. Only ART
     // can change in the scoped hosts below; these small snapshots let Recalc
     // retain its inputs across both sweeps while constructors borrow current
