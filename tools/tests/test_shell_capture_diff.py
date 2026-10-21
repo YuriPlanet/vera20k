@@ -379,9 +379,20 @@ class CampaignReceiptTests(unittest.TestCase):
                 receipt["startup"]["scenario"] = scenario
                 receipt["selected_map_source"]["logical_name"] = scenario
                 receipt["startup"]["seed"]["value"] = 1
+                if scenario == "ALL02UMD.MAP":
+                    receipt["runtime"]["player_buildings"] = [{
+                        "type": "NAFLAK", "cell": [159, 165], "in_playfield": False,
+                        "discovered": False, "opened": False, "ready": 0,
+                        "mission": -1, "queued": 5,
+                    }]
                 receipt["route"][2:4] = [{"frame": 3, "action": "explicit campaign spawn",
                                          "scenario": scenario, "difficulty": 1, "seed": 1}]
                 diff.validate_campaign_capture(receipt)
+                if scenario == "ALL02UMD.MAP":
+                    receipt["runtime"]["player_buildings"][0]["ready"] = 1
+                    with self.assertRaises(diff.InputError):
+                        diff.validate_campaign_capture(receipt)
+                    receipt["runtime"]["player_buildings"][0]["ready"] = 0
                 receipt["startup"]["scenario"] = "SOV01UMD.MAP"
                 with self.assertRaises(diff.InputError):
                     diff.validate_campaign_capture(receipt)

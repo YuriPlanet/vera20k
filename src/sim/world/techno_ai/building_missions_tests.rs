@@ -51,6 +51,10 @@ fn rows<'a>(golden: &'a Value, set: &str) -> &'a [Value] {
 /// cannot passive-acquire, so a cadence row's target comes only from its
 /// events, as in the oracle; `SHED` is the unarmed enemy they aim at.
 fn rules(guard_aa_rate: &str, rof: u32) -> RuleSet {
+    rules_with_turret(guard_aa_rate, rof, false)
+}
+
+fn rules_with_turret(guard_aa_rate: &str, rof: u32, has_turret: bool) -> RuleSet {
     RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[Guard]\nRate=.030\nAARate={guard_aa_rate}\n\
          [Sticky]\nRate=.016\nAARate=.016\n\
@@ -58,7 +62,7 @@ fn rules(guard_aa_rate: &str, rof: u32) -> RuleSet {
          [BuildingTypes]\n0=DEF\n1=TDEF\n2=EMPDEF\n3=AADEF\n4=PDEF\n5=HUT\n6=DEPOT\n\
          7=FACTORY\n8=SHED\n\
          [DEF]\nStrength=1000\nArmor=concrete\nFoundation=1x1\nPrimary=Gun\n\
-         CanPassiveAquire=no\n\
+         CanPassiveAquire=no\nTurret={has_turret}\n\
          [TDEF]\nImage=TDEFART\nStrength=1000\nArmor=concrete\nFoundation=1x1\nPrimary=Gun\n\
          Turret=yes\nROT=5\n\
          [EMPDEF]\nStrength=1000\nArmor=concrete\nFoundation=1x1\nPrimary=Gun\nEMPulseCannon=yes\n\
@@ -570,6 +574,121 @@ fn enter_idle_mode_matches_the_unlimbo_rows() {
 
 fn object_ai_visit(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     sim.object_ai_visit_one(id, Some(rules), ObjectAiCtx::default());
+}
+
+fn assert_hidden_startup_state(sim: &Simulation, id: u64, expected: &Value, context: &str) {
+    let entity = sim.substrate.entities.get(id).unwrap();
+    assert_eq!(
+        entity.mission.current(),
+        mission_of(expected["mission"].as_str().unwrap()),
+        "{context} mission"
+    );
+    assert_eq!(
+        entity.mission.queued(),
+        mission_of(expected["queued"].as_str().unwrap()),
+        "{context} queued mission"
+    );
+    for (key, actual) in [
+        ("ready", i64::from(ready_latch(sim, id))),
+        ("status", i64::from(entity.mission.handler_state())),
+        ("counter", i64::from(entity.mission.ai_counter())),
+        (
+            "mission_start",
+            i64::from(entity.mission.mission_start_frame()),
+        ),
+        ("bstate", i64::from(entity.building_body_state().unwrap())),
+        (
+            "queued_bstate",
+            i64::from(entity.queued_building_body_state().unwrap()),
+        ),
+    ] {
+        assert_eq!(actual, expected[key].as_i64().unwrap(), "{context} {key}");
+    }
+    let timer = entity.mission.dispatch_timer();
+    assert_eq!(
+        serde_json::json!([timer.start_frame(), timer.delay()]),
+        expected["timer"],
+        "{context} mission timer"
+    );
+    assert!(expected["target"].is_null());
+    assert_eq!(entity.attack_target.target(), None, "{context} target");
+}
+
+fn hidden_startup_rng(sim: &Simulation) -> Value {
+    serde_json::json!({
+        "main": sim.main_rng.native_state_hex(),
+        "scenario": sim.scenario_rng.native_state_hex(),
+        "mapgen": sim.mapgen_rng.native_state_hex(),
+    })
+}
+
+/// Original44D6A0 map idle queue, then4509D0 and both Building ready checks
+/// around6FA646..6FA65A's counter/MissionAI. A hidden turret's ready0 must
+/// survive: the first None dispatch writes450 without a draw. Ready1 and
+/// the non-turret contrast enter Guard and draw its delay. Native corpus
+/// supplies the incoming ready byte; the retail ALL02 loader test separately
+/// proves which discovery path establishes it. Full object AI runs here,
+/// with no target/passive acquisition; this is not whole-map RNG parity.
+#[test]
+fn hidden_startup_matches_original_mission_and_rng() {
+    let golden = golden();
+    let native = rows(&golden, "hidden_startup");
+    assert_eq!(native.len(), 3);
+    for row in native {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        assert_eq!(input["frame"], FRAME);
+        assert_eq!(input["armed"], true);
+        let rules = rules_with_turret(".016", 20, input["turret"].as_bool().unwrap());
+        let (mut sim, building, _) = fixture(&rules, "DEF", (15, 5));
+        set_mission(&mut sim, building, MissionId::NONE, 0);
+        sim.with_object_placement_scope(|sim| {
+            sim.building_enter_idle_mode(building, true, &rules);
+        });
+        let entity = sim.substrate.entities.get_mut(building).unwrap();
+        // The existing startup adapter applies ScenarioInit's immediate Idle
+        // body. No GrandOpening or discovery result is supplied by this replay.
+        entity.initialize_building_idle_body(FRAME as i32);
+        entity
+            .mission_leaf
+            .set_building_ready_latch(input["ready"].as_u64().unwrap() as u8);
+        sim.scenario_rng =
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
+        sim.main_rng =
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
+                .into();
+        sim.mapgen_rng =
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
+        assert_hidden_startup_state(&sim, building, &row["initial"], name);
+        assert_eq!(
+            hidden_startup_rng(&sim),
+            row["rng_before"],
+            "{name} initial RNG"
+        );
+        let frames = row["frames"].as_array().unwrap();
+        assert_eq!(frames.len() as u64, input["frames"].as_u64().unwrap());
+        for frame in frames {
+            sim.session
+                .set_binary_frame_for_test(frame["frame"].as_u64().unwrap() as u32);
+            let (_, draws) = crate::sim::rng::trace_draws(|| {
+                object_ai_visit(&mut sim, building, &rules);
+            });
+            let context = format!("{name} frame{}", frame["frame"]);
+            assert_hidden_startup_state(&sim, building, frame, &context);
+            // Seed1's admitted Guard range consumes one raw word, confirmed
+            // independently by the complete final native state below.
+            assert_eq!(
+                draws.len(),
+                frame["draws"].as_array().unwrap().len(),
+                "{context} draws"
+            );
+        }
+        assert_eq!(
+            hidden_startup_rng(&sim),
+            row["rng_after"],
+            "{name} final RNG"
+        );
+    }
 }
 
 /// End of Update: a target out of range of SelectWeapon's weapon is dropped;

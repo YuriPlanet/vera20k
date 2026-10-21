@@ -832,8 +832,9 @@ impl Simulation {
     /// the native creation-mission family is its own recorded UNCHECKED and the
     /// harvest FSM needs a truthful `current` from birth.
     ///
-    /// A building's `[Structures]` line has no mission column; it takes
-    /// [`ObjectSubstrate::ready_placed_building`](crate::sim::world::ObjectSubstrate::ready_placed_building).
+    /// A building's `[Structures]` line has no mission column. Its existing
+    /// discovery/GrandOpening and UpdateAnimation owners alone set readiness;
+    /// the reader must not ready a campaign turret hidden in the shroud.
     fn commit_map_placement_mission(
         session: &ScenarioSession,
         substrate: &mut ObjectSubstrate,
@@ -847,7 +848,11 @@ impl Simulation {
             .entities
             .get(stable_id)
             .is_some_and(crate::sim::game_entity::GameEntity::is_harvester);
-        if harvester || substrate.ready_placed_building(stable_id) {
+        let building = substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.category() == EntityCategory::Structure);
+        if harvester || building {
             return;
         }
         let Some(mission) = authored else {
@@ -1022,14 +1027,36 @@ impl Simulation {
         else {
             return Ok(None);
         };
-        // A convenience spawn's building stands finished, like a map's.
+        // This explicit adapter stands finished; authored map placement
+        // uses only native discovery and animation readiness.
         let (stable_id, outcome) = self.with_buildup_bypass(|sim| {
-            sim.unlimbo_after_constructor_managers(
+            let (stable_id, outcome) = sim.unlimbo_after_constructor_managers(
                 ge,
                 rules,
                 overlay_registry,
                 FrameEffects::default(),
-            )
+            );
+            if matches!(outcome, RevealOutcome::Revealed { .. }) {
+                // This tests/tools/debug adapter explicitly promises a finished
+                // building, independently of native authored-map discovery.
+                if sim.substrate.entities.get(stable_id).is_some_and(|entity| {
+                    entity.category() == EntityCategory::Structure
+                        && !entity.building_up()
+                        && sim.houses.get(&entity.owner()).is_some_and(|house| {
+                            house.is_controlled_by_human(sim.session.game_mode_nonzero())
+                        })
+                }) {
+                    sim.grand_opening(
+                        stable_id,
+                        false,
+                        false,
+                        rules,
+                        overlay_registry,
+                        FrameEffects::default(),
+                    );
+                }
+            }
+            (stable_id, outcome)
         });
         if outcome == RevealOutcome::Consumed {
             return Ok(Some(stable_id));
@@ -1048,7 +1075,7 @@ impl Simulation {
             rules,
         );
         self.add_unit_sensor_after_unlimbo(stable_id, rules, overlay_registry);
-        self.substrate.ready_placed_building(stable_id);
+        self.substrate.ready_finished_spawn_adapter(stable_id);
         Ok(Some(stable_id))
     }
 
@@ -1348,7 +1375,7 @@ impl Simulation {
                 effects,
             )
         })?;
-        self.substrate.ready_placed_building(result);
+        self.substrate.ready_finished_spawn_adapter(result);
         Some(result)
     }
 
@@ -2070,30 +2097,12 @@ impl Simulation {
                 if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
                     entity.initialize_building_idle_body(self.session.binary_frame() as i32);
                 }
-                // AI buildings reached virtual DiscoveredBy(owner) in the
-                // shared Unlimbo owner. Do not replace its radio/mission
-                // admission with an eager second opening here. The retained
-                // human-map setup seam is the separate shrouded-human
-                // residual in ready_placed_building.
-                if self
-                    .substrate
-                    .entities
-                    .get(stable_id)
-                    .is_some_and(|entity| {
-                        self.houses.get(&entity.owner()).is_some_and(|house| {
-                            house.is_controlled_by_human(self.session.game_mode_nonzero())
-                        })
-                    })
-                {
-                    self.grand_opening(
-                        stable_id,
-                        false,
-                        scenario_initialization,
-                        rules,
-                        overlay_registry,
-                        frame_effects,
-                    );
-                }
+                // BuildingUnlimbo440D25..440D6C discovers for Player only on
+                // revealed ground in campaign mode;440E5C..440E76 discovers
+                // for an AI owner. The shared discovery owner already ran
+                // both admitted routes. Do not add an eager human opening:
+                // GrandOpening4467C9 and UpdateAnimation451145..451218 own
+                // readiness, and a hidden turret must keep Guard queued.
             }
         }
         (stable_id, outcome)
@@ -2987,35 +2996,18 @@ impl Simulation {
 }
 
 impl crate::sim::world::ObjectSubstrate {
-    /// The ready byte of a building placed without a build-up (a map
-    /// building, or one [`Simulation::spawn_object`] places). Its Unlimbo
-    /// queued Guard ([`Simulation::building_enter_idle_mode`]'s Idle arm: a map placement
-    /// runs inside the placement scope, a convenience spawn inside the
-    /// build-up bypass), and the first opening its discovery runs
-    /// (`0x0044D5D0` -> Grand_Opening, `0x004467C9`) sets `+0x6DD`, so its
-    /// first Update's ready check commences Guard. Native execution:
-    /// `tools/spatial_oracle/building_guard_attack.json` (`unlimbo` rows).
-    /// Native has no write here: for a building its discovery opened it is
-    /// a repeat; it also readies one no house discovers (a houseless test
-    /// fixture). Answers whether `stable_id` is a building.
-    ///
-    /// RESIDUAL: VERA readies every such building at once; native reaches a
-    /// campaign's human-owned building through its discovery
-    /// (DiscoveredBy(Player) needs its cell's `+0x12C & 0x10` when GameMode
-    /// is 0). Trigger: a campaign map's shrouded player building. Effect: it
-    /// guards before it is discovered. Frequency: campaign maps only; in
-    /// skirmish and multiplayer every map building is discovered, and so
-    /// opened, at its Unlimbo.
-    fn ready_placed_building(&mut self, stable_id: u64) -> bool {
-        let Some(entity) = self
+    /// The explicit finished-object adapters (diagnostic spawn and supported
+    /// Ares delivery) bypass buildup and request a ready building. This is
+    /// their retained adapter contract, not a native Unlimbo or map-reader
+    /// write. Authored campaign structures never enter this adapter.
+    fn ready_finished_spawn_adapter(&mut self, stable_id: u64) {
+        if let Some(entity) = self
             .entities
             .get_mut(stable_id)
             .filter(|entity| entity.category() == EntityCategory::Structure)
-        else {
-            return false;
-        };
-        entity.mission_leaf.set_building_ready_latch(1);
-        true
+        {
+            entity.mission_leaf.set_building_ready_latch(1);
+        }
     }
 }
 

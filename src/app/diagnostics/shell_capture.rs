@@ -556,6 +556,9 @@ impl ShellCaptureCheckpoint {
             "campaign-sov07-first-live-frame" => {
                 Ok(Self::CampaignExplicitFirstLive("SOV07TMD.MAP"))
             }
+            "campaign-all02-first-live-frame" => {
+                Ok(Self::CampaignExplicitFirstLive("ALL02UMD.MAP"))
+            }
             CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN => Ok(Self::CampaignAbortReturn(
                 crate::ui::campaign_shell::CampaignSide::Allied,
             )),
@@ -682,6 +685,7 @@ impl ShellCaptureCheckpoint {
                 CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE
             }
             Self::CampaignExplicitFirstLive("SOV05UMD.MAP") => "campaign-sov05-first-live-frame",
+            Self::CampaignExplicitFirstLive("ALL02UMD.MAP") => "campaign-all02-first-live-frame",
             Self::CampaignExplicitFirstLive(_) => "campaign-sov07-first-live-frame",
             Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::Allied) => {
                 CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN
@@ -864,7 +868,11 @@ impl ShellCaptureCheckpoint {
                 target: movies::CampaignStartTarget::FirstLive,
             },
             Self::CampaignExplicitFirstLive(scenario) => movies::MoviesTarget::CampaignStart {
-                side: crate::ui::campaign_shell::CampaignSide::Soviet,
+                side: if scenario.starts_with("ALL") {
+                    crate::ui::campaign_shell::CampaignSide::Allied
+                } else {
+                    crate::ui::campaign_shell::CampaignSide::Soviet
+                },
                 target: movies::CampaignStartTarget::ExplicitFirstLive(scenario),
             },
             Self::CampaignAbortReturn(side) => movies::MoviesTarget::CampaignStart {
@@ -2395,6 +2403,13 @@ mod tests {
     fn campaign_start_checkpoints_select_only_the_normal_route_targets() {
         use crate::ui::campaign_shell::CampaignSide::{Allied, Soviet};
         for (name, target) in [
+            (
+                "campaign-all02-first-live-frame",
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::ExplicitFirstLive("ALL02UMD.MAP"),
+                },
+            ),
             (
                 "campaign-sov05-first-live-frame",
                 movies::MoviesTarget::CampaignStart {

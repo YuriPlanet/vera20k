@@ -46,6 +46,7 @@ CAMPAIGN_CHECKPOINTS["campaign-back-return"] = (None, "campaign-back-return")
 CAMPAIGN_CHECKPOINTS["campaign-all1-opening-load-unlocked"] = (
     "all1", "opening-load-unlocked-while-locked")
 EXPLICIT_CAMPAIGN_MAPS = {
+    "campaign-all02-first-live-frame": "ALL02UMD.MAP",
     "campaign-sov05-first-live-frame": "SOV05UMD.MAP",
     "campaign-sov07-first-live-frame": "SOV07TMD.MAP",
 }
@@ -167,6 +168,15 @@ def validate_campaign_capture(manifest):
     scenario_name = selected_scenario.replace("\\", "/").rsplit("/", 1)[-1].lower()
     if explicit_map:
         _require(startup.get("scenario") == explicit_map, "explicit campaign selected another map")
+    if explicit_map == "ALL02UMD.MAP":
+        buildings = manifest["runtime"].get("player_buildings", [])
+        flaks = [b for b in buildings if b.get("type") == "NAFLAK" and b.get("cell") == [159, 165]]
+        _require(len(flaks) == 1, "ALL02 capture omitted its authored player Flak")
+        flak = flaks[0]
+        _require(flak.get("in_playfield") is False and flak.get("discovered") is False
+                 and flak.get("opened") is False and flak.get("ready") == 0
+                 and flak.get("mission") == -1 and flak.get("queued") == 5,
+                 "ALL02 hidden player Flak was prematurely opened or ready")
     _require(selected_name == scenario_name, "map byte source differs from the admitted scenario")
     if source["kind"] == "mix":
         _require(isinstance(source["source_archive"], str) and source["source_archive"]

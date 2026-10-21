@@ -721,12 +721,16 @@ impl MoviesCapture {
                 if Self::slide_settled(state, ShellSlideKind::Campaign) {
                     if let MoviesTarget::CampaignStart {
                         target: CampaignStartTarget::ExplicitFirstLive(scenario),
-                        ..
+                        side,
                     } = self.target
                     {
+                        let side = match side {
+                            crate::ui::campaign_shell::CampaignSide::Allied => 0,
+                            crate::ui::campaign_shell::CampaignSide::Soviet => 1,
+                        };
                         let request = crate::app::frontend::cncnet_spawn::SpawnRequest::parse(
                             &format!(
-                                "[Settings]\nIsSinglePlayer=Yes\nScenario={scenario}\nSide=1\nDifficultyModeHuman=1\nDifficultyModeComputer=1\nGameSpeed=2\nSeed=1\n"
+                                "[Settings]\nIsSinglePlayer=Yes\nScenario={scenario}\nSide={side}\nDifficultyModeHuman=1\nDifficultyModeComputer=1\nGameSpeed=2\nSeed=1\n"
                             ),
                         )?;
                         App::start_spawn_session(state, request)?;
@@ -1791,6 +1795,18 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
         })
     };
     let rules = &runtime.resources.rules;
+    let player_buildings: Vec<_> = sim.entities().iter_sorted().filter_map(|(id, entity)| {
+        (entity.owner() == current && entity.category() == crate::map::entities::EntityCategory::Structure)
+            .then(|| json!({
+                "id": id, "type": sim.interner().resolve(entity.type_ref()),
+                "cell": [entity.position.rx(), entity.position.ry()],
+                "in_playfield": entity.in_playfield(),
+                "discovered": entity.discovery.discovered_by_current_house(),
+                "opened": entity.building_art.actually_placed(),
+                "ready": entity.building_ready_latch(),
+                "mission": entity.mission.current().raw(), "queued": entity.mission.queued().raw(),
+            }))
+    }).collect();
     Ok(json!({
         "tick": sim.session().tick(), "binary_frame": sim.session().binary_frame(),
         "scenario_started": sim.session().started(),
@@ -1808,6 +1824,7 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
             "simulation_config_hash": format!("{:016x}", rules.simulation_config_hash()),
             "domain": "parsed Rules projection and semantic config; not retail byte SHA256"},
         "house_roster": roster,
+        "player_buildings": player_buildings,
         "scalar_difficulty_order": ["Firepower", "Groundspeed", "Airspeed", "Armor", "ROF", "Cost", "BuildTime", "RepairDelay", "BuildDelay"],
         "native_identity_cursor": sim.native_identity_cursor(),
         "rng": {"main": rng_receipt(&rng.main), "scenario": rng_receipt(&rng.scenario), "mapgen": rng_receipt(&rng.mapgen)},
