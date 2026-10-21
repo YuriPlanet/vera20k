@@ -9,7 +9,6 @@ python -m tools.rules_oracle.session_country --parent --check
 Use the executable selection documented in [native_oracle.md](../native_oracle.md).
 This mode extends the existing physical Rules/Session Country oracle; it does
 not read retail INIs, extract game assets or change the default Session corpus.
-The JSON records the actual executable SHA-256 in `binary_sha256`.
 
 The native Country constructor `0x5113F0` clears only the first byte of retained
 `ParentCountry` storage at `+0x98` (`0x511404`). A successful body read

@@ -56,10 +56,8 @@ def generate_parent():
  This mode uses only synthetic physical INI bytes on the same Rules VM.
  Country/type/lookup/eligibility bodies execute unchanged.
  """
- import hashlib
  from unicorn import UC_HOOK_CODE,UC_HOOK_MEM_WRITE
  from unicorn.x86_const import UC_X86_REG_EAX,UC_X86_REG_EIP,UC_X86_REG_ESP
- from tools.native_oracle import image_bytes
  from tools.spatial_oracle.building_body_rules import dwords
 
  class NoAssets:
@@ -177,7 +175,7 @@ def generate_parent():
    gates.append(dict(id=name,country='CHILD',actual_index=m.read32(child+0xB8),
     parent=prior['parent'],owner_text=text,owner_mask=owner,required_mask=-1,forbidden_mask=-1,
     selected=bool(result),**receipt))
-  return dict(schema_version=1,binary_sha256=hashlib.sha256(image_bytes()).hexdigest(),
+  return dict(schema_version=1,
    constructor=ctor,rng_state_hex=initial_rng,reader_controls=rows,parent_alias_read=alias_read,
    lookup_controls=lookup,house_mask_controls=masks,first_buildable_controls=gates)
  finally:
