@@ -634,40 +634,30 @@ pub(crate) fn current_sidebar_side(state: &AppState) -> i32 {
         .as_ref()
         .map(|rt| &rt.simulation);
     #[cfg(feature = "ares")]
-    if let Some(sim) = sim {
+    let owner = None::<String>;
+    #[cfg(not(feature = "ares"))]
+    let owner = preferred_local_owner_name(state);
+    project_sidebar_side(sim, owner.as_deref())
+}
+
+/// The production chrome and radar adapters share this side-index decision.
+/// Original68781F/534FA0 and Ares1002FA00 consume the installed Scenario.Side;
+/// the ordinary sandbox retains its existing live-owner development switch.
+pub(crate) fn project_sidebar_side(
+    simulation: Option<&crate::sim::world::Simulation>,
+    owner: Option<&str>,
+) -> i32 {
+    #[cfg(feature = "ares")]
+    if let Some(sim) = simulation {
         return sim.session().scenario_side();
     }
-    preferred_local_owner_name(state)
-        .as_deref()
-        .zip(sim)
+    owner
+        .zip(simulation)
         .and_then(|(owner, sim)| {
             crate::sim::house_state::house_state_for_owner(sim.houses(), owner, sim.interner())
                 .map(|house| house.side_index())
         })
         .unwrap_or(0)
-}
-
-/// Shared installed-owner and atlas fallback projection for chrome and radar.
-/// The map loader calls the final sidebar refresh only after installing the
-/// new simulation and pinned owner; this helper never reads old load inputs.
-#[cfg(test)]
-pub(crate) fn project_sidebar_source<'a, T>(
-    simulation: Option<&crate::sim::world::Simulation>,
-    owner: Option<&str>,
-    allied: Option<&'a T>,
-    soviet: Option<&'a T>,
-    yuri: Option<&'a T>,
-) -> Option<(
-    crate::render::sidebar_chrome::SidebarTheme,
-    crate::render::sidebar_chrome::SidebarTheme,
-    &'a T,
-)> {
-    let requested = owner
-        .and_then(|owner| sidebar_theme_for_owner(simulation, owner))
-        .unwrap_or(crate::render::sidebar_chrome::SidebarTheme::Allied);
-    let (actual, source) =
-        crate::render::sidebar_chrome::select_sidebar_theme(requested, allied, soviet, yuri)?;
-    Some((requested, actual, source))
 }
 
 fn current_sidebar_resolution(
@@ -748,32 +738,6 @@ fn refresh_radar_animation_source(state: &mut AppState) {
     if presentation.radar_anim.is_none() {
         let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         crate::app::radar_movie::retire(state, wall_ms);
-    }
-}
-
-/// Original gamemd.exe:
-/// Full_Init @ 0x006877C9..0x0068781F resolves Basic.Player with 0x0050C170,
-/// reads House.Country+0x34 -> Country.Side+0xBC, then installs that side for
-/// InitSideMixFiles @ 0x00534FA0. Radar @ 0x00652E90 and resource selection
-/// @ 0x0072FA10 consume the installed side. Map House Side/Country text is
-/// not a second presentation authority. The executed stock House bindings
-/// are in tools/input_oracle/campaign_start_houses.json; they establish
-/// Americans/0 and Russians/1, without certifying native raster output.
-pub(crate) fn sidebar_theme_for_owner(
-    simulation: Option<&crate::sim::world::Simulation>,
-    owner: &str,
-) -> Option<crate::render::sidebar_chrome::SidebarTheme> {
-    let simulation = simulation?;
-    let live_house = crate::sim::house_state::house_state_for_owner(
-        simulation.houses(),
-        owner,
-        simulation.interner(),
-    )?;
-    match live_house.side_index() {
-        0 => Some(crate::render::sidebar_chrome::SidebarTheme::Allied),
-        1 => Some(crate::render::sidebar_chrome::SidebarTheme::Soviet),
-        2 => Some(crate::render::sidebar_chrome::SidebarTheme::Yuri),
-        _ => None,
     }
 }
 

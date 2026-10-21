@@ -1805,7 +1805,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_launch_local_owner_drives_production_sidebar_theme() {
+    fn explicit_launch_context_drives_production_sidebar_side() {
         use crate::render::sidebar_chrome::SidebarTheme;
 
         let terrain = test_terrain(64, 64);
@@ -1840,52 +1840,39 @@ mod tests {
                 .expect("explicit launch must return its pinned local owner");
             assert_eq!(owner, "Commander");
 
-            let actual = crate::app::presentation::sidebar_render::sidebar_theme_for_owner(
+            let side = crate::app::presentation::sidebar_render::project_sidebar_side(
                 Some(&sim),
-                owner,
-            )
-            .unwrap_or(SidebarTheme::Allied);
+                Some(owner),
+            );
+            let actual = crate::render::sidebar_chrome::sidebar_theme_for_side(side);
             assert_eq!(
                 actual, expected_theme,
                 "{country:?} launch owner must reach its live side theme"
             );
-            // The map-install refresh and chrome selection use this same source
-            // projection after the new roster, simulation and owner are installed.
-            let assets = [
-                "allied-frame-palette-insets",
-                "soviet-frame-palette-insets",
-                "yuri-frame-palette-insets",
-            ];
-            let selected = crate::app::presentation::sidebar_render::project_sidebar_source(
-                Some(&sim),
-                Some(owner),
-                Some(&assets[0]),
-                Some(&assets[1]),
-                Some(&assets[2]),
-            )
-            .expect("all three source packages installed");
-            assert_eq!((selected.0, selected.1), (expected_theme, expected_theme));
-            let index = match expected_theme {
+            let expected_side = match expected_theme {
                 SidebarTheme::Allied => 0,
                 SidebarTheme::Soviet => 1,
                 SidebarTheme::Yuri => 2,
             };
-            assert_eq!(*selected.2, assets[index]);
-            let fallback = crate::app::presentation::sidebar_render::project_sidebar_source(
+            assert_eq!(side, expected_side);
+
+            // This is the actual side-index boundary used by chrome and radar,
+            // not a test-only copy of the previous House/theme projection.
+            // A fourth installed side must survive even when the pinned House
+            // still names a stock side; the non-Ares sandbox keeps that House.
+            sim.session_mut_for_test().set_scenario_side_for_test(3);
+            let selected = crate::app::presentation::sidebar_render::project_sidebar_side(
                 Some(&sim),
                 Some(owner),
-                Some(&assets[0]),
-                None,
-                None,
-            )
-            .unwrap();
-            assert_eq!(
-                (fallback.0, fallback.1),
-                (expected_theme, SidebarTheme::Allied)
             );
             assert_eq!(
-                *fallback.2, assets[0],
-                "radar and chrome share the actual fallback package"
+                selected,
+                if cfg!(feature = "ares") {
+                    3
+                } else {
+                    expected_side
+                },
+                "actual Scenario.Side and development owner have separate authority"
             );
         }
     }
