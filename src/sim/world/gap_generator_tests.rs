@@ -659,3 +659,47 @@ fn a_raised_gap_generator_centres_its_circle_by_its_height() {
     assert!(sim.go_building_offline(1, &rules, FrameEffects::default()));
     assert_eq!(disc(&sim), (false, false, false, false));
 }
+
+#[test]
+fn alliance_callbacks_recheck_gap_operation_without_overwriting_the_building_sample() {
+    let (mut sim, rules, player, other, _) = fixture();
+    insert(&mut sim, 1, other, "GAGAP", 12, 12);
+    insert(&mut sim, 2, other, "POWER", 16, 12);
+    // The manual occupancy helper has no rules-bearing discovery context.
+    // Bind the supplied native player only after those fixture objects exist.
+    sim.session.set_current_house_for_test(Some(player));
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    power(&mut sim, &rules);
+    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    assert!(sim.fog.is_cell_gap_covered(player, 12, 12));
+    let sample = sim.entities().get(1).unwrap().building_last_operational;
+    let context = UninitContext::with_rules(&rules);
+    sim.release_alliance_sight(context);
+    assert!(!sim.fog.is_cell_gap_covered(player, 12, 12));
+    sim.admit_alliance_sight(context);
+    assert!(sim.fog.is_cell_gap_covered(player, 12, 12));
+    assert_eq!(
+        sim.entities().get(1).unwrap().building_last_operational,
+        sample
+    );
+
+    sim.release_alliance_sight(context);
+    assert!(sim.go_building_offline(1, &rules, FrameEffects::default()));
+    sim.admit_alliance_sight(context);
+    assert!(!sim.fog.is_cell_gap_covered(player, 12, 12));
+    assert_eq!(
+        sim.entities().get(1).unwrap().building_last_operational,
+        sample
+    );
+    assert!(sim.go_building_online(1, &rules, FrameEffects::default()));
+    // Online alone has no add. The map callback's fresh operational check
+    //can re-admit before Building43FB20 publishes its next6C8 sample.
+    assert!(!sim.fog.is_cell_gap_covered(player, 12, 12));
+    sim.admit_alliance_sight(context);
+    assert!(sim.fog.is_cell_gap_covered(player, 12, 12));
+    assert_eq!(
+        sim.entities().get(1).unwrap().building_last_operational,
+        sample
+    );
+}

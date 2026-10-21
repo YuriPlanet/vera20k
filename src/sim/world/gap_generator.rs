@@ -335,6 +335,44 @@ impl Simulation {
         }
     }
 
+    /// Map4ADEE0/4ADCD0's virtual418/414 calls, on one logical player's map.
+    /// Removal6FB470 reads269 without an operational gate; admission6FB170
+    /// rechecks4555D0. Both reuse the ordinary gap event owner and leave the
+    /// Building43FB20 sample6C8 alone.
+    pub(super) fn refresh_map_callback_gap(
+        &mut self,
+        id: u64,
+        viewer: InternedId,
+        admit: bool,
+        rules: &RuleSet,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        if !object.gap_generator {
+            return;
+        }
+        let radius = i32::from(object.gap_radius_in_cells);
+        if admit && self.building_operational_state(id, rules) != Some(true) {
+            return;
+        }
+        Self::set_building_gap_for_viewer(
+            &self.interner,
+            &mut self.fog,
+            &self.house_alliances,
+            &mut self.substrate,
+            &self.houses,
+            &self.resolved_terrain,
+            id,
+            viewer,
+            admit,
+            radius,
+        );
+    }
+
     /// The live4ADEE0/4ADCD0 bracket visits gap candidates even if they had no
     /// prior deposit. Only this viewer's269/26C changes;6C8 stays untouched.
     /// Returns hostile cell re-admissions and whether ANY (also friendly)

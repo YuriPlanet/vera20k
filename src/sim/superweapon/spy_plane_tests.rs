@@ -14,7 +14,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::mission::state::MissionTestFixture;
 use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
 use crate::sim::world::edge_cell::{Edge, find_paradrop_edge_cell};
-use crate::sim::world::{PlacementEvidence, SimSoundEvent, Simulation};
+use crate::sim::world::{FrameEffects, PlacementEvidence, SimSoundEvent, Simulation};
 use crate::util::fixed_math::SimFixed;
 use serde_json::{Value, json};
 
@@ -682,6 +682,133 @@ fn retail_spy_plane_photographs_the_target_and_leaves() {
     // Overfly photographs on past the target, silently.
     assert!(revealed(&sim) > at_overfly);
     assert!(!sim.fog.is_cell_revealed(americans, 60, 5));
+}
+
+/// Computer MCV Deploy7398D9 -> House505180 -> Paranoid501640 calls
+/// MakeEnemy4F9F90 even without an ally edge. Its4ADEE0/4ADCD0 bracket
+/// replaces the human SPYP's camera radius with its ordinary Sight=0.
+#[test]
+fn a_computer_mcv_deploy_replaces_the_human_spy_photo_with_normal_sight() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let mut rules = retail.rules;
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(
+        &retail.fixed_art,
+    ));
+    let soundmd = crate::rules::retail_ini_fixture::retail_ini("soundmd.ini").unwrap();
+    rules.bind_type_sound_references(&retail.processed_rules, &SoundRegistry::from_ini(&soundmd));
+    assert!(rules.general.allies_allowed && rules.general.paranoid);
+    assert_eq!(rules.weapon("SpyCameraWeapon").unwrap().damage, 6);
+    let (rules, mut sim, americans) = world(rules);
+    let player = sim.interner.get("Russians").unwrap();
+    for (owner, human) in [(americans, false), (player, true)] {
+        let house = sim.houses.get_mut(&owner).unwrap();
+        // The shared flight fixture omits Country; actual AI MCV Recalc
+        // needs the scenario's explicit country and side attachments.
+        house.set_country_for_test(Some(owner));
+        house.set_is_human_for_test(human);
+        house.set_player_control_for_test(human);
+        house.project_country_mults(&rules, &sim.interner);
+        house.resolve_multiplay_passive(&rules, Some(sim.interner.resolve(owner)));
+    }
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    sim.session.set_current_house_for_test(Some(player));
+    sim.session.game_options_mut_for_test().fog_of_war = true;
+    for (kind, owner, at) in [
+        ("NANRCT", "Russians", (20, 24)),
+        ("NARADR", "Russians", (24, 24)),
+        ("GAPOWR", "Americans", (20, 40)),
+    ] {
+        sim.spawn_object_at_height(kind, owner, at.0, at.1, 0, 0, &rules)
+            .unwrap_or_else(|| panic!("{kind} stands at {at:?}"));
+    }
+    step(&mut sim, &rules);
+    let before: Vec<_> = (0..64_u16)
+        .flat_map(|y| (0..64_u16).map(move |x| (x, y)))
+        .map(|(x, y)| sim.fog.is_cell_visible(player, x, y))
+        .collect();
+    charge_super(&mut sim, player, SPY_PLANE);
+    click(&mut sim, &rules, player, SPY_PLANE, TARGET);
+    let [plane] = spy_planes(&sim)[..] else {
+        panic!("one retail Spy Plane");
+    };
+    assert!(sim.entities().get(plane).unwrap().sight.is_zero());
+    let mut witness = None;
+    for _ in 0..1000 {
+        step(&mut sim, &rules);
+        if sim.fog.sight_is_latched(plane, player) {
+            witness = (0..64_u16)
+                .flat_map(|y| (0..64_u16).map(move |x| (x, y)))
+                .find(|&(x, y)| {
+                    !before[usize::from(y) * 64 + usize::from(x)]
+                        && sim.fog.is_cell_visible(player, x, y)
+                });
+            if witness.is_some() {
+                break;
+            }
+        }
+        assert!(sim.entities().contains(plane), "camera must photograph");
+    }
+    let witness = witness.expect("camera opens cells outside ordinary building sight");
+    assert!(
+        sim.entities()
+            .get(plane)
+            .unwrap()
+            .discovery
+            .discovered_by_current_house(),
+        "native Human callback requires Techno41B"
+    );
+    assert!(!sim.houses[&americans].is_defeated());
+    assert!(!sim.session.computer_slot_has_team());
+    assert!(sim.house_alliances.as_map().is_empty());
+    let yard = rules
+        .object("AMCV")
+        .unwrap()
+        .deploys_into
+        .as_deref()
+        .unwrap();
+    let deploy_facing = rules.object(yard).unwrap().deploy_facing;
+    let mcv = sim
+        .spawn_object_at_height("AMCV", "Americans", 22, 44, deploy_facing, 0, &rules)
+        .expect("computer MCV on a clear site after the photograph");
+    assert!(sim.deploy_mcv(mcv, &rules, None, FrameEffects::default()));
+    assert!(
+        sim.entities()
+            .get(mcv)
+            .is_none_or(|entity| entity.death.is_dying()),
+        "MCV completed UnInit; physical removal waits for frame cleanup"
+    );
+    assert!(sim.entities().values().any(|entity| {
+        entity.owner() == americans
+            && sim.interner.resolve(entity.type_ref()) == yard
+            && !entity.death.is_dying()
+    }));
+    assert!(sim.house_alliances.as_map().is_empty());
+    assert!(
+        !sim.fog.sight_is_latched(plane, player),
+        "no-edge MakeEnemy must release the camera; Sight=0 admits no replacement"
+    );
+    assert!(
+        !sim.fog.is_cell_visible(player, witness.0, witness.1),
+        "the camera-only cell loses current sight at the alliance callback"
+    );
+    assert!(sim.fog.is_cell_revealed(player, witness.0, witness.1));
+    // Keep the ordinary flight, later snapshots and destructor in this chain:
+    // the early bracket release must not leave a cache or double-release it.
+    for _ in 0..3000 {
+        if !sim.entities().contains(plane) {
+            break;
+        }
+        step(&mut sim, &rules);
+    }
+    assert!(
+        !sim.entities().contains(plane),
+        "Spy Plane completes its flight"
+    );
+    assert!(sim.fog.sight_admission(plane, player).is_none());
+    assert!(sim.fog.is_cell_revealed(player, witness.0, witness.1));
 }
 
 /// The Super Weapons option off (`0x00A8B263`) withholds only the

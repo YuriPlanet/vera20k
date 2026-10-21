@@ -1202,14 +1202,10 @@ impl Simulation {
                 .get(&owner)
                 .is_some_and(|house| house.spy_sat_active());
             let (gaps, admitted_gap) = self.prepare_spy_sat_gap_reentry(owner, rules);
-            // RESIDUAL: the other callers of `0x004ADCD0` do not run its
-            // `RevealToAll=` branch. MakeAlly (`0x004F9F4F`) and MakeEnemy
-            // (`0x004FA1E3`), which bracket it with `0x004ADEE0` (no such
-            // branch), run only its allied-Building arm, for the ally edge
-            // they change (`sim::house_diplomacy` records the rest). The
-            // first House update (`0x004F935A`) runs on the first frame;
-            // stock skirmish maps place no such building, which bounds those
-            // samples rather than proving campaign absence.
+            // Live diplomacy uses walk_alliance_sight's full visitor.
+            // This bulk transition still uses its bounded source/gap plan.
+            // The first House update (`0x004F935A`) is not migrated here;
+            // stock skirmish maps place no RevealToAll building at launch.
             // Fill_In_Data's call (`0x00684F89`) skips buildings. ALL01's live
             // SpySat_Boom061FF03C uses action51/577C90, so its represented
             // release/store/reentry path runs here; occupied discovery and
@@ -1574,12 +1570,15 @@ impl Simulation {
             ),
         };
         for &viewer in viewers.iter() {
-            //Each logical plane retains its own cache projection. Native
-            //constructor6F2D96 starts260 at0;70B202 retains it on release.
+            //Each logical plane retains its own cache projection. An
+            //alternate RevealToAll walk leaves260 at the ordinary source's
+            //cached radius, even when this viewer has no ordinary admission.
+            //Constructor6F2D96 starts260 at0;70B202 retains it on release.
             //Only reveal_area's admitted player walk emits native callbacks.
             let radius = self
                 .fog
                 .sight_admission(id, viewer)
+                .or_else(|| self.fog.sight_admission(id, entity.owner()))
                 .map_or(0, |source| source.radius);
             Self::refresh_sight_border(
                 &mut self.fog,
@@ -1827,8 +1826,9 @@ impl Simulation {
     /// at `0x004ADDA6..0x004ADE1C`). The Human arm comes first and takes
     /// every object of a House `HouseClass::IsHumanPlayer @ 0x0050B6F0`
     /// admits (`0x004ADF34`, `0x004ADD27`; in a nonzero game mode, the map's
-    /// player alone); VERA, which keeps a map per House, gives each map's own
-    /// objects that arm. The allied-Building arm then takes a Building of
+    /// player alone). The live walk uses that current-House predicate and41B;
+    /// bulk transitions retain their bounded known-own projection. The
+    /// allied-Building arm then takes a Building of
     /// another House when `AllyReveal=` is set (`Rules+0x17E7`) and that House
     /// counts the map's player an ally (`HouseClass::IsAlliedWith @
     /// 0x004F9A50`, its own mask): the house gate of `MapClass::RevealArea`
@@ -1851,77 +1851,93 @@ impl Simulation {
             )
     }
 
-    /// `owner`'s objects the allied-Building arm takes on `viewer`'s map
-    /// ([`Self::takes_allied_building_arm`]), in registration order.
-    fn allied_building_arm_sources(
-        &self,
-        owner: crate::sim::intern::InternedId,
-        viewer: crate::sim::intern::InternedId,
-        config: &vision::VisionConfig,
-    ) -> Vec<u64> {
-        self.substrate
-            .entities
-            .iter_sorted()
-            .filter(|(_, entity)| {
-                entity.owner() == owner && self.takes_allied_building_arm(entity, viewer, config)
-            })
-            .map(|(id, _)| id)
-            .collect()
+    /// Map4ADEE0 before a live diplomacy write. The matching4ADCD0 walk
+    /// must run even if MakeEnemy finds no ally bit to clear.
+    pub(crate) fn release_alliance_sight(&mut self, context: UninitContext<'_>) {
+        self.walk_alliance_sight(context, true);
     }
 
-    /// `MapClass::ParanoidRevealAll @ 0x004ADEE0`'s allied-Building arm for
-    /// the ally edge `owner` -> `viewer` that MakeEnemy is about to clear,
-    /// with `viewer` as the player whose map the bracket walks: each Building
-    /// of `owner`'s that the arm takes releases its sight on that map
-    /// (`ReReveal(0, arg, 0, 0)`, `0x004ADFB9`), which clears its latch
-    /// (`0x0070B202`).
-    pub(crate) fn release_allied_building_sight(
-        &mut self,
-        owner: crate::sim::intern::InternedId,
-        viewer: crate::sim::intern::InternedId,
-        context: UninitContext<'_>,
-    ) {
-        let config = self.sight_reveal_config(context.rules());
-        for id in self.allied_building_arm_sources(owner, viewer, &config) {
-            self.release_object_sight_for_viewer(id, viewer, &config, context);
-        }
+    /// Map4ADCD0 after diplomacy, including the Human41B arm's ordinary
+    /// Sight admission and cached-radius border. No source state lives here:
+    /// Techno sight and gap event owners retain their own caches/latches.
+    pub(crate) fn admit_alliance_sight(&mut self, context: UninitContext<'_>) {
+        self.walk_alliance_sight(context, false);
     }
 
-    /// `MapClass::ParanoidUnrevealAll @ 0x004ADCD0`'s allied-Building arm for
-    /// the ally edge `owner` -> `viewer` that MakeAlly has just set: each
-    /// Building of `owner`'s that the arm takes opens its sight on `viewer`'s
-    /// map (`UpdateReveal(0, arg, 0, 0)`, `0x004ADDE4`) and refreshes the fog
-    /// border there around its Location, out to its cached radius + 3
-    /// (`0x004ADE1C`).
+    /// Original4ADEE0..4ADFEC /4ADCD0..4ADED5, arguments(0,0) from
+    /// MakeAlly4F9B9A/4F9F4F and MakeEnemy4F9FD8/4FA1E3. Both visit in
+    /// Techno registration order; each source is re-read after callbacks.
+    /// House50B6F0 and41B select the actual current player's Human arm,
+    /// including campaign controlled Houses. Other logical maps retain the
+    /// existing directed allied-Building projection; they do not give an
+    /// AI's own mobile the Human arm. Multiplayer per-client41B histories
+    /// beyond the session's current House remain unrepresented.
     ///
-    /// RESIDUAL: native `UpdateReveal` returns while the object's one latch
-    /// (`+0x250`) is set (`0x0070B0B1..0x0070B0B9`), and sets it before
-    /// `MapClass::RevealArea`'s house gate picks the map (`0x0070B0CB`). A
-    /// Building revealed while `owner` did not count `viewer` an ally (its
-    /// Unlimbo, an owner change) therefore opens nothing here: it opens at
-    /// the next bracket whose release arm clears the latch while the edge
-    /// stands (any later MakeAlly or MakeEnemy, a whole-map transition). VERA
-    /// keeps a latch per map, made only on the maps a reveal's house gate
-    /// admits, and runs only the changed edge's arm, so the latch test alone
-    /// would leave such a Building closed on `viewer`'s map until its next
-    /// Limbo or owner change. VERA opens it here, as native does for a
-    /// Building whose latch MakeEnemy's release cleared. Trigger: an
-    /// alliance made while the ally has Buildings standing that are not open
-    /// on that map (map-placed Buildings at a team launch, `[AI] Paranoid=`,
-    /// ally triggers). Effect: native shows their sight to the new ally only
-    /// from the next bracket, at a launch the next MakeAlly if one follows.
-    /// Frequency: rare in skirmish, whose starts place MCVs.
-    pub(crate) fn admit_allied_building_sight(
-        &mut self,
-        owner: crate::sim::intern::InternedId,
-        viewer: crate::sim::intern::InternedId,
-        context: UninitContext<'_>,
-    ) {
+    /// RESIDUAL: per-viewer admissions still open a newly allied Building
+    /// one bracket earlier than native's shared250 latch (#2415). Native
+    /// ex-ally mobile release gates remain the source owner's residual
+    /// (#2414). Bulk map transitions retain their separately bounded
+    /// projection; this live walk does not certify whole-map/FogOfWar parity.
+    fn walk_alliance_sight(&mut self, context: UninitContext<'_>, release: bool) {
+        let count = self.substrate.entities.techno_registry_len();
+        let viewers: Vec<_> = self.houses.order().to_vec();
         let config = self.sight_reveal_config(context.rules());
-        for id in self.allied_building_arm_sources(owner, viewer, &config) {
-            let heights = self.sight_height_grid(&config);
-            self.update_object_sight_in_view(id, 0, Some(viewer), &config, Some(&heights), context);
-            self.refresh_object_sight_border_on(id, Some(viewer), context);
+        for ordinal in 0..count {
+            let Some(id) = self.substrate.entities.techno_registry_at(ordinal) else {
+                break;
+            };
+            let current = self.session.current_house();
+            for &viewer in &viewers {
+                let Some(entity) = self.substrate.entities.get(id) else {
+                    break;
+                };
+                if !Self::in_ally_bracket_walk(entity) {
+                    break;
+                }
+                let human = Some(viewer) == current && self.house_is_human_player(entity.owner());
+                if human && !entity.discovery.discovered_by_current_house() {
+                    // The Human branch skips everything, including gap.
+                    continue;
+                }
+                let allied = !human && self.takes_allied_building_arm(entity, viewer, &config);
+                if human || allied {
+                    if release {
+                        self.release_object_sight_for_viewer(id, viewer, &config, context);
+                    } else {
+                        // Re-read current XYZ/type/ability through70AF50;
+                        // a camera's Damage radius is never reused as Sight.
+                        let heights = self.sight_height_grid(&config);
+                        self.update_object_sight_in_view(
+                            id,
+                            0,
+                            Some(viewer),
+                            &config,
+                            Some(&heights),
+                            context,
+                        );
+                        self.refresh_object_sight_border_on(id, Some(viewer), context);
+                    }
+                    // The allied-Building arm jumps past virtual418/414.
+                    if allied {
+                        continue;
+                    }
+                } else if !release
+                    && Some(viewer) == current
+                    && entity.category() == EntityCategory::Structure
+                    && self
+                        .object_type(entity.type_ref(), context.rules())
+                        .is_some_and(|object| object.reveal_to_all)
+                {
+                    //4ADE68 has no matching pre-release. Each call counts
+                    //again through the existing alternate source owner.
+                    self.reveal_sight_to_current_house(id, context);
+                    self.refresh_object_sight_border_on(id, Some(viewer), context);
+                    continue;
+                }
+                // Read the type again after sight/discovery. Gap removal
+                //and operational re-admission share the ordinary gap owner.
+                self.refresh_map_callback_gap(id, viewer, !release, context.rules());
+            }
         }
     }
 
@@ -2010,11 +2026,18 @@ impl Simulation {
     /// - A source without its own admission yet (`+0x250` clear) would
     ///   natively store this footprint as its own and leave its owner
     ///   without sight (`0x0070B0BF..0x0070B131`); VERA keeps the owner's
-    ///   cache as it is. No caller reaches it: the opening follows the
-    ///   source's Unlimbo reveal (`0x006F6D27`, ahead of the opening at
-    ///   `0x00440E76`), and the re-admission callback's branch needs a placed
-    ///   building in the playfield.
-    pub(crate) fn reveal_sight_to_current_house(&mut self, stable_id: u64, rules: &RuleSet) {
+    ///   cache as it is. The ordinary opening follows the source's Unlimbo
+    ///   reveal (`0x006F6D27`, ahead of `0x00440E76`). Reentrant placement
+    ///   through the live map visitor has not been shown to preserve that
+    ///   prerequisite; this is a cache-ownership boundary, not an
+    ///   unreachable-path claim. The selected stock camera regression starts
+    ///   with a real ordinary cache and does not exercise this alternate arm.
+    pub(crate) fn reveal_sight_to_current_house(
+        &mut self,
+        stable_id: u64,
+        context: UninitContext<'_>,
+    ) {
+        let rules = context.rules();
         let Some(current) = self.session.current_house() else {
             return;
         };
@@ -2048,7 +2071,7 @@ impl Simulation {
                 false,
                 &config,
                 Some(&height_grid),
-                UninitContext::with_rules(rules),
+                context,
                 Some(current),
             );
         }

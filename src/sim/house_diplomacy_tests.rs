@@ -253,7 +253,7 @@ fn ally_writes_reach_the_remembered_reveal_viewers() {
     assert_eq!(viewers(&mut sim), (alone.clone(), alone.clone()));
     sim.make_ally(ids[1], ids[2], &rules, None, FrameEffects::default(), false);
     assert_eq!(viewers(&mut sim), (with_ally.clone(), with_ally));
-    sim.make_enemy(ids[1], ids[2], &rules, false);
+    sim.make_enemy(ids[1], ids[2], &rules, None, FrameEffects::default(), false);
     assert_eq!(viewers(&mut sim), (alone.clone(), alone));
     sim.reveal_viewers.end();
 }
@@ -281,14 +281,14 @@ fn make_enemy_angers_before_it_breaks_both_sides() {
         &rules,
     );
     let (first, second) = (ids[1], ids[2]);
-    sim.make_enemy(first, second, &rules, false);
+    sim.make_enemy(first, second, &rules, None, FrameEffects::default(), false);
     assert_eq!(allies(&sim, "Computer1"), set(&[]));
     assert_eq!(allies(&sim, "Computer2"), set(&[]));
     assert_eq!(sim.houses[&first].grudge_scores().get(&second), Some(&1));
     assert_eq!(sim.houses[&first].enemy_house(), None);
     assert!(sim.houses[&second].grudge_scores().is_empty());
 
-    sim.make_enemy(first, second, &rules, false);
+    sim.make_enemy(first, second, &rules, None, FrameEffects::default(), false);
     assert_eq!(sim.houses[&first].grudge_scores().get(&second), Some(&2));
     assert_eq!(sim.houses[&first].enemy_house(), Some(second));
 }
@@ -335,7 +335,9 @@ fn initial_scope_allies_keep_targets_and_can_ally_without_a_remaining_enemy() {
             .target(),
         Some(TargetKind::Entity(second))
     );
-    sim.with_object_placement_scope(|sim| sim.make_enemy(ids[0], ids[1], &rules, false));
+    sim.with_object_placement_scope(|sim| {
+        sim.make_enemy(ids[0], ids[1], &rules, None, FrameEffects::default(), false)
+    });
     assert!(allies(&sim, "Computer1").is_empty());
     assert!(allies(&sim, "Computer2").is_empty());
 }
