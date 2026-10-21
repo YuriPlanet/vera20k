@@ -161,7 +161,10 @@ pub(crate) fn can_build(
         if !crate::sim::factory_owners::qualifies(sim, rules, house, obj) {
             return CanBuild::No;
         }
-        if !sim.session.game_options().super_weapons
+        // Ares disabled-shell predicate10021A00..10021A6A bypasses this
+        // skirmish-shell restriction in mode0, before inspecting the Type.
+        if (!crate::rules::ARES_ENABLED || sim.session.game_mode_nonzero())
+            && !sim.session.game_options().super_weapons
             && obj.category == ObjectCategory::Building
             && let Some(super_weapon) = obj.super_weapon.as_deref()
             && !rules.is_build_tech(&obj.id)
