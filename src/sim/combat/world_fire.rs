@@ -182,10 +182,8 @@ fn admit_attacker_fire<'r>(
                 let (rx, ry, sx, sy) = resolve_target_coords(&snap.target, world)?;
                 Some((rx, ry, sx, sy, target.health(), target.type_ref()))
             }),
-        TargetKind::Cell(rx, ry) => {
-            let (trx, try_, tsx, tsy) = cell_center_coords(rx, ry);
-            Some((trx, try_, tsx, tsy, 1i32, snap.type_id))
-        }
+        TargetKind::Cell(..) => resolve_target_coords(&snap.target, world)
+            .map(|(trx, try_, tsx, tsy)| (trx, try_, tsx, tsy, 1i32, snap.type_id)),
     };
 
     let (target_rx, target_ry, target_sub_x, target_sub_y, target_type_ref) = match target_data {
@@ -570,7 +568,7 @@ fn admit_attacker_fire<'r>(
                     })?;
                 (coords, type_ref)
             }
-            TargetKind::Cell(rx, ry) => (cell_center_coords(rx, ry), snap.type_id),
+            TargetKind::Cell(..) => (resolve_target_coords(&snap.target, world)?, snap.type_id),
         }
     } else {
         (

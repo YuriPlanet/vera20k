@@ -455,6 +455,7 @@ mod tests {
                 constructor_reverse: false,
                 inactive: false,
                 paused: false,
+                temporal_paused: false,
             },
         )
     }

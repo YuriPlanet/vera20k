@@ -196,8 +196,9 @@ pub struct ArtEntry {
     /// Animation `StartSound=` sound ID. Takes priority over `Report=`.
     pub start_sound: Option<String>,
     /// Signed building brightness addition (ExtraLight= in art.ini).
-    /// DrawBody 0043D824 adds signed BuildingType+1548 to top-cell brightness;
-    /// buildup 0043D644 omits it. It is separate from NormalZAdjust.
+    /// DrawBody 0043D824 adds signed BuildingType+1548 to top-cell brightness
+    /// for the body and Buildup alike; the gate branch 0043D644 omits it. It
+    /// is separate from NormalZAdjust.
     /// Retail values: GADPSA=350, GAICBM=-100.
     pub extra_light: i32,
     /// BuildingType +0x1702, art parser 004612B4: use the cell ISO Convert.
@@ -2022,33 +2023,6 @@ pub fn object_shp_candidates(
     }
 
     push_shp_pair(&mut candidates, &upper, theater_ext);
-    candidates
-}
-
-/// Generate filename candidates for building make/build-up art.
-pub fn make_shp_candidates(
-    art: Option<&ArtRegistry>,
-    image_id: &str,
-    theater_ext: &str,
-    theater_name: &str,
-) -> Vec<String> {
-    let upper: String = image_id.to_uppercase();
-    let mut candidates: Vec<String> = Vec::with_capacity(6);
-    let use_new_theater: bool = art
-        .map(|registry| registry.should_use_new_theater(&upper))
-        .unwrap_or_else(|| has_hardcoded_new_theater_prefix(&upper));
-
-    if use_new_theater {
-        let subbed: String = apply_theater_letter(&upper, theater_name);
-        push_shp_pair(&mut candidates, &format!("{}MK", subbed), theater_ext);
-
-        let generic: String = apply_generic_letter(&upper);
-        if generic != subbed && generic != upper {
-            push_shp_pair(&mut candidates, &format!("{}MK", generic), theater_ext);
-        }
-    }
-
-    push_shp_pair(&mut candidates, &format!("{}MK", upper), theater_ext);
     candidates
 }
 

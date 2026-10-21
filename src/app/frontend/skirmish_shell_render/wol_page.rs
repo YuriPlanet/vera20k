@@ -346,6 +346,73 @@ pub(crate) fn paint_wol_add_buddy(
     paint
 }
 
+/// The connection verify `0x130` over C2/C9: the SS_CENTER title, then one
+/// owner-draw checkbox (`0x006213A0`) per node captioned with its name. The
+/// mismatch box `0xD0` has the same centred 451x326 rect and covers it
+/// whole, so only the box paints while it is up.
+pub(crate) fn paint_wol_verify(
+    state: &AppState,
+    verify: &crate::ui::wol_verify::WolVerifyDialog,
+    layout: &crate::ui::shell::modal::WolVerifyLayout,
+) -> WolLobbyPaint {
+    if let Some(message) = &verify.mismatch {
+        let pressed = verify
+            .ok
+            .is_pressed(crate::ui::wol_shell::BOX_OK)
+            .then_some(crate::ui::wol_shell::BOX_OK);
+        let (dialog, buttons, labels) = crate::app::frontend::wol_welcome_render::message_box_parts(
+            message,
+            pressed,
+            state.renderer.gpu.config.width as i32,
+            state.renderer.gpu.config.height as i32,
+        );
+        let buttons: Vec<ModalButton> = buttons
+            .into_iter()
+            .map(|(rect, pressed)| ModalButton {
+                rect,
+                pressed,
+                enabled: true,
+            })
+            .collect();
+        return paint_box(state, dialog, &buttons, &labels);
+    }
+    let labels = [caption(
+        state,
+        "GUI:ConnectingToPlayers",
+        layout.title,
+        ShellAlign::H_CENTER,
+        true,
+    )];
+    let mut paint = paint_box(state, layout.dialog, &[], &labels);
+    let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
+        return paint;
+    };
+    let chrome = atlas.control_chrome();
+    for (node, name) in verify.names.iter().enumerate() {
+        let rect = layout.boxes[node];
+        super::controls::paint_control(
+            &mut paint.controls,
+            &chrome,
+            super::controls::ControlPaint::Checkbox {
+                rect,
+                checked: verify.checked[node],
+            },
+            SCALE,
+        );
+        paint.texts.push(shell_text::draw_in_rect_scaled(
+            &state.renderer.bit_font,
+            name,
+            rect_to_text_rect(crate::ui::skirmish_shell::checkbox_text_rect(rect, SCALE)),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            [0.0; 2],
+            POPUP_DEPTHS.text,
+            SCALE.factor(),
+        ));
+    }
+    paint
+}
+
 /// The in-match `0xCF` (state 7) as GPU buffers for the screen-fixed UI
 /// pass: the battlefield keeps drawing under it, and the dialog goes down
 /// after the tooltips and before the cursor.

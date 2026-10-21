@@ -46,7 +46,9 @@
 //!   `SlaveMinerKickFrameDelay` has passed since its mission began and
 //!   ShouldRecallSlaves (`0x006B1020`) answers yes (a computer house always; a
 //!   human's on ore, or with ore within `SlaveMinerShortScan` after the
-//!   delay). State 1 finds the nearest field within `SlaveMinerLongScan` and
+//!   delay). On Area Guard it sets out at once: every visit the kick does
+//!   not take runs FootClass::Mission_AreaGuard, which starts an idle
+//!   manager's hunt (`0x004D6D69..0x004D6D73`). State 1 finds the nearest field within `SlaveMinerLongScan` and
 //!   a cell beside it to deploy on (FindDeployCell `0x006B0300`), state 2
 //!   drives there and deploys (`UnitClass::Deploy`, `deploy_mcv`), state 3
 //!   retries, state 4 waits for the deploy, and state 6 recalls its idle
@@ -64,13 +66,11 @@
 //!   idle slaves and hunts.
 //!
 //! ## Residuals
-//! - Two recall sites have no VERA anchor: FootClass::Mission_Hunt's reset
-//!   when it picks a destination (`0x004D553D..0x004D5547`; VERA's Hunt port
-//!   has no destination step) and FootClass::Mission_AreaGuard's hunt start
-//!   on its guard-area return path (`0x004D6D69..0x004D6D73`, absent with
-//!   that path). Trigger: a Slave Miner on Hunt (an AI's failed Unload
-//!   deploy) or on Area Guard past the Unit kick. Effect: retail resets or
-//!   starts the hunt, VERA does not. Frequency: rare. Downstream: none.
+//! - FootClass::Mission_Hunt's reset when it picks a destination
+//!   (`0x004D553D..0x004D5547`) has no VERA anchor: VERA's Hunt port has no
+//!   destination step. Trigger: a Slave Miner on Hunt (an AI's failed Unload
+//!   deploy). Effect: retail resets the hunt, VERA does not. Frequency: rare.
+//!   Downstream: none.
 //! - The Slave Miner carries a Miner component (`MinerKind::Slave`) as
 //!   VERA's order marker: input issues the Harvest order for it where native
 //!   `UnitClass::What_Action` gives the Harvest action to a

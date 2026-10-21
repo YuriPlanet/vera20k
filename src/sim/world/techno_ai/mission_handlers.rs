@@ -715,10 +715,8 @@ pub(crate) fn dispatch_foot_mission(
         //
         // `UnitClass::Mission_AreaGuard @ 0x00744100` is the Slave Miner's
         // kick (`sim::slave_manager`), whose Rate epilogue draws
-        // `RandomRanged(0, 2)`; anything else runs the Foot body. The Foot
-        // body's own hunt start (`0x004D6D69..0x004D6D73`, on its guard-area
-        // return path) is absent with that path (see
-        // `evaluate_foot_area_guard`).
+        // `RandomRanged(0, 2)`; anything else runs the Foot body, which
+        // starts an idle manager's hunt itself (`evaluate_foot_area_guard`).
         (EntityCategory::Unit, Some(MissionType::AreaGuard)) => {
             match sim.slave_master_mission_kick(
                 id,
@@ -2024,6 +2022,8 @@ const AREA_GUARD_CADENCE_JITTER_MAX: u32 = 5;
 /// follows the idle block. A harvester instead commences Harvest before the
 /// post/leash/scan work (4D6D1A..4D6D68), preserving its target and navigation.
 /// Native controls: `harvest_attack_return --area-guard`.
+/// Every other Foot with a SlaveManager starts its hunt there
+/// (`0x004D6D69..0x004D6D73`, [`Simulation::begin_slave_hunt`]).
 /// After establishing the post, the computer demolition arm queues Sabotage
 /// and returns 1 before leash/Approach/cadence work (4D6DBE..4D6E44), using
 /// the same admission predicate as Guard ([`guard_queues_sabotage`]).
@@ -2079,6 +2079,9 @@ pub(super) fn evaluate_foot_area_guard(
             sim.scenario_rng.next_range_u32_inclusive(1, 10) as i32 + 1,
         );
     }
+    // `0x004D6D69..0x004D6D73`: a SlaveManager (`+0x2D8`) starts its hunt
+    // (StartHunt `0x006B0CC0`, which acts only on an idle manager).
+    sim.begin_slave_hunt(id, rules, ctx.effects);
     let needs_post = sim.substrate.entities.get(id).is_some_and(|entity| {
         entity.archive_target().is_none() && entity.mission.queued() == MissionId::NONE
     });

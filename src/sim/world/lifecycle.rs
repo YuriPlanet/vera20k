@@ -5229,25 +5229,8 @@ impl Simulation {
         {
             return ProjectileTarget::None;
         }
-        match terrain {
-            Some(terrain) => match crate::sim::cell_rect::get_cellclass_fallback(
-                Some(terrain),
-                i32::from(rx),
-                i32::from(ry),
-            ) {
-                crate::sim::cell_rect::CellRef::Real(cell) => ProjectileTarget::Cell {
-                    rx: cell.rx,
-                    ry: cell.ry,
-                },
-                crate::sim::cell_rect::CellRef::Dummy { .. } => ProjectileTarget::DummyCell,
-            },
-            // Preserve the existing terrainless fixture representation. Real
-            // worlds always query MapClass and retain its returned identity.
-            None => ProjectileTarget::Cell {
-                rx: rx as u16,
-                ry: ry as u16,
-            },
-        }
+        // Real worlds query MapClass and retain its returned identity.
+        ProjectileTarget::looked_up_cell(terrain, rx as u16, ry as u16)
     }
 
     /// Anim4's dedicated holder announcement725A16..725A4C, before Anim

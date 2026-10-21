@@ -127,6 +127,8 @@ pub(crate) enum WolServiceRequest {
     JoinChannel { channel: WolChannel, key: String },
     /// API+0x24: leave the current channel.
     LeaveChannel,
+    /// API+0x34 from the logout `0x00785EA0`.
+    Logout,
     /// `0x00789B60`: API+0x1C with the new game channel's record and its
     /// key at `+0xD7`.
     CreateChannel { channel: WolChannel, key: String },
@@ -206,6 +208,25 @@ pub(crate) enum WolServiceEvent {
     UserLeft(String),
     /// OnPart for this user: `[0xB77DD0]` cleared.
     ChannelLeft,
+    /// The private game-options sink `+0x54` (`0x007A8260`): a guest's
+    /// `R` choices, decoded (the observer flag is country -3).
+    PlayerChoices {
+        from: String,
+        slot: crate::skirmish_launch::SkirmishLocalSlot,
+        observer: bool,
+    },
+    /// The public game-options sink `+0x58` (`0x007A7EA0`): a user's
+    /// `A<n>` readiness.
+    PlayerReady {
+        from: String,
+        value: i32,
+    },
+    /// The same sink's `K<n>` map status (`0x005E4C39`): `K1` 1, `K2` 2,
+    /// anything else 0.
+    MapStatus {
+        from: String,
+        status: u8,
+    },
     /// The create result and the channel's users.
     Created(Result<Vec<WolMember>, u32>),
     /// The page sinks: `ansi` for `0x007A9200`, otherwise the UTF-16
@@ -827,6 +848,9 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         | WolServiceEvent::UserJoined(_)
         | WolServiceEvent::UserLeft(_)
         | WolServiceEvent::ChannelLeft
+        | WolServiceEvent::PlayerChoices { .. }
+        | WolServiceEvent::PlayerReady { .. }
+        | WolServiceEvent::MapStatus { .. }
         | WolServiceEvent::Created(_)) => {
             super::lobby::service_event(state, event);
             answer_unavailable(state);

@@ -837,16 +837,9 @@ fn techno_ai_shell(
                 sim.update_building_absorb_anim(id, rules);
                 sim.update_building_storage_anims(id, rules);
             }
-            let airstrike_active = sim.airstrike_tint_active(id);
-            if let Some(entity) = sim.substrate.entities.get_mut(id) {
-                entity.building_art.capture_tint_sample(
-                    sim.session.binary_frame(),
-                    entity.flashing.flashed(),
-                    entity.invulnerability.as_ref(),
-                    &entity.airstrike_tint,
-                    airstrike_active,
-                );
-            }
+            // UpdateAnimation's slot-anim light (`0x00450A47..0x00450A77`).
+            sim.substrate
+                .relight_building_anims(id, sim.session.binary_frame());
             building_missions::update_animation(sim, id, rules);
             // The ready check after UpdateAnimation (`0x0043FE27`).
             building_missions::ready_commence(&sim.session, &mut sim.substrate, id, true);
@@ -885,7 +878,7 @@ fn techno_ai_shell(
                 return;
             }
             // The Gattling block after the Techno AI (`0x0043FE5B..0x0043FF8B`).
-            flash_step(&mut sim.substrate, id);
+            flash_step(&mut sim.substrate, id, sim.session.binary_frame());
             if let Some(rules) = rules {
                 building_missions::gattling_idle(
                     &sim.interner,
@@ -2174,7 +2167,7 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.tick_native_stage(sim.session.binary_frame() as i32);
     }
-    flash_step(&mut sim.substrate, id);
+    flash_step(&mut sim.substrate, id, sim.session.binary_frame());
     let Some(rules) = rules else {
         return;
     };
@@ -2185,11 +2178,19 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
 /// Shared late Techno6FAC31..6FAC79 slot for every represented category.
 /// The countdown owns no RNG or CdTimer. Native redraw virtual+124 is a
 /// presentation dependency; the existing +F0 supplies its phase bits.
-fn flash_step(substrate: &mut ObjectSubstrate, id: u64) {
-    if ai_alive(substrate, id)
-        && let Some(entity) = substrate.entities.get_mut(id)
-    {
-        entity.flashing.tick();
+/// A building whose countdown ran and flipped its flash phase relights its
+/// slot anims (`0x006FAC62..0x006FACC8`).
+fn flash_step(substrate: &mut ObjectSubstrate, id: u64, frame: u32) {
+    if !ai_alive(substrate, id) {
+        return;
+    }
+    let Some(entity) = substrate.entities.get_mut(id) else {
+        return;
+    };
+    let was_flashed = entity.flashing.flashed();
+    let flipped = entity.flashing.tick() && entity.flashing.flashed() != was_flashed;
+    if flipped && entity.category() == EntityCategory::Structure {
+        substrate.relight_building_anims(id, frame);
     }
 }
 

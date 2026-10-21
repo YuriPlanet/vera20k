@@ -201,6 +201,9 @@ fn launch_missile(
             .set_anim_attached_bullet(warning, Some(bullet_id));
     }
     let velocity = crate::sim::projectile::launch::missile_launch_velocity(MISSILE_VELOCITY_SCALE);
+    // The target is the CellClass `Map[NukeTarget]` gives (`0x0044CAB0..0x0044CAB5`,
+    // then CreateBullet at `0x0044CAED`): the shared dummy for a cell off the map.
+    let target = ProjectileTarget::looked_up_cell(sim.resolved_terrain.as_ref(), rx, ry);
     let payload = ProjectilePayload::new(
         weapon.damage,
         sim.interner.intern(&warhead.id),
@@ -216,7 +219,7 @@ fn launch_missile(
         rules,
         native_unique_id,
         id,
-        ProjectileTarget::Cell { rx, ry },
+        target,
         payload,
         MISSILE_SPEED,
         origin,

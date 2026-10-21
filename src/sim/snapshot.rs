@@ -1237,9 +1237,11 @@ use crate::util::save_codec;
 // Warhead extension records; the capability metadata header still starts at 459.
 // 463 -> 464: the retained type registry keeps each InfantryType's
 // ReadSequenceData sound pairs from every reached pass.
-// 464 -> 465: retain Techno's constructor house independently of its current
+// 464 -> 465: an Anim keeps its Temporal erase pause (+0x11A) and no longer
+// keeps a DoubleThick copy; DrawIt reads the type's.
+// 465 -> 466: retain Techno's constructor house independently of its current
 // owner; Building ChangeOwner uses it to decide the computer capture sale.
-const SNAPSHOT_VERSION: u32 = 465;
+const SNAPSHOT_VERSION: u32 = 466;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -10252,7 +10254,8 @@ mod tests {
         // 461 -> 462: the typed Enter and Harvest commands are gone.
         // 462 -> 463: retained armor IDs and Ares warhead extension records.
         // 463 -> 464: retained InfantryType sequence sound pairs.
-        // 464 -> 465: retained Techno constructor house for capture-sale policy.
-        assert_eq!(super::SNAPSHOT_VERSION, 465);
+        // 464 -> 465: the Anim Temporal erase pause.
+        // 465 -> 466: retained Techno constructor house for capture-sale policy.
+        assert_eq!(super::SNAPSHOT_VERSION, 466);
     }
 }

@@ -290,6 +290,12 @@ impl From<WorldCoordinate> for DriveCoord {
     }
 }
 
+/// The most direction words Find_Path's ordinary copy installs
+/// (`0x004D3E82..0x004D3EA1`): AStar returns the whole route, and a Foot
+/// requests the next window when this one runs short, so a long trip adapts
+/// to blockers found on the way.
+pub(crate) const FIND_PATH_WINDOW_WORDS: usize = 24;
+
 /// Foot-owned path replay. Native shifts a 24-dword queue on consumption;
 /// Rust retains the consumed prefix with an explicit cursor. Consumers must
 /// interpret the remaining suffix, not vector emptiness, as the native queue.
@@ -345,7 +351,11 @@ impl FootPathQueue {
 
     /// The queue `FootClass::Find_Path @ 0x004D3920` installs from a found
     /// route (`0x004D393A..0x004D4003`): the directions from `reference`
-    /// through `path` from `first_destination` on, unconsumed.
+    /// through `path` from `first_destination` on, unconsumed. The ordinary
+    /// zero-prefix copy at `0x004D3E82..0x004D3EA1` takes at most
+    /// [`FIND_PATH_WINDOW_WORDS`] words of the whole AStar route; tube jumps
+    /// count as one word. The Vec's end represents a short route's
+    /// terminator without retaining unused native backing words.
     pub(crate) fn install(
         &mut self,
         reference: (u16, u16),
@@ -354,7 +364,11 @@ impl FootPathQueue {
     ) {
         let mut from = (reference.0 as i16, reference.1 as i16);
         self.directions.clear();
-        for &destination in path.iter().skip(first_destination) {
+        for &destination in path
+            .iter()
+            .skip(first_destination)
+            .take(FIND_PATH_WINDOW_WORDS)
+        {
             self.directions.push(direction_from_step(from, destination));
             from = (destination.0 as i16, destination.1 as i16);
         }

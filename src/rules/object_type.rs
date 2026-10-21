@@ -1724,6 +1724,11 @@ pub struct ObjectType {
     /// `CurrentWeaponNumber` unless the type is gattling.
     pub turret_count: i32,
 
+    /// `HasTurretTooltips=` (`TechnoTypeClass+0x806`, ReadBool `0x00712837`,
+    /// ctor 0 @ `0x00711369`). With a positive TurretCount it selects the
+    /// turret formatter of `UnitClass::GetUIName @ 0x00746B20`.
+    pub has_turret_tooltips: bool,
+
     /// `Drainable=` (`TechnoTypeClass+0x5EF`, ReadINI `0x007143B0`).
     pub drainable: bool,
 
@@ -2006,6 +2011,11 @@ pub struct ObjectType {
     /// with **no stock-YR users** (the effect is dormant in stock). Default false.
     /// See [`ObjectType::emits_damage_spark`].
     pub cyborg: bool,
+
+    /// InfantryType `UseOwnName=` (`+0xECA`, ReadBool `0x00524634..0x0052464E`,
+    /// ctor 0 @ `0x005237DC`): an IFV carrying this infantryman names it in
+    /// its turret tooltip (`0x00746BB8`).
+    pub use_own_name: bool,
     /// `DestroyParticleSystems=` CSV list. Parsed for completeness;
     /// no live consumer in retail YR.
     pub destroy_particle_systems: Vec<String>,
@@ -3258,6 +3268,7 @@ impl ObjectType {
                 is_gattling,
             ),
             turret_count: 0,
+            has_turret_tooltips: section.read_bool("HasTurretTooltips", false),
             drainable: section.read_bool("Drainable", false),
             // Constructor defaults UNCHECKED; stock authors write all three
             // on CAOILD only (rulesmd.ini:13949-13951) and comment them out
@@ -3346,6 +3357,8 @@ impl ObjectType {
             stupid_hunt: section.read_bool("StupidHunt", false),
             default_to_guard_area: section.read_bool("DefaultToGuardArea", false),
             cyborg: section.read_bool("Cyborg", false),
+            use_own_name: category == ObjectCategory::Infantry
+                && section.read_bool("UseOwnName", false),
             destroy_particle_systems: Vec::new(),
             damage_smoke_offset: IVec3::from_array(
                 section.read_coord_tokens("DamageSmokeOffset", [0; 3]),

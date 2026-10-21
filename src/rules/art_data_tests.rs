@@ -535,21 +535,6 @@ fn anim_theater_letter_needs_the_native_name_pattern() {
 }
 
 #[test]
-fn test_make_candidates_use_deduped_uppercase_names() {
-    let reg: ArtRegistry = ArtRegistry::empty();
-    let candidates: Vec<String> = make_shp_candidates(Some(&reg), "GAPOWR", "sno", "SNOW");
-    assert_eq!(
-        candidates,
-        vec![
-            "GAPOWRMK.SHP",
-            "GAPOWRMK.SNO",
-            "GGPOWRMK.SHP",
-            "GGPOWRMK.SNO",
-        ]
-    );
-}
-
-#[test]
 fn test_resolve_overlay_image_id_and_candidates() {
     let art_ini: IniFile = IniFile::from_str("[LOBRDG27]\nImage=LOBRDGX\nTheater=yes\n");
     let rules_ini: IniFile = IniFile::from_str("[LOBRDG27]\nImage=LOBRDGY\n");

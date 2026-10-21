@@ -123,8 +123,36 @@ fn emit(
         10000.0,
         [-10000.0, -10000.0, 20000.0, 20000.0],
         DrawState::default(),
+        2,
     );
     out
+}
+
+/// DrawIt's translucency selection (`0x00423061`) reaches slot anims: a
+/// building being erased (Anim `+0x119`) draws them at 50%.
+#[test]
+fn an_erased_buildings_slot_anims_draw_translucent() {
+    let (mut sim, rules, building, atlas) = fixture("CAOILD", false);
+    let anim = sim
+        .entities()
+        .get(building)
+        .unwrap()
+        .building_art
+        .anim_slots()[3]
+        .unwrap();
+    let order = NativeDisplayOrder::new(&[anim]);
+    let alpha = |sim: &Simulation| {
+        emit(sim, &rules, building, &atlas, &order)[0].pieces[0]
+            .instance
+            .alpha
+    };
+    assert_eq!(alpha(&sim), 1.0);
+    sim.anims_mut_for_test()
+        .get_mut(anim)
+        .unwrap()
+        .draw_runtime_mut_for_test()
+        .forced_translucent = true;
+    assert_eq!(alpha(&sim), 0.5);
 }
 
 #[test]

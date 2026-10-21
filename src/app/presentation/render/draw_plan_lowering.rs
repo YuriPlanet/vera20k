@@ -8,16 +8,9 @@ use std::collections::BTreeMap;
 use crate::render::batch::SpriteInstance;
 use crate::render::surface_line::SurfaceDraw;
 use crate::render::tactical_draw_plan::{
-    BlitPolicy, BuildingOwnedPlan, BuildingPiece, BuildingPieceKind, CellDraw, CellDrawKind,
-    DrawId, ObjectDraw, RenderZPolicy, SpriteEncoding, TacticalDrawInput, TacticalDrawPlan,
-    TacticalLayer,
+    BlitPolicy, BuildingOwnedPlan, BuildingPiece, BuildingPieceKind, DrawId, ObjectDraw,
+    RenderZPolicy, SpriteEncoding, TacticalDrawInput, TacticalDrawPlan, TacticalLayer,
 };
-
-/// A cell-pass instance paired with the metadata needed by `YR TacticalClass::Draw`.
-pub(crate) struct PlannedCellInstance {
-    pub draw: CellDraw,
-    pub instance: SpriteInstance,
-}
 
 /// One GPU sprite that remains owned by a single building during lowering.
 ///
@@ -234,41 +227,6 @@ impl NativeDisplayOrder {
             policy,
         })
     }
-}
-
-/// Keep the fixed-cell policy beside each lowered instance. An overlay's
-/// native SHP depth behavior must survive lowering without sorting walls into
-/// a separate batch or moving the still unsupported slope-shape draws.
-pub(crate) fn lower_cell_instances_with_policy(
-    entries: Vec<PlannedCellInstance>,
-) -> (Vec<SpriteInstance>, Vec<RenderZPolicy>) {
-    let mut instances = BTreeMap::new();
-    let inputs = entries.into_iter().map(|entry| {
-        assert!(
-            instances.insert(entry.draw.id, entry.instance).is_none(),
-            "each planned cell instance must have a unique draw id"
-        );
-        TacticalDrawInput::Cell(entry.draw)
-    });
-    let plan = TacticalDrawPlan::build(inputs);
-    let mut ordered = Vec::with_capacity(instances.len());
-    let mut render_z = Vec::with_capacity(instances.len());
-    for draw in plan
-        .cell_pass
-        .terrain
-        .iter()
-        .chain(&plan.cell_pass.smudges)
-        .chain(&plan.cell_pass.overlays)
-        .chain(&plan.cell_pass.primary_objects)
-    {
-        render_z.push(draw.policy.render_z);
-        ordered.push(
-            instances
-                .remove(&draw.id)
-                .expect("plan entry must resolve to its existing GPU instance"),
-        );
-    }
-    (ordered, render_z)
 }
 
 /// Restore the retained Display vector order after the class-specific builders.
@@ -732,14 +690,6 @@ fn append_object_run(runs: &mut Vec<ObjectDrawRun>, next: ObjectDrawRun) {
     }
 }
 
-pub(crate) fn cell_draw_kind(is_wall: bool) -> CellDrawKind {
-    if is_wall {
-        CellDrawKind::WallOverlay
-    } else {
-        CellDrawKind::FlatOverlay
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1153,49 +1103,6 @@ mod tests {
                 "draw: {step}"
             );
         }
-    }
-
-    fn cell(id: DrawId, is_wall: bool) -> PlannedCellInstance {
-        PlannedCellInstance {
-            draw: CellDraw {
-                id,
-                kind: cell_draw_kind(is_wall),
-                policy: BlitPolicy::translucent(SpriteEncoding::Terrain, RenderZPolicy::None),
-            },
-            instance: SpriteInstance {
-                draw_state: DrawState {
-                    fx_flags: id as u32,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        }
-    }
-
-    #[test]
-    fn cell_lowering_preserves_mixed_depth_policies_beside_their_instances() {
-        let mut wall = cell(3, true);
-        wall.draw.policy.render_z = RenderZPolicy::ReadWrite;
-        wall.instance.z_adjust = -62.0;
-        wall.instance.z_gradient = 2;
-        let (lowered, policies) =
-            lower_cell_instances_with_policy(vec![cell(4, false), wall, cell(2, false)]);
-        assert_eq!(
-            policies,
-            [
-                RenderZPolicy::None,
-                RenderZPolicy::ReadWrite,
-                RenderZPolicy::None
-            ]
-        );
-        assert_eq!(
-            lowered
-                .iter()
-                .map(|i| i.draw_state.fx_flags)
-                .collect::<Vec<_>>(),
-            [4, 3, 2]
-        );
-        assert_eq!((lowered[1].z_adjust, lowered[1].z_gradient), (-62.0, 2));
     }
 
     fn marked_piece(target: ObjectTexture, marker: u32) -> ObjectPieceInstance {
