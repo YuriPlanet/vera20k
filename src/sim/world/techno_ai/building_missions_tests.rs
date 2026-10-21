@@ -791,9 +791,10 @@ fn building_dispatch_cadence_matches_the_original() {
 /// The retail inputs the handlers read, through the production reader:
 /// HasStupidGuardMode is cleared on these fourteen types; the unarmed ones
 /// among them are the depots, the airfields, the Tank Bunker and the missile
-/// silo, which take the unarmed status arm, and none is a WeaponsFactory
-/// (ClearBibArea dormant). No building sets `TickTank=`, `Artillary=` or
-/// `SAM=`, and no armed one `SuperWeapon=`, so those arms are dormant.
+/// silo, which take the unarmed status arm and have no turret, and none is a
+/// WeaponsFactory (ClearBibArea dormant). No building sets `TickTank=`,
+/// `Artillary=` or `SAM=`, and no armed one `SuperWeapon=`, so those arms are
+/// dormant.
 #[test]
 fn retail_building_mission_inputs() {
     let Some((rules_ini, _)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
@@ -839,6 +840,11 @@ fn retail_building_mission_inputs() {
             "AMRADR", "GAAIRC", "GADEPT", "NADEPT", "NAMISL", "NATBNK", "YADEPT"
         ])
     );
+    // None has a turret, so UpdateAnimation's turret gate (`0x00451145..
+    // 0x0045116F`) never withholds the ready byte from their idle body.
+    for id in &unarmed {
+        assert!(!rules.object(id).unwrap().has_turret, "{id}");
+    }
     // A garrison's Unload (`0x0044D880`) ends in its plain Guard tail: no
     // retail `CanBeOccupied=` type takes the absorber, factory or gap arm.
     let garrisons: Vec<_> = buildings.iter().filter(|obj| obj.can_be_occupied).collect();
@@ -858,6 +864,325 @@ fn retail_building_mission_inputs() {
         let sam = rules_ini.section_or_empty(id).read_bool("SAM", false);
         assert!(!sam, "{id}");
     }
+}
+
+/// Mission_Guard's status-1 contact arm (`0x00449817..0x00449950`) admits a
+/// UnitRepair, UnitReload or Bunker type (`+0x16A9/+0x16AA/+0x16AB`): a
+/// radio contact in Enter whose GetCoords lie under 64 leptons from the
+/// building's is sent NEED_TO_MOVE, and on ROGER the building queues Repair
+/// and returns 1 with no Scenario draw. A stopped Rhino beside a guarding
+/// retail Tank Bunker and a stopped Harrier over a guarding Airfield both
+/// answer ROGER. The same contact outside Enter leaves the arm to the Rate
+/// tail (`0x004499BB..0x00449A36`), which draws once.
+#[test]
+fn retail_bunker_and_airfield_guard_answer_a_contact_without_a_draw() {
+    let Some((rules_ini, _)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let rules = RuleSet::from_ini(&rules_ini).unwrap();
+    for (kind, unit_kind, owner) in [
+        ("NATBNK", "HTNK", "Russians"),
+        ("GAAIRC", "ORCA", "Americans"),
+    ] {
+        for in_enter in [true, false] {
+            let mut sim = Simulation::new();
+            sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(16));
+            crate::sim::arena_fixture::supply_native_map(&mut sim);
+            let building = sim.spawn_object(kind, owner, 5, 5, 0, &rules).unwrap();
+            let unit = sim
+                .spawn_object(unit_kind, owner, 10, 10, 0, &rules)
+                .unwrap();
+            sim.session.set_binary_frame_for_test(FRAME);
+            set_mission(
+                &mut sim,
+                building,
+                MissionId::from_known(MissionType::Guard),
+                1,
+            );
+            let centre = crate::sim::movement::ground_pose::object_get_coords(
+                sim.substrate.entities.get(building).unwrap(),
+                sim.resolved_terrain.as_ref(),
+            );
+            let mission = if in_enter {
+                MissionType::Enter
+            } else {
+                MissionType::Guard
+            };
+            let entity = sim.substrate.entities.get_mut(unit).unwrap();
+            entity.position.set_rx_for_test((centre.x / 256) as u16);
+            entity.position.set_ry_for_test((centre.y / 256) as u16);
+            entity
+                .position
+                .set_sub_x_for_test(crate::util::fixed_math::SimFixed::from_num(centre.x % 256));
+            entity
+                .position
+                .set_sub_y_for_test(crate::util::fixed_math::SimFixed::from_num(centre.y % 256));
+            entity.position.set_exact_z_leptons_for_test(Some(centre.z));
+            entity.mission.apply_test_fixture(MissionTestFixture {
+                current: MissionId::from_known(mission),
+                suspended: MissionId::NONE,
+                queued: MissionId::NONE,
+                movement_bypass_latch: 0,
+                handler_state: 0,
+                mission_start_frame: FRAME,
+                ai_counter: 0,
+                dispatch_timer: MissionDispatchTimer::from_raw(FRAME as i32, 0),
+            });
+            entity.radio_contacts.insert(building).unwrap();
+            sim.substrate
+                .entities
+                .get_mut(building)
+                .unwrap()
+                .radio_contacts
+                .insert(unit)
+                .unwrap();
+            let mut expected = sim.scenario_rng.clone();
+            let returns = mission_guard(
+                &mut sim,
+                building,
+                &rules,
+                crate::sim::world::ObjectAiCtx::default(),
+            );
+            let queued = sim
+                .substrate
+                .entities
+                .get(building)
+                .unwrap()
+                .mission
+                .queued();
+            if in_enter {
+                assert_eq!(returns, 1, "{kind}");
+                assert_eq!(queued, MissionId::from_known(MissionType::Repair), "{kind}");
+            } else {
+                let jitter = expected.next_range_u32_inclusive(0, 2) as i32;
+                let rate = rules.mission_control.rate_frames(MissionType::Guard);
+                assert_eq!(returns, rate * 3 + jitter, "{kind}");
+                assert_eq!(queued, MissionId::NONE, "{kind}");
+            }
+            assert_eq!(
+                sim.scenario_rng.logical_state(),
+                expected.logical_state(),
+                "{kind} in Enter {in_enter}"
+            );
+        }
+    }
+}
+
+/// Mission_Guard's UnitReload re-queue (`0x00449970..0x004499B5`): a
+/// guarding retail Airfield in radio contact (`0x0065AE30`, any slot filled)
+/// asks its first contact (`0x0065ACB0`, slot 0 only) QUERY_RELOADED and,
+/// unless that is ROGER, NEED_TO_MOVE, and on ROGER queues Repair. A stopped
+/// Harrier refuses QUERY_RELOADED with a Target or short of its Ammo
+/// (`0x00419153`) and answers NEED_TO_MOVE with ROGER (`0x00419274`), so
+/// Repair is queued; reloaded without a Target it answers ROGER and nothing
+/// follows. With slot 0 empty and the Harrier in slot 1 nothing is sent or
+/// queued. Every row falls through to the Rate tail's single draw.
+#[test]
+fn retail_airfield_guard_requeues_repair_for_a_contact_that_needs_reloading() {
+    use crate::sim::radio::{RadioMessage, RadioResponse};
+    let Some((rules_ini, _)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let rules = RuleSet::from_ini(&rules_ini).unwrap();
+    let type_ammo = rules.object("ORCA").unwrap().ammo;
+    assert!(type_ammo > 0);
+    let asked = [
+        (RadioMessage::QueryReloaded, RadioResponse::Negatory),
+        (RadioMessage::NeedToMove, RadioResponse::Roger),
+    ];
+    // Name, the Harrier's slot, its mission, Target, Ammo, what the Airfield
+    // sends it with the answers, and whether Repair is queued.
+    let rows: [(&str, usize, MissionType, bool, i32, &[_], bool); 4] = [
+        (
+            "Target",
+            0,
+            MissionType::Sleep,
+            true,
+            type_ammo,
+            &asked,
+            true,
+        ),
+        (
+            "reloaded",
+            0,
+            MissionType::Sleep,
+            false,
+            type_ammo,
+            &[(RadioMessage::QueryReloaded, RadioResponse::Roger)],
+            false,
+        ),
+        (
+            "short of Ammo",
+            0,
+            MissionType::Guard,
+            false,
+            type_ammo - 1,
+            &asked,
+            true,
+        ),
+        ("slot 1", 1, MissionType::Sleep, true, type_ammo, &[], false),
+    ];
+    for (name, slot, mission, target, ammo, sent, repair) in rows {
+        let mut sim = Simulation::new();
+        sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(16));
+        crate::sim::arena_fixture::supply_native_map(&mut sim);
+        let airfield = sim
+            .spawn_object("GAAIRC", "Americans", 5, 5, 0, &rules)
+            .unwrap();
+        let harrier = sim
+            .spawn_object("ORCA", "Americans", 10, 10, 0, &rules)
+            .unwrap();
+        sim.session.set_binary_frame_for_test(FRAME);
+        set_mission(
+            &mut sim,
+            airfield,
+            MissionId::from_known(MissionType::Guard),
+            1,
+        );
+        let entity = sim.substrate.entities.get_mut(harrier).unwrap();
+        entity.mission.apply_test_fixture(MissionTestFixture {
+            current: MissionId::from_known(mission),
+            suspended: MissionId::NONE,
+            queued: MissionId::NONE,
+            movement_bypass_latch: 0,
+            handler_state: 0,
+            mission_start_frame: FRAME,
+            ai_counter: 0,
+            dispatch_timer: MissionDispatchTimer::from_raw(FRAME as i32, 0),
+        });
+        entity.ammo_mut().unwrap().set_current_for_test(ammo);
+        entity.radio_contacts.insert(airfield).unwrap();
+        sim.substrate
+            .entities
+            .get_mut(airfield)
+            .unwrap()
+            .radio_contacts
+            .set_slot(slot, harrier);
+        if target {
+            aim_at(&mut sim, harrier, airfield);
+        }
+        let mut expected = sim.scenario_rng.clone();
+        let _ = crate::sim::radio::take_transmit_log();
+        let returns = mission_guard(
+            &mut sim,
+            airfield,
+            &rules,
+            crate::sim::world::ObjectAiCtx::default(),
+        );
+        let log: Vec<_> = crate::sim::radio::take_transmit_log()
+            .into_iter()
+            .map(|row| (row.sender_sid, row.msg, row.target_sid, row.reply))
+            .collect();
+        let sent: Vec<_> = sent
+            .iter()
+            .map(|(msg, reply)| (airfield, msg.code(), harrier, Some(reply.code())))
+            .collect();
+        assert_eq!(log, sent, "{name}");
+        let jitter = expected.next_range_u32_inclusive(0, 2) as i32;
+        let rate = rules.mission_control.rate_frames(MissionType::Guard);
+        assert_eq!(returns, rate * 3 + jitter, "{name}");
+        assert_eq!(
+            sim.scenario_rng.logical_state(),
+            expected.logical_state(),
+            "{name}"
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(airfield)
+                .unwrap()
+                .mission
+                .queued(),
+            if repair {
+                MissionId::from_known(MissionType::Repair)
+            } else {
+                MissionId::NONE
+            },
+            "{name}"
+        );
+    }
+}
+
+/// Through the production frame: neither Guard arm writes `+0x6DD`, but
+/// UpdateAnimation sets it on every frame for the retail Airfield's idle body
+/// (`0x00451205..0x00451218`), so Update's after-AI ready check
+/// (`0x0043FF91..0x0043FFAD`) commences the Repair the UnitReload re-queue
+/// queued in the same frame, and Repair runs on the next. Its first contact a
+/// stopped Harrier in Enter, short of Ammo, Repair skips it (`0x0044C89F`) and
+/// queues Guard (`0x0044C955`), which commences the same way: Guard and Repair
+/// alternate every frame, one Scenario draw per Guard visit.
+#[test]
+fn retail_airfield_alternates_guard_and_repair_for_a_stopped_contact_in_enter() {
+    let Some((rules_ini, _)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let rules = RuleSet::from_ini(&rules_ini).unwrap();
+    let mut sim = Simulation::new();
+    sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(16));
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
+    let airfield = sim
+        .spawn_object("GAAIRC", "Americans", 5, 5, 0, &rules)
+        .unwrap();
+    let harrier = sim
+        .spawn_object("ORCA", "Americans", 10, 10, 0, &rules)
+        .unwrap();
+    for _ in 0..5 {
+        sim.advance_tick(&[], Some(&rules), None, None, 67);
+    }
+    let now = sim.session.binary_frame();
+    let entity = sim.substrate.entities.get_mut(harrier).unwrap();
+    // Its own handler is held off.
+    entity.mission.apply_test_fixture(MissionTestFixture {
+        current: MissionId::from_known(MissionType::Enter),
+        suspended: MissionId::NONE,
+        queued: MissionId::NONE,
+        movement_bypass_latch: 0,
+        handler_state: 0,
+        mission_start_frame: now,
+        ai_counter: 0,
+        dispatch_timer: MissionDispatchTimer::from_raw(now as i32, 100_000),
+    });
+    entity.ammo_mut().unwrap().set_current_for_test(0);
+    entity.radio_contacts.insert(airfield).unwrap();
+    sim.substrate
+        .entities
+        .get_mut(airfield)
+        .unwrap()
+        .radio_contacts
+        .insert(harrier)
+        .unwrap();
+    let mut expected = sim.scenario_rng.clone();
+    let mut visits = Vec::new();
+    for _ in 0..200 {
+        let now = sim.session.binary_frame();
+        let building = sim.substrate.entities.get(airfield).unwrap();
+        let visit = building
+            .mission_handler_due(now)
+            .then(|| building.mission.current().known())
+            .flatten();
+        if visit == Some(MissionType::Guard) {
+            expected.next_range_u32_inclusive(0, 2);
+        }
+        if visit.is_some() || !visits.is_empty() {
+            visits.push(visit);
+        }
+        sim.advance_tick(&[], Some(&rules), None, None, 67);
+        assert_eq!(
+            sim.scenario_rng.logical_state(),
+            expected.logical_state(),
+            "frame {now}"
+        );
+        if visits.len() == 7 {
+            break;
+        }
+    }
+    let (guard, repair) = (Some(MissionType::Guard), Some(MissionType::Repair));
+    assert_eq!(visits, [guard, repair, guard, repair, guard, repair, guard]);
+    let building = sim.substrate.entities.get(airfield).unwrap();
+    assert_eq!(building.mission.current().known(), repair);
+    let entity = sim.substrate.entities.get(harrier).unwrap();
+    assert_eq!(entity.mission.current().known(), Some(MissionType::Enter));
+    assert!(building.radio_contacts.contains(harrier));
 }
 
 /// Retail Dustbowl with a `kind` base defence of `owner` at the returned cell
