@@ -192,6 +192,23 @@ impl SimRuntime {
 
 #[cfg(any(test, feature = "test-support"))]
 impl SimRuntime {
+    /// Call the existing command receiver with this runtime's bound resources.
+    /// Component fixtures can exercise an AI receiver without originating a
+    /// player event; this deliberately bypasses EventClass queue admission.
+    pub fn apply_command_for_test(
+        &mut self,
+        owner: &str,
+        command: &crate::sim::command::Command,
+    ) -> bool {
+        self.simulation.apply_command_with_overlays(
+            owner,
+            command,
+            &self.resources.rules,
+            Some(&self.resources.overlay_registry),
+            crate::sim::world::FrameEffects::default(),
+        )
+    }
+
     /// Replace a same-content restored simulation in place. Resource ownership
     /// never changes and callers must already have a running match.
     pub fn replace_simulation(&mut self, simulation: Simulation) {

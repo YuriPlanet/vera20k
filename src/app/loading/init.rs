@@ -362,10 +362,10 @@ mod map_wall_owner_candidate_tests {
             Some(neutral),
             "native47D210 measures Building→Cell without a Building-target foundation discount"
         );
-        // Delivered Computer PRODUCE is admitted by native Event4C7130 /
-        // House4FA350 without a Human flag. This is a supplied normal event,
-        // not a claim that autonomous AI selects this wall and site.
-        use crate::sim::command::{Command, CommandEnvelope};
+        // Exercise the existing production receivers for this synthetic AI
+        // setup. Execute_DoList64C4FB does not admit player events from this
+        // computer House; keep its AI flags and the wall-ownership assertions.
+        use crate::sim::command::Command;
         use crate::sim::world::{FrameEffects, TickLane};
         let wall_type = scene.runtime.simulation.intern("GAWALL");
         let rules = &scene.runtime.resources.rules;
@@ -375,21 +375,17 @@ mod map_wall_owner_candidate_tests {
         let cost = scene
             .sim()
             .cost_of(computer, rules.object("GAWALL").unwrap(), rules);
+        let computer_name = scene.sim().interner().resolve(computer).to_owned();
+        assert!(scene.runtime.apply_command_for_test(
+            &computer_name,
+            &Command::QueueProduction { type_id: wall_type },
+        ));
         let mut ready = None;
         for step in 0..4096 {
-            let commands = if step == 0 {
-                vec![CommandEnvelope::new(
-                    computer,
-                    scene.sim().session().tick(),
-                    Command::QueueProduction { type_id: wall_type },
-                )]
-            } else {
-                Vec::new()
-            };
             scene
                 .runtime
                 .advance_frame(
-                    &commands,
+                    &[],
                     crate::app::types::SIM_TICK_MS,
                     TickLane::Ordinary,
                     FrameEffects::default(),
@@ -418,19 +414,18 @@ mod map_wall_owner_candidate_tests {
             scene.sim().houses()[&computer].economy().spent_credits(),
             spent_before + cost
         );
-        let command = CommandEnvelope::new(
-            computer,
-            scene.sim().session().tick(),
-            Command::PlaceReadyBuilding {
+        assert!(!scene.runtime.apply_command_for_test(
+            &computer_name,
+            &Command::PlaceReadyBuilding {
                 type_id: wall_type,
                 rx: 90,
                 ry: 44,
             },
-        );
+        ));
         scene
             .runtime
             .advance_frame(
-                &[command],
+                &[],
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
                 FrameEffects::default(),
@@ -455,18 +450,17 @@ mod map_wall_owner_candidate_tests {
             0x10,
             "refusal keeps damaged material"
         );
-        let command = CommandEnvelope::new(
-            computer,
-            scene.sim().session().tick(),
-            Command::CancelProductionByType {
+        assert!(scene.runtime.apply_command_for_test(
+            &computer_name,
+            &Command::CancelProductionByType {
                 type_id: wall_type,
                 all: false,
             },
-        );
+        ));
         scene
             .runtime
             .advance_frame(
-                &[command],
+                &[],
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
                 FrameEffects::default(),
