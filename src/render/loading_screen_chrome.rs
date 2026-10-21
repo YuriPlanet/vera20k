@@ -231,7 +231,17 @@ pub struct LoadingScreenCompositionAtlasInput<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct LoadingScreenArtInput<'a> {
     pub variant: Option<LoadingArtVariant>,
-    pub background: Option<(&'a str, &'a str)>,
+    pub background: Option<LoadingCountryBackground<'a>>,
+}
+
+/// Late Country SHP with the PAL actually resolved before Full_Init's second
+/// Country pass. None palette denotes an explicitly cleared PAL, not fallback
+/// to a stock country's assets. Decoding remains with this module's owner.
+#[derive(Debug, Clone, Copy)]
+pub struct LoadingCountryBackground<'a> {
+    pub name: &'a str,
+    pub palette: Option<&'a Palette>,
+    pub palette_name: &'a str,
 }
 
 impl From<Option<LoadingArtVariant>> for LoadingScreenArtInput<'_> {
@@ -292,13 +302,46 @@ struct RenderedLoadingEntry {
     rgba: Vec<u8>,
 }
 
-/// Build the native loading atlas with optional selected-map preview/marker
-/// layers.
-///
-/// A stock variant requires its background; a country outside the stock
-/// presentation domain has no background layer. Progress is mandatory. Invalid preview input,
-/// missing `mmpb.shp`, or an unavailable color variant only removes optional
-/// layers.
+/// Resolve the one background layer before atlas packing. Explicit Country
+/// input already owns its early palette; only the stock branch loads one here.
+fn render_loading_background(
+    assets: &AssetManager,
+    art: LoadingScreenArtInput<'_>,
+    width: LoadingScreenWidth,
+) -> Option<Option<RenderedLoadingEntry>> {
+    if let Some(background) = art.background {
+        // Some(None) is a deliberately omitted layer. None is a failure to
+        // decode required art; keep that existing distinction for the atlas.
+        if background.name.is_empty() || background.palette.is_none() {
+            Some(None)
+        } else {
+            Some(Some(mandatory_shp(
+                assets,
+                background.name,
+                background.palette?,
+                0,
+                background.palette_name,
+            )?))
+        }
+    } else if let Some(variant) = art.variant {
+        let manifest = variant.manifest();
+        let name = manifest.background_asset(width);
+        let palette = load_named_ui_palette(assets, manifest.palette_name)?;
+        Some(Some(mandatory_shp(
+            assets,
+            &name,
+            &palette,
+            0,
+            manifest.palette_name,
+        )?))
+    } else {
+        Some(None)
+    }
+}
+
+/// Build the native loading atlas with optional selected-map preview/markers.
+/// A stock background and progress are mandatory; invalid optional preview or
+/// marker input removes only those layers. Explicit empty Country art stays empty.
 pub fn build_loading_screen_atlas_with_composition<'a>(
     gpu: &GpuContext,
     batch: &BatchRenderer,
@@ -311,28 +354,7 @@ pub fn build_loading_screen_atlas_with_composition<'a>(
 ) -> Option<LoadingScreenAtlas> {
     let art = art.into();
     let variant = art.variant;
-    let background = if let Some((name, palette_name)) = art.background {
-        // An explicitly cleared Country field never selects stock art.
-        if name.is_empty() || palette_name.is_empty() {
-            None
-        } else {
-            let palette = load_named_ui_palette(assets, palette_name)?;
-            Some(mandatory_shp(assets, name, &palette, 0, palette_name)?)
-        }
-    } else if let Some(variant) = variant {
-        let manifest = variant.manifest();
-        let name = manifest.background_asset(width);
-        let palette = load_named_ui_palette(assets, manifest.palette_name)?;
-        Some(mandatory_shp(
-            assets,
-            &name,
-            &palette,
-            0,
-            manifest.palette_name,
-        )?)
-    } else {
-        None
-    };
+    let background = render_loading_background(assets, art, width)?;
     let background_label = background.as_ref().map(|entry| entry.label.clone());
     // gamemd draws the Skirmish meter and the map-preview house-colour markers through
     // an assigned house's ColorScheme convert: `ProgressMeterClass__DrawFill @ 0x00643486`
@@ -677,7 +699,7 @@ fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<RenderedLo
 /// Loading-screen palettes come from ConvertClass__BuildFromPaletteFile
 /// `0x0072ADE0` and the meter base from Init_Game's TEMPERAT.PAL loop
 /// (`0x0052BC6A..0x0052BCB9`); both convert like every other palette load.
-fn load_named_ui_palette(assets: &AssetManager, name: &str) -> Option<Palette> {
+pub(crate) fn load_named_ui_palette(assets: &AssetManager, name: &str) -> Option<Palette> {
     let Some(bytes) = assets.get_ref(name) else {
         log::warn!("Missing loading palette {name}");
         return None;
@@ -843,6 +865,75 @@ mod tests {
         render_shp_entry,
     };
     use crate::assets::pal_file::{Color, Palette};
+
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_country_loading_background_consumes_frozen_palette_and_late_shape() {
+        let Some((_, mut retail)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        assert!(retail.register_loading_archives().unwrap());
+        let name = LoadingArtVariant::Americans
+            .manifest()
+            .background_asset(LoadingScreenWidth::W800);
+        let dir =
+            crate::map::source::test_support::TestDirectory::new("ares-country-loading-render");
+        dir.write(&name, retail.get_ref(&name).unwrap());
+        let mut red = [0; 768];
+        let mut green = [0; 768];
+        for index in 0..256 {
+            red[index * 3] = 63;
+            green[index * 3 + 1] = 63;
+        }
+        dir.write("early.pal", &red);
+        dir.write("late.pal", &green);
+        let assets =
+            crate::assets::asset_manager::AssetManager::from_loose_root_for_test(dir.path());
+        let frozen = super::load_named_ui_palette(&assets, "early.pal").unwrap();
+        let entry = super::render_loading_background(
+            &assets,
+            super::LoadingScreenArtInput {
+                variant: Some(LoadingArtVariant::Arabs),
+                background: Some(super::LoadingCountryBackground {
+                    name: &name,
+                    palette: Some(&frozen),
+                    palette_name: "late.pal",
+                }),
+            },
+            LoadingScreenWidth::W800,
+        )
+        .unwrap()
+        .unwrap();
+        let opaque: Vec<_> = entry
+            .rgba
+            .chunks_exact(4)
+            .filter(|pixel| pixel[3] != 0)
+            .collect();
+        assert!(!opaque.is_empty());
+        assert!(
+            opaque
+                .iter()
+                .all(|pixel| *pixel == [252u8, 0, 0, 255].as_slice()),
+            "late palette name cannot trigger a new read"
+        );
+        assert!(
+            super::render_loading_background(
+                &assets,
+                super::LoadingScreenArtInput {
+                    variant: Some(LoadingArtVariant::Americans),
+                    background: Some(super::LoadingCountryBackground {
+                        name: &name,
+                        palette: None,
+                        palette_name: ""
+                    }),
+                },
+                LoadingScreenWidth::W800,
+            )
+            .unwrap()
+            .is_none(),
+            "an explicitly cleared Country PAL cannot fall back to stock art"
+        );
+    }
 
     #[test]
     fn first_campaign_art_decodes_through_the_shared_loading_palette_and_shp_path() {

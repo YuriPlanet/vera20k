@@ -12,6 +12,21 @@ struct SpawnSeedClock {
     seed: Option<u32>,
 }
 
+#[cfg(feature = "ares")]
+pub(crate) fn prepare_external_skirmish_countries(
+    assets: &mut crate::app::process_assets::ProcessAssets,
+    session: &crate::skirmish_launch::SkirmishLaunchSession,
+) {
+    // External admission bypasses PrepareSession52E11E/123. Reuse only
+    // Countries allocation/body #1: cached shell settings would overwrite the
+    // spawn and would consume the unrelated PortPool Main RNG draw.
+    assets.read_multiplayer_country(
+        &crate::rules::ini_parser::IniFile::empty(),
+        i32::from(session.local_slot().country.raw_index()),
+    );
+    assets.refresh_multiplayer_country_bodies();
+}
+
 impl MatchSeedClock for SpawnSeedClock {
     fn low_u32(&mut self) -> u32 {
         self.seed
@@ -62,6 +77,8 @@ impl App {
         let mut clock = SpawnSeedClock { seed: request.seed };
         match request.game {
             SpawnGame::Skirmish(session) => {
+                #[cfg(feature = "ares")]
+                prepare_external_skirmish_countries(&mut state.process_assets, &session);
                 log::info!(
                     "CnCNet offline skirmish: scenario={:?}, players={}, seed={:?}",
                     session.selected_map_file,

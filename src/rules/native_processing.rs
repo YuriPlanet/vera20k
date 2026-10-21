@@ -2246,6 +2246,31 @@ impl Default for NativeRulesRegistryState {
 }
 
 impl NativeRulesRegistryState {
+    /// Read one presentation HSV from the retained paired Colors registry.
+    /// Native66D3A0 appends kind1 then kind53 for each entry; Ares loading
+    /// stores a kind1 ordinal. Negative indices resume the stock side branch.
+    /// The process owner exposes the value, never the mutable/raw registry.
+    #[cfg(feature = "ares")]
+    pub(crate) fn loading_text_hsv(&self, index: i32, side: i32) -> Option<[u8; 3]> {
+        let (name, value) = if let Ok(index) = usize::try_from(index) {
+            // This representation is owned by allocate_colors; both native
+            // variants share one HSV. No final RuleSet list participates.
+            self.colors.get(index / 2)?
+        } else {
+            let wanted = if side == 0 {
+                "AlliedLoad"
+            } else {
+                "SovietLoad"
+            };
+            self.colors
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(wanted))?
+        };
+        let mut section = IniSection::new("Colors".into());
+        section.set(name, value);
+        Some(crate::rules::color_scheme::read_scheme_hsv(&section, name))
+    }
+
     /// Real non-RMG Full_Init686B65 calls ClearClasses6851F0, whose Ares
     /// ScenarioClear10004EF1/10004EF7 reconstructs RulesExt1002A670. This is
     /// separate from Type deletion6686C0, which retains the extension below.
