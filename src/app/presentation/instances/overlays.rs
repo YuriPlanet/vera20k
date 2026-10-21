@@ -511,7 +511,10 @@ fn anim_instance_alpha(
     .unwrap_or(0.0)
 }
 
-fn anim_instance_alpha_with_flags(
+/// `AnimClass::DrawIt`'s translucency selection (`0x00423061`) as a source
+/// alpha, or `None` where it skips the draw. Free anims and building slot
+/// anims both draw through it.
+pub(super) fn anim_instance_alpha_with_flags(
     config: Option<&AnimTypeRuntimeConfig>,
     base_flags: u32,
     current_frame: i32,
@@ -523,7 +526,7 @@ fn anim_instance_alpha_with_flags(
         crate::sim::anim_class::AnimTranslucencyInput {
             base_flags,
             forced_translucent: draw_runtime.forced_translucent,
-            forced_uses_75: draw_runtime.forced_uses_75,
+            double_thick: config.is_some_and(|value| value.double_thick),
             translucency_detail_level: config.map_or(0, |value| value.translucency_detail_level),
             // Draw-time detail is presentation state and does not enter simulation.
             game_detail_level,
@@ -539,7 +542,7 @@ fn anim_instance_alpha_with_flags(
         .then(|| anim_translucency_source_alpha(result.flags))
 }
 
-fn presentation_anim_frame_count(
+pub(super) fn presentation_anim_frame_count(
     frame_counts: &HashMap<String, u16>,
     type_name: &str,
 ) -> Option<u16> {

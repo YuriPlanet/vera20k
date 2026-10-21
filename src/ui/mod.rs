@@ -29,6 +29,7 @@ pub(crate) mod wol_buddy;
 pub(crate) mod wol_lobby;
 pub(crate) mod wol_options;
 pub(crate) mod wol_page;
+pub(crate) mod wol_verify;
 pub(crate) mod wol_my_info;
 pub(crate) mod wol_persona;
 pub mod network_options;

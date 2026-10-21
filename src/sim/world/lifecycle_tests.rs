@@ -2409,6 +2409,7 @@ fn insert_anim(sim: &mut Simulation, stable_id: u64, inactive: bool) {
             constructor_reverse: false,
             inactive,
             paused: false,
+            temporal_paused: false,
         },
     );
     assert!(sim.substrate.anims.insert(anim).is_none());

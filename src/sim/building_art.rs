@@ -681,6 +681,11 @@ impl Simulation {
         if !enabled && object.powered && self.building_anim_power_flags(id, slot, rules).powered {
             self.substrate.anims.get_mut(new_id)?.pause();
         }
+        // 0x00451B17..0x00451B25: a building being erased (`vt+0x1D4`,
+        // Techno `+0x270`) freezes the new anim.
+        if self.substrate.entities.get(id)?.is_warped_out() {
+            self.substrate.anims.get_mut(new_id)?.temporal_pause();
+        }
         Some(new_id)
     }
 

@@ -1417,7 +1417,7 @@ pub(crate) fn build_building_anim_instances(
         // Preserve the existing slot material selector. The parent's
         // lifecycle/viewport/body visibility is not this Anim's admission;
         // its own retained Display member and hidden byte decide that.
-        let material = DrawState::for_entity(
+        let material = DrawState::for_building_slot_anims(
             building,
             sim.session().binary_frame(),
             super::units::house_color_to_remap_row(house_color),
@@ -1461,6 +1461,11 @@ pub(crate) fn build_building_anim_instances(
             axis.world_height,
             viewport,
             draw_state,
+            state
+                .match_state
+                .match_presentation
+                .in_game_options
+                .detail_level as i32,
         );
     }
 }
@@ -1506,6 +1511,7 @@ fn emit_building_anims(
     world_height: f32,
     viewport: [f32; 4],
     draw_state: DrawState,
+    detail_level: i32,
 ) {
     let rules_image: String = rules
         .and_then(|r| r.object(building_type))
@@ -1538,6 +1544,24 @@ fn emit_building_anims(
         if !runtime_config.art_body_read {
             continue;
         }
+        // DrawIt's translucency selection (`0x00423061`): a building being
+        // erased draws its slot anims at 50%, or 75% for `DoubleThick=`.
+        let Some(alpha) = super::overlays::anim_instance_alpha_with_flags(
+            Some(runtime_config),
+            instance.draw_flags(),
+            instance.runtime().current_frame,
+            i32::from(
+                super::overlays::presentation_anim_frame_count(
+                    &atlas.active_anim_frame_counts,
+                    anim_name,
+                )
+                .unwrap_or(0),
+            ),
+            detail_level,
+            instance.draw_runtime(),
+        ) else {
+            continue;
+        };
         // Anim+AC is relative to this instance's current type Start. Replacement
         // copies only AC; its timer/loop state remains the new constructor's.
         let Ok(frame) = u16::try_from(
@@ -1648,7 +1672,7 @@ fn emit_building_anims(
                     depth: anim_depth,
                     tint: anim_tint,
                     palette_light,
-                    alpha: 1.0,
+                    alpha,
                     draw_state,
                     // The anim's YDrawOffset is baked into the atlas offset, so it
                     // also rides the Z term (native `YDrawOffset + ZAdjust - 2`).

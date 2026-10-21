@@ -197,7 +197,10 @@ pub fn anim_draw_detail_visible(input: AnimDrawDetailInput) -> bool {
 pub struct AnimTranslucencyInput {
     pub base_flags: u32,
     pub forced_translucent: bool,
-    pub forced_uses_75: bool,
+    /// Type `+0x368`, art.ini `DoubleThick=` (`AnimTypeClass::ReadINI @
+    /// 0x00427D00`), read only by the `+0x119` arm: `OR EBX,0x6` when set,
+    /// `OR EBX,0x4` when clear.
+    pub double_thick: bool,
     pub translucency_detail_level: i32,
     pub game_detail_level: i32,
     pub translucent_ramp: bool,
@@ -227,9 +230,9 @@ fn translucency_flag(level: i32) -> u32 {
 /// `AnimClass__DrawIt` @ 0x00423061: preserve native 25/50/75 flag values.
 pub fn anim_translucency_selection(input: AnimTranslucencyInput) -> AnimTranslucencyResult {
     let mut flags = input.base_flags;
+    // `0x00423061..0x0042307A` ORs the `+0x119` bits and falls through.
     if input.forced_translucent {
-        flags |= if input.forced_uses_75 { 6 } else { 4 };
-        return AnimTranslucencyResult { draw: true, flags };
+        flags |= if input.double_thick { 6 } else { 4 };
     }
     if input.translucency_detail_level > input.game_detail_level {
         return AnimTranslucencyResult { draw: true, flags };
@@ -283,6 +286,12 @@ pub struct AnimRuntime {
     /// Anim+19E, pause/resume425260/425270. The absolute frame timer keeps running.
     #[serde(default)]
     pub paused: bool,
+    /// Anim+11A: a building's Temporal erase freezes its slot anims
+    /// ([`AnimObject::set_temporal_erase`], [`AnimObject::temporal_pause`]).
+    /// AI stops on it just as on +19E (`0x004244A9`); the frame timer keeps
+    /// running.
+    #[serde(default)]
+    pub temporal_paused: bool,
 }
 
 /// Per-instance `AnimClass::DrawIt` bytes that are independent of the art
@@ -296,18 +305,9 @@ pub struct AnimDrawRuntime {
     pub special_hidden: bool,
     /// AnimClass `+0x178`: ramp/age input used by translucency selection.
     pub translucency_ramp: u8,
-    /// AnimClass `+0x119`: force the type-selected 50/75% draw family.
+    /// AnimClass `+0x119`: draw at 50%, or 75% for a `DoubleThick=` type
+    /// (`AnimClass::DrawIt` reads type `+0x368` at `0x0042306B`).
     pub forced_translucent: bool,
-    /// Type `+0x368` = art.ini `DoubleThick=`, consulted only inside the
-    /// `+0x119` forced-translucency arm: `AnimClass::DrawIt` reads
-    /// `0x0042306B MOV CL,[EAX+0x368]` and takes `OR EBX,0x6` when set,
-    /// `OR EBX,0x4` when clear. `AnimTypeClass::ReadINI @ 0x00427D00` stores
-    /// `DoubleThick=` at `param_1[0xda]` (= byte offset `0x368`), which closes
-    /// the art-key mapping this comment previously left open. It stays a
-    /// producer-supplied instance byte rather than a type read because nothing
-    /// in this engine sets `+0x119` yet — the first producer that does should
-    /// feed it from `AnimTypeRuntimeConfig::double_thick`.
-    pub forced_uses_75: bool,
 }
 
 /// Retained Anim instance inputs to Display, independent of vector membership.
@@ -508,6 +508,24 @@ impl AnimObject {
     /// Anim resume (`0x00425270`).
     pub(crate) fn resume(&mut self) {
         self.runtime.paused = false;
+    }
+
+    /// A building's Temporal erase on one slot anim: `0x004521C0` freezes it
+    /// (+11A) and draws it translucent (+119); `0x00452210` clears both.
+    ///
+    /// RESIDUAL: the erase also saves the frame (+11C) and the release sets
+    /// +11B, which AI (`0x00423C03..0x00423C1D`) clears once the frame comes
+    /// back round to the saved one. Nothing else reads either, so neither is
+    /// kept.
+    pub(crate) fn set_temporal_erase(&mut self, erased: bool) {
+        self.runtime.temporal_paused = erased;
+        self.draw_runtime.forced_translucent = erased;
+    }
+
+    /// `0x00451B25`: a slot anim created while its building is being erased
+    /// starts frozen (+11A), but opaque.
+    pub(crate) fn temporal_pause(&mut self) {
+        self.runtime.temporal_paused = true;
     }
 
     /// A building writes the anim's current frame: a slot successor keeps
@@ -1548,6 +1566,7 @@ impl Simulation {
                 constructor_reverse: descriptor.reverse,
                 inactive: false,
                 paused: false,
+                temporal_paused: false,
             },
             draw_runtime: descriptor.draw_runtime,
             use_cell_drawer: descriptor.use_cell_drawer,
@@ -1898,8 +1917,9 @@ impl Simulation {
             let Some(anim) = self.substrate.anims.get_mut(id) else {
                 return false;
             };
-            //42449B: power pause follows first-AI/delay gates and precedes timer advance.
-            if anim.runtime.paused {
+            //42449B: power pause follows first-AI/delay gates and precedes timer advance;
+            //4244A9: the Temporal erase pause (+11A) right after it.
+            if anim.runtime.paused || anim.runtime.temporal_paused {
                 return false;
             }
             if anim.runtime.rate_reload == 0 {
@@ -3654,6 +3674,33 @@ mod long_tail_contract_tests {
 
     /// `0x0042319A..0x004231BC`: only an exact `Translucency=` 25, 50 or 75
     /// selects a stage; any other value draws without one.
+    /// `0x0042306B`: the `+0x119` arm ORs 75% for a `DoubleThick=` type,
+    /// else 50%, and falls through to the type's own arms (`0x0042307D`).
+    #[test]
+    fn forced_translucency_reads_double_thick_and_falls_through() {
+        let input = |double_thick, explicit_translucency, instance_ramp| AnimTranslucencyInput {
+            base_flags: 0,
+            forced_translucent: true,
+            double_thick,
+            translucency_detail_level: 0,
+            game_detail_level: 2,
+            translucent_ramp: false,
+            current_frame: 0,
+            end_frame: 10,
+            explicit_translucency,
+            instance_ramp,
+        };
+        for (double_thick, explicit, ramp, expected) in [
+            (false, 0, 0, (true, 4)),
+            (true, 0, 0, (true, 6)),
+            (false, 25, 0, (true, 6)),
+            (false, 0, 16, (false, 4)),
+        ] {
+            let result = anim_translucency_selection(input(double_thick, explicit, ramp));
+            assert_eq!((result.draw, result.flags), expected);
+        }
+    }
+
     #[test]
     fn only_exact_fixed_translucency_values_select_a_stage() {
         for (explicit_translucency, flags) in [
@@ -3670,7 +3717,7 @@ mod long_tail_contract_tests {
                 anim_translucency_selection(AnimTranslucencyInput {
                     base_flags: 0,
                     forced_translucent: false,
-                    forced_uses_75: false,
+                    double_thick: false,
                     translucency_detail_level: 0,
                     game_detail_level: 2,
                     translucent_ramp: false,
@@ -4764,7 +4811,6 @@ mod tests {
             special_hidden: true,
             translucency_ramp: 6,
             forced_translucent: true,
-            forced_uses_75: true,
         };
         descriptor.use_cell_drawer = true;
         descriptor.terrain_attached = true;

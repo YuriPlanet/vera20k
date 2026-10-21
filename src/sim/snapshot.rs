@@ -1237,11 +1237,13 @@ use crate::util::save_codec;
 // Warhead extension records; the capability metadata header still starts at 459.
 // 463 -> 464: the retained type registry keeps each InfantryType's
 // ReadSequenceData sound pairs from every reached pass.
-// 464 -> 467: bunker entry uses radio contacts, removing the separate
+// 464 -> 465: an Anim keeps its Temporal erase pause (+0x11A) and no longer
+// keeps a DoubleThick copy; DrawIt reads the type's.
+// 465 -> 467: bunker entry uses radio contacts, removing the separate
 // Approaching link, ArriveWait enum variant and installing_unit payload.
 // Enum ordinals and the positional building runtime payload both change.
-// Versions 465 and 466 belong to the concurrent constructor-owner (#2371)
-// and building-loss-index (#2383) changes; recheck their merge order.
+// Version 466 belongs to the concurrent building-loss-index (#2383) change;
+// recheck merge order before combining distinct serialized layouts.
 const SNAPSHOT_VERSION: u32 = 467;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
@@ -10204,7 +10206,8 @@ mod tests {
         // 461 -> 462: the typed Enter and Harvest commands are gone.
         // 462 -> 463: retained armor IDs and Ares warhead extension records.
         // 463 -> 464: retained InfantryType sequence sound pairs.
-        // 464 -> 467: remove duplicate bunker approach state (465/466 reserved).
+        // 464 -> 465: the Anim Temporal erase pause.
+        // 465 -> 467: remove duplicate bunker approach state (466 reserved).
         assert_eq!(super::SNAPSHOT_VERSION, 467);
     }
 }

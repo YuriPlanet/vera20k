@@ -85,6 +85,20 @@ pub(crate) enum NetworkSetupEvent {
         users: Vec<super::WolStartUser>,
         pings: [i32; 8],
     },
+    /// WOL Start Game Now's verify `0x7947B0` began; with connection pairs
+    /// it checks node 0 (`0x00794809`).
+    VerifyStarted {
+        pairs: bool,
+    },
+    /// A peer's verify reply (`0x00793D20`): `node` in the start order.
+    PeerConnected {
+        node: usize,
+    },
+    /// The scenario negotiation `0x795CD0`'s result: 0 goes on to the
+    /// match, 1 aborts silently, 2 aborts behind "Scenarios don't match".
+    Negotiated {
+        result: u8,
+    },
     /// A WOL ping result for one user (`007A0EA0`).
     Ping {
         name: String,
@@ -125,6 +139,9 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 NetworkSetupEvent::GameStarted { .. }
                     | NetworkSetupEvent::Ping { .. }
                     | NetworkSetupEvent::PlayerChoices { .. }
+                    | NetworkSetupEvent::VerifyStarted { .. }
+                    | NetworkSetupEvent::PeerConnected { .. }
+                    | NetworkSetupEvent::Negotiated { .. }
             ),
         "WOL setup event in a LAN setup"
     );
@@ -241,11 +258,51 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             // Native never automatically restarts when the last A1 arrives.
         }
         NetworkSetupEvent::MapStatus { index, status } => {
+            // 0x5E39C0 (the K arm, 0x5E4C39): only the host screens C2/BC
+            // take it (0x5E4C3D..0x5E4C57); the local node always holds its
+            // map; K0 and K2 print the sender and map name.
             anyhow::ensure!(status <= 2, "unknown native K status");
+            if !state.match_state.session.host() {
+                return Ok(());
+            }
+            let launch = state
+                .match_state
+                .session
+                .network_setup()
+                .ok_or_else(|| anyhow::anyhow!("no admitted setup"))?;
+            let status = if index == launch.local_player_index {
+                1
+            } else {
+                status
+            };
+            let name = launch
+                .humans
+                .get(index)
+                .ok_or_else(|| anyhow::anyhow!("no participant {index}"))?
+                .name
+                .clone();
             state
                 .match_state
                 .session
                 .set_network_map_status(index, status)?;
+            let key = match status {
+                0 => Some("GUI:HostNoMap"),
+                2 => Some("GUI:HostMapTransfer"),
+                _ => None,
+            };
+            if let Some(key) = key {
+                let map = super::map_display_name(state)
+                    .unwrap_or_default()
+                    .to_owned();
+                super::chat_notice(
+                    state,
+                    key,
+                    &[
+                        crate::assets::csf_file::CsfArg::Str(&name),
+                        crate::assets::csf_file::CsfArg::Str(&map),
+                    ],
+                );
+            }
         }
         NetworkSetupEvent::HostSetup {
             launch,
@@ -628,6 +685,13 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             super::wol::game_started(state, users, pings)?;
         }
         NetworkSetupEvent::Ping { name, ping } => super::wol::ping(state, name, ping)?,
+        NetworkSetupEvent::VerifyStarted { pairs } => {
+            if pairs {
+                super::wol::verify_connected(state, 0)?;
+            }
+        }
+        NetworkSetupEvent::PeerConnected { node } => super::wol::verify_connected(state, node)?,
+        NetworkSetupEvent::Negotiated { result } => super::wol::negotiated(state, result)?,
     }
     state.platform.window.request_redraw();
     Ok(())

@@ -845,6 +845,14 @@ fn close_runner(state: &mut AppState) {
     App::reopen_wol_welcome(state);
 }
 
+/// Start Game Now's abort: its leave (`0x00794E00`), then event 6's
+/// (`0x00787F95`), and the runner returns 0.
+pub(super) fn start_aborted(state: &mut AppState) {
+    request(state, WolServiceRequest::LeaveChannel);
+    request(state, WolServiceRequest::LeaveChannel);
+    close_runner(state);
+}
+
 /// Back's teardown has run: event 6 leaves the channel (API+0x24) and the
 /// runner returns 0.
 pub(crate) fn commit_back(state: &mut AppState) {
@@ -1810,6 +1818,13 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                 && let Err(error) = setup::player_ready(state, &from, value)
             {
                 log::warn!("WOL readiness from {from}: {error:#}");
+            }
+        }
+        WolServiceEvent::MapStatus { from, status } => {
+            if in_setup_channel(state)
+                && let Err(error) = setup::map_status(state, &from, status)
+            {
+                log::warn!("WOL map status from {from}: {error:#}");
             }
         }
         WolServiceEvent::Created(result) => created(state, result),
