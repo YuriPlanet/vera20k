@@ -297,9 +297,10 @@ fn cncnet_country_indices_respect_the_compiled_capability_and_identity_width() {
             assert!(SpawnRequest::parse(&text).is_err(), "Country {value}");
         }
     }
-    assert!(
-        SpawnRequest::parse("[Settings]\nIsSinglePlayer=Yes\nSide=10\n").is_err(),
-        "campaign Side keeps its separate Allied/Soviet meaning"
+    assert_eq!(
+        SpawnRequest::parse("[Settings]\nIsSinglePlayer=Yes\nSide=10\n").is_ok(),
+        crate::rules::ARES_ENABLED,
+        "campaign Side has its own byte-wide adapter identity in Ares builds"
     );
 }
 

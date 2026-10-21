@@ -72,36 +72,21 @@ impl App {
             }
             SpawnGame::Campaign(campaign) => {
                 state.process_assets.refresh_empty_campaigns_if_available();
-                let name = match campaign.side {
-                    0 => "ALL1",
-                    1 => "SOV1",
-                    _ => anyhow::bail!("unsupported YR campaign side {}", campaign.side),
-                };
                 let catalog = state
                     .process_assets
                     .campaigns()
                     .context("retail campaign catalog unavailable")?;
-                let startup = crate::app::match_bootstrap::prepare_campaign_startup(
-                    catalog,
-                    name,
-                    campaign.difficulty,
-                    Some(&campaign.scenario),
-                    Some(crate::app::match_bootstrap::CampaignLaunchOptions {
-                        game_speed: request.game_speed,
-                        build_off_ally: campaign.build_off_ally,
-                        scenario_directory: campaign.scenario_directory,
-                    }),
-                    &mut clock,
-                )
-                .with_context(|| format!("retail campaign {name} unavailable"))?;
-                state.persistence.options_profile.difficulty = campaign.difficulty;
+                let side = campaign.side;
+                let campaign_id = campaign.campaign_id;
+                let startup = campaign.prepare_startup(catalog, request.game_speed, &mut clock)?;
+                state.persistence.options_profile.difficulty = startup.difficulty();
                 state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
                 log::info!(
                     "CnCNet campaign: scenario={}, side={}, difficulty={}, client_campaign_id={}",
                     startup.scenario(),
-                    campaign.side,
-                    campaign.difficulty,
-                    campaign.campaign_id
+                    side,
+                    startup.difficulty(),
+                    campaign_id
                 );
                 Self::start_campaign_scenario(
                     state,

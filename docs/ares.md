@@ -13,6 +13,17 @@ cargo run --release --bin vera20k --features ares
 Ares builds identify themselves in the window title and startup log. Saves retain the build
 capability and cannot load in the other mode, even with identical retail INIs.
 
+For offline CnCNet campaign launches, Ares builds resolve the client's logical `Scenario`
+against the retained `BATTLEMD.INI` campaign catalog before preparing the ordinary campaign
+startup. A matching record keeps its actual index, final movie and continuation identity;
+`CampaignID` is client metadata and never selects a retail array entry. The adapter accepts
+byte-wide campaign `Side` values without interpreting them as Country indices. If no Scenario
+matches, Side 0/1 retain the existing ALL1/SOV1 explicit-mission override when those records
+exist; this fallback does not check which campaign owns an arbitrary mission. Other unmatched
+selections fail before consuming a match seed. Default builds retain the stock Side 0/1 path.
+This is an external-launch adapter capability, not native CnCNet patch parity or a claim that
+all custom campaigns and their gameplay extensions are supported.
+
 Supported extensions:
 
 - [Custom armor](ares-custom-armor.md)
