@@ -330,6 +330,10 @@ impl Simulation {
                 trace.push((id, captured));
             }
         });
+        // Ares445F80 entry hook100100B0 ->100449D0 precedes the vanilla
+        // ActuallyPlaced early return, including repeated and capture calls.
+        #[cfg(feature = "ares")]
+        self.grant_factory_plans(id, rules);
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };

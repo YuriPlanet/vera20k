@@ -108,6 +108,14 @@ impl Simulation {
         ge.discovery
             .classify_owner(session.current_house() == Some(ge.owner()));
 
+        #[cfg(feature = "ares")]
+        ge.initialize_factory_country(houses.get(&ge.owner()).and_then(|house| {
+            crate::sim::factory_owners::parent_or_self_country(
+                rules,
+                interner.resolve(house.house_type_id()),
+            )
+        }));
+
         // Building InitManagers442C48..442C5C records the owner's Country
         // array index (+0xB8), not its House registration index. Capture and
         // snapshot restoration retain this value; only construction runs here.

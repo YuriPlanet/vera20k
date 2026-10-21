@@ -1041,7 +1041,7 @@ pub(crate) fn parse_read_bool(default: bool, raw: &str) -> bool {
 
 /// ReadBool's verdict on the stored value's untrimmed first byte
 /// (`0x0052976B`): `None` where it returns its default.
-fn read_bool_decision(raw: &str) -> Option<bool> {
+pub(crate) fn read_bool_decision(raw: &str) -> Option<bool> {
     match raw.bytes().next().map(|byte| byte.to_ascii_uppercase()) {
         Some(b'1') | Some(b'T') | Some(b'Y') => Some(true),
         Some(b'0') | Some(b'F') | Some(b'N') => Some(false),
