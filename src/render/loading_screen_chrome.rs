@@ -310,18 +310,19 @@ fn render_loading_background(
     width: LoadingScreenWidth,
 ) -> Option<Option<RenderedLoadingEntry>> {
     if let Some(background) = art.background {
-        // Some(None) is a deliberately omitted layer. None is a failure to
-        // decode required art; keep that existing distinction for the atlas.
+        // Original DrawLoading 5535C1..5535CE skips the background if either
+        // Convert or SHP is null, then resumes progress drawing at 553603.
+        // Missing custom art cannot select a stock fallback or fail the atlas.
         if background.name.is_empty() || background.palette.is_none() {
             Some(None)
         } else {
-            Some(Some(mandatory_shp(
+            Some(mandatory_shp(
                 assets,
                 background.name,
                 background.palette?,
                 0,
                 background.palette_name,
-            )?))
+            ))
         }
     } else if let Some(variant) = art.variant {
         let manifest = variant.manifest();
@@ -341,7 +342,8 @@ fn render_loading_background(
 
 /// Build the native loading atlas with optional selected-map preview/markers.
 /// A stock background and progress are mandatory; invalid optional preview or
-/// marker input removes only those layers. Explicit empty Country art stays empty.
+/// marker input removes only those layers. Empty or unavailable Country background
+/// art omits that layer without a stock fallback.
 pub fn build_loading_screen_atlas_with_composition<'a>(
     gpu: &GpuContext,
     batch: &BatchRenderer,
@@ -932,6 +934,23 @@ mod tests {
             .unwrap()
             .is_none(),
             "an explicitly cleared Country PAL cannot fall back to stock art"
+        );
+        assert!(
+            super::render_loading_background(
+                &assets,
+                super::LoadingScreenArtInput {
+                    variant: Some(LoadingArtVariant::Arabs),
+                    background: Some(super::LoadingCountryBackground {
+                        name: "missing-country.shp",
+                        palette: Some(&frozen),
+                        palette_name: "early.pal",
+                    }),
+                },
+                LoadingScreenWidth::W800,
+            )
+            .unwrap()
+            .is_none(),
+            "missing Country SHP skips the background and retains progress"
         );
     }
 

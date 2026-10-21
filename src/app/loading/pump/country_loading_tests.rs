@@ -162,37 +162,49 @@ fn ares_country_loading_attempt_freezes_early_palette_color_and_binds_late_text(
 }
 
 #[test]
+fn ares_country_loading_attempt_freezes_absent_palette_without_aborting_prefix() {
+    for malformed in [false, true] {
+        let (dir, mut assets, mut session) = fixture();
+        if malformed {
+            // Invalid bytes use the same safe omission boundary; only missing
+            // native resources have established instruction-level equivalence.
+            dir.write("parent.pal", b"bad palette");
+        } else {
+            std::fs::remove_file(dir.path().join("parent.pal")).unwrap();
+        }
+        bind(&mut session, &assets).unwrap();
+        prepare_map(&mut session);
+        let LoadingStage::Prepared(prepared) = &mut session.stage else {
+            panic!("prepared");
+        };
+        prepare_country_loading_prefix(
+            &mut assets,
+            None,
+            prepared,
+            session.native.as_mut().unwrap(),
+        )
+        .unwrap();
+        let native = session.native.as_ref().unwrap();
+        let early = native.early_country_loading.as_ref().unwrap();
+        assert_eq!(early.palette_name, "parent.pal");
+        assert!(
+            early.palette.is_none(),
+            "late child.pal cannot replace absent early PAL"
+        );
+        assert_eq!(
+            native.late_country_loading.as_ref().unwrap().files().1,
+            "child.pal"
+        );
+        session.retire(&mut assets);
+        assert!(assets.is_available() && !assets.is_leased());
+    }
+}
+
+#[test]
 fn ares_country_loading_attempt_failures_cancel_pending_prefix_and_preserve_actual_registry() {
     for failed_attempt in [false, true] {
-        let (dir, mut assets, mut session) = fixture();
-        // An early resource error leaves the first body and its parent flag
-        // untouched, without creating a pending Full_Init preparation.
-        dir.write("parent.pal", b"bad palette");
-        assert!(bind(&mut session, &assets).is_err());
+        let (_dir, mut assets, mut session) = fixture();
         let country = crate::rules::ruleset::CountryIdx(1);
-        assert_eq!(
-            assets
-                .native_rules()
-                .unwrap()
-                .country_loading(country)
-                .unwrap()
-                .0
-                .files()
-                .0,
-            "parent.shp"
-        );
-        // A fresh asset lease sees the corrected physical fixture; no native
-        // Rules source is re-read or replaced during this recovery.
-        session.job.retire(&mut assets);
-        dir.write("parent.pal", &[12; 768]);
-        session = LoadingSession::from_request(LoadingRequest::unverified_legacy_skirmish(
-            tests::test_launch_session(LaunchCountry::from_country_index(1)),
-            tests::unverified_seed(77),
-        ));
-        // Model the existing lost-lease recovery seam, with the Rules owner
-        // retained. The old manager's immutable failed loose snapshot retires.
-        drop(assets.lease_for_loading());
-        session.job.asset_manager = Some(AssetManager::from_loose_root_for_test(dir.path()));
         bind(&mut session, &assets).unwrap();
         prepare_map(&mut session);
         let LoadingStage::Prepared(prepared) = &mut session.stage else {

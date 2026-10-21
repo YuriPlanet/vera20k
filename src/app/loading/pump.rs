@@ -862,12 +862,10 @@ fn bind_early_country_loading(
     let palette = if palette_name.is_empty() {
         None
     } else {
-        Some(
-            crate::render::loading_screen_chrome::load_named_ui_palette(assets, &palette_name)
-                .ok_or_else(|| {
-                    anyhow::anyhow!("early loading palette {palette_name:?} is unavailable")
-                })?,
-        )
+        // Original 72ADE0 -> 72AE06/72AEDD leaves a missing Convert null;
+        // DrawLoading 5535C1/5535C7 then skips only the background. Freeze
+        // that absent observation too; a later mount must not reread the PAL.
+        crate::render::loading_screen_chrome::load_named_ui_palette(assets, &palette_name)
     };
     let text_rgb = owner
         .country_loading_text_hsv(index)
