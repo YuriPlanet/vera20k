@@ -1677,10 +1677,12 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
                 if verbose {
                     log::warn!("cursor confinement: no window handle ({err})");
                 }
+                state.platform.pointer_held.set(false);
                 return;
             }
         };
         let RawWindowHandle::Win32(w) = handle.as_raw() else {
+            state.platform.pointer_held.set(false);
             return;
         };
         let hwnd = w.hwnd.get() as *mut c_void;
@@ -1741,6 +1743,7 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
                         clip.bottom
                     );
                 }
+                state.platform.pointer_held.set(false);
                 return;
             }
             // Only issue a call when the clip actually changes. Re-issuing
@@ -1754,6 +1757,7 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
                 None
             };
             if current_cursor_clip() == wanted {
+                state.platform.pointer_held.set(wanted.is_some());
                 return;
             }
             if verbose {
@@ -1774,6 +1778,10 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
             if ok == 0 && verbose {
                 log::warn!("cursor confinement: ClipCursor failed");
             }
+            state
+                .platform
+                .pointer_held
+                .set(state.platform.cursor_confined && ok != 0);
         }
     }
     // Other platforms: use winit's Confined grab. On X11/macOS this confines the
@@ -1788,11 +1796,16 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
         } else {
             CursorGrabMode::None
         };
-        if let Err(err) = state.platform.window.set_cursor_grab(mode) {
+        let grabbed = state.platform.window.set_cursor_grab(mode);
+        if let Err(err) = &grabbed {
             if verbose {
                 log::warn!("cursor confinement unavailable on this platform: {err:#}");
             }
         }
+        state
+            .platform
+            .pointer_held
+            .set(state.platform.cursor_confined && grabbed.is_ok());
     }
 }
 
@@ -1800,6 +1813,7 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
 /// the pointer instead of leaving it trapped over the game window (
 /// behaviour). Presentation-only.
 pub(crate) fn release_cursor_confinement(state: &AppState) {
+    state.platform.pointer_held.set(false);
     #[cfg(target_os = "windows")]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::ClipCursor;

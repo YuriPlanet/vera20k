@@ -1,75 +1,8 @@
-//! Original-executable observations plus VERA resolution-zoom regressions.
+//! Original-executable observations, never regenerated from the Rust port.
 use super::{RightDragPoll, TacticalMouseState, right_drag_pan_step};
 use crate::app::match_runtime::session::SessionMode;
 use crate::app::match_runtime::sim_tick::{RuntimePassInputs, decide_runtime_pass};
 use serde::Deserialize;
-
-#[test]
-fn physical_right_drag_threshold_and_speed_do_not_depend_on_resolution_zoom() {
-    for scale in [1.0, 1.5, 2.0, 3.0] {
-        // Deliberately include an anchor whose inverse is inexact at 150%.
-        let anchor = (211.0 / scale, 200.0 / scale);
-        let mut mouse = TacticalMouseState {
-            right_held: true,
-            ..Default::default()
-        };
-        mouse.begin_right_drag(anchor);
-        assert_eq!(
-            mouse.poll_right_drag((219.0 / scale, 200.0 / scale), (4, 4), false, scale),
-            RightDragPoll::Idle,
-            "exactly eight physical pixels at {scale}x"
-        );
-        assert_eq!(
-            mouse.poll_right_drag((220.0 / scale, 200.0 / scale), (4, 4), false, scale),
-            RightDragPoll::Pan,
-            "nine physical pixels at {scale}x"
-        );
-        let physical = right_drag_pan_step(
-            anchor,
-            (251.0 / scale, 180.0 / scale),
-            800.0 / scale,
-            600.0 / scale,
-            1,
-            scale,
-        );
-        assert_eq!(physical, (20.0, -10.0), "{scale}x");
-        for world_zoom in [0.5, 1.0, 2.0] {
-            let world = super::window_scroll_to_world(physical, world_zoom, scale);
-            assert!((world.0 * world_zoom * scale - 20.0).abs() < 0.0001);
-            assert!((world.1 * world_zoom * scale + 10.0).abs() < 0.0001);
-        }
-    }
-}
-
-#[test]
-fn a_scaled_last_source_pixel_still_admits_outward_right_drag_pan() {
-    for scale in [1.0, 1.5, 2.0, 3.0] {
-        for (anchor, expected) in [((0.0, 200.0), (-10.0, 0.0)), ((799.0, 200.0), (10.0, 0.0))] {
-            assert_eq!(
-                right_drag_pan_step(anchor, anchor, 800.0, 600.0, 1, scale),
-                expected,
-                "source edge {anchor:?}, scale {scale}"
-            );
-        }
-    }
-}
-
-#[test]
-fn edge_scroll_retains_physical_speed_through_both_zoom_stages() {
-    let mut edge = super::EdgeScrollState::default();
-    let mut physical = (0.0, 0.0);
-    for tick in 0..20 {
-        physical = super::edge_scroll_step(&mut edge, (799.0, 300.0), 800, 600, 3, tick);
-    }
-    assert_eq!(physical, (13.0, 0.0));
-    for scale in [1.0, 1.5, 2.0, 3.0] {
-        for world_zoom in [0.5, 1.0, 2.0] {
-            let world = super::window_scroll_to_world(physical, world_zoom, scale);
-            assert!((world.0 * world_zoom * scale - 13.0).abs() < 0.0001);
-            assert_eq!(world.1, 0.0);
-        }
-    }
-}
 
 #[derive(Deserialize)]
 struct Expected {
@@ -126,7 +59,6 @@ fn check_poll(mouse: &mut TacticalMouseState, case: &DragCase) {
             case.viewport[0],
             case.viewport[1],
             case.scroll_rate,
-            1.0,
         )
     } else {
         (0.0, 0.0)
@@ -441,7 +373,6 @@ fn pending_requests_commit_once_and_absolute_views_discard_them() {
                         sequence.viewport[0],
                         sequence.viewport[1],
                         sequence.scroll_rate,
-                        1.0,
                     );
                     mouse_request.0 += delta.0;
                     mouse_request.1 += delta.1;

@@ -117,7 +117,7 @@ impl AppState {
         self.match_state.input.set_cursor_from_window(
             (x, y),
             zoom,
-            self.platform.cursor_confined && self.platform.window_active,
+            self.platform.pointer_held.get() && self.platform.window_active,
         );
     }
 
