@@ -1549,7 +1549,7 @@ mod receiver {
                         timer,
                         "{label}"
                     );
-                    assert_eq!(victim.building_art.anim_slots[3], Some(slot), "{label}");
+                    assert_eq!(victim.building_art.anim_slots()[3], Some(slot), "{label}");
                 }
                 assert_eq!(
                     sim.rng_state(),
