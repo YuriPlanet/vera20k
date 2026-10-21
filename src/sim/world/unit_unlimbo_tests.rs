@@ -1214,6 +1214,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
                 &rules,
                 producer_id,
                 id,
+                (0, 0),
                 Some(&registry),
                 crate::sim::world::FrameEffects::default(),
             );

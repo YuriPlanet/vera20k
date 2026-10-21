@@ -141,7 +141,15 @@ fn exit_finished_object(
         return;
     };
     let is_building = product_type.category == ObjectCategory::Building;
-    let exit = exit_produced_object(sim, rules, building, product, overlay_registry, effects);
+    let exit = exit_produced_object(
+        sim,
+        rules,
+        building,
+        product,
+        (0, 0),
+        overlay_registry,
+        effects,
+    );
     if !is_building && exit == BuildingExit::Placed {
         sim.note_mission_spawned_entities();
     }
