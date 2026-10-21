@@ -1524,7 +1524,7 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_replay_discards_a_malformed_future_entry() {
+    fn diagnostic_replay_retains_a_future_admission_until_its_frame() {
         let mut sim = Simulation::with_seed(7);
         let owner = sim.interner.intern("Local");
         let mut log = ReplayLog::new(ReplayHeader {
@@ -1550,13 +1550,13 @@ mod tests {
 
         assert_eq!(hashes.len(), 2);
         assert!(
-            sim.pending_command_snapshot().is_empty(),
-            "the old replay seam ignored and discarded a future-stamped entry"
+            matches!(sim.pending_command_snapshot().as_slice(), [command] if command.execute_tick == 9),
+            "the admission journal retains accepted future work"
         );
     }
 
     #[test]
-    fn diagnostic_replay_consumes_only_recorded_due_regenerated_copies() {
+    fn diagnostic_replay_reconciles_each_recorded_admission_once() {
         let mut sim = Simulation::with_seed(7);
         let owner = sim.interner.intern("Local");
         let place = CommandEnvelope::new(
@@ -1577,11 +1577,11 @@ mod tests {
 
         let due = sim.take_due_replay_commands([place.clone(), future.clone()]);
 
-        assert_eq!(due, std::slice::from_ref(&place));
+        assert_eq!(due, [place.clone(), future]);
         assert_eq!(
             sim.pending_command_snapshot(),
-            &[unrelated, place, future],
-            "one recorded due PLACE consumes one copy; future/unrelated work survives"
+            &[unrelated, place],
+            "each recorded admission consumes one matching copy, including future work"
         );
     }
 }

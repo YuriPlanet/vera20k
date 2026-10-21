@@ -1,8 +1,30 @@
-//! Local event admission shared by semantic gameplay and native-byte queues.
+//! Event admission and synchronized dispatch shared by gameplay and byte queues.
+
+mod dispatch;
+pub use dispatch::{
+    CommandDispatchClock, CommandDispatchHouse, CommandDispatchMode, DO_LIST_CAPACITY,
+    DispatchSummary, DoList, DoListEvent, DoListHost, DoListRetimeWindow, SemanticEventHeader,
+};
 
 use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
+
+/// Exact diagnostic facts available when one due FRAMEINFO comparison fails.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
+#[error(
+    "multiplayer checksum mismatch for house {house_id} at frame {event_frame}: \
+     local {local_checksum:#010x}, remote {remote_checksum:#010x}, \
+     history[{history_index}] with delay {delay}"
+)]
+pub struct ChecksumMismatch {
+    pub house_id: i8,
+    pub event_frame: i32,
+    pub delay: u8,
+    pub history_index: u8,
+    pub local_checksum: u32,
+    pub remote_checksum: u32,
+}
 
 /// Try_Append_Event_To_OutList6521C0's process-wide capacity.
 pub const OUT_LIST_CAPACITY: usize = 0x80;
@@ -71,6 +93,12 @@ impl<T> LocalCommandStage<T> {
 
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.entries.iter()
+    }
+
+    /// Consume one matching retained event without changing FIFO order.
+    pub fn remove_first(&mut self, predicate: impl FnMut(&T) -> bool) -> Option<T> {
+        let index = self.entries.iter().position(predicate)?;
+        self.entries.remove(index)
     }
 
     /// Remove only the FIFO prefix selected by the transfer owner.

@@ -2,6 +2,418 @@ use super::*;
 use crate::sim::house_state::HouseState;
 use crate::sim::scenario_session::ScenarioGameMode;
 
+fn native_dolist_world() -> Simulation {
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("Human");
+    sim.houses
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
+    sim.session.set_game_mode(ScenarioGameMode::Wol);
+    sim.session.game_options_mut_for_test().game_speed = 3;
+    sim
+}
+
+#[test]
+fn native_frame_and_house_override_carrier_metadata() {
+    let mut sim = native_dolist_world();
+    let record = crate::sim::command::GameSpeedRecord {
+        house_id: 0,
+        frame: 2,
+        speed: 6,
+    }
+    .encode()
+    .unwrap();
+    let mut carrier = CommandEnvelope::synchronized(record, u64::MAX);
+    carrier.owner = InternedId::from_index(u32::MAX);
+    sim.queue_command(carrier);
+    for _ in 0..2 {
+        sim.advance_tick(&[], None, None, None, 33);
+        assert_eq!(sim.session.game_options().game_speed, 3);
+    }
+    let result = sim.advance_tick(&[], None, None, None, 33);
+    assert_eq!(sim.session.game_options().game_speed, 6);
+    assert_eq!(result.executed_commands, 1);
+    assert!(sim.pending_commands.is_empty());
+}
+
+#[test]
+fn native_speed_projection_uses_the_record_frame_instead_of_diagnostic_tick() {
+    for (frame, diagnostic_tick, expected) in [(0, u64::MAX, 6), (2, 0, 3), (-1, 0, 3)] {
+        let mut sim = native_dolist_world();
+        let record = crate::sim::command::GameSpeedRecord {
+            house_id: 0,
+            frame,
+            speed: 6,
+        }
+        .encode()
+        .unwrap();
+        sim.queue_command(CommandEnvelope::synchronized(
+            record.clone(),
+            diagnostic_tick,
+        ));
+        let diagnostic = sim.pending_command_snapshot();
+        assert_eq!(diagnostic[0].execute_tick, diagnostic_tick);
+        assert_eq!(sim.projected_in_game_options_speed(), Some(expected));
+        assert_eq!(sim.pending_command_snapshot(), diagnostic);
+        let replay = sim
+            .pending_commands
+            .iter()
+            .next()
+            .unwrap()
+            .replay_envelope();
+        assert_eq!(replay.execute_tick, diagnostic_tick);
+        assert!(
+            matches!(replay.payload, Command::SynchronizedRecord { record: retained } if retained == record)
+        );
+    }
+}
+
+#[test]
+fn processed_native_records_do_not_reapply_to_input_projections() {
+    let mut sim = native_dolist_world();
+    let record = crate::sim::command::GameSpeedRecord {
+        house_id: 0,
+        frame: 0,
+        speed: 6,
+    }
+    .encode()
+    .unwrap();
+    sim.admit_native_command_record(record);
+    sim.pending_commands
+        .iter_mut()
+        .next()
+        .unwrap()
+        .mark_processed();
+    assert_eq!(sim.projected_in_game_options_speed(), Some(3));
+}
+
+#[test]
+fn unresolved_native_megamissions_still_consume_the_production_staging_slots() {
+    let mut sim = native_dolist_world();
+    for _ in 0..257 {
+        let record = crate::sim::command::CommandRecord::encode(4, 0, 0, &[0; 23]).unwrap();
+        assert!(sim.admit_native_command_record(record));
+    }
+    let result = sim.advance_tick(&[], None, None, None, 33);
+    assert_eq!(result.executed_commands, 256);
+    assert!(sim.pending_commands.is_empty());
+}
+
+#[test]
+fn late_native_record_stays_unmarked_behind_a_future_head() {
+    let mut sim = native_dolist_world();
+    for (frame, speed) in [(3, 6), (-1, 4)] {
+        assert!(
+            sim.admit_native_command_record(
+                crate::sim::command::GameSpeedRecord {
+                    house_id: 0,
+                    frame,
+                    speed,
+                }
+                .encode()
+                .unwrap()
+            )
+        );
+    }
+    sim.advance_tick(&[], None, None, None, 33);
+    assert_eq!(sim.session.game_options().game_speed, 3);
+    assert_eq!(sim.pending_commands.len(), 2);
+    assert!(
+        !sim.pending_commands
+            .iter()
+            .nth(1)
+            .unwrap()
+            .record()
+            .unwrap()
+            .is_processed()
+    );
+    let saved = serde_json::to_vec(&sim).unwrap();
+    let mut restored: Simulation = serde_json::from_slice(&saved).unwrap();
+    assert_eq!(restored.pending_commands.len(), 2);
+    for _ in 0..3 {
+        restored.advance_tick(&[], None, None, None, 33);
+    }
+    assert_eq!(restored.session.game_options().game_speed, 6);
+    assert!(restored.pending_commands.is_empty());
+}
+
+#[test]
+fn processed_native_tail_survives_snapshot_without_executing_twice() {
+    let mut sim = native_dolist_world();
+    for (frame, speed) in [(3, 6), (0, 4)] {
+        sim.admit_native_command_record(
+            crate::sim::command::GameSpeedRecord {
+                house_id: 0,
+                frame,
+                speed,
+            }
+            .encode()
+            .unwrap(),
+        );
+    }
+    sim.advance_tick(&[], None, None, None, 33);
+    assert_eq!(sim.session.game_options().game_speed, 4);
+    assert_eq!(sim.pending_commands.len(), 2);
+    assert!(
+        sim.pending_commands
+            .iter()
+            .nth(1)
+            .unwrap()
+            .record()
+            .unwrap()
+            .is_processed()
+    );
+    let saved = serde_json::to_vec(&sim).unwrap();
+    let mut restored: Simulation = serde_json::from_slice(&saved).unwrap();
+    assert!(
+        restored
+            .pending_commands
+            .iter()
+            .nth(1)
+            .unwrap()
+            .record()
+            .unwrap()
+            .is_processed()
+    );
+    for _ in 0..3 {
+        restored.advance_tick(&[], None, None, None, 33);
+    }
+    assert_eq!(restored.session.game_options().game_speed, 6);
+    assert!(restored.pending_commands.is_empty());
+}
+
+#[test]
+fn future_native_admission_is_recorded_once_and_replays_at_its_raw_frame() {
+    let mut live = native_dolist_world();
+    let initial = serde_json::to_vec(&live).unwrap();
+    live.admit_native_command_record(
+        crate::sim::command::GameSpeedRecord {
+            house_id: 0,
+            frame: 2,
+            speed: 6,
+        }
+        .encode()
+        .unwrap(),
+    );
+    let mut replay: Simulation = serde_json::from_slice(&initial).unwrap();
+    for frame in 0..4 {
+        let mut output = live
+            .advance_app_frame(
+                &[],
+                RuleSet::empty_for_test(),
+                None,
+                33,
+                crate::sim::world::TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        let recorded = output.take_admitted_commands();
+        assert_eq!(recorded.len(), usize::from(frame == 0));
+        let replayed = replay.take_due_replay_commands(recorded);
+        replay
+            .advance_app_frame(
+                &replayed,
+                RuleSet::empty_for_test(),
+                None,
+                33,
+                crate::sim::world::TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            live.session.game_options().game_speed,
+            replay.session.game_options().game_speed
+        );
+        assert_eq!(live.pending_commands, replay.pending_commands);
+    }
+}
+
+#[test]
+fn production_dolist_preserves_unknown_records_and_enforces_native_capacity() {
+    let mut sim = native_dolist_world();
+    let record = crate::sim::command::CommandRecord::encode(0xff, -1, 10, &[0xaa]).unwrap();
+    for _ in 0..crate::sim::command_queue::DO_LIST_CAPACITY {
+        assert!(sim.admit_native_command_record(record.clone()));
+    }
+    assert!(!sim.admit_native_command_record(record));
+    assert_eq!(
+        sim.pending_commands.native_len(),
+        crate::sim::command_queue::DO_LIST_CAPACITY
+    );
+    sim.advance_tick(&[], None, None, None, 33);
+    assert_eq!(
+        sim.pending_commands.native_len(),
+        crate::sim::command_queue::DO_LIST_CAPACITY
+    );
+}
+
+#[test]
+fn frame_info_failure_resumes_only_the_remaining_tail_after_acknowledgement() {
+    use std::cell::Cell;
+    struct NetworkBoundary {
+        published: Cell<Option<u32>>,
+        compared: Cell<usize>,
+    }
+    impl crate::sim::world::NetworkCommandBoundary for NetworkBoundary {
+        fn record_frame_checksum(&self, frame: u32, _checksum: u32) {
+            self.published.set(Some(frame));
+        }
+        fn compare_frame_info(
+            &self,
+            _record: &crate::sim::command::CommandRecord,
+            current_frame: i32,
+        ) -> Result<bool, crate::sim::world::NetworkCommandError> {
+            assert_eq!(self.published.get(), Some(current_frame as u32));
+            self.compared.set(self.compared.get() + 1);
+            Err(crate::sim::command_queue::ChecksumMismatch {
+                house_id: 0,
+                event_frame: current_frame,
+                delay: 0,
+                history_index: 0,
+                local_checksum: 1,
+                remote_checksum: 2,
+            }
+            .into())
+        }
+    }
+    for terminal in [false, true] {
+        let mut sim = native_dolist_world();
+        sim.set_quit_requested_for_test(terminal);
+        // Ordinary work before the failing event stands. The staged copy is
+        // marked but never executed; failure/later entries remain unmarked.
+        sim.admit_native_command_record(
+            crate::sim::command::GameSpeedRecord {
+                house_id: 0,
+                frame: 0,
+                speed: 4,
+            }
+            .encode()
+            .unwrap(),
+        );
+        sim.admit_native_command_record(
+            crate::sim::command::CommandRecord::encode(4, 0, 0, &[0; 23]).unwrap(),
+        );
+        sim.admit_native_command_record(
+            crate::sim::command::CommandRecord::encode(0x1c, 0, 0, &[0; 7]).unwrap(),
+        );
+        sim.admit_native_command_record(
+            crate::sim::command::GameSpeedRecord {
+                house_id: 0,
+                frame: 0,
+                speed: 6,
+            }
+            .encode()
+            .unwrap(),
+        );
+        let boundary = NetworkBoundary {
+            published: Cell::new(None),
+            compared: Cell::new(0),
+        };
+        let output = sim
+            .advance_app_frame(
+                &[],
+                RuleSet::empty_for_test(),
+                None,
+                33,
+                crate::sim::world::TickLane::Ordinary,
+                FrameEffects::default().with_network_commands(&boundary),
+            )
+            .unwrap();
+        assert!(output.network_failure.is_some());
+        assert_eq!(boundary.compared.get(), 1);
+        assert!(!output.tick.frame_committed);
+        assert!(output.admitted_commands.is_empty());
+        assert_eq!(sim.session.binary_frame(), 0);
+        assert_eq!(sim.session.game_options().game_speed, 4);
+        assert_eq!(sim.dispatch_reserved_slots, 0);
+        let flags: Vec<_> = sim
+            .pending_commands
+            .iter()
+            .map(|entry| entry.record().unwrap().is_processed())
+            .collect();
+        assert_eq!(flags, [true, true, false, false]);
+        assert_eq!(
+            output
+                .lifecycle_outputs
+                .iter()
+                .filter(|event| matches!(event, crate::sim::world::LifecycleOutput::LogicVisit))
+                .count(),
+            1
+        );
+        let mut restored = if terminal {
+            // EXIT is an existing process-local latch, deliberately not saved.
+            sim
+        } else {
+            let saved = serde_json::to_vec(&sim).unwrap();
+            serde_json::from_slice::<Simulation>(&saved).unwrap()
+        };
+        // The pending native call frame survives a snapshot and blocks Logic.
+        assert!(restored.pending_network_failure().is_some());
+        assert!(
+            restored
+                .advance_app_frame(
+                    &[],
+                    RuleSet::empty_for_test(),
+                    None,
+                    33,
+                    crate::sim::world::TickLane::Ordinary,
+                    FrameEffects::default()
+                )
+                .is_err()
+        );
+        let resumed = restored
+            .resume_after_network_failure(RuleSet::empty_for_test(), None, FrameEffects::default())
+            .unwrap();
+        assert!(resumed.network_failure.is_none());
+        assert_eq!(resumed.tick.frame_committed, !terminal);
+        assert_eq!(restored.session.binary_frame(), u32::from(!terminal));
+        assert_eq!(resumed.tick.executed_commands, 1);
+        assert_eq!(resumed.admitted_commands.len(), 4);
+        assert!(
+            !resumed
+                .lifecycle_outputs
+                .iter()
+                .any(|event| matches!(event, crate::sim::world::LifecycleOutput::LogicVisit))
+        );
+        assert_eq!(restored.session.game_options().game_speed, 4);
+        assert_eq!(
+            restored.pending_commands.len(),
+            4,
+            "failure never retires DoList"
+        );
+        assert!(
+            restored
+                .resume_after_network_failure(
+                    RuleSet::empty_for_test(),
+                    None,
+                    FrameEffects::default()
+                )
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn frame_info_without_its_process_owner_is_not_silently_acknowledged() {
+    let mut sim = native_dolist_world();
+    sim.admit_native_command_record(
+        crate::sim::command::CommandRecord::encode(0x1c, 0, 0, &[0; 7]).unwrap(),
+    );
+    let error = sim
+        .advance_app_frame(
+            &[],
+            RuleSet::empty_for_test(),
+            None,
+            33,
+            crate::sim::world::TickLane::Ordinary,
+            FrameEffects::default(),
+        )
+        .err()
+        .expect("missing callback fails");
+    assert!(error.cause.contains("network session checksum owner"));
+    assert_eq!(sim.pending_commands.len(), 1);
+    assert_eq!(sim.session.binary_frame(), 0);
+}
+
 #[test]
 fn synchronized_tail_admits_human_or_player_controlled_houses_only() {
     // Execute_DoList 0x64C4E2..0x64C50D scans registered Houses and tests
@@ -271,7 +683,7 @@ fn replay_keeps_future_local_work_on_the_admitted_scheduler() {
             FrameEffects::default(),
         )
         .unwrap();
-    assert!(first.admitted_commands.is_empty());
+    assert_eq!(first.admitted_commands, [future.clone()]);
     assert_eq!(live.pending_command_snapshot(), [future.clone()]);
     let (mut replay, _) = make();
     let due = replay.take_due_replay_commands([]);

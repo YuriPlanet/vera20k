@@ -63,6 +63,10 @@ pub(crate) fn handle_mouse_input(
     button: MouseButton,
     btn_state: ElementState,
 ) {
+    if crate::app::match_runtime::network_failure::pending(state) {
+        crate::app::match_runtime::network_failure::mouse(state, button, btn_state.is_pressed());
+        return;
+    }
     handle_mouse_input_inner(state, button, btn_state);
     super::commands::reconcile_paid_super_weapon_cursor(state);
 }
@@ -804,6 +808,10 @@ fn clamp_tactical_drag_endpoint(
 }
 
 pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
+    if crate::app::match_runtime::network_failure::pending(state) {
+        crate::app::match_runtime::network_failure::cursor_moved(state);
+        return;
+    }
     if state.frontend.keyboard_dialog.is_some() {
         crate::app::input::keyboard::cursor_moved(state);
         return;
@@ -1635,6 +1643,9 @@ pub(crate) fn handle_hotkey_pressed(
     resolution: HotkeyResolution,
     physical_code: winit::keyboard::KeyCode,
 ) {
+    if crate::app::match_runtime::network_failure::pending(state) {
+        return;
+    }
     handle_hotkey_pressed_inner(state, resolution, physical_code);
     super::commands::reconcile_paid_super_weapon_cursor(state);
 }

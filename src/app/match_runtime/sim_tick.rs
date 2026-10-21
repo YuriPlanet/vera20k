@@ -766,6 +766,12 @@ fn advance_in_game_runtime_mode(
     mode: RuntimeAdvanceMode,
     startup_admitted: bool,
 ) {
+    // ExecuteDoList64CD0C is a blocking message box inside this frame. Even
+    // exact-step diagnostics must not admit another Logic pass while it waits.
+    if super::network_failure::pending(state) {
+        super::network_failure::show(state);
+        return;
+    }
     crate::app::input::commands::reconcile_paid_super_weapon_cursor(state);
     let frame_stepping = matches!(mode, RuntimeAdvanceMode::WallClock { .. })
         && state.diag.debug_frame_step_requested;
@@ -852,7 +858,11 @@ fn advance_in_game_runtime_mode(
         .then(|| crate::app::input::camera::poll_mouse_scroll(state));
     if decision.run_sim {
         let tick_lane = decision.tick_lane;
-        let frame_committed = advance_one_simulation_frame(state, tick_lane, mouse_scroll);
+        let frame_committed = advance_one_simulation_frame(state, tick_lane, mouse_scroll, false);
+        if super::network_failure::pending(state) {
+            super::network_failure::show(state);
+            return;
+        }
         #[cfg(feature = "telemetry-dashboard")]
         if frame_committed && state.diag.telemetry_active() {
             state.match_state.telemetry_tick_rate.record(Instant::now());
@@ -953,14 +963,25 @@ fn advance_in_game_runtime_mode(
 fn should_record_replay_tick(
     tick_result: &crate::sim::world::TickResult,
     due_commands: &[crate::sim::command::CommandEnvelope],
+    network_failure: bool,
 ) -> bool {
-    tick_result.frame_committed || !due_commands.is_empty() || tick_result.terminal_score_finalized
+    !network_failure
+        && (tick_result.frame_committed
+            || !due_commands.is_empty()
+            || tick_result.terminal_score_finalized)
+}
+
+/// Complete the exact frame suspended by ExecuteDoList's message box. Reuse
+/// every output consumer below; neither input admission nor Logic runs again.
+pub(crate) fn resume_after_network_failure(state: &mut AppState) -> bool {
+    advance_one_simulation_frame(state, TickLane::Ordinary, None, true)
 }
 
 fn advance_one_simulation_frame(
     state: &mut AppState,
     tick_lane: TickLane,
     mouse_scroll: Option<(f32, f32)>,
+    resume_network_failure: bool,
 ) -> bool {
     let mut refresh_atlases_after_tick = false;
     // Trigger definitions are runtime-bound (F07), so a live runtime is the
@@ -972,7 +993,9 @@ fn advance_one_simulation_frame(
     // Input QueueVoice requests precede this Logic pass. This shared consumer
     // only admits queued requests; positional redrive/EVA service remain at
     // their existing owners, and voices wait for actual Techno-head markers.
-    crate::app::presentation::building_anim::drain_pending_sound_events(state);
+    if !resume_network_failure {
+        crate::app::presentation::building_anim::drain_pending_sound_events(state);
+    }
     let mut frame_committed = state.match_state.sim_runtime.is_none();
 
     if let Some(rt) = state.match_state.sim_runtime.as_ref() {
@@ -1004,7 +1027,9 @@ fn advance_one_simulation_frame(
         if let Some(rt) = state.match_state.sim_runtime.as_mut() {
             let sim = &mut rt.simulation;
             let native_frame = sim.session().binary_frame();
-            sim.prepare_unit_voice_visits(unit_voice_owners);
+            if !resume_network_failure {
+                sim.prepare_unit_voice_visits(unit_voice_owners);
+            }
             // Normal play hashes its state once every PLAY_HASH_INTERVAL
             // frames and on the frame that ends the match, for the replay log.
             sim.hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
@@ -1015,7 +1040,7 @@ fn advance_one_simulation_frame(
             // Delay-zero AnimClass construction can emit StartSound during the
             // final map-load sweep. Keep it until this first tactical drain;
             // `drain(..)` below still consumes every event exactly once.
-            let due_commands = if tick_lane == TickLane::Ordinary {
+            let due_commands = if !resume_network_failure && tick_lane == TickLane::Ordinary {
                 sim.take_due_commands()
             } else {
                 Vec::new()
@@ -1057,13 +1082,16 @@ fn advance_one_simulation_frame(
                 .with_planning(
                     &mut state.match_state.input.planning,
                     &mut state.match_state.input.selection_state,
-                );
-                rt.advance_frame(
-                    &due_commands,
-                    SIM_TICK_MS,
-                    tick_lane,
-                    FrameEffects::for_sound(&boundary).with_local_planning(&boundary),
                 )
+                .with_network_session(&mut state.match_state.session);
+                let effects = FrameEffects::for_sound(&boundary)
+                    .with_local_planning(&boundary)
+                    .with_network_commands(&boundary);
+                if resume_network_failure {
+                    rt.resume_after_network_failure(effects)
+                } else {
+                    rt.advance_frame(&due_commands, SIM_TICK_MS, tick_lane, effects)
+                }
                 .expect("simulation frame failed; prior world mutations remain")
             };
             #[cfg(feature = "telemetry-dashboard")]
@@ -1121,19 +1149,13 @@ fn advance_one_simulation_frame(
                 combat_lights,
                 lighting_events,
                 multiplayer_checksum,
+                network_failure,
                 ..
             } = output;
-            if let Some(sync) = multiplayer_checksum {
-                // Native always stores a value; a VERA registry gap has no
-                // native equivalent and would desync every peer.
-                let checksum = sync.checksum.unwrap_or_else(|error| {
-                    panic!("multiplayer checksum for frame {}: {error}", sync.frame)
-                });
-                state
-                    .match_state
-                    .session
-                    .record_frame_checksum(sync.frame, checksum.value);
-            }
+            // Queue_AI already published this checksum to the process session
+            // before in-frame FRAMEINFO comparisons. Keep the output for other
+            // consumers without recording it a second time here.
+            let _ = multiplayer_checksum;
             camera_logic_frame = frame_lifecycle_outputs
                 .iter()
                 .any(|output| matches!(output, LifecycleOutput::LogicVisit))
@@ -1250,8 +1272,11 @@ fn advance_one_simulation_frame(
             // Both terminal routes belong to the deterministic stream even
             // though Main_Tick skips its frame commit. EventClass EXIT carries
             // a command; natural win/loss carries the one-shot score/RNG latch.
-            if should_record_replay_tick(&tick_result, &admitted_commands)
-                && let Some(log) = &mut state.match_state.match_diagnostics.replay_log
+            if should_record_replay_tick(
+                &tick_result,
+                &admitted_commands,
+                network_failure.is_some(),
+            ) && let Some(log) = &mut state.match_state.match_diagnostics.replay_log
             {
                 log.record_tick(tick_result.tick, admitted_commands, tick_result.state_hash);
             }
@@ -2271,13 +2296,17 @@ mod modal_pump_tests {
             bridge_state_changed: false,
         };
 
-        assert!(should_record_replay_tick(&tick, &[]));
+        assert!(should_record_replay_tick(&tick, &[], false));
+        // A suspended prefix may already carry an outcome, but the complete
+        // admitted journal and final hash arrive only after Stop resumes it.
+        assert!(!should_record_replay_tick(&tick, &[], true));
         assert!(!should_record_replay_tick(
             &crate::sim::world::TickResult {
                 terminal_score_finalized: false,
                 ..tick
             },
-            &[]
+            &[],
+            false
         ));
     }
 

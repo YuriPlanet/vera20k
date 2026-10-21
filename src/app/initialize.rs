@@ -614,6 +614,7 @@ impl App {
             match_state: crate::app::match_runtime::state::MatchState {
                 session: Default::default(),
                 network_wait: Default::default(),
+                network_failure: None,
                 startup: Default::default(),
                 sim_runtime: None,
                 input: crate::app::input::state::MatchInputState::new(hotkey_bindings),

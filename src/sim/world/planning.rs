@@ -1546,7 +1546,7 @@ impl Simulation {
         else {
             return false;
         };
-        let Some(owner) = usize::try_from(record.house_id())
+        let Some(_owner) = usize::try_from(record.house_id())
             .ok()
             .and_then(|index| self.houses.order().get(index))
             .copied()
@@ -1584,10 +1584,9 @@ impl Simulation {
         }
         // 637550 ->652230: deferred publication stamps frame+1. Reverse
         // pending traversal plus ring prepend restores generation order.
-        self.queue_command(CommandEnvelope::new(
-            owner,
+        self.queue_command(CommandEnvelope::synchronized(
+            record,
             self.session.tick().saturating_add(2),
-            Command::PlanningRecord { record },
         ));
         true
     }

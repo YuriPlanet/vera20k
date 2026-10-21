@@ -29,11 +29,34 @@ pub trait LocalPlanningBoundary {
     fn planning_active(&self) -> bool;
 }
 
+/// A checksum disagreement is a modal network failure, distinct from a
+/// missing process owner or malformed callback input (a programming failure).
+#[derive(Debug, thiserror::Error)]
+pub enum NetworkCommandError {
+    #[error(transparent)]
+    Mismatch(#[from] crate::sim::command_queue::ChecksumMismatch),
+    #[error("{0}")]
+    Unavailable(String),
+}
+
+/// The process network session owns checksum history and its grace timer.
+/// A frame borrows that owner at the native post-Logic queue boundary; no
+/// history or transport state is copied into Simulation.
+pub trait NetworkCommandBoundary {
+    fn record_frame_checksum(&self, frame: u32, checksum: u32);
+    fn compare_frame_info(
+        &self,
+        record: &crate::sim::command::CommandRecord,
+        current_frame: i32,
+    ) -> Result<bool, NetworkCommandError>;
+}
+
 /// Stack-scoped process effects accompanying this simulation visit.
 #[derive(Clone, Copy, Default)]
 pub struct FrameEffects<'a> {
     sound: Option<&'a dyn SoundBoundary>,
     local_planning: Option<&'a dyn LocalPlanningBoundary>,
+    network_commands: Option<&'a dyn NetworkCommandBoundary>,
     overlay_registry: Option<&'a OverlayTypeRegistry>,
 }
 
@@ -42,6 +65,7 @@ impl<'a> FrameEffects<'a> {
         Self {
             sound: None,
             local_planning: None,
+            network_commands: None,
             overlay_registry: None,
         }
     }
@@ -50,6 +74,7 @@ impl<'a> FrameEffects<'a> {
         Self {
             sound: Some(sound),
             local_planning: None,
+            network_commands: None,
             overlay_registry: None,
         }
     }
@@ -59,6 +84,33 @@ impl<'a> FrameEffects<'a> {
             local_planning: Some(boundary),
             ..self
         }
+    }
+
+    pub fn with_network_commands(self, boundary: &'a dyn NetworkCommandBoundary) -> Self {
+        Self {
+            network_commands: Some(boundary),
+            ..self
+        }
+    }
+
+    pub(crate) fn record_frame_checksum(self, frame: u32, checksum: u32) {
+        if let Some(boundary) = self.network_commands {
+            boundary.record_frame_checksum(frame, checksum);
+        }
+    }
+
+    pub(crate) fn compare_frame_info(
+        self,
+        record: &crate::sim::command::CommandRecord,
+        current_frame: i32,
+    ) -> Result<bool, NetworkCommandError> {
+        self.network_commands
+            .ok_or_else(|| {
+                NetworkCommandError::Unavailable(
+                    "FRAMEINFO requires the network session checksum owner".to_owned(),
+                )
+            })?
+            .compare_frame_info(record, current_frame)
     }
 
     pub(crate) fn leave_local_planning(

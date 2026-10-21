@@ -4,7 +4,6 @@
 use crate::app::AppState;
 use crate::app::input::hotkeys::{HotkeyCommand, HotkeyResolution};
 use crate::audio::events::{GameSoundEvent, SoundEventQueue};
-use crate::net::lockstep::SynchronizedCommand;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::CommandEnvelope;
 use crate::sim::selection::SelectionState;
@@ -71,7 +70,7 @@ impl PlanningInputState {
             sim.and_then(|sim| {
                 let owner = sim.session().current_house()?;
                 let record = sim.encode_plan_commit_record(owner)?;
-                SynchronizedCommand::opaque(record).decode_for_simulation(sim, sim.session().tick())
+                Some(CommandEnvelope::synchronized(record, sim.session().tick()))
             })
         };
         if !active {
@@ -291,12 +290,8 @@ fn queue_orders_in_sim(
         let Some(record) = sim.encode_planning_order_record(order.owner, &order.payload) else {
             continue;
         };
-        if let Some(envelope) =
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, order.execute_tick)
-        {
-            sim.issue_local_command(envelope);
-            added = true;
-        }
+        sim.issue_local_command(CommandEnvelope::synchronized(record, order.execute_tick));
+        added = true;
     }
     Ok(added)
 }
@@ -403,9 +398,8 @@ pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
             if let Some(record) = rt
                 .simulation
                 .encode_plan_connect_record_at_screen(owner, actor, point)
-                && let Some(command) = SynchronizedCommand::opaque(record)
-                    .decode_for_simulation(&rt.simulation, rt.simulation.session().tick())
             {
+                let command = CommandEnvelope::synchronized(record, rt.simulation.session().tick());
                 rt.simulation.issue_local_command(command);
             }
         }
@@ -425,9 +419,8 @@ pub(crate) fn delete_at_cursor(state: &mut AppState) {
         && let Some(record) = rt
             .simulation
             .encode_plan_node_delete_record_at_screen(owner, point)
-        && let Some(command) = SynchronizedCommand::opaque(record)
-            .decode_for_simulation(&rt.simulation, rt.simulation.session().tick())
     {
+        let command = CommandEnvelope::synchronized(record, rt.simulation.session().tick());
         rt.simulation.issue_local_command(command);
     }
 }

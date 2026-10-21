@@ -10,13 +10,11 @@
 //! generic execute callback, but this module does not claim that callback alone
 //! reproduces the native EXIT path.
 //!
-//! Production does not run this byte queue yet. Matches share its local-stage
-//! owner through `Simulation::issue_local_command`, and its bounded decoder
-//! through [`SynchronizedCommand::decode_for_simulation`]. The byte DoList, the
-//! scheduler, the send policy and the dispatch house are kept for the native
-//! multiplayer transport.
+//! Production and this native-byte adapter share local admission and DoList
+//! dispatch through `sim::command_queue`. Bytes stay authoritative here; the
+//! gameplay adapter decodes only after the shared dispatcher admits an event.
+//! Network packetization and the send policy remain transport responsibilities.
 
-use std::collections::VecDeque;
 use std::mem::size_of;
 #[cfg(any(test, feature = "test-support"))]
 use std::num::NonZeroU8;
@@ -26,32 +24,26 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 use crate::sim::command::MEGAMISSION_STAGE_CAPACITY;
-#[cfg(any(test, feature = "test-support"))]
-use crate::sim::command::stage_megamission;
 use crate::sim::command::{CommandRecord, CommandRecordError};
-pub use crate::sim::command_queue::OUT_LIST_CAPACITY;
-use crate::sim::command_queue::{LocalCommandEvent, LocalCommandStage};
+pub use crate::sim::command_queue::{
+    ChecksumMismatch, CommandDispatchHouse, DO_LIST_CAPACITY, DispatchSummary, OUT_LIST_CAPACITY,
+};
+#[cfg(any(test, feature = "test-support"))]
+use crate::sim::command_queue::{
+    CommandDispatchClock, CommandDispatchMode, DoListHost, DoListRetimeWindow,
+};
+use crate::sim::command_queue::{
+    DoList, DoListEvent, LocalCommandEvent, LocalCommandStage, SemanticEventHeader,
+};
 use crate::sim::intern::InternedId;
 
 pub const FRAMEINFO_EVENT_OPCODE: u8 = 0x1c;
 pub const CHECKSUM_HISTORY_LEN: usize = 0x100;
-pub const DO_LIST_CAPACITY: usize = 0x4000;
 pub const NETWORK_LOCAL_MIRROR_LIMIT: usize = 0x2000;
 
 const FRAMEINFO_CHECKSUM_PAYLOAD_OFFSET: usize = 0;
 const FRAMEINFO_TIMING_WORD_PAYLOAD_OFFSET: usize = 4;
 const FRAMEINFO_DELAY_PAYLOAD_OFFSET: usize = 6;
-#[cfg(any(test, feature = "test-support"))]
-const QUEUE_ONLY_EVENT_OPCODE_0C: u8 = 0x0c;
-#[cfg(any(test, feature = "test-support"))]
-const QUEUE_ONLY_EVENT_OPCODE_22: u8 = 0x22;
-
-#[cfg(any(test, feature = "test-support"))]
-#[inline]
-const fn queue_consumes_without_execute(opcode: u8, current_player: bool) -> bool {
-    opcode == QUEUE_ONLY_EVENT_OPCODE_22
-        || (opcode == QUEUE_ONLY_EVENT_OPCODE_0C && !current_player)
-}
 
 /// Initial LAN host5DD48D / guest5DD2CD MaxAhead calculation. Native
 /// IPX response getter5424C0 is observed twice only when the first calculation
@@ -371,8 +363,7 @@ impl MultiplayerChecksumHistory {
         self.values[(frame & 0xff) as usize]
     }
 
-    #[cfg(any(test, feature = "test-support"))]
-    fn compare(&self, frame_info: FrameInfo) -> Result<(), ChecksumMismatch> {
+    pub fn compare(&self, frame_info: FrameInfo) -> Result<(), ChecksumMismatch> {
         let history_index = frame_info.history_index();
         let local_checksum = self.values[history_index];
         if local_checksum == frame_info.checksum {
@@ -396,22 +387,6 @@ impl Default for MultiplayerChecksumHistory {
     }
 }
 
-/// Exact diagnostic facts available when one due FRAMEINFO comparison fails.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[error(
-    "multiplayer checksum mismatch for house {house_id} at frame {event_frame}: \
-     local {local_checksum:#010x}, remote {remote_checksum:#010x}, \
-     history[{history_index}] with delay {delay}"
-)]
-pub struct ChecksumMismatch {
-    pub house_id: i8,
-    pub event_frame: i32,
-    pub delay: u8,
-    pub history_index: u8,
-    pub local_checksum: u32,
-    pub remote_checksum: u32,
-}
-
 /// One byte-exact native synchronized command.
 ///
 /// Decoded Rust commands deliberately cannot be attached here. A native queue
@@ -426,6 +401,36 @@ pub struct SynchronizedCommand {
 impl LocalCommandEvent for SynchronizedCommand {
     fn consumes_native_outlist_slot(&self) -> bool {
         true
+    }
+}
+
+impl DoListEvent for SynchronizedCommand {
+    fn native_record(&self) -> Option<&CommandRecord> {
+        Some(&self.record)
+    }
+
+    fn native_record_mut(&mut self) -> Option<&mut CommandRecord> {
+        Some(&mut self.record)
+    }
+
+    fn semantic_header(&self) -> Option<SemanticEventHeader> {
+        None
+    }
+
+    fn consumes_native_dolist_slot(&self) -> bool {
+        true
+    }
+
+    fn is_processed(&self) -> bool {
+        self.record.is_processed()
+    }
+
+    fn mark_processed(&mut self) {
+        self.record.mark_processed();
+    }
+
+    fn clear_processed(&mut self) {
+        self.record.clear_processed();
     }
 }
 
@@ -463,35 +468,11 @@ impl SynchronizedCommand {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    fn stages_as_megamission(&self) -> bool {
-        self.record.opcode() == crate::sim::command::MEGAMISSION_OPCODE
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
     fn stamp_for_network(&mut self, house_id: i8, execute_frame: u32) {
         self.record.set_house_id(house_id);
         self.record.set_frame_stamp(execute_frame as i32);
         self.record.clear_processed();
     }
-}
-
-/// Result counters from one native-order DoList scan.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct DispatchSummary {
-    /// Records forwarded to the command executor.
-    pub executed: usize,
-    /// Due timing records consumed without command execution.
-    pub timing_consumed: usize,
-    /// Due-on-this-frame timing records compared with local history.
-    pub frame_info_compared: usize,
-    /// Executed non-timing records whose frame was already past.
-    pub late_executed: usize,
-    /// Late non-FRAMEINFO records skipped by network-mode dispatch.
-    pub late_skipped: usize,
-    /// Due MegaMission records dropped because the native staging ring was full.
-    pub megamission_dropped: usize,
-    /// Contiguous processed/expired records retired from the DoList head.
-    pub retired: usize,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -504,37 +485,6 @@ enum DispatchMode<'a> {
     },
 }
 
-/// One registered HouseClass slot presented to command dispatch.
-///
-/// `house_id` remains the native signed byte carried by command records.
-/// `dispatch_eligible` is the caller-owned `IsHuman || PlayerControl` result;
-/// keeping it explicit prevents skipped AI-only houses from compressing later
-/// house ids.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CommandDispatchHouse {
-    pub owner: InternedId,
-    pub house_id: i8,
-    pub dispatch_eligible: bool,
-    /// Execute_DoList64C8D8 compares OPTIONS' sender with PlayerPtr.
-    pub current_player: bool,
-}
-
-impl CommandDispatchHouse {
-    pub const fn new(owner: InternedId, house_id: i8, dispatch_eligible: bool) -> Self {
-        Self {
-            owner,
-            house_id,
-            dispatch_eligible,
-            current_player: false,
-        }
-    }
-
-    pub const fn with_current_player(mut self, current_player: bool) -> Self {
-        self.current_player = current_player;
-        self
-    }
-}
-
 /// Local issue queue and synchronized received-command list.
 ///
 /// `VecDeque` preserves the two native FIFO scans while admission methods
@@ -542,9 +492,7 @@ impl CommandDispatchHouse {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SynchronizedCommandQueue {
     local: LocalCommandStage<SynchronizedCommand>,
-    do_list: VecDeque<SynchronizedCommand>,
-    retime_window_start: i32,
-    retime_window_end: i32,
+    do_list: DoList<SynchronizedCommand>,
 }
 
 impl SynchronizedCommandQueue {
@@ -581,7 +529,7 @@ impl SynchronizedCommandQueue {
     /// adjustment, which is the value the session owner must commit. A timing
     /// update that widens neither unsigned negotiated value clears the window.
     ///
-    /// VERIFIED: gamemd.exe `EventClass__Execute @ 0x004C7600` case `0x20`
+    /// VERIFIED: gamemd.exe `EventClass__Execute @ 0x004C800C` case `0x20`
     /// publishes the adjusted window consumed by `FUN_0064C380 @ 0x0064C380`.
     #[cfg(any(test, feature = "test-support"))]
     pub fn apply_timing_update(
@@ -603,15 +551,14 @@ impl SynchronizedCommandQueue {
             || proposed_frame_send_rate > previous_frame_send_rate
         {
             let rate = i32::from(proposed_frame_send_rate.get());
-            self.retime_window_start = event_frame;
-            self.retime_window_end = event_frame
+            let end = event_frame
                 .wrapping_add(i32::from(adjusted_max_ahead))
                 .wrapping_add(rate.wrapping_sub(1))
                 .wrapping_div(rate)
                 .wrapping_mul(rate);
+            self.do_list.set_retime_window(event_frame, end);
         } else {
-            self.retime_window_start = 0;
-            self.retime_window_end = 0;
+            self.do_list.set_retime_window(0, 0);
         }
 
         adjusted_max_ahead
@@ -626,13 +573,8 @@ impl SynchronizedCommandQueue {
     /// Admit one received/replay command in arrival order. A record received
     /// while the native DoList's 0x4000-entry admission cap is full is consumed
     /// but not retained.
-    pub fn admit(&mut self, mut command: SynchronizedCommand) -> bool {
-        if self.do_list.len() >= DO_LIST_CAPACITY {
-            return false;
-        }
-        command.record.clear_processed();
-        self.do_list.push_back(command);
-        true
+    pub fn admit(&mut self, command: SynchronizedCommand) -> bool {
+        self.do_list.admit(command)
     }
 
     /// Admit an unknown fixed-width record without interpreting its payload.
@@ -646,11 +588,8 @@ impl SynchronizedCommandQueue {
     #[cfg(any(test, feature = "test-support"))]
     pub fn transfer_single_player(&mut self) -> usize {
         let drained = self.local.len();
-        for mut command in self.local.take_prefix(drained) {
-            command.record.clear_processed();
-            if self.do_list.len() < DO_LIST_CAPACITY {
-                self.do_list.push_back(command);
-            }
+        for command in self.local.take_prefix(drained) {
+            self.do_list.admit(command);
         }
         drained
     }
@@ -699,7 +638,7 @@ impl SynchronizedCommandQueue {
         for mut command in self.local.take_prefix(transfer_count) {
             command.stamp_for_network(local_house_id, execute_frame);
             transfer.push(command.record.clone());
-            self.do_list.push_back(command);
+            self.do_list.admit(command);
         }
         transfer
     }
@@ -783,107 +722,88 @@ impl SynchronizedCommandQueue {
         A: FnMut(InternedId, &mut [SynchronizedCommand]),
         F: FnMut(InternedId, &SynchronizedCommand, bool),
     {
-        let mut summary = DispatchSummary::default();
-        let scan_len = self.do_list.len();
+        let dispatch_mode = match mode {
+            DispatchMode::Offline => CommandDispatchMode::Offline,
+            DispatchMode::Network { .. } => CommandDispatchMode::Network,
+        };
+        let mut host = RawDispatchHost {
+            current_frame,
+            mode,
+            handle_late_record: &mut handle_late_record,
+            adjust_megamissions: &mut adjust_megamissions,
+            execute: &mut execute,
+        };
+        self.do_list.dispatch(
+            CommandDispatchClock {
+                native_frame: current_frame,
+                execute_tick: 0,
+            },
+            houses,
+            dispatch_mode,
+            &mut host,
+        )
+    }
+}
 
-        // VERIFIED: gamemd.exe `FUN_0064C380 @ 0x0064C380` scans the complete
-        // entry-count snapshot before house eligibility and keeps this window
-        // active until a later timing update replaces or clears it.
-        for record_index in 0..scan_len {
-            let command = self
-                .do_list
-                .get_mut(record_index)
-                .expect("retime scan is bounded by the DoList snapshot");
-            let frame = command.record.frame_stamp();
-            if command.record.opcode() != FRAMEINFO_EVENT_OPCODE
-                && self.retime_window_start < frame
-                && frame < self.retime_window_end
-            {
-                command.record.set_frame_stamp(self.retime_window_end);
-            }
+#[cfg(any(test, feature = "test-support"))]
+struct RawDispatchHost<'a, L, A, F> {
+    current_frame: i32,
+    mode: DispatchMode<'a>,
+    handle_late_record: &'a mut L,
+    adjust_megamissions: &'a mut A,
+    execute: &'a mut F,
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl<L, A, F> DoListHost<SynchronizedCommand> for RawDispatchHost<'_, L, A, F>
+where
+    L: FnMut(InternedId, &SynchronizedCommand),
+    A: FnMut(InternedId, &mut [SynchronizedCommand]),
+    F: FnMut(InternedId, &SynchronizedCommand, bool),
+{
+    type Error = ChecksumMismatch;
+
+    fn late_entry(&mut self, house: CommandDispatchHouse, entry: &SynchronizedCommand) {
+        (self.handle_late_record)(house.owner, entry);
+    }
+
+    fn frame_info(
+        &mut self,
+        _house: CommandDispatchHouse,
+        entry: &SynchronizedCommand,
+    ) -> Result<bool, Self::Error> {
+        let DispatchMode::Network {
+            checksum_history,
+            frame_info_gate,
+        } = self.mode
+        else {
+            return Ok(false);
+        };
+        if !frame_info_gate.allows_compare(self.current_frame) {
+            return Ok(false);
         }
+        let frame_info =
+            FrameInfo::decode(&entry.record).expect("dispatch checked FRAMEINFO opcode");
+        checksum_history.compare(frame_info)?;
+        Ok(true)
+    }
 
-        for house in houses.iter().copied() {
-            if !house.dispatch_eligible {
-                continue;
-            }
-            let owner = house.owner;
-            let house_id = house.house_id;
-            let mut staged_megamissions = Vec::new();
-            let mut staged_late = Vec::new();
-            for record_index in 0..scan_len {
-                let Some(command) = self.do_list.get_mut(record_index) else {
-                    break;
-                };
-                if command.record.house_id() != house_id
-                    || command.record.frame_stamp() > current_frame
-                    || command.record.is_processed()
-                {
-                    continue;
-                }
+    fn adjust_megamissions(
+        &mut self,
+        house: CommandDispatchHouse,
+        entries: &mut [SynchronizedCommand],
+    ) {
+        (self.adjust_megamissions)(house.owner, entries);
+    }
 
-                let is_late = command.record.frame_stamp() < current_frame;
-                if is_late
-                    && command.record.opcode() != FRAMEINFO_EVENT_OPCODE
-                    && matches!(mode, DispatchMode::Network { .. })
-                {
-                    handle_late_record(owner, command);
-                    summary.late_skipped += 1;
-                    continue;
-                }
-                match command.record.opcode() {
-                    FRAMEINFO_EVENT_OPCODE => {
-                        if command.record.frame_stamp() == current_frame
-                            && let DispatchMode::Network {
-                                checksum_history,
-                                frame_info_gate,
-                            } = mode
-                        {
-                            if !frame_info_gate.allows_compare(current_frame) {
-                                summary.timing_consumed += 1;
-                                command.record.mark_processed();
-                                continue;
-                            }
-                            let frame_info = FrameInfo::decode(&command.record)
-                                .expect("opcode was checked above");
-                            checksum_history.compare(frame_info)?;
-                            summary.frame_info_compared += 1;
-                        }
-                        summary.timing_consumed += 1;
-                    }
-                    opcode if queue_consumes_without_execute(opcode, house.current_player) => {}
-                    _ if command.stages_as_megamission() => {
-                        if stage_megamission(&mut staged_megamissions, command) {
-                            staged_late.push(is_late);
-                        } else {
-                            summary.megamission_dropped += 1;
-                        }
-                    }
-                    _ => {
-                        execute(owner, command, is_late);
-                        summary.executed += 1;
-                        summary.late_executed += usize::from(is_late);
-                    }
-                }
-                command.record.mark_processed();
-            }
-            if !staged_megamissions.is_empty() {
-                adjust_megamissions(owner, &mut staged_megamissions);
-            }
-            for (command, is_late) in staged_megamissions.into_iter().zip(staged_late) {
-                execute(owner, &command, is_late);
-                summary.executed += 1;
-                summary.late_executed += usize::from(is_late);
-            }
-        }
-
-        while self.do_list.front().is_some_and(|command| {
-            command.record.is_processed() || command.record.frame_stamp() < current_frame
-        }) {
-            self.do_list.pop_front();
-            summary.retired += 1;
-        }
-        Ok(summary)
+    fn execute(
+        &mut self,
+        house: CommandDispatchHouse,
+        entry: &SynchronizedCommand,
+        is_late: bool,
+        _retime_window: &mut DoListRetimeWindow,
+    ) {
+        (self.execute)(house.owner, entry, is_late);
     }
 }
 
@@ -1087,7 +1007,13 @@ mod tests {
         ] {
             assert!(queue.admit(opaque(opcode, 0, frame, &[payload])));
         }
-        queue.do_list[3].record.mark_processed();
+        queue
+            .do_list
+            .iter_mut()
+            .nth(3)
+            .unwrap()
+            .record
+            .mark_processed();
         let unchanged_parts = queue
             .synchronized_records()
             .map(|command| {
@@ -1180,14 +1106,13 @@ mod tests {
     #[test]
     fn gsi_16_02_timing_update_applies_scenario_adjustment_and_clears_on_nonincrease() {
         let mut queue = SynchronizedCommandQueue::new();
-        queue.retime_window_start = 1;
-        queue.retime_window_end = 2;
+        queue.do_list.set_retime_window(1, 2);
 
         assert_eq!(
             queue.apply_timing_update(100, 15, nonzero_u8(5), 20, nonzero_u8(5), true,),
             10
         );
-        assert_eq!((queue.retime_window_start, queue.retime_window_end), (0, 0));
+        assert_eq!(queue.do_list.retime_window().bounds(), (0, 0));
     }
 
     #[test]

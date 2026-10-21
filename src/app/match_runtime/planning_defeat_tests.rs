@@ -176,7 +176,8 @@ fn retail_local_defeat_leaves_planning_in_the_same_house_frame() {
         let admitted = output.take_admitted_commands();
         recorded.record_tick(tick, admitted.clone(), output.tick.state_hash);
         for command in admitted {
-            if matches!(command.payload, Command::PlanningRecord { .. }) {
+            if matches!(&command.payload, Command::SynchronizedRecord { record } if record.opcode() == 0x2B)
+            {
                 commits.push((tick, command));
             }
         }
@@ -189,11 +190,12 @@ fn retail_local_defeat_leaves_planning_in_the_same_house_frame() {
         "the commit joins the same frame's post-Logic dispatch"
     );
     assert_eq!(commit.execute_tick, tick);
-    assert_eq!(Some(commit.owner), rt.simulation.session().current_house());
-    let Command::PlanningRecord { record } = &commit.payload else {
+    let Command::SynchronizedRecord { record } = &commit.payload else {
         unreachable!()
     };
     assert_eq!(record.opcode(), 0x2B);
+    assert_eq!(record.house_id(), 0);
+    assert_eq!(record.frame_stamp(), tick as i32);
     assert_eq!(
         outcome_cues,
         [(false, vec!["PlanningModeEnd".into()])],
@@ -291,7 +293,7 @@ fn retail_inactive_and_nonlocal_defeat_do_not_leave_the_local_planner() {
         assert!(
             !admitted
                 .iter()
-                .any(|command| matches!(command.payload, Command::PlanningRecord { .. }))
+                .any(|command| matches!(&command.payload, Command::SynchronizedRecord { record } if record.opcode() == 0x2B))
         );
         assert!(sounds.is_empty());
     }

@@ -178,8 +178,8 @@ pub fn dispatch_production_changes_for_tests(
     sim.session
         .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
     publish_production_changes(sim, rules);
-    let mut due = sim.take_due_commands();
-    sim.transfer_local_commands(&mut due);
+    let due = sim.take_due_commands();
+    sim.transfer_local_commands();
     let (_, spawned) = sim.apply_due_commands(
         &due,
         rules,

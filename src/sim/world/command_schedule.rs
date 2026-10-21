@@ -6,6 +6,11 @@
 //! remains on Simulation for persistence and replay.
 
 use super::Simulation;
+use super::queued_command::QueuedCommand;
+use crate::sim::command_queue::{
+    CommandDispatchClock, CommandDispatchHouse, CommandDispatchMode, DoListEvent, DoListHost,
+    DoListRetimeWindow,
+};
 use crate::sim::world::FrameEffects;
 
 use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
@@ -37,26 +42,22 @@ impl Simulation {
         let Some(record) = self.encode_options_record(owner) else {
             return false;
         };
-        let Some(command) = self.decode_native_command_record(&record, self.session.tick()) else {
-            return false;
-        };
-        self.issue_local_command(command)
+        self.issue_local_command(CommandEnvelope::synchronized(record, self.session.tick()))
     }
 
     /// Submit a freshly produced local command. Native events share the
     /// process-wide OutList cap; local selection/Options use their ingress.
     /// The result describes queue admission, not whether input was handled.
     pub fn issue_local_command(&mut self, command: CommandEnvelope) -> bool {
-        if command.payload.uses_frame_ingress() {
-            self.queue_command(command);
-            return true;
-        }
         // A recorded frame is the authoritative accepted batch. Run local
         // producers for their other effects, but never recreate a record
         // that live OutList saturation may have dropped.
         #[cfg(any(test, feature = "test-support"))]
         if self.replaying_recorded_commands {
             return false;
+        }
+        if command.payload.uses_frame_ingress() {
+            return self.admit_queued_command(QueuedCommand::from_envelope(command), false);
         }
         if let Command::SetRally {
             rx,
@@ -66,19 +67,22 @@ impl Simulation {
         {
             let mut accepted = true;
             for &producer in producer_ids {
-                accepted &= self.local_commands.try_push(CommandEnvelope::new(
-                    command.owner,
-                    command.execute_tick,
-                    Command::SetRally {
-                        rx: *rx,
-                        ry: *ry,
-                        producer_ids: vec![producer],
-                    },
+                accepted &= self.local_commands.try_push(QueuedCommand::from_envelope(
+                    CommandEnvelope::new(
+                        command.owner,
+                        command.execute_tick,
+                        Command::SetRally {
+                            rx: *rx,
+                            ry: *ry,
+                            producer_ids: vec![producer],
+                        },
+                    ),
                 ));
             }
             return accepted;
         }
-        self.local_commands.try_push(command)
+        self.local_commands
+            .try_push(QueuedCommand::from_envelope(command))
     }
 
     pub fn issue_local_commands(&mut self, commands: impl IntoIterator<Item = CommandEnvelope>) {
@@ -87,35 +91,70 @@ impl Simulation {
         }
     }
 
-    fn queued_commands(&self) -> impl Iterator<Item = &CommandEnvelope> {
+    fn queued_command_entries(&self) -> impl Iterator<Item = &QueuedCommand> + '_ {
         self.pending_commands
             .iter()
             .chain(self.local_commands.iter())
+            .filter(|entry| !entry.is_processed())
     }
 
-    /// Offline transfer at the post-Logic queue boundary. The existing
-    /// semantic multiplayer path still lacks native send selection/retiming;
-    /// network transport must replace that policy, not drain in input code.
-    pub(crate) fn transfer_local_commands(&mut self, commands: &mut Vec<CommandEnvelope>) {
+    fn queued_commands(&self) -> impl Iterator<Item = CommandEnvelope> + '_ {
+        self.queued_command_entries()
+            .map(|entry| entry.diagnostic_envelope(self))
+    }
+
+    /// Add_Event_To_DoList clears the processed bit only on fresh admission.
+    /// The dispatcher reserves its moved FIFO's slots until retirement.
+    fn admit_queued_command(&mut self, mut command: QueuedCommand, record: bool) -> bool {
+        command.clear_processed();
+        let receipt = record.then(|| command.replay_envelope());
+        let accepted = self
+            .pending_commands
+            .admit_with_reserved_native(command, self.dispatch_reserved_slots);
+        if accepted && let Some(receipt) = receipt {
+            self.frame_command_admissions.push(receipt);
+        }
+        accepted
+    }
+
+    /// Admit received bytes without decoding their actor, House or frame.
+    /// Execute_DoList64C380 owns those checks at its post-Logic boundary.
+    pub fn admit_native_command_record(
+        &mut self,
+        record: crate::sim::command::CommandRecord,
+    ) -> bool {
+        self.admit_queued_command(
+            QueuedCommand::Native {
+                record,
+                diagnostic_issue_tick: self.session.tick(),
+            },
+            true,
+        )
+    }
+
+    /// Offline transfer retains each native frame and all FIFO positions.
+    /// Physical network send selection and retiming still belong to transport.
+    pub(crate) fn transfer_local_commands(&mut self) {
         let count = self.local_commands.len();
-        #[cfg(any(test, feature = "test-support"))]
-        let playback = self.replaying_recorded_commands;
-        #[cfg(not(any(test, feature = "test-support")))]
-        let playback = false;
-        let execute_tick = self.session.tick().saturating_add(1);
-        for command in self.local_commands.take_prefix(count) {
-            if command.execute_tick <= execute_tick {
-                // A snapshot can contain pending local input. Playback's
-                // admitted batch already represents the due part, but its
-                // future records still belong on the admitted scheduler.
-                if !playback {
-                    commands.push(command);
+        let entries: Vec<_> = self.local_commands.take_prefix(count).collect();
+        for command in entries {
+            #[cfg(any(test, feature = "test-support"))]
+            if self.replaying_recorded_commands {
+                // The recorded accepted stream owns due input. A snapshot
+                // may also retain future input not present in this batch.
+                let future = command.record().map_or_else(
+                    || {
+                        command.semantic().is_some_and(|entry| {
+                            entry.execute_tick > self.session.tick().saturating_add(1)
+                        })
+                    },
+                    |record| record.frame_stamp() > self.session.binary_frame() as i32,
+                );
+                if !future {
+                    continue;
                 }
-            } else {
-                // Transfer frees OutList occupancy even when the preserved
-                // frame remains in the future on the admitted DoList.
-                self.pending_commands.push(command);
             }
+            self.admit_queued_command(command, true);
         }
     }
 
@@ -127,16 +166,20 @@ impl Simulation {
     /// tick, and insertion position exactly. It does not sort, retime, normalize,
     /// intern, deduplicate, or apply the negotiated input delay.
     pub fn queue_command(&mut self, command: CommandEnvelope) {
-        self.queue_commands([command]);
+        #[cfg(any(test, feature = "test-support"))]
+        if self.replaying_recorded_commands {
+            return;
+        }
+        let record = !command.payload.uses_frame_ingress();
+        self.admit_queued_command(QueuedCommand::from_envelope(command), record);
     }
 
-    /// Queue an already-ordered batch for future execution.
-    ///
-    /// Commands are appended in iterator order with their owners, execution
-    /// ticks, and payloads unchanged. Native byte round-trips and network timing
-    /// remain the responsibility of the producer that prepares each envelope.
+    /// Already-ordered arrivals share one admitted FIFO, including commands
+    /// whose native codec has not yet been ported.
     pub fn queue_commands(&mut self, commands: impl IntoIterator<Item = CommandEnvelope>) {
-        self.pending_commands.extend(commands);
+        for command in commands {
+            self.queue_command(command);
+        }
     }
 
     /// Defensive queue snapshot for sealed input diagnostics and tests.
@@ -144,7 +187,7 @@ impl Simulation {
     /// draining or exposing writable queue state. Ordinary rendering does not
     /// call this diagnostic boundary.
     pub fn pending_command_snapshot(&self) -> Vec<CommandEnvelope> {
-        self.queued_commands().cloned().collect()
+        self.queued_commands().collect()
     }
 
     /// Whether provisional local selection still has authoritative queued
@@ -213,7 +256,11 @@ impl Simulation {
             .ok()
             .filter(|speed| *speed <= crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED);
         let execute_tick = self.session.tick().saturating_add(1);
-        let house_order = self.due_command_house_order(self.queued_commands(), execute_tick);
+        let queued: Vec<_> = self
+            .queued_command_entries()
+            .filter_map(|entry| entry.projected_envelope(self))
+            .collect();
+        let house_order = self.due_command_house_order(queued.iter(), execute_tick);
         // Match execution phases: all local Options ingress first, then all
         // eligible EventClass tails. Interleaving them by House can predict
         // a different speed from the one the frame actually commits.
@@ -225,7 +272,7 @@ impl Simulation {
                 if at_tail && !house.event_dispatch_eligible() {
                     continue;
                 }
-                for command in self.queued_commands().filter(|command| {
+                for command in queued.iter().filter(|command| {
                     command.execute_tick <= execute_tick && command.owner == owner
                 }) {
                     let speed = match (at_tail, &command.payload) {
@@ -252,69 +299,78 @@ impl Simulation {
         std::mem::take(&mut self.departed_owners)
     }
 
-    /// Drain commands that are due for the next tick from `pending_commands`.
-    /// Returns owned commands; remaining commands stay queued.
+    /// Only local frame-ingress actions leave the FIFO before Logic. Native
+    /// and semantic tail events stay in place until the canonical DoList scan.
     pub fn take_due_commands(&mut self) -> Vec<CommandEnvelope> {
         let execute_tick = self.session.tick().saturating_add(1);
-        let mut due = Vec::new();
-        let mut kept = Vec::new();
-        for cmd in std::mem::take(&mut self.pending_commands) {
-            if cmd.execute_tick <= execute_tick {
-                due.push(cmd);
-            } else {
-                kept.push(cmd);
-            }
-        }
-        self.pending_commands = kept;
-        due
+        self.pending_commands
+            .take_where(|entry| {
+                entry.semantic().is_some_and(|command| {
+                    command.payload.uses_frame_ingress() && command.execute_tick <= execute_tick
+                })
+            })
+            .into_iter()
+            .filter_map(|entry| match entry {
+                QueuedCommand::Semantic { envelope, .. } => Some(envelope),
+                _ => None,
+            })
+            .collect()
     }
 
-    /// Component fixtures can explicitly visit the real transfer boundary
-    /// without running unrelated world AI. Live frames transfer after Logic.
+    /// Component fixtures can drain a transferred batch instead of running
+    /// unrelated world AI. Production never uses this early extraction.
     #[cfg(any(test, feature = "test-support"))]
     pub fn take_frame_commands_for_test(&mut self) -> Vec<CommandEnvelope> {
-        let mut commands = self.take_due_commands();
-        self.transfer_local_commands(&mut commands);
-        commands
+        self.transfer_local_commands();
+        let native_frame = self.session.binary_frame() as i32;
+        let tick = self.session.tick().saturating_add(1);
+        let entries = self.pending_commands.take_where(|entry| {
+            entry.record().map_or_else(
+                || {
+                    entry
+                        .semantic()
+                        .is_some_and(|command| command.execute_tick <= tick)
+                },
+                |record| record.frame_stamp() <= native_frame,
+            )
+        });
+        entries
+            .into_iter()
+            .map(|entry| entry.diagnostic_envelope(self))
+            .collect()
     }
 
-    /// Strip's prefix follows prior input and precedes Logic. It appends to
-    /// the same local stage, retaining occupancy until the tail transfer.
+    /// Native replay/input imports join the same FIFO at the frame boundary.
+    /// Only local frame-ingress actions have already executed before Logic.
     pub(super) fn admit_frame_commands(
         &mut self,
         commands: &[CommandEnvelope],
         rules: &RuleSet,
     ) -> Vec<CommandEnvelope> {
         crate::sim::production::publish_production_changes(self, rules);
-        commands.to_vec()
+        for command in commands {
+            if command.payload.uses_frame_ingress() {
+                self.frame_command_admissions.push(command.clone());
+            } else {
+                self.admit_queued_command(QueuedCommand::from_envelope(command.clone()), true);
+            }
+        }
+        Vec::new()
     }
 
-    /// House-generated local events follow earlier input/Strip events. Future
-    /// deferred work retains the existing admitted scheduler. Replay's local
-    /// issue policy suppresses regenerated records, including dropped ones.
+    /// House-generated events use the same local/deferred owners. Playback
+    /// supplies every accepted admission, so regenerated writes are suppressed.
     pub(super) fn issue_generated_frame_commands(&mut self, generated: Vec<CommandEnvelope>) {
         let execute_tick = self.session.tick().saturating_add(1);
         for command in generated {
             if command.execute_tick <= execute_tick {
                 let _ = self.issue_local_command(command);
             } else {
-                self.pending_commands.push(command);
+                self.queue_command(command);
             }
         }
     }
 
-    /// Admit and drain a diagnostic-replay batch, consuming exact matching
-    /// due work regenerated by the simulation itself.
-    ///
-    /// The diagnostic log already contains the batch drained by the live app.
-    /// Playback can independently recreate later work such as C4 scatter, so
-    /// mixing that pending work with the recorded batch would admit it twice.
-    /// Consume one exact due regenerated copy for each recorded envelope, then
-    /// temporarily isolate the remaining queue:
-    /// the recorded batch still uses [`Self::queue_commands`] and the canonical
-    /// due filter, malformed future-stamped replay entries are discarded, and
-    /// unrelated/future simulation work remains untouched. Keeping a consumed
-    /// PLACE would leave replay/save state different from the ordinary app.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn take_due_replay_commands(
         &mut self,
@@ -323,20 +379,20 @@ impl Simulation {
         #[cfg(feature = "debug-tools")]
         self.set_debug_session_context(crate::sim::cheats::DebugSessionContext::Replay);
         self.replaying_recorded_commands = true;
+        self.frame_command_admissions.clear();
         let commands: Vec<_> = commands.into_iter().collect();
-        let execute_tick = self.session.tick().saturating_add(1);
         for recorded in &commands {
-            if recorded.execute_tick <= execute_tick
-                && let Some(index) = self.pending_commands.iter().position(|cmd| cmd == recorded)
-            {
-                self.pending_commands.remove(index);
+            let expected = QueuedCommand::from_envelope(recorded.clone());
+            let same = |entry: &QueuedCommand| match (entry.record(), expected.record()) {
+                (Some(a), Some(b)) => a == b,
+                (None, None) => entry.semantic() == expected.semantic(),
+                _ => false,
+            };
+            if self.pending_commands.remove_first(same).is_none() {
+                self.local_commands.remove_first(same);
             }
         }
-        let simulation_pending = std::mem::take(&mut self.pending_commands);
-        self.queue_commands(commands);
-        let due = self.take_due_commands();
-        self.pending_commands = simulation_pending;
-        due
+        commands
     }
 
     /// VERA-only: one command and its spawn-refresh report: a Deploy whose MCV left
@@ -407,21 +463,17 @@ impl Simulation {
         .then_some(command.owner)
     }
 
-    fn command_uses_megamission(command: &Command) -> bool {
-        if let Command::PlanningRecord { record } = command {
-            return record.opcode() == crate::sim::command::MEGAMISSION_OPCODE;
-        }
-        command.megamission_actor().is_some()
-    }
-
     /// The run key of `0x0064CDA0`'s caller: action, target and destination
     /// tokens (`0x0064CB0A..0x0064CB60`). `0x0064CDA0` returns at once unless
     /// the destination token is a Cell (`0x0064CDCA..0x0064CDDC`), so a Move
     /// onto an object, and an attack-move with a target or an object
     /// destination, have no key: each ends a run and is never spread. The
     /// click never sends an attack-move with both tokens.
-    fn formation_key(command: &Command) -> Option<((u8, i32, u8), u16, u16)> {
-        match command {
+    fn formation_key(command: &impl FormationCommand) -> Option<((u8, i32, u8), u16, u16)> {
+        if let Some(record) = command.formation_record() {
+            return Self::native_formation_key(record);
+        }
+        match command.formation_semantic()? {
             Command::Move {
                 target_rx,
                 target_ry,
@@ -434,38 +486,48 @@ impl Simulation {
             } => Some(((29, 0, 0), *rx, *ry)),
             // 64CB0A..64CBDB groups all staged opcode4 records by mission,
             // target and destination tokens, including planning flags1/2.
-            Command::PlanningRecord { record } if record.opcode() == 4 => {
-                let p = record.payload();
-                if p[16] != 11 {
-                    return None;
-                }
-                let destination = i32::from_le_bytes(p[12..16].try_into().ok()?);
-                let crate::sim::command::MegaMissionTarget::Cell { x, y } =
-                    crate::sim::command::MegaMissionTarget::from_token(destination, 11)?
-                else {
-                    return None;
-                };
-                Some((
-                    (p[5], i32::from_le_bytes(p[7..11].try_into().ok()?), p[11]),
-                    x as u16,
-                    y as u16,
-                ))
-            }
+            Command::PlanningRecord { record } => Self::native_formation_key(record),
             _ => None,
         }
     }
 
-    fn formation_entity_id(command: &Command) -> Option<u64> {
-        match command {
+    fn native_formation_key(
+        record: &crate::sim::command::CommandRecord,
+    ) -> Option<((u8, i32, u8), u16, u16)> {
+        if record.opcode() != 4 || record.payload()[16] != 11 {
+            return None;
+        }
+        let p = record.payload();
+        let destination = i32::from_le_bytes(p[12..16].try_into().ok()?);
+        let crate::sim::command::MegaMissionTarget::Cell { x, y } =
+            crate::sim::command::MegaMissionTarget::from_token(destination, 11)?
+        else {
+            return None;
+        };
+        Some((
+            (p[5], i32::from_le_bytes(p[7..11].try_into().ok()?), p[11]),
+            x as u16,
+            y as u16,
+        ))
+    }
+
+    fn formation_entity_id(command: &impl FormationCommand) -> Option<u64> {
+        let raw = command
+            .formation_record()
+            .or_else(|| match command.formation_semantic()? {
+                Command::PlanningRecord { record } => Some(record),
+                _ => None,
+            });
+        if let Some(record) = raw {
+            let p = record.payload();
+            if record.opcode() != 4 || p[4] != 0x34 {
+                return None;
+            }
+            return u64::try_from(i32::from_le_bytes(p[0..4].try_into().ok()?)).ok();
+        }
+        match command.formation_semantic()? {
             Command::Move { entity_id, .. } | Command::AttackMove { entity_id, .. } => {
                 Some(*entity_id)
-            }
-            Command::PlanningRecord { record } if record.opcode() == 4 => {
-                let p = record.payload();
-                if p[4] != 0x34 {
-                    return None;
-                }
-                u64::try_from(i32::from_le_bytes(p[0..4].try_into().ok()?)).ok()
             }
             _ => None,
         }
@@ -577,7 +639,7 @@ impl Simulation {
     /// member's coordinates (Location) and source cell.
     pub(super) fn adjust_staged_megamission_destinations(
         &self,
-        commands: &mut [CommandEnvelope],
+        commands: &mut [impl FormationCommand],
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
@@ -588,20 +650,18 @@ impl Simulation {
         };
         let mut run_start = 0;
         while run_start < commands.len() {
-            let Some(key) = Self::formation_key(&commands[run_start].payload) else {
+            let Some(key) = Self::formation_key(&commands[run_start]) else {
                 run_start += 1;
                 continue;
             };
             let mut run_end = run_start + 1;
-            while run_end < commands.len()
-                && Self::formation_key(&commands[run_end].payload) == Some(key)
-            {
+            while run_end < commands.len() && Self::formation_key(&commands[run_end]) == Some(key) {
                 run_end += 1;
             }
             if run_end - run_start > 1 {
                 let mut members = Vec::new();
                 for (command_index, command) in commands[run_start..run_end].iter().enumerate() {
-                    let Some(entity_id) = Self::formation_entity_id(&command.payload) else {
+                    let Some(entity_id) = Self::formation_entity_id(command) else {
                         continue;
                     };
                     let Some(entity) = self.substrate.entities.get(entity_id) else {
@@ -652,32 +712,7 @@ impl Simulation {
                     else {
                         continue;
                     };
-                    match &mut command.payload {
-                        Command::Move {
-                            target_rx,
-                            target_ry,
-                            ..
-                        }
-                        | Command::AttackMove {
-                            destination:
-                                Some(crate::sim::combat::TargetKind::Cell(target_rx, target_ry)),
-                            ..
-                        } => {
-                            *target_rx = assignment.destination.0 as u16;
-                            *target_ry = assignment.destination.1 as u16;
-                        }
-                        Command::PlanningRecord { record } => {
-                            let destination = crate::sim::command::MegaMissionTarget::Cell {
-                                x: assignment.destination.0,
-                                y: assignment.destination.1,
-                            }
-                            .token()
-                            .expect("Cell target token");
-                            record.payload_mut()[12..16]
-                                .copy_from_slice(&destination.0.to_le_bytes());
-                        }
-                        _ => {}
-                    }
+                    command.set_formation_destination(assignment.destination);
                 }
             }
             run_start = run_end;
@@ -693,10 +728,9 @@ impl Simulation {
         execute_tick: u64,
     ) -> Vec<InternedId> {
         let mut house_order = self.houses.order().to_vec();
-        for command in commands
-            .into_iter()
-            .filter(|command| command.execute_tick <= execute_tick)
-        {
+        for command in commands.into_iter().filter(|command| {
+            command.payload.uses_frame_ingress() && command.execute_tick <= execute_tick
+        }) {
             if !house_order.contains(&command.owner) {
                 house_order.push(command.owner);
             }
@@ -751,6 +785,7 @@ impl Simulation {
     /// `(executed_commands, spawned_entities)`. A sale or undeploy order only
     /// starts the Selling mission: the building leaves the map at its last
     /// visit (`Simulation::visit_building_down`).
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn apply_due_commands(
         &mut self,
         commands: &[CommandEnvelope],
@@ -759,59 +794,231 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> (usize, bool) {
-        let mut executed_commands = 0usize;
-        let mut spawned_entities = false;
+        self.dispatch_owned_commands(
+            commands,
+            rules,
+            execute_tick,
+            overlay_registry,
+            frame_effects,
+        )
+        .expect("component command dispatch must succeed")
+    }
 
-        // Empty-roster diagnostic scenes deliberately allow synthetic owners
-        // (the same UnregisteredDiagnostic boundary as spawn_from_map). A
-        // loaded scenario has a registered roster: Execute_DoList then scans
-        // only its eligible Houses, never a missing sender. Preserve this
-        // diagnostic extension without weakening live EventClass admission.
-        let diagnostic_scene = self.houses.is_empty();
-        for owner in self.due_command_house_order(commands.iter(), execute_tick) {
-            // Native 0x0064C4FB..0x0064C50D reads the flags on reaching each
-            // House, after prior Houses' events, not when taking the snapshot.
-            if !diagnostic_scene
-                && !self
-                    .houses
-                    .get(&owner)
-                    .is_some_and(|house| house.event_dispatch_eligible())
-            {
-                continue;
-            }
-            for command in commands.iter().filter(|command| {
-                command.execute_tick <= execute_tick
-                    && command.owner == owner
-                    && !command.payload.uses_frame_ingress()
-                    && !Self::command_uses_megamission(&command.payload)
-            }) {
-                let (_, spawned) =
-                    self.apply_one_due_command(command, rules, overlay_registry, frame_effects);
-                spawned_entities |= spawned;
-                executed_commands += 1;
-            }
-
-            let mut staged = Vec::new();
-            for command in commands.iter().filter(|command| {
-                command.execute_tick <= execute_tick
-                    && command.owner == owner
-                    && Self::command_uses_megamission(&command.payload)
-            }) {
-                // Execute_DoList marks excess records processed without
-                // executing them. The drained input batch already owns their
-                // consumption; only accepted members reach group adjustment.
-                crate::sim::command::stage_megamission(&mut staged, command);
-            }
-            self.adjust_staged_megamission_destinations(&mut staged, rules, overlay_registry);
-            for command in &staged {
-                let (_, spawned) =
-                    self.apply_one_due_command(command, rules, overlay_registry, frame_effects);
-                spawned_entities |= spawned;
-                executed_commands += 1;
+    pub(super) fn dispatch_owned_commands(
+        &mut self,
+        commands: &[CommandEnvelope],
+        rules: &RuleSet,
+        execute_tick: u64,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> Result<(usize, bool), (super::NetworkCommandError, usize, bool)> {
+        for command in commands
+            .iter()
+            .filter(|command| !command.payload.uses_frame_ingress())
+        {
+            self.admit_queued_command(QueuedCommand::from_envelope(command.clone()), true);
+        }
+        let mut list = std::mem::take(&mut self.pending_commands);
+        self.dispatch_reserved_slots = list.native_len();
+        let mut houses: Vec<_> = self
+            .houses
+            .order()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, &owner)| {
+                let house_id = i8::try_from(index).ok()?;
+                Some(
+                    CommandDispatchHouse::new(owner, house_id, true)
+                        .with_current_player(self.session.current_house() == Some(owner)),
+                )
+            })
+            .collect();
+        if self.houses.is_empty() {
+            for entry in list.iter() {
+                if let Some(command) = entry.semantic()
+                    && !houses.iter().any(|house| house.owner == command.owner)
+                {
+                    houses.push(CommandDispatchHouse::new(command.owner, -1, true));
+                }
             }
         }
+        let clock = CommandDispatchClock {
+            native_frame: self.session.binary_frame() as i32,
+            execute_tick,
+        };
+        let mode = if self.session.game_mode().command_queue_route()
+            == super::CommandQueueRoute::Multiplayer
+        {
+            CommandDispatchMode::Network
+        } else {
+            CommandDispatchMode::Offline
+        };
+        let mut host = WorldCommandHost {
+            sim: self,
+            rules,
+            overlay_registry,
+            frame_effects,
+            execute_tick,
+            spawned: false,
+            executed: 0,
+        };
+        let result = list.dispatch(clock, &houses, mode, &mut host);
+        let spawned = host.spawned;
+        let executed = host.executed;
+        self.dispatch_reserved_slots = 0;
+        let mut newly_admitted = std::mem::take(&mut self.pending_commands);
+        list.append_retained(&mut newly_admitted);
+        self.pending_commands = list;
+        result
+            .map(|summary| (summary.executed, spawned))
+            .map_err(|cause| (cause, executed, spawned))
+    }
+}
 
-        (executed_commands, spawned_entities)
+/// One view of the shared formation algorithm for stored native records and
+/// semantic component fixtures. It never resolves an actor to obtain a key.
+pub(super) trait FormationCommand {
+    fn formation_record(&self) -> Option<&crate::sim::command::CommandRecord>;
+    fn formation_semantic(&self) -> Option<&Command>;
+    fn set_formation_destination(&mut self, destination: (i16, i16));
+}
+
+fn write_formation_destination(
+    record: &mut crate::sim::command::CommandRecord,
+    destination: (i16, i16),
+) {
+    let token = crate::sim::command::MegaMissionTarget::Cell {
+        x: destination.0,
+        y: destination.1,
+    }
+    .token()
+    .expect("Cell target token");
+    record.payload_mut()[12..16].copy_from_slice(&token.0.to_le_bytes());
+}
+
+impl FormationCommand for Command {
+    fn formation_record(&self) -> Option<&crate::sim::command::CommandRecord> {
+        match self {
+            Command::PlanningRecord { record } => Some(record),
+            _ => None,
+        }
+    }
+    fn formation_semantic(&self) -> Option<&Command> {
+        Some(self)
+    }
+    fn set_formation_destination(&mut self, destination: (i16, i16)) {
+        match self {
+            Command::Move {
+                target_rx,
+                target_ry,
+                ..
+            }
+            | Command::AttackMove {
+                destination: Some(crate::sim::combat::TargetKind::Cell(target_rx, target_ry)),
+                ..
+            } => {
+                *target_rx = destination.0 as u16;
+                *target_ry = destination.1 as u16;
+            }
+            Command::PlanningRecord { record } => write_formation_destination(record, destination),
+            _ => {}
+        }
+    }
+}
+
+impl FormationCommand for CommandEnvelope {
+    fn formation_record(&self) -> Option<&crate::sim::command::CommandRecord> {
+        self.payload.formation_record()
+    }
+    fn formation_semantic(&self) -> Option<&Command> {
+        Some(&self.payload)
+    }
+    fn set_formation_destination(&mut self, destination: (i16, i16)) {
+        self.payload.set_formation_destination(destination);
+    }
+}
+
+impl FormationCommand for QueuedCommand {
+    fn formation_record(&self) -> Option<&crate::sim::command::CommandRecord> {
+        self.record()
+            .or_else(|| self.semantic()?.formation_record())
+    }
+    fn formation_semantic(&self) -> Option<&Command> {
+        self.semantic().map(|entry| &entry.payload)
+    }
+    fn set_formation_destination(&mut self, destination: (i16, i16)) {
+        if let Some(record) = self.record_mut() {
+            write_formation_destination(record, destination);
+        } else if let Some(command) = self.semantic_mut() {
+            command.set_formation_destination(destination);
+        }
+    }
+}
+
+struct WorldCommandHost<'a, 'r, 'e> {
+    sim: &'a mut Simulation,
+    rules: &'r RuleSet,
+    overlay_registry: Option<&'r crate::rules::overlay_types::OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'e>,
+    execute_tick: u64,
+    spawned: bool,
+    executed: usize,
+}
+
+impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
+    type Error = super::NetworkCommandError;
+
+    fn house_is_eligible(&self, house: CommandDispatchHouse) -> bool {
+        self.sim.houses.is_empty()
+            || self
+                .sim
+                .houses
+                .get(&house.owner)
+                .is_some_and(|state| state.event_dispatch_eligible())
+    }
+
+    fn late_entry(&mut self, _house: CommandDispatchHouse, _entry: &QueuedCommand) {}
+
+    fn frame_info(
+        &mut self,
+        _house: CommandDispatchHouse,
+        entry: &QueuedCommand,
+    ) -> Result<bool, Self::Error> {
+        let record = entry.record().ok_or_else(|| {
+            super::NetworkCommandError::Unavailable("FRAMEINFO requires native bytes".to_owned())
+        })?;
+        self.frame_effects
+            .compare_frame_info(record, self.sim.session.binary_frame() as i32)
+    }
+
+    fn adjust_megamissions(&mut self, _house: CommandDispatchHouse, entries: &mut [QueuedCommand]) {
+        self.sim
+            .adjust_staged_megamission_destinations(entries, self.rules, self.overlay_registry);
+    }
+
+    fn execute(
+        &mut self,
+        _house: CommandDispatchHouse,
+        entry: &QueuedCommand,
+        _late: bool,
+        _window: &mut DoListRetimeWindow,
+    ) {
+        self.executed += 1;
+        let command = match entry {
+            QueuedCommand::Native { record, .. } => self
+                .sim
+                .decode_native_command_record(record, self.execute_tick),
+            QueuedCommand::Semantic { envelope, .. } => Some(envelope.clone()),
+        };
+        if let Some(command) = command {
+            let (_, spawned) = self.sim.apply_one_due_command(
+                &command,
+                self.rules,
+                self.overlay_registry,
+                self.frame_effects,
+            );
+            self.spawned |= spawned;
+        }
     }
 }
 

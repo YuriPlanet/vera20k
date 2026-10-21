@@ -1296,7 +1296,23 @@ fn finish_order(
         restore_selection_dispatch_order(&mut queued, &selected);
         crate::app::input::planning_mode::queue_orders(state, &selected, queued)
     } else {
-        let mut queued = if let Some(sim) = state
+        let mut queued = queued;
+        restore_selection_dispatch_order(
+            &mut queued,
+            &selected_stable_ids_in_order(
+                state
+                    .match_state
+                    .sim_runtime
+                    .as_ref()
+                    .map(|rt| &rt.simulation),
+                state.rules(),
+                &state.match_state.input.selection_order,
+                state.match_state.input.selection_order_pending,
+            ),
+        );
+        // The local acknowledgement reads the resolved input order before
+        // encoding. Only the native record enters the gameplay queue.
+        let (encoded, feedback): (Vec<_>, Vec<_>) = if let Some(sim) = state
             .match_state
             .sim_runtime
             .as_ref()
@@ -1305,28 +1321,19 @@ fn finish_order(
             queued
                 .into_iter()
                 .filter_map(|envelope| {
-                    crate::app::input::commands::roundtrip_ordinary_local_megamission(sim, envelope)
+                    crate::app::input::commands::encode_ordinary_local_command(
+                        sim,
+                        envelope.clone(),
+                    )
+                    .map(|encoded| (encoded, envelope))
                 })
-                .collect::<Vec<_>>()
+                .unzip()
         } else {
-            queued
+            (queued.clone(), queued)
         };
-        if !queued.is_empty() {
-            restore_selection_dispatch_order(
-                &mut queued,
-                &selected_stable_ids_in_order(
-                    state
-                        .match_state
-                        .sim_runtime
-                        .as_ref()
-                        .map(|rt| &rt.simulation),
-                    state.rules(),
-                    &state.match_state.input.selection_order,
-                    state.match_state.input.selection_order_pending,
-                ),
-            );
+        if !encoded.is_empty() {
             if let Some(speaker_id) = speaker_id {
-                emit_resolved_order_voice(state, speaker_id, &queued);
+                emit_resolved_order_voice(state, speaker_id, &feedback);
             }
             if let Some(sim) = state
                 .match_state
@@ -1334,7 +1341,7 @@ fn finish_order(
                 .as_mut()
                 .map(|rt| &mut rt.simulation)
             {
-                sim.issue_local_commands(queued);
+                sim.issue_local_commands(encoded);
             }
         }
         true

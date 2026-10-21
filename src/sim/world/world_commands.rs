@@ -20,7 +20,7 @@ use crate::sim::combat::combat_aoe::CellTargetDetach;
 use crate::sim::command::{
     BUILDING_OFF_LINE_OPCODE, BUILDING_ON_LINE_OPCODE, BuildingOnLineRecord, COMMAND_RECORD_LEN,
     Command, CommandEnvelope, CommandRecord, ExitRecord, GameSpeedRecord, MegaMissionOrder,
-    MegaMissionRecord, MegaMissionTarget, ScatterRecord, SellWallAtCellRecord,
+    MegaMissionRecord, MegaMissionTarget, ScatterRecord, SellWallAtCellRecord, StopRecord,
 };
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::{InternedId, StringInterner};
@@ -207,6 +207,28 @@ impl Simulation {
         };
         let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).ok()?;
         typed.write_into(&mut record);
+        Some(record)
+    }
+
+    /// StopCommand730EE7 -> ClickedEvent6FFE34 -> EventCtor4C65E0 emits
+    /// IDLE6 with the current issuer and the actor's five-byte object token.
+    /// Keep the token even if its actor disappears before dispatch: native
+    /// Stop4C74CE resolves the identifier only when the event executes.
+    /// Source: original gamemd.exe instructions.
+    pub fn encode_stop_record(
+        &self,
+        command_owner: InternedId,
+        entity_id: u64,
+    ) -> Option<CommandRecord> {
+        let entity_id = i32::try_from(entity_id).ok()?;
+        let mut record =
+            self.encode_header_event(command_owner, crate::sim::command::IDLE_OPCODE)?;
+        StopRecord {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id,
+        }
+        .write_into(&mut record);
         Some(record)
     }
 
@@ -564,6 +586,20 @@ impl Simulation {
                     },
                 )
             });
+        }
+        if let Some(typed) = StopRecord::decode(record) {
+            let house_index = usize::try_from(typed.house_id).ok()?;
+            let owner = *self.houses.order().get(house_index)?;
+            if !self.houses.contains_key(&owner) {
+                return None;
+            }
+            let entity_id = u64::try_from(typed.entity_id).ok()?;
+            self.substrate.entities.get(entity_id)?;
+            return Some(CommandEnvelope::new(
+                owner,
+                execute_tick,
+                Command::Stop { entity_id },
+            ));
         }
         if let Some(typed) = ScatterRecord::decode(record) {
             let house_index = usize::try_from(typed.house_id).ok()?;
@@ -1130,6 +1166,9 @@ impl Simulation {
                 .accepted(),
             Command::PlanningRecord { record } => {
                 self.apply_planning_record(command_owner, record, rules)
+            }
+            Command::SynchronizedRecord { .. } => {
+                unreachable!("native record carrier must be unwrapped by queue admission")
             }
             Command::Select { entity_ids, .. } => self.apply_selection_snapshot(
                 entity_ids,
@@ -2838,6 +2877,68 @@ mod tests {
         // reads that byte, so the fixture must model a revealed object.
         entity.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(entity);
+    }
+
+    #[test]
+    fn idle_record_preserves_unresolved_token_and_decodes_at_execution() {
+        use crate::sim::house_state::HouseState;
+
+        let rules = amcv_move_rules();
+        let mut sim = Simulation::new();
+        sim.interner.intern("Interner gap");
+        let actor_owner = sim.interner.intern("Americans");
+        let issuer = sim.interner.intern("British");
+        sim.houses
+            .register(HouseState::new(actor_owner, 0, None, true, 0, 10));
+        sim.houses
+            .register(HouseState::new(issuer, 1, None, true, 0, 10));
+        sim.session.set_binary_frame_for_test(u32::MAX - 3);
+
+        // Encoding must not resolve a stale identifier. The native token is
+        // retained until4C74CE, independently of the issuer's House.
+        let record = sim.encode_stop_record(issuer, 42).unwrap();
+        assert_eq!(record.house_id(), 1);
+        assert_eq!(record.frame_stamp(), -4);
+        assert_eq!(StopRecord::decode(&record).unwrap().entity_id, 42);
+        assert!(sim.decode_native_command_record(&record, 123).is_none());
+        assert!(sim.encode_scatter_record(issuer, 42).is_none());
+
+        spawn_rule_backed_unit(&mut sim, 42, "AMCV", &rules);
+        let actor = sim.substrate.entities.get_mut(42).unwrap();
+        actor.navigation.set_nav_list_for_test(
+            vec![crate::sim::components::NavTargetRef::cell(12, 13)],
+            false,
+        );
+        let command = sim.decode_native_command_record(&record, 123).unwrap();
+        assert_eq!(command.owner, issuer);
+        assert_eq!(command.execute_tick, 123);
+        assert_eq!(command.payload, Command::Stop { entity_id: 42 });
+        assert!(sim.apply_command("British", &command.payload, Some(&rules)));
+        assert!(
+            sim.substrate
+                .entities
+                .get(42)
+                .unwrap()
+                .navigation
+                .nav_list()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn idle_record_rejects_unmapped_issuer_and_out_of_range_identifier() {
+        use crate::sim::house_state::HouseState;
+
+        let mut sim = Simulation::new();
+        let issuer = sim.interner.intern("British");
+        assert!(sim.encode_stop_record(issuer, 1).is_none());
+        sim.houses
+            .register(HouseState::new(issuer, 0, None, true, 0, 10));
+        assert!(sim.encode_stop_record(issuer, i32::MAX as u64).is_some());
+        assert!(
+            sim.encode_stop_record(issuer, i32::MAX as u64 + 1)
+                .is_none()
+        );
     }
 
     // ===== Order admission (GSI-07.01): liveness, strength and limbo =====

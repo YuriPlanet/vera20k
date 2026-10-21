@@ -35,6 +35,7 @@ mod disk_laser_tests;
 pub(crate) mod entry_test_fixture;
 mod frame_channel;
 mod frame_effects;
+mod queued_command;
 mod object_entry;
 mod sinking;
 mod time_warp;
@@ -42,7 +43,7 @@ mod trigger_chrono;
 mod type_tech_levels;
 mod unit_repair_seek;
 pub(crate) use frame_channel::FrameChannel;
-pub use frame_effects::{FrameEffects, LocalPlanningBoundary, SoundBoundary};
+pub use frame_effects::{FrameEffects, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError, SoundBoundary};
 pub(crate) use type_tech_levels::TypeTechLevels;
 #[cfg(test)]
 mod unit_unlimbo_tests;
@@ -315,6 +316,7 @@ pub struct TickResult {
 pub(crate) struct MasterFrameOutput {
     tick: TickResult,
     admitted_commands: Vec<CommandEnvelope>,
+    network_failure: Option<crate::sim::command_queue::ChecksumMismatch>,
 }
 
 impl MasterFrameOutput {
@@ -324,6 +326,26 @@ impl MasterFrameOutput {
     }
 }
 
+/// Saved continuation after the CRC modal. This is control state, not a
+/// second command queue: DoList retains the original bytes and processed bits.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct NetworkFailureContinuation {
+    failure: crate::sim::command_queue::ChecksumMismatch,
+    tick_ms: u32,
+    frame: FrameCompletion,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct FrameCompletion {
+    commands: Vec<CommandEnvelope>,
+    execute_tick: u64,
+    executed_commands: usize,
+    spawned_entities: bool,
+    destroyed_structure: bool,
+    ownership_changed: bool,
+    bridge_state_changed: bool,
+}
+
 /// One authoritative frame plus the transient facts emitted while producing it.
 ///
 /// Channel order is preserved within each vector. The app owns cross-channel
@@ -331,6 +353,9 @@ impl MasterFrameOutput {
 /// not invent a single mixed event timeline.
 #[derive(Debug)]
 pub struct SimFrameOutput {
+    /// Post-Logic suspension at Execute_DoList64CC61. Earlier effects stand;
+    /// acknowledge the client modal, then resume the remaining frame tail once.
+    pub network_failure: Option<crate::sim::command_queue::ChecksumMismatch>,
     admitted_commands: Vec<CommandEnvelope>,
     pub tick: TickResult,
     pub trigger_effects: Vec<TriggerEffect>,
@@ -1480,13 +1505,27 @@ pub struct Simulation {
     /// match hashes regardless. Never saved or hashed.
     #[serde(skip, default = "every_frame")]
     state_hash_interval: Option<std::num::NonZeroU64>,
-    /// Pending gameplay commands waiting for their scheduled execution tick.
-    /// Admitted through `queue_command(s)` and drained each tick when
-    /// `cmd.execute_tick <= current_tick + 1`.
-    pending_commands: Vec<CommandEnvelope>,
+    /// One admitted command FIFO. Native frame/flags remain in the record;
+    /// remaining semantic commands retain their monotonic scheduler.
+    pending_commands: crate::sim::command_queue::DoList<queued_command::QueuedCommand>,
     /// Locally issued events retain their shared OutList occupancy until
     /// the post-Logic transfer. Already-admitted/deferred work stays above.
-    local_commands: crate::sim::command_queue::LocalCommandStage<CommandEnvelope>,
+    local_commands:
+        crate::sim::command_queue::LocalCommandStage<queued_command::QueuedCommand>,
+    /// While the dispatcher temporarily owns the FIFO, this derived count
+    /// reserves its occupied native slots for callbacks that admit new work.
+    /// Balanced at the dispatch boundary, never saved or hashed.
+    #[serde(skip)]
+    dispatch_reserved_slots: usize,
+    /// Non-authoritative copies for this frame's replay output. Admissions
+    /// append once; collection drains them. Saved queue entries remain the
+    /// only gameplay authority and a restored snapshot starts a new receipt.
+    #[serde(skip)]
+    frame_command_admissions: Vec<CommandEnvelope>,
+    /// A synchronous CRC modal suspends MainTick after Logic/DoList. Preserve
+    /// its one remaining tail across snapshots; never replay the earlier work.
+    #[serde(default)]
+    network_failure_continuation: Option<NetworkFailureContinuation>,
     /// PlanMgr is the sole owner of shared nodes and per-actor plan tokens.
     planning: planning::PlanningState,
     /// Diagnostic playback supplies a batch already containing generated
@@ -4220,8 +4259,11 @@ impl Simulation {
             connection_lost: false,
             frame_sync_checksum: None,
             state_hash_interval: every_frame(),
-            pending_commands: Vec::new(),
+            pending_commands: Default::default(),
             local_commands: Default::default(),
+            dispatch_reserved_slots: 0,
+            frame_command_admissions: Vec::new(),
+            network_failure_continuation: None,
             planning: planning::PlanningState::default(),
             #[cfg(any(test, feature = "test-support"))]
             replaying_recorded_commands: false,
@@ -7207,7 +7249,7 @@ impl Simulation {
         executed_commands: &mut usize,
         spawned_entities: &mut bool,
         effects: FrameEffects<'_>,
-    ) -> bool {
+    ) -> Result<(bool, Option<crate::sim::command_queue::ChecksumMismatch>), FrameAdvanceError> {
         #[cfg(any(test, feature = "test-support"))]
         self.trace_master_frame_rung(MasterFrameTestRung::Houses);
         self.reconcile_active_vision_structures(rules);
@@ -7238,23 +7280,60 @@ impl Simulation {
             });
         }
 
+        if let Some(sync) = &self.frame_sync_checksum {
+            let checksum = sync.checksum.as_ref().map_err(|error|
+                FrameAdvanceError::new(self.session.tick(), self.session.binary_frame(), 0,
+                    format!("multiplayer checksum: {error}")))?;
+            effects.record_frame_checksum(sync.frame, checksum.value);
+        }
+
         // Queue_AI follows Logic, including Strip and House-generated events.
         // Keep local occupancy until this transfer; the earlier app drain is
         // only for already-admitted commands and local frame ingress.
-        self.transfer_local_commands(commands);
+        self.transfer_local_commands();
 
         // EventClass dispatch is a Main_Tick tail rung: the complete live
         // Logic walk observes frame N's pre-command state, so an accepted
         // command first changes that object's AI behavior on frame N+1.
-        let (executed, spawned) =
-            self.apply_due_commands(commands, rules, execute_tick, overlay_registry, effects);
-        *executed_commands += executed;
-        *spawned_entities |= spawned;
+        let result = self.dispatch_owned_commands(
+            commands, rules, execute_tick, overlay_registry, effects);
+        let failure = match result {
+            Ok((executed, spawned)) => {
+                *executed_commands += executed;
+                *spawned_entities |= spawned;
+                None
+            }
+            Err((NetworkCommandError::Mismatch(failure), executed, spawned)) => {
+                *executed_commands += executed;
+                *spawned_entities |= spawned;
+                Some(failure)
+            }
+            Err((NetworkCommandError::Unavailable(cause), _, _)) => {
+                return Err(FrameAdvanceError::new(
+                    self.session.tick(), self.session.binary_frame(), 0, cause));
+            }
+        };
+        *commands = std::mem::take(&mut self.frame_command_admissions);
         #[cfg(any(test, feature = "test-support"))]
-        {
-            self.replaying_recorded_commands = false;
+        { self.replaying_recorded_commands = false; }
+        if failure.is_some() {
+            //64CCEB's modal precedes Queue_AI clearing GameActive648266.
+            //No retirement, staged MegaMission execution or frame commit yet.
+            return Ok((false, failure));
         }
+        Ok((self.commit_frame_tail(rules, overlay_registry, tick_ms, execute_tick, effects), None))
+    }
 
+    /// MainTick55DE7E..55DEA4 is also reached after a CRC modal returns.
+    /// Independent victory/defeat/restart/EXIT flags still skip this tail.
+    fn commit_frame_tail(
+        &mut self,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        tick_ms: u32,
+        execute_tick: u64,
+        effects: FrameEffects<'_>,
+    ) -> bool {
         // Main_Tick returns immediately on a terminal result. The wrapping
         // frame commit, pacing tail, and pending-delete drain are all skipped
         // on that same terminating call.
@@ -7479,6 +7558,35 @@ impl Simulation {
         Ok(self.collect_frame_output(frame?, effects))
     }
 
+    /// The modal is client-owned; this world-owned continuation identifies
+    /// the suspended native frame without permitting another Logic pass.
+    pub fn pending_network_failure(&self) -> Option<crate::sim::command_queue::ChecksumMismatch> {
+        self.network_failure_continuation.as_ref().map(|pending| pending.failure)
+    }
+
+    /// Resume only MainTick's tail after Stop acknowledges64CCEB's modal.
+    /// Queue_AI's false result clears GameActive but does not set EXIT; the
+    /// caller returns through normal network-shell cleanup after this output.
+    pub fn resume_after_network_failure(
+        &mut self,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> Result<SimFrameOutput, FrameAdvanceError> {
+        let pending = self.network_failure_continuation.take().ok_or_else(||
+            FrameAdvanceError::new(self.session.tick(), self.session.binary_frame(), 0,
+                "no checksum modal frame is pending".to_owned()))?;
+        let effects = effects.with_overlay_registry(overlay_registry);
+        let committed = self.commit_frame_tail(rules, overlay_registry,
+            pending.tick_ms, pending.frame.execute_tick, effects);
+        let mut frame = self.finish_master_frame(pending.frame, committed, rules, overlay_registry,
+            #[cfg(feature = "telemetry")] None);
+        // This is the terminal match frame even when its native commit ran.
+        frame.tick.state_hash = Some(self.state_hash());
+        self.unit_voice_visit_interest.clear();
+        Ok(self.collect_frame_output(frame, effects))
+    }
+
     /// From the next frame on, hash the state for the TickResult only after
     /// frames whose tick is a multiple of `frames` (1: every frame), and after
     /// every frame that ends the match (an EXIT, a quit, the current house's
@@ -7534,6 +7642,7 @@ impl Simulation {
         let MasterFrameOutput {
             tick,
             admitted_commands,
+            network_failure,
         } = frame;
         let lighting_events = self.lighting_sources.take_pending();
         let trigger_effects = std::mem::take(&mut self.trigger_effects);
@@ -7554,6 +7663,7 @@ impl Simulation {
         let sound_events_delivered = effects.delivered_sound_events();
         assert!(sound_events_delivered <= sound_events.len());
         SimFrameOutput {
+            network_failure,
             admitted_commands,
             tick,
             trigger_effects,
@@ -7588,6 +7698,10 @@ impl Simulation {
         poll_triggers: bool,
         effects: FrameEffects<'_>,
     ) -> Result<MasterFrameOutput, FrameAdvanceError> {
+        if self.network_failure_continuation.is_some() {
+            return Err(FrameAdvanceError::new(self.session.tick(), self.session.binary_frame(), 0,
+                "checksum modal must be acknowledged before resuming this frame".to_owned()));
+        }
         #[cfg(feature = "telemetry")]
         let mut frame_clock = self
             .frame_profiling
@@ -7848,7 +7962,7 @@ impl Simulation {
         // behavior-preserving.) Native-spine note: gamemd runs HouseClass updates
         // (incl. defeat) in the tail and commits the frame counter late; AI
         // placement is project-deferred and kept in its current slot.
-        let frame_committed = self.run_late_region(
+        let (frame_committed, network_failure) = self.run_late_region(
             &mut commands,
             rules,
             overlay_registry,
@@ -7857,8 +7971,46 @@ impl Simulation {
             &mut executed_commands,
             &mut spawned_entities,
             effects,
-        );
+        )?;
         profile_phase!(LATE_AI);
+        bridge_state_changed |= self.trigger_effects.iter()
+            .any(|effect| matches!(effect, TriggerEffect::BridgeStateChanged));
+        let frame = FrameCompletion {
+            commands, execute_tick, executed_commands, spawned_entities,
+            destroyed_structure, ownership_changed, bridge_state_changed,
+        };
+        if let Some(failure) = network_failure {
+            let tick = TickResult {
+                tick: self.session.tick(), frame_committed: false,
+                executed_commands, state_hash: None, terminal_score_finalized: false,
+                spawned_entities, destroyed_structure, ownership_changed, bridge_state_changed,
+            };
+            self.network_failure_continuation = Some(NetworkFailureContinuation { failure, tick_ms, frame });
+            return Ok(MasterFrameOutput { tick, admitted_commands: Vec::new(), network_failure: Some(failure) });
+        }
+        Ok(self.finish_master_frame(frame, frame_committed, rules, overlay_registry,
+            #[cfg(feature = "telemetry")] frame_clock))
+    }
+
+    /// Finish the same frame after the single commit/pending-delete tail.
+    fn finish_master_frame(
+        &mut self,
+        frame: FrameCompletion,
+        frame_committed: bool,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        #[cfg(feature = "telemetry")] mut frame_clock: Option<crate::sim::frame_profile::FrameClock>,
+    ) -> MasterFrameOutput {
+        let FrameCompletion { commands, execute_tick: _, executed_commands,
+            mut spawned_entities, destroyed_structure, ownership_changed, mut bridge_state_changed } = frame;
+        macro_rules! profile_phase {
+            ($phase:ident) => {
+                #[cfg(feature = "telemetry")]
+                if let Some(clock) = frame_clock.as_mut() {
+                    clock.stamp(crate::sim::frame_profile::phase::$phase);
+                }
+            };
+        }
         spawned_entities |= std::mem::take(&mut self.mission_spawned_entities);
         bridge_state_changed |= self
             .trigger_effects
@@ -7931,7 +8083,8 @@ impl Simulation {
             let (phases, total) = clock.finish();
             self.frame_profile.record(phases, total);
         }
-        Ok(MasterFrameOutput {
+        MasterFrameOutput {
+            network_failure: None,
             admitted_commands: commands,
             tick: TickResult {
                 tick: self.session.tick(),
@@ -7944,7 +8097,7 @@ impl Simulation {
                 ownership_changed,
                 bridge_state_changed,
             },
-        })
+        }
     }
 }
 

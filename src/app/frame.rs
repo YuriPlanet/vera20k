@@ -46,6 +46,36 @@ impl App {
         // current outcome Vox before it raises the victory/defeat exit global.
         // Drive that gate before deciding whether another sim frame is legal.
         let scenario_now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+        if crate::app::match_runtime::network_failure::pending(state) {
+            // ExecuteDoList64CD0C blocks inside ShellMessageBox5D3490. Its
+            // message pump still reaches Network_ServiceLoop48D080/audio,
+            // while Main_Tick's terminal tests and frame tail wait for Stop.
+            crate::app::match_runtime::network_failure::show(state);
+            crate::app::match_runtime::sim_tick::pump_audio_service(state, scenario_now_ms);
+            if crate::app::match_runtime::network_failure::take_acknowledged(state) {
+                crate::app::match_runtime::sim_tick::resume_after_network_failure(state);
+                // Main_Tick55DE4F..55DE71 and Main_Game55CFD0 retain their
+                // independent restart/EXIT/outcome priority after the modal.
+                Self::consume_scenario_restart_request(state);
+                Self::consume_executed_abort_exit(state, scenario_now_ms);
+                crate::app::match_runtime::sim_tick::drive_local_player_outcome_voice_wait(
+                    state,
+                    scenario_now_ms,
+                );
+                Self::drive_scenario_exit(state, scenario_now_ms);
+                if matches!(state.frontend.screen, GameScreen::InGame)
+                    && state.match_state.scenario_exit.is_none()
+                    && state.match_state.scenario_outcome.is_none()
+                {
+                    // ProcessNetwork6475F0 clears GameActive at64826F;
+                    // Main_Game55D347 returns directly to shell cleanup.
+                    // This is the same route as WaitPass::Leave, without an
+                    // EXIT command or BattleControlTerminated686570.
+                    Self::return_to_main_menu(state);
+                }
+            }
+            return false;
+        }
         // Main_Tick55DE4F skips the frame while the restart byte is set and
         // Main_Game's router55CFD0 takes it before EXIT.
         Self::consume_scenario_restart_request(state);
@@ -127,6 +157,9 @@ impl App {
                 return false;
             }
             sim_tick::advance_in_game_runtime(state, now_ms);
+            if crate::app::match_runtime::network_failure::pending(state) {
+                return false;
+            }
             // EventClass EXIT is dispatched at the simulation tail. Consume
             // its terminal edge before any outcome route can claim teardown.
             Self::consume_executed_abort_exit(state, now_ms);
@@ -356,11 +389,17 @@ impl App {
 
         if state.match_state.match_presentation.in_game_menu.is_open()
             || state.match_state.network_wait.dialog_open()
+            || crate::app::match_runtime::network_failure::pending(state)
         {
             Self::ensure_skirmish_shell_chrome(state);
         }
         Self::update_saved_game_browser(state, false);
         match &state.frontend.screen {
+            GameScreen::InGame if crate::app::match_runtime::network_failure::pending(state) => {
+                crate::app::frontend::skirmish_shell_render::render_network_failure(
+                    state, &mut encoder, &output.texture,
+                )?;
+            }
             GameScreen::MainMenu if state.frontend.main_menu_shell_error.is_some() => {
                 Self::render_shell_error(state, &mut encoder, &view)?;
             }

@@ -6,7 +6,6 @@ use std::collections::HashMap;
 
 use crate::app::AppState;
 use crate::map::entities::EntityCategory;
-use crate::net::lockstep::SynchronizedCommand;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::intern::InternedId;
 use crate::sim::production;
@@ -1094,39 +1093,39 @@ pub(crate) fn schedule_command_in_sim(
     let envelope = match payload {
         Command::SetLatencyFudge { value } => {
             let record = sim.encode_latency_fudge_record(owner_id, value)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+            CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::Scatter { entity_id } => {
             let record = sim.encode_scatter_record(owner_id, entity_id)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+            CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::Cheer => {
             let record = sim.encode_cheer_record(owner_id)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+            CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::ExitMatch => {
             let record = sim.encode_exit_record(owner_id)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+            CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::Destruct => {
             let record = sim.encode_destruct_record(owner_id)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+            CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::RemovePlayer { house_index } => {
             let record = sim.encode_remove_player_record(owner_id, house_index)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+            CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::Ally { house_index } => {
             let record = sim.encode_ally_record(owner_id, house_index)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+            CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::SellWallAtCell { x, y } => {
             let record = sim.encode_sell_wall_at_cell_record(owner_id, x, y)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+            CommandEnvelope::synchronized(record, execute_tick)
         }
         payload => CommandEnvelope::new(owner_id, execute_tick, payload),
     };
-    let envelope = roundtrip_ordinary_local_megamission(sim, envelope)?;
+    let envelope = encode_ordinary_local_command(sim, envelope)?;
     // PlayerSend6FFDE6 ignores a full OutList's false return. The click is
     // still handled and its voice/action-line effects are not rolled back.
     let _ = sim.issue_local_command(envelope);
@@ -1186,7 +1185,7 @@ pub(crate) fn object_move_destination(
 /// reaches the same producer through QueueMegaMission6FFBE0. Move, to a Cell
 /// or an object, and AreaGuard share this codec; other semantic commands pass
 /// through until their native record is established.
-pub(crate) fn roundtrip_ordinary_local_megamission(
+pub(crate) fn encode_ordinary_local_command(
     sim: &crate::sim::world::Simulation,
     envelope: CommandEnvelope,
 ) -> Option<CommandEnvelope> {
@@ -1198,9 +1197,28 @@ pub(crate) fn roundtrip_ordinary_local_megamission(
     match payload {
         Command::Move { .. } | Command::MoveToObject { .. } | Command::Guard { .. } => {
             let record = sim.encode_megamission_record(owner, &payload)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)
+            Some(CommandEnvelope::synchronized(record, execute_tick))
+        }
+        Command::Stop { entity_id } => {
+            let record = sim.encode_stop_record(owner, entity_id)?;
+            Some(CommandEnvelope::synchronized(record, execute_tick))
         }
         payload => Some(CommandEnvelope::new(owner, execute_tick, payload)),
+    }
+}
+
+/// Component tests can inspect the executable view without running a frame;
+/// production retains the encoded record until the DoList admits it.
+#[cfg(test)]
+pub(crate) fn roundtrip_ordinary_local_megamission(
+    sim: &crate::sim::world::Simulation,
+    envelope: CommandEnvelope,
+) -> Option<CommandEnvelope> {
+    let command = encode_ordinary_local_command(sim, envelope)?;
+    if let Command::SynchronizedRecord { record } = &command.payload {
+        sim.decode_native_command_record(record, command.execute_tick)
+    } else {
+        Some(command)
     }
 }
 
@@ -1815,8 +1833,8 @@ mod tests {
         assert_eq!(singles.rng_state(), single_rng_before);
         assert_eq!(batches.rng_state(), batch_rng_before);
 
-        let due_from_singles = singles.take_due_commands();
-        let due_from_batches = batches.take_due_commands();
+        let due_from_singles = singles.take_frame_commands_for_test();
+        let due_from_batches = batches.take_frame_commands_for_test();
         let expected_due = vec![
             commands[0].clone(),
             commands[2].clone(),

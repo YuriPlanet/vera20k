@@ -656,6 +656,10 @@ impl ApplicationHandler for App {
                 // recorded before screen-specific dispatch own this state.
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                if crate::app::match_runtime::network_failure::pending(state) {
+                    crate::app::match_runtime::network_failure::key(state, &event);
+                    return;
+                }
                 // Host delivery adaptation: dialogs may consume ordinary keys,
                 // but a release for an admitted planning gesture must still
                 // end that gesture. Opening a menu itself never commits it.
@@ -1044,6 +1048,10 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 state.set_cursor_from_window(position.x as f32, position.y as f32);
+                if crate::app::match_runtime::network_failure::pending(state) {
+                    crate::app::match_runtime::network_failure::cursor_moved(state);
+                    return;
+                }
                 // Shared tooltip service: every move restarts the show delay
                 // and hides a visible tip (study S1).
                 crate::app::input::tooltips::on_mouse_move(state);
@@ -1135,6 +1143,14 @@ impl ApplicationHandler for App {
                 button,
                 ..
             } => {
+                if crate::app::match_runtime::network_failure::pending(state) {
+                    crate::app::match_runtime::network_failure::mouse(
+                        state,
+                        button,
+                        btn_state.is_pressed(),
+                    );
+                    return;
+                }
                 // Any button press/release kills a visible tooltip + pending
                 // timer (all buttons incl. middle — study S1).
                 crate::app::input::tooltips::on_button_event(state);
@@ -1306,6 +1322,9 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
+                if crate::app::match_runtime::network_failure::pending(state) {
+                    return;
+                }
                 let lines = match delta {
                     MouseScrollDelta::LineDelta(_, y) => y,
                     MouseScrollDelta::PixelDelta(pos) => (pos.y as f32 / 30.0).clamp(-3.0, 3.0),

@@ -18,6 +18,9 @@ pub(crate) struct MatchState {
     /// The in-match connection wait and its dialog 0xEA
     /// (`Wait_For_Players 0x00648710`).
     pub(crate) network_wait: super::network_match::NetworkMatchWait,
+    /// Input state for ExecuteDoList's blocking checksum-error message box.
+    /// The suspended frame and mismatch remain owned by Simulation.
+    pub(crate) network_failure: Option<super::network_failure::NetworkFailureModal>,
     pub(crate) sim_runtime: Option<crate::sim::runtime::SimRuntime>,
     /// Match input owner (F12): camera, zoom, cursor, keys, hotkeys.
     pub(crate) input: crate::app::input::state::MatchInputState,
@@ -108,14 +111,16 @@ impl MatchState {
     /// (`0x005D4430`, its only caller) ages the rows. The debug pause and
     /// the radar movie pause still stop it.
     pub(crate) fn main_tick_frozen(&self) -> bool {
-        self.debug_pause
+        self.sim_runtime
+            .as_ref()
+            .is_some_and(|rt| rt.simulation.pending_network_failure().is_some())
+            || self.debug_pause
             || self
                 .match_presentation
                 .radar_anim
                 .as_ref()
                 .is_some_and(|radar| radar.movie_pause())
-            || (self.match_presentation.in_game_menu.is_open()
-                && !self.session_mode().is_network())
+            || (self.match_presentation.in_game_menu.is_open() && !self.session_mode().is_network())
     }
 
     /// `GameMode` (`0x00A8B238`) from whichever side holds it: the installed
