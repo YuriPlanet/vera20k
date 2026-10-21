@@ -2316,9 +2316,93 @@ impl Simulation {
                 );
             }
         }
+        // Foot4D8B66..4D8CA5 scans the live Map tag vector with the shared
+        // A83DBC cursor. Actions may detach a tag, destroy one (adjusting this
+        // cursor), or enter another cell synchronously. Neither a snapshot of
+        // the vector nor a local index preserves those callbacks' behavior.
+        self.trigger_runtime.map_cursor = 0;
+        while let Some(&tag) = self
+            .trigger_runtime
+            .map_tags
+            .get(self.trigger_runtime.map_cursor as usize)
+        {
+            let attached = self.trigger_runtime.tag(tag).and_then(|live| {
+                self.trigger_runtime
+                    .definitions
+                    .has_event(live.type_index, 24)
+                    .then_some(live.attached_cell)
+            });
+            if let Some(attached) = attached {
+                let reachable = (|| {
+                    //4D8BAA copies vt+4C's Head_To coordinate before +BC
+                    //obtains its own coordinate/layer. A paid head is not
+                    //the object's physical Location.
+                    let destination = crate::sim::movement::coord_cell(
+                        self.foot_navigation_coordinate(actor).ok()?,
+                    );
+                    let entity = self.substrate.entities.get(actor)?;
+                    let current =
+                        crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+                    let in_tube = entity.low_bridge_tube_state.is_some();
+                    let head = if in_tube {
+                        current
+                    } else {
+                        self.foot_navigation_coordinate(actor).ok()?
+                    };
+                    let terrain = context.terrain().or(self.resolved_terrain.as_ref())?;
+                    let cells = NativeCellQuery::canonical(terrain);
+                    let destination_bridge =
+                        crate::sim::movement::ground_pose::navigation_should_be_on_bridge(
+                            &cells,
+                            head,
+                            current,
+                            entity.on_bridge(),
+                            in_tube,
+                        )
+                        .ok()?;
+                    //4D8BF4..4D8C39: the Tag's cell is the SOURCE, with its
+                    //raw structural bridge bit. Map56D100's fringe shortcuts
+                    //are asymmetric; do not reverse these endpoints.
+                    let source_bridge = cells.flags(cells.lookup(attached)) & 0x100 != 0;
+                    let movement_zone = self.object_type(entity.type_ref(), rules)?.movement_zone;
+                    self.zone_grid.as_ref()?.can_reach_native(
+                        &cells,
+                        crate::sim::pathfinding::zone_map::ZoneQueryCell::Copied(attached),
+                        crate::sim::pathfinding::zone_map::ZoneQueryCell::Copied(destination),
+                        movement_zone,
+                        source_bridge,
+                        destination_bridge,
+                        false,
+                        self.playfield_bounds()?,
+                        self.map_size_diamond()?,
+                    )
+                })();
+                if reachable == Some(true) {
+                    //4D8C4D re-reads vt+4C for the event payload. Do not
+                    //add an Alive gate: earlier callbacks may have changed a
+                    //retained actor. Stop only when its storage is gone.
+                    let Ok(coordinate) = self.foot_navigation_coordinate(actor) else {
+                        break;
+                    };
+                    self.dispatch_live_tag_event(
+                        tag,
+                        TagEventInput {
+                            kind: 24,
+                            actor: Some(actor),
+                            cell: crate::sim::movement::coord_cell(coordinate),
+                            ..Default::default()
+                        },
+                        &mut effects,
+                        rules,
+                        context.registry(),
+                        context.effects(),
+                    );
+                }
+            }
+            self.trigger_runtime.map_cursor = self.trigger_runtime.map_cursor.wrapping_add(1);
+        }
         self.publish_trigger_effects(effects);
-        //The later Map24 zone scan and ordinary Fly ingress retain their
-        //existing residuals.
+        // Ordinary Fly ingress remains unproven.
     }
 
     fn trigger_action_context(
@@ -4721,6 +4805,10 @@ fn count_techtype(sim: &Simulation, type_id: &str) -> usize {
 #[cfg(test)]
 #[path = "trigger_runtime_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_zone_entry_tests.rs"]
+mod zone_entry_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_native_tests.rs"]
