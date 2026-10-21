@@ -12,6 +12,13 @@ use crate::sim::replay::{ReplayHeader, ReplayLog, ReplayRunner};
 use crate::sim::snapshot::GameSnapshot;
 use crate::sim::world::{FrameEffects, MasterFrameTestRung, Simulation, TickLane};
 
+#[path = "trigger_runtime_mind_control_callback_tests.rs"]
+mod mind_control_callbacks;
+#[path = "trigger_runtime_mind_control_tests.rs"]
+mod mind_control_campaign;
+#[path = "trigger_runtime_mind_control_native_tests.rs"]
+mod mind_control_native;
+
 #[test]
 fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
     use crate::rules::{ini_parser::IniFile, team_ai_ini::TeamAiIniRegistry};
@@ -1535,6 +1542,237 @@ fn unit_record_kill_releases_retail_sov01_landing_when_the_last_target_is_a_ship
             crate::sim::world::UninitContext::new(&rules, Some(&overlay)),
         );
     }
+}
+
+const MIND_CONTROL_TAG_RULES: &str = "\
+[InfantryTypes]
+2=TAGYURI
+[TAGYURI]
+Strength=100
+Speed=4
+SpeedType=Foot
+Locomotor={4A582744-9839-11D1-B709-00A024DDAFD1}
+Primary=TagMindControl
+ImmuneToPsionics=yes
+[TagMindControl]
+Damage=1
+ROF=200
+Range=7
+Speed=100
+Projectile=TagPsychicControl
+Warhead=TagController
+[TagPsychicControl]
+Inviso=yes
+[Warheads]
+2=TagController
+[TagController]
+MindControl=yes
+Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+";
+
+const MIND_CONTROL_TAG_MAP: &str = "\
+[Triggers]
+ATTACKED=Country0,SOURCE,Attacked,0,1,1,1,0
+SOURCE=Country0,<none>,Source,0,1,1,1,0
+[Tags]
+TAG=2,Attacked,ATTACKED
+[Events]
+ATTACKED=1,6,0,0
+SOURCE=1,44,0,0
+[Actions]
+ATTACKED=1,28,0,6,0,0,0,0,A
+SOURCE=1,28,0,44,0,0,0,0,A
+";
+
+fn mind_control_tag_projectile(
+    sim: &mut Simulation,
+    source: u64,
+    target: u64,
+) -> crate::sim::projectile::ProjectileDetonation {
+    let projectile_id = sim.substrate.allocate_stable_id();
+    let payload = ProjectilePayload::new(
+        1,
+        sim.interner.intern("TagController"),
+        Some(sim.interner.intern("TagPsychicControl")),
+        false,
+    );
+    let impact = ProjectileCoord::new(15 * 256 + 128, 15 * 256 + 128, 0);
+    sim.admit_projectile(
+        projectile_id,
+        ProjectileSpawn {
+            native_unique_id: 0,
+            line_trail: None,
+            flat: false,
+            source_id: source,
+            origin: ProjectileCoord::new(17 * 256 + 128, 15 * 256 + 128, 0),
+            target: ProjectileTarget::Entity(target),
+            initial_target_position: impact,
+            payload,
+            speed_leptons_per_frame: 100,
+            velocity: crate::sim::projectile::ProjectileVelocity::new(0, 0, 0),
+            trajectory: crate::sim::projectile::ProjectileTrajectory::Straight,
+            guidance: None,
+            visual: crate::sim::projectile::ProjectileVisualState::new(0, 0, 0),
+            arm_frames: 0,
+            fuse_frames: None,
+            ranged_fuse: false,
+            tracks_target: false,
+            target_expiry: TargetExpiryPolicy::Expire,
+            collision: ProjectileCollisionPolicy::NONE,
+        },
+    );
+    crate::sim::projectile::ProjectileDetonation {
+        projectile_id,
+        source_id: source,
+        target: ProjectileTarget::Entity(target),
+        impact,
+        payload,
+        reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
+    }
+}
+
+#[test]
+fn mind_control_tags_precede_capture_admission_and_use_object_alive() {
+    for (manager, alive, health, immune, expected) in [
+        (true, true, 100, false, true),
+        (true, true, 100, true, true),
+        (true, true, 0, true, true),
+        (true, false, 100, true, false),
+        (false, true, 100, false, false),
+    ] {
+        let (mut sim, rules, overlay, _) = event_ingress_fixture_with_rules(MIND_CONTROL_TAG_RULES);
+        let victim_type = if immune { "TAGYURI" } else { "TAGUNIT" };
+        assert_eq!(
+            rules.object(victim_type).unwrap().immune_to_psionics,
+            immune
+        );
+        let source = sim
+            .spawn_object_at_height(
+                if manager { "TAGYURI" } else { "TAGUNIT" },
+                "House0",
+                17,
+                15,
+                0,
+                0,
+                &rules,
+            )
+            .unwrap();
+        let victim = sim
+            .spawn_object_at_height(victim_type, "House2", 15, 15, 0, 0, &rules)
+            .unwrap();
+        install_event_ingress_map(&mut sim, &rules, MIND_CONTROL_TAG_MAP);
+        sim.attach_object_trigger_tag(victim, Some("TAG"));
+        let entity = sim.substrate.entities.get_mut(victim).unwrap();
+        entity.health.set_for_test(health);
+        entity.lifecycle.set_object_alive_for_test(alive);
+        let detonation = mind_control_tag_projectile(&mut sim, source, victim);
+        sim.mind_control_detonation(detonation, &rules, Some(&overlay), FrameEffects::default());
+        let context =
+            format!("manager={manager}, ObjectAlive={alive}, HP={health}, immune={immune}");
+        assert_eq!(
+            sim.trigger_runtime.globals_set.contains(&6),
+            expected,
+            "{context}"
+        );
+        assert_eq!(
+            sim.trigger_runtime.globals_set.contains(&44),
+            expected,
+            "{context}"
+        );
+        assert_eq!(
+            sim.substrate.entities.get(victim).unwrap().health.current(),
+            health,
+            "{context}: no damage"
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(victim)
+                .unwrap()
+                .mind_control
+                .controller(),
+            (manager && !immune).then_some(source),
+            "{context}: existing capture admission"
+        );
+    }
+}
+
+#[test]
+fn mind_control_event6_owner_change_updates_source_house_before_event44_and_capture() {
+    let (mut sim, rules, overlay, houses) =
+        event_ingress_fixture_with_rules(MIND_CONTROL_TAG_RULES);
+    let source = sim
+        .spawn_object_at_height("TAGYURI", "House0", 17, 15, 0, 0, &rules)
+        .unwrap();
+    let victim = spawn_event_ingress_unit(&mut sim, &rules, houses[2], (15, 15));
+    install_event_ingress_map(
+        &mut sim,
+        &rules,
+        "[Triggers]\nATTACKED=Country0,SOURCE,Attacked,0,1,1,1,0\nSOURCE=Country0,<none>,Source,0,1,1,1,0\n\
+         [Tags]\nTAG=2,Attacked,ATTACKED\n[Events]\nATTACKED=1,6,0,0\nSOURCE=1,44,0,1\n\
+         [Actions]\nATTACKED=2,14,0,7,0,0,0,0,A,28,0,6,0,0,0,0,A\nSOURCE=1,28,0,44,0,0,0,0,A\n",
+    );
+    sim.attach_object_trigger_tag(victim, Some("TAG"));
+    sim.attach_object_trigger_tag(source, Some("TAG"));
+    let detonation = mind_control_tag_projectile(&mut sim, source, victim);
+    sim.mind_control_detonation(detonation, &rules, Some(&overlay), FrameEffects::default());
+    assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([6, 44]));
+    let live = sim.projectiles.current_detonation(detonation);
+    assert_eq!(live.source_id, source);
+    assert_eq!(live.target, ProjectileTarget::Entity(victim));
+    assert_eq!(
+        sim.substrate.entities.get(source).unwrap().owner(),
+        houses[1]
+    );
+    let victim = sim.substrate.entities.get(victim).unwrap();
+    assert_eq!(victim.owner(), houses[1]);
+    assert_eq!(victim.health.current(), 100);
+    assert_eq!(
+        victim.mind_control.controller(),
+        None,
+        "event6 transfers both actors to the same house before the capture attempt"
+    );
+}
+
+#[test]
+fn mind_control_attack_order_fires_attacked_tags_without_hp_damage() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    let (mut sim, rules, overlay, houses) =
+        event_ingress_fixture_with_rules(MIND_CONTROL_TAG_RULES);
+    let source = sim
+        .spawn_object_at_height("TAGYURI", "House0", 17, 15, 0, 0, &rules)
+        .unwrap();
+    let victim = spawn_event_ingress_unit(&mut sim, &rules, houses[2], (15, 15));
+    install_event_ingress_map(&mut sim, &rules, MIND_CONTROL_TAG_MAP);
+    sim.attach_object_trigger_tag(victim, Some("TAG"));
+    assert!(sim.trigger_runtime.globals_set.is_empty());
+    sim.queue_command(CommandEnvelope::new(
+        houses[0],
+        sim.session.tick() + 1,
+        Command::Attack {
+            attacker_id: source,
+            target_id: victim,
+        },
+    ));
+    for _ in 0..90 {
+        let commands = sim.take_due_commands();
+        sim.advance_tick(&commands, Some(&rules), None, Some(&overlay), 33);
+        if sim
+            .substrate
+            .entities
+            .get(victim)
+            .unwrap()
+            .mind_control
+            .controller()
+            .is_some()
+        {
+            break;
+        }
+    }
+    let victim = sim.substrate.entities.get(victim).unwrap();
+    assert_eq!(victim.health.current(), 100);
+    assert_eq!(victim.mind_control.controller(), Some(source));
+    assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([6, 44]));
 }
 
 #[test]

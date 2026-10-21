@@ -2036,7 +2036,7 @@ fn run_special_detonation_arm(
             }
         }
         SpecialDetonationAction::MindControl => {
-            world.mind_control_detonation(owner, object, rules, overlay_registry, effects);
+            world.mind_control_detonation(*detonation, rules, overlay_registry, effects);
         }
         SpecialDetonationAction::Temporal => {
             let target = match target {
