@@ -3838,22 +3838,30 @@ impl Simulation {
         houses: &mut Houses,
         stable_id: u64,
     ) {
-        let Some((owner, category, already_recorded, destroyed, dont_score)) =
-            substrate.entities.get(stable_id).map(|entity| {
-                (
-                    entity.owner(),
-                    entity.category(),
-                    entity.kill_record.is_recorded(),
-                    // A Temporal erase leaves at full health with its kill
-                    // already booked (`combat::record_kill::record_kill_credit`);
-                    // a crashing infantryman falls at Health 1 (`0x0051BC57`)
-                    // after the kill that booked its loss.
-                    entity.health.current() == 0
-                        || entity.kill_record.killer().is_some()
-                        || entity.crash.is_crashing(),
-                    entity.tracking_facts.dont_score(),
-                )
-            })
+        let Some((
+            owner,
+            category,
+            already_recorded,
+            destroyed,
+            dont_score,
+            suppress_building_loss,
+        )) = substrate.entities.get(stable_id).map(|entity| {
+            (
+                entity.owner(),
+                entity.category(),
+                entity.kill_record.is_recorded(),
+                // A Temporal erase leaves at full health with its kill
+                // already booked (`combat::record_kill::record_kill_credit`);
+                // a crashing infantryman falls at Health 1 (`0x0051BC57`)
+                // after the kill that booked its loss.
+                entity.health.current() == 0
+                    || entity.kill_record.killer().is_some()
+                    || entity.crash.is_crashing(),
+                entity.tracking_facts.dont_score(),
+                entity.category() == EntityCategory::Structure
+                    && entity.building_loss_index() == -1,
+            )
+        })
         else {
             return;
         };
@@ -3865,6 +3873,10 @@ impl Simulation {
         }
         if destroyed
             && !dont_score
+            // A synchronous sale Tag action can enter UnInit before the
+            // outer RecordKill books its guard. The native +53C sentinel
+            // still suppresses the building loss at that nested boundary.
+            && !suppress_building_loss
             && let Some(house) = houses.get_mut(&owner)
         {
             house.stats_mut().record_loss(category);

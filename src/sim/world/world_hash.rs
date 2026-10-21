@@ -1714,6 +1714,14 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     if entity.building_has_engineer.is_set() {
         b"building-has-engineer-v1".hash(hasher);
     }
+    // Native Building ComputeCRC4542E0 includes the retained +53C value,
+    // not merely the -1 loss gate. Keep the constructor-zero stream stable.
+    if entity.category() == crate::map::entities::EntityCategory::Structure
+        && entity.building_loss_index() != 0
+    {
+        b"building-loss-index-v1".hash(hasher);
+        entity.building_loss_index().hash(hasher);
+    }
     if !entity.unit_delivery_provides_base_space() {
         b"unit-delivery-no-base-v1".hash(hasher);
     }

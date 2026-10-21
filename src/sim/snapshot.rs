@@ -1255,7 +1255,8 @@ use crate::util::save_codec;
 // cache and ordinary queue nodes are not native saved state.
 // 472 -> 473: Ares HouseTracking retains its signed KeepAlive event count;
 // constructor-bound TrackingFacts retains each object's removal admission.
-const SNAPSHOT_VERSION: u32 = 473;
+// 473 -> 474: retain Building+53C across save/load and live sale callbacks.
+const SNAPSHOT_VERSION: u32 = 474;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4974,6 +4975,62 @@ mod tests {
             "only the next eligible Process restarts against live terrain"
         );
         assert_eq!(restored.scenario_rng.logical_state(), before_rng);
+    }
+
+    #[test]
+    fn building_loss_index_survives_transfer_and_snapshot_with_its_full_hash_value() {
+        use crate::map::entities::EntityCategory;
+        use crate::sim::game_entity::GameEntity;
+        use crate::sim::intern::test_intern;
+
+        let mut hashes = std::collections::BTreeSet::new();
+        for retained in [0, 3, 11, -1] {
+            let mut sim = Simulation::new();
+            sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+            let mut building = GameEntity::test_default_of_category(
+                1,
+                "GAPOWR",
+                "Americans",
+                4,
+                5,
+                EntityCategory::Structure,
+            );
+            match retained {
+                0 => {}
+                3 => building.initialize_building_loss_index(3),
+                11 => building.record_building_damage_house_index(11),
+                -1 => building.suppress_building_sale_loss(),
+                _ => unreachable!(),
+            }
+            sim.substrate.entities.insert(building);
+            sim.substrate
+                .entities
+                .change_owner(1, test_intern("Russians"));
+            assert_eq!(
+                sim.substrate.entities.get(1).unwrap().building_loss_index(),
+                retained,
+                "owner transfer must not recompute the retained index"
+            );
+            let expected_hash = sim.state_hash();
+            assert!(
+                hashes.insert(expected_hash),
+                "hash the full index, not only whether it suppresses loss"
+            );
+            let rng = sim.scenario_rng.logical_state();
+            let bytes = GameSnapshot::save(&sim, 1, 2, "building_loss_index", 0);
+            let restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
+            assert_eq!(
+                restored
+                    .substrate
+                    .entities
+                    .get(1)
+                    .unwrap()
+                    .building_loss_index(),
+                retained
+            );
+            assert_eq!(restored.state_hash(), expected_hash);
+            assert_eq!(restored.scenario_rng.logical_state(), rng);
+        }
     }
 
     #[test]
@@ -10301,6 +10358,7 @@ mod tests {
         // 470 -> 471: retained Type.Nominal and Infantry survivor marker.
         // 471 -> 472: independent saved Scenario.Side.
         // 472 -> 473: retained Ares KeepAlive count and per-object input.
-        assert_eq!(super::SNAPSHOT_VERSION, 473);
+        // 473 -> 474: retained Building+53C.
+        assert_eq!(super::SNAPSHOT_VERSION, 474);
     }
 }

@@ -496,6 +496,11 @@ pub struct GameEntity {
     /// [`LastOperational`]: crate::sim::world::LastOperational
     #[serde(default)]
     pub building_last_operational: crate::sim::world::LastOperational,
+    /// Building+53C, a signed index: constructor43B783 starts at zero,
+    /// InitManagers442C5C installs the owner's Country index, and damage44298B
+    /// records an attacker's House index. Sale44A1EF writes -1 before its
+    /// live callbacks; RecordKill70304D/7033C3 then suppress BuildingsLost.
+    building_loss_index: i32,
     /// A `PowersUnit=` building's share in its house's powered centers
     /// (`BuildingClass+0x662`), a [`PoweredCenter`] that `sim::powered_unit`
     /// owns.
@@ -1273,6 +1278,25 @@ impl GameEntity {
         self.initial_owner
     }
 
+    pub(crate) const fn building_loss_index(&self) -> i32 {
+        self.building_loss_index
+    }
+
+    /// Building InitManagers' retained Country index (442C5C).
+    pub(crate) fn initialize_building_loss_index(&mut self, country_index: i32) {
+        self.building_loss_index = country_index;
+    }
+
+    /// Building ReceiveDamage's nonnull source House index (44298B).
+    pub(crate) fn record_building_damage_house_index(&mut self, house_index: i32) {
+        self.building_loss_index = house_index;
+    }
+
+    /// The sale's accounting gate precedes its live destruction callbacks.
+    pub(crate) fn suppress_building_sale_loss(&mut self) {
+        self.building_loss_index = -1;
+    }
+
     /// Immutable indexed type identity, established by construction/decoding.
     pub fn type_ref(&self) -> InternedId {
         self.type_ref
@@ -1614,6 +1638,7 @@ impl GameEntity {
             tesla_charge: Default::default(),
             tesla_charger: Default::default(),
             building_last_operational: Default::default(),
+            building_loss_index: 0,
             building_powered_center: Default::default(),
             building_has_engineer: Default::default(),
             building_light: Default::default(),

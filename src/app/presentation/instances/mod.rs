@@ -18,6 +18,7 @@
 
 mod helpers;
 pub(crate) use helpers::*;
+mod anim_draw;
 mod foot_depth;
 
 mod units;

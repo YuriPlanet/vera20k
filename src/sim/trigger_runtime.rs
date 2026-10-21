@@ -4787,3 +4787,11 @@ mod restore_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_scenario_pause_tests.rs"]
 mod scenario_pause_tests;
+
+#[cfg(test)]
+#[path = "world/building_sale_trigger_tests.rs"]
+mod building_sale_trigger_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_building_sale_tests.rs"]
+mod building_sale_native_tests;

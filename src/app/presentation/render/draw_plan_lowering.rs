@@ -654,15 +654,22 @@ fn push_object_piece(
     // the packed leaves through Convert490E50. Source pieces retain their
     // parent here so hull/turret/barrel are not blended separately. Native
     // selectors and coverage: procedural_drawing_oracle/translucent_blitter_a.md.
-    let packed_parent = (matches!(
+    let packed_body = matches!(
         piece.target,
         ObjectTexture::UnitAtlasPage(_)
             | ObjectTexture::UnitPosePage(_)
             | ObjectTexture::ShpPage(_)
             | ObjectTexture::TerrainShp(crate::render::terrain_draw::TerrainPiece::Body)
     ) && piece.instance.draw_state.native_selector_bits() & 6 != 0
-        && piece.instance.draw_state.fx_flags & crate::render::draw_state::FX_SHADOW == 0)
-        .then_some(owner);
+        && piece.instance.draw_state.fx_flags & crate::render::draw_state::FX_SHADOW == 0;
+    // Anim42389E can select the no-Z shadow leaf496250. Its nonzero index
+    // stencil uses the existing packed-half operation, not Terrain's Z-tested
+    // edit pipeline. Retain the parent so it also fences adjacent edit spans.
+    let packed_shadow = matches!(
+        piece.target,
+        ObjectTexture::SpriteAtlasEdit(_, crate::render::terrain_draw::TerrainPiece::Shadow)
+    ) && piece.render_z == RenderZPolicy::None;
+    let packed_parent = (packed_body || packed_shadow).then_some(owner);
     let start = pass.instances.len() as u32;
     let run = ObjectDrawRun {
         target: piece.target,
