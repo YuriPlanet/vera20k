@@ -59,10 +59,6 @@ pub fn stored_z(depth: f32) -> u16 {
 /// (`0x00706430`, `0x00706505`, `0x007065D4`). Every SHP object draw carries it.
 pub const SHP_DRAW_Z_ADJUST_PX: i32 = -2;
 
-/// `BuildingClass_DrawBody @ 0x0043D9C9` pushes `-1 - AdjustForZ(Z)` as the
-/// bib's a7; the bib body then carries `-1 - 2` on top of the lift cancel.
-pub const BIB_Z_ADJUST_PX: i32 = -1;
-
 /// Terrain height levels project 15 screen rows apart. Raw object Z instead
 /// uses `native_x87::adjust_for_z_standard` (the active 104-lepton ground
 /// scalar and native rounding/728 correction); 256 leptons is one XY cell,
@@ -380,7 +376,7 @@ pub fn tile_base_z(screen_top: i32, height_level: i32) -> i32 {
 /// result anchors on the ground-projected row: every native class folds
 /// `-AdjustForZ(Location.Z)` into its adjustment, cancelling the screen lift.
 /// `class_term` is the remaining class constant (`SHP_DRAW_Z_ADJUST_PX`,
-/// `NormalZAdjust`, bib `-1`, anim `ZAdjust`, ...).
+/// `NormalZAdjust`, anim `ZAdjust`, ...).
 pub fn ground_anchored_z_adjust(height_level: i32, class_term: i32) -> i32 {
     class_term - HEIGHT_LEVEL_PX * height_level
 }

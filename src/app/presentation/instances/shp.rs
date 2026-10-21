@@ -21,8 +21,7 @@ use crate::map::entities::EntityCategory;
 use crate::render::batch::SpriteInstance;
 use crate::render::draw_state::DrawState;
 use crate::render::native_z::{
-    self, BIB_Z_ADJUST_PX, SHP_DRAW_Z_ADJUST_PX, ZGradient, ZSHAPE_MAX_FOUNDATION_WIDTH,
-    pack_z_gradient,
+    self, SHP_DRAW_Z_ADJUST_PX, ZGradient, ZSHAPE_MAX_FOUNDATION_WIDTH, pack_z_gradient,
 };
 use crate::render::sprite_atlas::ShpSpriteKey;
 use crate::render::tactical_draw_plan::{BlitPolicy, BuildingPieceKind, SpriteEncoding};
@@ -1357,8 +1356,9 @@ fn emit_building_bib(
     // overlapping walls at closer iso rows.
     //
     // Native Z (`BuildingClass_DrawBody @ 0x0043D9C9`): the bib is a second
-    // 0x6E00 draw with gradient entry 0, a7 = `-1 - AdjustForZ(Z)`, no
-    // z-shape; it tests and writes Z like the body, and takes its colour word.
+    // 0x6E00 draw with gradient entry 0, a7 = `-AdjustForZ(Z)`, no
+    // z-shape; shared case0 (0x00706430) adds -2. It tests and writes Z
+    // like the body, and takes its colour word.
     let policy = BlitPolicy::opaque(SpriteEncoding::Plain);
     pieces.push(PlannedBuildingPieceInstance {
         kind: BuildingPieceKind::Bib,
@@ -1382,7 +1382,7 @@ fn emit_building_bib(
             ),
             alpha: 1.0,
             draw_state,
-            z_adjust: lifted_z_adjust(lift_px, BIB_Z_ADJUST_PX + SHP_DRAW_Z_ADJUST_PX),
+            z_adjust: lifted_z_adjust(lift_px, SHP_DRAW_Z_ADJUST_PX),
             z_gradient: pack_z_gradient(ZGradient::Flat, false),
             ..Default::default()
         },
