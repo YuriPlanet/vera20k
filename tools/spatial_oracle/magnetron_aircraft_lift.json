@@ -1,0 +1,2024 @@
+{
+  "cases": [
+    {
+      "after_hit": {
+        "active_kind": "jumpjet",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": {
+          "destination": [
+            1728,
+            2880,
+            0
+          ],
+          "moving": true,
+          "phase": 0,
+          "suspended_kind": "fly"
+        },
+        "lifted": true,
+        "manipulated": false,
+        "mission": 5,
+        "nav": {
+          "cell": [
+            6,
+            11
+          ]
+        },
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": {
+          "object": "firer"
+        },
+        "target": {
+          "object": "victim"
+        }
+      },
+      "before": {
+        "active_kind": "fly",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": null,
+        "lifted": false,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": null,
+        "target": null
+      },
+      "events": [
+        "0x710000",
+        "0x41aa80",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": null
+        },
+        {
+          "nav_write": "0x4d96bc",
+          "value": null
+        },
+        "COM_original_jumpjet_factory",
+        "OS_OleRun",
+        "0x54ad30",
+        "0x54da00",
+        "0x41aa80",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": {
+            "object": "firer"
+          }
+        },
+        "0x54b1c0",
+        {
+          "move_args": {
+            "coordinate": [
+              1408,
+              2688,
+              0
+            ],
+            "interface": "jumpjet"
+          }
+        },
+        "0x56dc20",
+        {
+          "nav_write": "0x54b44b",
+          "value": {
+            "cell": [
+              6,
+              11
+            ]
+          }
+        }
+      ],
+      "input": {
+        "category": "aircraft",
+        "name": "landed_orca",
+        "type": "ORCA",
+        "z": 0
+      },
+      "next_random": 660436142
+    },
+    {
+      "after_hit": {
+        "active_kind": "jumpjet",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 200,
+        "jumpjet": {
+          "destination": [
+            1728,
+            2880,
+            0
+          ],
+          "moving": true,
+          "phase": 0,
+          "suspended_kind": "fly"
+        },
+        "lifted": true,
+        "manipulated": false,
+        "mission": 5,
+        "nav": {
+          "cell": [
+            6,
+            11
+          ]
+        },
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": {
+          "object": "firer"
+        },
+        "target": {
+          "object": "victim"
+        }
+      },
+      "before": {
+        "active_kind": "fly",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 200,
+        "jumpjet": null,
+        "lifted": false,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": null,
+        "target": null
+      },
+      "events": [
+        "0x710000",
+        "0x41aa80",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": null
+        },
+        {
+          "nav_write": "0x4d96bc",
+          "value": null
+        },
+        "COM_original_jumpjet_factory",
+        "OS_OleRun",
+        "0x54ad30",
+        "0x54da00",
+        "0x41aa80",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": {
+            "object": "firer"
+          }
+        },
+        "0x54b1c0",
+        {
+          "move_args": {
+            "coordinate": [
+              1408,
+              2688,
+              0
+            ],
+            "interface": "jumpjet"
+          }
+        },
+        "0x56dc20",
+        {
+          "nav_write": "0x54b44b",
+          "value": {
+            "cell": [
+              6,
+              11
+            ]
+          }
+        }
+      ],
+      "input": {
+        "category": "aircraft",
+        "name": "landed_beag",
+        "type": "BEAG",
+        "z": 0
+      },
+      "next_random": 660436142
+    },
+    {
+      "after_hit": {
+        "active_kind": "jumpjet",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": {
+          "destination": [
+            1728,
+            2880,
+            0
+          ],
+          "moving": true,
+          "phase": 0,
+          "suspended_kind": "fly"
+        },
+        "lifted": true,
+        "manipulated": false,
+        "mission": 5,
+        "nav": {
+          "cell": [
+            6,
+            11
+          ]
+        },
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": {
+          "object": "firer"
+        },
+        "target": {
+          "object": "victim"
+        }
+      },
+      "before": {
+        "active_kind": "fly",
+        "contact": {
+          "object": "pad"
+        },
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": null,
+        "lifted": false,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": {
+          "object": "victim"
+        },
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": null,
+        "target": null
+      },
+      "events": [
+        "0x710000",
+        "0x41aa80",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": null
+        },
+        {
+          "nav_write": "0x4d96bc",
+          "value": null
+        },
+        "COM_original_jumpjet_factory",
+        "OS_OleRun",
+        "0x54ad30",
+        "0x54da00",
+        "0x41aa80",
+        "0x65a970",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": {
+            "object": "firer"
+          }
+        },
+        "0x54b1c0",
+        {
+          "move_args": {
+            "coordinate": [
+              1408,
+              2688,
+              0
+            ],
+            "interface": "jumpjet"
+          }
+        },
+        "0x56dc20",
+        {
+          "nav_write": "0x54b44b",
+          "value": {
+            "cell": [
+              6,
+              11
+            ]
+          }
+        }
+      ],
+      "input": {
+        "category": "aircraft",
+        "docked": true,
+        "name": "prepared_reload_pad",
+        "type": "ORCA",
+        "z": 0
+      },
+      "next_random": 660436142
+    },
+    {
+      "after_hit": {
+        "active_kind": "fly",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": null,
+        "lifted": false,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          300
+        ],
+        "queued": -1,
+        "released": false,
+        "source": null,
+        "target": null
+      },
+      "before": {
+        "active_kind": "fly",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": null,
+        "lifted": false,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          300
+        ],
+        "queued": -1,
+        "released": false,
+        "source": null,
+        "target": null
+      },
+      "events": [],
+      "input": {
+        "category": "aircraft",
+        "name": "airborne_orca",
+        "type": "ORCA",
+        "z": 300
+      },
+      "next_random": 2025287381
+    },
+    {
+      "after_hit": {
+        "active_kind": "jumpjet",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 300,
+        "jumpjet": {
+          "destination": [
+            1664,
+            2944,
+            0
+          ],
+          "moving": true,
+          "phase": 0,
+          "suspended_kind": "drive"
+        },
+        "lifted": true,
+        "manipulated": false,
+        "mission": 5,
+        "nav": {
+          "cell": [
+            6,
+            11
+          ]
+        },
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": {
+          "object": "firer"
+        },
+        "target": {
+          "object": "victim"
+        }
+      },
+      "before": {
+        "active_kind": "drive",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 300,
+        "jumpjet": null,
+        "lifted": false,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": null,
+        "target": null
+      },
+      "events": [
+        "0x710000",
+        "COM_original_jumpjet_factory",
+        "OS_OleRun",
+        "0x54ad30",
+        "0x54da00",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": {
+            "object": "firer"
+          }
+        },
+        "0x54b1c0",
+        {
+          "move_args": {
+            "coordinate": [
+              1408,
+              2688,
+              0
+            ],
+            "interface": "jumpjet"
+          }
+        },
+        "0x56dc20",
+        {
+          "nav_write": "0x54b44b",
+          "value": {
+            "cell": [
+              6,
+              11
+            ]
+          }
+        }
+      ],
+      "input": {
+        "category": "unit",
+        "name": "unit_regression",
+        "type": "MTNK",
+        "z": 0
+      },
+      "next_random": 2025287381
+    },
+    {
+      "after_hit": {
+        "active_kind": "walk",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 125,
+        "jumpjet": null,
+        "lifted": false,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": null,
+        "target": null
+      },
+      "before": {
+        "active_kind": "walk",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 125,
+        "jumpjet": null,
+        "lifted": false,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": null,
+        "target": null
+      },
+      "events": [],
+      "input": {
+        "category": "infantry",
+        "name": "infantry_refused",
+        "type": "E1",
+        "z": 0
+      },
+      "next_random": 2025287381
+    },
+    {
+      "after_hit": {
+        "active_kind": "fly",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": null,
+        "lifted": false,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": null,
+        "target": null
+      },
+      "before": {
+        "active_kind": "fly",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": null,
+        "lifted": false,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": null,
+        "target": null
+      },
+      "events": [],
+      "input": {
+        "category": "aircraft",
+        "name": "strength_equals_size_refused",
+        "strength": 1,
+        "type": "ORCA",
+        "z": 0
+      },
+      "next_random": 2025287381
+    },
+    {
+      "after_hit": {
+        "active_kind": "jumpjet",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": {
+          "destination": [
+            1728,
+            2880,
+            0
+          ],
+          "moving": true,
+          "phase": 0,
+          "suspended_kind": "fly"
+        },
+        "lifted": true,
+        "manipulated": false,
+        "mission": 5,
+        "nav": {
+          "cell": [
+            6,
+            11
+          ]
+        },
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": {
+          "object": "firer"
+        },
+        "target": {
+          "object": "victim"
+        }
+      },
+      "before": {
+        "active_kind": "fly",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": null,
+        "lifted": false,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": null,
+        "target": null
+      },
+      "events": [
+        "0x710000",
+        "0x41aa80",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": null
+        },
+        {
+          "nav_write": "0x4d96bc",
+          "value": null
+        },
+        "COM_original_jumpjet_factory",
+        "OS_OleRun",
+        "0x54ad30",
+        "0x54da00",
+        "0x41aa80",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": {
+            "object": "firer"
+          }
+        },
+        "0x54b1c0",
+        {
+          "move_args": {
+            "coordinate": [
+              1408,
+              2688,
+              0
+            ],
+            "interface": "jumpjet"
+          }
+        },
+        "0x56dc20",
+        {
+          "nav_write": "0x54b44b",
+          "value": {
+            "cell": [
+              6,
+              11
+            ]
+          }
+        }
+      ],
+      "input": {
+        "category": "aircraft",
+        "name": "strength_exceeds_size",
+        "strength": 2,
+        "type": "ORCA",
+        "z": 0
+      },
+      "next_random": 660436142
+    },
+    {
+      "after_hit": {
+        "active_kind": "jumpjet",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": {
+          "destination": [
+            1728,
+            2880,
+            0
+          ],
+          "moving": true,
+          "phase": 0,
+          "suspended_kind": "fly"
+        },
+        "lifted": true,
+        "manipulated": false,
+        "mission": 5,
+        "nav": {
+          "cell": [
+            6,
+            11
+          ]
+        },
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": {
+          "object": "firer"
+        },
+        "target": {
+          "object": "victim"
+        }
+      },
+      "after_release": {
+        "active_kind": "jumpjet",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": {
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "moving": true,
+          "phase": 0,
+          "suspended_kind": "fly"
+        },
+        "lifted": true,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": true,
+        "source": null,
+        "target": null
+      },
+      "after_restore_gate": {
+        "active_kind": "jumpjet",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": {
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "moving": true,
+          "phase": 0,
+          "suspended_kind": "fly"
+        },
+        "lifted": true,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": true,
+        "source": null,
+        "target": null
+      },
+      "after_supplied_settled_restore": {
+        "active_kind": "fly",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": {
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "moving": false,
+          "phase": 0,
+          "suspended_kind": null
+        },
+        "lifted": false,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": null,
+        "target": null
+      },
+      "before": {
+        "active_kind": "fly",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": null,
+        "lifted": false,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": null,
+        "target": null
+      },
+      "before_release": {
+        "active_kind": "jumpjet",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": {
+          "destination": [
+            1728,
+            2880,
+            0
+          ],
+          "moving": true,
+          "phase": 0,
+          "suspended_kind": "fly"
+        },
+        "lifted": true,
+        "manipulated": false,
+        "mission": 5,
+        "nav": {
+          "cell": [
+            6,
+            11
+          ]
+        },
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": {
+          "object": "firer"
+        },
+        "target": {
+          "object": "victim"
+        }
+      },
+      "before_supplied_settled_restore": {
+        "active_kind": "jumpjet",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": {
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "moving": false,
+          "phase": 0,
+          "suspended_kind": "fly"
+        },
+        "lifted": true,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": true,
+        "source": null,
+        "target": null
+      },
+      "events": [
+        "0x710000",
+        "0x41aa80",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": null
+        },
+        {
+          "nav_write": "0x4d96bc",
+          "value": null
+        },
+        "COM_original_jumpjet_factory",
+        "OS_OleRun",
+        "0x54ad30",
+        "0x54da00",
+        "0x41aa80",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": {
+            "object": "firer"
+          }
+        },
+        "0x54b1c0",
+        {
+          "move_args": {
+            "coordinate": [
+              1408,
+              2688,
+              0
+            ],
+            "interface": "jumpjet"
+          }
+        },
+        "0x56dc20",
+        {
+          "nav_write": "0x54b44b",
+          "value": {
+            "cell": [
+              6,
+              11
+            ]
+          }
+        },
+        "0x70fee0",
+        "0x41aa80",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": null
+        },
+        "0x56dc20",
+        "0x54b1c0",
+        {
+          "move_args": {
+            "coordinate": [
+              2688,
+              2688,
+              0
+            ],
+            "interface": "jumpjet"
+          }
+        },
+        "0x56dc20",
+        {
+          "nav_write": "0x54b44b",
+          "value": {
+            "cell": [
+              10,
+              10
+            ]
+          }
+        },
+        {
+          "nav_write": "0x4d96bc",
+          "value": null
+        },
+        "0x41aa80",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": null
+        },
+        "0x56dc20",
+        "0x54b1c0",
+        {
+          "move_args": {
+            "coordinate": [
+              2688,
+              2688,
+              0
+            ],
+            "interface": "jumpjet"
+          }
+        },
+        "0x56dc20",
+        {
+          "nav_write": "0x54b44b",
+          "value": {
+            "cell": [
+              10,
+              10
+            ]
+          }
+        },
+        {
+          "nav_write": "0x4d96bc",
+          "value": null
+        },
+        "0x54db00",
+        "0x54db00",
+        "0x54da50"
+      ],
+      "input": {
+        "category": "aircraft",
+        "name": "ground_release",
+        "release_height": 0,
+        "type": "ORCA",
+        "z": 0
+      },
+      "next_random": 2901129938
+    },
+    {
+      "after_hit": {
+        "active_kind": "jumpjet",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": {
+          "destination": [
+            1728,
+            2880,
+            0
+          ],
+          "moving": true,
+          "phase": 0,
+          "suspended_kind": "fly"
+        },
+        "lifted": true,
+        "manipulated": false,
+        "mission": 5,
+        "nav": {
+          "cell": [
+            6,
+            11
+          ]
+        },
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": {
+          "object": "firer"
+        },
+        "target": {
+          "object": "victim"
+        }
+      },
+      "after_release": {
+        "active_kind": "jumpjet",
+        "contact": null,
+        "crashing": true,
+        "credit": {
+          "object": "firer"
+        },
+        "health": 150,
+        "jumpjet": {
+          "destination": [
+            2752,
+            2624,
+            0
+          ],
+          "moving": true,
+          "phase": 0,
+          "suspended_kind": "fly"
+        },
+        "lifted": true,
+        "manipulated": true,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          300
+        ],
+        "queued": -1,
+        "released": false,
+        "source": null,
+        "target": null
+      },
+      "before": {
+        "active_kind": "fly",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": null,
+        "lifted": false,
+        "manipulated": false,
+        "mission": 5,
+        "nav": null,
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          0
+        ],
+        "queued": -1,
+        "released": false,
+        "source": null,
+        "target": null
+      },
+      "before_release": {
+        "active_kind": "jumpjet",
+        "contact": null,
+        "crashing": false,
+        "credit": null,
+        "health": 150,
+        "jumpjet": {
+          "destination": [
+            1728,
+            2880,
+            0
+          ],
+          "moving": true,
+          "phase": 0,
+          "suspended_kind": "fly"
+        },
+        "lifted": true,
+        "manipulated": false,
+        "mission": 5,
+        "nav": {
+          "cell": [
+            6,
+            11
+          ]
+        },
+        "pad_contact": null,
+        "position": [
+          2688,
+          2688,
+          300
+        ],
+        "queued": -1,
+        "released": false,
+        "source": {
+          "object": "firer"
+        },
+        "target": {
+          "object": "victim"
+        }
+      },
+      "events": [
+        "0x710000",
+        "0x41aa80",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": null
+        },
+        {
+          "nav_write": "0x4d96bc",
+          "value": null
+        },
+        "COM_original_jumpjet_factory",
+        "OS_OleRun",
+        "0x54ad30",
+        "0x54da00",
+        "0x41aa80",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": {
+            "object": "firer"
+          }
+        },
+        "0x54b1c0",
+        {
+          "move_args": {
+            "coordinate": [
+              1408,
+              2688,
+              0
+            ],
+            "interface": "jumpjet"
+          }
+        },
+        "0x56dc20",
+        {
+          "nav_write": "0x54b44b",
+          "value": {
+            "cell": [
+              6,
+              11
+            ]
+          }
+        },
+        "0x70fee0",
+        "0x41aa80",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": null
+        },
+        "0x56dc20",
+        "0x54b1c0",
+        {
+          "move_args": {
+            "coordinate": [
+              2688,
+              2688,
+              0
+            ],
+            "interface": "jumpjet"
+          }
+        },
+        "0x56dc20",
+        {
+          "nav_write": "0x54b44b",
+          "value": {
+            "cell": [
+              10,
+              10
+            ]
+          }
+        },
+        {
+          "nav_write": "0x4d96bc",
+          "value": null
+        },
+        "0x56dc20",
+        "0x54b1c0",
+        {
+          "move_args": {
+            "coordinate": [
+              2688,
+              2688,
+              0
+            ],
+            "interface": "jumpjet"
+          }
+        },
+        "0x56dc20",
+        {
+          "nav_write": "0x54b44b",
+          "value": {
+            "cell": [
+              10,
+              10
+            ]
+          }
+        },
+        "0x41aa80",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": null
+        },
+        "0x56dc20",
+        "0x54b1c0",
+        {
+          "move_args": {
+            "coordinate": [
+              2688,
+              2688,
+              0
+            ],
+            "interface": "jumpjet"
+          }
+        },
+        "0x56dc20",
+        {
+          "nav_write": "0x54b44b",
+          "value": {
+            "cell": [
+              10,
+              10
+            ]
+          }
+        },
+        {
+          "nav_write": "0x4d96bc",
+          "value": null
+        },
+        "0x41aa80",
+        "0x4d94b0",
+        {
+          "nav_write": "0x4d9510",
+          "value": null
+        },
+        "0x56dc20",
+        "0x54b1c0",
+        {
+          "move_args": {
+            "coordinate": [
+              2688,
+              2688,
+              0
+            ],
+            "interface": "jumpjet"
+          }
+        },
+        "0x56dc20",
+        {
+          "nav_write": "0x54b44b",
+          "value": {
+            "cell": [
+              10,
+              10
+            ]
+          }
+        },
+        {
+          "nav_write": "0x4d96bc",
+          "value": null
+        }
+      ],
+      "input": {
+        "category": "aircraft",
+        "name": "supplied_altitude_release",
+        "release_height": 300,
+        "type": "ORCA",
+        "z": 0
+      },
+      "next_random": 615944872
+    }
+  ],
+  "impact_controls": [
+    {
+      "calls": [],
+      "dispatch": {
+        "arguments": [
+          4476,
+          0
+        ],
+        "interface_offset": 8,
+        "phase": 6,
+        "receiver": "aircraft_notice"
+      },
+      "input": {
+        "credit": true,
+        "current_strength_damage": false,
+        "health": 60,
+        "lifted": false,
+        "multiplier": 1.5,
+        "name": "unlifted_ignores_notice",
+        "z": 300
+      },
+      "return_value": 0
+    },
+    {
+      "calls": [
+        {
+          "bright": true,
+          "call": "create_bullet",
+          "damage": 225,
+          "owner": {
+            "object": "firer"
+          },
+          "speed": 0,
+          "target": {
+            "object": "victim"
+          },
+          "warhead": "rules_c4"
+        },
+        {
+          "call": "bullet_mark"
+        },
+        {
+          "call": "detonate",
+          "coordinate": [
+            2688,
+            2688,
+            0
+          ]
+        },
+        {
+          "call": "bullet_release"
+        },
+        {
+          "call": "record_kill",
+          "killer": {
+            "object": "firer"
+          }
+        },
+        {
+          "bright": true,
+          "call": "create_bullet",
+          "damage": 225,
+          "owner": {
+            "object": "firer"
+          },
+          "speed": 0,
+          "target": {
+            "object": "victim"
+          },
+          "warhead": "rules_c4"
+        },
+        {
+          "call": "bullet_mark"
+        },
+        {
+          "call": "detonate",
+          "coordinate": [
+            2688,
+            2688,
+            300
+          ]
+        },
+        {
+          "call": "bullet_release"
+        },
+        {
+          "call": "uninit"
+        }
+      ],
+      "dispatch": {
+        "arguments": [
+          4476,
+          0
+        ],
+        "interface_offset": 8,
+        "phase": 6,
+        "receiver": "aircraft_notice"
+      },
+      "input": {
+        "credit": true,
+        "current_strength_damage": false,
+        "health": 60,
+        "lifted": true,
+        "multiplier": 1.5,
+        "name": "type_strength_two_c4",
+        "z": 300
+      },
+      "return_value": 1
+    },
+    {
+      "calls": [
+        {
+          "bright": true,
+          "call": "create_bullet",
+          "damage": 90,
+          "owner": {
+            "object": "firer"
+          },
+          "speed": 0,
+          "target": {
+            "object": "victim"
+          },
+          "warhead": "rules_c4"
+        },
+        {
+          "call": "bullet_mark"
+        },
+        {
+          "call": "detonate",
+          "coordinate": [
+            2688,
+            2688,
+            0
+          ]
+        },
+        {
+          "call": "bullet_release"
+        },
+        {
+          "call": "record_kill",
+          "killer": {
+            "object": "firer"
+          }
+        },
+        {
+          "bright": true,
+          "call": "create_bullet",
+          "damage": 90,
+          "owner": {
+            "object": "firer"
+          },
+          "speed": 0,
+          "target": {
+            "object": "victim"
+          },
+          "warhead": "rules_c4"
+        },
+        {
+          "call": "bullet_mark"
+        },
+        {
+          "call": "detonate",
+          "coordinate": [
+            2688,
+            2688,
+            300
+          ]
+        },
+        {
+          "call": "bullet_release"
+        },
+        {
+          "call": "uninit"
+        }
+      ],
+      "dispatch": {
+        "arguments": [
+          4476,
+          0
+        ],
+        "interface_offset": 8,
+        "phase": 6,
+        "receiver": "aircraft_notice"
+      },
+      "input": {
+        "credit": true,
+        "current_strength_damage": true,
+        "health": 60,
+        "lifted": true,
+        "multiplier": 1.5,
+        "name": "current_strength_two_c4",
+        "z": 300
+      },
+      "return_value": 1
+    },
+    {
+      "calls": [
+        {
+          "bright": true,
+          "call": "create_bullet",
+          "damage": 0,
+          "owner": {
+            "object": "firer"
+          },
+          "speed": 0,
+          "target": {
+            "object": "victim"
+          },
+          "warhead": "rules_c4"
+        },
+        {
+          "call": "bullet_mark"
+        },
+        {
+          "call": "detonate",
+          "coordinate": [
+            2688,
+            2688,
+            0
+          ]
+        },
+        {
+          "call": "bullet_release"
+        },
+        {
+          "call": "record_kill",
+          "killer": {
+            "object": "firer"
+          }
+        },
+        {
+          "bright": true,
+          "call": "create_bullet",
+          "damage": 0,
+          "owner": {
+            "object": "firer"
+          },
+          "speed": 0,
+          "target": {
+            "object": "victim"
+          },
+          "warhead": "rules_c4"
+        },
+        {
+          "call": "bullet_mark"
+        },
+        {
+          "call": "detonate",
+          "coordinate": [
+            2688,
+            2688,
+            300
+          ]
+        },
+        {
+          "call": "bullet_release"
+        },
+        {
+          "call": "uninit"
+        }
+      ],
+      "dispatch": {
+        "arguments": [
+          4476,
+          0
+        ],
+        "interface_offset": 8,
+        "phase": 6,
+        "receiver": "aircraft_notice"
+      },
+      "input": {
+        "credit": true,
+        "current_strength_damage": false,
+        "health": 60,
+        "lifted": true,
+        "multiplier": -1.5,
+        "name": "negative_damage_clamps",
+        "z": 300
+      },
+      "return_value": 1
+    },
+    {
+      "calls": [
+        {
+          "bright": true,
+          "call": "create_bullet",
+          "damage": 225,
+          "owner": {
+            "object": "victim"
+          },
+          "speed": 0,
+          "target": {
+            "object": "victim"
+          },
+          "warhead": "rules_c4"
+        },
+        {
+          "call": "bullet_mark"
+        },
+        {
+          "call": "detonate",
+          "coordinate": [
+            2688,
+            2688,
+            0
+          ]
+        },
+        {
+          "call": "bullet_release"
+        },
+        {
+          "bright": true,
+          "call": "create_bullet",
+          "damage": 225,
+          "owner": {
+            "object": "victim"
+          },
+          "speed": 0,
+          "target": {
+            "object": "victim"
+          },
+          "warhead": "rules_c4"
+        },
+        {
+          "call": "bullet_mark"
+        },
+        {
+          "call": "detonate",
+          "coordinate": [
+            2688,
+            2688,
+            300
+          ]
+        },
+        {
+          "call": "bullet_release"
+        },
+        {
+          "call": "uninit"
+        }
+      ],
+      "dispatch": {
+        "arguments": [
+          4476,
+          0
+        ],
+        "interface_offset": 8,
+        "phase": 6,
+        "receiver": "aircraft_notice"
+      },
+      "input": {
+        "credit": false,
+        "current_strength_damage": false,
+        "health": 60,
+        "lifted": true,
+        "multiplier": 1.5,
+        "name": "no_manipulator_self_owner",
+        "z": 300
+      },
+      "return_value": 1
+    }
+  ],
+  "inputs": {
+    "allocated_size": [
+      32,
+      32
+    ],
+    "blocked_speed_rows": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "clear_speed_rows": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "firer_position": [
+      1408,
+      2688,
+      0
+    ],
+    "layers": [
+      {
+        "admitted": {
+          "BEAG": true,
+          "E1": true,
+          "MTNK": true,
+          "ORCA": true,
+          "TELE": true
+        },
+        "file": "RULESMD.INI",
+        "sections": {
+          "BEAG": {
+            "AirportBound": "yes",
+            "Armor": "light",
+            "Landable": "yes",
+            "Locomotor": "{4A582746-9839-11d1-B709-00A024DDAFD1}",
+            "MovementZone": "Fly",
+            "ROT": "3",
+            "Strength": "200"
+          },
+          "E1": {
+            "Armor": "none",
+            "Locomotor": "{4A582744-9839-11d1-B709-00A024DDAFD1}",
+            "MovementZone": "Infantry",
+            "Size": "1",
+            "Strength": "125"
+          },
+          "InvisibleHigh": {
+            "Image": "none",
+            "Inviso": "yes",
+            "SubjectToElevation": "yes"
+          },
+          "LocomotorBeam": {
+            "IsLocomotor": "yes",
+            "Locomotor": "{92612C46-F71F-11d1-AC9F-006008055BB5}",
+            "Verses": "0%,0%,0%,100%,100%,100%,0%,0%,0%,100%,0%"
+          },
+          "MTNK": {
+            "Armor": "heavy",
+            "Locomotor": "{4A582741-9839-11d1-B709-00A024DDAFD1}",
+            "MovementZone": "Normal",
+            "ROT": "5",
+            "Size": "3",
+            "Strength": "300"
+          },
+          "MagneticBeam": {
+            "Damage": "5000",
+            "MinimumRange": "3",
+            "Projectile": "InvisibleHigh",
+            "Range": "12",
+            "Warhead": "LocomotorBeam"
+          },
+          "MagneticBeamE": {
+            "Damage": "10000",
+            "MinimumRange": "3",
+            "Projectile": "InvisibleHigh",
+            "Range": "12",
+            "Warhead": "LocomotorBeam"
+          },
+          "ORCA": {
+            "AirportBound": "yes",
+            "Armor": "light",
+            "Landable": "yes",
+            "Locomotor": "{4A582746-9839-11d1-B709-00A024DDAFD1}",
+            "MovementZone": "Fly",
+            "ROT": "3",
+            "Strength": "150"
+          },
+          "TELE": {
+            "Armor": "light",
+            "ElitePrimary": "MagneticBeamE",
+            "Locomotor": "{4A582741-9839-11d1-B709-00A024DDAFD1}",
+            "MovementZone": "Destroyer",
+            "Primary": "MagneticBeam",
+            "ROT": "5",
+            "Size": "6",
+            "Strength": "150"
+          }
+        }
+      },
+      {
+        "absent": true,
+        "file": "LANGRULE.INI"
+      },
+      {
+        "admitted": {
+          "BEAG": false,
+          "E1": false,
+          "MTNK": false,
+          "ORCA": false,
+          "TELE": false
+        },
+        "file": "MPBattleMD.ini",
+        "sections": {}
+      }
+    ],
+    "magnetic_beam_damage": 5000,
+    "map_size": [
+      16,
+      16
+    ],
+    "mission": 5,
+    "placement_offsets": [
+      [
+        128,
+        128,
+        0
+      ],
+      [
+        64,
+        64,
+        0
+      ],
+      [
+        192,
+        64,
+        0
+      ],
+      [
+        64,
+        192,
+        0
+      ],
+      [
+        192,
+        192,
+        0
+      ]
+    ],
+    "queued": -1,
+    "seed": 1,
+    "types": {
+      "BEAG": {
+        "airport_bound": true,
+        "jumpjet": "040000000e0000000000a0400000a040f4010000000000409a99193e000000002800000000000100",
+        "landable": true,
+        "locomotor": "4627584a3998d111b70900a024ddafd1",
+        "size": 1.0,
+        "strength": 200
+      },
+      "E1": {
+        "airport_bound": null,
+        "jumpjet": "040000000e0000000000a0400000a040f4010000000000409a99193e000000002800000000000001",
+        "landable": null,
+        "locomotor": "4427584a3998d111b70900a024ddafd1",
+        "size": 1.0,
+        "strength": 125
+      },
+      "MTNK": {
+        "airport_bound": null,
+        "jumpjet": "040000000e0000000000a0400000a040f4010000000000409a99193e000000002800000000000000",
+        "landable": null,
+        "locomotor": "4127584a3998d111b70900a024ddafd1",
+        "size": 3.0,
+        "strength": 300
+      },
+      "ORCA": {
+        "airport_bound": true,
+        "jumpjet": "040000000e0000000000a0400000a040f4010000000000409a99193e000000002800000000000100",
+        "landable": true,
+        "locomotor": "4627584a3998d111b70900a024ddafd1",
+        "size": 1.0,
+        "strength": 150
+      },
+      "TELE": {
+        "airport_bound": null,
+        "jumpjet": "040000000e0000000000a0400000a040f4010000000000409a99193e000000002800000000000000",
+        "landable": null,
+        "locomotor": "4127584a3998d111b70900a024ddafd1",
+        "size": 6.0,
+        "strength": 150
+      }
+    },
+    "victim_position": [
+      2688,
+      2688,
+      0
+    ]
+  },
+  "landing_controls": [
+    {
+      "can_enter_cell": 0,
+      "entry": 0,
+      "input": {
+        "land_type": 0,
+        "name": "clear",
+        "speed_rows": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "wheel_clear": true
+    },
+    {
+      "can_enter_cell": 0,
+      "entry": 7,
+      "input": {
+        "land_type": 1,
+        "name": "impassable",
+        "speed_rows": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "wheel_clear": false
+    }
+  ],
+  "schema_version": 1
+}

@@ -330,7 +330,8 @@ impl Simulation {
 
     /// A crashed Jumpjet's impact: State 5's owner work (`AircraftTracker::
     /// Remove @ 0x004135D0`, `0x0054D075`), then its `(0x117C, 0)` notice to
-    /// `UnitClass`'s `INoticeSink` (`0x00746100`). A `Crashable=` type
+    /// the owner's `INoticeSink` (`0x0054D095`). For a Unit (`0x00746100`),
+    /// a `Crashable=` type
     /// (`+0xD95`, `0x0074619D`) answers it (`0x007461A7..0x00746206`):
     /// `SetHeight(0)` (vtable `+0x1CC`), then `Fire_Death_Weapon(0)` for a
     /// `BalloonHover=` type (`0x007461EF`, the Kirov's bomb) or
@@ -341,6 +342,11 @@ impl Simulation {
     /// answers with its falling damage ([`Self::falling_damage`]); the rest
     /// leave the notice unanswered. After it, the drop's credit (`+0x428`,
     /// `+0x42C`) clears (`0x0054D097..0x0054D0A7`).
+    ///
+    /// Aircraft uses its own sink (`0x0041BC30`, constructor secondary
+    /// vtable `0x007E2280` at `0x00413D94`): only a lifted aircraft answers,
+    /// with two C4 impacts and UnInit. It does not use Unit's Crashable arm
+    /// or the Crush warhead of Unit's first falling impact.
     ///
     /// An Infantry owner's notice (the Rocketeer's) keeps the infantryman
     /// instead: [`Simulation::infantry_crash_impact`]. Returns whether the
@@ -355,14 +361,31 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
-        debug_assert_eq!(entity.category(), EntityCategory::Unit);
+        let category = entity.category();
+        debug_assert!(matches!(
+            category,
+            EntityCategory::Unit | EntityCategory::Aircraft
+        ));
+        let lifted = entity.lift.swap_active();
         let (crashable, balloon_hover) = self
             .object_type(entity.type_ref(), rules)
             .map_or((false, false), |object| {
                 (object.crashable, object.balloon_hover)
             });
         self.substrate.aircraft_tracker_remove(id);
-        let bridge_state_changed = if crashable {
+        let bridge_state_changed = if category == EntityCategory::Aircraft {
+            if lifted {
+                self.falling_damage(
+                    id,
+                    &rules.bridge_warheads.c4_name,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                )
+            } else {
+                false
+            }
+        } else if crashable {
             self.set_object_height(id, 0, Some(rules), overlay_registry, frame_effects);
             let bridge_state_changed = if balloon_hover {
                 self.fire_death_weapon(id, rules, overlay_registry, frame_effects)
@@ -381,7 +404,13 @@ impl Simulation {
             .get(id)
             .is_some_and(|entity| entity.lift.swap_active())
         {
-            self.falling_damage(id, rules, overlay_registry, frame_effects)
+            self.falling_damage(
+                id,
+                &rules.bridge_warheads.crush_name,
+                rules,
+                overlay_registry,
+                frame_effects,
+            )
         } else {
             // The notice goes unanswered: the wreck rests in State 6.
             false
@@ -393,31 +422,33 @@ impl Simulation {
         bridge_state_changed
     }
 
-    /// A lifted Unit's answer to its Jumpjet's impact notice when its type is
-    /// not `Crashable=` (`UnitClass` `INoticeSink`, the `+0x6AD` arm at
-    /// `0x00746209..0x00746387`, which tests no notice code): its fall hurts
-    /// what it lands on. Returns whether a bullet changed a bridge.
+    /// The shared falling-damage transaction for Unit's lifted, non-Crashable
+    /// notice (`0x00746209..0x00746387`) and Aircraft's lifted notice
+    /// (`0x0041BC30..0x0041BDC0`). Neither body tests the notice code.
+    /// The caller selects the first impact's warhead: Unit uses Crush,
+    /// Aircraft uses C4 (`0x0041BCA0`); both use C4 for the second impact.
+    /// Returns whether a bullet changed a bridge.
     ///
-    /// The damage is the Unit's Health (`CurrentStrengthDamage=`) or its
+    /// The damage is the owner's Health (`CurrentStrengthDamage=`) or its
     /// type's `Strength=`, times `FallingDamageMultiplier=`, through
-    /// `Math::ftol` and floored at zero (`0x0074623A..0x0074625D`). A bullet
-    /// of `[CombatDamage] DeathWeapon=`'s projectile carries it in
-    /// `CrushWarhead=` from the dropping Magnetron (`+0x428`), else the Unit
-    /// itself (`CreateBullet @ 0x0046B050`, `0x0074628A`), and detonates where
-    /// the Unit meets the ground: its GetCoords less its height
-    /// (`0x007462B5..0x007462DA`). The Unit's death is booked for the drop's
-    /// credit ([`Self::record_manipulated_kill`]); a second bullet
-    /// detonates `C4Warhead=` at its GetCoords (`0x00746355..0x00746372`) and
-    /// the Unit is UnInit (`0x00746381`).
+    /// `Math::ftol` and floored at zero (`0x0074623A..0x0074625D`,
+    /// `0x0041BC72..0x0041BC89`). A bullet of `[CombatDamage] DeathWeapon=`'s
+    /// projectile carries it in the selected ground warhead from the dropping
+    /// Magnetron (`+0x428`), else the owner itself (`CreateBullet @ 0x0046B050`,
+    /// calls `0x0074628A` / `0x0041BCBB`). It detonates at GetCoords less the
+    /// owner's height. The death is booked for the drop's credit
+    /// ([`Self::record_manipulated_kill`]); a second bullet detonates C4 at
+    /// GetCoords (`0x00746372` / `0x0041BDA4`), then the owner is UnInit
+    /// (`0x00746381` / `0x0041BDB3`).
     ///
-    /// The first bullet's area usually kills the Unit itself; the booking and
+    /// The first bullet's area usually kills the owner itself; the booking and
     /// the UnInit run all the same, as native's do, so its death is booked
     /// twice (Record_The_Kill, `0x00702D40`, has no first-credit guard). The
     /// second bullet detonates at the coordinates read before the first;
-    /// native reads GetCoords again (`0x0074631A`), which the first bullet
+    /// native reads GetCoords again (`0x0074631A` / `0x0041BD4F`), which the first bullet
     /// leaves unchanged.
     ///
-    /// Create74628A/746355 each constructs an independent Bright1 Bullet
+    /// Each Create (74628A/746355 or 41BCBB/41BD86) constructs a Bright1 Bullet
     /// with no installed WeaponType. It remains in Limbo, but participates
     /// in pointer expiry through its synchronous detonation and destruction.
     /// Native dereferences a missing `DeathWeapon=`; VERA then books the
@@ -425,6 +456,7 @@ impl Simulation {
     fn falling_damage(
         &mut self,
         id: u64,
+        ground_warhead: &str,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
@@ -460,12 +492,15 @@ impl Simulation {
             .death_weapon
             .as_deref()
             .and_then(|weapon| rules.weapon(weapon));
-        let crush = self.interner.intern(&rules.bridge_warheads.crush_name);
+        let ground_warhead = self.interner.intern(ground_warhead);
         let c4 = self.interner.intern(&rules.bridge_warheads.c4_name);
         let mut bridge_state_changed = false;
-        for (index, (warhead, z)) in [(crush, coords.z.wrapping_sub(height)), (c4, coords.z)]
-            .into_iter()
-            .enumerate()
+        for (index, (warhead, z)) in [
+            (ground_warhead, coords.z.wrapping_sub(height)),
+            (c4, coords.z),
+        ]
+        .into_iter()
+        .enumerate()
         {
             if index == 1 {
                 self.record_manipulated_kill(

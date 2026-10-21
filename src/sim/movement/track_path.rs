@@ -28,11 +28,11 @@
 //! mode (`foot_path::finish_find_path_failure`). The ladder runs after that
 //! relocation.
 //!
-//! Residuals:
-//! - 24-word copy. Find_Path copies at most 24 - prefix words into Foot+5E0
-//!   (0x4D3E82..0x4D3E9F); VERA installs the whole route, so the native
-//!   re-request every 24 cells does not happen. Effect: a long route is not
-//!   re-planned mid-way.
+//! Find_Path's ordinary zero-prefix copy installs at most 24 direction words
+//! (`FootPathQueue::install`, 0x4D3E82..0x4D3EA1). The full search destination
+//! stays with its owner. When the window runs short, the existing last-word
+//! distance check or no-queue continuation can request the next window;
+//! this is not an unconditional replan every 24 cells.
 
 use super::foot_path::FootPathOutcome;
 use super::ground_pose;

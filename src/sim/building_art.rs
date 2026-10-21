@@ -957,6 +957,33 @@ pub fn body_frame(
     frame
 }
 
+/// The image `BuildingClass::GetImage @ 0x004513D0` hands DrawBody.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BuildingImage {
+    /// The type's own image (vt+0x9C, `0x0045F040`).
+    Body,
+    /// The type's Buildup SHP (vt+0xC0, `0x00465960`).
+    Buildup,
+    /// A null Buildup: DrawBody returns before drawing anything
+    /// (`0x0043D2BB`).
+    Null,
+}
+
+/// `BuildingClass::GetImage @ 0x004513D0`: the type's image once BState
+/// (+0x534) is nonzero and OnConstructionComplete has set +0x6E4
+/// (`0x00446A6E`); its Buildup until then, whatever the BState, so a human
+/// player's placement draws Buildup in its idle frame before Construction
+/// begins. Either image is drawn at GetCurrentFrame ([`body_frame`]).
+pub fn building_image(entity: &GameEntity, has_buildup: bool) -> BuildingImage {
+    if !entity.in_construction_bstate() && entity.building_art.actually_placed() {
+        BuildingImage::Body
+    } else if has_buildup {
+        BuildingImage::Buildup
+    } else {
+        BuildingImage::Null
+    }
+}
+
 /// Equality key for health-only receiver continuation442B37. Represented
 /// building body states are construction(0) and completed(1). Native fences
 /// and construction read no health, so their unchanged frame cancels here.
