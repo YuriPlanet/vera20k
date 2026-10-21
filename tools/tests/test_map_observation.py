@@ -5489,6 +5489,43 @@ class MapObservationTests(unittest.TestCase):
         self.assertEqual(report['status'], 'MISMATCH', report['errors'])
         self.assertEqual([d['field'] for d in report['differences']], ['frame.bytes'])
 
+    def test_comparison_reports_tooltip_outputs_without_invalidating_clock(self):
+        self.profile.update(schema_version=observation.PROFILE_V3, observe_tooltips=True)
+        self.profile_path.write_text(json.dumps(self.profile))
+        shown = self.tooltip_observation()
+        shown['active'] = {'id': 999, 'text': 'Power',
+                           'cursor_px': [400, 200], 'shown_at_ms': 22}
+        # A middle draw must be compared even when the final tooltip/frame agrees.
+        self.tooltip_frames[2] = shown
+        before = self.valid_capture('tooltip-before')
+        unchanged = self.valid_capture('tooltip-unchanged')
+        report = observation.compare_runs(before, unchanged)
+        self.assertEqual(report['status'], 'MATCH', report['errors'])
+        self.assertEqual(report['differences'], [])
+        changes = [('active', shown['active'], None,
+                    lambda t: t.update(active=None)),
+                   ('active.text', 'Power', 'Low Power',
+                    lambda t: t['active'].update(text='Low Power')),
+                   ('active.shown_at_ms', 22, 44,
+                    lambda t: t['active'].update(shown_at_ms=44)),
+                   ('camera_zoom', 1.0, 2.0,
+                    lambda t: t.update(camera_zoom=2.0))]
+        for index, (field, old, new, change) in enumerate(changes):
+            with self.subTest(field=field):
+                changed = deepcopy(shown)
+                change(changed)
+                self.tooltip_frames[2] = changed
+                after = self.valid_capture(f'tooltip-after-{index}')
+                report = observation.compare_runs(before, after)
+                self.assertEqual(report['status'], 'MISMATCH', report['errors'])
+                self.assertEqual(report['differences'], [{
+                    'field': f'presentation_clock.draws[1].tooltip.{field}',
+                    'before': old, 'after': new}])
+                # The full validated transcripts remain available in the report.
+                for name, tooltip in (('before', shown), ('after', changed)):
+                    self.assertEqual(report[name]['capture']['presentation_clock']
+                                     ['draws'][1]['tooltip'], tooltip)
+
     def test_comparison_requires_same_input_bytes(self):
         before = self.valid_capture('input-before')
         self.config.write_text('different production settings')

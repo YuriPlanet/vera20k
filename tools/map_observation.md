@@ -1092,6 +1092,11 @@ without assuming presentation state resets with the simulation clock. The
 projection shares the100000-draw budget and does not add simulation observation
 samples.
 
+Comparison requires matching clock policies and consumed draw times. Tooltip
+projections are observed output: changes at any draw are reported as `MISMATCH`
+under `presentation_clock.draws[index].tooltip`, even when the final frame is
+unchanged. Malformed transcripts or different clock schedules remain `INVALID`.
+
 The required v4 `render.neutral_input` has exactly
 `{"static_default_cursor":true,"camera_input_idle":true}`. Rust verifies these
 prerequisites and render readiness on every draw before publishing the final
