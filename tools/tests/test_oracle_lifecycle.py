@@ -23,6 +23,7 @@ PRODUCERS = tuple('tools.projectile_oracle.' + name for name in (
      'tools.spatial_oracle.magnetron_aircraft_lift',
      'tools.spatial_oracle.foot_path_window',
      'tools.spatial_oracle.captured_building_sale',
+     'tools.spatial_oracle.campaign_hunt',
      'tools.procedural_drawing_oracle.airstrike_beam')
 HELPERS = ('tools.native_slope', 'tools.projectile_oracle.collision_fixture',
            'tools.palette_oracle.check')
