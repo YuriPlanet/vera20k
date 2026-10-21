@@ -110,6 +110,19 @@ fn buildup_shp_candidates(
         .unwrap_or_default()
 }
 
+/// For an ordinary Theater=no body, BuildingType::LoadVisualAssets45F230
+/// applies the theater naming convention, then retries the generic second
+/// letter, both with .SHP. NewTheater does not gate this final pass. Theater=yes
+/// has a later InitTheater45E970 reload and stays on the existing lookup path;
+/// retained demand-loaded image histories are not modeled here.
+fn building_body_shp_candidates(image_id: &str, theater_name: &str) -> Vec<String> {
+    let mut candidates = art_data::theater_shp_names(image_id, theater_name)
+        .map(|name| format!("{name}.SHP"))
+        .to_vec();
+    candidates.dedup();
+    candidates
+}
+
 fn find_shp<'a, 'n>(
     asset_manager: &'a AssetManager,
     candidates: &'n [String],
@@ -2153,9 +2166,8 @@ impl<'a> ShpSource<'a> {
 ///
 /// `file` is the file registration counted the type's frames in (animation,
 /// make and parachute SHPs), so frames come from the file they were counted
-/// in. Other types resolve through rules/art `Image=` and the object naming
-/// (with NewTheater substitution), falling back to direct {TYPE_ID}.SHP when
-/// art data is unavailable.
+/// in. Completed Theater=no buildings use BuildingType's final image lookup;
+/// other bodies retain the object naming path through rules/art `Image=`.
 fn load_shp_source<'a>(
     asset_manager: &'a AssetManager,
     type_id: &str,
@@ -2176,16 +2188,26 @@ fn load_shp_source<'a>(
                 type_id
             };
             // Resolve image name: type_id → rules.ini Image= → art.ini Image= override.
-            let rules_image: String = rules
-                .and_then(|r| r.object(base_type_id))
+            let object = rules.and_then(|r| r.object(base_type_id));
+            let rules_image: String = object
                 .map(|o| o.image.clone())
                 .unwrap_or_else(|| base_type_id.to_string());
             let image: String = art
                 .map(|a| a.resolve_effective_image_id(base_type_id, &rules_image))
                 .unwrap_or_else(|| rules_image.to_uppercase());
+            // ObjectType reads Theater from the rules Image's ART section,
+            // before BuildingType's ART Image redirect selects the body.
+            let body_uses_theater_extension = art
+                .and_then(|art| art.get(&rules_image))
+                .is_some_and(|entry| entry.theater);
             if is_make {
                 art.map(|art| buildup_shp_candidates(art, rules, base_type_id, theater_name))
                     .unwrap_or_default()
+            } else if object.is_some_and(|object| {
+                object.category == crate::rules::object_type::ObjectCategory::Building
+            }) && !body_uses_theater_extension
+            {
+                building_body_shp_candidates(&image, theater_name)
             } else {
                 art_data::object_shp_candidates(art, &image, theater_ext, theater_name)
             }

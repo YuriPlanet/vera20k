@@ -551,6 +551,189 @@ fn retail_gapowr_atlas_registers_native_embedded_shadow_frames() {
     }
 }
 
+fn building_body_atlas_rules(art_text: &str) -> RuleSet {
+    use crate::rules::ini_parser::IniFile;
+    let art_ini = IniFile::from_str(art_text);
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[BuildingTypes]\n0=YAYARD\n1=BODYALIAS\n2=XAFOO\n\
+             [YAYARD]\nStrength=1500\n[BODYALIAS]\nImage=BODYART\n\
+             [XAFOO]\nStrength=100\n[VehicleTypes]\n0=YAMOBILE\n\
+             [YAMOBILE]\nImage=YAYARD\nStrength=100\n",
+        ),
+        &art_ini,
+    )
+    .expect("building body rules");
+    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+    rules
+}
+
+/// BuildingType45F230's final image pass, after the base ObjectType load.
+/// Stock YAYARD omits NewTheater: the original requests YTYARD.SHP, then
+/// YGYARD.SHP. A plain-name file or a different extension is not a third try.
+#[test]
+fn building_body_without_new_theater_uses_theater_then_generic() {
+    let rules = building_body_atlas_rules("[YAYARD]\nImage=YAYARD\nFoundation=4x4\n");
+    assert!(!rules.art().get("YAYARD").unwrap().new_theater);
+    for (files, expected) in [
+        (
+            vec!["YTYARD.SHP", "YGYARD.SHP", "YAYARD.SHP"],
+            Some("YTYARD.SHP"),
+        ),
+        (vec!["YGYARD.SHP", "YAYARD.SHP"], Some("YGYARD.SHP")),
+        (vec!["YAYARD.SHP", "YGYARD.TEM"], None),
+    ] {
+        let directory = StoredFrameTestDirectory::new();
+        for name in files {
+            directory.write_raw_and_rle_frames(name, [304, 236], [90, 98, 98, 108]);
+        }
+        let assets = AssetManager::from_loose_root_for_test(&directory.0);
+        let source = load_shp_source(
+            &assets,
+            "YAYARD",
+            None,
+            "tem",
+            "TEMPERATE",
+            Some(&rules),
+            Some(rules.art()),
+        );
+        assert_eq!(source.as_ref().map(|s| s.found_name.as_str()), expected);
+    }
+}
+
+#[test]
+fn building_theater_body_keeps_legacy_lookup_before_image_redirect() {
+    let rules = building_body_atlas_rules(
+        "[BODYART]\nImage=YABODY\nTheater=yes\nNewTheater=no\n\
+         [YABODY]\nTheater=no\n",
+    );
+    // Theater=yes has a separate startup reload. Preserve its existing source
+    // chooser here; this control does not certify that path's native parity.
+    for (files, expected) in [
+        (
+            vec!["YABODY.SHP", "YTBODY.SHP", "YGBODY.TEM"],
+            Some("YABODY.SHP"),
+        ),
+        (vec!["YABODY.TEM", "YTBODY.SHP"], Some("YABODY.TEM")),
+        (vec!["YTBODY.SHP", "YGBODY.SHP"], None),
+    ] {
+        let directory = StoredFrameTestDirectory::new();
+        for name in files {
+            directory.write_raw_and_rle_frames(name, [20, 10], [2, 1, 6, 4]);
+        }
+        let assets = AssetManager::from_loose_root_for_test(&directory.0);
+        let source = load_shp_source(
+            &assets,
+            "BODYALIAS",
+            None,
+            "tem",
+            "TEMPERATE",
+            Some(&rules),
+            Some(rules.art()),
+        );
+        assert_eq!(source.as_ref().map(|s| s.found_name.as_str()), expected);
+    }
+}
+
+#[test]
+fn building_body_lookup_uses_rules_image_theater_before_redirect() {
+    let rules = building_body_atlas_rules(
+        "[BODYART]\nImage=YABODY\nTheater=no\nNewTheater=no\n\
+         [YABODY]\nTheater=yes\n",
+    );
+    for (files, expected) in [
+        (
+            vec!["YTBODY.SHP", "YGBODY.SHP", "YTBODY.TEM", "YABODY.SHP"],
+            Some("YTBODY.SHP"),
+        ),
+        (vec!["YGBODY.SHP", "YTBODY.TEM"], Some("YGBODY.SHP")),
+        (vec!["YTBODY.TEM", "YGBODY.TEM", "YABODY.SHP"], None),
+    ] {
+        let directory = StoredFrameTestDirectory::new();
+        for name in files {
+            directory.write_raw_and_rle_frames(name, [20, 10], [2, 1, 6, 4]);
+        }
+        let assets = AssetManager::from_loose_root_for_test(&directory.0);
+        let source = load_shp_source(
+            &assets,
+            "BODYALIAS",
+            None,
+            "tem",
+            "TEMPERATE",
+            Some(&rules),
+            Some(rules.art()),
+        );
+        assert_eq!(source.as_ref().map(|s| s.found_name.as_str()), expected);
+    }
+}
+
+#[test]
+fn building_body_lookup_respects_name_pattern_category_and_bound_file() {
+    let rules = building_body_atlas_rules("[YAYARD]\n[XAFOO]\nNewTheater=yes\n");
+    let directory = StoredFrameTestDirectory::new();
+    for name in ["XAFOO.SHP", "XTFOO.SHP", "XGFOO.SHP", "YGYARD.SHP"] {
+        directory.write_raw_and_rle_frames(name, [20, 10], [2, 1, 6, 4]);
+    }
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let load = |name, file| {
+        load_shp_source(
+            &assets,
+            name,
+            file,
+            "tem",
+            "TEMPERATE",
+            Some(&rules),
+            Some(rules.art()),
+        )
+    };
+    assert_eq!(load("XAFOO", None).unwrap().found_name, "XAFOO.SHP");
+    assert!(
+        load("YAMOBILE", None).is_none(),
+        "only a Building gets the final pass"
+    );
+    assert_eq!(
+        load("YAYARD", Some("XAFOO.SHP")).unwrap().found_name,
+        "XAFOO.SHP",
+        "an already bound animation or buildup file keeps its source"
+    );
+}
+
+#[test]
+fn retail_yayard_body_resolves_without_new_theater() {
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let rules = &battle.rules;
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets()
+        .expect("Battle rules came from the explicit retail install");
+    assert!(!rules.art().get("YAYARD").unwrap().new_theater);
+    let source = load_shp_source(
+        &assets,
+        "YAYARD",
+        None,
+        "tem",
+        "TEMPERATE",
+        Some(rules),
+        Some(rules.art()),
+    )
+    .expect("stock YAYARD body must load independently of its slot animations");
+    assert_eq!(source.found_name, "YGYARD.SHP");
+    assert_eq!([source.shp.width, source.shp.height], [304, 236]);
+    assert_eq!(source.shp.frames.len(), 6);
+    let frame = &source.shp.frames[0];
+    assert_eq!(
+        [
+            frame.frame_x,
+            frame.frame_y,
+            frame.frame_width,
+            frame.frame_height
+        ],
+        [90, 98, 98, 108]
+    );
+    assert!(frame.pixels.iter().any(|&pixel| pixel != 0));
+}
+
 fn raw_infantry_atlas_rules(sequence_rows: &str) -> (RuleSet, ArtRegistry) {
     use crate::rules::ini_parser::IniFile;
     let art_ini = IniFile::from_str(&format!(
@@ -792,8 +975,8 @@ fn raw_infantry_render_does_not_substitute_an_out_of_asset_key() {
 fn building_animation_frames_render_from_the_file_they_were_counted_in() {
     // [YAGRND_B] authors no NewTheater=, and no TEMPERATE archive holds
     // YAGRND_B.SHP: AnimTypeClass forces the second letter to G and loads
-    // YGGRND_B.SHP. The object naming never reaches that file, so rendering
-    // must reuse the file the frame count came from.
+    // YGGRND_B.SHP. This unclassified legacy object path does not reach that
+    // file; rendering reuses the file the animation frame count came from.
     let directory = StoredFrameTestDirectory::new();
     directory.write_raw_and_rle_frames("YGGRND_B.SHP", [20, 10], [2, 1, 6, 4]);
     let assets = AssetManager::from_loose_root_for_test(&directory.0);
