@@ -7,8 +7,9 @@
 //! `GameLobbyBase.WriteSpawnIni` and `CampaignSelector.LaunchMission`:
 //! https://github.com/CnCNet/xna-cncnet-client/tree/develop/DXMainClient/DXGUI
 //!
-//! This boundary admits one local human and stock YR Battle/campaign sessions.
-//! It does not load native saves, run network sessions, or emulate Ares/Phobos.
+//! This boundary admits one local human, Battle and stock YR campaigns. Ares
+//! builds also carry allocated custom Country identities into Battle startup.
+//! It does not load native saves, run network sessions or load extension DLLs.
 
 use std::path::{Path, PathBuf};
 
@@ -305,10 +306,18 @@ fn skirmish(
 }
 
 fn country(section: &IniSection, key: &str) -> Result<LaunchCountry> {
-    // Stock RULESMD [Countries] 0..9 matches LaunchCountry::ALL. The client
-    // resolves Random before writing this field (not a fresh VERA RNG draw).
-    let index = ranged(section, key, -1, 0, 9)?;
-    Ok(LaunchCountry::ALL[index as usize])
+    // The client resolves Random and writes the actual Country array index,
+    // not a Side or display-list index. Stock menu4E3A91 caps it at9; Ares's
+    // replacement4E3A6A ->1001E2C0 retains Country+B8 without that cap.
+    // The shared launch owner validates allocation again after scenario Rules
+    // reset; this early reader only admits its canonical identity width.
+    let maximum = if crate::rules::ARES_ENABLED {
+        i32::from(u16::MAX)
+    } else {
+        9
+    };
+    let index = ranged(section, key, -1, 0, maximum)?;
+    Ok(LaunchCountry::from_country_index(index as u32))
 }
 
 fn color(section: &IniSection, key: &str, used: &mut [bool; 8]) -> Result<u8> {

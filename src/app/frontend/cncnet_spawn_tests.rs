@@ -246,7 +246,7 @@ fn rejects_network_sessions_unsupported_extensions_and_invalid_assignments() {
     }
     for (from, to) in [
         ("PlayerCount=1", "PlayerCount=2"),
-        ("Side=0", "Side=10"),
+        ("Side=0", "Side=65536"),
         ("Color=2", "Color=1"),
         ("Color=2", "Color=4294967298"),
         ("GameSpeed=1", "GameSpeed=7"),
@@ -272,4 +272,127 @@ fn rejects_network_sessions_unsupported_extensions_and_invalid_assignments() {
         assert!(SpawnRequest::parse(&fixture).is_err(), "{key}");
     }
     assert!(SpawnRequest::parse("[HouseColors]\nMulti1=0").is_err());
+}
+
+#[test]
+fn cncnet_country_indices_respect_the_compiled_capability_and_identity_width() {
+    for index in [10, 11, i32::from(u16::MAX)] {
+        let text = SKIRMISH.replacen("Side=0", &format!("Side={index}"), 1);
+        let result = SpawnRequest::parse(&text);
+        if crate::rules::ARES_ENABLED {
+            let SpawnGame::Skirmish(session) = result.unwrap().game else {
+                panic!("Battle Country identity");
+            };
+            assert_eq!(i32::from(session.local_slot().country.raw_index()), index);
+            assert!(!session.local_slot().country_random);
+        } else {
+            assert!(result.is_err(), "stock adapter rejects Country {index}");
+        }
+    }
+    for value in ["-1", "65536", "4294967306", "$10000", "broken"] {
+        for text in [
+            SKIRMISH.replacen("Side=0", &format!("Side={value}"), 1),
+            SKIRMISH.replacen("Multi2=8", &format!("Multi2={value}"), 1),
+        ] {
+            assert!(SpawnRequest::parse(&text).is_err(), "Country {value}");
+        }
+    }
+    assert!(
+        SpawnRequest::parse("[Settings]\nIsSinglePlayer=Yes\nSide=10\n").is_err(),
+        "campaign Side keeps its separate Allied/Soviet meaning"
+    );
+}
+
+#[cfg(feature = "ares")]
+#[test]
+fn cncnet_ares_country_indices_reach_house_side_and_mcv_selection() {
+    use crate::rules::ruleset::RuleSet;
+    use crate::sim::house_state::house_state_for_owner;
+    use crate::sim::scenario_bootstrap::{
+        MatchLaunchDescriptor, launch_mcv_type_for_country, normalized_launch_slots,
+        populate_launch_houses,
+    };
+    use crate::sim::world::Simulation;
+
+    let mut ini = String::from("[Countries]\n");
+    for index in 0..12 {
+        ini.push_str(&format!("{index}=C{index:02}\n"));
+    }
+    ini.push_str(
+        "12=Neutral\n13=Special\n\
+         [Sides]\nGDI=C00,C01,C02\nNod=C03,C04,C05\n\
+         ThirdSide=C06,C07,C08\nFourthSide=C09,C10,C11\n\
+         Civilian=Neutral\nMutant=Special\n\
+         [General]\nBaseUnit=BASEMCV,FOURMCV\n\
+         [VehicleTypes]\n0=BASEMCV\n1=FOURMCV\n\
+         [BASEMCV]\nOwner=C00,C01,C02,C03,C04,C05,C06,C07,C08\nStrength=100\n\
+         [FOURMCV]\nOwner=C09,C10,C11\nStrength=100\n",
+    );
+    for index in 0..12 {
+        let side = ["GDI", "Nod", "ThirdSide", "FourthSide"][index / 3];
+        ini.push_str(&format!("[C{index:02}]\nSide={side}\nMultiplay=yes\n"));
+    }
+    let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
+    // Explicit settings cross the same retained Country/Side/House and
+    // BaseUnit owners as production. No mod rules, art or parallel bootstrap.
+    for (index, side, mcv) in [(10, 3, "FOURMCV"), (0, 0, "BASEMCV")] {
+        let text = SKIRMISH
+            .replacen("Side=0", &format!("Side={index}"), 1)
+            .replacen("Multi2=8", "Multi2=11", 1);
+        let request = SpawnRequest::parse(&text).unwrap();
+        assert_eq!(request.seed, Some(0x8000_0000));
+        let SpawnGame::Skirmish(session) = request.game else {
+            panic!("Battle Country identity");
+        };
+        let launch = MatchLaunchDescriptor::from_resolved(*session).unwrap();
+        launch.validate_countries(&rules).unwrap();
+        let slots = normalized_launch_slots(launch.session());
+        let mut sim = Simulation::new();
+        let rng = sim.rng_state();
+        populate_launch_houses(&mut sim, &slots, &rules);
+        for (slot, country_index, country, expected_side, expected_mcv) in [
+            (
+                &slots[0],
+                launch.session().local_slot().country,
+                format!("C{index:02}"),
+                side,
+                mcv,
+            ),
+            (
+                &slots[1],
+                launch.session().opponents[0].country,
+                "C11".to_owned(),
+                3,
+                "FOURMCV",
+            ),
+        ] {
+            let house = house_state_for_owner(sim.houses(), &slot.owner_name, sim.interner())
+                .expect("canonical launch House");
+            assert_eq!(house.side_index(), expected_side);
+            assert_eq!(sim.interner().resolve(house.house_type_id()), country);
+            assert_eq!(
+                launch_mcv_type_for_country(country_index, &rules),
+                Some(expected_mcv)
+            );
+        }
+        assert_eq!(
+            sim.rng_state(),
+            rng,
+            "resolved client identities add no draw"
+        );
+    }
+
+    for text in [
+        SKIRMISH.replacen("Side=0", "Side=65535", 1),
+        SKIRMISH.replacen("Multi2=8", "Multi2=65535", 1),
+    ] {
+        let SpawnGame::Skirmish(session) = SpawnRequest::parse(&text).unwrap().game else {
+            panic!("Battle Country identity");
+        };
+        let launch = MatchLaunchDescriptor::from_resolved(*session).unwrap();
+        assert!(
+            launch.validate_countries(&rules).is_err(),
+            "unallocated identity must fail before House creation"
+        );
+    }
 }
