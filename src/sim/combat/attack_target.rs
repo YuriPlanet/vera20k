@@ -265,8 +265,11 @@ pub(crate) fn resolve_target_coords(
 /// integer sqrt changes observable lepton ties (1281 becomes1280 natively).
 /// Native comparisons: tools/spatial_oracle/aircraft_approach_range.{py,json}.
 /// The discount reads the same stamped foundation as the target's GetCoords.
+/// Source identity comes from the shared Abstract ID space: a live Techno/
+/// Terrain uses the existing coordinate resolver; a Bullet uses its retained
+/// position owner. All callers resolve the same live source they previously read.
 pub(crate) fn object_distance_to(
-    source: &GameEntity,
+    source: u64,
     target: &TargetKind,
     world: &crate::sim::world::Simulation,
 ) -> Option<i32> {
@@ -277,7 +280,15 @@ pub(crate) fn object_distance_to(
             0,
         ]
     };
-    let from = planar(target_coords(source));
+    // Bullet GetCoords inherits Object5F65A0's retained Location. Installed
+    //Ares10053660 jumps to this same5F6440 owner before EMP; it does not use
+    //the separate 3D Distance5F6360 or a Bullet's final impact argument.
+    let from = if let Some(bullet) = world.projectiles.get(source) {
+        let coord = bullet.position();
+        [coord.x, coord.y, 0]
+    } else {
+        planar(resolve_target_coords(&TargetKind::Entity(source), world)?)
+    };
     let to = planar(resolve_target_coords(target, world)?);
     let distance = crate::util::native_x87::distance_3d_leptons(from, to);
     if let TargetKind::Entity(id) = *target

@@ -693,7 +693,9 @@ fn mission_plane(sim: &mut Simulation, rules: &RuleSet, row: &Value, target: (u1
                 .set_sub_y_for_test(SimFixed::from_num(y % 256));
             let entities = &sim.substrate.entities;
             let plane = entities.get(id).unwrap();
-            if crate::sim::combat::object_distance_to(plane, &goal, &sim) == Some(distance) {
+            if crate::sim::combat::object_distance_to(plane.stable_id(), &goal, &sim)
+                == Some(distance)
+            {
                 placed = true;
                 break 'search;
             }

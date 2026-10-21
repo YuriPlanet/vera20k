@@ -128,7 +128,6 @@ impl Simulation {
     }
     /// Shared4555D0 inputs represented by Building and House owners. Native
     /// The warp's HasPower latch and Tesla charger list retain separate owners.
-    /// EMP remains outside this adapter's represented inputs.
     pub fn building_operational_state(&self, id: u64, rules: &RuleSet) -> Option<bool> {
         let entity = self.substrate.entities.get(id)?;
         if entity.category() != EntityCategory::Structure {
@@ -140,7 +139,7 @@ impl Simulation {
             // operational unless two retained Tesla chargers bypass it.
             online: entity.building_online(),
             tesla_chargers: entity.tesla_charge.chargers().len() as i32,
-            emp_remaining: 0,
+            emp_remaining: entity.emp_remaining(),
             health: entity.health.current(),
             powered: object.powered,
             power_drain: power_system::native_building_power_drain(object.power),

@@ -120,8 +120,9 @@ impl Simulation {
             let weapon = combat_weapon::primary_for_tier(object, entity.veterancy.rank())
                 .and_then(|name| rules.weapon(name))
                 .expect("strafe classifier's weapon");
-            let distance = crate::sim::combat::object_distance_to(entity, &target, self)
-                .expect("live aircraft Target");
+            let distance =
+                crate::sim::combat::object_distance_to(entity.stable_id(), &target, self)
+                    .expect("live aircraft Target");
             if distance < weapon.range_leptons {
                 return 4;
             }
@@ -141,8 +142,12 @@ impl Simulation {
         let Some(nav) = entity.navigation.nav_com() else {
             return 1;
         };
-        let distance = crate::sim::combat::object_distance_to(entity, &TargetKind::from(nav), self)
-            .expect("live aircraft NavCom");
+        let distance = crate::sim::combat::object_distance_to(
+            entity.stable_id(),
+            &TargetKind::from(nav),
+            self,
+        )
+        .expect("live aircraft NavCom");
         let facing = if distance < 512 {
             crate::sim::movement::turret::facing_toward_target(entity, &target, self)
                 .expect("live approach Target")

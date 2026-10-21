@@ -36,7 +36,7 @@ complete mission loading or all downstream campaign extensions.
 
 Supported extensions:
 
-- [Ordinary ground EMP](ares-emp.md) (bounded human Drive/Walk and unteamed AI Drive victims)
+- [Ordinary ground and tower EMP](ares-emp.md) (bounded human Drive/Walk, unteamed AI Drive and independent powered defensive buildings)
 - [Custom armor](ares-custom-armor.md)
 - [Per-type SHP building palettes](ares-building-palettes.md)
 - [EVA voice tags and Side selection](ares-eva.md)
