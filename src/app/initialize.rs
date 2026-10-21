@@ -873,6 +873,11 @@ impl App {
             // the unverified legacy Battle loader. It has no artificial AI
             // opponent or starting forces; this is not campaign admission.
             let session = quickplay_launch_session(quickplay);
+            #[cfg(feature = "ares")]
+            crate::app::frontend::skirmish_session::prepare_external_skirmish_countries(
+                &mut state.process_assets,
+                &session,
+            );
             let mut clock = crate::app::match_bootstrap::OrdinaryMatchSeedClock;
             let seed = crate::app::match_bootstrap::read_match_seed(&mut clock);
             let request = crate::app::loading::pump::LoadingRequest::unverified_legacy_skirmish(

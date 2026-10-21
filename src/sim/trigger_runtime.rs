@@ -42,6 +42,7 @@ const ACTION_SET_SUPER_CHARGE_PERCENTAGE: i32 = 129;
 const ACTION_SET_ALTERNATE_BASE: i32 = 137;
 const ACTION_CLEAR_ALTERNATE_BASE: i32 = 138;
 
+const EVENT_ATTACKED: i32 = 6;
 const EVENT_ANY: i32 = 8;
 const EVENT_BRIDGE_COLLAPSED: i32 = 31;
 const EVENT_GLOBAL_IS_SET: i32 = 27;
@@ -1956,6 +1957,54 @@ impl Simulation {
                 overlay_registry,
                 frame_effects,
             );
+        }
+        self.publish_trigger_effects(effects);
+    }
+
+    /// `HouseClass::NotifyUnderAttack @ 0x004F93E0`'s Tag raise
+    /// (`0x004F95D4..0x004F95FD`), which ends every call after the radar/EVA
+    /// arms, for any House: Tag6E53A0 raises event 6 ("attacked by any
+    /// house") with no object, the zero Cell `0x00A8EF98` (static init
+    /// `0x004F50A0`), unforced and with no source, on each of the House's Tags
+    /// (+3C), first to last. Every slot re-reads the list (`0x004F95E3`) and
+    /// the count (+48, `0x004F95F7`), so a raise that detaches its Tag shifts
+    /// the next one into the slot just passed, which the walk skips, as
+    /// natively. Besides event 6, the raise meets event 8 and every event
+    /// whose predicate ignores the raised kind (`has_occurred`), so
+    /// it also springs a House's condition Triggers (timers, counts) between
+    /// the House's own event-8 raises. Its callers own the NotifyUnderAttack
+    /// admission. No own RNG draw, timer write or detach:
+    /// Register/Spring/actions own those.
+    pub(crate) fn raise_house_attacked_tags(
+        &mut self,
+        house: crate::sim::intern::InternedId,
+        rules: &crate::rules::ruleset::RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        let mut effects = Vec::new();
+        let mut slot = 0;
+        while let Some(&tag) = self
+            .trigger_runtime
+            .house_tags
+            .get(&house)
+            .and_then(|tags| tags.get(slot))
+        {
+            self.dispatch_live_tag_event(
+                tag,
+                TagEventInput {
+                    kind: EVENT_ATTACKED,
+                    actor: None,
+                    source: None,
+                    cell: (0, 0),
+                    force: false,
+                },
+                &mut effects,
+                rules,
+                overlay_registry,
+                frame_effects,
+            );
+            slot += 1;
         }
         self.publish_trigger_effects(effects);
     }
@@ -4642,6 +4691,10 @@ mod build_type_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_house_notification_tests.rs"]
 mod house_notification_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_house_attacked_tests.rs"]
+mod house_attacked_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_wakeup_tests.rs"]

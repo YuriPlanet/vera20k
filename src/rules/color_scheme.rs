@@ -13,7 +13,7 @@
 //! ## Dependency rules
 //! - Part of rules/ — depends only on rules/ini_parser. No sim/render/ui deps.
 
-use crate::rules::ini_parser::IniFile;
+use crate::rules::ini_parser::{IniFile, IniSection};
 
 /// One `[Colors]` entry: a name and its H,S,V triple (each 0..=255), kept in
 /// section declaration order. Order is load-bearing: a player's color priority
@@ -82,15 +82,21 @@ pub fn parse_color_schemes(ini: &IniFile) -> Vec<ColorSchemeEntry> {
             if !seen.insert(key.to_ascii_uppercase()) {
                 return None;
             }
-            let hsv = section
-                .read_int_fields(key, 0x40, [0; 3])
-                .map(|channel| channel as u8);
+            let hsv = read_scheme_hsv(section, key);
             Some(ColorSchemeEntry {
                 name: key.to_string(),
                 hsv,
             })
         })
         .collect()
+}
+
+/// Original474C70's bounded string/sscanf read, shared by the compatibility
+/// projection and a retained ColorScheme observation before Scenario reset.
+pub(crate) fn read_scheme_hsv(section: &IniSection, key: &str) -> [u8; 3] {
+    section
+        .read_int_fields(key, 0x40, [0; 3])
+        .map(|channel| channel as u8)
 }
 
 /// Resolve the loading-bar color scheme for a player color priority.

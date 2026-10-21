@@ -587,30 +587,6 @@ fn normalized_action_delay_uses_session_game_speed() {
 
 // --- Default sequence set tests ---
 
-// --- death_sequence_for_inf_death tests ---
-
-#[test]
-fn gsi_08_13_death_sequence_and_anim_arms_are_exclusive() {
-    use crate::sim::animation::inf_death_spawns_anim;
-    // The jump table at 0x00518D58 dispatches on `InfDeath - 1` over 0..9.
-    // 0 and > 10 fall off it entirely.
-    assert_eq!(death_sequence_for_inf_death(0), None);
-    assert!(!inf_death_spawns_anim(0));
-    assert_eq!(death_sequence_for_inf_death(11), None);
-    assert!(!inf_death_spawns_anim(11));
-    // 1 and 2 are the only sequence arms, and they spawn no animation.
-    assert_eq!(death_sequence_for_inf_death(1), Some(SequenceKind::Die1));
-    assert_eq!(death_sequence_for_inf_death(2), Some(SequenceKind::Die2));
-    assert!(!inf_death_spawns_anim(1));
-    assert!(!inf_death_spawns_anim(2));
-    // 3..=10 are animation arms, and they select no sequence — Die3, Die4 and
-    // Die5 are unreachable from the death handler.
-    for inf_death in 3..=10u8 {
-        assert_eq!(death_sequence_for_inf_death(inf_death), None);
-        assert!(inf_death_spawns_anim(inf_death));
-    }
-}
-
 // --- Infantry class action and presentation integration tests ---
 
 /// Production rules and ART readers establish the action records; the class

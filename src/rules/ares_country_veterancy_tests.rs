@@ -71,7 +71,7 @@ fn ares_country_list_reads_match_native_find_only_controls() {
             }
         }
         let ini = pass(country, &row["values"]);
-        reader.process_house_family(&ini);
+        reader.process_house_family(&ini, false);
         let label = row["name"].as_str().unwrap();
         assert_original_lists(
             &reader.families[&RulesTypeFamily::Country][index].country_veterancy,
@@ -93,7 +93,7 @@ fn ares_country_list_reads_match_native_find_only_controls() {
                 &row["after_later_registration_without_read"],
                 label,
             );
-            reader.process_house_family(&ini);
+            reader.process_house_family(&ini, false);
             assert_original_lists(
                 &reader.families[&RulesTypeFamily::Country][index].country_veterancy,
                 &row["after_explicit_reread"],
@@ -135,10 +135,11 @@ fn ares_country_extension_histories_match_native_parent_and_retention() {
             &mut child.country_veterancy,
             &initial["original_country_vectors"],
         );
-        child.country_veterancy.ares = AresCountryVeterancy {
+        child.country_veterancy.ares = AresCountryState {
             phase: initial["extension_phase"].as_i64().unwrap() as i32,
             parent_initialized: initial["parent_initialized"].as_bool().unwrap(),
             buildings: names(&initial["veteran_buildings"]),
+            ..Default::default()
         };
         let parent_id = initial["parent_id"].as_str().unwrap();
         if names(&initial["registered_country_ids"])
@@ -173,15 +174,16 @@ fn ares_country_extension_histories_match_native_parent_and_retention() {
                 let parent = reader
                     .find_existing(RulesTypeFamily::Country, parent_id)
                     .unwrap();
-                reader.process_ares_country_veterancy(
+                reader.process_ares_country(
                     parent,
                     &pass(parent_id, &input["read_parent_values"]),
+                    false,
                 );
             }
             if initial["base_reader_mode"] == "missing_section_suffix" {
-                reader.process_house_family(&IniFile::empty());
+                reader.process_house_family(&IniFile::empty(), false);
             } else {
-                reader.process_ares_country_veterancy(index, &pass(country, &input["values"]));
+                reader.process_ares_country(index, &pass(country, &input["values"]), false);
             }
             let actual = &reader.families[&RulesTypeFamily::Country][index].country_veterancy;
             let label = format!("{} step{}", row["name"], step["step"]);
@@ -210,7 +212,7 @@ fn ares_country_extension_histories_match_native_parent_and_retention() {
 #[test]
 fn ares_country_constructor_and_extension_stream_keep_retained_state() {
     let native = corpus();
-    let default = AresCountryVeterancy::default();
+    let default = AresCountryState::default();
     assert_eq!(
         default.phase,
         native["constructor"]["init_state"].as_i64().unwrap() as i32
@@ -237,12 +239,13 @@ fn ares_country_constructor_and_extension_stream_keep_retained_state() {
                 .map(|token| format!("{:08X}", token.as_u64().unwrap()))
                 .collect::<Vec<_>>()
         };
-        let state = AresCountryVeterancy {
+        let state = AresCountryState {
             phase: 2,
             parent_initialized: row["input_flag"].as_u64().unwrap() != 0,
             buildings: labels(&row["pointer_tokens"]),
+            ..Default::default()
         };
-        let restored: AresCountryVeterancy =
+        let restored: AresCountryState =
             save_codec::deserialize(&save_codec::serialize(&state).unwrap()).unwrap();
         assert_eq!(restored.buildings, labels(&row["loaded_pointer_tokens"]));
         assert_eq!(

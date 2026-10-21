@@ -88,6 +88,20 @@ impl CampaignRegistry {
             .position(|entry| entry.id.eq_ignore_ascii_case(incoming))
     }
 
+    /// External mission selectors identify the logical Scenario, not a retail
+    /// Campaign array index. Resolve it against this same retained catalog;
+    /// source-order duplicates select the first record, as ID lookup does.
+    /// This is an adapter query, not a port of a native CnCNet patch.
+    #[cfg(feature = "ares")]
+    pub fn find_scenario_index(&self, scenario: &str) -> Option<usize> {
+        if scenario.is_empty() {
+            return None;
+        }
+        self.entries
+            .iter()
+            .position(|entry| entry.scenario.eq_ignore_ascii_case(scenario))
+    }
+
     pub fn get(&self, index: usize) -> Option<&CampaignDefinition> {
         self.entries.get(index)
     }

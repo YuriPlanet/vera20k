@@ -63,19 +63,22 @@ pub struct WarheadType {
     /// at `0x0075d47c`, key string `0x00847e54`).
     pub delay_kill_at_max_f64: f64,
     /// Whether this warhead can damage walls/bridges (Wall=yes).
-    /// NO-DIFF (GSI-08.33) — pass 1's three "unparsed effect flags" have no
-    /// gameplay consumer in gamemd either, and its stock-authorship claim was
-    /// inverted. `WarheadTypeClass::ReadINI @ 0x0075D3A0` does store `Sparky=`
-    /// (`+0x14A`), `Bullets=` (`+0x17A`), `Deform=` (`+0x98`) and
-    /// `DeformThreshhold=` (`+0x100`), but exhaustive displacement sweeps find
-    /// `Sparky`, `Deform` and `DeformThreshhold` reaching only
-    /// `WarheadTypeClass::Compute_CRC @ 0x0075DEC0`, and `Bullets` reaching
-    /// nothing at all. `Apply_area_damage @ 0x00489280`, which owns every
-    /// warhead effect on ore, walls, bridges, barrels and the rocker, never
-    /// touches any of them. `Deform` is Tiberian Sun cell-height deformation
-    /// with its consumer deleted. And all 28 stock `Sparky=` entries are `no`,
-    /// including `[Fire]` and `[Fire2]` — the opposite of "most fire weapons are
-    /// Sparky". Parsing them here would add fields nothing can read.
+    /// NO-DIFF (GSI-08.33) — VERA reads none of `Sparky=`, `Bullets=`,
+    /// `Deform=` and `DeformThreshhold=`, which `WarheadTypeClass::ReadINI @
+    /// 0x0075D3A0` stores at `+0x14A` (ReadBool at `0x0075D585`, key string
+    /// `0x00847DF8`), `+0x17A`, `+0x98` and `+0x100`. Exhaustive displacement
+    /// sweeps find `Deform` and `DeformThreshhold` reaching only
+    /// `WarheadTypeClass::Compute_CRC @ 0x0075DEC0` (`Deform` is Tiberian Sun
+    /// cell-height deformation with its consumer deleted) and `Bullets`
+    /// reaching nothing at all. `Sparky` has one consumer:
+    /// `BuildingClass::ReceiveDamage @ 0x00442230` tests it for each
+    /// foundation cell of its NowYellow/NowRed loop (`0x00442785`) and, by
+    /// Scenario `RandomRanged` draws (`0x004427C0`, `0x00442804`), may build
+    /// one of Rules' `OnFire` anims (`+0xB78`) there. That arm is dormant:
+    /// the constructor stores `false` (`0x0075CF77`), and all 28 stock
+    /// `Sparky=` entries are `no`, including `[Fire]` and `[Fire2]`. `Apply_area_damage @ 0x00489280`, which owns every warhead
+    /// effect on ore, walls, bridges, barrels and the rocker, touches none of
+    /// the four.
     ///
     /// The field itself is `WarheadTypeClass+0x144` (ReadINI `0x0075d508`,
     /// key string `0x0081ac58`).
@@ -107,9 +110,17 @@ pub struct WarheadType {
     /// The original engine selects by `damage / 25`, clamped to list length.
     /// Example: ["XGRYSML1","EXPLOSML","EXPLOMED","EXPLOLRG","TWLT070"].
     pub anim_list: Vec<String>,
-    /// Infantry death animation variant (InfDeath= in rules.ini, 0–10).
-    /// Maps to Die1–Die5 infantry sequences. Default 1 (standard rifle death).
-    pub inf_death: u8,
+    /// `InfDeath=`: the arm of `InfantryClass::ReceiveDamage`'s death ladder
+    /// (`0x00517FA0`, `world::infantry_death`) this warhead's kill takes. A
+    /// signed dword at `WarheadTypeClass+0x120`: the constructor stores
+    /// [`Self::DEFAULT_INF_DEATH`] (`0x0075CF14`), and ReadINI reads
+    /// `INIClass::ReadInt @ 0x005276D0` over the current value with no clamp
+    /// (`0x0075D75D..0x0075D771`, key string `0x00847D88`). The ladder's table
+    /// (`0x00518D58`) takes 1..=10; any other value, the default 0 included,
+    /// UnInits the infantryman inside the killing call with neither sequence
+    /// nor anim (`0x005185C8` -> `0x00518B9A`). Retail `[CometWH]` (the
+    /// Prism Tank's beam and fragments) and `[GrandCannonWH]` keep the 0.
+    pub inf_death: i32,
 
     // --- Bool fields (verified offsets from WarheadTypeClass::ReadINI) ---
     /// Conventional warhead — no special effects. `WarheadTypeClass+0x14D`,
@@ -269,11 +280,12 @@ pub struct WarheadType {
     /// fallback General.MetallicDebris SHP path on each admitted hit. This
     /// differs from TechnoType debris, which belongs to the death receiver.
     ///
-    /// RESIDUAL: the authored nonempty typed-warhead arm469D40..469E18
-    /// still lacks VoxelAnim emission. Its budget request precedes that arm;
-    /// a nonempty list must not instead produce fallback metallic SHPs.
-    /// Stock Brute's empty typed list does not exercise this residual. General
-    /// Airburst child emission469EBA..46A28A is a separate later mechanism.
+    /// `combat::world_receiver`'s `emit_warhead_debris` owns both arms after
+    /// their one budget: a nonempty list throws its VoxelAnims through the
+    /// typed selector Techno deaths share (`throw_typed_debris`,
+    /// `0x00469D40..0x00469E18`), an empty one the MetallicDebris SHPs.
+    /// General Airburst child emission (`0x00469EBA..0x0046A28A`) is a
+    /// separate later mechanism.
     pub debris_types: Vec<String>,
     /// Per-type debris count cap.
     ///
@@ -294,6 +306,10 @@ pub struct WarheadType {
 }
 
 impl WarheadType {
+    /// `InfDeath=`'s constructor value (`0x0075CF14`, the zeroed EBX of
+    /// `0x0075CED0`): what a warhead whose sections name no `InfDeath=` keeps.
+    pub(crate) const DEFAULT_INF_DEATH: i32 = 0;
+
     pub fn interaction(&self, armor: ArmorId) -> ArmorInteraction {
         #[cfg(feature = "ares")]
         {
@@ -382,7 +398,7 @@ impl WarheadType {
             // and empty values (`0x0075CF89`, `0x0075CFB3`): the ordered Rules
             // processor owns those reads and RuleSet publishes its result.
             anim_list: Vec::new(),
-            inf_death: section.read_int("InfDeath", 1).clamp(0, 10) as u8,
+            inf_death: section.read_int("InfDeath", Self::DEFAULT_INF_DEATH),
 
             // Bool fields — all default false
             conventional: false,
@@ -561,6 +577,22 @@ mod tests {
         assert_eq!(wh.delay_kill_at_max_f64, 1.0);
         assert_eq!(wh.prone_damage_f64, 1.0);
         assert!(!wh.wall);
+    }
+
+    /// `InfDeath=` (`+0x120`): the constructor's 0 (`0x0075CF14`) when no
+    /// layer names it, else ReadInt's value with no clamp
+    /// (`0x0075D75D..0x0075D771`).
+    #[test]
+    fn inf_death_reads_unclamped_over_the_constructor_zero() {
+        let ini = IniFile::from_str(
+            "[Unset]\nFixtureOnly=1\n[Brute]\nInfDeath=10\n[High]\nInfDeath=11\n\
+             [Negative]\nInfDeath=-2\n",
+        );
+        let read = |id| WarheadType::from_ini_section(id, ini.section(id).unwrap()).inf_death;
+        assert_eq!(read("Unset"), 0);
+        assert_eq!(read("Brute"), 10);
+        assert_eq!(read("High"), 11);
+        assert_eq!(read("Negative"), -2);
     }
 
     #[test]

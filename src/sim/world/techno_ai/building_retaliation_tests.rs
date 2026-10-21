@@ -235,6 +235,7 @@ fn the_block_matches_the_original() {
             result(input["result"].as_i64().unwrap_or(1)),
             &rules,
             None,
+            crate::sim::world::FrameEffects::default(),
         );
 
         let after = sim.substrate.entities.get(building).unwrap();

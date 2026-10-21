@@ -2451,7 +2451,7 @@ fn a_captured_factory_loses_its_rally_point() {
 }
 
 #[test]
-fn ready_manager_cancel_refunds_disposes_and_constructs_one_successor() {
+fn ready_manager_is_refunded_and_disposed_by_another_buildings_produce() {
     let (mut sim, rules, owner) = world(0xfac7_0011);
     let before = counts(&sim, owner);
     assert!(enqueue_by_type(
@@ -2499,7 +2499,10 @@ fn ready_manager_cancel_refunds_disposes_and_constructs_one_successor() {
             .is_empty()
     );
     assert_eq!(sim.houses[&owner].economy().credits(), credits);
-    // A different queued type does not intercept cancellation of the ready head.
+    // Another building's PRODUCE never queues behind the ready head:
+    // StartProduction abandons it first (0x004C9C87 -> AbandonProduction
+    // 0x004C9FF0), refunding Cost_Of less the zero Balance and destroying its
+    // slaves with it, then constructs its own type at once.
     assert!(enqueue_by_type(
         &mut sim,
         &rules,
@@ -2507,17 +2510,6 @@ fn ready_manager_cancel_refunds_disposes_and_constructs_one_successor() {
         "GAPOWR",
         crate::sim::world::FrameEffects::default(),
         false,
-    ));
-    assert!(cancel_production_for_owner(
-        &mut sim,
-        &rules,
-        "Americans",
-        crate::sim::production::ProductionCancellation::Type {
-            type_id: "YAREFN",
-            naval: false
-        },
-        false,
-        crate::sim::world::FrameEffects::default(),
     ));
     assert_gone(&sim, parent, &child_ids);
     assert_eq!(sim.houses[&owner].economy().credits(), credits + 1000);
@@ -2541,6 +2533,125 @@ fn ready_manager_cancel_refunds_disposes_and_constructs_one_successor() {
             .progress,
         0
     );
+}
+
+/// Begin_Production drops a building's PRODUCE while the building factory
+/// runs (`0x004FA520..0x004FA550`: rate set, +0x70 clear, RTTI
+/// BuildingType), ahead of its same-type branch and without a scold: a second
+/// PRODUCE that lands in the first one's frame starts nothing, of either type.
+#[test]
+fn a_building_produce_is_dropped_while_the_building_factory_runs() {
+    use crate::sim::world::{FrameEffects, SimSoundEvent};
+
+    let (mut sim, rules, owner) = world(0xfa52_e000);
+    assert!(enqueue_by_type(
+        &mut sim,
+        &rules,
+        "Americans",
+        "GAPOWR",
+        FrameEffects::default(),
+        false,
+    ));
+    let held = held_id(&sim, owner, ProductionCategory::Building);
+    let factory = |sim: &Simulation| {
+        let view = sim
+            .production
+            .factories()
+            .view(owner, ProductionCategory::Building)
+            .unwrap();
+        (view.is_running(), view.queue.len())
+    };
+    assert_eq!(factory(&sim), (true, 0));
+    let entities = sim.substrate.entities.len();
+    let credits = sim.houses[&owner].economy().credits();
+    let rng = sim.scenario_rng.logical_state();
+    for type_id in ["YAREFN", "GAPOWR"] {
+        assert!(
+            !enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                type_id,
+                FrameEffects::default(),
+                false,
+            ),
+            "{type_id}"
+        );
+    }
+    assert_eq!(held_id(&sim, owner, ProductionCategory::Building), held);
+    assert_eq!(factory(&sim), (true, 0));
+    assert_eq!(sim.substrate.entities.len(), entities);
+    assert_eq!(sim.houses[&owner].economy().credits(), credits);
+    assert_eq!(sim.scenario_rng.logical_state(), rng);
+    assert!(
+        !sim.sound_events
+            .iter()
+            .any(|event| matches!(event, SimSoundEvent::ProductionRefused { .. }))
+    );
+}
+
+/// Otherwise StartProduction abandons what the building factory holds before
+/// it starts another type (`0x004C9C7F..0x004C9C89`): a held building goes,
+/// refunded its Cost_Of less the Balance still owed (`0x004CA029..
+/// 0x004CA046`), and the new type is constructed at once, never queued
+/// (`0x004C9C95..0x004C9C98`).
+#[test]
+fn a_building_produce_abandons_a_held_building_and_starts_its_own() {
+    use crate::sim::world::FrameEffects;
+
+    let (mut sim, rules, owner) = world(0xfa52_e001);
+    assert!(enqueue_by_type(
+        &mut sim,
+        &rules,
+        "Americans",
+        "GAPOWR",
+        FrameEffects::default(),
+        false,
+    ));
+    let held = held_id(&sim, owner, ProductionCategory::Building);
+    // 150 of GAPOWR's 800 paid so far.
+    let factory = sim
+        .production
+        .factories_mut()
+        .test_factory_mut(owner, ProductionCategory::Building)
+        .unwrap();
+    factory.set_progress_for_test(10);
+    factory.set_balance_for_test(650);
+    assert!(super::suspend_production(
+        &sim.interner,
+        &mut sim.production,
+        &sim.session,
+        "Americans",
+        ProductionCategory::Building
+    ));
+    let credits = sim.houses[&owner].economy().credits();
+    let mut expected = sim.scenario_rng.clone();
+
+    assert!(enqueue_by_type(
+        &mut sim,
+        &rules,
+        "Americans",
+        "YAREFN",
+        FrameEffects::default(),
+        false,
+    ));
+    assert_gone(&sim, held, &[]);
+    assert_eq!(sim.houses[&owner].economy().credits(), credits + 150);
+    let successor = held_id(&sim, owner, ProductionCategory::Building);
+    assert_eq!(
+        sim.interner
+            .resolve(sim.substrate.entities.get(successor).unwrap().type_ref()),
+        "YAREFN"
+    );
+    assert_constructor_words(&sim, successor, &mut expected);
+    let factory = sim
+        .production
+        .factories()
+        .view(owner, ProductionCategory::Building)
+        .unwrap();
+    assert!(factory.is_running());
+    assert!(factory.queue.is_empty());
+    assert_eq!(factory.progress, 0);
 }
 
 /// A build whose prerequisite leaves the map is abandoned by its strip's

@@ -25,7 +25,7 @@
 //! has the same matchbot, whose `Start` names Cooperative on `C2S01MD.MAP`.
 
 use super::lobby::WolJoined;
-use super::service::WolLadderRecord;
+use super::service::{WolHighScoreRecord, WolLadderRecord};
 use super::{WolApiStatus, WolLoginAccepted, WolServer, WolServerList, WolServiceEvent};
 use super::{WolProvider, WolServiceRequest, service_event};
 use crate::app::AppState;
@@ -450,10 +450,13 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         WolServiceRequest::LadderRecords(names) => WolServiceEvent::Ladder(
             names
                 .iter()
-                .filter(|name| name.eq_ignore_ascii_case("Tanya"))
-                .map(|_| tanya_ladder())
+                .filter_map(|name| ladder_record(name))
                 .collect(),
         ),
+        WolServiceRequest::HighScores(names) => WolServiceEvent::HighScores(Ok(names
+            .iter()
+            .filter_map(|name| high_score(name))
+            .collect())),
         WolServiceRequest::Chat {
             line: WolChatLine::Page { name, .. },
             ..
@@ -551,7 +554,7 @@ fn lobby_greeting(state: &mut AppState) {
     }
 }
 
-/// Tanya's ladder record, the only one the service holds.
+/// Tanya's ladder record.
 fn tanya_ladder() -> WolLadderRecord {
     WolLadderRecord {
         name: "Tanya".into(),
@@ -561,6 +564,44 @@ fn tanya_ladder() -> WolLadderRecord {
         rank: 1,
         disconnects: 0,
     }
+}
+
+/// The ladder holds Tanya (rank 1) and Boris (rank 17); Natasha is
+/// unranked.
+fn ladder_record(name: &str) -> Option<WolLadderRecord> {
+    if name.eq_ignore_ascii_case("Tanya") {
+        Some(tanya_ladder())
+    } else if name.eq_ignore_ascii_case("Boris") {
+        Some(WolLadderRecord {
+            name: "Boris".into(),
+            wins: 4,
+            losses: 6,
+            points: 300,
+            rank: 17,
+            disconnects: 1,
+        })
+    } else {
+        None
+    }
+}
+
+/// The high scores: Tanya's 1520 points (a three-star general's badge) at
+/// rank 7; Boris's 90 points (lieutenant) at rank 123 with every co-op
+/// campaign finished.
+fn high_score(name: &str) -> Option<WolHighScoreRecord> {
+    let (name, points, rank, coop) = if name.eq_ignore_ascii_case("Tanya") {
+        ("Tanya", 1520, 7, 0)
+    } else if name.eq_ignore_ascii_case("Boris") {
+        ("Boris", 90, 123, 0xF)
+    } else {
+        return None;
+    };
+    Some(WolHighScoreRecord {
+        name: name.into(),
+        points,
+        rank,
+        coop,
+    })
 }
 
 /// The buddy list a fresh process starts with: Tanya (in a chat lobby),

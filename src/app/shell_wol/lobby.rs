@@ -54,7 +54,7 @@ const BAD_CHANNEL_KEY: u32 = 0x8004_01F8;
 
 /// Globals the lobby keeps for the process (BSS 0 at start; the WOL reset
 /// `0x00780110` leaves them alone).
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct WolLobbyGlobals {
     /// `[0xB77DD4]`: the chat lobby number the picker rejoins.
     pub(crate) lobby_number: i32,
@@ -70,7 +70,21 @@ pub(crate) struct WolLobbyGlobals {
     /// `[0xB78608]`: the options sink's preview-request stamp in 16 ms
     /// buckets, first set by its one-time init (`0x007A7EA0..0x007A7ED3`).
     pub(crate) preview_stamp: Option<u32>,
+    /// The ladder table `0xB77D80` (`[0xB77E0C]` outside mode 3; `0x00780110`
+    /// clears only the clan and mode-3 tables) and the high-score table
+    /// `0xB76640`, keyed by the ASCII-lowered name the lookups use
+    /// (`0x007B5B30`).
+    /// RESIDUAL: Quick Match's mode-3 ladder table `0xB73AF8`, which the
+    /// WOL reset clears, shares this table.
+    pub(crate) ladder: std::collections::HashMap<String, service::WolLadderRecord>,
+    pub(crate) high_scores: std::collections::HashMap<String, service::WolHighScoreRecord>,
 }
+
+/// The user-list sink sends its ladder batch once it holds more than 20
+/// names (`0x007A74E3`) and takes names from the first 99 users only
+/// (`0x007A7454`).
+const LADDER_BATCH_LIMIT: usize = 20;
+const LADDER_LISTED_USERS: usize = 100;
 
 /// The decoded result of a joined channel: its record and its users.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -465,7 +479,6 @@ pub(super) fn squad(
         visit.squad_own_pending = false;
         visit.squad_id = id;
     }
-    let sort = state.frontend.wol_lobby_globals.player_sort;
     let Ok(squad) = squad else {
         return;
     };
@@ -478,30 +491,143 @@ pub(super) fn squad(
             member.clan_tag = squad.tag.clone();
             member.clan_name = squad.name.clone();
         }
-        for member in matched {
-            insert_member(&mut lobby.members, member, sort);
-        }
+        insert_members(state, matched);
     }
     if last {
         refill_players(state);
     }
 }
 
-/// The user-list sink's squad requests (`0x007A7193..0x007A71C6`): each
-/// listed user in a squad whose tag is not known yet, the user included.
-fn request_listed_squads(state: &mut AppState) {
-    let squads: Vec<i32> = lobby(state)
-        .map(|lobby| {
-            lobby
-                .members
-                .iter()
-                .filter(|member| member.squad != 0 && member.clan_tag.is_empty())
-                .map(|member| member.squad)
-                .collect()
-        })
-        .unwrap_or_default();
-    for squad in squads {
-        request_squad(state, squad);
+/// One request of the user-list sink, in its order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ListedRequest {
+    Squad(i32),
+    /// Ladder and high-score requests with the same lowered names.
+    Ladder(Vec<String>),
+}
+
+/// The user-list sink's requests (`0x007A7187..0x007A781A`), user by user
+/// in the listed order (the user included): a squad whose tag is not
+/// known yet is asked (`0x007A7193..0x007A71C6`); the lowered name of each
+/// of the first 99 users the ladder table lacks joins the batch, which
+/// goes out whenever it holds more than 20 names, and once more at the
+/// end when not empty.
+/// RESIDUAL: the clan-ladder request for a known tag (API+0x14 with SKU
+/// `0x802100`, `0x007A71D1..0x007A7267`) is the backend's.
+fn listed_requests(listed: &[WolMember], ranked: impl Fn(&str) -> bool) -> Vec<ListedRequest> {
+    let mut requests = Vec::new();
+    let mut batch = Vec::new();
+    for (position, member) in listed.iter().enumerate() {
+        if member.squad != 0 && member.clan_tag.is_empty() {
+            requests.push(ListedRequest::Squad(member.squad));
+        }
+        let key = member.name.to_ascii_lowercase();
+        if !ranked(&key) && position + 1 < LADDER_LISTED_USERS {
+            batch.push(key);
+        }
+        if batch.len() > LADDER_BATCH_LIMIT {
+            requests.push(ListedRequest::Ladder(std::mem::take(&mut batch)));
+        }
+    }
+    if !batch.is_empty() {
+        requests.push(ListedRequest::Ladder(batch));
+    }
+    requests
+}
+
+fn request_listed(state: &mut AppState, listed: &[WolMember]) {
+    let ladder = &state.frontend.wol_lobby_globals.ladder;
+    let requests = listed_requests(listed, |key| ladder.contains_key(key));
+    for listed in requests {
+        match listed {
+            ListedRequest::Squad(squad) => request_squad(state, squad),
+            ListedRequest::Ladder(names) => request_ladders(state, names),
+        }
+    }
+}
+
+/// API vt+0x14 and vt+0x38 with the same names.
+fn request_ladders(state: &mut AppState, names: Vec<String>) {
+    request(state, WolServiceRequest::LadderRecords(names.clone()));
+    request(state, WolServiceRequest::HighScores(names));
+}
+
+/// The ladder rank `0x00782320` sorts by: the ladder table's, else -1.
+fn ladder_rank(
+    ladder: &std::collections::HashMap<String, service::WolLadderRecord>,
+    name: &str,
+) -> i32 {
+    ladder
+        .get(&name.to_ascii_lowercase())
+        .map_or(-1, |record| record.rank)
+}
+
+/// Each member joins the lobby's users by the player sort.
+fn insert_members(state: &mut AppState, members: impl IntoIterator<Item = WolMember>) {
+    let globals = &state.frontend.wol_lobby_globals;
+    let Some(lobby) = state
+        .frontend
+        .wol
+        .as_mut()
+        .and_then(|visit| visit.lobby.as_deref_mut())
+    else {
+        return;
+    };
+    let (sort, rank) = (globals.player_sort, |name: &str| {
+        ladder_rank(&globals.ladder, name)
+    });
+    for member in members {
+        insert_member(&mut lobby.members, member, sort, &rank);
+    }
+}
+
+/// The ladder sink's re-sort (`0x007A3966..0x007A39C4`): under a rank
+/// sort, while the current channel's kind (`[0xB76B10]`) is 0, the user of a
+/// stored record leaves the users and joins them again.
+pub(super) fn rank_changed(state: &mut AppState, name: &str) {
+    let sort = state.frontend.wol_lobby_globals.player_sort;
+    if !matches!(sort, 2 | 3) || !chat_kind_current(state) {
+        return;
+    }
+    let Some(lobby) = lobby_mut(state) else {
+        return;
+    };
+    let Some(at) = lobby
+        .members
+        .iter()
+        .position(|member| crate::util::native_string::crt_strcmpi(&member.name, name).is_eq())
+    else {
+        return;
+    };
+    let member = lobby.members.remove(at);
+    insert_members(state, [member]);
+}
+
+/// `[0xB76B10] == 0`: the current channel record's kind is 0, or no
+/// channel is current.
+fn chat_kind_current(state: &AppState) -> bool {
+    lobby(state)
+        .and_then(|lobby| lobby.current.as_ref())
+        .is_none_or(|channel| channel.kind == 0)
+}
+
+/// The high-score sink `0x007A3B30`: each record replaces the table's
+/// record of its lowered name. A failure is only logged. Nothing is
+/// refreshed.
+pub(super) fn high_scores_received(
+    state: &mut AppState,
+    result: Result<Vec<service::WolHighScoreRecord>, u32>,
+) {
+    let records = match result {
+        Ok(records) => records,
+        Err(code) => {
+            log::debug!("WOL high scores failed: {code:#x}");
+            return;
+        }
+    };
+    let table = &mut state.frontend.wol_lobby_globals.high_scores;
+    for record in records {
+        table.insert(record.name.to_ascii_lowercase(), record);
     }
 }
 
@@ -915,17 +1041,49 @@ fn refill_lobbies(state: &mut AppState) {
         .replace_lobbies(lobby_rows(&lobby.lobbies), current.as_deref());
 }
 
-fn refill_players(state: &mut AppState) {
-    let Some(lobby) = lobby_mut(state) else {
+/// `0x00783C80`: the chat lobby's users with their ladder ranks and
+/// high-score cells; in a game channel it shows nothing the custom lobby
+/// can see.
+/// RESIDUAL: the colors of mode 4 with `[0xA8B244]` 3 (`0x00783F02`) are
+/// not ported; the cells' tooltips (`0x4A8` records) have no reader, as
+/// nothing sends the list `0x4AD`.
+pub(super) fn refill_players(state: &mut AppState) {
+    let campaigns = state
+        .frontend
+        .multiplayer_shell_runtime
+        .cooperative_campaign_count();
+    let globals = &state.frontend.wol_lobby_globals;
+    let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
-    // 0x00783C80 fills the chat lobby's users; in a game channel it shows
-    // nothing the custom lobby can see.
+    let Some(lobby) = visit.lobby.as_deref_mut() else {
+        return;
+    };
     let rows = match &lobby.current {
         Some(channel) if channel.kind == 0 => lobby
             .members
             .iter()
-            .map(WolPlayerRow::from_member)
+            .map(|member| {
+                let key = member.name.to_ascii_lowercase();
+                let icons = globals
+                    .high_scores
+                    .get(&key)
+                    .map_or_else(Vec::new, |record| {
+                        score_icons(
+                            PlayerScore {
+                                points: record.points,
+                                rank: record.rank,
+                                coop: record.coop,
+                            },
+                            campaigns,
+                        )
+                    });
+                WolPlayerRow::from_member(
+                    member,
+                    globals.ladder.get(&key).map(|record| record.rank),
+                    icons,
+                )
+            })
             .collect(),
         _ => Vec::new(),
     };
@@ -1715,8 +1873,15 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
             let globals = &mut state.frontend.wol_lobby_globals;
             if let Some(sort) = toggle_player_sort(control, globals.player_sort) {
                 globals.player_sort = sort;
-                if let Some(lobby) = lobby_mut(state) {
-                    resort_members(&mut lobby.members, sort);
+                let globals = &state.frontend.wol_lobby_globals;
+                if let Some(lobby) = state
+                    .frontend
+                    .wol
+                    .as_mut()
+                    .and_then(|visit| visit.lobby.as_deref_mut())
+                {
+                    let rank = |name: &str| ladder_rank(&globals.ladder, name);
+                    resort_members(&mut lobby.members, sort, &rank);
                 }
                 refill_players(state);
             }
@@ -1940,17 +2105,16 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
             return;
         }
     };
-    let sort = state.frontend.wol_lobby_globals.player_sort;
     let runner = lobby_mut(state).expect("checked");
     runner.pending = None;
     let entry = matches!(runner.step, Step::JoiningLobby { entry: true });
     runner.step = Step::Ready;
     runner.members.clear();
-    for member in joined.members {
-        insert_member(&mut runner.members, member, sort);
-    }
+    let listed = joined.members.clone();
+    insert_members(state, joined.members);
+    let runner = lobby_mut(state).expect("checked");
     runner.current = Some(joined.channel.clone());
-    request_listed_squads(state);
+    request_listed(state, &listed);
     if joined.channel.kind == GAME_CHANNEL {
         // The guest dialog C9 over a hidden 0x113; the observer preference
         // [0xAC10C8] makes the local node an observer.
@@ -2156,11 +2320,12 @@ fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>) {
             let lobby = lobby_mut(state).expect("checked");
             // 0x7A57C7..0x7A57EB: the created channel is the current one
             // ([0xB76B10]) and this user its host ([0xB77E4C]).
+            let listed = members.clone();
             lobby.current = Some(channel);
             lobby.members = members;
             lobby.step = Step::Ready;
             let buddy = lobby.runner == Runner::Buddy;
-            request_listed_squads(state);
+            request_listed(state, &listed);
             if quick_match {
                 // 0x0078A36C..0x0078A386: modes 1-3 skip C2; the game
                 // channel's nodes run without a dialog.
@@ -2241,18 +2406,31 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         }
         WolServiceEvent::Joined(result) => joined(state, result),
         WolServiceEvent::UserJoined(member) => {
-            let sort = state.frontend.wol_lobby_globals.player_sort;
             let lobby = lobby_mut(state).expect("checked");
             if lobby.current.is_some() {
                 let name = member.name.clone();
                 // 0x7A62B7..0x7A62EE: a joiner in a squad whose tag is not
                 // known yet.
-                let squad =
-                    (member.squad != 0 && member.clan_tag.is_empty()).then_some(member.squad);
-                insert_member(&mut lobby.members, member, sort);
-                if let Some(squad) = squad {
-                    request_squad(state, squad);
+                if member.squad != 0 && member.clan_tag.is_empty() {
+                    request_squad(state, member.squad);
                 }
+                // 0x7A6542..0x7A662D: the lowered name's ladder record and
+                // high score, each unless its table holds it, before the
+                // insert.
+                // RESIDUAL: native kicks a game-channel joiner while a start
+                // is pending ([0xB77DEC]/[0xB77E28]/[0xB77E27]) before these
+                // requests and the insert; VERA kicks in setup::user_joined.
+                let key = name.to_ascii_lowercase();
+                let globals = &state.frontend.wol_lobby_globals;
+                let ladder = !globals.ladder.contains_key(&key);
+                let high_score = !globals.high_scores.contains_key(&key);
+                if ladder {
+                    request(state, WolServiceRequest::LadderRecords(vec![key.clone()]));
+                }
+                if high_score {
+                    request(state, WolServiceRequest::HighScores(vec![key]));
+                }
+                insert_members(state, [member]);
                 refill_players(state);
                 if in_setup_channel(state)
                     && let Err(error) = setup::user_joined(state, name)
@@ -3287,15 +3465,16 @@ pub(crate) fn status_help(state: &AppState) -> String {
 /// known nonzero locale. Both tables are looked up by the ASCII-lowered
 /// name (`0x007B5B30`). A player row passes its user record; a game row's
 /// record (`0x00780E30`) holds only the host's name, so no clan.
-/// RESIDUAL: nothing requests ladder ranks or locales yet (ladder chain);
-/// only a service that sends them fills the tables.
+/// RESIDUAL: the lobby's locale queue `0xB765F8` (filled at `0x007A73C8`
+/// and `0x007A6495`) is not ported; only the user's own locale request
+/// fills the locale table.
 fn user_help(state: &AppState, name: &str, member: Option<&WolMember>) -> String {
     let Some(visit) = state.frontend.wol.as_ref() else {
         return String::new();
     };
     let key = name.to_ascii_lowercase();
     let mut help = format!("{name} : ");
-    match visit.ladder.get(&key) {
+    match state.frontend.wol_lobby_globals.ladder.get(&key) {
         Some(record) => {
             help.push_str(&csf(state, "TXT_RANK"));
             help.push(' ');
@@ -3487,6 +3666,41 @@ mod tests {
             &[member("a", 7), member("b", 7), member("c", 9)],
             None
         ));
+    }
+
+    #[test]
+    fn the_user_list_batches_unranked_names_with_its_squad_requests() {
+        let member = |name: String, squad| WolMember {
+            name,
+            squad,
+            ..WolMember::default()
+        };
+        let mut listed: Vec<WolMember> = (1..=104).map(|n| member(format!("User{n}"), 0)).collect();
+        listed[1].squad = 7;
+        listed[23].squad = 9;
+        listed[23].clan_tag = "KN".into();
+        listed[30].squad = 11;
+        let requests = listed_requests(&listed, |key| key == "user3");
+        let names = |range: std::ops::RangeInclusive<usize>, skip: usize| {
+            range
+                .filter(|n| *n != skip)
+                .map(|n| format!("user{n}"))
+                .collect::<Vec<_>>()
+        };
+        // A batch leaves at its 21st name; users from the 100th on and a
+        // ranked user add none, and a known tag asks for no squad.
+        assert_eq!(
+            requests,
+            [
+                ListedRequest::Squad(7),
+                ListedRequest::Ladder(names(1..=22, 3)),
+                ListedRequest::Squad(11),
+                ListedRequest::Ladder(names(23..=43, 0)),
+                ListedRequest::Ladder(names(44..=64, 0)),
+                ListedRequest::Ladder(names(65..=85, 0)),
+                ListedRequest::Ladder(names(86..=99, 0)),
+            ]
+        );
     }
 
     #[test]

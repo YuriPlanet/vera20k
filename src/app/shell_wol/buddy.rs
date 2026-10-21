@@ -391,9 +391,9 @@ fn stats(state: &mut AppState) {
         );
         let record = state
             .frontend
-            .wol
-            .as_ref()
-            .and_then(|visit| visit.ladder.get(&selected.to_ascii_lowercase()));
+            .wol_lobby_globals
+            .ladder
+            .get(&selected.to_ascii_lowercase());
         let values = match record {
             Some(record) => [
                 record.wins,

@@ -2677,6 +2677,9 @@ pub(crate) fn load_map_from_initial(
     theater_cache_mismatch: bool,
     runtime_color_scheme_count: usize,
     native_rules_owner: &mut crate::rules::process_owner::NativeRulesProcessOwner,
+    #[cfg(feature = "ares")] prepared_noncampaign_prefix: &mut Option<
+        crate::rules::process_owner::NativeNonCampaignPrefixPreparation,
+    >,
     audio: Option<&crate::app::process_assets::ProcessAudioCatalog>,
     shared_cell_dummy: crate::map::resolved_terrain::SharedCellDummy,
     tile_variant_selector_cache: &mut crate::map::tile_variant_selector::TileVariantSelectorCache,
@@ -2802,15 +2805,39 @@ pub(crate) fn load_map_from_initial(
     } else {
         None
     };
+    #[cfg(feature = "ares")]
+    let prepared_prefix = prepared_noncampaign_prefix.take();
     let rules_prefix = if materialization == FreshMapMaterialization::AcceptedGenerated {
+        #[cfg(feature = "ares")]
+        assert!(
+            prepared_prefix.is_none(),
+            "generated loading cannot consume an ordinary prefix"
+        );
         crate::rules::process_owner::NativeScenarioRulesPrefix::RandomMap(
             mode_override_ini.as_ref(),
         )
     } else if game_mode_nonzero {
+        #[cfg(feature = "ares")]
+        if let Some(preparation) = prepared_prefix {
+            crate::rules::process_owner::NativeScenarioRulesPrefix::PreparedNonCampaign {
+                preparation,
+                mode_rules_override: mode_override_ini.as_ref(),
+            }
+        } else {
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
+                mode_override_ini.as_ref(),
+            )
+        }
+        #[cfg(not(feature = "ares"))]
         crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
             mode_override_ini.as_ref(),
         )
     } else {
+        #[cfg(feature = "ares")]
+        assert!(
+            prepared_prefix.is_none(),
+            "campaign loading cannot consume an ordinary prefix"
+        );
         crate::rules::process_owner::NativeScenarioRulesPrefix::Campaign(
             campaign_named_ini.as_ref(),
         )

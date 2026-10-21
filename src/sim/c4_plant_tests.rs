@@ -73,6 +73,7 @@ Range=1.5
 Warhead=SA
 [SA]
 Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
+InfDeath=1
 ";
 
 const ART: &str = "\
@@ -876,9 +877,10 @@ fn a_computer_tanya_reaching_her_navcom_cell_on_sabotage_sets_off_c4_there() {
 
 /// An infantryman already standing in its cell when the cell arm runs is in
 /// its cell's list: the first blast spares it as the source, and the two
-/// sourceless ones (`0x0051A79E`, `0x0051A7D3`) kill it. IsAlive (`+0x90`)
-/// holds until its UnInit, so the `0x0051A7D8` test still passes and
-/// Per_Cell_Process goes on at `0x0051A7F8`.
+/// sourceless ones (`0x0051A79E`, `0x0051A7D3`) kill it. The C4 warhead's
+/// `InfDeath=1` leaves a Die1 corpse, whose IsAlive (`+0x90`) holds until its
+/// UnInit, so the `0x0051A7D8` test still passes and Per_Cell_Process goes on
+/// at `0x0051A7F8`.
 #[test]
 fn the_sourceless_blasts_kill_a_c4_infantryman_standing_in_its_cell() {
     let rules = rules();

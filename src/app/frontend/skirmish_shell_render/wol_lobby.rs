@@ -386,8 +386,21 @@ pub(crate) fn paint_wol_lobby_children(
                 SHELL_LABEL_TEXT_RGB,
             ));
         }
-        if let (Some(art), Some((file, _))) = (art, row.icon) {
-            push_icon(&mut paint.icons, art, file, rect, PLAYER_ICON_X, scale);
+        if let Some(rank) = &row.rank {
+            paint.texts.push(text(
+                rank,
+                cell(rect, PLAYER_RANK_X, 0),
+                ShellAlign::V_CENTER,
+                SHELL_LABEL_TEXT_RGB,
+            ));
+        }
+        if let Some(art) = art {
+            if let Some((file, _)) = row.icon {
+                push_icon(&mut paint.icons, art, file, rect, PLAYER_ICON_X, scale);
+            }
+            for (file, x) in &row.score_icons {
+                push_icon(&mut paint.icons, art, file, rect, *x, scale);
+            }
         }
     }
     for (visible, line) in ui

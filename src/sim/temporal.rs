@@ -450,7 +450,7 @@ impl Simulation {
                 if let Some(link) = self.substrate.temporal_link_mut(attacker) {
                     link.warp_remaining = strength.wrapping_mul(10);
                 }
-                self.temporal_warp_start_notice(target, rules);
+                self.temporal_warp_start_notice(target, rules, registry, effects);
             }
             Some(head) => {
                 // 0x0071B0D1..0x0071B0E4: insert right after the head.
@@ -510,23 +510,31 @@ impl Simulation {
     /// gated on the player's own house, which the app applies); a building
     /// that is not `Insignificant=` and not a 1x1 undeployer (`vtable+0x80`,
     /// `0x00465D40`, as on the damage path) notifies its house it is under
-    /// attack.
-    fn temporal_warp_start_notice(&mut self, target: u64, rules: &RuleSet) {
+    /// attack (`0x0071B0CA`), whose call ends by raising event 6 on that
+    /// House's Tags ([`Self::raise_house_attacked_tags`]).
+    fn temporal_warp_start_notice(
+        &mut self,
+        target: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
         let Some(entity) = self.substrate.entities.get(target) else {
             return;
         };
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        match entity.category() {
-            EntityCategory::Unit if object.harvester => {}
+        let notify_house = match entity.category() {
+            EntityCategory::Unit if object.harvester => false,
             EntityCategory::Structure
                 if !object.insignificant && !object.is_1x1_with_undeploy() =>
             {
                 // HouseNotify owns the deployed-miner subtype.
+                true
             }
             _ => return,
-        }
+        };
         // The radar cell is the victim's GetCoords (vt+0x48): a building's
         // foundation centre (`0x00447AC0`; NotifyUnderAttack `0x004F94AE`,
         // `0x004F950E`, `0x004F956A`).
@@ -551,6 +559,9 @@ impl Simulation {
             &[event],
             rules,
         );
+        if notify_house {
+            self.raise_house_attacked_tags(event.owner, rules, registry, effects);
+        }
     }
 
     /// `TemporalClass::CanWarpTarget @ 0x0071AE50`: a `Warpable=` type, not

@@ -684,9 +684,10 @@ pub struct HouseState {
     /// House selected by `HouseClass::UpdateAngerNodes`, or native `-1` as None.
     #[serde(default)]
     enemy_house: Option<InternedId>,
-    /// Edge of the playfield where this house spawns paradrop carriers.
-    /// Encoding: 0=N, 1=E, 2=S, 3=W. Launch setup seeds it from the assigned
-    /// start anchor; committed structures refresh it through lifecycle authority.
+    /// House+0x577C, the map edge this house's aircraft come from and leave
+    /// by. Encoding: 0=N, 1=E, 2=S, 3=W. The constructor writes North
+    /// (`0x004F5C79`); only DetermineEdge
+    /// ([`crate::sim::world::Simulation::determine_house_edge`]) changes it.
     waypoint_edge: u8,
     /// End-of-match score-screen statistics (Kills / Losses / Built columns).
     ///
@@ -2817,7 +2818,9 @@ fn native_edge_distance(anchor: (u16, u16), reference: (i32, i32)) -> i32 {
     ])
 }
 
-/// HouseClass-style playfield edge selection for a committed anchor cell.
+/// `HouseClass::DetermineEdge`'s edge choice (`0x0050DCAF..0x0050DEC1`) from
+/// its anchor cell; [`crate::sim::world::Simulation::determine_house_edge`]
+/// finds the anchor.
 ///
 /// The four asymmetric reference points live in the map's LocalSize frame and
 /// must be skewed into cell-grid coordinates before comparison. Strictly-better

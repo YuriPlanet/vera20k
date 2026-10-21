@@ -7,7 +7,7 @@
 use super::{GeneratedTechnoInitError, object_uses_voxel};
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::rules::object_type::{FactoryType, ObjectType};
+use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::animation::{Animation, SequenceKind};
 use crate::sim::combat::Health;
@@ -560,9 +560,6 @@ pub struct TypeFacts {
     /// reservation writer; `None` is the native BuildingType gate.
     #[serde(default)]
     base_reservation_spacing: Option<i32>,
-    /// `Factory=BuildingType`: the House edge refresh callback's input.
-    #[serde(default)]
-    determines_waypoint_edge: bool,
     /// Membership in the resolved `[AI] BuildConst=` vector
     /// (`RulesClass__ReadAI @ 0x00672AE0`, `0x00672B14..0x00672C01`).
     #[serde(default)]
@@ -598,7 +595,6 @@ impl TypeFacts {
             building_hidden_occupancy: (category == EntityCategory::Structure)
                 .then(crate::rules::object_type::BuildingHiddenOccupancyProfile::default),
             base_reservation_spacing: None,
-            determines_waypoint_edge: false,
             build_const_eligible: false,
             base_plan_type_index: default_base_plan_type_index(),
             base_plan_is_defense: false,
@@ -615,7 +611,6 @@ impl TypeFacts {
         if category == EntityCategory::Structure {
             self.building_hidden_occupancy = Some(obj.hidden_occupancy);
             self.base_reservation_spacing = obj.base_reservation_spacing;
-            self.determines_waypoint_edge = obj.factory_type() == Some(FactoryType::BuildingType);
             self.build_const_eligible = obj.build_const_eligible;
             self.base_plan_type_index = obj.base_plan_type_index;
             self.base_plan_is_defense = obj.is_base_defense;
@@ -642,11 +637,6 @@ impl TypeFacts {
     /// `[AI] AIBaseSpacing=` for a base-reserving building.
     pub(crate) fn base_reservation_spacing(&self) -> Option<i32> {
         self.base_reservation_spacing
-    }
-
-    /// `Factory=BuildingType`.
-    pub(crate) fn determines_waypoint_edge(&self) -> bool {
-        self.determines_waypoint_edge
     }
 
     /// In `[AI] BuildConst=`.
@@ -688,12 +678,6 @@ impl TypeFacts {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_base_reservation_spacing_for_test(&mut self, value: Option<i32>) {
         self.base_reservation_spacing = value;
-    }
-
-    /// Install a fixture's `determines_waypoint_edge`.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn set_determines_waypoint_edge_for_test(&mut self, value: bool) {
-        self.determines_waypoint_edge = value;
     }
 
     /// Install a fixture's `build_const_eligible`.

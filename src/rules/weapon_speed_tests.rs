@@ -49,6 +49,7 @@ fn retained_weapon_speed_matches_original_reader_controls() {
                 &pass,
                 &IniFile::empty(),
                 &crate::rules::sound_ini::EvaRegistry::default(),
+                false,
             )
             .unwrap();
         assert_eq!(

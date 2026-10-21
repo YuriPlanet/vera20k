@@ -30,13 +30,13 @@
 //! Available_Money, IsRecruitable and the draws hooked (the
 //! `ai_unit_choice_tests` goldens).
 //!
-//! RESIDUALS:
-//! - Native tallies need in stack arrays of 100 entries: a class with more
-//!   than 100 types, or more than 100 candidate types, writes past them.
-//!   VERA sizes them by the class. Retail classes hold fewer than 100 types.
-//! - A team's `+0x79` (full) and `+0x77` (forced) are written only by
-//!   recruitment, which is not ported (`sim::team_script_vm`), so a
-//!   `Reinforce=` team counts as needing members forever.
+//! A team's `+0x79` (full) comes from `TeamClass::Recalc @ 0x006EA3E0` and
+//! team creation, its `+0x77` (forced) from reinforcement creation
+//! (`0x0065DD64`), all in `sim::team_script_vm`.
+//!
+//! RESIDUAL: native tallies need in stack arrays of 100 entries: a class with
+//! more than 100 types, or more than 100 candidate types, writes past them.
+//! VERA sizes them by the class. Retail classes hold fewer than 100 types.
 
 use serde::{Deserialize, Serialize};
 

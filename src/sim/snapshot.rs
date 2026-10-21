@@ -6267,53 +6267,6 @@ mod tests {
     }
 
     #[test]
-    fn gsi_04_16_waypoint_edge_factory_profile_roundtrips_and_hashes() {
-        use crate::map::entities::EntityCategory;
-        use crate::sim::game_entity::GameEntity;
-
-        let mut sim = Simulation::new();
-        let entity_id = sim.substrate.allocate_stable_id();
-        let conyard = GameEntity::test_default_of_category(
-            entity_id,
-            "GACNST",
-            "AMERICANS",
-            10,
-            10,
-            EntityCategory::Structure,
-        );
-        sim.substrate.entities.insert(conyard);
-        // Native in-scenario load restarts Scenario RNG from Seed0; isolate
-        // waypoint-edge profile persistence on that same post-load cursor.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
-        let without_profile = sim.state_hash();
-        sim.substrate
-            .entities
-            .get_mut(entity_id)
-            .unwrap()
-            .type_facts
-            .set_determines_waypoint_edge_for_test(true);
-        let expected_hash = sim.state_hash();
-        assert_ne!(expected_hash, without_profile);
-
-        let bytes = GameSnapshot::save(&sim, 0, 0, "gsi_04_16_edge_profile", 0);
-        assert_eq!(
-            GameSnapshot::read_header(&bytes).unwrap().layout,
-            super::snapshot_layout()
-        );
-        let restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
-        assert!(
-            restored
-                .substrate
-                .entities
-                .get(entity_id)
-                .unwrap()
-                .type_facts
-                .determines_waypoint_edge()
-        );
-        assert_eq!(restored.state_hash(), expected_hash);
-    }
-
-    #[test]
     fn gsi_04_05_reservation_roundtrip_preserves_real_and_house_state_but_clears_dummy() {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("AMERICANS");

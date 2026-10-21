@@ -187,74 +187,28 @@ pub(crate) struct PreparedLoadingPreview {
     pub fit: PreviewAspectFit,
 }
 
-/// Static CSF keys selected from the resolved local country.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Owned CSF labels selected from stock literals or the retained Country.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LoadingCountryTextKeys {
-    pub country_name: &'static str,
-    pub special_unit: &'static str,
-    pub load_brief: &'static str,
+    pub country_name: String,
+    pub special_unit: String,
+    pub load_brief: String,
 }
-
-const COUNTRY_TEXT_KEYS: [LoadingCountryTextKeys; 10] = [
-    LoadingCountryTextKeys {
-        country_name: "Name:Americans",
-        special_unit: "Name:Para",
-        load_brief: "LoadBrief:USA",
-    },
-    LoadingCountryTextKeys {
-        country_name: "Name:Alliance",
-        special_unit: "Name:BEAGLE",
-        load_brief: "LoadBrief:Korea",
-    },
-    LoadingCountryTextKeys {
-        country_name: "Name:French",
-        special_unit: "Name:GTGCAN",
-        load_brief: "LoadBrief:French",
-    },
-    LoadingCountryTextKeys {
-        country_name: "Name:Germans",
-        special_unit: "Name:TNKD",
-        load_brief: "LoadBrief:Germans",
-    },
-    LoadingCountryTextKeys {
-        country_name: "Name:British",
-        special_unit: "Name:SNIPE",
-        load_brief: "LoadBrief:British",
-    },
-    LoadingCountryTextKeys {
-        country_name: "Name:Africans",
-        special_unit: "Name:DTRUCK",
-        load_brief: "LoadBrief:Lybia",
-    },
-    LoadingCountryTextKeys {
-        country_name: "Name:Arabs",
-        special_unit: "Name:DESO",
-        load_brief: "LoadBrief:Iraq",
-    },
-    LoadingCountryTextKeys {
-        country_name: "Name:Confederation",
-        special_unit: "Name:TERROR",
-        load_brief: "LoadBrief:Cuba",
-    },
-    LoadingCountryTextKeys {
-        country_name: "Name:Russians",
-        special_unit: "Name:TTNK",
-        load_brief: "LoadBrief:Russia",
-    },
-    LoadingCountryTextKeys {
-        country_name: "Name:YuriCountry",
-        special_unit: "Name:YURI",
-        load_brief: "LoadBrief:YuriCountry",
-    },
-];
 
 pub(crate) const LOADING_TEXT_KEY: &str = "GUI:LoadingEx";
 
 /// Resolve the verified country-dependent key row without inventing fallback text.
 pub(crate) fn loading_country_text_keys(country: LaunchCountry) -> Option<LoadingCountryTextKeys> {
-    COUNTRY_TEXT_KEYS
-        .get(usize::from(country.raw_index()))
-        .copied()
+    crate::rules::country_loading::stock_country_loading(usize::from(country.raw_index())).map(
+        |row| {
+            let [name, special, brief] = row.labels();
+            LoadingCountryTextKeys {
+                country_name: name.into(),
+                special_unit: special.into(),
+                load_brief: brief.into(),
+            }
+        },
+    )
 }
 
 /// Localized strings retained by the immutable loading composition.
@@ -284,22 +238,22 @@ pub(crate) fn localize_loading_text(
     csf: &CsfFile,
     country: LaunchCountry,
 ) -> LocalizedLoadingTextSnapshot {
-    let Some(keys) = loading_country_text_keys(country) else {
-        // DrawLoading55381E/553B39/553E52 supplies NULL outside0..9;
-        // 553B44 then copies NULL. Safely omit these unsupported stock labels
-        // rather than reproducing that crash or changing the canonical country.
-        return LocalizedLoadingTextSnapshot {
-            loading: Some(csf.text(LOADING_TEXT_KEY).into_owned()),
-            ..LocalizedLoadingTextSnapshot::missing(country)
-        };
-    };
+    localize_country_keys(csf, loading_country_text_keys(country))
+}
+
+fn localize_country_keys(
+    csf: &CsfFile,
+    keys: Option<LoadingCountryTextKeys>,
+) -> LocalizedLoadingTextSnapshot {
+    let text = |key: &str| (!key.is_empty()).then(|| csf.text(key).into_owned());
     LocalizedLoadingTextSnapshot {
-        keys: Some(keys),
-        country_name: Some(csf.text(keys.country_name).into_owned()),
-        special_unit: Some(native_uppercase_special_unit(
-            csf.text(keys.special_unit).as_ref(),
-        )),
-        load_brief: Some(csf.text(keys.load_brief).into_owned()),
+        country_name: keys.as_ref().and_then(|keys| text(&keys.country_name)),
+        special_unit: keys
+            .as_ref()
+            .and_then(|keys| text(&keys.special_unit))
+            .map(|text| native_uppercase_special_unit(&text)),
+        load_brief: keys.as_ref().and_then(|keys| text(&keys.load_brief)),
+        keys,
         loading: Some(csf.text(LOADING_TEXT_KEY).into_owned()),
     }
 }
@@ -382,6 +336,37 @@ pub(crate) struct LoadingCompositionSnapshot {
     pub text: LocalizedLoadingTextSnapshot,
     pub text_rects: LoadingTextRects,
     pub layers: Vec<LoadingCompositionLayer>,
+}
+
+impl LoadingCompositionSnapshot {
+    /// Ares553820/553B3B/553E54 use the actual retained Country label records,
+    /// keeping the shared localization, special uppercase and layout owners.
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_country_loading(
+        &mut self,
+        loading: &crate::rules::country_loading::AresCountryLoading,
+        csf: Option<&CsfFile>,
+    ) {
+        let [name, special, brief] = loading.labels();
+        let keys = LoadingCountryTextKeys {
+            country_name: name.into(),
+            special_unit: special.into(),
+            load_brief: brief.into(),
+        };
+        self.text = if let Some(csf) = csf {
+            localize_country_keys(csf, Some(keys))
+        } else {
+            LocalizedLoadingTextSnapshot {
+                keys: Some(keys),
+                country_name: None,
+                special_unit: None,
+                load_brief: None,
+                loading: None,
+            }
+        };
+        self.layers =
+            composition_layers(self.preview.is_some(), !self.markers.is_empty(), &self.text);
+    }
 }
 
 /// Build a complete selected-map snapshot after the map's initial parse.
@@ -1424,6 +1409,65 @@ mod tests {
                 LoadingCompositionLayer::ProgressSideIcon,
                 LoadingCompositionLayer::ProgressLabel,
             ]
+        );
+    }
+
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_country_loading_uses_retained_labels_instead_of_the_stock_slot() {
+        let csf = test_csf(&[
+            ("Name:Arabs", "Iraq"),
+            ("Name:DESO", "Desolator"),
+            ("LoadBrief:Iraq", "Stock brief"),
+            (LOADING_TEXT_KEY, "Loading..."),
+            ("Name:Fixture", "Custom country"),
+            ("Unit:Fixture", "Custom unit"),
+            ("Brief:Fixture", "Custom brief"),
+        ]);
+        let mut session = test_launch_session();
+        session.humans[0].slot.country = LaunchCountry::Iraq;
+        let mut composition = finish_loading_composition(
+            &session,
+            Some(&csf),
+            [800, 600],
+            ShellScale::RETAIL,
+            None,
+            Vec::new(),
+        );
+        assert_eq!(composition.text.country_name.as_deref(), Some("Iraq"));
+        let ini = crate::rules::ini_parser::IniFile::from_str(
+            "[Countries]\n0=A\n1=B\n2=C\n3=D\n4=E\n5=F\n6=CUSTOM\n[CUSTOM]\nFile.LoadScreen=ls800fixture.shp\nLoadScreenText.Name=Name:Fixture\nLoadScreenText.SpecialName=Unit:Fixture\nLoadScreenText.Brief=Brief:Fixture\n",
+        );
+        let mut owner =
+            crate::rules::process_owner::NativeRulesProcessOwner::from_cold_start_sources(
+                ini,
+                None,
+                crate::rules::ini_parser::IniFile::empty(),
+                std::sync::Arc::new(crate::rules::sound_ini::SoundRegistry::default()),
+                std::sync::Arc::new(crate::rules::sound_ini::EvaRegistry::default()),
+            )
+            .unwrap();
+        owner.read_multiplayer_country(&crate::rules::ini_parser::IniFile::empty(), 6);
+        owner.refresh_multiplayer_country_bodies();
+        let (retained, _) = owner.country_loading(LaunchCountry::Iraq.index()).unwrap();
+        composition.bind_country_loading(retained, Some(&csf));
+        assert_eq!(
+            composition.text.country_name.as_deref(),
+            Some("Custom country")
+        );
+        assert_eq!(
+            composition.text.special_unit.as_deref(),
+            Some("CUSTOM UNIT")
+        );
+        assert_eq!(composition.text.load_brief.as_deref(), Some("Custom brief"));
+        assert_eq!(composition.text.loading.as_deref(), Some("Loading..."));
+        assert_eq!(
+            retained.background_file(true).as_deref(),
+            Some("ls800fixture.shp")
+        );
+        assert_eq!(
+            retained.background_file(false).as_deref(),
+            Some("ls800fixture.shp")
         );
     }
 

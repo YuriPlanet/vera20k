@@ -38,8 +38,6 @@
 //!   difficulty gate and refuses such a trigger. Trigger: campaign AI trigger
 //!   selection after startup; effects include missing recruitment and a
 //!   different eligible/weighted trigger set. Required live chain: campaign AI eligibility under issue1508.
-//! - Conditions 5 and 6 compare a super weapon's charge against its type's
-//!   `RechargeTime=` ([`super_nearly_ready`]'s residual).
 
 use crate::sim::world::FrameEffects;
 use std::hash::{Hash, Hasher};
@@ -618,10 +616,10 @@ fn zones_admit(
     !same_zone && zone(own, MovementZone::Amphibious) == zone(theirs, MovementZone::Amphibious)
 }
 
-/// `TeamTypeClass` `0x00509610` for `team_type`: in a multiplayer game, every
-/// TaskForce type has a factory of the house (`FindFactory(1, 1, 0,
-/// house)`: online, CanBuild not asked). A TeamType without a TaskForce
-/// fails.
+/// `HouseClass::Has_Factories_For_TeamType` `0x00509610` for `team_type`: in a
+/// multiplayer game, every TaskForce type has a factory of the house
+/// (`FindFactory(1, 1, 0, house)`: online, CanBuild not asked). A TeamType
+/// without a TaskForce fails.
 fn factories_admit(
     sim: &Simulation,
     rules: &RuleSet,

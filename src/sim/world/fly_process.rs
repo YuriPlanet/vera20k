@@ -19,8 +19,10 @@
 //!
 //! RESIDUAL: the spin (`0x004CE5A0`). Power_Off (`0x004CFD20`) starts it on
 //! a moving Fly, with two Scenario draws, and then the unpowered fall
-//! (`Simulation::fly_crash_fall`) drops it. Nothing in VERA powers off an
-//! aircraft (native: EMP), so both are dormant.
+//! (`Simulation::fly_crash_fall`) drops it. Both are unreachable natively:
+//! only an EMP powers off an aircraft, and EMPulseClass's constructor
+//! (`0x004C52B0`) has no caller or pointer in the executable (rulesmd's
+//! `[EMPuls]` says it is disabled in code).
 //!
 //! Horizontal_Step ends by deselecting another house's object over the
 //! player's shroud ([`Simulation::deselect_over_player_shroud`]).

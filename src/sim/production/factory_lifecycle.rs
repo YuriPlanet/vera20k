@@ -108,13 +108,16 @@ impl HouseFactoryAbandonment {
 /// Only that fallback requests a held start from the shared Resume owner;
 /// the ordinary online path and Building factories pass false.
 ///
-/// Residual (building path): a building never queues in gamemd.
-/// Begin_Production refuses a building PRODUCE while the building factory runs
-/// (`0x004FA52E..0x004FA550`), and StartProduction abandons a held or finished
-/// building before starting a different one (`0x004C9C87..0x004C9C98`); VERA
-/// appends it. Trigger: a second building PRODUCE before the first executes
-/// (the sidebar refuses a busy structure strip, and VERA's AI asks only while
-/// no building is queued). Effect: VERA builds both in turn. Rare.
+/// A building never queues. A building cameo's PRODUCE names its type's RTTI
+/// (BuildingType 7, `AddCameo(7, ..)` at `0x00445762`), which Begin_Production
+/// refuses without a scold while that category's factory runs: rate (+0x38)
+/// set and +0x70 clear (`0x004FA520..0x004FA550`). Otherwise, unless it
+/// resumes the same type, StartProduction first abandons whatever the factory
+/// holds, held or finished (`0x004C9C7F..0x004C9C89`, AbandonProduction
+/// `0x004C9FF0`: [`settle_abandoned`]), and a BuildingType always takes the
+/// create path (`0x004C9C95..0x004C9C98`). The sidebar refuses a busy
+/// structure strip, so only a building PRODUCE sent before an earlier one
+/// executed reaches either branch.
 pub fn enqueue_by_type(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -149,6 +152,16 @@ pub fn enqueue_by_type(
         return false;
     };
     let type_interned = sim.interner.intern(type_id);
+    let building = obj.category == ObjectCategory::Building;
+    if building
+        && sim
+            .production
+            .factories()
+            .view(owner_id, category)
+            .is_some_and(|factory| factory.is_running())
+    {
+        return false;
+    }
     if let Some((active, suspended)) = sim.production.factories().active_object(owner_id, category)
         && active == type_interned
         && suspended
@@ -175,6 +188,10 @@ pub fn enqueue_by_type(
             type_interned,
         );
         return true;
+    }
+    let holder = FactoryHolder::House(owner_id, category);
+    if building && let Some(abandoned) = sim.production.factories().pending_abandonment(holder) {
+        settle_abandoned(sim, rules, owner_id, holder, abandoned, effects);
     }
     let enqueue_order = sim.production.next_enqueue_order();
     let cost = sim.cost_of(owner_id, obj, rules);

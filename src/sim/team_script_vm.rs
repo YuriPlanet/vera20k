@@ -720,7 +720,7 @@ impl TeamScriptState {
     /// The unit choosers' filter (`0x004FEC20..0x004FEC47`): a team still
     /// wants members while its TeamType is `Reinforce=` and it is not full
     /// (`+0x79`), or while it is neither forced (`+0x77`, which only
-    /// reinforcements set: none is ported) nor has been full (`+0x78`).
+    /// reinforcements set: `reinforcements.rs`) nor has been full (`+0x78`).
     pub(crate) const fn wants_members(&self, reinforce: bool) -> bool {
         (reinforce && !self.full_strength) || (!self.forced_active && !self.has_been_full)
     }

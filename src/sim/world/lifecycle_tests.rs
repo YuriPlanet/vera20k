@@ -4782,15 +4782,7 @@ fn gsi_04_16_dustbowl_conyard_unlimbo_uses_local_size_edge() {
     let conyard = sim
         .spawn_object("GACNST", "Americans", 69, 115, 0, &rules)
         .expect("GACNST reveals");
-    assert!(
-        sim.substrate
-            .entities
-            .get(conyard)
-            .unwrap()
-            .type_facts
-            .determines_waypoint_edge(),
-        "Factory=BuildingType must freeze onto the entity before Reveal"
-    );
+    assert!(sim.production.is_primary_factory(conyard));
     let house = sim.houses.get(&owner).expect("launch house");
     assert_eq!(house.base_center(), Some((70, 116)));
     assert_eq!(house.waypoint_edge(), 2);
@@ -4812,8 +4804,9 @@ fn gsi_04_16_committed_structure_owner_change_refreshes_new_house_edge() {
         .spawn_object("GACNST", "Americans", 69, 115, 0, &rules)
         .expect("GACNST reveals");
 
-    sim.change_owner(conyard, new_owner);
+    sim.change_owner_with_rules(conyard, new_owner, &rules, None, Default::default());
 
+    assert!(sim.production.is_primary_factory(conyard));
     let new_house = sim.houses.get(&new_owner).expect("new owner house");
     assert_eq!(new_house.base_center(), Some((68, 114)));
     assert_eq!(new_house.waypoint_edge(), 2);
@@ -4836,18 +4829,9 @@ fn gsi_04_16_caoild_reveal_and_owner_change_preserve_waypoint_edges() {
     let oil = sim
         .spawn_object("CAOILD", "Americans", 69, 115, 0, &rules)
         .expect("CAOILD reveals");
-    assert!(
-        !sim.substrate
-            .entities
-            .get(oil)
-            .unwrap()
-            .type_facts
-            .determines_waypoint_edge(),
-        "missing Factory= must freeze as an ineligible edge profile"
-    );
     assert_eq!(sim.houses.get(&old_owner).unwrap().waypoint_edge(), 1);
 
-    sim.change_owner(oil, new_owner);
+    sim.change_owner_with_rules(oil, new_owner, &rules, None, Default::default());
 
     assert_eq!(sim.houses.get(&new_owner).unwrap().waypoint_edge(), 3);
 }

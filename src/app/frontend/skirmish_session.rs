@@ -41,6 +41,20 @@ const MULTIPLAYER_HANDLE_LIMIT_BYTES: usize = 19;
 const DEFAULT_MULTIPLAYER_HANDLE: &[u8] = b"[New Player]";
 const DEFAULT_MULTIPLAYER_GAME_MODE: i32 = 1;
 
+/// Direct launch adapters bypass PrepareSession52E11E/123. Share its Country
+/// allocation/body #1 without cached shell settings or the PortPool RNG draw.
+#[cfg(feature = "ares")]
+pub(crate) fn prepare_external_skirmish_countries(
+    assets: &mut crate::app::process_assets::ProcessAssets,
+    session: &SkirmishLaunchSession,
+) {
+    assets.read_multiplayer_country(
+        &IniFile::empty(),
+        i32::from(session.local_slot().country.raw_index()),
+    );
+    assets.refresh_multiplayer_country_bodies();
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LocalMultiplayerPreferences {
     handle_bytes: Vec<u8>,
@@ -1004,6 +1018,11 @@ impl MultiplayerShellRuntime {
             registry: &self.cooperative_registry,
             rng: &mut self.scenario_rng,
         }
+    }
+
+    /// `0x0049E4F0`: the CoopCampMD `[Campaigns]` count, 0 without the file.
+    pub(crate) fn cooperative_campaign_count(&self) -> u32 {
+        self.cooperative_registry.campaigns.len() as u32
     }
 
     /// A campaign's `CampaignName` string-table key, for `+0x4C`'s rows.

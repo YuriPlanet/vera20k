@@ -63,7 +63,6 @@ pub use spotlight::BuildingSpotlight;
 mod infantry_death;
 mod jumpjet_cruise;
 pub use infantry_death::InfantryDeathPostlude;
-#[cfg(any(test, feature = "test-support"))]
 pub use infantry_death::InfantryDeathSequence;
 mod aircraft_attack;
 mod aircraft_enter;
@@ -5519,6 +5518,17 @@ impl Simulation {
     /// house, priced with that house's current `Cost_Of` factors. It counts
     /// no powered center and invalidates no power; the first GrandOpening
     /// owns that invalidation.
+    ///
+    /// RESIDUAL: a Building's arm also adds its `GetPowerDrain @ 0x0044E880`
+    /// to the House's retained drain (`+0x53A8`) at once
+    /// (`0x00502B4A..0x00502B52`, `0x005018C0`, whose remaining redraw and
+    /// COM notify have no sim reader). Here the drain counts from the House's
+    /// next power reassessment, which native also runs after the building's
+    /// first health sample ([`crate::sim::power_system::PowerHealthSample`],
+    /// `0x00440055`) or OnConstructionComplete (`0x00446A77`) sets
+    /// RecheckPower. Trigger: every building placement or capture. Effect:
+    /// for about one frame GetPowerRatio readers (production rate,
+    /// `Powered=`, AI power conditions) miss the new consumer. Invisible.
     pub(crate) fn house_added_to_game(
         substrate: &ObjectSubstrate,
         houses: &mut Houses,
@@ -6130,14 +6140,7 @@ impl Simulation {
             );
         }
         if category == EntityCategory::Structure {
-            crate::sim::production::initialize_factory_primary(
-                &self.interner,
-                &mut self.production,
-                &self.substrate,
-                &self.houses,
-                stable_id,
-                rules,
-            );
+            crate::sim::production::initialize_factory_primary(self, rules, stable_id);
             //448CEF: Grand_Opening(1) also runs on an already placed
             //building; its6E4 gate prevents repeating first-opening slots.
             self.grand_opening(stable_id, true, false, rules, None, effects);
@@ -6153,7 +6156,6 @@ impl Simulation {
             self.leave_team(stable_id, false, rules, effects);
         }
         self.foot_neighbors_after_owner_change(stable_id, rules);
-        self.refresh_waypoint_edge_from_committed_structure(stable_id);
         self.reapply_building_gap_after_owner_change(stable_id, rules);
         self.relink_docked_after_owner_change(stable_id, &taken_along, rules, effects);
         // Building449267/449284: old House then new House, after lists,

@@ -13,7 +13,10 @@ use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
 
 /// Per-tick speed ramp step for Fly aircraft (0.1 per tick).
 /// Original: _DAT_007e3860 = 0.1 (verified from binary).
-/// Full acceleration 0->1 takes 10 ticks.
+/// In SimFixed, 0->1 takes 10 ticks. Native adds the binary64 0.1 (`0x004CE441..
+/// 0x004CE495`): the 10th step stores 0.9999999999999999, so 1.0 arrives on the
+/// 11th, and Apparent_Speed (`0x004CFE20`, ftol) pays one lepton less on such
+/// steps. RESIDUAL under the SimFixed policy: at most one lepton per ramp.
 const FLY_SPEED_RAMP_STEP: SimFixed = SimFixed::lit("0.1");
 
 /// The target speed of a Fly crawling in under the 0.1 slowdown floor

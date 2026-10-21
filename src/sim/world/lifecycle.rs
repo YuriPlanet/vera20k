@@ -1587,21 +1587,13 @@ impl Simulation {
             // Building440D2D, after native House building registration.
             entity.reset_building_health_sample_at_unlimbo();
         }
-        self.refresh_waypoint_edge_from_committed_structure(stable_id);
         self.mark_building_base_reservation_with_arg(stable_id, false, context);
         self.discover_building_owner_after_unlimbo(stable_id, context);
         self.construct_spotlight(stable_id, context.rules());
         // Unlimbo44119C clears this object's retained primary before
         //448070 asks the owning house for another live primary.
         self.production.clear_primary_factory(stable_id);
-        crate::sim::production::initialize_factory_primary(
-            &self.interner,
-            &mut self.production,
-            &self.substrate,
-            &self.houses,
-            stable_id,
-            context.rules(),
-        );
+        crate::sim::production::initialize_factory_primary(self, context.rules(), stable_id);
         //440E76's virtual discovery precedes the successful BasePlan
         // tail at44159D..4415B3, including a reached first opening.
         self.fill_base_plan_from_successful_building_unlimbo(stable_id);
@@ -1979,30 +1971,6 @@ impl Simulation {
                 is_base_defense,
                 session.game_mode_nonzero(),
             );
-        }
-    }
-
-    /// Refresh the owning house's navigation edge from a live, map-committed
-    /// structure. Launch base-center authority remains the assigned start cell.
-    /// Serves `HouseClass::DetermineEdge @ 0x0050DB00`'s building arm, which the
-    /// primary-factory selection calls (`0x00448070`, `0x00448160`).
-    pub(crate) fn refresh_waypoint_edge_from_committed_structure(&mut self, stable_id: u64) {
-        let Some(bounds) = self.playfield_bounds else {
-            return;
-        };
-        let Some((owner, anchor)) = self.substrate.entities.get(stable_id).and_then(|entity| {
-            (entity.category() == EntityCategory::Structure
-                && entity.type_facts.determines_waypoint_edge()
-                && entity.lifecycle.object_alive
-                && !entity.lifecycle.in_limbo
-                && entity.lifecycle.cell_marked)
-                .then_some((entity.owner(), (entity.position.rx(), entity.position.ry())))
-        }) else {
-            return;
-        };
-        let edge = crate::sim::house_state::determine_waypoint_edge(anchor, bounds);
-        if let Some(house) = self.houses.get_mut(&owner) {
-            house.assign_waypoint_edge(edge);
         }
     }
 

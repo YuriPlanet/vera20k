@@ -490,6 +490,18 @@ impl NativeSpreadProcessStats {
 }
 
 impl NativeTiberiumClassState {
+    /// Both timers due now, as the TiberiumClass constructor leaves them
+    /// (`0x0072176A..0x007217A0`, duration 0).
+    ///
+    /// INTENTIONAL DIFFERENCE: gamemd constructs TiberiumClass once per
+    /// process (Init_Game -> RulesClass::Process `0x00668F65` -> ReadINI_All
+    /// `0x00721D10`), the scenario reset `0x006686C0` keeps it, and every
+    /// scenario load zeroes the frame counter `0x00A8ED84`. Its signed timer
+    /// tests (`0x00722C87..0x00722C97`, `0x007221EE..0x007221FE`) then hold
+    /// growth and spread in a second match until about the previous match's
+    /// last reload frame. VERA gives every match the first match's state:
+    /// a match must not depend on what the process played before it, which
+    /// multiplayer peers and replays could not share.
     pub fn new_due(current_frame: u32, queue_capacity: u32) -> Self {
         Self {
             growth_timer: CdTimer::started(current_frame as i32, 0),

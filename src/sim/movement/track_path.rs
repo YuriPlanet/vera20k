@@ -164,7 +164,9 @@ fn facing_octant(entity: &GameEntity, frame: u32) -> u8 {
 /// the next setter call runs for an unchanged NavCom (`0x00741A88`); every
 /// setter call that passes that check clears it (`0x00741A9C`). Unlimbo's
 /// own raise and clear (`0x006F6E1B`/`0x006F6E34`) bracket one call and
-/// leave nothing behind. Only this module's setters write it.
+/// leave nothing behind, but Teleport Move_To reads it inside that bracket
+/// (its infantry Scatter_Objects arm `0x0071816F..0x0071819F`, not ported;
+/// reachability unproven). Only this module's setters write it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub(crate) struct SetterForceReassign {

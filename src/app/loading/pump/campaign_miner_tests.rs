@@ -93,6 +93,8 @@ fn load_campaign(
         request,
         initial,
         context,
+        #[cfg(feature = "ares")]
+            rules_prefix: mut prepared_rules_prefix,
     } = request.prepare_initial(initial).unwrap();
     let dummy = process.shared_cell_dummy.clone();
     let (rules, cache, audio) = process.native_rules_mut_with_tile_cache();
@@ -106,6 +108,8 @@ fn load_campaign(
         false,
         8,
         rules.unwrap(),
+        #[cfg(feature = "ares")]
+        &mut prepared_rules_prefix,
         audio,
         dummy,
         cache,

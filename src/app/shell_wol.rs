@@ -28,8 +28,8 @@ mod test_service;
 
 pub(crate) use login::{combo_popup, login_layout, open_login_art};
 pub(crate) use service::{
-    NET_STATUS_LOST, WolApiStatus, WolLadderRecord, WolLoginAccepted, WolProvider, WolServer,
-    WolServerList, WolServiceEvent, WolServiceRequest, service_event,
+    NET_STATUS_LOST, WolApiStatus, WolHighScoreRecord, WolLadderRecord, WolLoginAccepted,
+    WolProvider, WolServer, WolServerList, WolServiceEvent, WolServiceRequest, service_event,
 };
 pub(crate) use test_service::{
     WolTestGuest, default_buddies as test_service_buddies,
@@ -216,10 +216,9 @@ pub(crate) struct WolVisit {
     /// `[0xB76E28]`: the name the last locate (`0x0078A470`) asked for; the
     /// find sink formats its answer with it and clears it.
     locate_name: Option<String>,
-    /// The ladder table `[0xB77E0C]` (`0xB77D80` outside mode 3) and the
-    /// locale table `0xB76530`, keyed by the ASCII-lowered name the tooltip
-    /// `0x00780A90` looks up with (`0x007B5B30`). `0x00780110` clears both.
-    ladder: std::collections::HashMap<String, service::WolLadderRecord>,
+    /// The locale table `0xB76530`, keyed by the ASCII-lowered name the
+    /// tooltip `0x00780A90` looks up with (`0x007B5B30`); `0x00780110`
+    /// clears it.
     locales: std::collections::HashMap<String, i32>,
     /// The custom lobby runner; kept hidden while C2/C9 run over it.
     lobby: Option<Box<lobby::WolLobby>>,
@@ -267,7 +266,6 @@ impl WolVisit {
             disconnected: false,
             relogin: None,
             locate_name: None,
-            ladder: Default::default(),
             locales: Default::default(),
             lobby: None,
             lobby_joined_before: false,

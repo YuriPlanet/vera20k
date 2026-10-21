@@ -3080,9 +3080,10 @@ impl GeneralRules {
         native_minutes_to_frames(self.placement_delay)
     }
 
-    pub fn infantry_death_anim(&self, inf_death: u8) -> Option<&str> {
-        self.infantry_death_anims
-            .get(usize::from(inf_death))
+    pub fn infantry_death_anim(&self, inf_death: i32) -> Option<&str> {
+        usize::try_from(inf_death)
+            .ok()
+            .and_then(|slot| self.infantry_death_anims.get(slot))
             .and_then(Option::as_deref)
     }
 

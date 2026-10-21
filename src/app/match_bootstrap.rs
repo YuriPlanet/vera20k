@@ -333,6 +333,27 @@ pub fn prepare_campaign_startup(
     clock: &mut impl MatchSeedClock,
 ) -> Option<PreparedCampaignStartup> {
     let campaign_index = campaigns.find_index(name)?;
+    prepare_campaign_startup_at_index(
+        campaigns,
+        campaign_index,
+        difficulty,
+        scenario,
+        launch_options,
+        clock,
+    )
+}
+
+/// Retain an already-resolved catalog identity, including entries whose native
+/// truncated IDs collide. Both named shell starts and external Scenario lookup
+/// use this one constructor and consume the seed only after admission succeeds.
+pub(crate) fn prepare_campaign_startup_at_index(
+    campaigns: &crate::rules::campaigns::CampaignRegistry,
+    campaign_index: usize,
+    difficulty: i32,
+    scenario: Option<&str>,
+    launch_options: Option<CampaignLaunchOptions>,
+    clock: &mut impl MatchSeedClock,
+) -> Option<PreparedCampaignStartup> {
     let campaign = campaigns.get(campaign_index)?.clone();
     let (scenario, scenario_file) = prepare_campaign_scenario(
         scenario.unwrap_or_else(|| campaign.scenario()),

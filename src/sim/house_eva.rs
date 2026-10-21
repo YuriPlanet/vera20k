@@ -11,6 +11,10 @@
 //! state for them, so a replay/snapshot carries state gamemd never holds;
 //! gamemd equivalent UNCHECKED for anything but the local player's lines.
 //!
+//! The block's head drops sell mode for a player with no tracked building
+//! (`0x004F8B14..0x004F8B2B`); that Display state belongs to the client
+//! (`app::presentation::sidebar_gadgets::exit_sell_mode_without_buildings`).
+//!
 //! ## Dependency rules
 //! - Part of sim/ — depends on rules/ and sim/ only.
 

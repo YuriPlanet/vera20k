@@ -509,14 +509,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                 sim.sound_events.clear_for_test();
                 let mut event = None;
                 match input["op"].as_str().unwrap() {
-                    "automatic" => initialize_factory_primary(
-                        &sim.interner,
-                        &mut sim.production,
-                        &sim.substrate,
-                        &sim.houses,
-                        id,
-                        &rules,
-                    ),
+                    "automatic" => initialize_factory_primary(&mut sim, &rules, id),
                     "click" => {
                         for &selected in &ids {
                             sim.substrate
@@ -584,10 +577,11 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                         "{context}: no Stage writes"
                     );
                 }
-                // Yard setting calls the existing edge owner. Its broader
-                // geometry is an explicit separate bound; all other phases,
-                // including already-primary yard clear, preserve every House
-                // field and timer. Compare cloned state, not a mirror owner.
+                // Yard setting calls DetermineEdge; these controls record the
+                // call, and `house_base::edge_tests` covers the edge it writes.
+                // All other phases, including already-primary yard clear,
+                // preserve every House field and timer. Compare cloned state,
+                // not a mirror owner.
                 let has_edge = phase["effects"]
                     .as_array()
                     .unwrap()

@@ -673,6 +673,11 @@ fn paid_super_weapon_cursor_cancellation(
         .then_some(Command::CancelPaidSuperWeapon { selection })
 }
 
+/// Dev "Base" button: start the next opening building (power plant, barracks,
+/// refinery) the owner has none of on the map and the strip offers. A
+/// building never queues (`production::enqueue_by_type`), so each press
+/// starts one while the building factory holds nothing; place it, then press
+/// again.
 pub(crate) fn place_starter_base_for_local_owner(state: &mut AppState) {
     let owner: String = resolve_owner(state);
     let (Some(sim), Some(rules)) = (
@@ -694,41 +699,52 @@ pub(crate) fn place_starter_base_for_local_owner(state: &mut AppState) {
         ),
         pick_building_for_owner(rules, &owner, &["GAREFN", "NAREFN", "YAREFN", "GAOREP"]),
     ];
+    let owner_id = sim.interner().get(&owner);
     let build_options = production::build_options_for_owner(sim, rules, &owner);
-    let queueable: Vec<String> = opening
-        .into_iter()
-        .flatten()
-        .filter(|type_id| {
-            build_options.iter().any(|opt| {
-                let opt_str = sim.interner().resolve(opt.type_id);
-                opt_str.eq_ignore_ascii_case(type_id) && opt.enabled
+    let next = opening.into_iter().flatten().find(|type_id| {
+        let on_map = sim.interner().get(type_id).is_some_and(|type_ref| {
+            sim.entities().values().any(|entity| {
+                Some(entity.owner()) == owner_id
+                    && entity.type_ref() == type_ref
+                    && !entity.in_limbo()
             })
-        })
-        .collect();
-    let mut queued = 0u32;
-    for type_id in queueable {
-        let type_interned = intern_in_sim(state, &type_id);
-        schedule_command(
-            state,
-            &owner,
-            Command::QueueProduction {
-                type_id: type_interned,
-            },
-        );
-        queued += 1;
-    }
-    if queued > 0 {
-        log::info!(
-            "Starter opening queued: owner={} count={} issue_frame=current",
-            owner,
-            queued
-        );
-    } else {
+        });
+        !on_map
+            && build_options.iter().any(|opt| {
+                opt.enabled
+                    && sim
+                        .interner()
+                        .resolve(opt.type_id)
+                        .eq_ignore_ascii_case(type_id)
+            })
+    });
+    let Some(type_id) = next else {
+        log::warn!("Starter opening: owner={owner} has no opening building left to start");
+        return;
+    };
+    let Some(category) = rules.object(&type_id).map(production::category_for_object) else {
+        return;
+    };
+    if owner_id.is_some_and(|owner_id| {
+        sim.production()
+            .factories()
+            .view(owner_id, category)
+            .is_some_and(|factory| factory.object.is_some())
+    }) {
         log::warn!(
-            "Starter opening queue failed: owner={} (no compatible first-build sequence available)",
-            owner
+            "Starter opening: owner={owner} must place or cancel its current building first"
         );
+        return;
     }
+    let type_interned = intern_in_sim(state, &type_id);
+    schedule_command(
+        state,
+        &owner,
+        Command::QueueProduction {
+            type_id: type_interned,
+        },
+    );
+    log::info!("Starter opening started: owner={owner} type={type_id}");
 }
 
 /// Queue one attack-move per object for a dev stress army. Every order goes

@@ -100,8 +100,9 @@ pub enum AiTriggerOwnerIni {
 /// One AITriggerType after the fixed/map replacement pass.
 ///
 /// The typed fields are limited to storage proven in the active YR raw reader
-/// at `0x0041F580`. `tokens` remains authoritative for token 12 and for the
-/// still-untraced semantic names of tokens 11 through 14.
+/// at `0x0041F580`. Token 11 is read and discarded (the `strtok` at
+/// `0x0041F942`); 12 is [`Self::side`], 13 [`Self::storage_flag_d1`] and 14
+/// [`Self::secondary_team_type`]. `tokens` keeps every token's raw text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiTriggerTypeIni {
     pub id: String,

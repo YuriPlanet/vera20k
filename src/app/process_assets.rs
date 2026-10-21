@@ -157,17 +157,22 @@ impl ProcessAssets {
                 None
             };
             let definitions = crate::rules::audio_sources::AudioDefinitions::select(assets);
-            log::info!(
-                "Process audio catalog selected: {}",
-                serde_json::json!({
-                    "soundmd": definitions.sound_source(),
-                    "evamd": definitions.eva_source(),
-                    "index_enabled": self.load_audio_index,
-                    "index": index.as_ref().map(|loaded| &loaded.sources),
-                    "sound_count": definitions.sounds().len(),
-                    "eva_count": definitions.eva().len(),
-                })
-            );
+            let source_receipt = serde_json::json!({
+                "soundmd": definitions.sound_source(),
+                "evamd": definitions.eva_source(),
+                "index_enabled": self.load_audio_index,
+                "index": index.as_ref().map(|loaded| &loaded.sources),
+                "sound_count": definitions.sounds().len(),
+                "eva_count": definitions.eva().len(),
+            });
+            #[cfg(feature = "ares")]
+            let source_receipt = {
+                let mut receipt = source_receipt;
+                receipt["additional_indexes"] =
+                    serde_json::json!(index.as_ref().map(|loaded| &loaded.additional_sources));
+                receipt
+            };
+            log::info!("Process audio catalog selected: {source_receipt}");
             self.audio_catalog = Some(ProcessAudioCatalog { definitions, index });
         }
         if self.native_rules.is_some() {

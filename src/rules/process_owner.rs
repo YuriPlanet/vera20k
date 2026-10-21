@@ -66,6 +66,14 @@ enum NativeRulesRegistryOwner {
     /// Completed scenario Rules inputs and their same live registry. Constructor
     /// events have transferred to Scenario; save reads this owner by reference.
     Scenario(Box<ProcessedRulesLayers>),
+    /// Full_Init's E_multi has run, but its first Draw still reads this live
+    /// registry before Type reset. The owner retains the constructor chronology
+    /// until the matching loading attempt finishes or explicitly retires it.
+    #[cfg(feature = "ares")]
+    PreparedNonCampaign {
+        trace: NativeTypeConstructionTrace,
+        identity: Arc<()>,
+    },
 }
 
 impl NativeRulesRegistryOwner {
@@ -74,6 +82,8 @@ impl NativeRulesRegistryOwner {
             Self::BeforeReset(trace) => trace.registry_state(),
             Self::Live(state) => state,
             Self::Scenario(processed) => processed.native_registry_state(),
+            #[cfg(feature = "ares")]
+            Self::PreparedNonCampaign { trace, .. } => trace.registry_state(),
         }
     }
 
@@ -98,6 +108,10 @@ impl NativeRulesRegistryOwner {
                 .into_ini_and_native_type_construction_trace()
                 .1
                 .into_registry_state_discarding_events(),
+            #[cfg(feature = "ares")]
+            Self::PreparedNonCampaign { .. } => {
+                panic!("prepared Rules prefix requires its loading attempt's ticket")
+            }
         }
     }
 }
@@ -109,6 +123,18 @@ pub struct NativeRulesProcessOwner {
     /// `None` exists only while an in-place transition is executing. Every
     /// ordinary return, including a failed Process/RuleSet parse, restores it.
     registry: Option<NativeRulesRegistryOwner>,
+}
+
+/// Move-only permission to consume or retire one prepared noncampaign prefix.
+///
+/// This ticket contains no Rules state or constructor events. Pointer identity
+/// binds it to the exact preparation, including across different process owners;
+/// allocating this presentation capability consumes no simulation RNG or IDs.
+#[cfg(feature = "ares")]
+#[derive(Debug)]
+#[must_use = "a prepared Rules prefix must be consumed or explicitly cancelled"]
+pub struct NativeNonCampaignPrefixPreparation {
+    identity: Arc<()>,
 }
 
 /// One constructor phase transferred to the independent native-ID cursor.
@@ -174,6 +200,13 @@ pub enum NativeScenarioRulesPrefix<'a> {
     Campaign(Option<&'a IniFile>),
     /// Admitted generated .SED route: Full_Init's saved DL skips ClearClasses.
     RandomMap(Option<&'a IniFile>),
+    /// Ordinary E_multi already ran before the first loading frame. Consume
+    /// its exact chronology without clearing classes or reading root again.
+    #[cfg(feature = "ares")]
+    PreparedNonCampaign {
+        preparation: NativeNonCampaignPrefixPreparation,
+        mode_rules_override: Option<&'a IniFile>,
+    },
 }
 
 impl NativeScenarioRulesLoad {
@@ -244,6 +277,7 @@ impl NativeRulesProcessOwner {
     /// Session6980C0/475540 against the retained process INI. This mutates the
     /// one live registry before PrepareSession's separate Country body pass.
     pub fn read_multiplayer_country(&mut self, settings: &IniFile, current: i32) -> i32 {
+        self.assert_no_prepared_prefix();
         let (events, state) = self
             .registry
             .take()
@@ -262,6 +296,7 @@ impl NativeRulesProcessOwner {
 
     /// PrepareSession52E123; intentionally separate from D7's6980C0 call.
     pub fn refresh_multiplayer_country_bodies(&mut self) {
+        self.assert_no_prepared_prefix();
         let (events, state) = self
             .registry
             .take()
@@ -286,6 +321,38 @@ impl NativeRulesProcessOwner {
         self.multiplayer_countries()
             .nth(usize::try_from(index).ok()?)
             .map(|(id, _)| id)
+    }
+
+    /// Ares loading hooks read the actual retained Country before Full_Init
+    /// destroys the registry. Consumers clone this view once per loading attempt.
+    #[cfg(feature = "ares")]
+    pub fn country_loading(
+        &self,
+        index: crate::rules::ruleset::CountryIdx,
+    ) -> Option<(&crate::rules::country_loading::AresCountryLoading, i32)> {
+        self.registry
+            .as_ref()
+            .expect("Rules transition reentered")
+            .registry_state()
+            .country_projection()
+            .nth(usize::from(index.0))
+            .map(|(_, _, _, side, _, country)| (country.loading(), side))
+    }
+
+    /// Early Ares6847B7 loading color, resolved against this same retained
+    /// registry before E_multi or the later mode/map Rules reset can change it.
+    /// `None` when the Country sets no color, leaving the stock side color.
+    #[cfg(feature = "ares")]
+    pub fn country_loading_text_hsv(
+        &self,
+        index: crate::rules::ruleset::CountryIdx,
+    ) -> Option<[u8; 3]> {
+        let (loading, _) = self.country_loading(index)?;
+        self.registry
+            .as_ref()
+            .expect("Rules transition reentered")
+            .registry_state()
+            .loading_text_hsv(loading.color_index())
     }
 
     /// Refresh derived frontend country/side fields without replaying Process
@@ -358,6 +425,8 @@ impl NativeRulesProcessOwner {
         match self.registry.as_ref()? {
             NativeRulesRegistryOwner::Scenario(processed) => Some(processed.as_ref()),
             NativeRulesRegistryOwner::BeforeReset(_) | NativeRulesRegistryOwner::Live(_) => None,
+            #[cfg(feature = "ares")]
+            NativeRulesRegistryOwner::PreparedNonCampaign { .. } => None,
         }
     }
 
@@ -376,6 +445,7 @@ impl NativeRulesProcessOwner {
     /// Commit the validated saved registry, replacing the outgoing authority.
     /// Deserialization excludes constructor receipts, so load cannot replay IDs.
     pub fn install_saved_scenario_rules(&mut self, processed: ProcessedRulesLayers) {
+        self.assert_no_prepared_prefix();
         self.registry = Some(NativeRulesRegistryOwner::Scenario(Box::new(processed)));
     }
 
@@ -396,6 +466,7 @@ impl NativeRulesProcessOwner {
         ambient_change: [Option<crate::util::native_x87::NativeF64Bits>; 2],
         upgrade_art_names: impl IntoIterator<Item = (String, u8, String)>,
     ) -> Result<(), RulesError> {
+        self.assert_no_prepared_prefix();
         let mut registry = self
             .registry
             .take()
@@ -422,6 +493,99 @@ impl NativeRulesProcessOwner {
             .map_err(|failure| failure.into_parts().0)
     }
 
+    /// Run ordinary Full_Init's pre-reset E_multi exactly once, before Draw.
+    ///
+    /// Original68741D/68742E/687451 read root Countries, General and Country
+    /// bodies; Draw687588 then observes those fields before TypeReset6876AC.
+    /// Ares6847B7/1002F8F0 color and552D58/1001E0E0 PAL consumers run earlier.
+    /// The app must transfer any retired scene's runtime Rules writes first.
+    /// Generated RMG saved-DL admission deliberately keeps its existing path.
+    #[cfg(feature = "ares")]
+    pub fn prepare_noncampaign_scenario_prefix(&mut self) -> NativeNonCampaignPrefixPreparation {
+        let state = self.take_pre_reset_state(true);
+        let trace =
+            process_native_noncampaign_rules_prepass(state, &self.sources.selected_rules_root);
+        let identity = Arc::new(());
+        self.registry = Some(NativeRulesRegistryOwner::PreparedNonCampaign {
+            trace,
+            identity: Arc::clone(&identity),
+        });
+        NativeNonCampaignPrefixPreparation { identity }
+    }
+
+    /// Retire an attempt which will not reach the destructive Type reset.
+    ///
+    /// Keep the actual post-prefix registry, including consumed Country parent
+    /// flags. Its unconsumed constructor chronology belongs to this cancelled
+    /// attempt and must not be replayed by the next Scenario's numeric cursor.
+    #[cfg(feature = "ares")]
+    pub fn cancel_prepared_noncampaign_scenario_prefix(
+        &mut self,
+        preparation: NativeNonCampaignPrefixPreparation,
+    ) {
+        let trace = self.take_prepared_noncampaign_trace(preparation);
+        self.registry = Some(NativeRulesRegistryOwner::Live(
+            trace.into_registry_state_discarding_events(),
+        ));
+    }
+
+    fn assert_no_prepared_prefix(&self) {
+        #[cfg(feature = "ares")]
+        assert!(
+            !matches!(
+                self.registry.as_ref(),
+                Some(NativeRulesRegistryOwner::PreparedNonCampaign { .. })
+            ),
+            "prepared Rules prefix must be consumed or cancelled before another Rules mutation"
+        );
+    }
+
+    /// The same pre-reset ownership transfer serves both atomic loading and
+    /// first-frame preparation. Check before take so a rejected transition
+    /// cannot drop the pending trace or leave the owner empty during unwinding.
+    fn take_pre_reset_state(&mut self, clear_classes: bool) -> NativeRulesRegistryState {
+        self.assert_no_prepared_prefix();
+        let state = self
+            .registry
+            .take()
+            .expect("native Rules registry transition may not be re-entered")
+            .into_registry_state();
+        #[cfg(feature = "ares")]
+        let state = {
+            let mut state = state;
+            // Full_Init686B5D/686B65 clears classes before the early map/rules
+            // pass on ordinary loads. Generated RMG retains RulesExt, and the
+            // later TypeReset6686C0 is a separate, retaining transaction.
+            if clear_classes {
+                state.clear_scenario_global_controls();
+            }
+            state
+        };
+        #[cfg(not(feature = "ares"))]
+        let _ = clear_classes;
+        state
+    }
+
+    #[cfg(feature = "ares")]
+    fn take_prepared_noncampaign_trace(
+        &mut self,
+        preparation: NativeNonCampaignPrefixPreparation,
+    ) -> NativeTypeConstructionTrace {
+        match self.registry.as_ref() {
+            Some(NativeRulesRegistryOwner::PreparedNonCampaign { identity, .. }) => assert!(
+                Arc::ptr_eq(identity, &preparation.identity),
+                "Rules prefix ticket does not belong to the current loading attempt"
+            ),
+            _ => panic!("Rules prefix ticket has no pending loading attempt"),
+        }
+        let Some(NativeRulesRegistryOwner::PreparedNonCampaign { trace, .. }) =
+            self.registry.take()
+        else {
+            unreachable!("prepared Rules prefix validated before take")
+        };
+        trace
+    }
+
     /// Execute the active Full_Init Rules chronology in place.
     ///
     /// Noncampaign runs `E_multi` against the process-retained registry;
@@ -438,35 +602,31 @@ impl NativeRulesProcessOwner {
         prefix: NativeScenarioRulesPrefix<'_>,
         map_rules_overrides: &IniFile,
     ) -> Result<NativeScenarioRulesLoad, RulesError> {
-        let registry_owner = self
-            .registry
-            .take()
-            .expect("native Rules registry transition may not be re-entered");
-        let pre_reset_state = registry_owner.into_registry_state();
-        #[cfg(feature = "ares")]
-        let pre_reset_state = {
-            let mut state = pre_reset_state;
-            // Full_Init686B5D/686B65 clears classes before the early map/rules
-            // pass on ordinary loads. The generated RMG arm retains RulesExt;
-            // the later TypeReset6686C0 is a separate, retaining transaction.
-            if !matches!(&prefix, NativeScenarioRulesPrefix::RandomMap(_)) {
-                state.clear_scenario_global_controls();
-            }
-            state
-        };
-
+        let clear_classes = !matches!(&prefix, NativeScenarioRulesPrefix::RandomMap(_));
         let (pre_reset_trace, mode_rules_override) = match prefix {
             NativeScenarioRulesPrefix::NonCampaign(mode)
-            | NativeScenarioRulesPrefix::RandomMap(mode) => (
-                process_native_noncampaign_rules_prepass(
-                    pre_reset_state,
-                    &self.sources.selected_rules_root,
-                ),
-                mode,
+            | NativeScenarioRulesPrefix::RandomMap(mode) => {
+                let state = self.take_pre_reset_state(clear_classes);
+                (
+                    process_native_noncampaign_rules_prepass(
+                        state,
+                        &self.sources.selected_rules_root,
+                    ),
+                    mode,
+                )
+            }
+            #[cfg(feature = "ares")]
+            NativeScenarioRulesPrefix::PreparedNonCampaign {
+                preparation,
+                mode_rules_override,
+            } => (
+                self.take_prepared_noncampaign_trace(preparation),
+                mode_rules_override,
             ),
             NativeScenarioRulesPrefix::Campaign(named) => {
+                let state = self.take_pre_reset_state(true);
                 let trace = match process_native_campaign_rules_prepass(
-                    pre_reset_state,
+                    state,
                     named,
                     &self.sources.fixed_art,
                     &self.sources.fixed_eva,
@@ -565,3 +725,7 @@ mod ares_eva_tests;
 #[cfg(all(test, feature = "ares"))]
 #[path = "process_owner_global_controls_tests.rs"]
 mod global_controls_tests;
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "country_loading_prefix_tests.rs"]
+mod country_loading_prefix_tests;

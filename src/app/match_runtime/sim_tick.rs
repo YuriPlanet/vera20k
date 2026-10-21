@@ -1299,6 +1299,16 @@ fn advance_one_simulation_frame(
                 .interner()
                 .get(&owner)
         });
+        // House4F8B08..4F8B2B: this frame's House rung is the native caller.
+        let placement_armed = state.armed_building_type().is_some();
+        if let Some(rt) = state.match_state.sim_runtime.as_ref() {
+            crate::app::presentation::sidebar_gadgets::exit_sell_mode_without_buildings(
+                &mut state.match_state.match_presentation.sidebar_gadget_state,
+                &rt.simulation,
+                local_house,
+                placement_armed,
+            );
+        }
         for output in drained_lifecycle_outputs {
             if let Some(cursor_clear) = state
                 .match_state

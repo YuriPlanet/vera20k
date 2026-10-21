@@ -2002,10 +2002,11 @@ fn gsi_04_07_command_places_authoritative_owned_wall_without_entity() {
     let category =
         super::production_tech::production_category_for_object(rules.object("GAWALL").unwrap());
     let held = super::lifecycle_tests::held_id(&sim, owner, category);
-    // A second wall waits behind the finished one, as when VERA queued it while the
-    // first was still building (gamemd never queues a building: see enqueue_by_type's
-    // building-path residual). A PRODUCE sent now would take the finished head's
-    // same-type branch instead (0x004FA5A8..0x004FA5C4), so the fixture appends it.
+    // A second wall waits behind the finished one. No PRODUCE queues a building
+    // (enqueue_by_type: StartProduction never appends a BuildingType), and one
+    // sent now would take the finished head's same-type branch instead
+    // (0x004FA5A8..0x004FA5C4), so the fixture appends it to reach Place's
+    // queued-copy removal.
     let cost = rules.object("GAWALL").unwrap().cost.max(0);
     assert!(
         !sim.production

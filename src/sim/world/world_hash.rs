@@ -1770,7 +1770,6 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     entity.type_facts.foundation().hash(hasher);
     entity.type_facts.building_hidden_occupancy().hash(hasher);
     entity.type_facts.base_reservation_spacing().hash(hasher);
-    entity.type_facts.determines_waypoint_edge().hash(hasher);
     if entity.type_facts.build_const_eligible() {
         b"naval-build-const-entity-v1".hash(hasher);
         entity.type_facts.build_const_eligible().hash(hasher);

@@ -1,0 +1,3708 @@
+{
+  "controls": [
+    {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
+      "country_side": 3,
+      "declared_initial": {
+        "brief": "CHILD_brief",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 1,
+        "file": "CHILD_file",
+        "name": "CHILD_name",
+        "palette": "CHILD_palette",
+        "parent_initialized": 0,
+        "phase": 2,
+        "special": "CHILD_special"
+      },
+      "declared_parent": {
+        "brief": "PARENT_brief",
+        "color": 3,
+        "file": "PARENT_file",
+        "name": "PARENT_name",
+        "palette": "PARENT_palette",
+        "special": "PARENT_special"
+      },
+      "name": "primary_then_nonprimary_then_missing_empty",
+      "parent_country": "CHILD_A",
+      "rows": [
+        {
+          "after": {
+            "brief": "Brief:Fixture",
+            "cached_csf": {
+              "brief": 8673340,
+              "name": 8673340,
+              "special": 8673340
+            },
+            "color": 2,
+            "file": "ls%sfixture.shp",
+            "name": "Name:Fixture",
+            "palette": "fixture.pal",
+            "parent_initialized": 0,
+            "phase": 2,
+            "special": "Name:Unit"
+          },
+          "input": {
+            "primary": true,
+            "values": {
+              "File.LoadScreen": "ls%sfixture.shp",
+              "File.LoadScreenPAL": "fixture.pal",
+              "LoadScreenText.Brief": "Brief:Fixture",
+              "LoadScreenText.Color": "SCHEME_B",
+              "LoadScreenText.Name": "Name:Fixture",
+              "LoadScreenText.SpecialName": "Name:Unit"
+            }
+          },
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.Flag",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverFlag",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverBackground",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.LoadScreen",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "ls%sfixture.shp"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.LoadScreenPAL",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "fixture.pal"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.Taunt",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Name",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "Name:Fixture"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.SpecialName",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "Name:Unit"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Brief",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "Brief:Fixture"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "MenuText.Status",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverFlagAltPalette",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AI.PowerPlants",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Parachute.Anim",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Aircraft",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Num",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Color",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "SCHEME_B"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "RandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AIRandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ListIndex",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "VeteranBuildings",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Degrades",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "CanBeDriven",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.WithConst",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "GivesBounty",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            }
+          ]
+        },
+        {
+          "after": {
+            "brief": "Brief:Fixture",
+            "cached_csf": {
+              "brief": 8673340,
+              "name": 8673340,
+              "special": 8673340
+            },
+            "color": 0,
+            "file": "ls%sfixture.shp",
+            "name": "Name:Fixture",
+            "palette": "fixture.pal",
+            "parent_initialized": 0,
+            "phase": 2,
+            "special": "Name:Unit"
+          },
+          "input": {
+            "primary": false,
+            "values": {
+              "File.LoadScreen": "ignored.shp",
+              "LoadScreenText.Color": "SCHEME_A",
+              "LoadScreenText.Name": "Ignored:Name"
+            }
+          },
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AI.PowerPlants",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Parachute.Anim",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Aircraft",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Num",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Color",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "SCHEME_A"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "RandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AIRandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ListIndex",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "VeteranBuildings",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Degrades",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "CanBeDriven",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.WithConst",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "GivesBounty",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            }
+          ]
+        },
+        {
+          "after": {
+            "brief": "Brief:Fixture",
+            "cached_csf": {
+              "brief": 8673340,
+              "name": 8673340,
+              "special": 8673340
+            },
+            "color": 0,
+            "file": "ls%sfixture.shp",
+            "name": "Name:Fixture",
+            "palette": "fixture.pal",
+            "parent_initialized": 0,
+            "phase": 2,
+            "special": "Name:Unit"
+          },
+          "input": {
+            "primary": true,
+            "values": {}
+          },
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.Flag",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverFlag",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverBackground",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.LoadScreen",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.LoadScreenPAL",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.Taunt",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Name",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.SpecialName",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Brief",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "MenuText.Status",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverFlagAltPalette",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AI.PowerPlants",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Parachute.Anim",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Aircraft",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Num",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Color",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "RandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AIRandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ListIndex",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "VeteranBuildings",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Degrades",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "CanBeDriven",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.WithConst",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "GivesBounty",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            }
+          ]
+        },
+        {
+          "after": {
+            "brief": "Brief:Fixture",
+            "cached_csf": {
+              "brief": 8673340,
+              "name": 8673340,
+              "special": 8673340
+            },
+            "color": 0,
+            "file": "ls%sfixture.shp",
+            "name": "Name:Fixture",
+            "palette": "fixture.pal",
+            "parent_initialized": 0,
+            "phase": 2,
+            "special": "Name:Unit"
+          },
+          "input": {
+            "primary": true,
+            "values": {
+              "File.LoadScreen": "",
+              "File.LoadScreenPAL": "",
+              "LoadScreenText.Brief": "",
+              "LoadScreenText.Color": "",
+              "LoadScreenText.Name": "",
+              "LoadScreenText.SpecialName": ""
+            }
+          },
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.Flag",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverFlag",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverBackground",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.LoadScreen",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": ""
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.LoadScreenPAL",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": ""
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.Taunt",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Name",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": ""
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.SpecialName",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": ""
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Brief",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": ""
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "MenuText.Status",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverFlagAltPalette",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AI.PowerPlants",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Parachute.Anim",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Aircraft",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Num",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Color",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": ""
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "RandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AIRandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ListIndex",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "VeteranBuildings",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Degrades",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "CanBeDriven",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.WithConst",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "GivesBounty",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
+      "country_side": 3,
+      "declared_initial": {
+        "brief": "CHILD_brief",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 1,
+        "file": "CHILD_file",
+        "name": "CHILD_name",
+        "palette": "CHILD_palette",
+        "parent_initialized": 0,
+        "phase": 2,
+        "special": "CHILD_special"
+      },
+      "declared_parent": {
+        "brief": "PARENT_brief",
+        "color": 3,
+        "file": "PARENT_file",
+        "name": "PARENT_name",
+        "palette": "PARENT_palette",
+        "special": "PARENT_special"
+      },
+      "name": "sentinels_files_clear_csf_labels_literal_color_minus_one",
+      "parent_country": "CHILD_A",
+      "rows": [
+        {
+          "after": {
+            "brief": "none",
+            "cached_csf": {
+              "brief": 8673340,
+              "name": 8673340,
+              "special": 8673340
+            },
+            "color": 4294967295,
+            "file": "",
+            "name": "none",
+            "palette": "",
+            "parent_initialized": 0,
+            "phase": 2,
+            "special": "<none>"
+          },
+          "input": {
+            "primary": true,
+            "values": {
+              "File.LoadScreen": "NoNe",
+              "File.LoadScreenPAL": "<NoNe>",
+              "LoadScreenText.Brief": "none",
+              "LoadScreenText.Color": "none",
+              "LoadScreenText.Name": "none",
+              "LoadScreenText.SpecialName": "<none>"
+            }
+          },
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.Flag",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverFlag",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverBackground",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.LoadScreen",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "NoNe"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.LoadScreenPAL",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "<NoNe>"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.Taunt",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Name",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "none"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.SpecialName",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "<none>"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Brief",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "none"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "MenuText.Status",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverFlagAltPalette",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AI.PowerPlants",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Parachute.Anim",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Aircraft",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Num",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Color",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "none"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "RandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AIRandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ListIndex",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "VeteranBuildings",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Degrades",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "CanBeDriven",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.WithConst",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "GivesBounty",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
+      "country_side": 3,
+      "declared_initial": {
+        "brief": "CHILD_brief",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 1,
+        "file": "CHILD_file",
+        "name": "CHILD_name",
+        "palette": "CHILD_palette",
+        "parent_initialized": 0,
+        "phase": 2,
+        "special": "CHILD_special"
+      },
+      "declared_parent": {
+        "brief": "PARENT_brief",
+        "color": 3,
+        "file": "PARENT_file",
+        "name": "PARENT_name",
+        "palette": "PARENT_palette",
+        "special": "PARENT_special"
+      },
+      "name": "unknown_color_retains",
+      "parent_country": "CHILD_A",
+      "rows": [
+        {
+          "after": {
+            "brief": "CHILD_brief",
+            "cached_csf": {
+              "brief": 0,
+              "name": 0,
+              "special": 0
+            },
+            "color": 1,
+            "file": "CHILD_file",
+            "name": "CHILD_name",
+            "palette": "CHILD_palette",
+            "parent_initialized": 0,
+            "phase": 2,
+            "special": "CHILD_special"
+          },
+          "input": {
+            "primary": false,
+            "values": {
+              "LoadScreenText.Color": "MISSING_SCHEME"
+            }
+          },
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AI.PowerPlants",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Parachute.Anim",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Aircraft",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Num",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Color",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "MISSING_SCHEME"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "RandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AIRandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ListIndex",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "VeteranBuildings",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Degrades",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "CanBeDriven",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.WithConst",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "GivesBounty",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
+      "country_side": 3,
+      "declared_initial": {
+        "brief": "CHILD_brief",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 1,
+        "file": "CHILD_file",
+        "name": "CHILD_name",
+        "palette": "CHILD_palette",
+        "parent_initialized": 0,
+        "phase": 2,
+        "special": "CHILD_special"
+      },
+      "declared_parent": {
+        "brief": "PARENT_brief",
+        "color": 3,
+        "file": "PARENT_file",
+        "name": "PARENT_name",
+        "palette": "PARENT_palette",
+        "special": "PARENT_special"
+      },
+      "name": "fixed31byte_destinations",
+      "parent_country": "CHILD_A",
+      "rows": [
+        {
+          "after": {
+            "brief": "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
+            "cached_csf": {
+              "brief": 8673340,
+              "name": 8673340,
+              "special": 8673340
+            },
+            "color": 1,
+            "file": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "name": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+            "palette": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+            "parent_initialized": 0,
+            "phase": 2,
+            "special": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+          },
+          "input": {
+            "primary": true,
+            "values": {
+              "File.LoadScreen": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.shp",
+              "File.LoadScreenPAL": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB.pal",
+              "LoadScreenText.Brief": "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
+              "LoadScreenText.Name": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+              "LoadScreenText.SpecialName": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+            }
+          },
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.Flag",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverFlag",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverBackground",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.LoadScreen",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.shp"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.LoadScreenPAL",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB.pal"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.Taunt",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Name",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.SpecialName",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Brief",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "MenuText.Status",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverFlagAltPalette",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AI.PowerPlants",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Parachute.Anim",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Aircraft",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Num",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Color",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "RandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AIRandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ListIndex",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "VeteranBuildings",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Degrades",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "CanBeDriven",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.WithConst",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "GivesBounty",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
+      "country_side": 3,
+      "declared_initial": {
+        "brief": "CHILD_brief",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 1,
+        "file": "CHILD_file",
+        "name": "CHILD_name",
+        "palette": "CHILD_palette",
+        "parent_initialized": 0,
+        "phase": 2,
+        "special": "CHILD_special"
+      },
+      "declared_parent": {
+        "brief": "PARENT_brief",
+        "color": 3,
+        "file": "PARENT_file",
+        "name": "PARENT_name",
+        "palette": "PARENT_palette",
+        "special": "PARENT_special"
+      },
+      "name": "first_primary_inherit_overwrites_gui_then_later_primary_child_wins",
+      "parent_country": "PARENT_A",
+      "rows": [
+        {
+          "after": {
+            "brief": "PARENT_brief",
+            "cached_csf": {
+              "brief": 0,
+              "name": 0,
+              "special": 0
+            },
+            "color": 0,
+            "file": "PARENT_file",
+            "name": "PARENT_name",
+            "palette": "PARENT_palette",
+            "parent_initialized": 1,
+            "phase": 2,
+            "special": "PARENT_special"
+          },
+          "input": {
+            "primary": true,
+            "values": {
+              "File.LoadScreen": "child_first.shp",
+              "File.LoadScreenPAL": "child_first.pal",
+              "LoadScreenText.Color": "SCHEME_A",
+              "LoadScreenText.Name": "Name:First"
+            }
+          },
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.Flag",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverFlag",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverBackground",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.LoadScreen",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "child_first.shp"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.LoadScreenPAL",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "child_first.pal"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.Taunt",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Name",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "Name:First"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.SpecialName",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Brief",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "MenuText.Status",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverFlagAltPalette",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AI.PowerPlants",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Parachute.Anim",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Aircraft",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Num",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Color",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "SCHEME_A"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "RandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AIRandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ListIndex",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "VeteranBuildings",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Degrades",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "CanBeDriven",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.WithConst",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "GivesBounty",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            }
+          ]
+        },
+        {
+          "after": {
+            "brief": "PARENT_brief",
+            "cached_csf": {
+              "brief": 0,
+              "name": 8673340,
+              "special": 0
+            },
+            "color": 0,
+            "file": "child_second.shp",
+            "name": "Name:Second",
+            "palette": "PARENT_palette",
+            "parent_initialized": 1,
+            "phase": 2,
+            "special": "PARENT_special"
+          },
+          "input": {
+            "primary": true,
+            "values": {
+              "File.LoadScreen": "child_second.shp",
+              "LoadScreenText.Name": "Name:Second"
+            }
+          },
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.Flag",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverFlag",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverBackground",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.LoadScreen",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "child_second.shp"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.LoadScreenPAL",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.Taunt",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Name",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "Name:Second"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.SpecialName",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Brief",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "MenuText.Status",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "File.ObserverFlagAltPalette",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AI.PowerPlants",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Parachute.Anim",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Aircraft",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Num",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Color",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "RandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AIRandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ListIndex",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "VeteranBuildings",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Degrades",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "CanBeDriven",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.WithConst",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "GivesBounty",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
+      "country_side": 3,
+      "declared_initial": {
+        "brief": "CHILD_brief",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 1,
+        "file": "CHILD_file",
+        "name": "CHILD_name",
+        "palette": "CHILD_palette",
+        "parent_initialized": 0,
+        "phase": 2,
+        "special": "CHILD_special"
+      },
+      "declared_parent": {
+        "brief": "PARENT_brief",
+        "color": 3,
+        "file": "PARENT_file",
+        "name": "PARENT_name",
+        "palette": "PARENT_palette",
+        "special": "PARENT_special"
+      },
+      "name": "nonprimary_can_inherit_gui",
+      "parent_country": "PARENT_A",
+      "rows": [
+        {
+          "after": {
+            "brief": "PARENT_brief",
+            "cached_csf": {
+              "brief": 0,
+              "name": 0,
+              "special": 0
+            },
+            "color": 0,
+            "file": "PARENT_file",
+            "name": "PARENT_name",
+            "palette": "PARENT_palette",
+            "parent_initialized": 1,
+            "phase": 2,
+            "special": "PARENT_special"
+          },
+          "input": {
+            "primary": false,
+            "values": {
+              "File.LoadScreen": "ignored.shp",
+              "LoadScreenText.Color": "SCHEME_A"
+            }
+          },
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AI.PowerPlants",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Parachute.Anim",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Aircraft",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Num",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Color",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": "SCHEME_A"
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "RandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AIRandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ListIndex",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "VeteranBuildings",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Degrades",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "CanBeDriven",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.WithConst",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "GivesBounty",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
+      "country_side": 3,
+      "declared_initial": {
+        "brief": "CHILD_brief",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 1,
+        "file": "CHILD_file",
+        "name": "CHILD_name",
+        "palette": "CHILD_palette",
+        "parent_initialized": 0,
+        "phase": 4294967295,
+        "special": "CHILD_special"
+      },
+      "declared_parent": {
+        "brief": "PARENT_brief",
+        "color": 3,
+        "file": "PARENT_file",
+        "name": "PARENT_name",
+        "palette": "PARENT_palette",
+        "special": "PARENT_special"
+      },
+      "name": "negative_phase_skips_all",
+      "parent_country": "CHILD_A",
+      "rows": [
+        {
+          "after": {
+            "brief": "CHILD_brief",
+            "cached_csf": {
+              "brief": 0,
+              "name": 0,
+              "special": 0
+            },
+            "color": 1,
+            "file": "CHILD_file",
+            "name": "CHILD_name",
+            "palette": "CHILD_palette",
+            "parent_initialized": 0,
+            "phase": 4294967295,
+            "special": "CHILD_special"
+          },
+          "input": {
+            "primary": true,
+            "values": {
+              "File.LoadScreen": "ignored.shp",
+              "LoadScreenText.Color": "SCHEME_B"
+            }
+          },
+          "reads": []
+        }
+      ]
+    },
+    {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
+      "country_side": 3,
+      "declared_initial": {
+        "brief": "CHILD_brief",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 1,
+        "file": "CHILD_file",
+        "name": "CHILD_name",
+        "palette": "CHILD_palette",
+        "parent_initialized": 0,
+        "phase": 3,
+        "special": "CHILD_special"
+      },
+      "declared_parent": {
+        "brief": "PARENT_brief",
+        "color": 3,
+        "file": "PARENT_file",
+        "name": "PARENT_name",
+        "palette": "PARENT_palette",
+        "special": "PARENT_special"
+      },
+      "name": "phase3_skips_all",
+      "parent_country": "CHILD_A",
+      "rows": [
+        {
+          "after": {
+            "brief": "CHILD_brief",
+            "cached_csf": {
+              "brief": 0,
+              "name": 0,
+              "special": 0
+            },
+            "color": 1,
+            "file": "CHILD_file",
+            "name": "CHILD_name",
+            "palette": "CHILD_palette",
+            "parent_initialized": 0,
+            "phase": 3,
+            "special": "CHILD_special"
+          },
+          "input": {
+            "primary": true,
+            "values": {
+              "File.LoadScreen": "ignored.shp",
+              "LoadScreenText.Color": "SCHEME_B"
+            }
+          },
+          "reads": []
+        }
+      ]
+    },
+    {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
+      "country_side": 2,
+      "declared_initial": {
+        "brief": "CHILD_brief",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 1,
+        "file": "CHILD_file",
+        "name": "CHILD_name",
+        "palette": "CHILD_palette",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "CHILD_special"
+      },
+      "declared_parent": {
+        "brief": "PARENT_brief",
+        "color": 3,
+        "file": "PARENT_file",
+        "name": "PARENT_name",
+        "palette": "PARENT_palette",
+        "special": "PARENT_special"
+      },
+      "name": "phase0_side2_default_color_then_common",
+      "parent_country": "CHILD_A",
+      "rows": [
+        {
+          "after": {
+            "brief": "CHILD_brief",
+            "cached_csf": {
+              "brief": 0,
+              "name": 0,
+              "special": 0
+            },
+            "color": 8,
+            "file": "CHILD_file",
+            "name": "CHILD_name",
+            "palette": "CHILD_palette",
+            "parent_initialized": 0,
+            "phase": 2,
+            "special": "CHILD_special"
+          },
+          "input": {
+            "primary": false,
+            "values": {}
+          },
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AI.PowerPlants",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Parachute.Anim",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Aircraft",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Num",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Color",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "RandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AIRandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ListIndex",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "VeteranBuildings",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Degrades",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "CanBeDriven",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.WithConst",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "GivesBounty",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "YuriLoad",
+        "Purple"
+      ],
+      "country_side": 3,
+      "declared_initial": {
+        "brief": "CHILD_brief",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 1,
+        "file": "CHILD_file",
+        "name": "CHILD_name",
+        "palette": "CHILD_palette",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "CHILD_special"
+      },
+      "declared_parent": {
+        "brief": "PARENT_brief",
+        "color": 3,
+        "file": "PARENT_file",
+        "name": "PARENT_name",
+        "palette": "PARENT_palette",
+        "special": "PARENT_special"
+      },
+      "name": "phase0_side3_keeps_prior_color",
+      "parent_country": "CHILD_A",
+      "rows": [
+        {
+          "after": {
+            "brief": "CHILD_brief",
+            "cached_csf": {
+              "brief": 0,
+              "name": 0,
+              "special": 0
+            },
+            "color": 1,
+            "file": "CHILD_file",
+            "name": "CHILD_name",
+            "palette": "CHILD_palette",
+            "parent_initialized": 0,
+            "phase": 2,
+            "special": "CHILD_special"
+          },
+          "input": {
+            "primary": false,
+            "values": {}
+          },
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AI.PowerPlants",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Parachute.Anim",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Aircraft",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Num",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Color",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "RandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AIRandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ListIndex",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "VeteranBuildings",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Degrades",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "CanBeDriven",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.WithConst",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "GivesBounty",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "color_registry": [],
+      "country_side": 0,
+      "declared_initial": {
+        "brief": "CHILD_brief",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 1,
+        "file": "CHILD_file",
+        "name": "CHILD_name",
+        "palette": "CHILD_palette",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "CHILD_special"
+      },
+      "declared_parent": {
+        "brief": "PARENT_brief",
+        "color": 3,
+        "file": "PARENT_file",
+        "name": "PARENT_name",
+        "palette": "PARENT_palette",
+        "special": "PARENT_special"
+      },
+      "name": "phase0_missing_allied_default_writes_minus_one",
+      "parent_country": "CHILD_A",
+      "rows": [
+        {
+          "after": {
+            "brief": "CHILD_brief",
+            "cached_csf": {
+              "brief": 0,
+              "name": 0,
+              "special": 0
+            },
+            "color": 4294967295,
+            "file": "CHILD_file",
+            "name": "CHILD_name",
+            "palette": "CHILD_palette",
+            "parent_initialized": 0,
+            "phase": 2,
+            "special": "CHILD_special"
+          },
+          "input": {
+            "primary": false,
+            "values": {}
+          },
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AI.PowerPlants",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Parachute.Anim",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Aircraft",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Num",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Color",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "RandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AIRandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ListIndex",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "VeteranBuildings",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Degrades",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "CanBeDriven",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.WithConst",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "GivesBounty",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "color_registry": [
+        "SCHEME_A",
+        "SCHEME_B",
+        "AlliedLoad",
+        "SovietLoad",
+        "Purple"
+      ],
+      "country_side": 2,
+      "declared_initial": {
+        "brief": "CHILD_brief",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 1,
+        "file": "CHILD_file",
+        "name": "CHILD_name",
+        "palette": "CHILD_palette",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "CHILD_special"
+      },
+      "declared_parent": {
+        "brief": "PARENT_brief",
+        "color": 3,
+        "file": "PARENT_file",
+        "name": "PARENT_name",
+        "palette": "PARENT_palette",
+        "special": "PARENT_special"
+      },
+      "name": "phase0_missing_yuri_uses_current_purple",
+      "parent_country": "CHILD_A",
+      "rows": [
+        {
+          "after": {
+            "brief": "CHILD_brief",
+            "cached_csf": {
+              "brief": 0,
+              "name": 0,
+              "special": 0
+            },
+            "color": 8,
+            "file": "CHILD_file",
+            "name": "CHILD_name",
+            "palette": "CHILD_palette",
+            "parent_initialized": 0,
+            "phase": 2,
+            "special": "CHILD_special"
+          },
+          "input": {
+            "primary": false,
+            "values": {}
+          },
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AI.PowerPlants",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Parachute.Anim",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Aircraft",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ParaDrop.Num",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "LoadScreenText.Color",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "RandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "AIRandomSelectionWeight",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "ListIndex",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "VeteranBuildings",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "Degrades",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "CanBeDriven",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.Types",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "StartInMultiplayer.WithConst",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            },
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "GivesBounty",
+              "kind": "ReadString",
+              "section": "CHILD_A",
+              "supplied": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "fields": {
+    "brief": 212,
+    "file": 44,
+    "name": 140,
+    "palette": 76,
+    "special": 176
+  },
+  "filename_formats": [
+    {
+      "output": "ls640fixture.shp",
+      "return_length": 16,
+      "template": "ls%sfixture.shp",
+      "width": "640"
+    },
+    {
+      "output": "ls800fixture.shp",
+      "return_length": 16,
+      "template": "ls%sfixture.shp",
+      "width": "800"
+    },
+    {
+      "output": "ls800fixture.shp",
+      "return_length": 16,
+      "template": "ls800fixture.shp",
+      "width": "640"
+    },
+    {
+      "output": "ls%sfixture.shp",
+      "return_length": 15,
+      "template": "ls%%sfixture.shp",
+      "width": "800"
+    }
+  ],
+  "initializers": [
+    {
+      "after_id_defaults": {
+        "brief": "LoadBrief:USA",
+        "cached_csf": {
+          "brief": 8673340,
+          "name": 8673340,
+          "special": 8673340
+        },
+        "color": 4294967295,
+        "file": "ls%sustates.shp",
+        "name": "Name:Americans",
+        "palette": "mplsu.pal",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "Name:Para"
+      },
+      "constructor_scalar_prior": {
+        "brief": "",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 4294967295,
+        "file": "",
+        "name": "",
+        "palette": "",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": ""
+      },
+      "country_id": "Americans",
+      "resource_boundaries": [
+        {
+          "kind": "PCXResourceLoadBoundary",
+          "name": "usai.pcx"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "obsalli.shp"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "usai.shp"
+        }
+      ]
+    },
+    {
+      "after_id_defaults": {
+        "brief": "LoadBrief:Korea",
+        "cached_csf": {
+          "brief": 8673340,
+          "name": 8673340,
+          "special": 8673340
+        },
+        "color": 4294967295,
+        "file": "ls%skorea.shp",
+        "name": "Name:Alliance",
+        "palette": "mplsk.pal",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "Name:BEAGLE"
+      },
+      "constructor_scalar_prior": {
+        "brief": "",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 4294967295,
+        "file": "",
+        "name": "",
+        "palette": "",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": ""
+      },
+      "country_id": "Alliance",
+      "resource_boundaries": [
+        {
+          "kind": "PCXResourceLoadBoundary",
+          "name": "japi.pcx"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "obsalli.shp"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "japi.shp"
+        }
+      ]
+    },
+    {
+      "after_id_defaults": {
+        "brief": "LoadBrief:French",
+        "cached_csf": {
+          "brief": 8673340,
+          "name": 8673340,
+          "special": 8673340
+        },
+        "color": 4294967295,
+        "file": "ls%sfrance.shp",
+        "name": "Name:French",
+        "palette": "mplsf.pal",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "Name:GTGCAN"
+      },
+      "constructor_scalar_prior": {
+        "brief": "",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 4294967295,
+        "file": "",
+        "name": "",
+        "palette": "",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": ""
+      },
+      "country_id": "French",
+      "resource_boundaries": [
+        {
+          "kind": "PCXResourceLoadBoundary",
+          "name": "frai.pcx"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "obsalli.shp"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "frai.shp"
+        }
+      ]
+    },
+    {
+      "after_id_defaults": {
+        "brief": "LoadBrief:Germans",
+        "cached_csf": {
+          "brief": 8673340,
+          "name": 8673340,
+          "special": 8673340
+        },
+        "color": 4294967295,
+        "file": "ls%sgermany.shp",
+        "name": "Name:Germans",
+        "palette": "mplsg.pal",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "Name:TNKD"
+      },
+      "constructor_scalar_prior": {
+        "brief": "",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 4294967295,
+        "file": "",
+        "name": "",
+        "palette": "",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": ""
+      },
+      "country_id": "Germans",
+      "resource_boundaries": [
+        {
+          "kind": "PCXResourceLoadBoundary",
+          "name": "geri.pcx"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "obsalli.shp"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "geri.shp"
+        }
+      ]
+    },
+    {
+      "after_id_defaults": {
+        "brief": "LoadBrief:British",
+        "cached_csf": {
+          "brief": 8673340,
+          "name": 8673340,
+          "special": 8673340
+        },
+        "color": 4294967295,
+        "file": "ls%sukingdom.shp",
+        "name": "Name:British",
+        "palette": "mplsuk.pal",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "Name:SNIPE"
+      },
+      "constructor_scalar_prior": {
+        "brief": "",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 4294967295,
+        "file": "",
+        "name": "",
+        "palette": "",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": ""
+      },
+      "country_id": "British",
+      "resource_boundaries": [
+        {
+          "kind": "PCXResourceLoadBoundary",
+          "name": "gbri.pcx"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "obsalli.shp"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "gbri.shp"
+        }
+      ]
+    },
+    {
+      "after_id_defaults": {
+        "brief": "LoadBrief:Lybia",
+        "cached_csf": {
+          "brief": 8673340,
+          "name": 8673340,
+          "special": 8673340
+        },
+        "color": 4294967295,
+        "file": "ls%slibya.shp",
+        "name": "Name:Africans",
+        "palette": "mplsl.pal",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "Name:DTRUCK"
+      },
+      "constructor_scalar_prior": {
+        "brief": "",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 4294967295,
+        "file": "",
+        "name": "",
+        "palette": "",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": ""
+      },
+      "country_id": "Africans",
+      "resource_boundaries": [
+        {
+          "kind": "PCXResourceLoadBoundary",
+          "name": "djbi.pcx"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "obssovi.shp"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "djbi.shp"
+        }
+      ]
+    },
+    {
+      "after_id_defaults": {
+        "brief": "LoadBrief:Iraq",
+        "cached_csf": {
+          "brief": 8673340,
+          "name": 8673340,
+          "special": 8673340
+        },
+        "color": 4294967295,
+        "file": "ls%siraq.shp",
+        "name": "Name:Arabs",
+        "palette": "mplsi.pal",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "Name:DESO"
+      },
+      "constructor_scalar_prior": {
+        "brief": "",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 4294967295,
+        "file": "",
+        "name": "",
+        "palette": "",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": ""
+      },
+      "country_id": "Arabs",
+      "resource_boundaries": [
+        {
+          "kind": "PCXResourceLoadBoundary",
+          "name": "arbi.pcx"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "obssovi.shp"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "arbi.shp"
+        }
+      ]
+    },
+    {
+      "after_id_defaults": {
+        "brief": "LoadBrief:Cuba",
+        "cached_csf": {
+          "brief": 8673340,
+          "name": 8673340,
+          "special": 8673340
+        },
+        "color": 4294967295,
+        "file": "ls%scuba.shp",
+        "name": "Name:Confederation",
+        "palette": "mplsc.pal",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "Name:TERROR"
+      },
+      "constructor_scalar_prior": {
+        "brief": "",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 4294967295,
+        "file": "",
+        "name": "",
+        "palette": "",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": ""
+      },
+      "country_id": "Confederation",
+      "resource_boundaries": [
+        {
+          "kind": "PCXResourceLoadBoundary",
+          "name": "lati.pcx"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "obssovi.shp"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "lati.shp"
+        }
+      ]
+    },
+    {
+      "after_id_defaults": {
+        "brief": "LoadBrief:Russia",
+        "cached_csf": {
+          "brief": 8673340,
+          "name": 8673340,
+          "special": 8673340
+        },
+        "color": 4294967295,
+        "file": "ls%srussia.shp",
+        "name": "Name:Russians",
+        "palette": "mplsr.pal",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "Name:TTNK"
+      },
+      "constructor_scalar_prior": {
+        "brief": "",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 4294967295,
+        "file": "",
+        "name": "",
+        "palette": "",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": ""
+      },
+      "country_id": "Russians",
+      "resource_boundaries": [
+        {
+          "kind": "PCXResourceLoadBoundary",
+          "name": "rusi.pcx"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "obssovi.shp"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "rusi.shp"
+        }
+      ]
+    },
+    {
+      "after_id_defaults": {
+        "brief": "LoadBrief:YuriCountry",
+        "cached_csf": {
+          "brief": 8673340,
+          "name": 8673340,
+          "special": 8673340
+        },
+        "color": 4294967295,
+        "file": "ls%syuri.shp",
+        "name": "Name:YuriCountry",
+        "palette": "mpyls.pal",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "Name:YURI"
+      },
+      "constructor_scalar_prior": {
+        "brief": "",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 4294967295,
+        "file": "",
+        "name": "",
+        "palette": "",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": ""
+      },
+      "country_id": "YuriCountry",
+      "resource_boundaries": [
+        {
+          "kind": "PCXResourceLoadBoundary",
+          "name": "yrii.pcx"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "obsyuri.shp"
+        },
+        {
+          "kind": "SHPResourceLoadBoundary",
+          "name": "yrii.shp"
+        }
+      ]
+    },
+    {
+      "after_id_defaults": {
+        "brief": "GUI:Unknown",
+        "cached_csf": {
+          "brief": 8673340,
+          "name": 8673340,
+          "special": 8673340
+        },
+        "color": 4294967295,
+        "file": "ls%sobs.shp",
+        "name": "GUI:Unknown",
+        "palette": "mplsobs.pal",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": "GUI:Unknown"
+      },
+      "constructor_scalar_prior": {
+        "brief": "",
+        "cached_csf": {
+          "brief": 0,
+          "name": 0,
+          "special": 0
+        },
+        "color": 4294967295,
+        "file": "",
+        "name": "",
+        "palette": "",
+        "parent_initialized": 0,
+        "phase": 0,
+        "special": ""
+      },
+      "country_id": "COUNTRY_A",
+      "resource_boundaries": [
+        {
+          "kind": "PCXResourceLoadBoundary",
+          "name": "rani.pcx"
+        }
+      ]
+    }
+  ]
+}

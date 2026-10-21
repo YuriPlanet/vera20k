@@ -253,7 +253,9 @@ impl RulesLayerStack {
                 // particular, LANG's AudioVisual selectors stay current.
                 processor.rules_color_add.apply_pass(root);
             }
-            if let Err(error) = processor.apply_pass(ini, fixed_art, fixed_eva) {
+            if let Err(error) =
+                processor.apply_pass(ini, fixed_art, fixed_eva, kind == RulesLayerKind::RulesMd)
+            {
                 let (_, partial_trace, _) = processor.finish();
                 return Err(NativeRulesProcessingFailure {
                     error,
@@ -346,7 +348,7 @@ fn process_native_rules_cold_start_inner(
     processor.allocate_audio_visual_references(selected_rules_root);
     let after_audio_visual = processor.native_type_construction_events.len();
     if let Some(langrule) = langrule {
-        processor.apply_pass(langrule, fixed_art, fixed_eva)?;
+        processor.apply_pass(langrule, fixed_art, fixed_eva, false)?;
     }
     processor.allocate_explicit_family(
         selected_rules_root,
@@ -404,7 +406,7 @@ pub(crate) fn process_native_campaign_rules_prepass(
 ) -> Result<NativeTypeConstructionTrace, NativeRulesProcessingFailure> {
     let mut processor = RulesPassProcessor::with_registry_state(registry_state);
     if let Some(ini) = scenario_named_ini
-        && let Err(error) = processor.apply_pass(ini, fixed_art, fixed_eva)
+        && let Err(error) = processor.apply_pass(ini, fixed_art, fixed_eva, false)
     {
         let (_, partial_trace, _) = processor.finish();
         return Err(NativeRulesProcessingFailure {
@@ -427,7 +429,7 @@ fn process_native_noncampaign_rules_prepass_inner(
     let after_countries = processor.native_type_construction_events.len();
     processor.allocate_general_references(selected_rules_root);
     let after_general = processor.native_type_construction_events.len();
-    processor.process_house_family(selected_rules_root);
+    processor.process_house_family(selected_rules_root, true);
     let after_house_bodies = processor.native_type_construction_events.len();
     let (_, trace, _) = processor.finish();
     (trace, [after_countries, after_general, after_house_bodies])
@@ -472,7 +474,7 @@ pub(crate) fn refresh_native_multiplayer_country_bodies(
     root: &IniFile,
 ) -> NativeTypeConstructionTrace {
     let mut processor = RulesPassProcessor::with_registry_state(registry);
-    processor.process_house_family(root);
+    processor.process_house_family(root, true);
     processor.finish().1
 }
 
@@ -1921,7 +1923,7 @@ pub(crate) struct CountryVeterancyState {
     units: Vec<String>,
     aircraft: Vec<String>,
     #[cfg(feature = "ares")]
-    ares: AresCountryVeterancy,
+    ares: AresCountryState,
 }
 
 /// Live Side identity plus the immutable selected extension fields. The
@@ -2006,14 +2008,30 @@ impl AresSideState {
 /// list and an unconsumed parent attempt. This state shares the existing
 /// Country owner, persistence and immutable RuleSet projection.
 #[cfg(feature = "ares")]
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-struct AresCountryVeterancy {
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct AresCountryState {
     phase: i32,
     parent_initialized: bool,
     buildings: Vec<String>,
+    loading: crate::rules::country_loading::AresCountryLoading,
+}
+
+// GUI fields are process-retained and persisted, but do not enter simulation CRC.
+#[cfg(feature = "ares")]
+impl Hash for AresCountryState {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.phase.hash(state);
+        self.parent_initialized.hash(state);
+        self.buildings.hash(state);
+    }
 }
 
 impl CountryVeterancyState {
+    #[cfg(feature = "ares")]
+    pub(crate) fn loading(&self) -> &crate::rules::country_loading::AresCountryLoading {
+        &self.ares.loading
+    }
+
     pub(crate) fn contains(&self, category: ObjectCategory, type_id: &str) -> bool {
         let members = match category {
             ObjectCategory::Infantry => &self.infantry,
@@ -2228,6 +2246,21 @@ impl Default for NativeRulesRegistryState {
 }
 
 impl NativeRulesRegistryState {
+    /// Read one presentation HSV from the retained paired Colors registry.
+    /// Native66D3A0 appends kind1 then kind53 for each entry; Ares loading
+    /// stores a kind1 ordinal. A negative index is no override: the loading
+    /// screen's own stock AlliedLoad/SovietLoad branch keeps the color.
+    /// The process owner exposes the value, never the mutable/raw registry.
+    #[cfg(feature = "ares")]
+    pub(crate) fn loading_text_hsv(&self, index: i32) -> Option<[u8; 3]> {
+        // This representation is owned by allocate_colors; both native
+        // variants share one HSV. No final RuleSet list participates.
+        let (name, value) = self.colors.get(usize::try_from(index).ok()? / 2)?;
+        let mut section = IniSection::new("Colors".into());
+        section.set(name, value);
+        Some(crate::rules::color_scheme::read_scheme_hsv(&section, name))
+    }
+
     /// Real non-RMG Full_Init686B65 calls ClearClasses6851F0, whose Ares
     /// ScenarioClear10004EF1/10004EF7 reconstructs RulesExt1002A670. This is
     /// separate from Type deletion6686C0, which retains the extension below.
@@ -3416,6 +3449,7 @@ impl RulesPassProcessor {
         pass: &IniFile,
         fixed_art: &IniFile,
         fixed_eva: &EvaRegistry,
+        primary_rules: bool,
     ) -> Result<(), RulesError> {
         #[cfg(feature = "ares")]
         self.ares_global_controls.read_pass(pass);
@@ -3443,7 +3477,7 @@ impl RulesPassProcessor {
         self.allocate_ai_references(pass);
         self.read_prerequisite_lists(pass);
         self.allocate_general_references(pass);
-        self.process_type_data(pass, fixed_art, fixed_eva);
+        self.process_type_data(pass, fixed_art, fixed_eva, primary_rules);
 
         // ReadDifficulty66D270 skips an absent section. Once present, each
         // absent key receives its literal default, rather than a prior-pass
@@ -3649,6 +3683,13 @@ impl RulesPassProcessor {
         #[cfg(feature = "ares")]
         if family == RulesTypeFamily::Side {
             members[index].ares_side = Some(AresSideState::default());
+        }
+        #[cfg(feature = "ares")]
+        if family == RulesTypeFamily::Country {
+            members[index].country_veterancy.ares.loading =
+                crate::rules::country_loading::AresCountryLoading::for_country_id(
+                    &native_stored_id,
+                );
         }
         #[cfg(feature = "ares")]
         if family == RulesTypeFamily::Building {
@@ -4195,7 +4236,13 @@ impl RulesPassProcessor {
         Some((native_stored_id, raw, member.body.clone()))
     }
 
-    fn process_type_data(&mut self, pass: &IniFile, fixed_art: &IniFile, _fixed_eva: &EvaRegistry) {
+    fn process_type_data(
+        &mut self,
+        pass: &IniFile,
+        fixed_art: &IniFile,
+        _fixed_eva: &EvaRegistry,
+        primary_rules: bool,
+    ) {
         // Ares ReadTypeData679A10 hook1002EFC0 sweeps every Side before
         // Country bodies. It does not require [Sides] or a Side section.
         // Country-only prepasses do not enter this hook. The live loop sees
@@ -4238,7 +4285,7 @@ impl RulesPassProcessor {
             );
             self.ares_prerequisites = Some(catalog);
         }
-        self.process_house_family(pass);
+        self.process_house_family(pass, primary_rules);
         self.process_super_weapon_family(pass);
         self.process_anim_family(fixed_art);
         self.process_techno_family(RulesTypeFamily::Building, pass, fixed_art);
@@ -4261,7 +4308,7 @@ impl RulesPassProcessor {
         // MissionControl adds no Type references.
     }
 
-    fn process_house_family(&mut self, pass: &IniFile) {
+    fn process_house_family(&mut self, pass: &IniFile, _primary_rules: bool) {
         // Process668BFE calls Colors66D3A0 before Country allocation668CD1
         // and this first ReadTypeData679A2D loop. Use only names registered
         // now; a later pass cannot resolve an earlier unknown retroactively.
@@ -4318,7 +4365,7 @@ impl RulesPassProcessor {
             // Ares1001D110 ->1001C530. Do not put this suffix inside the
             // original section-admission branch or use final merged text.
             #[cfg(feature = "ares")]
-            self.process_ares_country_veterancy(index, pass);
+            self.process_ares_country(index, pass, _primary_rules);
             index += 1;
         }
     }
@@ -4328,7 +4375,7 @@ impl RulesPassProcessor {
     ///1001BA90 uses stored ID, not the original Country Name alias. The
     /// native controls live in tools/rules_oracle/ares_country_veterancy.*.
     #[cfg(feature = "ares")]
-    fn process_ares_country_veterancy(&mut self, index: usize, pass: &IniFile) {
+    fn process_ares_country(&mut self, index: usize, pass: &IniFile, primary_rules: bool) {
         let country = &self.families[&RulesTypeFamily::Country][index];
         let phase = country.country_veterancy.ares.phase;
         if !(0..=2).contains(&phase) {
@@ -4340,12 +4387,29 @@ impl RulesPassProcessor {
             && !parent.is_empty()
             && !parent.eq_ignore_ascii_case(&id);
         if phase == 0 {
-            //1001C549..1001C59A initializes unrelated side defaults, then
-            // enters1. It does not reset the selected list or parent flag.
+            //1001C549..1001C59A initializes the color from the current Side.
+            // It does not reset any GUI field, list or parent attempt.
+            let mut loading = country.country_veterancy.ares.loading.clone();
+            loading.initialize_color(country.country_side_index, |name| {
+                self.loading_color_index(name)
+            });
+            self.family_mut(RulesTypeFamily::Country)[index]
+                .country_veterancy
+                .ares
+                .loading = loading;
             self.family_mut(RulesTypeFamily::Country)[index]
                 .country_veterancy
                 .ares
                 .phase = 1;
+        }
+        // GUI1001C770 runs only for the selected primary Rules object and
+        // BEFORE common1001C5D0's one-shot parent copy1001BDC0.
+        if primary_rules && let Some(section) = pass.section(&id) {
+            self.family_mut(RulesTypeFamily::Country)[index]
+                .country_veterancy
+                .ares
+                .loading
+                .read_primary(section);
         }
         if inherit {
             let inherited = ares_country_index_of_name(
@@ -4358,14 +4422,14 @@ impl RulesPassProcessor {
                 self.families[&RulesTypeFamily::Country][usize::from(index.0)]
                     .country_veterancy
                     .ares
-                    .buildings
                     .clone()
             });
             if let Some(inherited) = inherited {
-                self.family_mut(RulesTypeFamily::Country)[index]
+                let current = &mut self.family_mut(RulesTypeFamily::Country)[index]
                     .country_veterancy
-                    .ares
-                    .buildings = inherited;
+                    .ares;
+                current.buildings = inherited.buildings;
+                current.loading = inherited.loading;
             }
             //1001C0CB consumes the attempt even when Find failed. Empty
             // and case-insensitive self references above do not consume it.
@@ -4373,6 +4437,19 @@ impl RulesPassProcessor {
                 .country_veterancy
                 .ares
                 .parent_initialized = true;
+        }
+        // Color1001C686 is common to every pass and follows inheritance.
+        if let Some(section) = pass.section(&id) {
+            let mut loading = self.families[&RulesTypeFamily::Country][index]
+                .country_veterancy
+                .ares
+                .loading
+                .clone();
+            loading.read_color(section, |name| self.loading_color_index(name));
+            self.family_mut(RulesTypeFamily::Country)[index]
+                .country_veterancy
+                .ares
+                .loading = loading;
         }
         if let Some(resolved) = pass.section(&id).and_then(|section| {
             self.resolve_existing_list_from(
@@ -4391,6 +4468,16 @@ impl RulesPassProcessor {
             .country_veterancy
             .ares
             .phase = 2;
+    }
+
+    /// CountryExt1001BB30 finds the current kind1 runtime scheme. Each
+    /// retained [Colors] entry contributes kind1 then kind53, in native order.
+    #[cfg(feature = "ares")]
+    fn loading_color_index(&self, name: &str) -> Option<i32> {
+        self.colors
+            .iter()
+            .position(|(id, _)| id.eq_ignore_ascii_case(name))
+            .map(|index| (index as i32).wrapping_mul(2))
     }
 
     /// HouseType ReadINI51208C..512162 stores BC, then updates Side vectors
@@ -5773,3 +5860,7 @@ mod native_type_reader_tests;
 #[cfg(all(test, feature = "ares"))]
 #[path = "ares_side_eva_tests.rs"]
 mod ares_side_eva_tests;
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "ares_country_loading_tests.rs"]
+mod ares_country_loading_tests;

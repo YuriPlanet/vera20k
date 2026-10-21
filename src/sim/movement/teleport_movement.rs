@@ -1265,10 +1265,14 @@ impl crate::sim::world::Simulation {
                 // FootClass::SetLocation (vt+0x1B4, 0x00719637 and again at
                 // 0x00719684); the retained Process adapter applies SetHeight(0)
                 // after its XY write and skips the OpenTopped rider tail. Trigger:
-                // a loaded OpenTopped transport (retail: the Drive BFRT) warped
-                // by a superweapon, whose SuperClass code gives any Foot a
-                // Teleport locomotor (0x006CC989..0x006CC999); VERA ports no such
-                // warp yet. Effect: the riders stay at the departure point.
+                // an OpenTopped Foot whose active locomotor is a Teleport taking an
+                // ordinary Move_To. No retail Teleport type carries passengers. A
+                // superweapon warp (0x006CC989..0x006CC999) sets the latch and runs
+                // the Chronosphere states, whose SetLocation keeps the rider tail
+                // (`teleport_chrono.rs`), so the only window is between that warp's
+                // state 7 and its piggyback END, which the Foot AI tail normally
+                // takes in the same frame. Effect: the riders stay at the
+                // departure point.
                 if let Some(terrain) = terrain {
                     let cell = terrain.native_cell_identity((
                         (destination.x / 256) as i16,
