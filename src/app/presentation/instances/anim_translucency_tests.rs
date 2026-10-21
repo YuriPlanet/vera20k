@@ -140,6 +140,7 @@ fn emit_with_house_colors(
         },
         &mut out,
         &order,
+        Default::default(),
     );
     assert_eq!(sim.state_hash(), before_hash);
     assert_eq!(sim.rng_state(), before_rng);

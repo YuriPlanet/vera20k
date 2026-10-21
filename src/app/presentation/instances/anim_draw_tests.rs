@@ -289,6 +289,7 @@ fn free_anim_draw(
         },
         &mut planned,
         &order,
+        Default::default(),
     );
     assert_eq!(
         sim.state_hash(),

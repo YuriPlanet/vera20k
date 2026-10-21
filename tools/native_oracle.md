@@ -37,6 +37,16 @@ already-acquired YURI; it does not replay the Engineer/base-building opening or
 compare a complete original campaign. Set `RA2_DIR` to the retail install and
 `VERA20K_REQUIRE_RETAIL_ASSETS=1` so absent archives fail instead of skipping.
 
+### Attached animation detail admission
+
+`python -m tools.spatial_oracle.building_anim_detail --check` keeps one physical
+GAPOWR/GAPOWR_A slot and runs 16 whole DrawIfVisible controls. Original Logic
+counters and Throttle supply sampled rates; options, hysteresis and offscreen
+controls retain actual FPS-query counts, thresholds, latch changes and Surface
+admission. The retail CPU test consumes those observations through the actual
+slot emitter and shared Display traversal. See
+[inputs and boundaries](spatial_oracle/building_anim_detail.md).
+
 ### Computer sale of captured buildings
 
 `python -m tools.spatial_oracle.captured_building_sale --check` executes the

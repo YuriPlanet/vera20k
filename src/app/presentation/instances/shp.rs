@@ -2064,6 +2064,18 @@ mod building_anim_translucency_gpu_tests;
 pub(crate) use building_anim_translucency_gpu_tests::{PLANT_OWNER, SlotScene};
 
 #[cfg(test)]
+#[path = "building_anim_detail_tests.rs"]
+mod building_anim_detail_tests;
+
+#[cfg(test)]
+#[path = "building_anim_detail_order_tests.rs"]
+mod building_anim_detail_order_tests;
+
+#[cfg(test)]
+#[path = "anim_detail_delay_tests.rs"]
+mod anim_detail_delay_tests;
+
+#[cfg(test)]
 #[path = "building_sale_draw_tests.rs"]
 mod building_sale_draw_tests;
 

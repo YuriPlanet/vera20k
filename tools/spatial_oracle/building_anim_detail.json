@@ -1,0 +1,5532 @@
+{
+  "anim_type_reader": {
+    "art_body_read": true,
+    "asset_loads": [
+      {
+        "bytes": 0,
+        "name": "GAPOWR_A.SHP",
+        "sha256": null
+      },
+      {
+        "bytes": 49480,
+        "name": "GGPOWR_A.SHP",
+        "sha256": "4761e4c39be2683362baa8987fbbcff9ab0deacda75344848b9427e84c621724"
+      }
+    ],
+    "bounce_anim": null,
+    "bouncer": false,
+    "bound_physical_names": [
+      "GGPOWR_A.SHP"
+    ],
+    "crater": false,
+    "damage_f64_bits": 0,
+    "damage_radius": 0,
+    "elasticity_f64_bits": 4605380979056443392,
+    "end": 32,
+    "expire_anim": null,
+    "flat": false,
+    "image": "GAPOWR_A",
+    "loop_count": -1,
+    "loop_end": 8,
+    "loop_start": 0,
+    "max_xy_vel_f64_bits": 4624633867356078080,
+    "max_z_vel_f64_bits": 4615063718147915776,
+    "middle": 16,
+    "min_z_vel_f64_bits": 4615063718147915776,
+    "name": "GAPOWR_A",
+    "native_detail_level": 2,
+    "normalized": true,
+    "physical_art_keys": {
+      "DetailLevel": "2",
+      "Image": "GAPOWR_A",
+      "Layer": "ground",
+      "LoopCount": "-1",
+      "LoopEnd": "8",
+      "LoopStart": "0",
+      "NewTheater": "yes",
+      "Normalized": "yes",
+      "Rate": "220",
+      "Start": "0"
+    },
+    "random_rate": [
+      0,
+      0
+    ],
+    "rate": 4,
+    "raw_shp_frame_count": 32,
+    "report_index": -1,
+    "scorch": false,
+    "shadow": false,
+    "should_use_cell_drawer": true,
+    "start": 0,
+    "trailer_anim": null,
+    "trailer_seperation": 0,
+    "use_normal_light": false,
+    "warhead": null,
+    "y_draw_offset": 0,
+    "z_adjust": 0
+  },
+  "boundary": "One physical GAPOWR_A created by original451890 in the existing admitted flat-map Building/House fixture. Original Logic counter/Throttle produces every tested FPS bucket; only OS milliseconds and process Options0/1/2 are supplied. Whole422C70 retains native viewport, DrawIt and55AF60 ordering. No forced hidden/image/ART/FPS result/frame fields, no full Logic/Game/Options/Display traversal. One separate supplied offscreen camera tests the earlier projection boundary. Pixel output is not golden here: actual Surface/selector/leaf calls and lifecycle observations establish admission. Base palette format priors are inherited unchanged; pixel output and Convert-mask parity are excluded.",
+  "checked_ranges": {
+    "text_bytes": 4063232,
+    "text_start": "00401000",
+    "vtables": [
+      {
+        "address": "007E3EBC",
+        "bytes": 1280
+      },
+      {
+        "address": "007E3354",
+        "bytes": 528
+      },
+      {
+        "address": "007E3608",
+        "bytes": 160
+      },
+      {
+        "address": "007E2070",
+        "bytes": 256
+      },
+      {
+        "address": "007F4348",
+        "bytes": 256
+      },
+      {
+        "address": "007E9F24",
+        "bytes": 48
+      }
+    ]
+  },
+  "checked_text_and_vtables_unchanged": true,
+  "input": {
+    "animation": "GAPOWR_A",
+    "initial_buffer": 5,
+    "initial_minimum": 15,
+    "normal_camera": [
+      -384,
+      380
+    ],
+    "original_type_detail": 2,
+    "reset_performance_once": true,
+    "retain_latch_between_rows": true,
+    "scope": "Whole original DrawIfVisible admission; no pixel comparison",
+    "slot": 3,
+    "type": "GAPOWR"
+  },
+  "original_slot_calls": [
+    {
+      "phase": "original_slot_creation",
+      "result_coord": [
+        0,
+        0,
+        0
+      ],
+      "return_pc": "0045190F"
+    },
+    {
+      "phase": "original_slot_creation",
+      "result_coord": [
+        2560,
+        5120,
+        0
+      ],
+      "return_pc": "00451920"
+    },
+    {
+      "caller": "00451975",
+      "delay": 0,
+      "entry": "00421EA0",
+      "flags": 5632,
+      "loops": 1,
+      "phase": "original_slot_creation",
+      "received_coord": [
+        2560,
+        5120,
+        0
+      ],
+      "reverse": 0,
+      "type_name": "GAPOWR_A",
+      "z_adjust": 0
+    }
+  ],
+  "performance_setup": {
+    "after": {
+      "buckets": 11,
+      "buffer": 5,
+      "current_fps": 14,
+      "logic_count": 0,
+      "minimum": 15,
+      "options_detail": 2,
+      "reduced": true,
+      "timer_initialized": true,
+      "timer_words": [
+        600,
+        0,
+        60
+      ],
+      "total": 235
+    },
+    "before": {
+      "buckets": 0,
+      "buffer": 5,
+      "current_fps": 0,
+      "logic_count": 0,
+      "minimum": 15,
+      "options_detail": 0,
+      "reduced": false,
+      "timer_initialized": false,
+      "timer_words": [
+        0,
+        0,
+        0
+      ],
+      "total": 0
+    },
+    "boundary": "Empty counter/timer/latch inputs installed once; minimum15/buffer5 use original setters. Each next960ms bucket runs the requested number of real55AFB0..55AFD9 counter prefixes then whole55E33B tail. timeGetTime and caller-checked CRT atexit are platform transports. No extra55AF60 query runs here: only whole Anim DrawIt consumes its retained latch.",
+    "checked_text_unchanged": true,
+    "exit_registrations": [
+      {
+        "caller": "0055E36F",
+        "destructor": "0055E410",
+        "entry": "007C978A",
+        "supplied_platform_result": 0
+      }
+    ],
+    "history": [
+      {
+        "after": {
+          "buckets": 1,
+          "buffer": 5,
+          "current_fps": 0,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": false,
+          "timer_initialized": true,
+          "timer_words": [
+            0,
+            0,
+            60
+          ],
+          "total": 0
+        },
+        "before": {
+          "buckets": 0,
+          "buffer": 5,
+          "current_fps": 0,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": false,
+          "timer_initialized": false,
+          "timer_words": [
+            0,
+            0,
+            0
+          ],
+          "total": 0
+        },
+        "clock_reads": [
+          0,
+          0,
+          0
+        ],
+        "logic_visits": 0,
+        "milliseconds": 0
+      },
+      {
+        "after": {
+          "buckets": 2,
+          "buffer": 5,
+          "current_fps": 0,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": false,
+          "timer_initialized": true,
+          "timer_words": [
+            60,
+            0,
+            60
+          ],
+          "total": 0
+        },
+        "before": {
+          "buckets": 1,
+          "buffer": 5,
+          "current_fps": 0,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": false,
+          "timer_initialized": true,
+          "timer_words": [
+            0,
+            0,
+            60
+          ],
+          "total": 0
+        },
+        "clock_reads": [
+          960,
+          960
+        ],
+        "logic_visits": 0,
+        "milliseconds": 960
+      },
+      {
+        "after": {
+          "buckets": 3,
+          "buffer": 5,
+          "current_fps": 60,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": true,
+          "timer_initialized": true,
+          "timer_words": [
+            120,
+            0,
+            60
+          ],
+          "total": 60
+        },
+        "before": {
+          "buckets": 2,
+          "buffer": 5,
+          "current_fps": 0,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": true,
+          "timer_initialized": true,
+          "timer_words": [
+            60,
+            0,
+            60
+          ],
+          "total": 0
+        },
+        "clock_reads": [
+          1920,
+          1920
+        ],
+        "logic_visits": 60,
+        "milliseconds": 1920
+      },
+      {
+        "after": {
+          "buckets": 4,
+          "buffer": 5,
+          "current_fps": 14,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": false,
+          "timer_initialized": true,
+          "timer_words": [
+            180,
+            0,
+            60
+          ],
+          "total": 74
+        },
+        "before": {
+          "buckets": 3,
+          "buffer": 5,
+          "current_fps": 60,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": false,
+          "timer_initialized": true,
+          "timer_words": [
+            120,
+            0,
+            60
+          ],
+          "total": 60
+        },
+        "clock_reads": [
+          2880,
+          2880
+        ],
+        "logic_visits": 14,
+        "milliseconds": 2880
+      },
+      {
+        "after": {
+          "buckets": 5,
+          "buffer": 5,
+          "current_fps": 19,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": true,
+          "timer_initialized": true,
+          "timer_words": [
+            240,
+            0,
+            60
+          ],
+          "total": 93
+        },
+        "before": {
+          "buckets": 4,
+          "buffer": 5,
+          "current_fps": 14,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": true,
+          "timer_initialized": true,
+          "timer_words": [
+            180,
+            0,
+            60
+          ],
+          "total": 74
+        },
+        "clock_reads": [
+          3840,
+          3840
+        ],
+        "logic_visits": 19,
+        "milliseconds": 3840
+      },
+      {
+        "after": {
+          "buckets": 6,
+          "buffer": 5,
+          "current_fps": 20,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": true,
+          "timer_initialized": true,
+          "timer_words": [
+            300,
+            0,
+            60
+          ],
+          "total": 113
+        },
+        "before": {
+          "buckets": 5,
+          "buffer": 5,
+          "current_fps": 19,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": true,
+          "timer_initialized": true,
+          "timer_words": [
+            240,
+            0,
+            60
+          ],
+          "total": 93
+        },
+        "clock_reads": [
+          4800,
+          4800
+        ],
+        "logic_visits": 20,
+        "milliseconds": 4800
+      },
+      {
+        "after": {
+          "buckets": 7,
+          "buffer": 5,
+          "current_fps": 19,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": false,
+          "timer_initialized": true,
+          "timer_words": [
+            360,
+            0,
+            60
+          ],
+          "total": 132
+        },
+        "before": {
+          "buckets": 6,
+          "buffer": 5,
+          "current_fps": 20,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": false,
+          "timer_initialized": true,
+          "timer_words": [
+            300,
+            0,
+            60
+          ],
+          "total": 113
+        },
+        "clock_reads": [
+          5760,
+          5760
+        ],
+        "logic_visits": 19,
+        "milliseconds": 5760
+      },
+      {
+        "after": {
+          "buckets": 8,
+          "buffer": 5,
+          "current_fps": 15,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": false,
+          "timer_initialized": true,
+          "timer_words": [
+            420,
+            0,
+            60
+          ],
+          "total": 147
+        },
+        "before": {
+          "buckets": 7,
+          "buffer": 5,
+          "current_fps": 19,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": false,
+          "timer_initialized": true,
+          "timer_words": [
+            360,
+            0,
+            60
+          ],
+          "total": 132
+        },
+        "clock_reads": [
+          6720,
+          6720
+        ],
+        "logic_visits": 15,
+        "milliseconds": 6720
+      },
+      {
+        "after": {
+          "buckets": 9,
+          "buffer": 5,
+          "current_fps": 14,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": false,
+          "timer_initialized": true,
+          "timer_words": [
+            480,
+            0,
+            60
+          ],
+          "total": 161
+        },
+        "before": {
+          "buckets": 8,
+          "buffer": 5,
+          "current_fps": 15,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": false,
+          "timer_initialized": true,
+          "timer_words": [
+            420,
+            0,
+            60
+          ],
+          "total": 147
+        },
+        "clock_reads": [
+          7680,
+          7680
+        ],
+        "logic_visits": 14,
+        "milliseconds": 7680
+      },
+      {
+        "after": {
+          "buckets": 10,
+          "buffer": 5,
+          "current_fps": 60,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": true,
+          "timer_initialized": true,
+          "timer_words": [
+            540,
+            0,
+            60
+          ],
+          "total": 221
+        },
+        "before": {
+          "buckets": 9,
+          "buffer": 5,
+          "current_fps": 14,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": true,
+          "timer_initialized": true,
+          "timer_words": [
+            480,
+            0,
+            60
+          ],
+          "total": 161
+        },
+        "clock_reads": [
+          8640,
+          8640
+        ],
+        "logic_visits": 60,
+        "milliseconds": 8640
+      },
+      {
+        "after": {
+          "buckets": 11,
+          "buffer": 5,
+          "current_fps": 14,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": false,
+          "timer_initialized": true,
+          "timer_words": [
+            600,
+            0,
+            60
+          ],
+          "total": 235
+        },
+        "before": {
+          "buckets": 10,
+          "buffer": 5,
+          "current_fps": 60,
+          "logic_count": 0,
+          "minimum": 15,
+          "options_detail": 2,
+          "reduced": false,
+          "timer_initialized": true,
+          "timer_words": [
+            540,
+            0,
+            60
+          ],
+          "total": 221
+        },
+        "clock_reads": [
+          9600,
+          9600
+        ],
+        "logic_visits": 14,
+        "milliseconds": 9600
+      }
+    ],
+    "supplied_priors": {
+      "buckets": 0,
+      "buffer": 5,
+      "current_fps": 0,
+      "logic_count": 0,
+      "minimum": 15,
+      "options_detail": 2,
+      "reduced": false,
+      "timer_initialized": false,
+      "timer_words": [
+        0,
+        0,
+        0
+      ],
+      "total": 0
+    }
+  },
+  "physical_inputs": {
+    "archive_precedence": [
+      "expandmd01.mix",
+      "ra2md.mix/localmd.mix",
+      "ra2md.mix/genermd.mix",
+      "ra2md.mix/conqmd.mix",
+      "ra2md.mix/isotemmd.mix",
+      "ra2.mix/generic.mix",
+      "ra2.mix/conquer.mix",
+      "ra2.mix/isotemp.mix",
+      "ra2.mix/temperat.mix"
+    ],
+    "boundary": "Physical archive/header and lexical inspection; enumerated resources are supplied through inherited file transport, not native archive search. Original readers decide final names, flags and frame bounds.",
+    "lexical_art": {
+      "GAPOWR": {
+        "ActiveAnim": "GAPOWR_A",
+        "ActiveAnimDamaged": "GAPOWR_AD",
+        "ActiveAnimPowered": "false",
+        "ActiveAnimPoweredSpecial": "true",
+        "ActiveAnimYSort": "362",
+        "ActiveAnimZAdjust": "-32",
+        "Buildup": "GAPOWRMK",
+        "Cameo": "POWRICON",
+        "CanBeHidden": "False",
+        "CanHideThings": "True",
+        "DamageFireOffset0": "-20,32",
+        "DamageFireOffset1": "3,12",
+        "DemandLoadBuildup": "true",
+        "Foundation": "2x2",
+        "FreeBuildup": "true",
+        "Height": "4",
+        "NewTheater": "yes",
+        "Normalized": "yes",
+        "OccupyHeight": "3",
+        "Remapable": "yes"
+      },
+      "GAPOWR_A": {
+        "DetailLevel": "2",
+        "Image": "GAPOWR_A",
+        "Layer": "ground",
+        "LoopCount": "-1",
+        "LoopEnd": "8",
+        "LoopStart": "0",
+        "NewTheater": "yes",
+        "Normalized": "yes",
+        "Rate": "220",
+        "Start": "0"
+      },
+      "GAPOWR_AD": {
+        "DetailLevel": "2",
+        "Image": "GAPOWR_A",
+        "Layer": "ground",
+        "LoopCount": "-1",
+        "LoopEnd": "16",
+        "LoopStart": "8",
+        "Normalized": "yes",
+        "Rate": "220",
+        "Start": "8"
+      }
+    },
+    "sources": [
+      {
+        "archive": "ra2md.mix/localmd.mix",
+        "bytes": 336535,
+        "name": "ARTMD.INI",
+        "other_hits": [],
+        "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+      },
+      {
+        "absent_from_enumerated_archives": true,
+        "name": "GAPOWR.SHP"
+      },
+      {
+        "absent_from_enumerated_archives": true,
+        "name": "GAPOWR_A.SHP"
+      },
+      {
+        "absent_from_enumerated_archives": true,
+        "name": "GAPOWR_AD.SHP"
+      },
+      {
+        "absent_from_enumerated_archives": true,
+        "name": "GAPOWRMK.SHP"
+      },
+      {
+        "absent_from_enumerated_archives": true,
+        "name": "GTPOWR.SHP"
+      },
+      {
+        "absent_from_enumerated_archives": true,
+        "name": "GTPOWR_A.SHP"
+      },
+      {
+        "absent_from_enumerated_archives": true,
+        "name": "GTPOWR_AD.SHP"
+      },
+      {
+        "archive": "ra2.mix/isotemp.mix",
+        "bytes": 101960,
+        "canvas": [
+          142,
+          110
+        ],
+        "frame_zero_crop": [
+          54,
+          75,
+          32,
+          18
+        ],
+        "name": "GTPOWRMK.SHP",
+        "other_hits": [],
+        "raw_frame_count": 50,
+        "sha256": "0ae9b81804b725ff662a56c81d23b3af031d66ac273554651bb0ccf189fdc873"
+      },
+      {
+        "archive": "ra2.mix/generic.mix",
+        "bytes": 16416,
+        "canvas": [
+          142,
+          110
+        ],
+        "frame_zero_crop": [
+          28,
+          14,
+          84,
+          92
+        ],
+        "name": "GGPOWR.SHP",
+        "other_hits": [],
+        "raw_frame_count": 6,
+        "sha256": "f758f01ddde6994eb2056d0a45a91e820a544fed513e38a6dad512c14484e37c"
+      },
+      {
+        "archive": "ra2.mix/generic.mix",
+        "bytes": 49480,
+        "canvas": [
+          142,
+          110
+        ],
+        "frame_zero_crop": [
+          48,
+          14,
+          44,
+          83
+        ],
+        "name": "GGPOWR_A.SHP",
+        "other_hits": [],
+        "raw_frame_count": 32,
+        "sha256": "4761e4c39be2683362baa8987fbbcff9ab0deacda75344848b9427e84c621724"
+      },
+      {
+        "absent_from_enumerated_archives": true,
+        "name": "GGPOWR_AD.SHP"
+      },
+      {
+        "absent_from_enumerated_archives": true,
+        "name": "GGPOWRMK.SHP"
+      }
+    ]
+  },
+  "post_admission_ai": {
+    "after": {
+      "anim": {
+        "alive": 1,
+        "draw_flags": 5632,
+        "forced_translucency": false,
+        "is_building_anim": true,
+        "limbo": 0,
+        "marked": 0,
+        "native_id": 338,
+        "pointer": "2428E8E0",
+        "runtime": {
+          "constructor_reverse": 0,
+          "current_frame": 0,
+          "delay_remaining": 0,
+          "first_ai_guard": 0,
+          "frame_step": 1,
+          "frame_timer": [
+            1000,
+            4
+          ],
+          "inactive": 0,
+          "loop_remaining": 255,
+          "paused": 0,
+          "rate_reload": 4
+        },
+        "stored_xyz": [
+          2560,
+          5120,
+          0
+        ],
+        "temporal_paused": false,
+        "temporal_resume_pending": false,
+        "type_name": "GAPOWR_A",
+        "z_adjust": -32
+      },
+      "building": {
+        "location": [
+          2688,
+          5248,
+          0
+        ],
+        "online": true,
+        "pointer": "2415FBA0",
+        "slot": 3,
+        "slot_pointer": "2428E8E0",
+        "temporal_head": "00000000",
+        "warped": false
+      },
+      "identity_cursor": 338,
+      "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+    },
+    "before": {
+      "anim": {
+        "alive": 1,
+        "draw_flags": 5632,
+        "forced_translucency": false,
+        "is_building_anim": true,
+        "limbo": 0,
+        "marked": 0,
+        "native_id": 338,
+        "pointer": "2428E8E0",
+        "runtime": {
+          "constructor_reverse": 0,
+          "current_frame": 0,
+          "delay_remaining": 0,
+          "first_ai_guard": 1,
+          "frame_step": 1,
+          "frame_timer": [
+            1000,
+            4
+          ],
+          "inactive": 0,
+          "loop_remaining": 255,
+          "paused": 0,
+          "rate_reload": 4
+        },
+        "stored_xyz": [
+          2560,
+          5120,
+          0
+        ],
+        "temporal_paused": false,
+        "temporal_resume_pending": false,
+        "type_name": "GAPOWR_A",
+        "z_adjust": -32
+      },
+      "building": {
+        "location": [
+          2688,
+          5248,
+          0
+        ],
+        "online": true,
+        "pointer": "2415FBA0",
+        "slot": 3,
+        "slot_pointer": "2428E8E0",
+        "temporal_head": "00000000",
+        "warped": false
+      },
+      "identity_cursor": 338,
+      "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+    }
+  },
+  "presentation_sinks": [
+    {
+      "argument": 1,
+      "caller": "004238BA",
+      "entry": "005F5850",
+      "phase": "original_slot_creation",
+      "receiver": "2428E8E0"
+    },
+    {
+      "argument": 606660832,
+      "caller": "005F4FE7",
+      "entry": "004A9720",
+      "phase": "original_slot_creation",
+      "receiver": "0087F7E8"
+    },
+    {
+      "argument": 2,
+      "caller": "004238BA",
+      "entry": "005F5850",
+      "phase": "original_slot_creation",
+      "receiver": "2428E8E0"
+    }
+  ],
+  "rows": [
+    {
+      "calls": [],
+      "checked_pixel_vtables_unchanged": true,
+      "display_priors": {
+        "delay_remaining": 0,
+        "hidden_19d": 0,
+        "special_hidden_199": 0,
+        "type_image": "24282790"
+      },
+      "entry": "00422C70",
+      "name": "zero_fps0_options0",
+      "native_store_counts": {
+        "a": 0,
+        "color": 0,
+        "z": 0
+      },
+      "observed_surface_call_count": 0,
+      "ordered_gate_entries": [
+        {
+          "pc": "00422C70",
+          "stage": "Anim.DrawIfVisible.delay_check"
+        },
+        {
+          "pc": "005F4B10",
+          "stage": "Object.DrawIfVisible"
+        },
+        {
+          "pc": "006D2140",
+          "stage": "Tactical.projection"
+        },
+        {
+          "pc": "00422CA0",
+          "stage": "Anim.DrawIt"
+        },
+        {
+          "pc": "00422FCC",
+          "stage": "Anim.fps_query"
+        },
+        {
+          "pc": "00422FD1",
+          "stage": "Anim.fps_compare"
+        },
+        {
+          "pc": "00422FDF",
+          "stage": "Anim.low_fps_type_detail"
+        },
+        {
+          "pc": "004238A3",
+          "stage": "Anim.return"
+        }
+      ],
+      "original_fps_gate_calls": [
+        {
+          "after": {
+            "buckets": 2,
+            "buffer": 5,
+            "current_fps": 0,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 0,
+            "reduced": true,
+            "timer_initialized": true,
+            "timer_words": [
+              60,
+              0,
+              60
+            ],
+            "total": 0
+          },
+          "before": {
+            "buckets": 2,
+            "buffer": 5,
+            "current_fps": 0,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 0,
+            "reduced": false,
+            "timer_initialized": true,
+            "timer_words": [
+              60,
+              0,
+              60
+            ],
+            "total": 0
+          },
+          "caller": "00422FD1",
+          "entry": "0055AF60",
+          "returned": true,
+          "threshold": 20
+        }
+      ],
+      "performance_after": {
+        "buckets": 2,
+        "buffer": 5,
+        "current_fps": 0,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 0,
+        "reduced": true,
+        "timer_initialized": true,
+        "timer_words": [
+          60,
+          0,
+          60
+        ],
+        "total": 0
+      },
+      "performance_before": {
+        "buckets": 2,
+        "buffer": 5,
+        "current_fps": 0,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 0,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          60,
+          0,
+          60
+        ],
+        "total": 0
+      },
+      "received_drawit": [
+        {
+          "caller": "005F4D03",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "point": [
+            84,
+            70
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_entries": [],
+      "size": [
+        160,
+        160
+      ],
+      "state_after": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "state_before": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "underlay": {
+        "a": 127,
+        "background_rgb565": 48631,
+        "z": 65535
+      }
+    },
+    {
+      "calls": [],
+      "checked_pixel_vtables_unchanged": true,
+      "display_priors": {
+        "delay_remaining": 0,
+        "hidden_19d": 0,
+        "special_hidden_199": 0,
+        "type_image": "24282790"
+      },
+      "entry": "00422C70",
+      "name": "zero_fps0_options1",
+      "native_store_counts": {
+        "a": 0,
+        "color": 0,
+        "z": 0
+      },
+      "observed_surface_call_count": 0,
+      "ordered_gate_entries": [
+        {
+          "pc": "00422C70",
+          "stage": "Anim.DrawIfVisible.delay_check"
+        },
+        {
+          "pc": "005F4B10",
+          "stage": "Object.DrawIfVisible"
+        },
+        {
+          "pc": "006D2140",
+          "stage": "Tactical.projection"
+        },
+        {
+          "pc": "00422CA0",
+          "stage": "Anim.DrawIt"
+        },
+        {
+          "pc": "00422FCC",
+          "stage": "Anim.fps_query"
+        },
+        {
+          "pc": "00422FD1",
+          "stage": "Anim.fps_compare"
+        },
+        {
+          "pc": "00422FDF",
+          "stage": "Anim.low_fps_type_detail"
+        },
+        {
+          "pc": "004238A3",
+          "stage": "Anim.return"
+        }
+      ],
+      "original_fps_gate_calls": [
+        {
+          "after": {
+            "buckets": 2,
+            "buffer": 5,
+            "current_fps": 0,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 1,
+            "reduced": true,
+            "timer_initialized": true,
+            "timer_words": [
+              60,
+              0,
+              60
+            ],
+            "total": 0
+          },
+          "before": {
+            "buckets": 2,
+            "buffer": 5,
+            "current_fps": 0,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 1,
+            "reduced": true,
+            "timer_initialized": true,
+            "timer_words": [
+              60,
+              0,
+              60
+            ],
+            "total": 0
+          },
+          "caller": "00422FD1",
+          "entry": "0055AF60",
+          "returned": true,
+          "threshold": 20
+        }
+      ],
+      "performance_after": {
+        "buckets": 2,
+        "buffer": 5,
+        "current_fps": 0,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 1,
+        "reduced": true,
+        "timer_initialized": true,
+        "timer_words": [
+          60,
+          0,
+          60
+        ],
+        "total": 0
+      },
+      "performance_before": {
+        "buckets": 2,
+        "buffer": 5,
+        "current_fps": 0,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 1,
+        "reduced": true,
+        "timer_initialized": true,
+        "timer_words": [
+          60,
+          0,
+          60
+        ],
+        "total": 0
+      },
+      "received_drawit": [
+        {
+          "caller": "005F4D03",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "point": [
+            84,
+            70
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_entries": [],
+      "size": [
+        160,
+        160
+      ],
+      "state_after": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "state_before": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "underlay": {
+        "a": 127,
+        "background_rgb565": 48631,
+        "z": 65535
+      }
+    },
+    {
+      "calls": [],
+      "checked_pixel_vtables_unchanged": true,
+      "display_priors": {
+        "delay_remaining": 0,
+        "hidden_19d": 0,
+        "special_hidden_199": 0,
+        "type_image": "24282790"
+      },
+      "entry": "00422C70",
+      "name": "zero_fps0_options2",
+      "native_store_counts": {
+        "a": 0,
+        "color": 0,
+        "z": 0
+      },
+      "observed_surface_call_count": 0,
+      "ordered_gate_entries": [
+        {
+          "pc": "00422C70",
+          "stage": "Anim.DrawIfVisible.delay_check"
+        },
+        {
+          "pc": "005F4B10",
+          "stage": "Object.DrawIfVisible"
+        },
+        {
+          "pc": "006D2140",
+          "stage": "Tactical.projection"
+        },
+        {
+          "pc": "00422CA0",
+          "stage": "Anim.DrawIt"
+        },
+        {
+          "pc": "00422FCC",
+          "stage": "Anim.fps_query"
+        },
+        {
+          "pc": "00422FD1",
+          "stage": "Anim.fps_compare"
+        },
+        {
+          "pc": "00422FDF",
+          "stage": "Anim.low_fps_type_detail"
+        },
+        {
+          "pc": "004238A3",
+          "stage": "Anim.return"
+        }
+      ],
+      "original_fps_gate_calls": [
+        {
+          "after": {
+            "buckets": 2,
+            "buffer": 5,
+            "current_fps": 0,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": true,
+            "timer_initialized": true,
+            "timer_words": [
+              60,
+              0,
+              60
+            ],
+            "total": 0
+          },
+          "before": {
+            "buckets": 2,
+            "buffer": 5,
+            "current_fps": 0,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": true,
+            "timer_initialized": true,
+            "timer_words": [
+              60,
+              0,
+              60
+            ],
+            "total": 0
+          },
+          "caller": "00422FD1",
+          "entry": "0055AF60",
+          "returned": true,
+          "threshold": 20
+        }
+      ],
+      "performance_after": {
+        "buckets": 2,
+        "buffer": 5,
+        "current_fps": 0,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": true,
+        "timer_initialized": true,
+        "timer_words": [
+          60,
+          0,
+          60
+        ],
+        "total": 0
+      },
+      "performance_before": {
+        "buckets": 2,
+        "buffer": 5,
+        "current_fps": 0,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": true,
+        "timer_initialized": true,
+        "timer_words": [
+          60,
+          0,
+          60
+        ],
+        "total": 0
+      },
+      "received_drawit": [
+        {
+          "caller": "005F4D03",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "point": [
+            84,
+            70
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_entries": [],
+      "size": [
+        160,
+        160
+      ],
+      "state_after": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "state_before": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "underlay": {
+        "a": 127,
+        "background_rgb565": 48631,
+        "z": 65535
+      }
+    },
+    {
+      "calls": [],
+      "checked_pixel_vtables_unchanged": true,
+      "display_priors": {
+        "delay_remaining": 0,
+        "hidden_19d": 0,
+        "special_hidden_199": 0,
+        "type_image": "24282790"
+      },
+      "entry": "00422C70",
+      "name": "sixty_fps60_options0",
+      "native_store_counts": {
+        "a": 0,
+        "color": 0,
+        "z": 0
+      },
+      "observed_surface_call_count": 0,
+      "ordered_gate_entries": [
+        {
+          "pc": "00422C70",
+          "stage": "Anim.DrawIfVisible.delay_check"
+        },
+        {
+          "pc": "005F4B10",
+          "stage": "Object.DrawIfVisible"
+        },
+        {
+          "pc": "006D2140",
+          "stage": "Tactical.projection"
+        },
+        {
+          "pc": "00422CA0",
+          "stage": "Anim.DrawIt"
+        },
+        {
+          "pc": "00422FCC",
+          "stage": "Anim.fps_query"
+        },
+        {
+          "pc": "00422FD1",
+          "stage": "Anim.fps_compare"
+        },
+        {
+          "pc": "00422FEC",
+          "stage": "Anim.hidden_19d"
+        },
+        {
+          "pc": "00423000",
+          "stage": "Anim.options_detail"
+        },
+        {
+          "pc": "0042300E",
+          "stage": "Anim.options_branch"
+        },
+        {
+          "pc": "004238A3",
+          "stage": "Anim.return"
+        }
+      ],
+      "original_fps_gate_calls": [
+        {
+          "after": {
+            "buckets": 3,
+            "buffer": 5,
+            "current_fps": 60,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 0,
+            "reduced": false,
+            "timer_initialized": true,
+            "timer_words": [
+              120,
+              0,
+              60
+            ],
+            "total": 60
+          },
+          "before": {
+            "buckets": 3,
+            "buffer": 5,
+            "current_fps": 60,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 0,
+            "reduced": true,
+            "timer_initialized": true,
+            "timer_words": [
+              120,
+              0,
+              60
+            ],
+            "total": 60
+          },
+          "caller": "00422FD1",
+          "entry": "0055AF60",
+          "returned": true,
+          "threshold": 15
+        }
+      ],
+      "performance_after": {
+        "buckets": 3,
+        "buffer": 5,
+        "current_fps": 60,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 0,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          120,
+          0,
+          60
+        ],
+        "total": 60
+      },
+      "performance_before": {
+        "buckets": 3,
+        "buffer": 5,
+        "current_fps": 60,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 0,
+        "reduced": true,
+        "timer_initialized": true,
+        "timer_words": [
+          120,
+          0,
+          60
+        ],
+        "total": 60
+      },
+      "received_drawit": [
+        {
+          "caller": "005F4D03",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "point": [
+            84,
+            70
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_entries": [],
+      "size": [
+        160,
+        160
+      ],
+      "state_after": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "state_before": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "underlay": {
+        "a": 127,
+        "background_rgb565": 48631,
+        "z": 65535
+      }
+    },
+    {
+      "calls": [],
+      "checked_pixel_vtables_unchanged": true,
+      "display_priors": {
+        "delay_remaining": 0,
+        "hidden_19d": 0,
+        "special_hidden_199": 0,
+        "type_image": "24282790"
+      },
+      "entry": "00422C70",
+      "name": "sixty_fps60_options1",
+      "native_store_counts": {
+        "a": 0,
+        "color": 0,
+        "z": 0
+      },
+      "observed_surface_call_count": 0,
+      "ordered_gate_entries": [
+        {
+          "pc": "00422C70",
+          "stage": "Anim.DrawIfVisible.delay_check"
+        },
+        {
+          "pc": "005F4B10",
+          "stage": "Object.DrawIfVisible"
+        },
+        {
+          "pc": "006D2140",
+          "stage": "Tactical.projection"
+        },
+        {
+          "pc": "00422CA0",
+          "stage": "Anim.DrawIt"
+        },
+        {
+          "pc": "00422FCC",
+          "stage": "Anim.fps_query"
+        },
+        {
+          "pc": "00422FD1",
+          "stage": "Anim.fps_compare"
+        },
+        {
+          "pc": "00422FEC",
+          "stage": "Anim.hidden_19d"
+        },
+        {
+          "pc": "00423000",
+          "stage": "Anim.options_detail"
+        },
+        {
+          "pc": "0042300E",
+          "stage": "Anim.options_branch"
+        },
+        {
+          "pc": "004238A3",
+          "stage": "Anim.return"
+        }
+      ],
+      "original_fps_gate_calls": [
+        {
+          "after": {
+            "buckets": 3,
+            "buffer": 5,
+            "current_fps": 60,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 1,
+            "reduced": false,
+            "timer_initialized": true,
+            "timer_words": [
+              120,
+              0,
+              60
+            ],
+            "total": 60
+          },
+          "before": {
+            "buckets": 3,
+            "buffer": 5,
+            "current_fps": 60,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 1,
+            "reduced": false,
+            "timer_initialized": true,
+            "timer_words": [
+              120,
+              0,
+              60
+            ],
+            "total": 60
+          },
+          "caller": "00422FD1",
+          "entry": "0055AF60",
+          "returned": true,
+          "threshold": 15
+        }
+      ],
+      "performance_after": {
+        "buckets": 3,
+        "buffer": 5,
+        "current_fps": 60,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 1,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          120,
+          0,
+          60
+        ],
+        "total": 60
+      },
+      "performance_before": {
+        "buckets": 3,
+        "buffer": 5,
+        "current_fps": 60,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 1,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          120,
+          0,
+          60
+        ],
+        "total": 60
+      },
+      "received_drawit": [
+        {
+          "caller": "005F4D03",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "point": [
+            84,
+            70
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_entries": [],
+      "size": [
+        160,
+        160
+      ],
+      "state_after": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "state_before": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "underlay": {
+        "a": 127,
+        "background_rgb565": 48631,
+        "z": 65535
+      }
+    },
+    {
+      "calls": [
+        {
+          "caller": "0042382C",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "color": 0,
+          "flags": 15872,
+          "frame": 0,
+          "gradient": 2,
+          "intensity": 950,
+          "pixel_leaves": [
+            "00497FD0"
+          ],
+          "point": [
+            84,
+            70
+          ],
+          "returned": true,
+          "selectors": [
+            {
+              "entry": "00490E50",
+              "flags": 15872,
+              "pixel_object": "24109120",
+              "vtable": "007E5420"
+            }
+          ],
+          "source_is_physical_idle": true,
+          "z_adjust": -34
+        }
+      ],
+      "checked_pixel_vtables_unchanged": true,
+      "display_priors": {
+        "delay_remaining": 0,
+        "hidden_19d": 0,
+        "special_hidden_199": 0,
+        "type_image": "24282790"
+      },
+      "entry": "00422C70",
+      "name": "sixty_fps60_options2",
+      "native_store_counts": {
+        "a": 0,
+        "color": 2438,
+        "z": 0
+      },
+      "observed_surface_call_count": 1,
+      "ordered_gate_entries": [
+        {
+          "pc": "00422C70",
+          "stage": "Anim.DrawIfVisible.delay_check"
+        },
+        {
+          "pc": "005F4B10",
+          "stage": "Object.DrawIfVisible"
+        },
+        {
+          "pc": "006D2140",
+          "stage": "Tactical.projection"
+        },
+        {
+          "pc": "00422CA0",
+          "stage": "Anim.DrawIt"
+        },
+        {
+          "pc": "00422FCC",
+          "stage": "Anim.fps_query"
+        },
+        {
+          "pc": "00422FD1",
+          "stage": "Anim.fps_compare"
+        },
+        {
+          "pc": "00422FEC",
+          "stage": "Anim.hidden_19d"
+        },
+        {
+          "pc": "00423000",
+          "stage": "Anim.options_detail"
+        },
+        {
+          "pc": "0042300E",
+          "stage": "Anim.options_branch"
+        },
+        {
+          "pc": "00423014",
+          "stage": "Anim.special_hidden_199"
+        },
+        {
+          "pc": "00423030",
+          "stage": "Anim.image_virtual"
+        },
+        {
+          "pc": "00423033",
+          "stage": "Anim.image_null_check"
+        },
+        {
+          "pc": "004AED70",
+          "stage": "Surface.DrawShape"
+        },
+        {
+          "pc": "004238A3",
+          "stage": "Anim.return"
+        }
+      ],
+      "original_fps_gate_calls": [
+        {
+          "after": {
+            "buckets": 3,
+            "buffer": 5,
+            "current_fps": 60,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": false,
+            "timer_initialized": true,
+            "timer_words": [
+              120,
+              0,
+              60
+            ],
+            "total": 60
+          },
+          "before": {
+            "buckets": 3,
+            "buffer": 5,
+            "current_fps": 60,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": false,
+            "timer_initialized": true,
+            "timer_words": [
+              120,
+              0,
+              60
+            ],
+            "total": 60
+          },
+          "caller": "00422FD1",
+          "entry": "0055AF60",
+          "returned": true,
+          "threshold": 15
+        }
+      ],
+      "performance_after": {
+        "buckets": 3,
+        "buffer": 5,
+        "current_fps": 60,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          120,
+          0,
+          60
+        ],
+        "total": 60
+      },
+      "performance_before": {
+        "buckets": 3,
+        "buffer": 5,
+        "current_fps": 60,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          120,
+          0,
+          60
+        ],
+        "total": 60
+      },
+      "received_drawit": [
+        {
+          "caller": "005F4D03",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "point": [
+            84,
+            70
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_entries": [],
+      "size": [
+        160,
+        160
+      ],
+      "state_after": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "state_before": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "underlay": {
+        "a": 127,
+        "background_rgb565": 48631,
+        "z": 65535
+      }
+    },
+    {
+      "calls": [],
+      "checked_pixel_vtables_unchanged": true,
+      "display_priors": {
+        "delay_remaining": 0,
+        "hidden_19d": 0,
+        "special_hidden_199": 0,
+        "type_image": "24282790"
+      },
+      "entry": "00422C70",
+      "name": "below_minimum_fps14_options2",
+      "native_store_counts": {
+        "a": 0,
+        "color": 0,
+        "z": 0
+      },
+      "observed_surface_call_count": 0,
+      "ordered_gate_entries": [
+        {
+          "pc": "00422C70",
+          "stage": "Anim.DrawIfVisible.delay_check"
+        },
+        {
+          "pc": "005F4B10",
+          "stage": "Object.DrawIfVisible"
+        },
+        {
+          "pc": "006D2140",
+          "stage": "Tactical.projection"
+        },
+        {
+          "pc": "00422CA0",
+          "stage": "Anim.DrawIt"
+        },
+        {
+          "pc": "00422FCC",
+          "stage": "Anim.fps_query"
+        },
+        {
+          "pc": "00422FD1",
+          "stage": "Anim.fps_compare"
+        },
+        {
+          "pc": "00422FDF",
+          "stage": "Anim.low_fps_type_detail"
+        },
+        {
+          "pc": "004238A3",
+          "stage": "Anim.return"
+        }
+      ],
+      "original_fps_gate_calls": [
+        {
+          "after": {
+            "buckets": 4,
+            "buffer": 5,
+            "current_fps": 14,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": true,
+            "timer_initialized": true,
+            "timer_words": [
+              180,
+              0,
+              60
+            ],
+            "total": 74
+          },
+          "before": {
+            "buckets": 4,
+            "buffer": 5,
+            "current_fps": 14,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": false,
+            "timer_initialized": true,
+            "timer_words": [
+              180,
+              0,
+              60
+            ],
+            "total": 74
+          },
+          "caller": "00422FD1",
+          "entry": "0055AF60",
+          "returned": true,
+          "threshold": 20
+        }
+      ],
+      "performance_after": {
+        "buckets": 4,
+        "buffer": 5,
+        "current_fps": 14,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": true,
+        "timer_initialized": true,
+        "timer_words": [
+          180,
+          0,
+          60
+        ],
+        "total": 74
+      },
+      "performance_before": {
+        "buckets": 4,
+        "buffer": 5,
+        "current_fps": 14,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          180,
+          0,
+          60
+        ],
+        "total": 74
+      },
+      "received_drawit": [
+        {
+          "caller": "005F4D03",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "point": [
+            84,
+            70
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_entries": [],
+      "size": [
+        160,
+        160
+      ],
+      "state_after": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "state_before": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "underlay": {
+        "a": 127,
+        "background_rgb565": 48631,
+        "z": 65535
+      }
+    },
+    {
+      "calls": [],
+      "checked_pixel_vtables_unchanged": true,
+      "display_priors": {
+        "delay_remaining": 0,
+        "hidden_19d": 0,
+        "special_hidden_199": 0,
+        "type_image": "24282790"
+      },
+      "entry": "00422C70",
+      "name": "below_recovery_fps19_options2",
+      "native_store_counts": {
+        "a": 0,
+        "color": 0,
+        "z": 0
+      },
+      "observed_surface_call_count": 0,
+      "ordered_gate_entries": [
+        {
+          "pc": "00422C70",
+          "stage": "Anim.DrawIfVisible.delay_check"
+        },
+        {
+          "pc": "005F4B10",
+          "stage": "Object.DrawIfVisible"
+        },
+        {
+          "pc": "006D2140",
+          "stage": "Tactical.projection"
+        },
+        {
+          "pc": "00422CA0",
+          "stage": "Anim.DrawIt"
+        },
+        {
+          "pc": "00422FCC",
+          "stage": "Anim.fps_query"
+        },
+        {
+          "pc": "00422FD1",
+          "stage": "Anim.fps_compare"
+        },
+        {
+          "pc": "00422FDF",
+          "stage": "Anim.low_fps_type_detail"
+        },
+        {
+          "pc": "004238A3",
+          "stage": "Anim.return"
+        }
+      ],
+      "original_fps_gate_calls": [
+        {
+          "after": {
+            "buckets": 5,
+            "buffer": 5,
+            "current_fps": 19,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": true,
+            "timer_initialized": true,
+            "timer_words": [
+              240,
+              0,
+              60
+            ],
+            "total": 93
+          },
+          "before": {
+            "buckets": 5,
+            "buffer": 5,
+            "current_fps": 19,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": true,
+            "timer_initialized": true,
+            "timer_words": [
+              240,
+              0,
+              60
+            ],
+            "total": 93
+          },
+          "caller": "00422FD1",
+          "entry": "0055AF60",
+          "returned": true,
+          "threshold": 20
+        }
+      ],
+      "performance_after": {
+        "buckets": 5,
+        "buffer": 5,
+        "current_fps": 19,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": true,
+        "timer_initialized": true,
+        "timer_words": [
+          240,
+          0,
+          60
+        ],
+        "total": 93
+      },
+      "performance_before": {
+        "buckets": 5,
+        "buffer": 5,
+        "current_fps": 19,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": true,
+        "timer_initialized": true,
+        "timer_words": [
+          240,
+          0,
+          60
+        ],
+        "total": 93
+      },
+      "received_drawit": [
+        {
+          "caller": "005F4D03",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "point": [
+            84,
+            70
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_entries": [],
+      "size": [
+        160,
+        160
+      ],
+      "state_after": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "state_before": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "underlay": {
+        "a": 127,
+        "background_rgb565": 48631,
+        "z": 65535
+      }
+    },
+    {
+      "calls": [
+        {
+          "caller": "0042382C",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "color": 0,
+          "flags": 15872,
+          "frame": 0,
+          "gradient": 2,
+          "intensity": 950,
+          "pixel_leaves": [
+            "00497FD0"
+          ],
+          "point": [
+            84,
+            70
+          ],
+          "returned": true,
+          "selectors": [
+            {
+              "entry": "00490E50",
+              "flags": 15872,
+              "pixel_object": "24109120",
+              "vtable": "007E5420"
+            }
+          ],
+          "source_is_physical_idle": true,
+          "z_adjust": -34
+        }
+      ],
+      "checked_pixel_vtables_unchanged": true,
+      "display_priors": {
+        "delay_remaining": 0,
+        "hidden_19d": 0,
+        "special_hidden_199": 0,
+        "type_image": "24282790"
+      },
+      "entry": "00422C70",
+      "name": "at_recovery_fps20_options2",
+      "native_store_counts": {
+        "a": 0,
+        "color": 2438,
+        "z": 0
+      },
+      "observed_surface_call_count": 1,
+      "ordered_gate_entries": [
+        {
+          "pc": "00422C70",
+          "stage": "Anim.DrawIfVisible.delay_check"
+        },
+        {
+          "pc": "005F4B10",
+          "stage": "Object.DrawIfVisible"
+        },
+        {
+          "pc": "006D2140",
+          "stage": "Tactical.projection"
+        },
+        {
+          "pc": "00422CA0",
+          "stage": "Anim.DrawIt"
+        },
+        {
+          "pc": "00422FCC",
+          "stage": "Anim.fps_query"
+        },
+        {
+          "pc": "00422FD1",
+          "stage": "Anim.fps_compare"
+        },
+        {
+          "pc": "00422FEC",
+          "stage": "Anim.hidden_19d"
+        },
+        {
+          "pc": "00423000",
+          "stage": "Anim.options_detail"
+        },
+        {
+          "pc": "0042300E",
+          "stage": "Anim.options_branch"
+        },
+        {
+          "pc": "00423014",
+          "stage": "Anim.special_hidden_199"
+        },
+        {
+          "pc": "00423030",
+          "stage": "Anim.image_virtual"
+        },
+        {
+          "pc": "00423033",
+          "stage": "Anim.image_null_check"
+        },
+        {
+          "pc": "004AED70",
+          "stage": "Surface.DrawShape"
+        },
+        {
+          "pc": "004238A3",
+          "stage": "Anim.return"
+        }
+      ],
+      "original_fps_gate_calls": [
+        {
+          "after": {
+            "buckets": 6,
+            "buffer": 5,
+            "current_fps": 20,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": false,
+            "timer_initialized": true,
+            "timer_words": [
+              300,
+              0,
+              60
+            ],
+            "total": 113
+          },
+          "before": {
+            "buckets": 6,
+            "buffer": 5,
+            "current_fps": 20,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": true,
+            "timer_initialized": true,
+            "timer_words": [
+              300,
+              0,
+              60
+            ],
+            "total": 113
+          },
+          "caller": "00422FD1",
+          "entry": "0055AF60",
+          "returned": true,
+          "threshold": 15
+        }
+      ],
+      "performance_after": {
+        "buckets": 6,
+        "buffer": 5,
+        "current_fps": 20,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          300,
+          0,
+          60
+        ],
+        "total": 113
+      },
+      "performance_before": {
+        "buckets": 6,
+        "buffer": 5,
+        "current_fps": 20,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": true,
+        "timer_initialized": true,
+        "timer_words": [
+          300,
+          0,
+          60
+        ],
+        "total": 113
+      },
+      "received_drawit": [
+        {
+          "caller": "005F4D03",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "point": [
+            84,
+            70
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_entries": [],
+      "size": [
+        160,
+        160
+      ],
+      "state_after": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "state_before": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "underlay": {
+        "a": 127,
+        "background_rgb565": 48631,
+        "z": 65535
+      }
+    },
+    {
+      "calls": [
+        {
+          "caller": "0042382C",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "color": 0,
+          "flags": 15872,
+          "frame": 0,
+          "gradient": 2,
+          "intensity": 950,
+          "pixel_leaves": [
+            "00497FD0"
+          ],
+          "point": [
+            84,
+            70
+          ],
+          "returned": true,
+          "selectors": [
+            {
+              "entry": "00490E50",
+              "flags": 15872,
+              "pixel_object": "24109120",
+              "vtable": "007E5420"
+            }
+          ],
+          "source_is_physical_idle": true,
+          "z_adjust": -34
+        }
+      ],
+      "checked_pixel_vtables_unchanged": true,
+      "display_priors": {
+        "delay_remaining": 0,
+        "hidden_19d": 0,
+        "special_hidden_199": 0,
+        "type_image": "24282790"
+      },
+      "entry": "00422C70",
+      "name": "above_minimum_after_recovery_fps19_options2",
+      "native_store_counts": {
+        "a": 0,
+        "color": 2438,
+        "z": 0
+      },
+      "observed_surface_call_count": 1,
+      "ordered_gate_entries": [
+        {
+          "pc": "00422C70",
+          "stage": "Anim.DrawIfVisible.delay_check"
+        },
+        {
+          "pc": "005F4B10",
+          "stage": "Object.DrawIfVisible"
+        },
+        {
+          "pc": "006D2140",
+          "stage": "Tactical.projection"
+        },
+        {
+          "pc": "00422CA0",
+          "stage": "Anim.DrawIt"
+        },
+        {
+          "pc": "00422FCC",
+          "stage": "Anim.fps_query"
+        },
+        {
+          "pc": "00422FD1",
+          "stage": "Anim.fps_compare"
+        },
+        {
+          "pc": "00422FEC",
+          "stage": "Anim.hidden_19d"
+        },
+        {
+          "pc": "00423000",
+          "stage": "Anim.options_detail"
+        },
+        {
+          "pc": "0042300E",
+          "stage": "Anim.options_branch"
+        },
+        {
+          "pc": "00423014",
+          "stage": "Anim.special_hidden_199"
+        },
+        {
+          "pc": "00423030",
+          "stage": "Anim.image_virtual"
+        },
+        {
+          "pc": "00423033",
+          "stage": "Anim.image_null_check"
+        },
+        {
+          "pc": "004AED70",
+          "stage": "Surface.DrawShape"
+        },
+        {
+          "pc": "004238A3",
+          "stage": "Anim.return"
+        }
+      ],
+      "original_fps_gate_calls": [
+        {
+          "after": {
+            "buckets": 7,
+            "buffer": 5,
+            "current_fps": 19,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": false,
+            "timer_initialized": true,
+            "timer_words": [
+              360,
+              0,
+              60
+            ],
+            "total": 132
+          },
+          "before": {
+            "buckets": 7,
+            "buffer": 5,
+            "current_fps": 19,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": false,
+            "timer_initialized": true,
+            "timer_words": [
+              360,
+              0,
+              60
+            ],
+            "total": 132
+          },
+          "caller": "00422FD1",
+          "entry": "0055AF60",
+          "returned": true,
+          "threshold": 15
+        }
+      ],
+      "performance_after": {
+        "buckets": 7,
+        "buffer": 5,
+        "current_fps": 19,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          360,
+          0,
+          60
+        ],
+        "total": 132
+      },
+      "performance_before": {
+        "buckets": 7,
+        "buffer": 5,
+        "current_fps": 19,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          360,
+          0,
+          60
+        ],
+        "total": 132
+      },
+      "received_drawit": [
+        {
+          "caller": "005F4D03",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "point": [
+            84,
+            70
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_entries": [],
+      "size": [
+        160,
+        160
+      ],
+      "state_after": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "state_before": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "underlay": {
+        "a": 127,
+        "background_rgb565": 48631,
+        "z": 65535
+      }
+    },
+    {
+      "calls": [
+        {
+          "caller": "0042382C",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "color": 0,
+          "flags": 15872,
+          "frame": 0,
+          "gradient": 2,
+          "intensity": 950,
+          "pixel_leaves": [
+            "00497FD0"
+          ],
+          "point": [
+            84,
+            70
+          ],
+          "returned": true,
+          "selectors": [
+            {
+              "entry": "00490E50",
+              "flags": 15872,
+              "pixel_object": "24109120",
+              "vtable": "007E5420"
+            }
+          ],
+          "source_is_physical_idle": true,
+          "z_adjust": -34
+        }
+      ],
+      "checked_pixel_vtables_unchanged": true,
+      "display_priors": {
+        "delay_remaining": 0,
+        "hidden_19d": 0,
+        "special_hidden_199": 0,
+        "type_image": "24282790"
+      },
+      "entry": "00422C70",
+      "name": "at_minimum_after_recovery_fps15_options2",
+      "native_store_counts": {
+        "a": 0,
+        "color": 2438,
+        "z": 0
+      },
+      "observed_surface_call_count": 1,
+      "ordered_gate_entries": [
+        {
+          "pc": "00422C70",
+          "stage": "Anim.DrawIfVisible.delay_check"
+        },
+        {
+          "pc": "005F4B10",
+          "stage": "Object.DrawIfVisible"
+        },
+        {
+          "pc": "006D2140",
+          "stage": "Tactical.projection"
+        },
+        {
+          "pc": "00422CA0",
+          "stage": "Anim.DrawIt"
+        },
+        {
+          "pc": "00422FCC",
+          "stage": "Anim.fps_query"
+        },
+        {
+          "pc": "00422FD1",
+          "stage": "Anim.fps_compare"
+        },
+        {
+          "pc": "00422FEC",
+          "stage": "Anim.hidden_19d"
+        },
+        {
+          "pc": "00423000",
+          "stage": "Anim.options_detail"
+        },
+        {
+          "pc": "0042300E",
+          "stage": "Anim.options_branch"
+        },
+        {
+          "pc": "00423014",
+          "stage": "Anim.special_hidden_199"
+        },
+        {
+          "pc": "00423030",
+          "stage": "Anim.image_virtual"
+        },
+        {
+          "pc": "00423033",
+          "stage": "Anim.image_null_check"
+        },
+        {
+          "pc": "004AED70",
+          "stage": "Surface.DrawShape"
+        },
+        {
+          "pc": "004238A3",
+          "stage": "Anim.return"
+        }
+      ],
+      "original_fps_gate_calls": [
+        {
+          "after": {
+            "buckets": 8,
+            "buffer": 5,
+            "current_fps": 15,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": false,
+            "timer_initialized": true,
+            "timer_words": [
+              420,
+              0,
+              60
+            ],
+            "total": 147
+          },
+          "before": {
+            "buckets": 8,
+            "buffer": 5,
+            "current_fps": 15,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": false,
+            "timer_initialized": true,
+            "timer_words": [
+              420,
+              0,
+              60
+            ],
+            "total": 147
+          },
+          "caller": "00422FD1",
+          "entry": "0055AF60",
+          "returned": true,
+          "threshold": 15
+        }
+      ],
+      "performance_after": {
+        "buckets": 8,
+        "buffer": 5,
+        "current_fps": 15,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          420,
+          0,
+          60
+        ],
+        "total": 147
+      },
+      "performance_before": {
+        "buckets": 8,
+        "buffer": 5,
+        "current_fps": 15,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          420,
+          0,
+          60
+        ],
+        "total": 147
+      },
+      "received_drawit": [
+        {
+          "caller": "005F4D03",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "point": [
+            84,
+            70
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_entries": [],
+      "size": [
+        160,
+        160
+      ],
+      "state_after": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "state_before": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "underlay": {
+        "a": 127,
+        "background_rgb565": 48631,
+        "z": 65535
+      }
+    },
+    {
+      "calls": [],
+      "checked_pixel_vtables_unchanged": true,
+      "display_priors": {
+        "delay_remaining": 0,
+        "hidden_19d": 0,
+        "special_hidden_199": 0,
+        "type_image": "24282790"
+      },
+      "entry": "00422C70",
+      "name": "below_minimum_again_fps14_options2",
+      "native_store_counts": {
+        "a": 0,
+        "color": 0,
+        "z": 0
+      },
+      "observed_surface_call_count": 0,
+      "ordered_gate_entries": [
+        {
+          "pc": "00422C70",
+          "stage": "Anim.DrawIfVisible.delay_check"
+        },
+        {
+          "pc": "005F4B10",
+          "stage": "Object.DrawIfVisible"
+        },
+        {
+          "pc": "006D2140",
+          "stage": "Tactical.projection"
+        },
+        {
+          "pc": "00422CA0",
+          "stage": "Anim.DrawIt"
+        },
+        {
+          "pc": "00422FCC",
+          "stage": "Anim.fps_query"
+        },
+        {
+          "pc": "00422FD1",
+          "stage": "Anim.fps_compare"
+        },
+        {
+          "pc": "00422FDF",
+          "stage": "Anim.low_fps_type_detail"
+        },
+        {
+          "pc": "004238A3",
+          "stage": "Anim.return"
+        }
+      ],
+      "original_fps_gate_calls": [
+        {
+          "after": {
+            "buckets": 9,
+            "buffer": 5,
+            "current_fps": 14,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": true,
+            "timer_initialized": true,
+            "timer_words": [
+              480,
+              0,
+              60
+            ],
+            "total": 161
+          },
+          "before": {
+            "buckets": 9,
+            "buffer": 5,
+            "current_fps": 14,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": false,
+            "timer_initialized": true,
+            "timer_words": [
+              480,
+              0,
+              60
+            ],
+            "total": 161
+          },
+          "caller": "00422FD1",
+          "entry": "0055AF60",
+          "returned": true,
+          "threshold": 20
+        }
+      ],
+      "performance_after": {
+        "buckets": 9,
+        "buffer": 5,
+        "current_fps": 14,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": true,
+        "timer_initialized": true,
+        "timer_words": [
+          480,
+          0,
+          60
+        ],
+        "total": 161
+      },
+      "performance_before": {
+        "buckets": 9,
+        "buffer": 5,
+        "current_fps": 14,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          480,
+          0,
+          60
+        ],
+        "total": 161
+      },
+      "received_drawit": [
+        {
+          "caller": "005F4D03",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "point": [
+            84,
+            70
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_entries": [],
+      "size": [
+        160,
+        160
+      ],
+      "state_after": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "state_before": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "underlay": {
+        "a": 127,
+        "background_rgb565": 48631,
+        "z": 65535
+      }
+    },
+    {
+      "calls": [
+        {
+          "caller": "0042382C",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "color": 0,
+          "flags": 15872,
+          "frame": 0,
+          "gradient": 2,
+          "intensity": 950,
+          "pixel_leaves": [
+            "00497FD0"
+          ],
+          "point": [
+            84,
+            70
+          ],
+          "returned": true,
+          "selectors": [
+            {
+              "entry": "00490E50",
+              "flags": 15872,
+              "pixel_object": "24109120",
+              "vtable": "007E5420"
+            }
+          ],
+          "source_is_physical_idle": true,
+          "z_adjust": -34
+        }
+      ],
+      "checked_pixel_vtables_unchanged": true,
+      "display_priors": {
+        "delay_remaining": 0,
+        "hidden_19d": 0,
+        "special_hidden_199": 0,
+        "type_image": "24282790"
+      },
+      "entry": "00422C70",
+      "name": "final_admitted_fps60_options2",
+      "native_store_counts": {
+        "a": 0,
+        "color": 2438,
+        "z": 0
+      },
+      "observed_surface_call_count": 1,
+      "ordered_gate_entries": [
+        {
+          "pc": "00422C70",
+          "stage": "Anim.DrawIfVisible.delay_check"
+        },
+        {
+          "pc": "005F4B10",
+          "stage": "Object.DrawIfVisible"
+        },
+        {
+          "pc": "006D2140",
+          "stage": "Tactical.projection"
+        },
+        {
+          "pc": "00422CA0",
+          "stage": "Anim.DrawIt"
+        },
+        {
+          "pc": "00422FCC",
+          "stage": "Anim.fps_query"
+        },
+        {
+          "pc": "00422FD1",
+          "stage": "Anim.fps_compare"
+        },
+        {
+          "pc": "00422FEC",
+          "stage": "Anim.hidden_19d"
+        },
+        {
+          "pc": "00423000",
+          "stage": "Anim.options_detail"
+        },
+        {
+          "pc": "0042300E",
+          "stage": "Anim.options_branch"
+        },
+        {
+          "pc": "00423014",
+          "stage": "Anim.special_hidden_199"
+        },
+        {
+          "pc": "00423030",
+          "stage": "Anim.image_virtual"
+        },
+        {
+          "pc": "00423033",
+          "stage": "Anim.image_null_check"
+        },
+        {
+          "pc": "004AED70",
+          "stage": "Surface.DrawShape"
+        },
+        {
+          "pc": "004238A3",
+          "stage": "Anim.return"
+        }
+      ],
+      "original_fps_gate_calls": [
+        {
+          "after": {
+            "buckets": 10,
+            "buffer": 5,
+            "current_fps": 60,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": false,
+            "timer_initialized": true,
+            "timer_words": [
+              540,
+              0,
+              60
+            ],
+            "total": 221
+          },
+          "before": {
+            "buckets": 10,
+            "buffer": 5,
+            "current_fps": 60,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": true,
+            "timer_initialized": true,
+            "timer_words": [
+              540,
+              0,
+              60
+            ],
+            "total": 221
+          },
+          "caller": "00422FD1",
+          "entry": "0055AF60",
+          "returned": true,
+          "threshold": 15
+        }
+      ],
+      "performance_after": {
+        "buckets": 10,
+        "buffer": 5,
+        "current_fps": 60,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          540,
+          0,
+          60
+        ],
+        "total": 221
+      },
+      "performance_before": {
+        "buckets": 10,
+        "buffer": 5,
+        "current_fps": 60,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": true,
+        "timer_initialized": true,
+        "timer_words": [
+          540,
+          0,
+          60
+        ],
+        "total": 221
+      },
+      "received_drawit": [
+        {
+          "caller": "005F4D03",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "point": [
+            84,
+            70
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_entries": [],
+      "size": [
+        160,
+        160
+      ],
+      "state_after": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "state_before": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "underlay": {
+        "a": 127,
+        "background_rgb565": 48631,
+        "z": 65535
+      }
+    },
+    {
+      "calls": [],
+      "checked_pixel_vtables_unchanged": true,
+      "display_priors": {
+        "delay_remaining": 0,
+        "hidden_19d": 0,
+        "special_hidden_199": 0,
+        "type_image": "24282790"
+      },
+      "entry": "00422C70",
+      "name": "offscreen_camera_fps60_options2",
+      "native_store_counts": {
+        "a": 0,
+        "color": 0,
+        "z": 0
+      },
+      "observed_surface_call_count": 0,
+      "ordered_gate_entries": [
+        {
+          "pc": "00422C70",
+          "stage": "Anim.DrawIfVisible.delay_check"
+        },
+        {
+          "pc": "005F4B10",
+          "stage": "Object.DrawIfVisible"
+        },
+        {
+          "pc": "006D2140",
+          "stage": "Tactical.projection"
+        },
+        {
+          "pc": "005F4B7F",
+          "stage": "Object.projection_or_display_return"
+        }
+      ],
+      "original_fps_gate_calls": [],
+      "performance_after": {
+        "buckets": 10,
+        "buffer": 5,
+        "current_fps": 60,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          540,
+          0,
+          60
+        ],
+        "total": 221
+      },
+      "performance_before": {
+        "buckets": 10,
+        "buffer": 5,
+        "current_fps": 60,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          540,
+          0,
+          60
+        ],
+        "total": 221
+      },
+      "received_drawit": [],
+      "returned_al": 0,
+      "rng_entries": [],
+      "size": [
+        160,
+        160
+      ],
+      "state_after": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "state_before": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "supplied_camera": [
+        100000,
+        100000
+      ],
+      "underlay": {
+        "a": 127,
+        "background_rgb565": 48631,
+        "z": 65535
+      }
+    },
+    {
+      "calls": [],
+      "checked_pixel_vtables_unchanged": true,
+      "display_priors": {
+        "delay_remaining": 0,
+        "hidden_19d": 0,
+        "special_hidden_199": 0,
+        "type_image": "24282790"
+      },
+      "entry": "00422C70",
+      "name": "offscreen_camera_fps14_options2",
+      "native_store_counts": {
+        "a": 0,
+        "color": 0,
+        "z": 0
+      },
+      "observed_surface_call_count": 0,
+      "ordered_gate_entries": [
+        {
+          "pc": "00422C70",
+          "stage": "Anim.DrawIfVisible.delay_check"
+        },
+        {
+          "pc": "005F4B10",
+          "stage": "Object.DrawIfVisible"
+        },
+        {
+          "pc": "006D2140",
+          "stage": "Tactical.projection"
+        },
+        {
+          "pc": "005F4B7F",
+          "stage": "Object.projection_or_display_return"
+        }
+      ],
+      "original_fps_gate_calls": [],
+      "performance_after": {
+        "buckets": 11,
+        "buffer": 5,
+        "current_fps": 14,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          600,
+          0,
+          60
+        ],
+        "total": 235
+      },
+      "performance_before": {
+        "buckets": 11,
+        "buffer": 5,
+        "current_fps": 14,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          600,
+          0,
+          60
+        ],
+        "total": 235
+      },
+      "received_drawit": [],
+      "returned_al": 0,
+      "rng_entries": [],
+      "size": [
+        160,
+        160
+      ],
+      "state_after": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "state_before": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "supplied_camera": [
+        100000,
+        100000
+      ],
+      "underlay": {
+        "a": 127,
+        "background_rgb565": 48631,
+        "z": 65535
+      }
+    },
+    {
+      "calls": [],
+      "checked_pixel_vtables_unchanged": true,
+      "display_priors": {
+        "delay_remaining": 0,
+        "hidden_19d": 0,
+        "special_hidden_199": 0,
+        "type_image": "24282790"
+      },
+      "entry": "00422C70",
+      "name": "restored_camera_fps14_options2",
+      "native_store_counts": {
+        "a": 0,
+        "color": 0,
+        "z": 0
+      },
+      "observed_surface_call_count": 0,
+      "ordered_gate_entries": [
+        {
+          "pc": "00422C70",
+          "stage": "Anim.DrawIfVisible.delay_check"
+        },
+        {
+          "pc": "005F4B10",
+          "stage": "Object.DrawIfVisible"
+        },
+        {
+          "pc": "006D2140",
+          "stage": "Tactical.projection"
+        },
+        {
+          "pc": "00422CA0",
+          "stage": "Anim.DrawIt"
+        },
+        {
+          "pc": "00422FCC",
+          "stage": "Anim.fps_query"
+        },
+        {
+          "pc": "00422FD1",
+          "stage": "Anim.fps_compare"
+        },
+        {
+          "pc": "00422FDF",
+          "stage": "Anim.low_fps_type_detail"
+        },
+        {
+          "pc": "004238A3",
+          "stage": "Anim.return"
+        }
+      ],
+      "original_fps_gate_calls": [
+        {
+          "after": {
+            "buckets": 11,
+            "buffer": 5,
+            "current_fps": 14,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": true,
+            "timer_initialized": true,
+            "timer_words": [
+              600,
+              0,
+              60
+            ],
+            "total": 235
+          },
+          "before": {
+            "buckets": 11,
+            "buffer": 5,
+            "current_fps": 14,
+            "logic_count": 0,
+            "minimum": 15,
+            "options_detail": 2,
+            "reduced": false,
+            "timer_initialized": true,
+            "timer_words": [
+              600,
+              0,
+              60
+            ],
+            "total": 235
+          },
+          "caller": "00422FD1",
+          "entry": "0055AF60",
+          "returned": true,
+          "threshold": 20
+        }
+      ],
+      "performance_after": {
+        "buckets": 11,
+        "buffer": 5,
+        "current_fps": 14,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": true,
+        "timer_initialized": true,
+        "timer_words": [
+          600,
+          0,
+          60
+        ],
+        "total": 235
+      },
+      "performance_before": {
+        "buckets": 11,
+        "buffer": 5,
+        "current_fps": 14,
+        "logic_count": 0,
+        "minimum": 15,
+        "options_detail": 2,
+        "reduced": false,
+        "timer_initialized": true,
+        "timer_words": [
+          600,
+          0,
+          60
+        ],
+        "total": 235
+      },
+      "received_drawit": [
+        {
+          "caller": "005F4D03",
+          "clip": [
+            0,
+            0,
+            160,
+            160
+          ],
+          "point": [
+            84,
+            70
+          ]
+        }
+      ],
+      "returned_al": 1,
+      "rng_entries": [],
+      "size": [
+        160,
+        160
+      ],
+      "state_after": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "state_before": {
+        "anim": {
+          "alive": 1,
+          "draw_flags": 5632,
+          "forced_translucency": false,
+          "is_building_anim": true,
+          "limbo": 0,
+          "marked": 0,
+          "native_id": 338,
+          "pointer": "2428E8E0",
+          "runtime": {
+            "constructor_reverse": 0,
+            "current_frame": 0,
+            "delay_remaining": 0,
+            "first_ai_guard": 1,
+            "frame_step": 1,
+            "frame_timer": [
+              1000,
+              4
+            ],
+            "inactive": 0,
+            "loop_remaining": 255,
+            "paused": 0,
+            "rate_reload": 4
+          },
+          "stored_xyz": [
+            2560,
+            5120,
+            0
+          ],
+          "temporal_paused": false,
+          "temporal_resume_pending": false,
+          "type_name": "GAPOWR_A",
+          "z_adjust": -32
+        },
+        "building": {
+          "location": [
+            2688,
+            5248,
+            0
+          ],
+          "online": true,
+          "pointer": "2415FBA0",
+          "slot": 3,
+          "slot_pointer": "2428E8E0",
+          "temporal_head": "00000000",
+          "warped": false
+        },
+        "identity_cursor": 338,
+        "scenario_rng_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+      },
+      "supplied_camera": [
+        -384,
+        380
+      ],
+      "underlay": {
+        "a": 127,
+        "background_rgb565": 48631,
+        "z": 65535
+      }
+    }
+  ],
+  "schema": 1,
+  "slot_construction_effects": {
+    "identity_cursor_after": 338,
+    "identity_cursor_before": 337,
+    "scenario_rng_after_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d",
+    "scenario_rng_before_sha256": "de3c47e97e7090f190fe181a35a5b3b08f4c46cb19b3ad75953b6ba21088a19d"
+  },
+  "slot_input": {
+    "building_damaged": false,
+    "building_location": [
+      2688,
+      5248,
+      0
+    ],
+    "building_stuff_enabled": true,
+    "damaged_name": "GAPOWR_AD",
+    "garrisoned_name": "GAPOWR_A",
+    "name": "GAPOWR_A",
+    "native_body_frame": 0,
+    "pixel_offset": [
+      0,
+      0
+    ],
+    "powered": false,
+    "slot": 3,
+    "y_sort": 362,
+    "z_adjust": -32
+  },
+  "startup": {
+    "anim_registry": {
+      "action": "Original CRT4E6D60..4E6D96; stop before atexit only",
+      "after": [
+        8298276,
+        0,
+        0,
+        1,
+        0,
+        10
+      ],
+      "before": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "live_object_vectors_preserved": true
+    },
+    "building_dependencies": {
+      "building_type_registry_startup": {
+        "after_original_type_constructor": {
+          "count": 1,
+          "entry_is_selected_type": true,
+          "get_array_index": 0,
+          "index_field": "BuildingType+DF8",
+          "name": "GAPOWR"
+        },
+        "after_words": [
+          8299044,
+          0,
+          0,
+          1,
+          0,
+          10
+        ],
+        "before_words": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "boundary": "Original CRT vector initialization before BuildingType45DD90; only process-exit destructor registration is excluded. No live registry is reset, type ordinal supplied, or constructor replayed.",
+        "checked_text_and_vector_vtables_unchanged": true,
+        "crt_table_slot": "0081326C",
+        "entry": "004E7360",
+        "stop_before": "004E7396",
+        "vector": "00A83C68"
+      },
+      "checked_text_unchanged": true,
+      "enslaves_after_reader": null,
+      "house": {
+        "boundary": "Original Country/House constructors; default Country, supplied human/LightGold/current-player flags, no full scenario or House INI load.",
+        "building_tracking_after_constructor": {
+          "boundary": "Observed House Add_Tracking and Counter increment for the bounded selected-type registry; complete stock type registration and UndeploysInto dependency reading are excluded.",
+          "counted_as_owned": true,
+          "owned_buildings": 1,
+          "owned_units": 0,
+          "selected_type_count": 1,
+          "selected_type_index": 0,
+          "total": 1
+        },
+        "constructor": "004F54A0",
+        "country_constructor": "005113F0",
+        "country_name": "Americans",
+        "country_reader_executed": false,
+        "index": 0,
+        "scenario_seed_before_house": 31,
+        "vtable": "007EA8A0"
+      },
+      "original_entries": [
+        "0043B740",
+        "00442C40",
+        "00465DB0",
+        "0049FA00",
+        "004F54A0",
+        "004FF700",
+        "005113F0",
+        "006F3F40"
+      ],
+      "platform": [
+        {
+          "caller": "004A053B",
+          "increment": true,
+          "kind": "OS_Interlocked"
+        }
+      ],
+      "slave_constructors_reached": false,
+      "slave_manager_after_real_constructor": null,
+      "type_layers": []
+    },
+    "geometry": {
+      "b0cd48": "60493474535ec23f",
+      "entries": [
+        "006D1830",
+        "006D18C0",
+        "006D1BB0",
+        "0049F2F0",
+        "00561710",
+        "005617A0",
+        "005617C0",
+        "005617E0",
+        "00561910",
+        "005638D0",
+        "0047B150",
+        "0047B180",
+        "0047B1A0",
+        "0047B1C0",
+        "0047B1E0",
+        "0047B200",
+        "0047B220",
+        "0047B260",
+        "0047B290",
+        "0047B2C0",
+        "0047B2F0",
+        "0047B300",
+        "0047B320",
+        "0047B340",
+        "006DCD70",
+        "006DCDA0",
+        "006DCDC0",
+        "006DCDE0",
+        "006DCE00",
+        "006DCE20",
+        "006DCE40",
+        "006DCE80",
+        "006DCEB0",
+        "006DCEE0",
+        "006DCF10",
+        "006DCF20",
+        "006DCF40",
+        "006DCF60"
+      ]
+    },
+    "object_retirement_registry": {
+      "boundary": "Only original CRT prefixes for wholly pristine missing Object-destructor listener headers, before any Anim slot constructor; no live/header reset, supplied vptr, FindIndex result, destructor or callback replacement. Established inherited headers remain byte-identical.",
+      "established_headers_preserved": true,
+      "guarded_headers": [
+        "00B0F698",
+        "00A8E360",
+        "00B0F720",
+        "00B0F670",
+        "00B0F618",
+        "00A8EC50",
+        "00A8E9A8",
+        "00A83C68",
+        "00A80228",
+        "00A83C98"
+      ],
+      "headers": [
+        {
+          "action": "original_CRT_prefix",
+          "address": "00B0F698",
+          "after_words": [
+            8294892,
+            0,
+            0,
+            1,
+            0,
+            10
+          ],
+          "before_words": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "entry": "00725850",
+          "executed": true,
+          "original_vptr": "007E91EC",
+          "required_vptr_store": "0072586D",
+          "stop_before_atexit": "00725886"
+        },
+        {
+          "action": "original_CRT_prefix",
+          "address": "00A8E360",
+          "after_words": [
+            8277860,
+            0,
+            0,
+            1,
+            0,
+            10
+          ],
+          "before_words": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "entry": "004E7AE0",
+          "executed": true,
+          "original_vptr": "007E4F64",
+          "required_vptr_store": "004E7AFD",
+          "stop_before_atexit": "004E7B16"
+        },
+        {
+          "action": "original_CRT_prefix",
+          "address": "00B0F720",
+          "after_words": [
+            8294892,
+            0,
+            0,
+            1,
+            0,
+            10
+          ],
+          "before_words": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "entry": "007252D0",
+          "executed": true,
+          "original_vptr": "007E91EC",
+          "required_vptr_store": "007252ED",
+          "stop_before_atexit": "00725306"
+        },
+        {
+          "action": "preserve_established_header",
+          "address": "00B0F670",
+          "after_words": [
+            8304340,
+            603996160,
+            1024,
+            1,
+            16,
+            10
+          ],
+          "before_words": [
+            8304340,
+            603996160,
+            1024,
+            1,
+            16,
+            10
+          ],
+          "entry": "00725350",
+          "executed": false,
+          "original_vptr": "007E91EC",
+          "required_vptr_store": "0072536D",
+          "stop_before_atexit": "00725386"
+        },
+        {
+          "action": "original_CRT_prefix",
+          "address": "00B0F618",
+          "after_words": [
+            8294892,
+            0,
+            0,
+            1,
+            0,
+            10
+          ],
+          "before_words": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "entry": "007253D0",
+          "executed": true,
+          "original_vptr": "007E91EC",
+          "required_vptr_store": "007253ED",
+          "stop_before_atexit": "00725406"
+        }
+      ],
+      "original_text_and_vtables_unchanged": true
+    },
+    "tactical_matrix": {
+      "boundary": "Original Tactical constructor matrix tail only; existing supplied viewport retained, no full window construction.",
+      "entry": "006D1DC5",
+      "pixel_to_coord_matrix_hex": "ce888840ce8808410000000000000000ce8888c0ce880841000000000000000000000000000000000000803f00000000",
+      "stop_before": "006D1E24"
+    }
+  },
+  "type_layers": [
+    {
+      "admitted": true,
+      "archive": "expandmd01.mix",
+      "file": "RULESMD.INI",
+      "loads": [
+        {
+          "bytes": 0,
+          "name": "GTPOWR.SHP",
+          "sha256": null
+        },
+        {
+          "bytes": 16416,
+          "name": "GGPOWR.SHP",
+          "sha256": "f758f01ddde6994eb2056d0a45a91e820a544fed513e38a6dad512c14484e37c"
+        },
+        {
+          "bytes": 0,
+          "name": "POWRICON.SHP",
+          "sha256": null
+        },
+        {
+          "bytes": 0,
+          "name": "XXICON.SHP",
+          "sha256": null
+        },
+        {
+          "bytes": 101960,
+          "name": "GTPOWRMK.SHP",
+          "sha256": "0ae9b81804b725ff662a56c81d23b3af031d66ac273554651bb0ccf189fdc873"
+        },
+        {
+          "bytes": 0,
+          "name": "GTPOWR.SHP",
+          "sha256": null
+        },
+        {
+          "bytes": 16416,
+          "name": "GGPOWR.SHP",
+          "sha256": "f758f01ddde6994eb2056d0a45a91e820a544fed513e38a6dad512c14484e37c"
+        }
+      ],
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+    },
+    {
+      "absent": true,
+      "archive": "loose",
+      "file": "LANGRULE.INI"
+    },
+    {
+      "admitted": false,
+      "archive": "ra2md.mix/localmd.mix",
+      "file": "MPBattleMD.ini",
+      "loads": [],
+      "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+    },
+    {
+      "admitted": false,
+      "archive": "multimd.mix",
+      "file": "XMP03T4.MAP",
+      "loads": [],
+      "sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
+    }
+  ]
+}

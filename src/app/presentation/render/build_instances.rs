@@ -237,9 +237,14 @@ pub(super) fn build_world_instances(
         &mut planned_objects,
         &display_order,
     );
-    // Building slots keep their sole existing binding/light producer. Dynamic
-    // Anim/System/Particle bodies then share one retained Display traversal.
-    instances::build_building_anim_instances(state, &mut planned_objects, &display_order);
+    // Prepare slot binding/light pieces without querying the shared FPS latch.
+    // Each Anim's retained Display encounter admits and appends its pieces.
+    let mut building_anim_instances = Vec::new();
+    instances::build_building_anim_instances(state, &mut building_anim_instances, &display_order);
+    let prepared_building_anims = building_anim_instances
+        .into_iter()
+        .map(|parent| (parent.parent.id, parent))
+        .collect();
     let mut particle_draws = state.diagnostic_presentation_ms().map(|_| Vec::new());
     let display_inputs = state.match_state.sim_runtime.as_ref().map(|runtime| {
         let presentation = &state.match_state.match_presentation;
@@ -270,8 +275,12 @@ pub(super) fn build_world_instances(
         }
     });
     if let Some(input) = display_inputs.as_ref() {
-        particle_draws =
-            instances::build_display_effect_instances(input, &mut planned_objects, &display_order);
+        particle_draws = instances::build_display_effect_instances(
+            input,
+            &mut planned_objects,
+            &display_order,
+            prepared_building_anims,
+        );
     }
     instances::build_projectile_visual_instances(state, &mut planned_objects, &display_order);
     if let Some(input) = display_inputs.as_ref() {

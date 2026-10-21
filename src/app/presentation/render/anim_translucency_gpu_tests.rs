@@ -269,6 +269,7 @@ fn retail_smkpuff_effect_builder_matches_original_translucency() {
                     },
                     &mut parents,
                     &order,
+                    Default::default(),
                 );
                 assert_eq!(
                     parents.len(),

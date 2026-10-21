@@ -7,7 +7,7 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::app::AppState;
 use crate::map::terrain::{self, TILE_HEIGHT, TILE_WIDTH};
@@ -24,6 +24,7 @@ use crate::rules::overlay_types::is_bridge_overlay_index;
 
 use super::helpers::{
     ANIM_DRAW_DEPTH_BIAS_PX, apply_shape_z_adjust, compute_sprite_depth_params, in_view,
+    projection_admitted,
 };
 
 /// Map terrain entries remain the render metadata source, but once rules-backed
@@ -249,12 +250,18 @@ pub(crate) struct DisplayEffectInputs<'a> {
 /// Traverse dynamic effect bodies in actual Display order. Anim and particle
 /// consumers share the mutative55AF60 FPS latch; grouping them by class changes
 /// native admission when the unsigned minimum/buffer arithmetic wraps.
+/// Prepared building slots keep their binding/light owner, but query and append
+/// only at their own encounter, even when preparation produced no visible piece.
 pub(crate) fn build_display_effect_instances(
     input: &DisplayEffectInputs<'_>,
     ground_objects: &mut Vec<
         crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance,
     >,
     ground_order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
+    mut prepared_building_anims: BTreeMap<
+        crate::sim::anim_class::AnimId,
+        crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance,
+    >,
 ) -> Option<Vec<super::particles::ParticleDrawObservation>> {
     let mut observations = input.observe_particles.then(Vec::new);
     let sim = input.sim;
@@ -279,6 +286,7 @@ pub(crate) fn build_display_effect_instances(
         input.render_size[0] as f32 / z2,
         input.render_size[1] as f32 / z2,
     );
+    let projection_viewport = [input.tactical[2] as f32 / z2, input.tactical[3] as f32 / z2];
     let parachute_type = input
         .rules
         .general
@@ -326,11 +334,6 @@ pub(crate) fn build_display_effect_instances(
         let Some(anim) = sim.anim(stable_id) else {
             continue;
         };
-        // DrawIt422CA0..4238AF does not read native19B. Display membership
-        // supplies live draws; Building slots use the binding owner above.
-        if anim.is_building_anim() {
-            continue;
-        }
         // The canopy is placed by `build_parachute_instances`, on its owner's
         // sort key.
         if parachute_type.is_some_and(|ty| parachute_canopy_owner(anim, ty).is_some()) {
@@ -339,6 +342,41 @@ pub(crate) fn build_display_effect_instances(
         let type_name: &str = sim.interner().resolve(anim.type_id());
         let config = input.rules.art().anim_runtime_config(type_name);
         if config.is_some_and(|config| !config.art_body_read) {
+            continue;
+        }
+        // AnimDrawIfVisible422C70 rejects delay+184 before Object5F4B10's
+        // Tactical6D2140 projection gate and the mutative DrawIt55AF60 query.
+        // Whole-slot controls: spatial_oracle/building_anim_detail.json.
+        if anim.runtime().delay_remaining != 0 {
+            continue;
+        }
+        // AnimGetCoords422BE0 resolves owner-relative coordinates. Admission
+        // uses the same painted point as the existing body emitter, without
+        // image offsets or the parent Building's viewport/body visibility.
+        let Some(anim_coord) = sim.anim_absolute_coord(stable_id) else {
+            continue;
+        };
+        let (mut center_x, mut center_y, rx, ry, _, mut lift_px) =
+            anim_world_render_coords(anim_coord);
+        let is_building_anim = anim.is_building_anim();
+        // Slot preparation uses the committed coordinate; retain that geometry.
+        // Free Anims keep their existing sampled point for admission and drawing.
+        if !is_building_anim && let Some(interpolation) = input.interpolation {
+            use crate::app::presentation::interpolation::{PointKind, PointPose};
+            let sample = interpolation.sample_point(
+                PointKind::Anim,
+                stable_id,
+                PointPose::new(
+                    [anim_coord.x, anim_coord.y, anim_coord.z],
+                    anim.type_id().index(),
+                    anim.owner_entity(),
+                ),
+                sim.session().binary_frame(),
+            );
+            [center_x, center_y] = sample.screen;
+            lift_px = sample.lift.round() as i32;
+        }
+        if !projection_admitted([center_x, center_y], input.camera, projection_viewport) {
             continue;
         }
         if !crate::sim::anim_class::anim_draw_detail_visible(
@@ -380,6 +418,14 @@ pub(crate) fn build_display_effect_instances(
         ) {
             continue;
         }
+        if is_building_anim {
+            // DrawIt queries detail before hidden/image/material rejection.
+            // An absent prepared piece must not suppress that query.
+            if let Some(parent) = prepared_building_anims.remove(&stable_id) {
+                ground_objects.push(parent);
+            }
+            continue;
+        }
         // DrawIt423055..42305D resolves the ordinary source as AC + AnimType.Start,
         // just as the building-slot caller. Special draw arms retain their
         // existing frame selection until their own renderer is ported.
@@ -391,29 +437,6 @@ pub(crate) fn build_display_effect_instances(
         let Ok(frame) = u16::try_from(anim.runtime().current_frame.wrapping_add(start)) else {
             continue;
         };
-        // `AnimClass::GetCoords @ 0x00422BE0`: an owner-attached anim stores an
-        // owner-relative delta, so the draw position must be resolved through
-        // the owner rather than read off the field.
-        let Some(anim_coord) = sim.anim_absolute_coord(anim.stable_id()) else {
-            continue;
-        };
-        let (mut center_x, mut center_y, rx, ry, _, mut lift_px) =
-            anim_world_render_coords(anim_coord);
-        if let Some(interpolation) = input.interpolation {
-            use crate::app::presentation::interpolation::{PointKind, PointPose};
-            let sample = interpolation.sample_point(
-                PointKind::Anim,
-                stable_id,
-                PointPose::new(
-                    [anim_coord.x, anim_coord.y, anim_coord.z],
-                    anim.type_id().index(),
-                    anim.owner_entity(),
-                ),
-                sim.session().binary_frame(),
-            );
-            [center_x, center_y] = sample.screen;
-            lift_px = sample.lift.round() as i32;
-        }
         let tint = input.lighting.anim_tint_at((rx, ry), config);
         let remap_color =
             crate::render::sprite_atlas::anim_remap_color(anim, sim.interner(), input.house_colors);
