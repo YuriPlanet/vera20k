@@ -252,6 +252,70 @@ impl Simulation {
         }
     }
 
+    /// `Apply_Squad_Alliances @ 0x0069B170`, which Read_Scenario calls after
+    /// FillInData (`0x00684B45..0x00684B53`). In GameMode 4 it clears
+    /// FixedAlliance (`0x0069B18A..0x0069B19E`); when both of Start Game
+    /// Now's clan lists hold a name, each entry gathers every human House
+    /// (`+0x1EC`) whose name (`+0x15FF4`) matches it under `_stricmp`, in
+    /// House array order (`0x0069B29B..0x0069B33A`). Each list's Houses then
+    /// ally every other one in it, unannounced (`0x0069B41E..0x0069B4BE`),
+    /// and FixedAlliance is set (`0x0069B4DB..0x0069B4E5`).
+    /// GameMode 4 skips Make_Ally's initialization bypass
+    /// (`0x004F9C1F..0x004F9C28`), so the live tail runs here as it does in
+    /// VERA outside the placement scope.
+    /// RESIDUAL: Session+0x688, set beside the flag (`0x0069B4D4`), has no
+    /// traced reader. Native still holds ScenarioInit `[0xA8E7AC]` here
+    /// (released at `0x00684B63`), so Can_Ally returns early (`0x005015A1`);
+    /// VERA runs its defeated and remaining-enemy gates, which no valid clan
+    /// start trips. Whether the live tail's alliance lines reach the message
+    /// list at start is not checked.
+    pub(crate) fn apply_squad_alliances(
+        &mut self,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
+        if self.session.game_mode() != crate::sim::scenario_session::ScenarioGameMode::Wol {
+            return;
+        }
+        self.session.set_fixed_alliance(false);
+        let lists = self.session.wol_squad_lists().clone();
+        if lists.iter().any(Vec::is_empty) {
+            return;
+        }
+        for list in &lists {
+            let mut group = Vec::new();
+            for name in list {
+                for owner in self.houses.order() {
+                    let house = &self.houses[owner];
+                    if house.is_human()
+                        && house.native_scenario_name().is_some_and(|house_name| {
+                            crate::util::native_string::crt_strcmpi(house_name, name).is_eq()
+                        })
+                    {
+                        group.push(*owner);
+                    }
+                }
+            }
+            if group.len() > 1 {
+                for &owner in &group {
+                    for &other in &group {
+                        if owner != other {
+                            self.make_ally(
+                                owner,
+                                other,
+                                rules,
+                                registry,
+                                FrameEffects::default(),
+                                false,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        self.session.set_fixed_alliance(true);
+    }
+
     /// `HouseClass::Make_Ally @ 0x004F9B70`. Only the ALLY event passes
     /// `announce` (`0x004C6E1E`); Paranoid, the triggers and the launch
     /// alliances pass 0.

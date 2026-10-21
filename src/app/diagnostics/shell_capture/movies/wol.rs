@@ -253,6 +253,16 @@ pub enum WolTarget {
     ClanNoStart,
     /// The same, then Choose Map: no FreeForAll, official maps only.
     ClanChooseMap,
+    /// A clan game's match: `[0xB779C4]` = 2, Start Game Now's clan lists
+    /// and FixedAlliance reach the sim, an Ally request is refused, and the
+    /// peer's EXIT kills its House (DestroyConnection `0x005DA8F7`).
+    ClanLeaver,
+    /// A clan game's B5 Abort opens the Surrender box (state 2).
+    ClanSurrender,
+    /// Its OK queues the player's DESTRUCT and EXIT.
+    ClanSurrenderOk,
+    /// A stalled peer's `0xEA` row answers `TXT_CANT_KICK`.
+    ClanCantKick,
 }
 
 impl WolTarget {
@@ -362,6 +372,14 @@ impl WolTarget {
         )
     }
 
+    /// A controlled clan game with the guest in another squad, played.
+    fn clan_match(self) -> bool {
+        matches!(
+            self,
+            Self::ClanLeaver | Self::ClanSurrender | Self::ClanSurrenderOk | Self::ClanCantKick
+        )
+    }
+
     /// The stand-in host whose game the C9 targets join.
     fn guest_host(self) -> &'static str {
         if self == Self::GuestTournamentRows {
@@ -444,6 +462,10 @@ impl WolTarget {
                 | Self::IngamePageCancel
                 | Self::AbortRelogin
                 | Self::VerifyDialog
+                | Self::ClanLeaver
+                | Self::ClanSurrender
+                | Self::ClanSurrenderOk
+                | Self::ClanCantKick
         )
     }
 
@@ -471,6 +493,10 @@ impl WolTarget {
                 | Self::IngamePage
                 | Self::IngamePageCancel
                 | Self::AbortRelogin
+                | Self::ClanLeaver
+                | Self::ClanSurrender
+                | Self::ClanSurrenderOk
+                | Self::ClanCantKick
         )
     }
 }
@@ -579,6 +605,10 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-c2-clan-lockout", WolTarget::ClanLockout),
     ("wol-c2-clan-nostart", WolTarget::ClanNoStart),
     ("wol-choose-map-clan-filter", WolTarget::ClanChooseMap),
+    ("wol-clan-leaver-dies", WolTarget::ClanLeaver),
+    ("wol-clan-surrender", WolTarget::ClanSurrender),
+    ("wol-clan-surrender-ok", WolTarget::ClanSurrenderOk),
+    ("wol-clan-cant-kick", WolTarget::ClanCantKick),
 ];
 
 /// The controlled guest of the C2 targets, the host of the C9 targets.
@@ -680,6 +710,12 @@ enum WolPhase {
     /// `0x116` Back or Join on a chat lobby: waiting for the next page.
     BuddyReturn,
     Settle(u32),
+    /// A clan game's peer EXIT was delivered at `tick`.
+    ClanLeaving {
+        tick: u64,
+    },
+    /// A clan game's peer stalled: waiting for `0xEA`.
+    ClanStalled,
 }
 
 pub(super) struct WolCapture {
@@ -1345,10 +1381,17 @@ impl WolCapture {
                 self.phase = WolPhase::Setup;
             }
             WolPhase::Creating => {
-                service_event(
-                    state,
-                    WolServiceEvent::Created(Ok(vec![member(NICKNAME, MEMBER_OPERATOR, "")])),
-                );
+                // A clan game's echo lists the guest of the other squad too,
+                // so the channel users carry both squads.
+                let members = if self.target.clan_match() {
+                    vec![
+                        squad_member(NICKNAME, MEMBER_OPERATOR, CLAN_SQUAD, "VERA"),
+                        squad_member(PEER, 0, RIVAL_SQUAD, "RIVL"),
+                    ]
+                } else {
+                    vec![member(NICKNAME, MEMBER_OPERATOR, "")]
+                };
+                service_event(state, WolServiceEvent::Created(Ok(members)));
                 ensure!(
                     state.frontend.shell_exit.is_some(),
                     "the create did not slide 0x113 out"
@@ -1459,6 +1502,9 @@ impl WolCapture {
                     "a line received during the match was shown"
                 );
                 self.event(frame, "WOL match installed");
+                if self.target.clan_match() {
+                    return self.clan_match(state, frame);
+                }
                 if matches!(
                     self.target,
                     WolTarget::IngamePage | WolTarget::IngamePageCancel
@@ -1512,6 +1558,71 @@ impl WolCapture {
                 });
                 self.phase = WolPhase::AbortInput;
             }
+            WolPhase::ClanLeaving { tick } => {
+                let sim = &state
+                    .match_state
+                    .sim_runtime
+                    .as_ref()
+                    .context("the clan peer's EXIT lost the runtime")?
+                    .simulation;
+                let peer = clan_peer_house(state)?;
+                // Flag_To_Die's zero allow-win timer (0x004FC980) blows the
+                // House up on its next update; the defeat follows once its
+                // objects are gone.
+                let house = &sim.houses()[&peer];
+                let waited = sim.session().tick().saturating_sub(tick);
+                if !house.left_game() || (!house.is_defeated() && waited < 300) {
+                    return Ok(());
+                }
+                let left = App::csf_label(state, "TXT_LEFT_GAME", "TXT_LEFT_GAME");
+                let posted = state
+                    .match_state
+                    .match_presentation
+                    .message_list
+                    .messages()
+                    .iter()
+                    .any(|row| row.text.contains(left.trim_start_matches("%s").trim()));
+                let killed = house.is_defeated();
+                ensure!(
+                    killed && posted,
+                    "a tournament game's leaver was not killed ({killed}) or its line \
+                     ({posted}) is missing: won {} lost {} tournament {} rows {:?}",
+                    house.has_won(),
+                    house.has_lost(),
+                    sim.session().wol_tournament_game(),
+                    state
+                        .match_state
+                        .match_presentation
+                        .message_list
+                        .messages()
+                        .iter()
+                        .map(|row| row.text.clone())
+                        .collect::<Vec<_>>()
+                );
+                self.event(frame, "the clan leaver's House is killed");
+                self.phase = WolPhase::Settle(2);
+            }
+            WolPhase::ClanStalled => {
+                if !state.match_state.network_wait.dialog_open() {
+                    return Ok(());
+                }
+                crate::app::match_runtime::network_match::propose_kick(state, 1);
+                let refused = App::csf_label(state, "TXT_CANT_KICK", "TXT_CANT_KICK");
+                let last = state
+                    .match_state
+                    .network_wait
+                    .page()
+                    .and_then(|page| page.lines.last())
+                    .map(|line| String::from_utf16_lossy(&line.text));
+                ensure!(
+                    last.as_deref() == Some(refused.as_str())
+                        && state.match_state.network_wait.dialog_open(),
+                    "0xEA's kick in a tournament game did not answer TXT_CANT_KICK: {last:?}"
+                );
+                self.event(frame, json!({"0xEA kick row 1": last}));
+                MoviesCapture::restore_neutral_pointer(state);
+                self.phase = WolPhase::Settle(2);
+            }
             WolPhase::AbortInput => {
                 if self
                     .abort_input
@@ -1519,7 +1630,9 @@ impl WolCapture {
                     .context("WOL abort input")?
                     .after_present(state, &mut self.route, frame)?
                 {
-                    self.phase = if matches!(
+                    self.phase = if self.target == WolTarget::ClanSurrender {
+                        WolPhase::Settle(2)
+                    } else if matches!(
                         self.target,
                         WolTarget::InternetMenu | WolTarget::GameControls
                     ) {
@@ -2089,7 +2202,11 @@ impl WolCapture {
                     | WolTarget::IngameConnectionLost
                     | WolTarget::IngamePage
                     | WolTarget::IngamePageCancel
-                    | WolTarget::AbortRelogin => {
+                    | WolTarget::AbortRelogin
+                    | WolTarget::ClanLeaver
+                    | WolTarget::ClanSurrender
+                    | WolTarget::ClanSurrenderOk
+                    | WolTarget::ClanCantKick => {
                         self.start(state, frame)?;
                         return Ok(());
                     }
@@ -2102,6 +2219,96 @@ impl WolCapture {
         MoviesCapture::restore_neutral_pointer(state);
         crate::app::input::multiplayer_setup::cursor_moved(state);
         self.settle();
+        Ok(())
+    }
+
+    /// The clan game's match: the WOL start terms in the sim, the refused
+    /// Ally, then the target's own step.
+    fn clan_match(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let peer = clan_peer_house(state)?;
+        let (terms, pending) = {
+            let sim = &state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .context("the clan match runtime")?
+                .simulation;
+            let session = sim.session();
+            ensure!(
+                session.wol_tournament_game() && session.fixed_alliance(),
+                "a clan game's start terms did not reach the sim"
+            );
+            let names: Vec<String> = sim
+                .houses()
+                .values()
+                .filter(|house| house.is_human())
+                .filter_map(|house| house.native_scenario_name().map(str::to_owned))
+                .collect();
+            ensure!(
+                names.iter().any(|name| name == NICKNAME) && names.iter().any(|name| name == PEER),
+                "WOL human Houses must carry their nodes' names: {names:?}"
+            );
+            (names, sim.pending_command_snapshot().len())
+        };
+        // 0x731850: FixedAlliance refuses the Ally request.
+        crate::app::input::diplomacy::ally(state, peer);
+        let after = state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .context("the clan match runtime")?
+            .simulation
+            .pending_command_snapshot()
+            .len();
+        ensure!(
+            after == pending,
+            "FixedAlliance did not refuse the Ally request"
+        );
+        self.event(
+            frame,
+            json!({"clan match": {"tournament": 2, "house names": terms,
+                "fixed alliance": true, "ally refused": true}}),
+        );
+        match self.target {
+            WolTarget::ClanSurrender | WolTarget::ClanSurrenderOk => {
+                self.abort_input = Some(abort_return::AbortReturnInput::begin_surrender(
+                    state,
+                    &mut self.route,
+                    frame,
+                    self.target == WolTarget::ClanSurrenderOk,
+                )?);
+                self.phase = WolPhase::AbortInput;
+            }
+            WolTarget::ClanLeaver => {
+                crate::app::match_runtime::network_match::service_event(
+                    state,
+                    crate::app::match_runtime::network_match::NetworkMatchEvent::PeerExit {
+                        source_index: 1,
+                    },
+                )?;
+                let tick = state
+                    .match_state
+                    .sim_runtime
+                    .as_ref()
+                    .context("the clan match runtime")?
+                    .simulation
+                    .session()
+                    .tick();
+                self.event(frame, "controlled clan peer EXIT");
+                self.phase = WolPhase::ClanLeaving { tick };
+            }
+            WolTarget::ClanCantKick => {
+                crate::app::match_runtime::network_match::service_event(
+                    state,
+                    crate::app::match_runtime::network_match::NetworkMatchEvent::PeerStalled {
+                        source_index: 1,
+                    },
+                )?;
+                self.event(frame, "controlled clan peer stall");
+                self.phase = WolPhase::ClanStalled;
+            }
+            _ => unreachable!("clan match targets"),
+        }
         Ok(())
     }
 
@@ -2248,16 +2455,23 @@ impl WolCapture {
         };
         setup::service_event(state, ready())?;
         let layout = crate::app::input::multiplayer_setup::layout(state);
-        setup_click(
-            state,
-            crate::ui::skirmish_shell::checkbox_icon_rect(layout.checkboxes[0], layout.page.scale),
-        );
-        ensure!(
-            !state.match_state.session.network_player_ready(1),
-            "a C2 option edit kept the guest's acceptance"
-        );
-        setup_requests(state);
-        setup::service_event(state, ready())?;
+        // A clan room's Short Game is locked (0x78F85E), so the edit is
+        // made only elsewhere.
+        if !self.target.clan_match() {
+            setup_click(
+                state,
+                crate::ui::skirmish_shell::checkbox_icon_rect(
+                    layout.checkboxes[0],
+                    layout.page.scale,
+                ),
+            );
+            ensure!(
+                !state.match_state.session.network_player_ready(1),
+                "a C2 option edit kept the guest's acceptance"
+            );
+            setup_requests(state);
+            setup::service_event(state, ready())?;
+        }
         setup_button(state, setup_ui::START)?;
         let requests = setup_requests(state);
         ensure!(
@@ -2983,6 +3197,20 @@ impl WolCapture {
                         | WolTarget::PersonaPicks
                 ) || target.guest_joined() =>
             {
+                if target.clan_match() {
+                    // The own squad request's answer (0x7A4EC0) enables the
+                    // clan box.
+                    service_event(
+                        state,
+                        WolServiceEvent::Squad {
+                            id: CLAN_SQUAD,
+                            squad: Ok(crate::ui::wol_lobby::WolSquad {
+                                name: "VERA Testers".into(),
+                                tag: "VERA".into(),
+                            }),
+                        },
+                    );
+                }
                 lobby_button(state, &layout, lobby_ui::CREATE)?;
                 ensure!(
                     Self::lobby(state)?
@@ -2995,7 +3223,18 @@ impl WolCapture {
                 );
                 self.event(frame, "0xC3 opened");
                 if self.target != WolTarget::CreatePopup {
-                    let ok = crate::ui::shell::modal::wol_create_game_layout(width, height).ok;
+                    let create = crate::ui::shell::modal::wol_create_game_layout(width, height);
+                    if self.target.clan_match() {
+                        welcome_click(
+                            state,
+                            crate::ui::skirmish_shell::checkbox_icon_rect(
+                                create.clan,
+                                crate::ui::shell::geom::ShellScale::RETAIL,
+                            ),
+                        );
+                        self.event(frame, "0xC3 clan box");
+                    }
+                    let ok = create.ok;
                     welcome_click(state, ok);
                     self.event(frame, "0xC3 OK");
                     self.phase = WolPhase::Leaving;
@@ -3660,6 +3899,10 @@ impl WolCapture {
             }
             WolTarget::IngamePage => Some(crate::ui::pause_menu::InGameMenuState::Page),
             WolTarget::GameControls => Some(crate::ui::pause_menu::InGameMenuState::Options),
+            WolTarget::ClanSurrender => Some(crate::ui::pause_menu::InGameMenuState::Surrender),
+            WolTarget::ClanLeaver | WolTarget::ClanCantKick => {
+                Some(crate::ui::pause_menu::InGameMenuState::Closed)
+            }
             _ => None,
         } {
             // The connection-lost row types itself out on the wall clock.
@@ -3721,6 +3964,33 @@ impl WolCapture {
                 "focused": login.focused_control,
             })),
         })
+    }
+}
+
+/// The controlled guest's House.
+fn clan_peer_house(state: &AppState) -> Result<crate::sim::intern::InternedId> {
+    let sim = &state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .context("the clan match runtime")?
+        .simulation;
+    state
+        .match_state
+        .session
+        .network_source_owner(1)
+        .and_then(|owner| sim.interner().get(&owner))
+        .context("the clan peer's House")
+}
+
+/// The user's and the controlled guest's squads in a clan game.
+const CLAN_SQUAD: i32 = 7;
+const RIVAL_SQUAD: i32 = 9;
+
+fn squad_member(name: &str, flags: u32, squad: i32, tag: &str) -> WolMember {
+    WolMember {
+        squad,
+        ..member(name, flags, tag)
     }
 }
 

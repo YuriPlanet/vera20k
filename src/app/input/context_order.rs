@@ -98,6 +98,12 @@ pub(crate) enum AttackAction {
     /// Move (1) over an object: an Aircraft's own Cell action under it
     /// (`0x00417D7C`), which its ClickedAction sends to Foot's Move arm.
     Move,
+    /// AttackSupport (0x3B): a player's healing Unit's Attack on a Cell
+    /// (`0x007404FD..0x00740522`). SetCursorFromAction (`0x004AAE90`) has no
+    /// case for it, so it shows the arrow (row 0), and Foot's ClickedAction_Cell
+    /// (`0x004D7D50`) takes its default case (`0x004D8237`): the click is
+    /// consumed and sends nothing.
+    AttackSupport,
 }
 
 /// The allied-object part of Techno6FFEC0's unforced attack admission,
@@ -290,7 +296,38 @@ pub(crate) fn attack_action(
         }
         TargetKind::Cell(..) => human,
     };
-    let mut action = if admitted
+    // TechnoClass::What_Action_OnObject's tail (`0x0070056C..0x007005E6`):
+    // Select over an object the player may select that is not selected,
+    // unless an armed player's object points at another House's, or at its
+    // own loaner. The warp arm (`0x006FFF03..0x006FFF8A`) asks the same
+    // without the target's own warp test (`0x007005CD`).
+    let selects = |target_id: u64, warp_test: bool| {
+        sim.entities().get(target_id).is_some_and(|object| {
+            !(armed && human && object.owner() != actor.owner())
+                && !(actor.is_mission_only() && actor.discovery.owned_by_current_house())
+                && sim.object_is_selectable(target_id, rules)
+                && !object.selection.is_selected()
+                && !(warp_test && object.is_warped_out())
+        })
+    };
+    // An object being warped out (vt+0x1D4) answers before the attack rung:
+    // 0 on a Cell (`0x00700731`; warping in too, `0x00700743`), and over an
+    // object the tail's Select, else 0. A berserk one answers 0 before that
+    // (`0x006FFEC9`). The class tails below still run on the answer; none
+    // turns its 0 into NoMove, as the object is not controllable (vt+0xA0,
+    // `0x00700C40`), but a Building's Cell tail still answers its rally.
+    let warping =
+        actor.is_warped_out() || (actor.is_warping_in() && matches!(target, TargetKind::Cell(..)));
+    let mut action = if warping {
+        match *target {
+            TargetKind::Entity(target_id)
+                if !actor.berserk.is_active() && selects(target_id, false) =>
+            {
+                AttackAction::Select
+            }
+            _ => AttackAction::None,
+        }
+    } else if admitted
         && (sim.techno_player_controllable(actor_id, rules)
             || resolved_unit_in_range(
                 sim,
@@ -316,17 +353,56 @@ pub(crate) fn attack_action(
     {
         AttackAction::Attack
     } else if let TargetKind::Entity(target_id) = *target
-        && let Some(object) = sim.entities().get(target_id)
-        && !(armed && human && object.owner() != actor.owner())
-        && !(actor.is_mission_only() && actor.discovery.owned_by_current_house())
-        && sim.object_is_selectable(target_id, rules)
-        && !object.selection.is_selected()
-        && !object.is_warped_out()
+        && selects(target_id, true)
     {
         AttackAction::Select
     } else {
         AttackAction::None
     };
+    let healing_unit = actor.category() == EntityCategory::Unit
+        && human
+        && crate::sim::combat::combat_weapon::weapon_damage_value(
+            actor,
+            kind,
+            sim.entities(),
+            rules,
+            sim.interner(),
+        ) < 0;
+    // UnitClass::What_Action_OnCell 0x007404FD..0x00740522: a player's Unit
+    // whose GetWeaponDamageValue(-1) (0x006F3970) is negative, an IFV with an
+    // Engineer, turns Foot's Attack on a Cell into AttackSupport (0x3B), which
+    // every later Unit rung returns unchanged (0x0074072B..0x0074075F).
+    if action == AttackAction::Attack && healing_unit && matches!(target, TargetKind::Cell(..)) {
+        action = AttackAction::AttackSupport;
+    }
+    // UnitClass::What_Action_OnObject's healer arm (0x0073FD7C)
+    // asks Is_Ally_ByObject (0x004F9A90), which refuses a Terrain object's
+    // null House, so the answer is 0 (0x00740115) and the Foot tail below
+    // makes it NoMove. A Techno target's healer arm is
+    // `Simulation::unit_repair_action`.
+    if healing_unit
+        && let TargetKind::Entity(target_id) = *target
+        && sim.terrain_objects().get(target_id).is_some()
+    {
+        action = AttackAction::None;
+    }
+    // UnitClass::What_Action_OnObject 0x0073FE48: a Unit that is not IsActive
+    // (0x007010D0; a Robot Tank without its control) turns Foot's Attack over
+    // an object into Move where it may crush it (a crusher, and
+    // Is_Crushable_By 0x005F6CD0), otherwise Select (0x0073FE3B).
+    if action == AttackAction::Attack
+        && actor.category() == EntityCategory::Unit
+        && let TargetKind::Entity(target_id) = *target
+        && !sim.techno_is_active(actor_id, rules)
+    {
+        action = if crate::sim::combat::veterancy::is_crusher(actor.veterancy.rank_kind(), kind)
+            && sim.object_crushable_by_unit(actor_id, target_id, rules)
+        {
+            AttackAction::Move
+        } else {
+            AttackAction::Select
+        };
+    }
     // Unit74077F..7407E5 /740389..7403E8: the fully deployed
     // SimpleDeployer repeats SelectWeapon(NULL), then range. This returns
     // Action2, unlike the Techno control/range Action0 branch above.
@@ -808,9 +884,10 @@ fn attack_branch_orders(
             continue;
         }
         match action {
-            AttackAction::None | AttackAction::NoMove | AttackAction::Move => {
-                consumed_attack_action = true
-            }
+            AttackAction::None
+            | AttackAction::NoMove
+            | AttackAction::Move
+            | AttackAction::AttackSupport => consumed_attack_action = true,
             AttackAction::Rally => unreachable!("rally remains with its existing receiver"),
             AttackAction::Select => select_fallback = true,
             AttackAction::Attack => {
@@ -1225,7 +1302,9 @@ pub(super) fn selection_can_attack_move(
 /// Techno object700191..700217 / Cell700830..700894. The keyboard chord
 /// alone is not a Guard action. Object targets must be allied; bare ground
 /// requires IsActive7010D0. Waypoint/patrol input is not exposed by VERA.
-/// Shared by the hover and click producers; no simulation state is changed.
+/// A berserk object answers 0 before the rung (object `0x006FFEC9`, Cell
+/// `0x00700609`). Shared by the hover and click producers; no simulation
+/// state is changed.
 pub(super) fn guard_area_admitted(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -1235,7 +1314,9 @@ pub(super) fn guard_area_admitted(
     let Some(actor) = sim.entities().get(actor_id) else {
         return false;
     };
-    if !sim.house_is_human_player(actor.owner()) || !sim.techno_player_controllable(actor_id, rules)
+    if actor.berserk.is_active()
+        || !sim.house_is_human_player(actor.owner())
+        || !sim.techno_player_controllable(actor_id, rules)
     {
         return false;
     }
@@ -1253,6 +1334,38 @@ pub(super) fn guard_area_admitted(
         }
         None => sim.techno_is_active(actor_id, rules),
     }
+}
+
+/// Techno What_Action on a Cell's Ctrl+Alt rung (`0x00700815..0x007008A3`):
+/// whether `actor_id` answers GuardArea (0x1A) on `cell`, ahead of the move
+/// rungs, as `viewer` sees it. The class wrappers then keep it, except:
+/// - over a shrouded Cell centre a Foot's wrapper turns it into Move or
+///   NoMove (`0x004DDE64..0x004DDEBE`, the bridge-raised test of
+///   [`Simulation::clicked_cell_is_shrouded`]), as the move rungs answer there;
+/// - a Building with a rally line turns it into Move (`0x0044774B`); any
+///   other Building's wrapper (`0x00447540`) keeps it, shroud or not.
+///
+/// The hover, the Foot click and the Building click all ask this.
+///
+/// [`Simulation::clicked_cell_is_shrouded`]: crate::sim::world::Simulation::clicked_cell_is_shrouded
+pub(super) fn cell_guard_area_action(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor_id: u64,
+    viewer: Option<InternedId>,
+    cell: (u16, u16),
+) -> bool {
+    let Some(actor) = sim.entities().get(actor_id) else {
+        return false;
+    };
+    let rewritten = if actor.category() == EntityCategory::Structure {
+        sim.interner()
+            .object_type(actor.type_ref(), rules)
+            .is_some_and(|object| object.has_rally_line())
+    } else {
+        viewer.is_some_and(|viewer| sim.clicked_cell_is_shrouded(viewer, cell) == Ok(true))
+    };
+    !rewritten && guard_area_admitted(sim, rules, actor_id, None)
 }
 
 /// The order one receiver commits for a Move click's destination.
@@ -1408,7 +1521,10 @@ fn object_attack_click_command(
             return move_near(crate::sim::world::MoveAction::NoMove);
         }
         AttackAction::Move => return move_near(crate::sim::world::MoveAction::Move),
-        AttackAction::Select | AttackAction::None | AttackAction::Rally => return None,
+        AttackAction::Select
+        | AttackAction::None
+        | AttackAction::Rally
+        | AttackAction::AttackSupport => return None,
     }
     match infantry_attack_action(sim, rules, attacker_id, target_id) {
         Some(InfantryAttackAction::NoMove) => {
@@ -1469,7 +1585,8 @@ impl From<AttackAction> for ReleaseAction {
             AttackAction::Attack
             | AttackAction::NoMove
             | AttackAction::Rally
-            | AttackAction::Move => Self::Other,
+            | AttackAction::Move
+            | AttackAction::AttackSupport => Self::Other,
         }
     }
 }
@@ -1903,8 +2020,9 @@ pub(crate) fn try_queue_context_order_at_screen_point(
         {
             // Each selected object's What_Action on the Cell reaches its
             // unforced Attack rung on its own (0x004AE750's object loop);
-            // its tail is the forced shot's, and any other answer keeps
-            // the object on its Move rungs below. Foot's shroud wrapper
+            // its tail is the forced shot's (Attack, or a healing Unit's
+            // AttackSupport), and any other answer keeps the object on its
+            // Move rungs below. Foot's shroud wrapper
             // (0x004DDE64..0x004DDEBE) takes a Foot's Attack back over a
             // shrouded Cell; the Building wrapper keeps it.
             let rung: Vec<u64> = selected_ids
@@ -1922,14 +2040,17 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                             &resources.rules,
                             Some(&resources.overlay_registry),
                         )
-                        && armed_action(
-                            sim,
-                            &resources.rules,
-                            id,
-                            &attack_target,
-                            true,
-                            Some(&resources.overlay_registry),
-                        ) == Some(AttackAction::Attack)
+                        && matches!(
+                            armed_action(
+                                sim,
+                                &resources.rules,
+                                id,
+                                &attack_target,
+                                true,
+                                Some(&resources.overlay_registry),
+                            ),
+                            Some(AttackAction::Attack | AttackAction::AttackSupport)
+                        )
                 })
                 .collect();
             attack_branch_orders(
@@ -2267,7 +2388,7 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 })
                 .map(|target| target.stable_id);
             // Foot4DDDE0's hidden-cell wrapper rewrites a nonzero action
-            // except GuardArea0x33 to Move when MoveToShroud and the playfield
+            // except the planning action 0x33 to Move when MoveToShroud and the playfield
             // admit it, otherwise NoMove (4DDE8F..4DDEB0). It does not preserve
             // Attack5. The ordinary MTNK fall-through below takes Move; other
             // class/shroud combinations remain part of the shared-cell audit.
@@ -2318,9 +2439,16 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                     };
                     payload
                 } else if modifier == OrderModifier::GuardArea
-                    && guard_area_admitted(sim, &resources.rules, stable_id, None)
+                    && cell_guard_area_action(
+                        sim,
+                        &resources.rules,
+                        stable_id,
+                        Some(owner_id),
+                        (target_rx, target_ry),
+                    )
                 {
-                    // Ctrl+Alt over bare ground uses the same admission as hover.
+                    // Ctrl+Alt over bare ground uses the same rung as hover;
+                    // a Foot over shroud takes the Move path below.
                     Command::Guard {
                         entity_id: stable_id,
                         target: Some(TargetKind::Cell(target_rx, target_ry)),
@@ -2593,7 +2721,9 @@ pub(super) fn self_click_command(
     planning: bool,
 ) -> Option<Command> {
     let target = hover?;
-    if planning_refuses_self(sim, local_owner, selected_ids, target, planning) {
+    if planning_refuses_self(sim, local_owner, selected_ids, target, planning)
+        || self_is_warped_out(sim, target)
+    {
         return None;
     }
     self_action(sim, rules, local_owner, selected_ids, target)
@@ -2615,25 +2745,36 @@ pub(super) fn self_answers_no_deploy(
     target: &HoverTargetKindWithId,
     planning: bool,
 ) -> bool {
-    self_deploy_is_refused(
-        sim,
-        rules,
-        registry,
-        local_owner,
-        selected_ids,
-        target,
-        planning,
-    ) || (selected_ids == [target.stable_id]
-        && sim.entities().get(target.stable_id).is_some_and(|entity| {
-            entity.owner() == local_owner
-                && sim
-                    .interner()
-                    .object_type(entity.type_ref(), rules)
-                    .is_some_and(|object| {
-                        self_deploy_is_blocked(entity, object)
-                            || is_simple_deploy_unit(entity, object)
-                    })
-        }))
+    !self_is_warped_out(sim, target)
+        && (self_deploy_is_refused(
+            sim,
+            rules,
+            registry,
+            local_owner,
+            selected_ids,
+            target,
+            planning,
+        ) || (selected_ids == [target.stable_id]
+            && sim.entities().get(target.stable_id).is_some_and(|entity| {
+                entity.owner() == local_owner
+                    && sim
+                        .interner()
+                        .object_type(entity.type_ref(), rules)
+                        .is_some_and(|object| {
+                            self_deploy_is_blocked(entity, object)
+                                || is_simple_deploy_unit(entity, object)
+                        })
+            })))
+}
+
+/// Techno's warp arm (`0x006FFF03..0x006FFF8A`) precedes the self rung
+/// (`0x007000B9`): an object being warped out (a Chronosphere's warp-out,
+/// which leaves it selected) answers 0 over itself, as it is selected, so it
+/// neither deploys nor answers NoDeploy.
+fn self_is_warped_out(sim: &crate::sim::world::Simulation, target: &HoverTargetKindWithId) -> bool {
+    sim.entities()
+        .get(target.stable_id)
+        .is_some_and(|entity| entity.is_warped_out())
 }
 
 /// The release of the lone selected Unit or Infantryman `target` clicked by
@@ -3506,8 +3647,7 @@ fn shot_is_illegal(
 /// has no arm for NoMove or for the Ctrl+Alt guard rung's 0x1A
 /// (`0x0044372F..0x00443737`): a Construction Yard over a Cell it may not
 /// stand on neither archives nor packs up, nor does an active building
-/// without a rally line under `guard_area` ([`guard_area_admitted`],
-/// `0x00700815..0x007008A3`; a rally line turns it into Move, `0x0044774B`).
+/// without a rally line under `guard_area` ([`cell_guard_area_action`]).
 /// A query the sim cannot answer (no map cells) keeps Move: VERA-internal, as
 /// a live gamemd session always has a map.
 #[allow(clippy::too_many_arguments)]
@@ -3536,7 +3676,7 @@ fn building_cell_orders(
         else {
             continue;
         };
-        if guard_area && !object.has_rally_line() && guard_area_admitted(sim, rules, id, None) {
+        if guard_area && cell_guard_area_action(sim, rules, id, Some(owner), cell) {
             continue;
         }
         let action = sim
@@ -6786,6 +6926,10 @@ mod retail_entry_tests;
 #[cfg(test)]
 #[path = "context_order_retail_terrain_tests.rs"]
 mod retail_terrain_tests;
+
+#[cfg(test)]
+#[path = "context_order_retail_inactive_unit_tests.rs"]
+mod retail_inactive_unit_tests;
 
 #[cfg(test)]
 #[path = "context_order_retail_self_deploy_tests.rs"]

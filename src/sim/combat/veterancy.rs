@@ -343,6 +343,12 @@ pub fn has_weapon_ability(rank: VeterancyRank, object: &ObjectType, ability: Abi
     }
 }
 
+/// A crusher: `Crusher=` (`TechnoType+0xD28`) or the Crusher ability by rank
+/// (`HasWeaponAbility(0x11)`, `0x0070D0D0`), the pair every crush gate reads.
+pub fn is_crusher(rank: VeterancyRank, object: &ObjectType) -> bool {
+    object.crusher || has_weapon_ability(rank, object, Ability::Crusher)
+}
+
 /// A demolition infantryman's test: `C4=` (`InfantryType+0xEC2`) or a rank
 /// holding weapon ability 14 ([`has_weapon_ability`]), in that order.
 pub fn holds_c4(rank: VeterancyRank, object: &ObjectType) -> bool {

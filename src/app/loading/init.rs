@@ -1834,6 +1834,8 @@ pub(super) fn install_startup_session_mode(
     simulation.install_session_mode(startup.session_mode());
     if let LoadingStartup::Network(accepted) = startup {
         simulation.install_network_timing(accepted.max_ahead_frames());
+        let wol = accepted.wol_start();
+        simulation.install_wol_start(wol.tournament, wol.squad_lists.clone());
     }
 }
 

@@ -184,6 +184,9 @@ struct NetworkSession {
     /// The WOL game channel's kind (`0x0077D940`/`0x0077D970`), fixed for
     /// the setup it hosts.
     room: NetworkRoom,
+    /// The WOL start's tournament value and clan lists, taken at
+    /// OnGameStart/Start Game Now for the accepted start.
+    wol_start: WolStartTerms,
     loading_requests: Vec<NetworkLoadingRequest>,
     map_metadata: Option<NetworkMapMetadata>,
     proposed_seed: Option<u32>,
@@ -391,6 +394,7 @@ impl MatchSession {
         self.offline_player_name = None;
         self.network = Some(NetworkSession {
             room: NetworkRoom::default(),
+            wol_start: WolStartTerms::default(),
             loading_requests: Vec::new(),
             map_metadata: None,
             proposed_seed: None,
@@ -1542,6 +1546,14 @@ impl MatchSession {
         Ok(())
     }
 
+    /// OnGameStart's `[0xB779C4]` and Start Game Now's clan lists for the
+    /// accepted WOL start.
+    pub(crate) fn set_wol_start(&mut self, terms: WolStartTerms) {
+        if let Some(network) = self.network.as_mut() {
+            network.wol_start = terms;
+        }
+    }
+
     pub(crate) fn network_max_ahead_frames(&self) -> Option<i32> {
         self.network.as_ref()?.max_ahead_frames
     }
@@ -1610,6 +1622,7 @@ impl MatchSession {
             network.return_context.session_mode(),
             self.host,
             max_ahead_frames,
+            std::mem::take(&mut network.wol_start),
         ));
         network.phase = NetworkPhase::Frozen {
             connected: (0..startup.launch_session().humans.len()).collect(),
@@ -1795,6 +1808,15 @@ impl MatchSession {
     pub(crate) fn host(&self) -> bool {
         self.host
     }
+}
+
+/// What a WOL start hands the match: OnGameStart's `[0xB779C4]` (the
+/// channel's tournament value, 2 in a clan room) and Start Game Now's two
+/// clan name lists `[0xB77A04]`/`[0xB76568]`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct WolStartTerms {
+    pub(crate) tournament: i32,
+    pub(crate) squad_lists: [Vec<String>; 2],
 }
 
 /// A WOL game channel's kind from its record: tournament `+0x14` and the

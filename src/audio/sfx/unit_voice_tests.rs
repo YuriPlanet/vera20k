@@ -126,7 +126,14 @@ fn two_reached_gi_voices_share_admission_and_original_main_sample_continuation()
     let initial_main = main.native_state_hex();
     let mut clock = arbiter::AudioServiceClock::default();
     assert!(clock.admit(1000));
-    player.service_events(1000, registry, &assets, index, &mut retained_draws(&main));
+    player.service_events(
+        1000,
+        registry,
+        &crate::rules::sound_ini::EvaRegistry::default(),
+        &assets,
+        index,
+        &mut retained_draws(&main),
+    );
     player
         .observe_pcm(PcmObservationConfig {
             sound_ids: vec!["GIMove".into(), "CommandBar".into()],
@@ -195,7 +202,16 @@ fn two_reached_gi_voices_share_admission_and_original_main_sample_continuation()
     assert!(clock.admit(1034));
 
     let (mut draw, ranges) = recorded_draws(&main);
-    let (_, raw) = trace_draws(|| player.service_events(1034, registry, &assets, index, &mut draw));
+    let (_, raw) = trace_draws(|| {
+        player.service_events(
+            1034,
+            registry,
+            &crate::rules::sound_ini::EvaRegistry::default(),
+            &assets,
+            index,
+            &mut draw,
+        )
+    });
     let expected_ranges: Vec<_> = service["requests"]
         .as_array()
         .unwrap()
@@ -417,7 +433,14 @@ fn shared_pool_admission_and_channel_shifts_match_original_main_draws() {
                 let (mut draw, ranges) = recorded_draws(&main);
                 let (_, raw) = trace_draws(|| {
                     if clock.admit(now) {
-                        player.service_events(now, &registry, &assets, index, &mut draw);
+                        player.service_events(
+                            now,
+                            &registry,
+                            &crate::rules::sound_ini::EvaRegistry::default(),
+                            &assets,
+                            index,
+                            &mut draw,
+                        );
                     }
                 });
                 // Native controls run no device-worker iteration here. Keep

@@ -401,8 +401,6 @@ impl Simulation {
     ) {
         use crate::map::cell_index::NativeCellIdentity;
         use crate::rules::locomotor_type::MovementZone;
-        use crate::rules::object_type::Ability;
-        use crate::sim::combat::veterancy::has_weapon_ability;
         use crate::sim::overlay_grid::WallPointerTarget;
 
         let Some(terrain) = self.resolved_terrain.as_ref() else {
@@ -415,9 +413,7 @@ impl Simulation {
         let Some(object) = self.object_type(actor.type_ref(), rules) else {
             return;
         };
-        if !(object.crusher
-            || has_weapon_ability(actor.veterancy.rank_kind(), object, Ability::Crusher))
-        {
+        if !crate::sim::combat::veterancy::is_crusher(actor.veterancy.rank_kind(), object) {
             return;
         }
         let Some(flags) = self

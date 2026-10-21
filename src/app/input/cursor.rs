@@ -467,7 +467,8 @@ pub(crate) fn terrain_object_feedback(
 /// ([`Simulation::cell_attack_rung_admits`]) precedes its Shift and Move
 /// rungs, so it answers under every chord but Ctrl (the forced rung above)
 /// and Ctrl+Alt. Its tail is the forced shot's; an answer other than Attack
-/// falls through to the Move rungs. Foot's shroud wrapper turns it back into
+/// or a healing Unit's AttackSupport (the arrow, `0x007404FD`) falls through
+/// to the Move rungs. Foot's shroud wrapper turns it back into
 /// Move or NoMove over a shrouded Cell (`0x004DDE64..0x004DDEBE`); the
 /// Building wrapper (`0x00447540`) keeps a building's Attack there.
 ///
@@ -499,10 +500,13 @@ fn unforced_cell_attack_feedback(
         return None;
     }
     let target = combat::TargetKind::Cell(cell.0, cell.1);
+    // The arrow here is a healing Unit's AttackSupport, which stops the rungs.
     match force_fire_feedback(sim, id, &target, selected_count, rules, overlay_registry)? {
-        Some(feedback @ (CursorFeedbackKind::EnemyUnit | CursorFeedbackKind::EnemyOutOfRange)) => {
-            Some(feedback)
-        }
+        Some(
+            feedback @ (CursorFeedbackKind::EnemyUnit
+            | CursorFeedbackKind::EnemyOutOfRange
+            | CursorFeedbackKind::Default),
+        ) => Some(feedback),
         _ => None,
     }
 }
@@ -540,18 +544,17 @@ fn empty_cell_cursor(
     order_mode: crate::app::presentation::render::OrderMode,
 ) -> CursorFeedbackKind {
     use crate::sim::world::MoveAction;
+    if modifier == super::context_order::OrderModifier::GuardArea
+        && let (Some(rules), Some(id)) = (rules, best_id)
+        && super::context_order::cell_guard_area_action(sim, rules, id, viewer, cell)
+    {
+        return CursorFeedbackKind::GuardArea;
+    }
     let action = what_action_on_cell(sim, viewer, best_id, cell, modifier, rules, registry);
     match action {
         MoveAction::None => return CursorFeedbackKind::Default,
         MoveAction::NoMove => return CursorFeedbackKind::Invalid,
         MoveAction::Move | MoveAction::Harvest => {}
-    }
-
-    if modifier == super::context_order::OrderModifier::GuardArea
-        && let (Some(rules), Some(id)) = (rules, best_id)
-        && super::context_order::guard_area_admitted(sim, rules, id, None)
-    {
-        return CursorFeedbackKind::GuardArea;
     }
     // The one resolved object's harvest rungs, not the whole selection's.
     if action == MoveAction::Harvest {
@@ -664,10 +667,12 @@ pub(super) fn capability_cursor_for_hover(
 ) -> CursorFeedbackKind {
     use super::context_order::OrderModifier;
     use crate::map::entities::EntityCategory;
+    // Techno's berserk exit and warp arm (`0x006FFEC9`, `0x006FFF03`)
+    // precede its key reads (`0x00700006`).
     if modifier == OrderModifier::Shift
         && !best_id
             .and_then(|id| sim.entities().get(id))
-            .is_some_and(|actor| actor.berserk.is_active())
+            .is_some_and(|actor| actor.berserk.is_active() || actor.is_warped_out())
     {
         return CursorFeedbackKind::Select;
     }
@@ -706,6 +711,7 @@ pub(super) fn capability_cursor_for_hover(
         && let (Some(rules), Some(entity)) = (rules, hovered_entity)
         && sim.session().current_house() == Some(entity.owner())
         && !entity.berserk.is_active()
+        && !entity.is_warped_out()
     {
         if super::context_order::self_click_command(
             sim,
@@ -965,6 +971,11 @@ pub(super) fn capability_cursor_for_hover(
                     EntityCategory::Aircraft | EntityCategory::Structure
                 )
             })
+        // Unit `0x007403EB` and Infantry `0x0051F05E` make that 0 NoMove
+        // only for an object they may control (vt+0xA0); else it stays 0.
+        && best_id
+            .zip(rules)
+            .is_none_or(|(id, rules)| sim.techno_player_controllable(id, rules))
     {
         return CursorFeedbackKind::Invalid;
     }
@@ -1011,7 +1022,9 @@ pub(super) fn capability_cursor_for_hover(
                     false,
                     overlay_registry,
                 ) {
-                    AttackAction::None => return CursorFeedbackKind::Default,
+                    AttackAction::None | AttackAction::AttackSupport => {
+                        return CursorFeedbackKind::Default;
+                    }
                     AttackAction::NoMove => return CursorFeedbackKind::Invalid,
                     AttackAction::Select => return CursorFeedbackKind::FriendlyUnit,
                     AttackAction::Rally | AttackAction::Move => return CursorFeedbackKind::Move,
@@ -1277,6 +1290,7 @@ fn action_feedback(
         AttackAction::NoMove => Some(CursorFeedbackKind::Invalid),
         AttackAction::Rally | AttackAction::Move => Some(CursorFeedbackKind::Move),
         AttackAction::Select => Some(CursorFeedbackKind::FriendlyUnit),
+        AttackAction::AttackSupport => Some(CursorFeedbackKind::Default),
         AttackAction::Attack => Some(
             if attack_cursor_is_in_range(
                 sim,
@@ -3544,6 +3558,35 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             bomb_hover(&sim, &rules, engineer, EnemyUnit, far_tank),
             CursorFeedbackKind::DisarmBomb,
             "a bomb the player does not see"
+        );
+    }
+}
+
+#[cfg(test)]
+mod cursor_attack_support_tests {
+    use super::force_fire_feedback;
+    use crate::app::types::CursorFeedbackKind;
+
+    /// SetCursorFromAction (`0x004AAE90`) has no case for a healing Unit's
+    /// AttackSupport (0x3B): Ctrl over the ground shows the arrow.
+    #[test]
+    fn retail_engineer_ifv_ctrl_over_the_ground_shows_the_arrow() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = &retail.rules;
+        let (sim, ifv, _) =
+            crate::app::input::context_order::retail_ifv_repair_tests::repair_ifv(rules);
+        assert_eq!(
+            force_fire_feedback(
+                &sim,
+                ifv,
+                &crate::sim::combat::TargetKind::Cell(16, 19),
+                1,
+                Some(rules),
+                None,
+            ),
+            Some(Some(CursorFeedbackKind::Default))
         );
     }
 }

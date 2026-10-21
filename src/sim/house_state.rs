@@ -1480,7 +1480,7 @@ impl HouseState {
         );
     }
 
-    pub(crate) fn native_scenario_name(&self) -> Option<&str> {
+    pub fn native_scenario_name(&self) -> Option<&str> {
         self.native_scenario_name.as_deref()
     }
 

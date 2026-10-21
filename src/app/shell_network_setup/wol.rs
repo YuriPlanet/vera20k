@@ -571,6 +571,10 @@ pub(super) fn game_started(
         .match_state
         .session
         .prepare_wol_timing(pings, channel_owner)?;
+    // [0xB779C4] (0x7A7D0E..0x7A7D49) and Start Game Now's clan lists
+    // (0x795250..0x79546E) for the match.
+    let terms = crate::app::shell_wol::lobby::start_terms(state);
+    state.match_state.session.set_wol_start(terms);
     // C2/C9 stay up: Start Game Now (0x794BA0) pushes the verify 0x130
     // over them with the nodes in [0xA8DA78] order (0x794C5B).
     let names = launch_names(state);

@@ -126,6 +126,12 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
             return;
         }
         if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::Surrender
+        {
+            crate::app::input::surrender::mouse(state, button, pressed);
+            return;
+        }
+        if state.match_state.match_presentation.in_game_menu
             == crate::ui::pause_menu::InGameMenuState::Diplomacy
         {
             crate::app::input::diplomacy::mouse(state, button, pressed);
@@ -764,6 +770,12 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
             == crate::ui::pause_menu::InGameMenuState::AbortConfirm
         {
             crate::app::input::abort::cursor_moved(state);
+            return;
+        }
+        if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::Surrender
+        {
+            crate::app::input::surrender::cursor_moved(state);
             return;
         }
         if state.match_state.match_presentation.in_game_menu

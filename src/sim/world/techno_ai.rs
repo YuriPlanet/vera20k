@@ -782,6 +782,9 @@ fn techno_ai_shell(
             // at43FE56. A yellow-crossing selfheal must not retire damage
             // fire one native frame early.
             crate::sim::credit_income::produce_cash_step(sim, id, rules);
+            // UpdateAnimation's depot raise (`0x00450A86..0x00450B34`) runs
+            // just before its InfantryAbsorb block (`0x00450B34`).
+            sim.update_depot_raise_anim(id, rules);
             sim.update_building_absorb_anim(id, rules);
             sim.update_building_storage_anims(id, rules);
             // UpdateAnimation's slot-anim light (`0x00450A47..0x00450A77`).
@@ -979,8 +982,8 @@ fn techno_ai_shell(
         // (`0x0041504A`/`0x00415058`). Keep the counter here; the sole promotion
         // is `object_ai_post_movement_promote_one`.
         //
-        // AircraftClass::AI drops an unsensed cloaked Target, then reaches the
-        // common Techno AI body through FootClass::AI (`0x00414DA3`), so the
+        // AircraftClass::AI drops an airborne or unsensed cloaked Target, then
+        // reaches the common Techno AI body through FootClass::AI (`0x00414DA3`), so the
         // off-mission clear, the counter, MissionClass::AI and the passive
         // block run in AI_Update's order (`0x006FA5E8..0x006FA6EE`). The
         // retail fixed-wing types are `CanPassiveAquire=no`, so the block's
@@ -990,7 +993,9 @@ fn techno_ai_shell(
         // gives a zero flags word, which the class gate (`0x006F821A`) refuses
         // for every candidate; the scan's Scenario draw and timer remain.
         EntityCategory::Aircraft => {
-            drop_unsensed_cloaked_target_step(sim, id, rules, ctx.effects);
+            if !drop_airborne_target_step(sim, id, rules, ctx.effects) {
+                drop_unsensed_cloaked_target_step(sim, id, rules, ctx.effects);
+            }
             if !techno_common_steps(sim, id, rules, ctx.overlay_registry, ctx.effects, None) {
                 return;
             }
@@ -1275,6 +1280,40 @@ fn self_heal_step(
         id,
         rules,
     );
+}
+
+/// `AircraftClass::AI @ 0x00414D2C..0x00414D4B`: a Target whose vt+0x54
+/// answers true (IsHighFlying: Object `0x005F6B90`, Aircraft `0x0041B920`,
+/// [`is_high_flying`](crate::sim::movement::air_movement::is_high_flying))
+/// is dropped every frame through `Assign_Target(NULL)` (vt+0x3C8), and the
+/// cloaked-target test below is skipped (`JMP 0x00414DA1`). Returns whether
+/// it dropped one. A Cell's slot (`0x00410530`) answers false, and so does a
+/// Terrain object on the ground.
+fn drop_airborne_target_step(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    effects: FrameEffects<'_>,
+) -> bool {
+    let Some(crate::sim::combat::TargetKind::Entity(target_id)) = sim
+        .substrate
+        .entities
+        .get(id)
+        .and_then(|entity| entity.attack_target.target())
+    else {
+        return false;
+    };
+    if !sim.substrate.entities.get(target_id).is_some_and(|target| {
+        crate::sim::movement::air_movement::is_high_flying(
+            target,
+            sim.resolved_terrain.as_ref(),
+            Some((rules, &sim.interner)),
+        )
+    }) {
+        return false;
+    }
+    let _ = sim.assign_target_represented(id, None, rules, None, effects);
+    true
 }
 
 /// `AircraftClass::AI @ 0x00414D4D..0x00414DA1`, read from the disassembly:
@@ -4272,6 +4311,60 @@ mod tests {
             Some(MissionType::Guard),
             "stock [Attack] carries neither key"
         );
+    }
+
+    /// `AircraftClass::AI` drops a Target in the air every frame
+    /// (`0x00414D2C..0x00414D4B`): another aircraft at the high-flight
+    /// threshold (2 x 104 leptons) goes, one a lepton below it stays. The
+    /// production object visit runs the step.
+    #[test]
+    fn an_aircraft_drops_a_target_in_the_air() {
+        let pair = |altitude: i32| {
+            let mut sim = Simulation::with_seed(0x414D2C);
+            for (id, owner, rx) in [(1, "Americans", 5), (2, "Russians", 6)] {
+                let mut entity = GameEntity::test_default(id, "ORCA", owner, rx, 5);
+                entity.set_category_for_test(EntityCategory::Aircraft);
+                entity.lifecycle.set_in_limbo_for_test(false);
+                entity.lifecycle.set_cell_marked_for_test(true);
+                entity.set_owner_for_test(sim.interner.intern(owner));
+                sim.substrate.entities.insert(entity);
+            }
+            sim.substrate
+                .entities
+                .get_mut(2)
+                .unwrap()
+                .position
+                .set_exact_z_leptons_for_test(Some(altitude));
+            sim.substrate
+                .entities
+                .get_mut(1)
+                .unwrap()
+                .attack_target
+                .set_for_test(Some(TargetKind::Entity(2)));
+            sim
+        };
+        let kept = |altitude: i32| {
+            let mut sim = pair(altitude);
+            let dropped = drop_airborne_target_step(
+                &mut sim,
+                1,
+                RuleSet::empty_for_test(),
+                FrameEffects::empty(),
+            );
+            assert_eq!(dropped, target_of(&sim, 1).is_none());
+            !dropped
+        };
+        assert!(!kept(208));
+        assert!(kept(207));
+        // Off the sixteenth frame, so the illegal-target check stays out.
+        let visited = |altitude: i32| {
+            let mut sim = pair(altitude);
+            sim.session.set_binary_frame_for_test(1);
+            sim.object_ai_visit_one(1, None, ObjectAiCtx::default());
+            target_of(&sim, 1)
+        };
+        assert_eq!(visited(208), None);
+        assert_eq!(visited(207), Some(TargetKind::Entity(2)));
     }
 
     /// `AircraftClass::AI` keeps an unsensed cloaked Target only while its own

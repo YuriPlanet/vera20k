@@ -18,7 +18,22 @@ fn arena(rules: &RuleSet) -> Simulation {
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
+    // The native corpus rows hover mapped ground; Foot's shroud wrapper
+    // (`0x004DDE64..0x004DDEBE`) would rewrite their answers otherwise.
+    let rows = sim.session().map_height();
+    reveal_rows(&mut sim, house.unwrap(), rows);
     sim
+}
+
+/// The player's map shows rows `0..rows` and shrouds the rest.
+fn reveal_rows(sim: &mut Simulation, owner: crate::sim::intern::InternedId, rows: u16) {
+    let (width, height) = (sim.session().map_width(), sim.session().map_height());
+    let fog = sim.fog_mut_for_test();
+    *fog = crate::sim::vision::FogState::new(width, height);
+    fog.reveal_cells_for_owner(
+        owner,
+        (0..width).flat_map(|x| (0..rows).map(move |y| (x, y))),
+    );
 }
 
 #[test]
@@ -228,6 +243,57 @@ fn retail_cell_chords_have_their_native_cursors() {
             "{modifier:?}"
         );
     }
+}
+
+/// Techno's Ctrl+Alt rung (`0x00700815..0x007008A3`) answers GuardArea on
+/// mapped ground. Over shroud a Foot's wrapper (`0x004DDE64..0x004DDEBE`)
+/// makes it Move for a MoveToShroud type, and the click asks the same rung.
+/// A berserk tank never reaches it.
+#[test]
+fn retail_ctrl_alt_over_shroud_is_a_move_for_a_foot() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = arena(rules);
+    let tank = sim
+        .spawn_object("MTNK", "Americans", 16, 16, 64, rules)
+        .unwrap();
+    let owner = sim.interner().get("Americans").unwrap();
+    reveal_rows(&mut sim, owner, 20);
+    let cursor = |sim: &Simulation, cell| {
+        cursor_id_for_feedback(empty_cell_cursor(
+            sim,
+            Some(rules),
+            None,
+            sim.session().current_house(),
+            Some(tank),
+            cell,
+            OrderModifier::GuardArea,
+            crate::app::types::OrderMode::Move,
+        ))
+    };
+    let guards = |sim: &Simulation, cell| {
+        crate::app::input::context_order::cell_guard_area_action(
+            sim,
+            rules,
+            tank,
+            Some(owner),
+            cell,
+        )
+    };
+    assert_eq!(cursor(&sim, (10, 10)), Some(CursorId::GuardArea));
+    assert_eq!(cursor(&sim, (10, 30)), Some(CursorId::Move));
+    assert!(guards(&sim, (10, 10)));
+    assert!(!guards(&sim, (10, 30)));
+    // A berserk tank answers 0 before the rung (`0x00700609`): the arrow.
+    sim.entities_mut_for_test()
+        .get_mut(tank)
+        .unwrap()
+        .berserk
+        .set_active_for_test(true);
+    assert!(!guards(&sim, (10, 10)));
+    assert_eq!(cursor(&sim, (10, 10)), Some(CursorId::Default));
 }
 
 #[test]

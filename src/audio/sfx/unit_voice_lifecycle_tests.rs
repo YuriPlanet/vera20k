@@ -104,6 +104,7 @@ fn with_playback(name: &str, run: impl FnOnce(&mut Playback<'_>)) {
     playback.player.service_events(
         1000,
         playback.registry,
+        &crate::rules::sound_ini::EvaRegistry::default(),
         playback.assets,
         playback.index,
         &mut retained_draws(&playback.main),
@@ -165,6 +166,7 @@ impl Playback<'_> {
             self.player.service_events(
                 milliseconds,
                 self.registry,
+                &crate::rules::sound_ini::EvaRegistry::default(),
                 self.assets,
                 self.index,
                 &mut draw,

@@ -3,6 +3,35 @@
 use super::*;
 use crate::util::save_codec;
 
+#[test]
+fn nominal_type_reader_matches_executed_physical_history() {
+    use crate::rules::ruleset::RuleSet;
+    let corpus = crate::test_fixture::json("tools/spatial_oracle/nominal_building_survivor.json");
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[InfantryTypes]\n0=CONTROL\n[CONTROL]\nStrength=50\n",
+    ));
+    assert!(
+        !RuleSet::from_processed_rules(&layers.process().unwrap())
+            .unwrap()
+            .object("CONTROL")
+            .unwrap()
+            .nominal()
+    );
+    for row in corpus["reader_history"]["rows"].as_array().unwrap() {
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str(row["physical_ini"].as_str().unwrap()),
+        );
+        let rules = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
+        assert_eq!(
+            rules.object("CONTROL").unwrap().nominal(),
+            row["after"].as_u64().unwrap() != 0,
+            "{}",
+            row["physical_ini"]
+        );
+    }
+}
+
 ///71592A reads exact-case ART ShadowIndex with the current field as default,
 ///after each retained Rules Image read. Neither retail zero nor final-image
 ///defaults can replace the previous section's selected value.

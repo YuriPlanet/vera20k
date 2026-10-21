@@ -247,6 +247,7 @@ impl AppAudioRuntime {
             sfx.service_events(
                 wall_ms,
                 catalog.sounds(),
+                catalog.eva(),
                 assets,
                 catalog.index(),
                 &mut draw_main,
@@ -432,6 +433,18 @@ impl AppAudioRuntime {
             .theme
             .queue_then_stop_score_zero(gates, physical, wall_ms);
         self.apply_theme_action(action);
+    }
+}
+
+/// InitSideMixFiles534FAC / LoadContent67E761 bind saved Scenario.Side,
+/// not the separately restored current House. Only successful adoption calls
+/// here; reset retains the outgoing cache until this explicit replacement.
+pub(crate) fn bind_match_eva_context(state: &mut crate::app::AppState) {
+    if let (Some(runtime), Some(sfx)) = (
+        state.match_state.sim_runtime.as_ref(),
+        state.audio.sfx_player.as_mut(),
+    ) {
+        sfx.set_eva_side(runtime.simulation.session().scenario_side());
     }
 }
 

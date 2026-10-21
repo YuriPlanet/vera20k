@@ -194,7 +194,6 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
     let command = radar.movie_command(selected_done, streams_ready);
     match command {
         RadarMovieCommand::Announce => {
-            let side = crate::app::presentation::building_anim::local_eva_side(state);
             if let Some(sfx) = state.audio.sfx_player.as_mut() {
                 sfx.clear_eva_queues();
                 if let (Some(catalog), Some(assets)) = (
@@ -206,8 +205,6 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
                         Some(EvaType::Standard),
                         Some(EvaPriority::Critical),
                         catalog.eva(),
-                        side,
-                        catalog.sounds(),
                         assets,
                         catalog.index(),
                     );

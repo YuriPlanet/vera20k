@@ -402,8 +402,9 @@ fn press_allies_box(state: &mut AppState, row: usize) {
 /// `Ally 0x00731840`: queue EVENT_ALLY toward `house` for the player's
 /// House. Gates (`0x00731840..0x00731877`): a nonzero GameMode, the
 /// Scenario's FixedAlliance bit (`0x400`) clear, AlliesAllowed and
-/// AllyChangeAllowed. FixedAlliance has no VERA field: no skirmish or LAN
-/// writer sets it (`SpecialClass::Init 0x006B8AE0` clears it).
+/// AllyChangeAllowed. FixedAlliance is set only by a WOL clan game's
+/// Apply_Squad_Alliances (`0x0069B170`); `SpecialClass::Init 0x006B8AE0`
+/// clears it.
 /// RESIDUAL: a full OutList (128 records, `[0xA802C8]`) drops the event
 /// natively; VERA's queue has no such cap.
 pub(crate) fn ally(state: &mut AppState, house: InternedId) {
@@ -416,6 +417,7 @@ pub(crate) fn ally(state: &mut AppState, house: InternedId) {
     let rules = &runtime.resources.rules;
     let sim = &mut runtime.simulation;
     if !sim.session().game_mode_nonzero()
+        || sim.session().fixed_alliance()
         || !rules.general.allies_allowed
         || !rules.general.ally_change_allowed
     {

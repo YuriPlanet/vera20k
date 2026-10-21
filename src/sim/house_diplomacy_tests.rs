@@ -441,3 +441,56 @@ fn only_a_human_sender_prints_the_alliance_line() {
         .collect();
     assert_eq!(lines, [(ids[0], true, None)]);
 }
+
+#[test]
+fn squad_alliances_ally_each_clan_list_and_fix_the_alliances() {
+    // Apply_Squad_Alliances 0x0069B170: GameMode 4, both lists nonempty;
+    // each entry gathers the human Houses whose +0x15FF4 matches it under
+    // _stricmp, every pair in a list allies, and FixedAlliance is set.
+    let rules = rules();
+    let (mut sim, ids) = sim_with(
+        &rules,
+        &[
+            ("A", "Americans", true),
+            ("B", "Russians", true),
+            ("C", "Americans", true),
+            ("D", "Russians", true),
+            ("E", "Americans", false),
+        ],
+    );
+    for (id, name) in ids.iter().zip(["Ann", "Bob", "Cid", "Dee", "Ann"]) {
+        sim.houses
+            .get_mut(id)
+            .unwrap()
+            .initialize_scenario_name(name);
+    }
+    sim.session.install_wol_start(
+        2,
+        [
+            vec!["ann".into(), "CID".into()],
+            vec!["Bob".into(), "Dee".into()],
+        ],
+    );
+    // Outside GameMode 4 nothing happens.
+    sim.apply_squad_alliances(&rules, None);
+    assert!(allies(&sim, "A").is_empty() && !sim.session.fixed_alliance());
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Wol);
+    sim.apply_squad_alliances(&rules, None);
+    assert_eq!(allies(&sim, "A"), set(&["C"]));
+    assert_eq!(allies(&sim, "C"), set(&["A"]));
+    assert_eq!(allies(&sim, "B"), set(&["D"]));
+    // The computer named like a list entry is not human.
+    assert!(allies(&sim, "E").is_empty());
+    assert!(sim.session.fixed_alliance() && sim.session.wol_tournament_game());
+
+    // One empty list: the flag is cleared and nobody allies.
+    let (mut sim, _) = sim_with(&rules, &[("A", "Americans", true)]);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Wol);
+    sim.session.set_fixed_alliance(true);
+    sim.session
+        .install_wol_start(2, [vec!["Ann".into()], Vec::new()]);
+    sim.apply_squad_alliances(&rules, None);
+    assert!(!sim.session.fixed_alliance());
+}

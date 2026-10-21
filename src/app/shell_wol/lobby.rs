@@ -286,6 +286,48 @@ pub(crate) fn room(state: &AppState) -> crate::app::match_runtime::session::Netw
     }
 }
 
+/// What the matched OnGameStart and Start Game Now hand the match.
+/// `[0xB779C4]` is the current channel's tournament value, 2 in a clan room
+/// (`0x007A7D0E..0x007A7D49`). In a clan room Start Game Now splits the
+/// channel users, in list order, into two name lists by squad
+/// (`0x00795250..0x0079546E`): the first squad seen, or a user while it is
+/// 0, joins the first list; the next squad the second; a third is left out.
+/// RESIDUAL: native builds the lists when the lobby runner calls Start Game
+/// Now (`0x007800EC`), after OnGameStart; VERA takes them at the matched
+/// OnGameStart, so a user parting in between stays listed. The WDT builder
+/// for `[0xA8B244]` 3 (`0x0079546E..0x00795574`) is dormant for custom games.
+pub(crate) fn start_terms(state: &AppState) -> crate::app::match_runtime::session::WolStartTerms {
+    lobby(state)
+        .and_then(|lobby| Some(start_terms_for(lobby.current.as_ref()?, &lobby.members)))
+        .unwrap_or_default()
+}
+
+fn start_terms_for(
+    current: &WolChannel,
+    members: &[WolMember],
+) -> crate::app::match_runtime::session::WolStartTerms {
+    let clan = current.game_flags & GAME_CLAN != 0;
+    let mut squad_lists: [Vec<String>; 2] = Default::default();
+    if clan {
+        let mut squads = [0; 2];
+        for member in members {
+            let list = if squads[0] == 0 || member.squad == squads[0] {
+                0
+            } else if squads[1] == 0 || member.squad == squads[1] {
+                1
+            } else {
+                continue;
+            };
+            squads[list] = member.squad;
+            squad_lists[list].push(member.name.clone());
+        }
+    }
+    crate::app::match_runtime::session::WolStartTerms {
+        tournament: if clan { 2 } else { current.tournament },
+        squad_lists,
+    }
+}
+
 /// C2's clan start test (`0x0079096A..0x00790B18`) over the channel users.
 pub(crate) fn clan_teams_even(state: &AppState, observer: Option<&str>) -> bool {
     lobby(state).is_some_and(|lobby| clan_split_even(&lobby.members, observer))
@@ -3016,6 +3058,39 @@ mod tests {
         );
         assert_eq!(join_error_reply(0x8000_4005, true), JoinErrorReply::Chat);
         assert_eq!(join_error_reply(0x8004_006D, false), JoinErrorReply::Chat);
+    }
+
+    #[test]
+    fn start_game_now_splits_users_by_their_first_two_squads() {
+        let member = |name: &str, squad| WolMember {
+            name: name.to_string(),
+            squad,
+            ..WolMember::default()
+        };
+        let members = [
+            member("a", 0),
+            member("b", 7),
+            member("c", 9),
+            member("d", 7),
+            member("e", 11),
+            member("f", 9),
+        ];
+        let mut channel = created_channel("Tester", true, false, 1024, 0);
+        let terms = start_terms_for(&channel, &members);
+        assert_eq!(terms.tournament, 2);
+        assert_eq!(
+            terms.squad_lists,
+            [
+                vec!["a".to_string(), "b".into(), "d".into()],
+                vec!["c".to_string(), "f".into()]
+            ]
+        );
+        // Outside a clan room the lists stay empty and the value is raw.
+        channel.game_flags = 0;
+        channel.tournament = 3;
+        let terms = start_terms_for(&channel, &members);
+        assert_eq!(terms.tournament, 3);
+        assert!(terms.squad_lists.iter().all(Vec::is_empty));
     }
 
     #[test]

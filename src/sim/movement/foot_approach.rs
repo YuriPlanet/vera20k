@@ -13,12 +13,10 @@ use super::foot_path::{chebyshev, coord_cell};
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::rules::object_type::Ability;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_kernel::cell_center;
 use crate::sim::cell_rect;
-use crate::sim::combat::veterancy::has_weapon_ability;
 use crate::sim::combat::{self, TargetKind, in_range};
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::mission::MissionType;
@@ -122,8 +120,8 @@ impl Simulation {
             return None;
         }
         let object = self.object_type(actor.type_ref(), rules)?;
-        let crusher = object.crusher
-            || has_weapon_ability(actor.veterancy.rank_kind(), object, Ability::Crusher);
+        let crusher =
+            crate::sim::combat::veterancy::is_crusher(actor.veterancy.rank_kind(), object);
         // Every Approach asks this; most units crush nothing.
         if !crusher && !object.omni_crusher {
             return None;
@@ -146,8 +144,8 @@ impl Simulation {
     }
 
     /// `ObjectClass::Is_Crushable_By @ 0x005F6CD0` of `target` by Unit `id`,
-    /// as the bump crush asks it.
-    fn approach_crushable(&self, id: u64, target: u64, rules: &RuleSet) -> bool {
+    /// as the bump crush and the Unit's object action ask it.
+    pub fn object_crushable_by_unit(&self, id: u64, target: u64, rules: &RuleSet) -> bool {
         let (Some(actor), Some(victim)) = (
             self.substrate.entities.get(id),
             self.substrate.entities.get(target),
@@ -197,7 +195,7 @@ impl Simulation {
                     self.object_distance_to(id, TargetKind::Entity(target))
                         .unwrap_or(i32::MAX)
                 },
-                || self.approach_crushable(id, target, rules),
+                || self.object_crushable_by_unit(id, target, rules),
             )
         {
             return Some(NavTargetRef::object(target));
@@ -207,7 +205,7 @@ impl Simulation {
         }
         crush
             .filter(|&(facts, target)| {
-                facts.omni_arm(|| self.approach_crushable(id, target, rules))
+                facts.omni_arm(|| self.object_crushable_by_unit(id, target, rules))
             })
             .map(|(_, target)| NavTargetRef::object(target))
     }

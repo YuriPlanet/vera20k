@@ -1451,6 +1451,24 @@ mod tests {
     }
 
     #[test]
+    fn a_wol_tournament_remove_player_skips_the_human_test() {
+        // 0x004C7BBF..0x004C7BCE: GameMode 4 with [0xB779C4] set flags the
+        // House without IsHumanControlled.
+        let (mut sim, _, _) = two_human_sim();
+        let ai = sim.intern("Ai");
+        sim.houses_mut_for_test()
+            .register(HouseState::new(ai, 0, None, false, 0, 10));
+        sim.session_mut_for_test()
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Wol);
+        sim.install_network_timing(10);
+        sim.install_wol_start(1, Default::default());
+        schedule_command_in_sim(&mut sim, "Local", Command::RemovePlayer { house_index: 2 })
+            .unwrap();
+        run_due(&mut sim);
+        assert!(sim.houses()[&ai].is_to_die());
+    }
+
+    #[test]
     fn the_ally_record_carries_the_other_house_index_through_the_queue() {
         // Ally 0x00731877..0x007318C8: EventClass(PlayerPtr, 3, index).
         let (mut sim, local, peer) = two_human_sim();

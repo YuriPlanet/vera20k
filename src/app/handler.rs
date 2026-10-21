@@ -880,6 +880,23 @@ impl ApplicationHandler for App {
                     }
                     if in_game
                         && state.match_state.match_presentation.in_game_menu
+                            == crate::ui::pause_menu::InGameMenuState::Surrender
+                    {
+                        // 0x005D36A0: IDOK and IDCANCEL both answer result 1.
+                        if event.state.is_pressed()
+                            && !event.repeat
+                            && matches!(
+                                code,
+                                KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Escape
+                            )
+                        {
+                            crate::app::input::surrender::key(state);
+                        }
+                        state.platform.window.request_redraw();
+                        return;
+                    }
+                    if in_game
+                        && state.match_state.match_presentation.in_game_menu
                             == crate::ui::pause_menu::InGameMenuState::Page
                     {
                         // 0xCF's loop takes every key; Escape names nothing.

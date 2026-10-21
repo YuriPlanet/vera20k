@@ -60,12 +60,10 @@ use super::track_process::TrackFamily;
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::MovementZone;
 use crate::rules::mission_data::MissionType;
-use crate::rules::object_type::Ability;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_kernel::native_xyz_distance;
 use crate::sim::combat::TargetKind;
-use crate::sim::combat::veterancy::has_weapon_ability;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::locomotor::MovementLayer;
@@ -1149,8 +1147,8 @@ impl Simulation {
             return Ok(());
         };
         //Type+D28, or HasWeaponAbility(0x11) by rank (0x70D0D0).
-        let crusher = object.crusher
-            || has_weapon_ability(actor.veterancy.rank_kind(), object, Ability::Crusher);
+        let crusher =
+            crate::sim::combat::veterancy::is_crusher(actor.veterancy.rank_kind(), object);
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
         let native = cells.lookup(cell);
         let deck = cells.flags(native) & 0x100 != 0 && {

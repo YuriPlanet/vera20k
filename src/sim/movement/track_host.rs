@@ -839,12 +839,10 @@ impl Simulation {
             let tilt = object.tilts_when_crushes
                 && (slowdown
                     || (wall
-                        && (object.crusher
-                            || crate::sim::combat::veterancy::has_weapon_ability(
-                                entity.veterancy.rank_kind(),
-                                object,
-                                crate::rules::object_type::Ability::Crusher,
-                            ))));
+                        && crate::sim::combat::veterancy::is_crusher(
+                            entity.veterancy.rank_kind(),
+                            object,
+                        )));
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 // A failed gate retains the flag; there is no per-frame clear.
                 if slowdown {

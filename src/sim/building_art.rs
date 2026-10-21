@@ -15,6 +15,9 @@ use crate::util::native_x87::MaskedX87Ordering::Greater;
 #[path = "building_art_admission.rs"]
 mod admission;
 #[cfg(test)]
+#[path = "building_art_depot_tests.rs"]
+mod depot_tests;
+#[cfg(test)]
 #[path = "building_art_expiry_tests.rs"]
 mod expiry_tests;
 #[cfg(test)]

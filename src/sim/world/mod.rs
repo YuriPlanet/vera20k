@@ -3346,6 +3346,12 @@ impl Simulation {
         self.session.install_network_timing(max_ahead_frames);
     }
 
+    /// The WOL start's tournament value and clan lists
+    /// ([`ScenarioSession::install_wol_start`]).
+    pub fn install_wol_start(&mut self, tournament: i32, squad_lists: [Vec<String>; 2]) {
+        self.session.install_wol_start(tournament, squad_lists);
+    }
+
     /// The map's waypoints ([`ScenarioSession::install_waypoints`]).
     pub fn install_waypoints(
         &mut self,
