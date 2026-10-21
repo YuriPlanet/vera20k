@@ -9,6 +9,14 @@ use crate::sim::{game_entity::GameEntity, world::Simulation};
 use std::collections::HashMap;
 
 fn fixture(building_name: &str, damaged: bool) -> (Simulation, RuleSet, u64, SpriteAtlas) {
+    fixture_with_anim_keys(building_name, damaged, "")
+}
+
+fn fixture_with_anim_keys(
+    building_name: &str,
+    damaged: bool,
+    anim_keys: &str,
+) -> (Simulation, RuleSet, u64, SpriteAtlas) {
     let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/building_slot_replacement.display.json",
     ))
@@ -37,7 +45,9 @@ fn fixture(building_name: &str, damaged: bool) -> (Simulation, RuleSet, u64, Spr
             names.push(name.to_string());
             // A nonzero Start catches selecting relative AC as an atlas frame.
             // The offsets are atlas frame offsets, independent of slot X/Y.
-            art_text.push_str(&format!("[{name}]\nLayer=ground\nLoopCount=-1\nStart=3\n"));
+            art_text.push_str(&format!(
+                "[{name}]\nLayer=ground\nLoopCount=-1\nStart=3\n{anim_keys}"
+            ));
             entries.insert(
                 ShpSpriteKey {
                     palette_context: ShpPaletteContext::SelectedScheme,
@@ -58,6 +68,20 @@ fn fixture(building_name: &str, damaged: bool) -> (Simulation, RuleSet, u64, Spr
                     source_palette: 1,
                 },
             );
+            if !anim_keys.is_empty() {
+                let mut shadow_key = ShpSpriteKey {
+                    palette_context: ShpPaletteContext::SelectedScheme,
+                    type_id: name.to_string(),
+                    facing: 0,
+                    frame: 3,
+                    house_color: HouseColorIndex(1),
+                };
+                let mut shadow = entries[&shadow_key];
+                shadow_key.frame = 23;
+                shadow.page += 20;
+                shadow.offset_x += 9.0;
+                entries.insert(shadow_key, shadow);
+            }
         }
     }
     let art_ini = IniFile::from_str(&art_text);
@@ -153,6 +177,85 @@ fn an_erased_buildings_slot_anims_draw_translucent() {
         .draw_runtime_mut_for_test()
         .forced_translucent = true;
     assert_eq!(alpha(&sim), 0.5);
+}
+
+#[test]
+fn building_slot_draw_retains_body_shadow_order_and_absolute_start_frame() {
+    use crate::render::{tactical_draw_plan::RenderZPolicy, terrain_draw::TerrainPiece};
+    let (sim, rules, building, atlas) = fixture_with_anim_keys("CAOILD", false, "Shadow=yes\n");
+    let anim = sim
+        .entities()
+        .get(building)
+        .unwrap()
+        .building_art
+        .anim_slots()[3]
+        .unwrap();
+    let order = NativeDisplayOrder::new(&[anim]);
+    let planned = emit(&sim, &rules, building, &atlas, &order);
+    assert_eq!(planned.len(), 1);
+    assert_eq!(planned[0].parent.id, anim);
+    assert_eq!(planned[0].pieces.len(), 2);
+    assert_eq!(planned[0].pieces[0].target, ObjectTexture::ShpPage(3));
+    assert_eq!(
+        planned[0].pieces[1].target,
+        ObjectTexture::SpriteAtlasEdit(23, TerrainPiece::Shadow)
+    );
+    assert!(
+        planned[0]
+            .pieces
+            .iter()
+            .all(|piece| piece.render_z == RenderZPolicy::ReadOnly)
+    );
+    let pass = lower_ground_object_instances(planned);
+    assert_eq!(pass.owners, [anim, anim]);
+}
+
+#[test]
+fn building_slot_draws_a_nonempty_shadow_when_the_body_has_no_atlas_entry() {
+    use crate::render::{tactical_draw_plan::RenderZPolicy, terrain_draw::TerrainPiece};
+    let (sim, rules, building, atlas) = fixture_with_anim_keys("CAOILD", false, "Shadow=yes\n");
+    let anim = sim
+        .entities()
+        .get(building)
+        .unwrap()
+        .building_art
+        .anim_slots()[3]
+        .unwrap();
+    let order = NativeDisplayOrder::new(&[anim]);
+    let full = emit(&sim, &rules, building, &atlas, &order);
+    let shadow_key = ShpSpriteKey {
+        palette_context: ShpPaletteContext::SelectedScheme,
+        type_id: sim
+            .interner()
+            .resolve(sim.anim(anim).unwrap().type_id())
+            .to_string(),
+        facing: 0,
+        frame: 23,
+        house_color: HouseColorIndex(1),
+    };
+    // render_shp_frame omits a zero-W/H body; the physical companion frame
+    // still supplies its own nonempty rectangle and palette context.
+    let shadow_only = SpriteAtlas::from_test_entries(HashMap::from([(
+        shadow_key.clone(),
+        *atlas.get(&shadow_key).unwrap(),
+    )]));
+    let planned = emit(&sim, &rules, building, &shadow_only, &order);
+    assert_eq!(planned.len(), 1);
+    assert_eq!(planned[0].parent.id, anim);
+    assert_eq!(planned[0].pieces.len(), 1);
+    assert_eq!(
+        planned[0].pieces[0].target,
+        ObjectTexture::SpriteAtlasEdit(23, TerrainPiece::Shadow)
+    );
+    assert_eq!(planned[0].pieces[0].render_z, RenderZPolicy::ReadOnly);
+    assert_eq!(
+        planned[0].pieces[0].instance.position,
+        full[0].pieces[1].instance.position
+    );
+    assert_eq!(
+        planned[0].pieces[0].instance.z_adjust,
+        full[0].pieces[1].instance.z_adjust
+    );
 }
 
 #[test]
