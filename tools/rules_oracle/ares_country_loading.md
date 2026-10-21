@@ -7,7 +7,7 @@ run `python -m tools.rules_oracle.ares_country_loading --check`.
 
 ## Native component execution
 
-The reference contains ten retained histories (fourteen dispatches), eleven
+The reference contains twelve retained histories (sixteen dispatches), eleven
 constructor/ID-default controls, and four original `sprintf` filename controls.
 The sidecar records the scope, substitutions and payload identity. The original
 instructions stay unchanged, and monitored RNG/detach entries reject execution.
@@ -53,9 +53,16 @@ layers. The shared Special uppercase and 640/800/cooperative layout stay intact.
 Color binding `6847B7 -> 1002F8F0` captures the Country's signed index for
 `642B36/642B91/643BB9`; negative resumes the stock Side lookup.
 
-The process Rules owner supplies the immutable loading-prefix Country/Side
-snapshot, before destructive Full_Init reset. The existing loading-attempt
-atlas owns decoded SHP/PAL and is dropped on ordinary success/handled failure.
+The process Rules owner supplies two observations from the same retained
+Country identity. Color and the resolved PAL bind before Full_Init's E_multi;
+its second primary Country body (687451) then supplies the filename and CSF
+labels for first Draw687588, before TypeReset6876AC. Direct CnCNet and tactical
+capture adapters share PrepareSession's Country master/body admission without
+cached shell settings or a PortPool RNG draw. The owner retains E_multi's
+constructor chronology behind one move-only attempt ticket until the real
+reset boundary; cancellation discards that chronology while retaining the
+actually mutated registry. The loading attempt owns its early decoded palette
+and the atlas owns its uploaded pixels until success or handled failure.
 This corresponds to native success `684C00 -> 554370 -> 72B870` and handled
 failure `684A8B -> 552AA0 -> 552AAA -> 554370`. Native cleanup clears palette
 buffers/Convert while retaining mode; the next `72B530` detects null Convert,
