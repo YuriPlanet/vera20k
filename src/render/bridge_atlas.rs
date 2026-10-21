@@ -441,6 +441,9 @@ fn pack_bridge_sprites(
                 pixel_size: [w as f32, h as f32],
                 offset_x: spr.offset_x,
                 offset_y: spr.offset_y,
+                // Bridge bodies/proxies use their independent draw path.
+                draw_point_offset: [0; 2],
+                extended: false,
             },
         );
     }

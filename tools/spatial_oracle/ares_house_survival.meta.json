@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ares KeepAlive retained physical reader, tracking hooks/continuations, fullvector short-game and normal Foot eligibility, bounded native stream slices.",
+  "assumptions": [
+    "Ares3.0 exports10024990/10024580/100245D0 enter from installed4F8EBD/4FF71B/4FF563 hooks. Shared register frames carry original saved EDI/ESI/EAX; original CPU context and returned saved EAX are restored before each actual continuation. Neither executable text is patched.",
+    "Existing physical Rules retail_history owns synthetic INI file/load/section/ReadString. Full1003C710 establishes nullable KeepAlive+646/+647 unset. Exact field1003F47C..1003F492 runs through original nullable/2048-byte/first-character bool helpers. File sequence is explicit and excludes full Rules Process/type reset, unrelated extension keys and real archive discovery.",
+    "Existing gate Fixture supplies House/Rules/type-index/counter priors. All BaseUnit entries are valid nonnull synthetic UnitType pointers; signed index>=capacity skips, corrupt negative indices/pointers are excluded. Native count and scan results are observed, including fourth entry, duplicates, negative/cancelling counts and capacity boundary.",
+    "Native HouseExt constructor zero-store prefix executes; Add/Remove_Tracking and real Unit/Building object virtuals, shared Type+DF8 ArrayIndex getter and original CounterClass increments/decrements execute. Supplied per-object type facts and retained nullable pairs come from executed reader controls. Captured transfer executes7015D8..7015EB with old owner pointer retained and the new House explicit in EBP; wider ChangeOwner/deletion bodies are excluded.",
+    "Normal scans require nonzero per-class active totals, then original class/vector order and current owner, InLimbo/ParasiteImUsing fields; no health/map-membership equivalence is assumed. The supplied parasite pointer represents allocated ParasiteClass, not eater or attached status.",
+    "Native nullable stream helpers and HouseExt+18 save/load field slices execute on a preallocated native byte-vector stream with original copy leaves. They demonstrate retained bytes, not complete SAV files, swizzling or all extension fields. Zero Main/RandomRanged, action-timer-start and detach entries are asserted within these bounded bodies."
+  ],
+  "substitutions": [
+    "Existing Fixture records Blowup_All4FC6D0/MPlayer_Defeated4FC0B0 and returns without executing. Existing house_tracking owned-type-set749020 boundary returns zero at entry; this set is not a survival input. No complete class constructor/lifecycle scheduler, death RNG, full teardown or original scenario comparison.",
+    "Retain the existing single gate VM; map Ares over unused lower stack space, retain its historical SP and expand scratch only. Reuse existing physical Rules VM/PE mapper; no new INI/parser/counter/RNG implementation. DebugINIParseFailed is a recorded diagnostic sink."
+  ],
+  "entry_points": {
+    "gate": "0x004F8E86",
+    "survival_export": "0x10024990",
+    "add_tracking": "0x004FF700",
+    "remove_tracking": "0x004FF550",
+    "tracking_helper": "0x10021F70",
+    "type_constructor": "0x1003C710",
+    "keep_alive_reader": "0x1003F47C",
+    "nullable_reader": "0x1000E9B0",
+    "capture_tracking": "0x007015D8",
+    "nullable_save": "0x1000F0C0",
+    "nullable_load": "0x1000D7E0",
+    "house_count_save": "0x1001F4D7",
+    "house_count_load": "0x1001F366"
+  },
+  "replay_command": "python -m tools.spatial_oracle.house_defeat_gate --ares-survival",
+  "payload_sha256": "9134be4c8765a35b8812d3db3789f5a75e59cc0841c96eac81a08dbd519d0cf6"
+}

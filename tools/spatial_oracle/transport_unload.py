@@ -3,6 +3,8 @@
 Default: four independent hull/turret state-1 controls in the existing dock VM.
 --retail: BFRT turn/no-turn and FV/HTK turret-turn histories in FootMissions'
 physical Anytown crop, using its original type/actor/locomotor/placement owners.
+--deploy-event: ordinary ground-transport D producer, Event9 receiver and empty
+Unload admission components in the same existing dock VM.
 See transport_unload.md for supplied boundaries and input preparation.
 """
 from pathlib import Path
@@ -167,7 +169,257 @@ def retail_controls():
         htk_turret=retail_history('HTK', 0x2000, True))
 
 
+def _deploy_fixture(mission, cargo):
+    from tools.spatial_oracle import refinery_dock as rd
+
+    u, call, read = rd.make_dock_fixture(dict(
+        harvester=False, linked=False, mission='guard', west_building=False,
+        frame=100, seed=1, nav=[11, 10], moving=mission == 2))
+    for offset, values in (
+        (0xAC, (mission, 7, -1)), (0xB8, (1,)), (0xBC, (7,)),
+        (0xC0, (50, 90, 40, 777, 99)),
+        (0x114, (cargo, rd.OTHER if cargo else 0)),
+        (0x218, (rd.cell(7, 7),)),
+        (0x2B4, (rd.cell(12, 12), rd.cell(13, 13))),
+        (0x5A8, (rd.cell(14, 14),)), (0x6E4, (9,)),
+    ):
+        u.mem_write(rd.ACTOR + offset, dwords(*values))
+    u.mem_write(rd.ACTOR + 0x90, b'\x01')
+    u.mem_write(rd.ACTOR + 0x81, b'\x00')
+    u.mem_write(rd.TYPE + 0x5E0, dwords(2))
+    return u, call, read
+
+
+def _deploy_trace(u, read):
+    from unicorn import UC_HOOK_CODE
+    from unicorn.x86_const import UC_X86_REG_ESP
+    from tools.native_oracle import NativeCallTrace
+
+    specs = {
+        0x65ACB0: ('over_out_first_contact', 1, 4),
+        0x741970: ('unit_assign_destination', 2, 8),
+        0x6FCDB0: ('techno_assign_target', 1, 4),
+        0x5B35E0: ('queue_mission', 2, 8),
+        0x5B3570: ('commence', 0, 0),
+        0x700D50: ('can_deploy_slash_unload', 0, 0),
+        0x65C7E0: ('scenario_random_ranged', 2, 8),
+        0x65C780: ('main_random', 0, 0),
+        0x750920: ('sound_play', 2, 8),
+        0x7509E0: ('sound_play_at', 4, 16),
+        0x708D90: ('queue_voice', 1, 4),
+        0x70D150: ('action_timer_start', 1, 4),
+        0x7258D0: ('detach', 2, 8),
+        0x5F5280: ('object_detach', 2, 8),
+        0x405190: ('allocate_sound_sample', 0, 0),
+        0x4061D0: ('sound_sample_volume', 0, 0),
+        0x406270: ('play_sound_sample', 0, 0),
+    }
+    trace = NativeCallTrace(u, read)
+
+    def observe(_u, pc, _size, _data):
+        sp = u.reg_read(UC_X86_REG_ESP)
+        trace.returned(pc, sp)
+        if pc in specs:
+            trace.entered(pc, sp, specs[pc])
+
+    u.hook_add(UC_HOOK_CODE, observe)
+    return trace
+
+
+def _deploy_calls(trace, start=0):
+    rows = []
+    for call in trace.calls[start:]:
+        row = dict(name=call['name'], args=call['args'])
+        if call['name'] == 'scenario_random_ranged':
+            row['value'] = call['return_eax']
+        elif call['name'] == 'can_deploy_slash_unload':
+            row['returned_al'] = call['return_eax'] & 255
+        rows.append(row)
+    return rows
+
+
+def _deploy_snapshot(u, read):
+    from tools.spatial_oracle import refinery_dock as rd
+
+    signed = lambda off: struct.unpack('<i', u.mem_read(rd.ACTOR + off, 4))[0]
+    return dict(
+        mission=signed(0xAC), suspended_mission=signed(0xB0), queued=signed(0xB4),
+        movement_bypass=u.mem_read(rd.ACTOR + 0xB8, 1)[0], status=signed(0xBC),
+        mission_start=signed(0xC0), mission_accum=signed(0xC4),
+        timer_start=signed(0xC8), timer_duration=signed(0xD0),
+        target=rd.cell_xy(read(rd.ACTOR + 0x2B4)),
+        suspended_target=rd.cell_xy(read(rd.ACTOR + 0x2B8)),
+        archive=rd.cell_xy(read(rd.ACTOR + 0x218)),
+        nav=rd.cell_xy(read(rd.ACTOR + 0x5A4)),
+        suspended_nav=rd.cell_xy(read(rd.ACTOR + 0x5A8)),
+        cargo=signed(0x114), keep_count=signed(0x6E4),
+        drive_destination=list(struct.unpack('<3i', u.mem_read(rd.LOCO + 0x34, 12))))
+
+
+def deploy_event_control(mission, cargo):
+    from tools.native_oracle import RET_MAGIC
+    from tools.spatial_oracle import refinery_dock as rd
+    from tools.spatial_oracle.unit_scatter_state import SP
+
+    u, call, read = _deploy_fixture(mission, cargo)
+    text = bytes(u.mem_read(0x401000, 0x3E0000))
+    trace = _deploy_trace(u, read)
+    rng = lambda: bytes(u.mem_read(rd.SCENARIO + 0x218, 1012))
+
+    def moving():
+        call(read(read(rd.LOCO + 4) + 0x10), 0, [rd.LOCO + 4])
+        return bool(u.reg_read(UC_X86_REG_EAX) & 255)
+
+    before = _deploy_snapshot(u, read)
+    before['drive_is_moving'] = moving()
+    initial_rng = rng()
+    # Resolved actor supplied after Event9's token/planning prefix. All later
+    # lifecycle, terrain, mission, class and factory gates execute unchanged.
+    u.mem_write(SP, bytes(0x100))
+    u.reg_write(UC_X86_REG_ESP, SP)
+    u.reg_write(UC_X86_REG_ESI, rd.ACTOR)
+    stop = run_checked(u, 0x4C76D7, (0x4C7818, 0x4C8109), count=300000,
+                       required_addresses=[0x65ACB0, rd.ASSIGN, 0x6FCDB0, rd.QUEUE])
+    trace.returned(stop, u.reg_read(UC_X86_REG_ESP))
+    after = _deploy_snapshot(u, read)
+    after['drive_is_moving'] = moving()
+    result = dict(input=dict(mission=mission, cargo=cargo), before=before,
+                  event_stop=hex(stop), after_event=after,
+                  scenario_rng_before_hex=initial_rng.hex(),
+                  event_rng_unchanged=rng() == initial_rng,
+                  event_calls=_deploy_calls(trace))
+    mark = len(trace.calls)
+    # Explicit promotion component: this is not a Ready/Logic scheduler port.
+    call(rd.COMMENCE, rd.ACTOR, [])
+    trace.returned(RET_MAGIC, u.reg_read(UC_X86_REG_ESP))
+    result.update(commence_returned_al=u.reg_read(UC_X86_REG_EAX) & 255,
+                  after_direct_commence=_deploy_snapshot(u, read),
+                  commence_rng_unchanged=rng() == initial_rng,
+                  commence_calls=_deploy_calls(trace, mark))
+    if cargo == 0 and mission != 16:
+        mark = len(trace.calls)
+        call(0x73D630, rd.ACTOR, [])
+        trace.returned(RET_MAGIC, u.reg_read(UC_X86_REG_ESP))
+        result.update(unload_returned_delay=u.reg_read(UC_X86_REG_EAX),
+                      after_first_empty_unload=_deploy_snapshot(u, read),
+                      scenario_rng_after_unload_hex=rng().hex(),
+                      unload_calls=_deploy_calls(trace, mark))
+    assert not trace.pending
+    assert bytes(u.mem_read(0x401000, 0x3E0000)) == text
+    return result
+
+
+def deploy_key_producer(cargo):
+    from tools.native_oracle import RET_MAGIC
+    from tools.spatial_oracle import refinery_dock as rd
+    from tools.spatial_oracle.unit_scatter_state import SP
+
+    u, _call, read = _deploy_fixture(5, cargo)
+    text = bytes(u.mem_read(0x401000, 0x3E0000))
+    items = rd.EXTRA + 0x2C800
+    for address, value in ((0xA83D4C, rd.HOUSE), (0xA8ECC8, 1),
+                           (0xA8ECBC, items), (items, rd.ACTOR)):
+        u.mem_write(address, dwords(value))
+    u.mem_write(rd.ACTOR + 0x83, b'\x01')
+    u.mem_write(rd.TYPE + 0x230, b'\x01')
+    trace = _deploy_trace(u, read)
+    u.mem_write(SP, dwords(RET_MAGIC))
+    u.reg_write(UC_X86_REG_ESP, SP)
+    stop = run_checked(u, 0x730AF0, (RET_MAGIC, 0x6FFE00), count=200000,
+                       required_addresses=[0x730AF0, 0x700D50])
+    trace.returned(stop, u.reg_read(UC_X86_REG_ESP))
+    assert not trace.pending
+    assert bytes(u.mem_read(0x401000, 0x3E0000)) == text
+    return dict(cargo=cargo, stop=hex(stop),
+                event_opcode=read(u.reg_read(UC_X86_REG_ESP) + 4)
+                    if stop == 0x6FFE00 else None,
+                calls=_deploy_calls(trace))
+
+
+def deploy_default_sound():
+    from unicorn.x86_const import UC_X86_REG_EBP, UC_X86_REG_EDX
+    from tools.native_oracle import RET_MAGIC
+    from tools.spatial_oracle import refinery_dock as rd
+
+    u, call, read = _deploy_fixture(5, 0)
+    text = bytes(u.mem_read(0x401000, 0x3E0000))
+    trace = _deploy_trace(u, read)
+    # Constructor components produce the default rather than supplying -1 as
+    # this test's answer. The intervening constructor/layer loader is excluded.
+    u.reg_write(UC_X86_REG_EBP, 0xCCCCCCCC)
+    u.reg_write(UC_X86_REG_ESI, rd.RULES)
+    run_checked(u, 0x66585F, 0x665862)
+    run_checked(u, 0x66606A, 0x666070)
+    sound = read(rd.RULES + 0x72C)
+    u.mem_write(0x8464AC, b'\x01')
+    u.reg_write(UC_X86_REG_EDX, 0x2000)
+    call(0x750920, sound, [0x3F800000, 0])
+    trace.returned(RET_MAGIC, u.reg_read(UC_X86_REG_ESP))
+    assert not trace.pending
+    assert bytes(u.mem_read(0x401000, 0x3E0000)) == text
+    return dict(sound_id=struct.unpack('<i', dwords(sound))[0], audio_enabled=True,
+                edx_flags=0x2000, volume_bits='3f800000', second_stack_argument=0,
+                returned_eax=u.reg_read(UC_X86_REG_EAX), calls=_deploy_calls(trace))
+
+
+def deploy_event_controls():
+    return dict(
+        fixture=dict(passengers=2, frame=100, seed=1, unload_rate=0.016,
+                     status=7, queued=-1, movement_bypass=1,
+                     mission_start=50, mission_accum=90,
+                     timer_start=40, timer_duration=99, suspended_mission=7),
+        deploy_key=[deploy_key_producer(cargo) for cargo in (0, 1)],
+        receiver=[deploy_event_control(mission, cargo)
+                  for mission, cargo in ((5, 0), (2, 0), (16, 0), (2, 1))],
+        default_sound=deploy_default_sound())
+
+
+def deploy_event_metadata():
+    return provenance(
+        scope='Ordinary ground transport D: two selected-unit producers, four '
+              'Event9/Commence admission controls, two empty first Unload visits '
+              'within those controls, and a default D-sound component.',
+        entry_points=dict(deploy_command=0x730AF0, event_producer=0x6FFE00,
+                          deploy_receiver=0x4C76D7, deploy_receiver_stop=0x4C7818,
+                          unit_destination=0x741970, techno_target=0x6FCDB0,
+                          queue=0x5B35E0, commence=0x5B3570, unload=0x73D630,
+                          scenario_random=0x65C7E0, sound=0x750920),
+        assumptions=[
+            'Reuse refinery_dock.make_dock_fixture and its original Unit/Type '
+            'vtables, constructed Drive, supplied 32x32 map, House and Scenario '
+            'seed1. Positive Passengers2, no bunker/radio contacts/EMP/factory, '
+            'ordinary land and alive nonlimbo Unit; no original Unit constructor.',
+            'Supplied frame100, Unload Rate0.016, old target/destination and '
+            'retained archive/suspended Cell identities. Move rows begin with '
+            'original Drive IsMoving true. Status7 and bypass1 are sentinels; '
+            'the already-Unload row is not dispatched as a status7 handler.',
+            'The count1 head is a nonnull fixture sentinel, never dereferenced: '
+            'only producer/receiver/Commence admission is executed for it.',
+            'Receiver starts with ESI=resolved actor after token/planning work. '
+            'Direct Commence supplies the promotion boundary; no Ready/Logic '
+            'scheduler or later mission-timer scheduling is executed.',
+            'Default sound executes constructor OR/store components66585F and '
+            '66606A, then whole750920 with audio enabled and D argument values; '
+            'not full Rules construction, sound catalog or OS playback.'],
+        substitutions=[
+            'Only inherited Interlocked OS imports. No original gameplay '
+            'instructions, vtables, parser answers, RNG results or decisions patched.',
+            'D producer stops at6FFE00 before event encoding/delivery and the '
+            'success sound tail. Receiver stops at4C7818 before its epilogue.',
+            'Empty land transport executes one complete73D630 call after direct '
+            'Commence. No passenger ejection/placement, later Unload/Guard '
+            'promotion, full pathfinding or death mechanism.'])
+
+
 if __name__ == '__main__':
+    if '--deploy-event' in sys.argv:
+        if '--retail' in sys.argv:
+            raise SystemExit('--deploy-event and --retail select different corpora')
+        finish_vectors(deploy_event_controls,
+            Path(__file__).with_name('ground_transport_deploy.json'),
+            argv=[arg for arg in sys.argv[1:] if arg != '--deploy-event'],
+            provenance=deploy_event_metadata)
+        raise SystemExit(0)
     retail = '--retail' in sys.argv
     finish_vectors(retail_controls if retail else gate_controls,
         Path(__file__).with_name('transport_unload_retail.json' if retail else 'transport_unload_gate.json'),

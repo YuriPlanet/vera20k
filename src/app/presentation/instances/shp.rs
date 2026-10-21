@@ -1566,7 +1566,7 @@ fn emit_building_anims(
         }
         // DrawIt's translucency selection (`0x00423061`): a building being
         // erased draws its slot anims at 50%, or 75% for `DoubleThick=`.
-        let Some(alpha) = super::overlays::anim_instance_alpha_with_flags(
+        let Some(flags) = super::overlays::anim_instance_flags(
             Some(runtime_config),
             instance.draw_flags(),
             instance.runtime().current_frame,
@@ -1582,6 +1582,7 @@ fn emit_building_anims(
         ) else {
             continue;
         };
+        let alpha = crate::rules::art_data::anim_translucency_source_alpha(flags);
         // Anim+AC is relative to this instance's current type Start. Replacement
         // copies only AC; its timer/loop state remains the new constructor's.
         let Ok(frame) = u16::try_from(
@@ -1605,11 +1606,7 @@ fn emit_building_anims(
                 house_color
             },
         };
-        let anim_entry_opt = atlas.get(&anim_key);
-
-        let Some(anim_entry) = anim_entry_opt else {
-            continue;
-        };
+        let anim_entry = atlas.get(&anim_key);
 
         // Slot construction/repositioning already converts art X/Y into
         // this Anim's retained coordinate. Consume that owner rather than
@@ -1619,21 +1616,6 @@ fn emit_building_anims(
         };
         let (screen_x, screen_y, _, _, _, lift_px) =
             super::overlays::anim_world_render_coords(coord);
-        let ax = screen_x + anim_entry.offset_x;
-        let ay = screen_y + anim_entry.offset_y;
-        if !in_view(
-            ax,
-            ay,
-            anim_entry.pixel_size[0],
-            anim_entry.pixel_size[1],
-            viewport[0],
-            viewport[1],
-            viewport[2],
-            viewport[3],
-            200.0,
-        ) {
-            continue;
-        }
         // Original451988 copies the slot's ZAdjust even when it is zero;
         // the constructor's AnimType ZAdjust is not a zero-value fallback.
         let z_adjust_px = instance.z_adjust() + ANIM_DRAW_DEPTH_BIAS_PX;
@@ -1666,47 +1648,68 @@ fn emit_building_anims(
                 ),
             )
         };
-        // DrawIt blits with flags 0x2800 (`z_read`), which takes the word
-        // from either frame encoding.
+        // Preserve the existing body's color-word path. The shared pass
+        // builder clears it independently for the later shadow.
         let policy = BlitPolicy::z_read(SpriteEncoding::Plain);
-        let palette_light =
-            palette_light.with_colour_word(if policy.ors_colour_word(anim_entry.extended) {
-                anim_word(anim_id)
-            } else {
-                0
-            });
-        // Native Z (`AnimClass__DrawIt @ 0x00422CA0`): an anim draw carries
-        // 0x2800 with gradient entry 2 and `YDrawOffset + ZAdjust -
-        // AdjustForZ - 2`; it tests Z per pixel and never writes.
+        let palette_light = palette_light.with_colour_word(anim_word(anim_id));
+        // DrawIt422CA0 -> 4AED70 retains the Anim's Convert selector. Reducing
+        // it to alpha loses the indexed palette/A lookup and packed RGB565
+        // blend (spatial_oracle/building_anim_translucency). The inherited
+        // cloak/offset/effect composition is a separate, unresolved owner.
+        // The shared pass builder replaces this material for the shadow.
+        let (alpha, draw_state) = if flags & 6 != 0
+            && super::anim_draw::ordinary_anim_type(anim_name, Some(runtime_config))
+            && anim_entry.is_some_and(|entry| entry.source_palette != 0)
+            && palette_light.rows() != 0
+            && draw_state
+                == (DrawState {
+                    remap_row: draw_state.remap_row,
+                    ..DrawState::default()
+                }) {
+            (
+                1.0,
+                DrawState::from_native_selector(draw_state.remap_row, (flags & 6) as u8),
+            )
+        } else {
+            (alpha, draw_state)
+        };
         objects.push(PlannedObjectInstance::object(
             parent,
-            vec![ObjectPieceInstance {
-                render_z: policy.render_z,
-                target: ObjectTexture::ShpPage(anim_entry.page as usize),
-                instance: SpriteInstance {
-                    position: [ax, ay],
-                    size: anim_entry.pixel_size,
-                    uv_origin: anim_entry.uv_origin,
-                    uv_size: anim_entry.uv_size,
-                    source_palette: anim_entry.source_palette,
-                    depth: anim_depth,
-                    tint: anim_tint,
-                    palette_light,
-                    alpha,
-                    draw_state,
-                    // The anim's YDrawOffset is baked into the atlas offset, so it
-                    // also rides the Z term (native `YDrawOffset + ZAdjust - 2`).
-                    z_adjust: lifted_z_adjust(
-                        lift_px,
-                        z_adjust_px
-                            + art_reg
-                                .anim_runtime_config(anim_name)
-                                .map_or(0, |c| c.y_draw_offset),
-                    ),
-                    z_gradient: pack_z_gradient(ZGradient::Vertical, false),
-                    ..Default::default()
+            super::anim_draw::anim_draw_pieces(
+                atlas,
+                super::anim_draw::AnimDrawInput {
+                    key: &anim_key,
+                    entry: anim_entry,
+                    point: [screen_x, screen_y],
+                    config,
+                    flags,
+                    lift_px,
+                    axis: crate::render::batch::DepthAxis {
+                        origin_y,
+                        world_height,
+                    },
+                    viewport,
+                    legacy_policy: policy.render_z,
+                    body: SpriteInstance {
+                        depth: anim_depth,
+                        tint: anim_tint,
+                        palette_light,
+                        alpha,
+                        draw_state,
+                        // The anim's YDrawOffset is baked into the atlas offset, so it
+                        // also rides the Z term (native `YDrawOffset + ZAdjust - 2`).
+                        z_adjust: lifted_z_adjust(
+                            lift_px,
+                            z_adjust_px
+                                + art_reg
+                                    .anim_runtime_config(anim_name)
+                                    .map_or(0, |c| c.y_draw_offset),
+                        ),
+                        z_gradient: pack_z_gradient(ZGradient::Vertical, false),
+                        ..Default::default()
+                    },
                 },
-            }],
+            ),
         ));
     }
 }
@@ -2053,6 +2056,24 @@ mod tests {
 #[cfg(test)]
 #[path = "building_anim_tests.rs"]
 mod building_anim_tests;
+
+#[cfg(test)]
+#[path = "building_anim_translucency_gpu_tests.rs"]
+mod building_anim_translucency_gpu_tests;
+#[cfg(test)]
+pub(crate) use building_anim_translucency_gpu_tests::{PLANT_OWNER, SlotScene};
+
+#[cfg(test)]
+#[path = "building_anim_detail_tests.rs"]
+mod building_anim_detail_tests;
+
+#[cfg(test)]
+#[path = "building_anim_detail_order_tests.rs"]
+mod building_anim_detail_order_tests;
+
+#[cfg(test)]
+#[path = "anim_detail_delay_tests.rs"]
+mod anim_detail_delay_tests;
 
 #[cfg(test)]
 #[path = "building_sale_draw_tests.rs"]

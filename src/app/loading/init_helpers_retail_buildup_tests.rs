@@ -8,7 +8,8 @@ use std::path::PathBuf;
 use super::load_rules_with_merged_ini;
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::map::theater;
-use crate::rules::buildup_asset_catalog::{BuildupAssetCatalog, NO_BUILDUP, buildup_shp_names};
+use crate::rules::art_data::building_shp_names;
+use crate::rules::buildup_asset_catalog::{BuildupAssetCatalog, NO_BUILDUP};
 use crate::rules::object_type::ObjectCategory;
 
 const THEATERS: [&str; 6] = ["TEMPERATE", "SNOW", "URBAN", "DESERT", "NEWURBAN", "LUNAR"];
@@ -60,7 +61,7 @@ fn retail_buildup_controls_bind_in_every_theater() {
             };
             if catalog.control(&object.id) == NO_BUILDUP {
                 // Native Retrieve misses too: neither name is in the MIXes.
-                let candidates = buildup_shp_names(&buildup, theater_name);
+                let candidates = building_shp_names(&buildup, theater_name);
                 assert!(
                     candidates.iter().all(|name| assets.get_ref(name).is_none()),
                     "{theater_name} {}: {candidates:?} exists but did not bind",

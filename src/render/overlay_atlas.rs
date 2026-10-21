@@ -29,6 +29,11 @@ use crate::rules::overlay_types::{
 };
 use crate::rules::tiberium_type::TiberiumTypeRegistry;
 
+#[path = "overlay_zshape.rs"]
+mod zshape;
+pub(crate) use zshape::OverlayShapeRequest;
+use zshape::OverlayZShapes;
+
 /// Padding between sprites in the atlas to prevent texture bleeding.
 const SPRITE_PADDING: u32 = 1;
 
@@ -208,21 +213,19 @@ fn runtime_low_bridge_sprite_keys(
     keys
 }
 
-/// Atlas keys reachable through the flat-cell resource display selector.
+/// Atlas keys reachable through the native flat/sloped resource selector.
 ///
 /// Active YR `CellClass__DrawOverlay_Body @ 0x0047F6A0` may draw any of the
-/// parsed TiberiumClass's 12 primary flat images while retaining the Cell data
-/// byte as the density frame. Preload that complete parsed product instead of
-/// inferring image families from stock filename prefixes or current map use.
-fn runtime_flat_tiberium_sprite_keys(
+/// TiberiumClass's12 primary and8 extra images (no extras for Image2) while
+/// retaining the Cell data byte. Preload the same range owner the display
+/// selector uses, including images absent from the current map pack.
+fn runtime_tiberium_sprite_keys(
     overlay_registry: &OverlayTypeRegistry,
     tiberium_types: &TiberiumTypeRegistry,
 ) -> HashSet<OverlaySpriteKey> {
     let mut keys = HashSet::new();
     for ty in tiberium_types.types() {
-        let Some(variant_ids) = overlay_registry.flat_tiberium_variant_ids(ty) else {
-            continue;
-        };
+        let variant_ids = overlay_registry.tiberium_display_variant_ids(ty);
         for overlay_id in variant_ids {
             let Some(name) = overlay_registry.name(overlay_id).map(str::to_owned) else {
                 continue;
@@ -385,6 +388,11 @@ pub struct OverlaySpriteEntry {
     pub offset_x: f32,
     /// Y offset from the cell center to the sprite's top-left corner.
     pub offset_y: f32,
+    /// Ordinary overlay crop/centering to CC_Draw_Shape's point. Bridge and
+    /// terrain proxies do not consume optional overlay shape metadata.
+    pub draw_point_offset: [i32; 2],
+    /// Only the extended ordinary SHP walker consumes optional depth bytes.
+    pub extended: bool,
 }
 
 /// A GPU texture atlas containing pre-rendered overlay sprites.
@@ -394,9 +402,33 @@ pub struct OverlayAtlas {
     /// Lookup: (name, frame) → UV rectangle + offset data.
     entries: HashMap<OverlaySpriteKey, OverlaySpriteEntry>,
     native_terrain: HashSet<String>,
+    zshapes: Option<OverlayZShapes>,
 }
 
 impl OverlayAtlas {
+    pub(crate) fn apply_zshape(
+        &self,
+        request: OverlayShapeRequest,
+        sprite: &OverlaySpriteEntry,
+        camera: [f32; 2],
+        viewport: [f32; 2],
+        instance: &mut crate::render::batch::SpriteInstance,
+    ) -> bool {
+        self.zshapes.as_ref().is_none_or(|shapes| {
+            shapes.apply(
+                request,
+                sprite.draw_point_offset,
+                sprite.extended,
+                camera,
+                viewport,
+                instance,
+            )
+        })
+    }
+
+    pub(crate) fn zshape_bind_group(&self) -> Option<&wgpu::BindGroup> {
+        self.zshapes.as_ref().map(|shapes| &shapes.bind_group)
+    }
     /// Look up the atlas entry for a given (name, frame) pair.
     pub fn get(&self, key: &OverlaySpriteKey) -> Option<&OverlaySpriteEntry> {
         self.entries.get(key)
@@ -433,6 +465,8 @@ struct RenderedOverlay {
     height: u32,
     offset_x: f32,
     offset_y: f32,
+    draw_point_offset: [i32; 2],
+    extended: bool,
 }
 
 /// Build an overlay sprite atlas from map overlay/terrain data.
@@ -533,13 +567,13 @@ pub(crate) fn build_overlay_atlas_on_device(
         needed.extend(low_bridge_keys);
     }
 
-    let flat_tiberium_keys = runtime_flat_tiberium_sprite_keys(overlay_registry, tiberium_types);
-    if !flat_tiberium_keys.is_empty() {
+    let tiberium_keys = runtime_tiberium_sprite_keys(overlay_registry, tiberium_types);
+    if !tiberium_keys.is_empty() {
         log::info!(
-            "Pre-loading {} flat tiberium display frame(s)",
-            flat_tiberium_keys.len()
+            "Pre-loading {} tiberium display frame(s)",
+            tiberium_keys.len()
         );
-        needed.extend(flat_tiberium_keys);
+        needed.extend(tiberium_keys);
     }
 
     // Overlay types the sim can create or mutate after this atlas is built are
@@ -820,13 +854,9 @@ pub(crate) fn build_overlay_atlas_on_device(
         );
     }
 
-    Some(pack_overlay_sprites(
-        device,
-        queue,
-        batch,
-        &rendered,
-        native_terrain,
-    ))
+    let mut atlas = pack_overlay_sprites(device, queue, batch, &rendered, native_terrain);
+    atlas.zshapes = OverlayZShapes::load(device, queue, batch, asset_manager, theater_ext);
+    Some(atlas)
 }
 
 /// Load and render a single overlay SHP sprite to RGBA pixels.
@@ -983,6 +1013,11 @@ fn render_decoded_overlay_frame(
         height: u32::from(frame.frame_height),
         offset_x,
         offset_y,
+        draw_point_offset: [
+            i32::from(shp.width / 2) - i32::from(frame.frame_x),
+            i32::from(shp.height / 2) - i32::from(frame.frame_y),
+        ],
+        extended: frame.format & 2 != 0,
     })
 }
 
@@ -1253,6 +1288,8 @@ fn render_smudge_sprite(
         height: full_h,
         offset_x,
         offset_y,
+        draw_point_offset: [0; 2],
+        extended: false,
     })
 }
 
@@ -1299,6 +1336,7 @@ fn pack_overlay_sprites(
         texture,
         entries,
         native_terrain,
+        zshapes: None,
     }
 }
 
@@ -1400,6 +1438,8 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
                 pixel_size: [w as f32, h as f32],
                 offset_x: spr.offset_x,
                 offset_y: spr.offset_y,
+                draw_point_offset: spr.draw_point_offset,
+                extended: spr.extended,
             },
         );
     }
@@ -1420,6 +1460,7 @@ impl OverlayAtlas {
             texture,
             entries: HashMap::new(),
             native_terrain: HashSet::new(),
+            zshapes: None,
         }
     }
 }
@@ -1498,7 +1539,7 @@ mod tests {
     use super::{
         MAX_OVERLAY_FRAME_COUNT, OverlaySpriteKey, OverlayTypeFlags, body_frame_count,
         decrement_numeric_suffix, resolve_body_frame, runtime_crate_sprite_keys,
-        runtime_flat_tiberium_sprite_keys, runtime_low_bridge_sprite_keys, stored_frame_offset,
+        runtime_low_bridge_sprite_keys, runtime_tiberium_sprite_keys, stored_frame_offset,
         wall_body_frame_count,
     };
     use crate::map::overlay::OverlayEntry;
@@ -1806,7 +1847,7 @@ mod tests {
         let overlays = OverlayTypeRegistry::from_ini(&ini, None);
         let tiberiums = TiberiumTypeRegistry::from_ini(&ini);
 
-        let keys = runtime_flat_tiberium_sprite_keys(&overlays, &tiberiums);
+        let keys = runtime_tiberium_sprite_keys(&overlays, &tiberiums);
 
         assert_eq!(keys.len(), 288, "2 types * 12 images * 12 densities");
         for (name, frame) in [("TIB05", 8), ("GEM01", 11)] {

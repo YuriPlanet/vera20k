@@ -407,6 +407,137 @@ fn kill_with(
     );
 }
 
+/// A 20x20 open map whose cell (12, 12) stands two levels up, on Water or
+/// Clear.
+fn water_cell_sim(rules: &RuleSet, water: bool) -> Simulation {
+    use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
+    use crate::rules::terrain_rules::SpeedCostProfile;
+
+    let open = SpeedCostProfile {
+        foot: Some(100),
+        track: Some(100),
+        wheel: Some(100),
+        float: Some(100),
+        amphibious: Some(100),
+        float_beach: Some(100),
+        hover: Some(100),
+    };
+    let mut sim = sim(9);
+    let cells = (0..20_u16)
+        .flat_map(|y| (0..20_u16).map(move |x| (x, y)))
+        .map(|(x, y)| {
+            let mut cell = test_flat_cell(x, y);
+            cell.speed_costs = open;
+            cell.base_speed_costs = open;
+            if (x, y) == (12, 12) {
+                cell.level = 2;
+                cell.land_type = if water {
+                    LandType::Water.as_index()
+                } else {
+                    LandType::Clear.as_index()
+                };
+                cell.base_land_type = cell.land_type;
+            }
+            cell
+        })
+        .collect();
+    sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(20, 20, cells));
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
+        base: 20,
+        off_fc: -128,
+        off_100: -128,
+        off_104: 256,
+        off_108: 256,
+    }));
+    sim.set_playfield_size_height_for_test(Some(20));
+    assert!(sim.rebuild_dynamic_navigation(rules));
+    sim
+}
+
+/// Puts `id` `height` leptons above cell (12, 12)'s two ground levels and,
+/// for a bomb, lands it from a DropAsBomb fall (the +8F byte persists).
+fn drop_at_height(sim: &mut Simulation, id: u64, bomb: bool, height: i32) {
+    let entity = sim.substrate.entities.get_mut(id).unwrap();
+    // Two ground levels exercise a raw world Z rather than a floor-Z
+    // substitute. Native GetHeight still sees the given height.
+    entity.position.set_exact_z_leptons_for_test(Some(
+        2 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS + height,
+    ));
+    if bomb {
+        entity.begin_bomb_fall();
+        entity.finish_fall();
+        assert!(entity.was_dropped_as_bomb(), "landing retains +8F");
+    }
+}
+
+/// Rust regression through the production damage receiver. Instruction
+/// evidence: Techno702232..70227B (retail gamemd) jumps to 0x702672 for a
+/// low dropped bomb over water, past KillPassengers (0x702603..0x702667) and
+/// Fire_Death_Weapon (0x70266D) as well as the debris. An `Explodes=` unit
+/// that falls off a bridge into water sets off no death weapon; high or dry,
+/// it still does. Its passenger dies either way: skipped by KillPassengers,
+/// it meets the unit tail's escape, which kills every passenger of a dropped
+/// bomb (+0x8F, `0x007380AF` -> RecordKill and UnInit at `0x00738188`).
+#[test]
+fn a_low_dropped_bomb_over_water_fires_no_death_weapon() {
+    let text = RULES
+        .replace("1=ENGINEER\n", "1=ENGINEER\n2=BYSTANDER\n")
+        .replace(
+            "[APOC]\nStrength=100\nExplodes=yes\n",
+            "[APOC]\nStrength=100\nExplodes=yes\nDeathWeapon=BOOMW\nPassengers=1\n",
+        )
+        + "\n[BYSTANDER]\nStrength=125\nSpeed=4\n\
+           Locomotor={4A582744-9839-11D1-B709-00A024DDAFD1}\n\
+           [BOOMW]\nDamage=50\nWarhead=BOOMWH\n\
+           [BOOMWH]\nCellSpread=2\nPercentAtMax=100%\n\
+           Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
+    let rules = rules_from(&text);
+    for (bomb, height, water, fires) in [
+        (true, 0, true, false),
+        (true, 10, true, false),
+        (true, 11, true, true),
+        (false, 0, true, true),
+        (true, 0, false, true),
+    ] {
+        let case = format!("bomb={bomb} height={height} water={water}");
+        let mut sim = water_cell_sim(&rules, water);
+        let apoc = spawn(&mut sim, &rules, "APOC", 12, 12);
+        let bystander = spawn(&mut sim, &rules, "BYSTANDER", 13, 12);
+        let rider = spawn(&mut sim, &rules, "E1", 11, 12);
+        assert!(crate::sim::passenger::board_passenger(
+            &mut sim,
+            &rules,
+            rider,
+            apoc,
+            crate::sim::passenger::BoardingArm::InfantryTransport,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        ));
+        drop_at_height(&mut sim, apoc, bomb, height);
+
+        kill(&mut sim, &rules, apoc);
+
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(bystander)
+                .unwrap()
+                .health
+                .current()
+                < 125,
+            fires,
+            "death weapon: {case}"
+        );
+        assert!(
+            sim.substrate
+                .entities
+                .get(rider)
+                .is_none_or(|rider| !rider.lifecycle.object_alive()),
+            "passenger: {case}"
+        );
+    }
+}
+
 /// Rust regression through the production damage receiver. Instruction
 /// evidence: Techno702232, Unit737E78 and Infantry5181B5 (retail gamemd).
 /// Both water branches retain Location Z and construct Wake before the
@@ -414,9 +545,6 @@ fn kill_with(
 /// Techno's debris; high bombs and ordinary water deaths still consume it.
 #[test]
 fn low_dropped_bombs_use_class_water_splashes_without_debris() {
-    use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
-    use crate::rules::terrain_rules::SpeedCostProfile;
-
     let text = RULES
         .replace("[General]\n", "[General]\nWake=EXPA\n")
         .replace("1=ENGINEER\n", "1=ENGINEER\n2=ROCKET\n")
@@ -428,15 +556,6 @@ fn low_dropped_bombs_use_class_water_splashes_without_debris() {
            [ROCKET]\nStrength=100\nJumpJet=yes\nCrashable=yes\nSpeed=4\n\
            Locomotor={92612C46-F71F-11d1-AC9F-006008055BB5}\n";
     let rules = rules_from(&text);
-    let open = SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
-        float: Some(100),
-        amphibious: Some(100),
-        float_beach: Some(100),
-        hover: Some(100),
-    };
     for (kind, bomb, height, water, splash) in [
         ("PLAIN", true, 10, true, Some(("EXPB", 5))),
         ("PLAIN", true, 0, true, Some(("EXPB", 5))),
@@ -449,48 +568,10 @@ fn low_dropped_bombs_use_class_water_splashes_without_debris() {
         ("ROCKET", true, 10, true, Some(("EXPC", 3))),
         ("SHIP", true, 0, true, None),
     ] {
-        let mut sim = sim(9);
-        let cells = (0..20_u16)
-            .flat_map(|y| (0..20_u16).map(move |x| (x, y)))
-            .map(|(x, y)| {
-                let mut cell = test_flat_cell(x, y);
-                cell.speed_costs = open;
-                cell.base_speed_costs = open;
-                if (x, y) == (12, 12) {
-                    cell.level = 2;
-                    cell.land_type = if water {
-                        LandType::Water.as_index()
-                    } else {
-                        LandType::Clear.as_index()
-                    };
-                    cell.base_land_type = cell.land_type;
-                }
-                cell
-            })
-            .collect();
-        sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(20, 20, cells));
-        sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
-            base: 20,
-            off_fc: -128,
-            off_100: -128,
-            off_104: 256,
-            off_108: 256,
-        }));
-        sim.set_playfield_size_height_for_test(Some(20));
-        assert!(sim.rebuild_dynamic_navigation(&rules));
+        let mut sim = water_cell_sim(&rules, water);
         let id = spawn(&mut sim, &rules, kind, 12, 12);
-        let entity = sim.substrate.entities.get_mut(id).unwrap();
-        // Two ground levels exercise a raw world Z rather than a floor-Z
-        // substitute. Native GetHeight still sees the table's 0/10/11.
-        entity.position.set_exact_z_leptons_for_test(Some(
-            2 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS + height,
-        ));
-        if bomb {
-            entity.begin_bomb_fall();
-            entity.finish_fall();
-            assert!(entity.was_dropped_as_bomb(), "landing retains +8F");
-        }
-        let raw = position_world_coord(&entity.position);
+        drop_at_height(&mut sim, id, bomb, height);
+        let raw = position_world_coord(&sim.substrate.entities.get(id).unwrap().position);
         let before = sim.scenario_rng.state();
         kill(&mut sim, &rules, id);
         let played = anims(&sim);

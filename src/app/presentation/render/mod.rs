@@ -21,12 +21,16 @@
 //! - Part of the app layer — may depend on everything.
 
 #[cfg(test)]
+mod anim_translucency_gpu_tests;
+#[cfg(test)]
 mod bridge_shadow_gpu_tests;
 mod build_instances;
 #[cfg(test)]
 mod building_bracket_gpu_tests;
 #[cfg(test)]
 mod building_shadow_gpu_tests;
+#[cfg(test)]
+mod building_slot_native_gpu_tests;
 mod draw_passes;
 #[cfg(test)]
 mod magnetic_wave_gpu_tests;

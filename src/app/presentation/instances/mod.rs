@@ -18,6 +18,9 @@
 
 mod helpers;
 pub(crate) use helpers::*;
+mod anim_draw;
+#[cfg(test)]
+mod anim_translucency_tests;
 mod foot_depth;
 
 mod units;

@@ -52,8 +52,10 @@ impl CrushImmunity {
 }
 
 /// Event9 DEPLOY4C76BC..4C7812. MCV conversion, simple deployment, the
-/// deploy-fire arm and a tank bunker's occupant share this event; each
-/// concrete Mission_Unload branch owns its effects.
+/// deploy-fire arm, Unit transports and a tank bunker's occupant share this
+/// event; each concrete Mission_Unload branch owns its effects. A transport's
+/// empty hold does not suppress this event: it still stops and queues Unload.
+/// Native controls: tools/spatial_oracle/transport_unload.py --deploy-event.
 ///
 /// The object must be alive (`+0x90`), out of limbo (`+0x81`), untethered
 /// (`+0x418`) and not under EMP (`+0x504`, which nothing writes yet). Then it
@@ -61,11 +63,11 @@ impl CrushImmunity {
 ///
 /// RESIDUAL: native refuses only an aircraft (`0x004C777E`) and the
 /// Construction/Selling missions below; VERA admits only the Unit kinds whose
-/// Unload arms it ports: an MCV, a simple deployer, a deploy-fire unit and a
-/// unit in a tank bunker. Trigger: a DEPLOY event for another object, which
-/// no VERA sender issues: the deploy key and the self-click send a loaded
-/// transport's unload order instead, and CanDeploySlashUnload refuses every
-/// other Unit.
+/// Unload arms it ports: an MCV, a simple deployer, a deploy-fire unit, a Unit
+/// transport and a unit in a tank bunker. Other Units fail the deploy key's
+/// CanDeploySlashUnload query; their externally supplied DEPLOY events remain
+/// outside these represented Unload arms. Self-click still uses its separate
+/// clicked-Mission owner and requires cargo for a transport.
 pub(crate) fn issue_order(
     sim: &mut Simulation,
     id: u64,
@@ -80,7 +82,8 @@ pub(crate) fn issue_order(
                 || crate::sim::unit_simple_deploy::is_simple_deployer(sim, e, rules)
                 || unit_fires_on_deploy(sim, e, rules)
                 || (e.category() == EntityCategory::Unit
-                    && e.bunker.link().installed_in().is_some()))
+                    && (e.bunker.link().installed_in().is_some()
+                        || crate::sim::transport_unload::is_vehicle_transport_type(sim, e, rules))))
     }) {
         return false;
     }

@@ -1354,6 +1354,12 @@ impl Simulation {
             // CanDeploySlashUnload (`0x00700D50`) is the sender's admission
             // (deploy key, `Simulation::can_deploy_slash_unload`), not this
             // receiver's.
+            //
+            // RESIDUAL: this arm uses the clicked-mission owner instead of
+            // Event9 (`0x004C76D7..0x004C7818`). Trigger: a deployer infantry
+            // in Construction/Selling, a WeaponsFactory cell or a rejected
+            // ground projection. Effect: it can deploy where native ignores D.
+            // Frequency: rare; downstream risk: low.
             Command::ToggleInfantryDeploy { entity_id } => {
                 if !self.entity_owned_by_id(command_owner, *entity_id) {
                     return false;
@@ -1752,22 +1758,9 @@ impl Simulation {
                         // event's NULL target and destination stop a moving
                         // transport where it is, to unload there.
                         //
-                        // RESIDUAL: the deploy key sends DEPLOY instead
-                        // (`DeployCommandClass` `0x00730AF0` ->
-                        // `ClickedEvent(9)`), and VERA does not tell the two
-                        // apart. That arm (`0x004C7762..0x004C7812`) also
-                        // nulls the destination and target, but it refuses a
-                        // current mission 0x12 or 0x13, an aircraft, a cell
-                        // holding a `WeaponsFactory=` building (BuildingType
-                        // +0x16BD, read at `0x00460A72`), and a unit off a
-                        // bridge on a flat cell whose vt+0x2B0 answers true;
-                        // it leaves ArchiveTarget and the suspended
-                        // NavCom/TarCom alone. Trigger: the deploy key on a
-                        // loaded transport or a deployer infantry in one of
-                        // those states. Effect: VERA unloads or deploys where
-                        // native ignores the key, for example a transport
-                        // still in its war factory's cell. Frequency: rare.
-                        // Risk: low.
+                        // Unit transport D uses deploy::issue_order instead:
+                        // Event9 (`0x004C76D7..0x004C7818`) retains its own
+                        // admission guards and archive/suspended state.
                         self.apply_megamission_command(
                             *transport_id,
                             MissionType::Unload,
@@ -1805,7 +1798,7 @@ impl Simulation {
                 if c4_ok.is_none() {
                     return false;
                 }
-                // Validate target is a CanC4, non-invisible enemy building, not iron-curtained.
+                // Validate target is a CanC4, non-invisible building, not iron-curtained.
                 // These gates stand in for the cursor's (What_Action), which
                 // is unread for a building being sold (Mission 0x13); the
                 // arrival plants nothing on one (`sim::c4_plant`).
@@ -1839,24 +1832,15 @@ impl Simulation {
                             Some((rules, &self.interner)),
                         )
                         .ok()?;
-                        Some(b.owner())
+                        Some(())
                     });
-                let Some(target_owner) = target_info else {
+                let Some(()) = target_info else {
                     return false;
                 };
-                // RESIDUAL: enemy-only, as the actor's house asks it. Native
-                // has no such gate: a Ctrl+click passes What_Action's ally
-                // test (`0x007003C4`), and neither the Sabotage click arm
-                // (`0x004D7788`) nor the arrival (`0x0051A4BF..0x0051A664`)
-                // tests an alliance, so a forced charge goes on an allied or
-                // own CanC4 building.
-                if crate::map::houses::is_allied_with(
-                    self.house_alliances.as_map(),
-                    command_owner,
-                    self.interner.resolve(target_owner),
-                ) {
-                    return false;
-                }
+                // The command carries the selected Sabotage action. Native
+                // What_Action permits Ctrl on allies (7003C4..700406); the
+                // click arm4D7788 emits mission17. That arm and arrival
+                // 51A4BF..51A664 do not test the target's alliance.
                 // Event4C747C: Set_Destination(target building, 1). The building is
                 // the NavCom, so the Infantry +1AC admits its footprint cells to a
                 // Sabotage C4 carrier (`0x0051C2D3..`); the walk ends inside, where

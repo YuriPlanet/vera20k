@@ -1243,6 +1243,26 @@ pub fn initialize_skirmish_launch_houses(
             id
         });
     sim.session.install_current_house(current_house);
+    // Full_Init68782D/687938 takes the local participant's Country.Side,
+    // before the color-ordered House array is consulted. Native source node0
+    // is the current local node (CreateHouses6880F8..68810F); VERA represents
+    // that identity by local_player_index, independently of host node order.
+    let scenario_side = session
+        .humans
+        .get(session.local_player_index)
+        .map(|human| {
+            let country = if human.is_observer() {
+                LaunchCountry::America
+            } else {
+                human.slot.country
+            };
+            let name = rules
+                .country_name(country.index())
+                .expect("accepted local Country exists");
+            rules.country_side_index_raw(name).unwrap_or(0)
+        })
+        .unwrap_or(0);
+    sim.session.install_scenario_side(scenario_side);
     let observer = slots
         .iter()
         .rev()
@@ -1773,7 +1793,8 @@ pub fn populate_launch_houses(
             .as_deref()
             .filter(|_| {
                 slot.is_human
-                    && sim.session.game_mode() == crate::sim::scenario_session::ScenarioGameMode::Wol
+                    && sim.session.game_mode()
+                        == crate::sim::scenario_session::ScenarioGameMode::Wol
             })
             .map(|handle| handle.chars().take(20).collect::<String>());
         house.initialize_scenario_name(match (&wol_handle, slot.is_human) {
@@ -2605,6 +2626,7 @@ impl ScenarioBootstrapRng {
                     &mut simulation.houses,
                     &map_data.ini,
                 );
+                initialize_campaign_scenario_side(&mut simulation, &map_data.ini, rules);
                 simulation
                     .native_unique_ids
                     .as_mut()
@@ -2793,6 +2815,25 @@ pub fn initialize_campaign_current_house(
         let house = houses.get_mut(&owner).expect("registered current House");
         house.make_campaign_player();
     }
+}
+
+/// Full_Init687874..6878C5/68792A reads Basic.Player independently of the
+/// current-House reader68ACAA: capacity32, default literal Americans, miss0.
+/// House.Find50C170 and the retained Country reader remain their sole owners.
+fn initialize_campaign_scenario_side(
+    sim: &mut Simulation,
+    ini: &crate::rules::ini_parser::IniFile,
+    rules: &RuleSet,
+) {
+    let requested = ini.section("Basic").map_or_else(
+        || "Americans".to_owned(),
+        |section| section.read_string("Player", "Americans", 32),
+    );
+    let side = Simulation::scenario_house_named(&sim.houses, &requested)
+        .and_then(|owner| sim.houses.get(&owner))
+        .and_then(|house| rules.country_side_index_raw(sim.interner.resolve(house.house_type_id())))
+        .unwrap_or(0);
+    sim.session.install_scenario_side(side);
 }
 
 /// Map-roster house construction shared by app and headless (F09):
@@ -3508,6 +3549,73 @@ mod tests {
             sim.houses[&first].is_human() && sim.houses[&first].player_control(),
             "selecting another House does not clear previously set flags"
         );
+    }
+
+    #[test]
+    fn scenario_side_campaign_uses_its_own_basic_player_reader() {
+        let rules = techno_constructor_start_rules();
+        // ReadHousesList first reads each roster name with capacity20, so
+        // authored names retain19 bytes before House's own20-byte copy.
+        // A suffix is cut by the current-House reader but retained by this
+        // independent32-byte Player reader, whose exact lookup must miss.
+        let long_name = "1234567890123456789";
+        let map = IniFile::from_str(&format!(
+            "[Houses]\n0=First\n1=Americans\n2={long_name}\n[First]\nCountry=YuriCountry\n[Americans]\nCountry=Russians\n[{long_name}]\nCountry=YuriCountry\n"
+        ));
+        let roster =
+            crate::map::houses::parse_house_roster(&map, &rules.color_schemes, Some(&rules));
+        let mut sim = Simulation::new();
+        initialize_map_roster_houses(&mut sim, &roster, &rules, None);
+        let rng = sim.rng_state();
+        for (basic, expected) in [
+            (String::new(), 1),
+            ("[Basic]\n".to_owned(), 1),
+            // Physical INI loading omits empty values, so this also uses
+            // the literal Americans default rather than a stored-empty key.
+            ("[Basic]\nPlayer=\n".to_owned(), 1),
+            ("[Basic]\nPlayer=First\n".to_owned(), 2),
+            ("[Basic]\nPlayer=americans\n".to_owned(), 0),
+            (format!("[Basic]\nPlayer={long_name}\n"), 2),
+            (format!("[Basic]\nPlayer={long_name}suffix\n"), 0),
+        ] {
+            let ini = IniFile::from_str(&basic);
+            initialize_campaign_current_house(&mut sim.session, &mut sim.houses, &ini);
+            let current = sim.session.current_house();
+            if basic.ends_with("suffix\n") {
+                assert_eq!(current, sim.interner.get(long_name));
+            }
+            initialize_campaign_scenario_side(&mut sim, &ini, &rules);
+            assert_eq!(sim.session.scenario_side(), expected, "{basic}");
+            assert_eq!(sim.session.current_house(), current);
+            assert_eq!(sim.rng_state(), rng);
+        }
+    }
+
+    #[test]
+    fn scenario_side_skirmish_uses_local_source_identity_before_house_color_order() {
+        let mut session = one_player_battle_launch("side.map").session().clone();
+        let mut second = session.humans[0].clone();
+        second.name = "LocalSecond".into();
+        second.raw_slot_index = Some(1);
+        second.slot.country = LaunchCountry::Russia;
+        second.slot.color_index = 1;
+        session.humans[0].slot.color_index = 0;
+        session.humans.push(second);
+        session.local_player_index = 1;
+        session.rebuild_house_roster();
+        let descriptor = MatchLaunchDescriptor::from_resolved(session).unwrap();
+        let rules = techno_constructor_start_rules();
+        let mut sim = Simulation::new();
+        initialize_skirmish_launch_houses(&mut sim, &HouseRoster::default(), &rules, &descriptor);
+        assert_eq!(sim.houses[&sim.houses.order()[0]].side_index(), 0);
+        assert_eq!(sim.session.scenario_side(), 1);
+        let hash = sim.state_hash();
+        let rng = sim.rng_state();
+        sim.session
+            .install_current_house(Some(sim.houses.order()[0]));
+        assert_eq!(sim.session.scenario_side(), 1);
+        assert_eq!(sim.state_hash(), hash);
+        assert_eq!(sim.rng_state(), rng);
     }
 
     /// x87 chop (cw `0x0E7F`) versus f64 round-to-nearest for the AI opening

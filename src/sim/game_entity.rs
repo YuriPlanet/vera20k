@@ -496,6 +496,11 @@ pub struct GameEntity {
     /// [`LastOperational`]: crate::sim::world::LastOperational
     #[serde(default)]
     pub building_last_operational: crate::sim::world::LastOperational,
+    /// Building+53C, a signed index: constructor43B783 starts at zero,
+    /// InitManagers442C5C installs the owner's Country index, and damage44298B
+    /// records an attacker's House index. Sale44A1EF writes -1 before its
+    /// live callbacks; RecordKill70304D/7033C3 then suppress BuildingsLost.
+    building_loss_index: i32,
     /// A `PowersUnit=` building's share in its house's powered centers
     /// (`BuildingClass+0x662`), a [`PoweredCenter`] that `sim::powered_unit`
     /// owns.
@@ -715,6 +720,11 @@ pub struct GameEntity {
     /// [`NoSurvivor`]: crate::sim::crew_survival::NoSurvivor
     #[serde(default)]
     pub(crate) no_survivor: crate::sim::crew_survival::NoSurvivor,
+    /// Infantry+6D9, initialized clear at517A98. Building crew producers
+    /// mark it before death Unlimbo443127 or after sale Unlimbo44A747;
+    /// placement, ownership transfer and removal never clear it.
+    #[serde(default)]
+    nominal_survivor: bool,
     /// Both ends of the tank-bunker reciprocal link, a [`BunkerLinks`] that
     /// `docking::bunker_link` owns.
     ///
@@ -847,6 +857,19 @@ fn default_build_rejects_saved_delivery_base_override_and_keeps_base_space() {
 }
 
 impl GameEntity {
+    /// Infantry+6D9: building survivor identity, not Type.Nominal.
+    /// Added_To_Game502C3C skips its active counter; UI-name51F2C0 uses
+    /// TXT_TECHNICIAN. The flag persists across placement and capture.
+    pub const fn is_nominal_survivor(&self) -> bool {
+        self.nominal_survivor
+    }
+
+    /// The two building crew producers' stores443127 and44A747.
+    pub(crate) fn mark_nominal_survivor(&mut self) {
+        debug_assert_eq!(self.category, EntityCategory::Infantry);
+        self.nominal_survivor = true;
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn set_unit_delivery_base_normal(&mut self, base_normal: bool) {
         self.unit_delivery_no_base = self.category() == EntityCategory::Structure && !base_normal;
@@ -1255,6 +1278,25 @@ impl GameEntity {
         self.initial_owner
     }
 
+    pub(crate) const fn building_loss_index(&self) -> i32 {
+        self.building_loss_index
+    }
+
+    /// Building InitManagers' retained Country index (442C5C).
+    pub(crate) fn initialize_building_loss_index(&mut self, country_index: i32) {
+        self.building_loss_index = country_index;
+    }
+
+    /// Building ReceiveDamage's nonnull source House index (44298B).
+    pub(crate) fn record_building_damage_house_index(&mut self, house_index: i32) {
+        self.building_loss_index = house_index;
+    }
+
+    /// The sale's accounting gate precedes its live destruction callbacks.
+    pub(crate) fn suppress_building_sale_loss(&mut self) {
+        self.building_loss_index = -1;
+    }
+
     /// Immutable indexed type identity, established by construction/decoding.
     pub fn type_ref(&self) -> InternedId {
         self.type_ref
@@ -1305,6 +1347,11 @@ impl GameEntity {
 impl GameEntity {
     pub fn set_stable_id_for_test(&mut self, stable_id: u64) {
         self.stable_id = stable_id;
+    }
+
+    /// Supply the building crew producer's retained marker in a UI fixture.
+    pub fn mark_nominal_survivor_for_test(&mut self) {
+        self.mark_nominal_survivor();
     }
 
     pub(crate) fn set_native_unique_id_for_test(&mut self, native_unique_id: i32) {
@@ -1591,6 +1638,7 @@ impl GameEntity {
             tesla_charge: Default::default(),
             tesla_charger: Default::default(),
             building_last_operational: Default::default(),
+            building_loss_index: 0,
             building_powered_center: Default::default(),
             building_has_engineer: Default::default(),
             building_light: Default::default(),
@@ -1642,6 +1690,7 @@ impl GameEntity {
             pending_c4_detonation: Default::default(),
             has_been_captured: Default::default(),
             no_survivor: Default::default(),
+            nominal_survivor: false,
             bunker: Default::default(),
             building_gate: None,
             door: crate::sim::door::DoorClass::at_frame(construction_frame),

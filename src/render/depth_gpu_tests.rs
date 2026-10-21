@@ -1065,6 +1065,51 @@ fn terrain_and_building_depth_hide_only_behind_pixels_and_preserve_holes() {
 
 #[test]
 #[ignore = "requires a wgpu adapter; run explicitly"]
+fn shaped_sprites_use_original_gradient_seed() {
+    let native = crate::test_fixture::json("tools/spatial_oracle/ore_shape_clip.json");
+    let gpu = Gpu::new();
+    for gradient in 0..=2 {
+        let row = native["shape_seeds"]
+            .as_array()
+            .expect("original seed controls")
+            .iter()
+            .find(|row| {
+                row["gradient"].as_u64() == Some(gradient)
+                    && row["screen_top"].as_i64() == Some(0)
+                    && row["height"].as_u64() == Some(u64::from(SIDE))
+                    && row["z_adjust"].as_i64() == Some(-1)
+            })
+            .expect("original 8-row shape seed");
+        let seed = row["seed"].as_i64().expect("native seed") as i32;
+        let mut shape = Layer::solid(Shader::SpriteWrite, BLUE, -1.0);
+        shape.instance.z_gradient = gradient as u32 | Z_GRADIENT_ZSHAPE_FLAG;
+        shape.z_bytes.fill(128);
+        for y in 0..SIDE {
+            shape.z_bytes[(y * SIDE + 1) as usize] = 129;
+            shape.z_bytes[(y * SIDE + 6) as usize] = 127;
+        }
+        let pixels = gpu.render(&[
+            Layer::solid(
+                Shader::Terrain,
+                RED,
+                (seed - super::native_z::DEFAULT_Z) as f32,
+            ),
+            shape,
+        ]);
+        for y in 0..SIDE {
+            for x in 0..SIDE {
+                assert_eq!(
+                    pixels[(y * SIDE + x) as usize],
+                    if x == 1 { BLUE } else { RED },
+                    "native gradient{gradient} seed{seed}, shape admission at ({x},{y})"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires a wgpu adapter; run explicitly"]
 fn building_zshape_uses_constant_raw_seed_and_signed_shape_bytes() {
     let gpu = Gpu::new();
     // CC_Draw_Shape 0x437C39..0x437C72 / 0x437E67..0x437EA7:

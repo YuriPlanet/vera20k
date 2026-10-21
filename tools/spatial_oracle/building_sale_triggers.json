@@ -1,0 +1,1494 @@
+{
+  "art_input": {
+    "GAPOWR": {
+      "ActiveAnim": "GAPOWR_A",
+      "ActiveAnimDamaged": "GAPOWR_AD",
+      "ActiveAnimPowered": "false",
+      "ActiveAnimPoweredSpecial": "true",
+      "ActiveAnimYSort": "362",
+      "ActiveAnimZAdjust": "-32",
+      "Buildup": "GAPOWRMK",
+      "Cameo": "POWRICON",
+      "CanBeHidden": "False",
+      "CanHideThings": "True",
+      "DamageFireOffset0": "-20,32",
+      "DamageFireOffset1": "3,12",
+      "DemandLoadBuildup": "true",
+      "Foundation": "2x2",
+      "FreeBuildup": "true",
+      "Height": "4",
+      "NewTheater": "yes",
+      "Normalized": "yes",
+      "OccupyHeight": "3",
+      "Remapable": "yes"
+    },
+    "GAPOWR_A": {
+      "DetailLevel": "2",
+      "Image": "GAPOWR_A",
+      "Layer": "ground",
+      "LoopCount": "-1",
+      "LoopEnd": "8",
+      "LoopStart": "0",
+      "NewTheater": "yes",
+      "Normalized": "yes",
+      "Rate": "220",
+      "Start": "0"
+    },
+    "GAPOWR_AD": {
+      "DetailLevel": "2",
+      "Image": "GAPOWR_A",
+      "Layer": "ground",
+      "LoopCount": "-1",
+      "LoopEnd": "16",
+      "LoopStart": "8",
+      "Normalized": "yes",
+      "Rate": "220",
+      "Start": "8"
+    }
+  },
+  "cases": [
+    {
+      "after": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [],
+        "health": 750,
+        "houses": {
+          "OLD": {
+            "credits": 1400,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": -1,
+        "owner": "OLD",
+        "slot3": "GAPOWR_A",
+        "tag_attached": false,
+        "triggers": []
+      },
+      "allocation_delta": 0,
+      "before": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [],
+        "health": 750,
+        "houses": {
+          "OLD": {
+            "credits": 1000,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": 0,
+        "owner": "OLD",
+        "slot3": "GAPOWR_A",
+        "tag_attached": false,
+        "triggers": []
+      },
+      "calls": [
+        {
+          "kind": "loss_field_write",
+          "pc": "0x0044A1EF",
+          "value": -1
+        },
+        {
+          "kind": "record_kill",
+          "loss_field": -1,
+          "pc": "0x00702D40",
+          "source_null": true
+        },
+        {
+          "kind": "refund",
+          "owner": "OLD",
+          "pc": "0x0070ADA0"
+        },
+        {
+          "amount": 400,
+          "kind": "add_credits",
+          "owner": "OLD",
+          "pc": "0x004F9950"
+        }
+      ],
+      "constructed_anims": [],
+      "constructor_loss_field": 0,
+      "identity_delta": 0,
+      "input": {
+        "name": "no_tag",
+        "rust_comparison": "sale_callbacks"
+      },
+      "native_inputs": {
+        "game_mode": 1,
+        "houses": {
+          "OLD": {
+            "country_cost_buildings_bits": "0000803f",
+            "country_index": 0,
+            "country_keys": {},
+            "human": true,
+            "player_control": true
+          }
+        },
+        "type": {
+          "cost": 800,
+          "name": "GAPOWR",
+          "strength": 750
+        }
+      },
+      "reached_platform": [],
+      "reached_presentation": [],
+      "required_reached": [
+        "0x0044A1E8",
+        "0x0044A1EF",
+        "0x00702D40",
+        "0x0044A215",
+        "0x0044A21B",
+        "0x004F9950"
+      ],
+      "rng_unchanged": true,
+      "unchanged_executable_sections": true,
+      "unchanged_vtables": true
+    },
+    {
+      "after": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [
+          7,
+          8
+        ],
+        "health": 750,
+        "houses": {
+          "OLD": {
+            "credits": 1400,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": -1,
+        "owner": "OLD",
+        "slot3": "GAPOWR_A",
+        "tag_attached": true,
+        "triggers": [
+          {
+            "completed": 1,
+            "enabled": true,
+            "pending": false
+          },
+          {
+            "completed": 1,
+            "enabled": true,
+            "pending": false
+          },
+          {
+            "completed": 0,
+            "enabled": true,
+            "pending": false
+          }
+        ]
+      },
+      "allocation_delta": 0,
+      "before": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [],
+        "health": 750,
+        "houses": {
+          "OLD": {
+            "credits": 1000,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": 0,
+        "owner": "OLD",
+        "slot3": "GAPOWR_A",
+        "tag_attached": true,
+        "triggers": [
+          {
+            "completed": 0,
+            "enabled": true,
+            "pending": false
+          },
+          {
+            "completed": 0,
+            "enabled": true,
+            "pending": false
+          },
+          {
+            "completed": 0,
+            "enabled": true,
+            "pending": false
+          }
+        ]
+      },
+      "calls": [
+        {
+          "kind": "loss_field_write",
+          "pc": "0x0044A1EF",
+          "value": -1
+        },
+        {
+          "kind": "record_kill",
+          "loss_field": -1,
+          "pc": "0x00702D40",
+          "source_null": true
+        },
+        {
+          "event": 48,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": "0x006DD8B0",
+          "value": 7
+        },
+        {
+          "event": 29,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": "0x006DD8B0",
+          "value": 8
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": "0x006DD8B0",
+          "value": 7
+        },
+        {
+          "kind": "refund",
+          "owner": "OLD",
+          "pc": "0x0070ADA0"
+        },
+        {
+          "amount": 400,
+          "kind": "add_credits",
+          "owner": "OLD",
+          "pc": "0x004F9950"
+        }
+      ],
+      "constructed_anims": [],
+      "constructor_loss_field": 0,
+      "identity_delta": 0,
+      "input": {
+        "definitions": {
+          "Actions": {
+            "REPEAT_0": "1,28,0,7,0,0,0,0,A",
+            "REPEAT_1": "1,28,0,8,0,0,0,0,A",
+            "REPEAT_2": "1,28,0,9,0,0,0,0,A"
+          },
+          "Events": {
+            "REPEAT_0": "1,48,0,0",
+            "REPEAT_1": "1,29,0,0",
+            "REPEAT_2": "1,7,0,0"
+          },
+          "Tags": {
+            "REPEAT": "2,REPEAT,REPEAT_0"
+          },
+          "Triggers": {
+            "REPEAT_0": "Americans,REPEAT_1,REPEAT_0,0,1,1,1,0",
+            "REPEAT_1": "Americans,REPEAT_2,REPEAT_1,0,1,1,1,0",
+            "REPEAT_2": "Americans,<none>,REPEAT_2,0,1,1,1,0"
+          }
+        },
+        "name": "repeating_48_and_29",
+        "rust_comparison": "sale_callbacks"
+      },
+      "native_inputs": {
+        "game_mode": 1,
+        "houses": {
+          "OLD": {
+            "country_cost_buildings_bits": "0000803f",
+            "country_index": 0,
+            "country_keys": {},
+            "human": true,
+            "player_control": true
+          }
+        },
+        "type": {
+          "cost": 800,
+          "name": "GAPOWR",
+          "strength": 750
+        }
+      },
+      "reached_platform": [],
+      "reached_presentation": [],
+      "required_reached": [
+        "0x0044A1E8",
+        "0x0044A1EF",
+        "0x00702D40",
+        "0x0044A215",
+        "0x0044A21B",
+        "0x004F9950"
+      ],
+      "rng_unchanged": true,
+      "unchanged_executable_sections": true,
+      "unchanged_vtables": true
+    },
+    {
+      "after": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [
+          7
+        ],
+        "health": 750,
+        "houses": {
+          "OLD": {
+            "credits": 1400,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": -1,
+        "owner": "OLD",
+        "slot3": "GAPOWR_A",
+        "tag_attached": false,
+        "triggers": [
+          {
+            "completed": 0,
+            "enabled": true,
+            "pending": true
+          }
+        ]
+      },
+      "allocation_delta": 0,
+      "before": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [],
+        "health": 750,
+        "houses": {
+          "OLD": {
+            "credits": 1000,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": 0,
+        "owner": "OLD",
+        "slot3": "GAPOWR_A",
+        "tag_attached": true,
+        "triggers": [
+          {
+            "completed": 0,
+            "enabled": true,
+            "pending": false
+          }
+        ]
+      },
+      "calls": [
+        {
+          "kind": "loss_field_write",
+          "pc": "0x0044A1EF",
+          "value": -1
+        },
+        {
+          "kind": "record_kill",
+          "loss_field": -1,
+          "pc": "0x00702D40",
+          "source_null": true
+        },
+        {
+          "event": 48,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": "0x006DD8B0",
+          "value": 7
+        },
+        {
+          "kind": "refund",
+          "owner": "OLD",
+          "pc": "0x0070ADA0"
+        },
+        {
+          "amount": 400,
+          "kind": "add_credits",
+          "owner": "OLD",
+          "pc": "0x004F9950"
+        }
+      ],
+      "constructed_anims": [],
+      "constructor_loss_field": 0,
+      "identity_delta": 0,
+      "input": {
+        "definitions": {
+          "Actions": {
+            "ONESHOT_0": "1,28,0,7,0,0,0,0,A"
+          },
+          "Events": {
+            "ONESHOT_0": "1,48,0,0"
+          },
+          "Tags": {
+            "ONESHOT": "0,ONESHOT,ONESHOT_0"
+          },
+          "Triggers": {
+            "ONESHOT_0": "Americans,<none>,ONESHOT_0,0,1,1,1,0"
+          }
+        },
+        "name": "one_shot_48",
+        "rust_comparison": "sale_callbacks"
+      },
+      "native_inputs": {
+        "game_mode": 1,
+        "houses": {
+          "OLD": {
+            "country_cost_buildings_bits": "0000803f",
+            "country_index": 0,
+            "country_keys": {},
+            "human": true,
+            "player_control": true
+          }
+        },
+        "type": {
+          "cost": 800,
+          "name": "GAPOWR",
+          "strength": 750
+        }
+      },
+      "reached_platform": [],
+      "reached_presentation": [],
+      "required_reached": [
+        "0x0044A1E8",
+        "0x0044A1EF",
+        "0x00702D40",
+        "0x0044A215",
+        "0x0044A21B",
+        "0x004F9950"
+      ],
+      "rng_unchanged": true,
+      "unchanged_executable_sections": true,
+      "unchanged_vtables": true
+    },
+    {
+      "after": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [],
+        "health": 750,
+        "houses": {
+          "NEW": {
+            "credits": 2300,
+            "losses": 0,
+            "score": 800
+          },
+          "OLD": {
+            "credits": 1000,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": -1,
+        "owner": "NEW",
+        "slot3": "GAPOWR_A",
+        "tag_attached": true,
+        "triggers": [
+          {
+            "completed": 1,
+            "enabled": true,
+            "pending": false
+          }
+        ]
+      },
+      "allocation_delta": 0,
+      "before": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [],
+        "health": 750,
+        "houses": {
+          "NEW": {
+            "credits": 2000,
+            "losses": 0,
+            "score": 0
+          },
+          "OLD": {
+            "credits": 1000,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": 0,
+        "owner": "OLD",
+        "slot3": "GAPOWR_A",
+        "tag_attached": true,
+        "triggers": [
+          {
+            "completed": 0,
+            "enabled": true,
+            "pending": false
+          }
+        ]
+      },
+      "calls": [
+        {
+          "kind": "loss_field_write",
+          "pc": "0x0044A1EF",
+          "value": -1
+        },
+        {
+          "kind": "record_kill",
+          "loss_field": -1,
+          "pc": "0x00702D40",
+          "source_null": true
+        },
+        {
+          "event": 48,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "action": 14,
+          "kind": "action",
+          "pc": "0x006DD8B0",
+          "value": 1
+        },
+        {
+          "kind": "change_owner",
+          "owner": "NEW",
+          "pc": "0x00448260"
+        },
+        {
+          "kind": "record_kill",
+          "loss_field": -1,
+          "pc": "0x00702D40",
+          "source_null": true
+        },
+        {
+          "event": 48,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "event": 29,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "event": 29,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "action": 14,
+          "kind": "action",
+          "pc": "0x006DD8B0",
+          "value": 1
+        },
+        {
+          "kind": "change_owner",
+          "owner": "NEW",
+          "pc": "0x00448260"
+        },
+        {
+          "kind": "refund",
+          "owner": "NEW",
+          "pc": "0x0070ADA0"
+        },
+        {
+          "amount": 300,
+          "kind": "add_credits",
+          "owner": "NEW",
+          "pc": "0x004F9950"
+        }
+      ],
+      "constructed_anims": [],
+      "constructor_loss_field": 0,
+      "identity_delta": 0,
+      "input": {
+        "definitions": {
+          "Actions": {
+            "OWNER_0": "1,14,0,1,0,0,0,0,A"
+          },
+          "Events": {
+            "OWNER_0": "1,48,0,0"
+          },
+          "Tags": {
+            "OWNER": "2,OWNER,OWNER_0"
+          },
+          "Triggers": {
+            "OWNER_0": "Americans,<none>,OWNER_0,0,1,1,1,0"
+          }
+        },
+        "name": "callback_changes_owner",
+        "new_house": true,
+        "rust_comparison": "sale_callbacks"
+      },
+      "native_inputs": {
+        "game_mode": 1,
+        "houses": {
+          "NEW": {
+            "country_cost_buildings_bits": "0000403f",
+            "country_index": 1,
+            "country_keys": {
+              "CostBuildingsMult": "0.75"
+            },
+            "human": true,
+            "player_control": false
+          },
+          "OLD": {
+            "country_cost_buildings_bits": "0000803f",
+            "country_index": 0,
+            "country_keys": {},
+            "human": true,
+            "player_control": true
+          }
+        },
+        "type": {
+          "cost": 800,
+          "name": "GAPOWR",
+          "strength": 750
+        }
+      },
+      "reached_platform": [
+        [
+          "platform_registration_or_clock",
+          "0x007C978A"
+        ]
+      ],
+      "reached_presentation": [
+        "0x00451F60",
+        "0x00452170",
+        "0x00705D70"
+      ],
+      "required_reached": [
+        "0x0044A1E8",
+        "0x0044A1EF",
+        "0x00702D40",
+        "0x0044A215",
+        "0x0044A21B",
+        "0x004F9950",
+        "0x006E0AA0",
+        "0x00448260",
+        "0x007014A0"
+      ],
+      "rng_unchanged": true,
+      "unchanged_executable_sections": true,
+      "unchanged_vtables": true
+    },
+    {
+      "after": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": true,
+        "globals": [],
+        "health": 0,
+        "houses": {
+          "OLD": {
+            "credits": 1400,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": -1,
+        "owner": "OLD",
+        "slot3": "GAPOWR_AD",
+        "tag_attached": true,
+        "triggers": [
+          {
+            "completed": 1,
+            "enabled": true,
+            "pending": false
+          }
+        ]
+      },
+      "allocation_delta": 10,
+      "before": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [],
+        "health": 750,
+        "houses": {
+          "OLD": {
+            "credits": 1000,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": 0,
+        "owner": "OLD",
+        "slot3": "GAPOWR_A",
+        "tag_attached": true,
+        "triggers": [
+          {
+            "completed": 0,
+            "enabled": true,
+            "pending": false
+          }
+        ]
+      },
+      "calls": [
+        {
+          "kind": "loss_field_write",
+          "pc": "0x0044A1EF",
+          "value": -1
+        },
+        {
+          "kind": "record_kill",
+          "loss_field": -1,
+          "pc": "0x00702D40",
+          "source_null": true
+        },
+        {
+          "event": 48,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "action": 32,
+          "kind": "action",
+          "pc": "0x006DD8B0",
+          "value": 0
+        },
+        {
+          "kind": "destroy_attached",
+          "pc": "0x006E2050"
+        },
+        {
+          "kind": "receive_damage",
+          "pc": "0x00442230"
+        },
+        {
+          "event": 43,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "event": 41,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "kind": "record_kill",
+          "loss_field": -1,
+          "pc": "0x00702D40",
+          "source_null": true
+        },
+        {
+          "event": 48,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "event": 29,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "event": 29,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "action": 32,
+          "kind": "action",
+          "pc": "0x006DD8B0",
+          "value": 0
+        },
+        {
+          "kind": "destroy_attached",
+          "pc": "0x006E2050"
+        },
+        {
+          "kind": "refund",
+          "owner": "OLD",
+          "pc": "0x0070ADA0"
+        },
+        {
+          "amount": 400,
+          "kind": "add_credits",
+          "owner": "OLD",
+          "pc": "0x004F9950"
+        }
+      ],
+      "constructed_anims": [
+        {
+          "delay": 0,
+          "flags": 1536,
+          "name": "DBRIS1LG"
+        },
+        {
+          "delay": 0,
+          "flags": 1536,
+          "name": "DBRIS4SM"
+        },
+        {
+          "delay": 0,
+          "flags": 1536,
+          "name": "DBRIS1LG"
+        },
+        {
+          "delay": 0,
+          "flags": 1536,
+          "name": "DBRIS1SM"
+        },
+        {
+          "delay": 0,
+          "flags": 1536,
+          "name": "DBRIS5SM"
+        },
+        {
+          "delay": 0,
+          "flags": 1536,
+          "name": "S_BANG48"
+        },
+        {
+          "delay": 0,
+          "flags": 1536,
+          "name": "S_BANG48"
+        },
+        {
+          "delay": 1,
+          "flags": 1536,
+          "name": "S_BRNL58"
+        },
+        {
+          "delay": 2,
+          "flags": 1536,
+          "name": "S_BANG48"
+        },
+        {
+          "delay": 0,
+          "flags": 5632,
+          "name": "GAPOWR_AD"
+        }
+      ],
+      "constructor_loss_field": 0,
+      "identity_delta": 10,
+      "input": {
+        "definitions": {
+          "Actions": {
+            "DESTROY_0": "1,32,0,0,0,0,0,0,A"
+          },
+          "Events": {
+            "DESTROY_0": "1,48,0,0"
+          },
+          "Tags": {
+            "DESTROY": "2,DESTROY,DESTROY_0"
+          },
+          "Triggers": {
+            "DESTROY_0": "Americans,<none>,DESTROY_0,0,1,1,1,0"
+          }
+        },
+        "destroy_attached": true,
+        "name": "callback_destroys_attached",
+        "rust_comparison": "native_only_selling_death"
+      },
+      "native_inputs": {
+        "game_mode": 1,
+        "houses": {
+          "OLD": {
+            "country_cost_buildings_bits": "0000803f",
+            "country_index": 0,
+            "country_keys": {},
+            "human": true,
+            "player_control": true
+          }
+        },
+        "type": {
+          "cost": 800,
+          "name": "GAPOWR",
+          "strength": 750
+        }
+      },
+      "reached_platform": [
+        [
+          "platform_registration_or_clock",
+          "0x007C978A"
+        ]
+      ],
+      "reached_presentation": [
+        "0x00705D70"
+      ],
+      "required_reached": [
+        "0x0044A1E8",
+        "0x0044A1EF",
+        "0x00702D40",
+        "0x0044A215",
+        "0x0044A21B",
+        "0x004F9950",
+        "0x006E2050",
+        "0x00442230",
+        "0x004415F0"
+      ],
+      "rng_unchanged": false,
+      "unchanged_executable_sections": true,
+      "unchanged_vtables": true
+    },
+    {
+      "after": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [],
+        "health": 750,
+        "houses": {
+          "OLD": {
+            "credits": 1000,
+            "losses": 1,
+            "score": 0
+          }
+        },
+        "loss_field": 0,
+        "owner": "OLD",
+        "slot3": "GAPOWR_A",
+        "tag_attached": false,
+        "triggers": []
+      },
+      "allocation_delta": 0,
+      "before": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [],
+        "health": 750,
+        "houses": {
+          "OLD": {
+            "credits": 1000,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": 0,
+        "owner": "OLD",
+        "slot3": "GAPOWR_A",
+        "tag_attached": false,
+        "triggers": []
+      },
+      "calls": [
+        {
+          "kind": "record_kill",
+          "loss_field": 0,
+          "pc": "0x00702D40",
+          "source_null": true
+        }
+      ],
+      "constructed_anims": [],
+      "constructor_loss_field": 0,
+      "identity_delta": 0,
+      "input": {
+        "name": "ordinary_record_kill",
+        "ordinary_record_kill": true,
+        "rust_comparison": "sale_callbacks"
+      },
+      "native_inputs": {
+        "game_mode": 1,
+        "houses": {
+          "OLD": {
+            "country_cost_buildings_bits": "0000803f",
+            "country_index": 0,
+            "country_keys": {},
+            "human": true,
+            "player_control": true
+          }
+        },
+        "type": {
+          "cost": 800,
+          "name": "GAPOWR",
+          "strength": 750
+        }
+      },
+      "reached_platform": [],
+      "reached_presentation": [],
+      "required_reached": [
+        "0x00702D40",
+        "0x0070305C"
+      ],
+      "rng_unchanged": true,
+      "unchanged_executable_sections": true,
+      "unchanged_vtables": true
+    },
+    {
+      "after": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [
+          7
+        ],
+        "health": 750,
+        "houses": {
+          "OLD": {
+            "credits": 1400,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": -1,
+        "owner": "OLD",
+        "slot3": "GAPOWR_A",
+        "tag_attached": true,
+        "triggers": [
+          {
+            "completed": 1,
+            "enabled": true,
+            "pending": false
+          }
+        ]
+      },
+      "allocation_delta": 0,
+      "before": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [],
+        "health": 750,
+        "houses": {
+          "OLD": {
+            "credits": 1000,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": 0,
+        "owner": "OLD",
+        "slot3": "GAPOWR_A",
+        "tag_attached": true,
+        "triggers": [
+          {
+            "completed": 0,
+            "enabled": true,
+            "pending": false
+          }
+        ]
+      },
+      "calls": [
+        {
+          "kind": "loss_field_write",
+          "pc": "0x0044A1EF",
+          "value": -1
+        },
+        {
+          "kind": "record_kill",
+          "loss_field": -1,
+          "pc": "0x00702D40",
+          "source_null": true
+        },
+        {
+          "event": 48,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": "0x006DD8B0",
+          "value": 7
+        },
+        {
+          "event": 29,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": "0x006DD8B0",
+          "value": 7
+        },
+        {
+          "kind": "refund",
+          "owner": "OLD",
+          "pc": "0x0070ADA0"
+        },
+        {
+          "amount": 400,
+          "kind": "add_credits",
+          "owner": "OLD",
+          "pc": "0x004F9950"
+        }
+      ],
+      "constructed_anims": [],
+      "constructor_loss_field": 0,
+      "identity_delta": 0,
+      "input": {
+        "definitions": {
+          "Actions": {
+            "DONTSCORE_0": "1,28,0,7,0,0,0,0,A"
+          },
+          "Events": {
+            "DONTSCORE_0": "1,48,0,0"
+          },
+          "Tags": {
+            "DONTSCORE": "2,DONTSCORE,DONTSCORE_0"
+          },
+          "Triggers": {
+            "DONTSCORE_0": "Americans,<none>,DONTSCORE_0,0,1,1,1,0"
+          }
+        },
+        "dont_score": true,
+        "name": "dont_score_callback",
+        "rust_comparison": "sale_callbacks"
+      },
+      "native_inputs": {
+        "game_mode": 1,
+        "houses": {
+          "OLD": {
+            "country_cost_buildings_bits": "0000803f",
+            "country_index": 0,
+            "country_keys": {},
+            "human": true,
+            "player_control": true
+          }
+        },
+        "type": {
+          "cost": 800,
+          "name": "GAPOWR",
+          "strength": 750
+        }
+      },
+      "reached_platform": [],
+      "reached_presentation": [],
+      "required_reached": [
+        "0x0044A1E8",
+        "0x0044A1EF",
+        "0x00702D40",
+        "0x0044A215",
+        "0x0044A21B",
+        "0x004F9950"
+      ],
+      "rng_unchanged": true,
+      "unchanged_executable_sections": true,
+      "unchanged_vtables": true
+    },
+    {
+      "after": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [
+          7
+        ],
+        "health": 750,
+        "houses": {
+          "OLD": {
+            "credits": 1400,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": -1,
+        "owner": "OLD",
+        "slot3": "GAPOWR_A",
+        "tag_attached": true,
+        "triggers": [
+          {
+            "completed": 1,
+            "enabled": true,
+            "pending": false
+          }
+        ]
+      },
+      "allocation_delta": 0,
+      "before": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [],
+        "health": 750,
+        "houses": {
+          "OLD": {
+            "credits": 1000,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": 0,
+        "owner": "OLD",
+        "slot3": "GAPOWR_A",
+        "tag_attached": true,
+        "triggers": [
+          {
+            "completed": 0,
+            "enabled": true,
+            "pending": false
+          }
+        ]
+      },
+      "calls": [
+        {
+          "kind": "loss_field_write",
+          "pc": "0x0044A1EF",
+          "value": -1
+        },
+        {
+          "kind": "record_kill",
+          "loss_field": -1,
+          "pc": "0x00702D40",
+          "source_null": true
+        },
+        {
+          "event": 48,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": "0x006DD8B0",
+          "value": 7
+        },
+        {
+          "event": 29,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        },
+        {
+          "action": 28,
+          "kind": "action",
+          "pc": "0x006DD8B0",
+          "value": 7
+        },
+        {
+          "kind": "refund",
+          "owner": "OLD",
+          "pc": "0x0070ADA0"
+        },
+        {
+          "amount": 400,
+          "kind": "add_credits",
+          "owner": "OLD",
+          "pc": "0x004F9950"
+        }
+      ],
+      "constructed_anims": [],
+      "constructor_loss_field": 0,
+      "identity_delta": 0,
+      "input": {
+        "definitions": {
+          "Actions": {
+            "INSIGNIFICANT_0": "1,28,0,7,0,0,0,0,A"
+          },
+          "Events": {
+            "INSIGNIFICANT_0": "1,48,0,0"
+          },
+          "Tags": {
+            "INSIGNIFICANT": "2,INSIGNIFICANT,INSIGNIFICANT_0"
+          },
+          "Triggers": {
+            "INSIGNIFICANT_0": "Americans,<none>,INSIGNIFICANT_0,0,1,1,1,0"
+          }
+        },
+        "insignificant": true,
+        "name": "insignificant_callback",
+        "rust_comparison": "sale_callbacks"
+      },
+      "native_inputs": {
+        "game_mode": 1,
+        "houses": {
+          "OLD": {
+            "country_cost_buildings_bits": "0000803f",
+            "country_index": 0,
+            "country_keys": {},
+            "human": true,
+            "player_control": true
+          }
+        },
+        "type": {
+          "cost": 800,
+          "name": "GAPOWR",
+          "strength": 750
+        }
+      },
+      "reached_platform": [],
+      "reached_presentation": [],
+      "required_reached": [
+        "0x0044A1E8",
+        "0x0044A1EF",
+        "0x00702D40",
+        "0x0044A215",
+        "0x0044A21B",
+        "0x004F9950"
+      ],
+      "rng_unchanged": true,
+      "unchanged_executable_sections": true,
+      "unchanged_vtables": true
+    },
+    {
+      "after": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [],
+        "health": 750,
+        "houses": {
+          "OLD": {
+            "credits": 1000,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": -1,
+        "owner": "OLD",
+        "slot3": "GAPOWR_A",
+        "tag_attached": true,
+        "triggers": [
+          {
+            "completed": 1,
+            "enabled": true,
+            "pending": false
+          },
+          {
+            "completed": 0,
+            "enabled": false,
+            "pending": false
+          }
+        ]
+      },
+      "allocation_delta": 0,
+      "before": {
+        "actually_placed": true,
+        "alive": true,
+        "damaged_mode": false,
+        "globals": [],
+        "health": 750,
+        "houses": {
+          "OLD": {
+            "credits": 1000,
+            "losses": 0,
+            "score": 0
+          }
+        },
+        "loss_field": 0,
+        "owner": "OLD",
+        "slot3": "GAPOWR_A",
+        "tag_attached": true,
+        "triggers": [
+          {
+            "completed": 0,
+            "enabled": true,
+            "pending": false
+          },
+          {
+            "completed": 0,
+            "enabled": false,
+            "pending": false
+          }
+        ]
+      },
+      "calls": [
+        {
+          "kind": "loss_field_write",
+          "pc": "0x0044A1EF",
+          "value": -1
+        },
+        {
+          "kind": "record_kill",
+          "loss_field": -1,
+          "pc": "0x00702D40",
+          "source_null": true
+        },
+        {
+          "event": 48,
+          "kind": "tag_event",
+          "pc": "0x006E53A0",
+          "source_null": true
+        }
+      ],
+      "constructed_anims": [],
+      "constructor_loss_field": 0,
+      "identity_delta": 0,
+      "input": {
+        "definitions": {
+          "Actions": {
+            "061FF03C": "3,51,0,0,0,0,0,0,A,18,0,496,0,0,0,0,SC,54,2,061FF03C,0,0,0,0,A",
+            "0BE0B26C": "2,14,0,0,0,0,0,0,A,54,2,0BE0B26C,0,0,0,0,A"
+          },
+          "Events": {
+            "061FF03C": "1,48,0,0",
+            "0BE0B26C": "1,13,0,1"
+          },
+          "Tags": {
+            "0BE0AB4C": "2,Change_Radar_House,061FF03C"
+          },
+          "Triggers": {
+            "061FF03C": "Americans,0BE0B26C,SpySat_Boom,0,1,1,1,0",
+            "0BE0B26C": "Americans,<none>,Change_Radar_House,1,1,1,1,0"
+          }
+        },
+        "map": "ALL01UMD.MAP",
+        "map_sha256": "dee38769f2247a85908705486c175ef14a4cf90437899defe7c8b4c0d1c51fb0",
+        "name": "physical_all01_before_reshroud",
+        "rust_comparison": "before_authored_action",
+        "stop_before_action": 51
+      },
+      "native_inputs": {
+        "game_mode": 1,
+        "houses": {
+          "OLD": {
+            "country_cost_buildings_bits": "0000803f",
+            "country_index": 0,
+            "country_keys": {},
+            "human": true,
+            "player_control": true
+          }
+        },
+        "type": {
+          "cost": 800,
+          "name": "GAPOWR",
+          "strength": 750
+        }
+      },
+      "reached_platform": [],
+      "reached_presentation": [],
+      "required_reached": [
+        "0x0044A1E8",
+        "0x0044A1EF",
+        "0x00702D40",
+        "0x006E53A0",
+        "0x007264C0",
+        "0x007265C0"
+      ],
+      "rng_unchanged": true,
+      "unchanged_executable_sections": true,
+      "unchanged_vtables": true
+    }
+  ],
+  "native_anim_inputs": [
+    {
+      "name": "GAPOWR_A",
+      "raw_shp_frame_count": 32
+    },
+    {
+      "name": "GAPOWR_AD",
+      "raw_shp_frame_count": 32
+    }
+  ],
+  "schema_version": 1,
+  "source": "unicorn/gamemd.exe"
+}

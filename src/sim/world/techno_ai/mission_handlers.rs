@@ -44,6 +44,10 @@ mod guard_sabotage_tests;
 mod hunt_idle_tests;
 
 #[cfg(test)]
+#[path = "campaign_hunt_oracle_tests.rs"]
+mod campaign_hunt_oracle_tests;
+
+#[cfg(test)]
 #[path = "area_guard_post_tests.rs"]
 mod area_guard_post_tests;
 
@@ -1332,7 +1336,7 @@ pub(crate) fn foot_enter_idle_mode_selection(
 /// 4. **No target**: an object whose owner is controlled by a human, or any
 ///    object when `g_GameMode` is nonzero (every non-campaign match), runs
 ///    the idle-action virtual (`vt+0x478`, `0x004D557C`); a campaign
-///    computer's marches on the player's base (RESIDUAL below).
+///    computer's hunter marches on the player's base (described below).
 /// 5. **The tail** at `0x004D5582`, reached from every arm:
 ///    `ftol(MissionControl[current].Rate * 900.0) + RandomRanged(0, 2)`;
 ///    `0x005B3A00` indexes the current mission, Capture or Sabotage once a
@@ -1351,7 +1355,7 @@ pub(crate) fn foot_enter_idle_mode_selection(
 /// (`vt+0x480`); VERA runs it ([`Simulation::approach_target`]) for every
 /// mover the Foot body represents.
 ///
-/// RESIDUAL — **the campaign computer's march on the player**
+/// The campaign computer's march on the player
 /// (`0x004D5506`-`0x004D5576`), taken when `!IsControlledByHuman(Owner)` and
 /// `g_GameMode (0x00A8B238) == 0`; every non-campaign match has a nonzero
 /// game mode, so it is dormant there. It asks the player's House
@@ -1359,11 +1363,10 @@ pub(crate) fn foot_enter_idle_mode_selection(
 /// (`HouseClass::Get_Base_Or_Starting_Cell @ 0x0050DEF0`); unless that is the
 /// empty cell, a Slave Miner abandons its hunt
 /// (`SlaveManagerClass::AbandonHunt @ 0x006B0C80`), then `Set_Destination`
-/// (`vt+0x480`) takes that cell and `vt+0x1E8(2, 1)` queues Move. Trigger: a
-/// campaign computer's hunter with no target. Effect: VERA's stays on Hunt
-/// where it stands, repeating the scan and cadence draws, instead of moving
-/// on the player's base. The idle arm's `UpdateIdleAction` uses its one
-/// Infantry receiver synchronously, before the cadence draw.
+/// (`vt+0x480`) takes that cell and `vt+0x1E8(2, 1)` queues Move. The
+/// destination and queue with immediate readiness check use their class
+/// receivers before the cadence draw. The other no-target arm's
+/// `UpdateIdleAction` uses its one Infantry receiver synchronously.
 ///
 /// Infantry reach this body past `InfantryClass::Mission_Hunt @ 0x0051F540`
 /// (slot `+0x228`, single DATA xref `0x007EB280`), whose two computer arms
@@ -1411,17 +1414,19 @@ fn evaluate_foot_hunt(
     // 0x004D54EE..0x004D557C: IsControlledByHuman (0x0050B730) or a nonzero
     // g_GameMode (0x00A8B238) takes the class idle receiver before the
     // mission-rate jitter, so every owner in a non-campaign match idles. Only
-    // a campaign computer house reaches the march on the player (RESIDUAL
-    // above).
-    if no_target_arm
-        && (sim.session.game_mode_nonzero()
+    // a campaign computer house reaches the march on the player.
+    if no_target_arm {
+        if sim.session.game_mode_nonzero()
             || sim
                 .substrate
                 .entities
                 .get(id)
-                .is_some_and(|entity| sim.owner_is_human(entity.owner())))
-    {
-        let _ = sim.infantry_idle_action(id, rules, ctx.overlay_registry, ctx.effects);
+                .is_some_and(|entity| sim.owner_is_human(entity.owner()))
+        {
+            let _ = sim.infantry_idle_action(id, rules, ctx.overlay_registry, ctx.effects);
+        } else {
+            hunt_march_on_player(sim, id, rules, ctx);
+        }
     }
     MissionHandlerEvaluation::cadence(Simulation::mission_rate_epilogue_for(
         &mut sim.scenario_rng,
@@ -1430,6 +1435,46 @@ fn evaluate_foot_hunt(
         id,
         MissionType::Hunt,
     ))
+}
+
+/// Foot4D5506..5576: a campaign hunter with no target heads for the current
+/// player's base. House50DEF0 owns alternate/primary selection; Map5657A0
+/// resolves the returned cell before the class destination setter runs.
+fn hunt_march_on_player(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    ctx: super::ObjectAiCtx<'_>,
+) {
+    let Some(cell) = sim
+        .session
+        .current_house()
+        .and_then(|owner| sim.houses.get(&owner))
+        .map(|house| house.base_origin())
+        .filter(|cell| *cell != (0, 0))
+    else {
+        return;
+    };
+    sim.reset_slave_manager(id, rules, ctx.effects);
+    let (rx, ry) = sim.resolved_terrain.as_ref().map_or(cell, |terrain| {
+        let identity = terrain.native_cell_identity((cell.0 as i16, cell.1 as i16));
+        let (x, y) = terrain.native_cell_coord(identity);
+        (x as u16, y as u16)
+    });
+    let _ = sim.assign_destination_represented(
+        id,
+        Some(crate::sim::components::NavTargetRef::cell(rx, ry)),
+        rules,
+        ctx.overlay_registry,
+        ctx.effects,
+    );
+    let _ = sim.mission_queue_exact(
+        id,
+        MissionId::from_known(MissionType::Move),
+        1,
+        sim.session.binary_frame(),
+        &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+    );
 }
 
 /// Whether Mission_Hunt scans (`0x004D5367`): its type is not `StupidHunt=`.

@@ -842,6 +842,11 @@ pub struct ScenarioSession {
     /// the presentation viewer and cannot be rebound from selection each frame.
     /// Evidence: docs/research/PHASE3_CURRENT_HOUSE_IDENTITY_GHIDRA_REPORT.md.
     current_house: Option<InternedId>,
+    /// Scenario+34B8: saved signed Side, independent of current House and
+    /// process Vox selection. SetDefaults68389F initializes0; Full_Init
+    /// 687819/68782D/68792A/687938 installs the fresh value. Load67E75B
+    /// reads this datum before the separate current-House globals restore.
+    scenario_side: i32,
     /// Per-match game settings (the lobby options card). Set once at game
     /// start, read-only during gameplay.
     game_options: GameOptions,
@@ -981,6 +986,11 @@ impl ScenarioSession {
         self.current_house = owner;
     }
 
+    /// Fresh Scenario identity; ownership/viewer changes do not rebind it.
+    pub(crate) fn install_scenario_side(&mut self, side: i32) {
+        self.scenario_side = side;
+    }
+
     /// The start-slot -> House table filled after the random assignment.
     pub(crate) fn install_start_slot_houses(
         &mut self,
@@ -1042,6 +1052,11 @@ impl ScenarioSession {
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_current_house_for_test(&mut self, value: Option<InternedId>) {
         self.current_house = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_scenario_side_for_test(&mut self, side: i32) {
+        self.install_scenario_side(side);
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -1326,6 +1341,10 @@ impl ScenarioSession {
         self.current_house
     }
 
+    pub const fn scenario_side(&self) -> i32 {
+        self.scenario_side
+    }
+
     /// Session identity/bounds/waypoints — appended AFTER the legacy folds so
     /// the pre-session hash prefix order is preserved (SC-2). The clock and
     /// game options keep their original fold positions above; this fold adds
@@ -1374,7 +1393,7 @@ impl ScenarioSession {
             b"scenario-waypoints-v1".hash(hasher);
             s.waypoints.hash(hasher);
         }
-        // current_house is persisted process input, deliberately absent from
+        // current_house and scenario_side are persisted process inputs, absent from
         // the shared peer hash: native64DAB0 does not fold A83D4C, and different
         // participants legitimately select different current houses. Gameplay
         // mutations made by current-house callbacks retain their own hash owners.
@@ -1590,6 +1609,7 @@ impl ScenarioSession {
             waypoints: BTreeMap::new(),
             start_slot_houses: BTreeMap::new(),
             current_house: None,
+            scenario_side: 0,
             game_options: GameOptions::default(),
             tick: 0,
             total_sim_ms: 0,

@@ -1065,3 +1065,46 @@ fn a_deployed_gis_alt_over_the_ifv_skips_the_row() {
         Some(crate::sim::world::EntryClickAction::Enter)
     );
 }
+
+/// A player's Harrier or Black Eagle over the player's own Service Depot
+/// (`UnitRepair=yes`, like the Naval Yards): Aircraft What_Action's depot row
+/// (`0x00417DF6..0x00417E78`) takes a human player's base Select over a
+/// UnitRepair building, finds the building type in no retail aircraft's
+/// `Dock=` list (only GAAIRC and AMRADR) and answers NoEnter (0x1F). The
+/// cursor is NoEnter; Aircraft ClickedAction (`0x00417BD0`) passes 0x1F to
+/// Foot ClickedAction (`0x004D74E0`), whose default orders nothing, so the
+/// click orders nothing and no longer selects the depot.
+#[test]
+fn a_players_jet_over_the_players_service_depot_gets_no_enter() {
+    let Some((retail, registry)) = retail() else {
+        return;
+    };
+    let rules = &retail.rules;
+    assert!(rules.object("GADEPT").unwrap().unit_repair);
+    for jet in ["ORCA", "BEAG"] {
+        let (mut sim, depot, _, _) = scene_with(rules, "GADEPT", "Americans");
+        let jet_id = sim
+            .spawn_object(jet, "Americans", 13, 13, 0, rules)
+            .unwrap_or_else(|| panic!("{jet}"));
+        assert_eq!(
+            cursor(&sim, rules, &registry, jet_id, depot),
+            Some(CursorId::NoEnter),
+            "{jet}"
+        );
+        let mut selected = vec![jet_id];
+        assert_eq!(
+            entry_orders(
+                &sim,
+                rules,
+                &[jet_id],
+                &mut selected,
+                &hover(depot),
+                OrderModifier::Normal,
+                false,
+                Some(&registry)
+            ),
+            Some(Vec::new()),
+            "{jet}"
+        );
+    }
+}

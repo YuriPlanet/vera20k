@@ -389,6 +389,10 @@ pub struct ObjectType {
     /// — the enslaved miners and the three spawner missiles, all of which die
     /// constantly in ordinary play.
     pub dont_score: bool,
+    /// TechnoType+C9E, exact Rules key `Nominal`: constructor7113F0=false,
+    /// retained ReadBool713F2C..713F3E. This type input is distinct from
+    /// an Infantry's runtime survivor marker (Infantry+6D9).
+    nominal: bool,
     /// `SpecialThreatValue=` candidate multiplier used by threat scoring.
     pub special_threat_value: f64,
     /// `ThreatPosed=` (`TechnoTypeClass+0x670`, read by
@@ -842,6 +846,10 @@ pub struct ObjectType {
     /// retaliation and script-issued missions retain their existing owners.
     #[cfg(feature = "ares")]
     no_manual_fire: bool,
+    /// Ares3.0 TypeExt+646/+647. Unset uses the class/score default at the
+    /// Add/Remove_Tracking owner; an explicit false is a distinct retained input.
+    #[cfg(feature = "ares")]
+    keep_alive: Option<bool>,
     /// TechnoType+D33, read by Foot Approach_Target4D5690. Constructor
     /// 71152A sets true; ReadINI7144AF uses native ReadBool with the current
     /// value as its default. Attack still searches when this flag is false.
@@ -2104,6 +2112,12 @@ fn native_minutes_to_ticks(value: f64) -> u32 {
 }
 
 impl ObjectType {
+    /// Retained TechnoType+C9E; building crew admission reads this input
+    /// separately from the constructed Infantry's survivor marker.
+    pub const fn nominal(&self) -> bool {
+        self.nominal
+    }
+
     /// The optional Ares manual-action restriction, shared by cursor and
     /// click through the existing action owner. INIs cannot enable it in a
     /// retail-only build.
@@ -2115,6 +2129,18 @@ impl ObjectType {
         #[cfg(not(feature = "ares"))]
         {
             false
+        }
+    }
+
+    /// Optional Ares tracking override (reader1003F47C, constructor1003CF8E).
+    pub const fn keep_alive(&self) -> Option<bool> {
+        #[cfg(feature = "ares")]
+        {
+            self.keep_alive
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            None
         }
     }
 
@@ -2731,6 +2757,7 @@ impl ObjectType {
             not_human: category == ObjectCategory::Infantry && section.read_bool("NotHuman", false),
             strength: section.read_int("Strength", 0),
             dont_score: section.read_bool("DontScore", false),
+            nominal: section.read_bool("Nominal", false),
             special_threat_value: section.read_double("SpecialThreatValue", 0.0),
             threat_posed: section.read_int("ThreatPosed", 0),
             leadership_rating: section.read_int("LeadershipRating", 5),
@@ -2929,6 +2956,8 @@ impl ObjectType {
             can_retaliate: section.read_bool("CanRetaliate", true),
             #[cfg(feature = "ares")]
             no_manual_fire: section.read_ares_bool("NoManualFire", false),
+            #[cfg(feature = "ares")]
+            keep_alive: section.read_ares_nullable_bool("KeepAlive", None),
             // ReadINI7144AF then7144C9. The shared bool reader folds only
             // post-allocation passes retained by native_processing, preserving
             // an earlier false when a later key is missing or malformed.

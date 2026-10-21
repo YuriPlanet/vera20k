@@ -1300,8 +1300,8 @@ pub(super) fn selection_can_attack_move(
 }
 
 /// Techno object700191..700217 / Cell700830..700894. The keyboard chord
-/// alone is not a Guard action. Object targets must be allied; bare ground
-/// requires IsActive7010D0. Waypoint/patrol input is not exposed by VERA.
+/// alone is not a Guard action. Object targets must be allied and the actor
+/// no Aircraft (RTTI 2, 7001B4..7001BA); bare ground requires IsActive7010D0. Waypoint/patrol input is not exposed by VERA.
 /// A berserk object answers 0 before the rung (object `0x006FFEC9`, Cell
 /// `0x00700609`). Shared by the hover and click producers; no simulation
 /// state is changed.
@@ -2078,9 +2078,28 @@ pub(crate) fn try_queue_context_order_at_screen_point(
         );
         let attack_receivers = attack_dispatch.receivers;
         let select_fallback = attack_dispatch.select_fallback;
+        if terrain_target.is_none()
+            && let TargetKind::Entity(target_id) = attack_target
+        {
+            let receivers: Vec<u64> = attack_receivers.iter().copied().collect();
+            match object_click_release(
+                sim,
+                &resources.rules,
+                &current_objects,
+                &receivers,
+                target_id,
+                &resources.overlay_registry,
+                force_fire,
+            ) {
+                LeftRelease::Select => return false,
+                LeftRelease::Nothing => return true,
+                LeftRelease::Dispatch => {}
+            }
+        }
         // A blocked stationary actor cannot suppress another selected actor's
-        // accepted attack. If only Action7 remains, allow click-selection;
-        // Action0 instead consumes the click without issuing a move/attack.
+        // accepted attack. An owner this branch took has decided the release
+        // above; otherwise, with every receiver taken, Action7 alone allows
+        // click-selection and Action0 consumes the click.
         let selected_ids: Vec<_> = selected_ids
             .into_iter()
             .filter(|id| !attack_receivers.contains(id))
@@ -3451,15 +3470,19 @@ fn cursor_owner(
 
 /// The left release over another house's object: [`left_release`] of the
 /// [`attack_action`] of the object that owns the cursor ([`cursor_owner`]),
-/// when it is one of the `receivers` the capability arms left. An owner
-/// those arms took answered there, receiver by receiver, so the release
-/// dispatches.
+/// when it is one of the `receivers`; any other owner answered in an earlier
+/// arm, whose release dispatches. The click asks it twice: for the attack
+/// branch's receivers right after that branch, where an armed owner's 0 over
+/// another house's object out of its range (Techno `0x0070056C..0x007005E6`,
+/// kept by Building `0x0044750D`) selects the object and sends nothing, the
+/// other receivers' orders included (`0x004ABE18`, `0x004ABE88`); then for
+/// the receivers left.
 ///
-/// RESIDUAL (#605): `attack_branch_orders` decides each receiver's release
-/// itself, and consumes a 0 where native selects an object the player may
-/// select and has not. Trigger: a selected armed building alone, over
-/// another house's object out of its range. Effect: VERA does nothing where
-/// native selects the object. Rare.
+/// RESIDUAL: over a Terrain object the attack branch's receivers keep their
+/// own answers. Native decides that release from the owner too (a 0 over a
+/// tree the player may not select does nothing, `0x004AC294`). Trigger: an
+/// armed building with another object selected, clicking a tree. Effect:
+/// the other object's order is sent. Rare.
 ///
 /// RESIDUAL: a release that selects hands the click to the selection
 /// picker, which picks again. Both pickers admit what

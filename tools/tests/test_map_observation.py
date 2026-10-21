@@ -418,6 +418,18 @@ class MapObservationTests(unittest.TestCase):
                          {'scenario_rng_cursor': [0, 103], 'projectiles': [], 'animations': []})
         self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
 
+    def test_historical_effect_runtime_without_temporal_pause_remains_unchanged(self):
+        self.effect_profile()
+        for frame in self.effect_frames.values():
+            for animation in frame['animations']:
+                animation['runtime'].pop('temporal_paused')
+        run = self.valid_capture('effect-before-temporal-pause')
+        checked = observation.validate_run(run)
+        self.assertEqual(checked['status'], 'VALID', checked['errors'])
+        retained = checked['capture']['observations']['frames'][1]['effects']
+        self.assertEqual(retained, self.effect_frames[1])
+        self.assertNotIn('temporal_paused', retained['animations'][0]['runtime'])
+
     def test_wave_observations_retain_lifetime_and_refuse_malformed_snapshots(self):
         self.profile.update(schema_version=observation.PROFILE_V2, observe_waves=True)
         self.profile_path.write_text(json.dumps(self.profile))
@@ -3571,6 +3583,64 @@ class MapObservationTests(unittest.TestCase):
             change(invalid['voxel_gun'])
             with self.assertRaises(observation.ValidationError):
                 observation._building(invalid, 'building')
+
+    def test_animation_temporal_pause_extension_is_optional_and_strict(self):
+        legacy = self.building()['animation_slots'][0]['animation']['runtime']
+        legacy.pop('temporal_paused')
+        original = deepcopy(legacy)
+        observation._animation_runtime(legacy, 'runtime')
+        self.assertEqual(legacy, original)
+        self.assertNotIn('temporal_paused', legacy)
+        for paused in (False, True):
+            with self.subTest(paused=paused):
+                current = dict(legacy, temporal_paused=paused)
+                observation._animation_runtime(current, 'runtime')
+                self.assertEqual(current, dict(original, temporal_paused=paused))
+        for invalid in (None, 0, 1, 0.0, 'false', [], {}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValidationError):
+                observation._animation_runtime(dict(legacy, temporal_paused=invalid), 'runtime')
+        for extra in ({}, {'temporal_paused': False}):
+            current = dict(legacy, **extra)
+            with self.subTest(extra=extra), self.assertRaises(ValidationError):
+                observation._animation_runtime(dict(current, unknown_flag=False), 'runtime')
+            current.pop('paused')
+            with self.subTest(missing_required=True, extra=extra), self.assertRaises(ValidationError):
+                observation._animation_runtime(current, 'runtime')
+
+    def test_historical_v5_and_v8_building_runtime_without_temporal_pause_remains_unchanged(self):
+        self.production_profile()
+        for actors in self.actor_frames.values():
+            for slot in actors[0]['building']['animation_slots']:
+                slot['animation']['runtime'].pop('temporal_paused')
+        for version in (5, 8):
+            with self.subTest(version=version):
+                run = self.valid_capture(f'building-v{version}-before-temporal-pause')
+                if version == 5:
+                    self.make_historical_building(run)
+                paths = (run / 'run.json', run / 'child-output/capture.json')
+                originals = {path: path.read_bytes() for path in paths}
+                checked = observation.validate_run(run)
+                self.assertEqual(checked['status'], 'VALID', checked['errors'])
+                for frame in checked['capture']['observations']['frames']:
+                    slots = frame['actors'][0]['building']['animation_slots']
+                    self.assertNotIn('temporal_paused', slots[0]['animation']['runtime'])
+                for path, raw in originals.items():
+                    self.assertEqual(path.read_bytes(), raw)
+
+    def test_building_temporal_pause_is_retained_and_compared(self):
+        self.production_profile()
+        runtime = self.actor_frames[1][0]['building']['animation_slots'][0]['animation']['runtime']
+        before = self.valid_capture('building-temporal-running')
+        runtime['temporal_paused'] = True
+        after = self.valid_capture('building-temporal-paused')
+        checked = observation.validate_run(after)
+        self.assertEqual(checked['status'], 'VALID', checked['errors'])
+        retained = checked['capture']['observations']['frames'][1]['actors'][0]['building']
+        self.assertIs(retained['animation_slots'][0]['animation']['runtime']['temporal_paused'], True)
+        report = observation.compare_runs(before, after)
+        self.assertEqual(report['status'], 'MISMATCH', report['errors'])
+        self.assertEqual([row['field'] for row in report['differences']],
+                         ['observations.frames[1].actors[0].building.animation_slots[0].animation.runtime.temporal_paused'])
 
     def test_missing_live_animation_is_explicit_and_slots_count_towards_sample_budget(self):
         self.production_profile()

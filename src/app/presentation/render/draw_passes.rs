@@ -1036,10 +1036,19 @@ pub(crate) fn draw_pooled_cell_bodies<'a>(
     );
     for (start, count, draw) in cell_body_runs(draws) {
         let texture = match draw.atlas {
-            CellBodyAtlas::Overlay => overlay_atlas.map(|atlas| &atlas.texture),
-            CellBodyAtlas::Bridge => bridge_atlas.map(|atlas| &atlas.texture),
+            CellBodyAtlas::Overlay => overlay_atlas.map(|atlas| {
+                (
+                    &atlas.texture,
+                    atlas
+                        .zshape_bind_group()
+                        .unwrap_or_else(|| batch.default_zshape_bind_group()),
+                )
+            }),
+            CellBodyAtlas::Bridge => {
+                bridge_atlas.map(|atlas| (&atlas.texture, batch.default_zshape_bind_group()))
+            }
         };
-        let Some(texture) = texture else {
+        let Some((texture, zshape)) = texture else {
             continue;
         };
         if draw.render_z == RenderZPolicy::None {
@@ -1048,7 +1057,7 @@ pub(crate) fn draw_pooled_cell_bodies<'a>(
             batch.draw_zsprite_range(
                 pass,
                 texture,
-                batch.default_zshape_bind_group(),
+                zshape,
                 buf,
                 start,
                 count,

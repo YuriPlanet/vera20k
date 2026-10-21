@@ -649,8 +649,9 @@ fn what_action_on_cell(
 /// 3. Engineer capturing: selected Engineer hovering capturable enemy building.
 /// 4. Engineer repairing: selected Engineer hovering damaged friendly building.
 /// 5. Entry (Enter/NoEnter): a Unit's Select over a friendly building whose
-///    CAN_LOAD admits it, an Infantryman's over a Grinder, and either's over a
-///    friendly passenger carrier.
+///    CAN_LOAD admits it, an Infantryman's over a Grinder, either's over a
+///    friendly passenger carrier, and an Aircraft's NoEnter over a
+///    `UnitRepair=` building.
 /// 6. Infantry garrisoning: selected Occupier infantry hovering friendly CanBeOccupied building.
 /// 7. Admitted friendly Attack: consume the shared Techno grant and class action.
 /// 9. Generic friendly/enemy/in-range/out-of-range fallback.
@@ -795,9 +796,9 @@ pub(super) fn capability_cursor_for_hover(
 
         // 5. Entry: a Unit's Select over a friendly building it may enter
         //    (refinery, Service Depot, Tank Bunker, Grinder), an Infantryman's
-        //    over a Grinding= building, and either's over a friendly
-        //    passenger carrier, Alt's Move included
-        //    (`context_order::entry_action`).
+        //    over a Grinding= building, either's over a friendly passenger
+        //    carrier, Alt's Move included, and an Aircraft's NoEnter over a
+        //    UnitRepair= building (`context_order::entry_action`).
         if let Some(action) = rules
             .filter(|_| {
                 matches!(
