@@ -244,7 +244,9 @@ mod tests {
             inert: Some(word & 0x20 != 0),
             tiberium_grows: Some(word & 0x40 != 0),
             tiberium_spreads: Some(word & 0x80 != 0),
-            destroyable_bridges: Some(word & 0x08 != 0),
+            // ReadSpecialFlags6B8E19..6B8E39 reads/writes bit15. The
+            // ApplyAreaDamage489EB2 consumer independently tests CH,0x80.
+            destroyable_bridges: Some(word & 0x8000 != 0),
             harvester_immune: Some(word & 0x800 != 0),
             ..SpecialFlagsSection::default()
         };

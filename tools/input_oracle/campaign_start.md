@@ -43,7 +43,7 @@ in scratch, not this directory.
 | `rng_cases` | Full52FC20 and original seed/RandomStraw bodies; ten entropy, override, saved/replay/network/mode and MapGen-disabled controls with full raw RNG states |
 | `difficulty_cases` | Full_Init686B6A..686C48 for Options0..4; only0..2 are ordinary campaign-selector inputs |
 | `basic_start` | Selected Basic.Action/Home/Alt readers, SpecialFlags6B8CA0, selected Waypoint ReadInt/divide/remainder and opening-view cell-center kernel before world ground-height/Radar calls |
-| `special_controls`, `reset_control` | Native SpecialFlags read and SetDefaults683610; current-bit defaults, exact case and repeated selection's Home/Alt reset |
+| `special_controls`, `reset_control` | Native SpecialFlags read and SetDefaults683610; current-bit defaults, exact case, four distinct bit3/bit15 DestroyableBridges controls, and repeated selection's Home/Alt reset |
 | `campaign_start_houses.json` / `stock_rows` | ALL/SOV×Options0..2: selected native Rules prerequisites, Country/Side/SuperWeaponType registration, full5009B0/500B40 House creation/read/SetDifficulty, then current-house68ACAA..68AD2F |
 | `controls`, `edge_controls`, `allies_reader_controls` | Eleven credits/TechLevel/no-Houses/Allies histories,20 original ReadEdge475980 controls and27 original ReadHousesList475260 controls |
 | `color_controls` | 22 full ReadColor474A90 calls and24 full Country511850 reads; current0/3, whole-section admission, missing/stored-empty/physical-empty, case, unknown/numeric and31/32-byte boundaries |

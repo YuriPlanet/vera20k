@@ -22791,6 +22791,358 @@
           "TiberiumSpreads": "junk"
         }
       }
+    },
+    {
+      "after": 8,
+      "before": 8,
+      "name": "bridges_absent_bit3",
+      "reads": [
+        {
+          "ini": "0x887180",
+          "key": "TiberiumExplosive",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "MCVDeploy",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "InitialVeteran",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "IonStorms",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Meteorites",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Visceroids",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "TiberiumGrows",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "TiberiumSpreads",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "DestroyableBridges",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "FixedAlliance",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "FogOfWar",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Inert",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "HarvesterImmune",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        }
+      ],
+      "sections": {}
+    },
+    {
+      "after": 32768,
+      "before": 32768,
+      "name": "bridges_absent_bit15",
+      "reads": [
+        {
+          "ini": "0x887180",
+          "key": "TiberiumExplosive",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "MCVDeploy",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "InitialVeteran",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "IonStorms",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Meteorites",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Visceroids",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "TiberiumGrows",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "TiberiumSpreads",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "DestroyableBridges",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "FixedAlliance",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "FogOfWar",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Inert",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "HarvesterImmune",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        }
+      ],
+      "sections": {}
+    },
+    {
+      "after": 8,
+      "before": 32776,
+      "name": "bridges_no",
+      "reads": [
+        {
+          "ini": "0x887180",
+          "key": "TiberiumExplosive",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "MCVDeploy",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "InitialVeteran",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "IonStorms",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Meteorites",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Visceroids",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "TiberiumGrows",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "TiberiumSpreads",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "DestroyableBridges",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "FixedAlliance",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "FogOfWar",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Inert",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "HarvesterImmune",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        }
+      ],
+      "sections": {
+        "SpecialFlags": {
+          "DestroyableBridges": "no"
+        }
+      }
+    },
+    {
+      "after": 32776,
+      "before": 8,
+      "name": "bridges_yes",
+      "reads": [
+        {
+          "ini": "0x887180",
+          "key": "TiberiumExplosive",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "MCVDeploy",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "InitialVeteran",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "IonStorms",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Meteorites",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Visceroids",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "TiberiumGrows",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "TiberiumSpreads",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "DestroyableBridges",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "FixedAlliance",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "FogOfWar",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Inert",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "HarvesterImmune",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        }
+      ],
+      "sections": {
+        "SpecialFlags": {
+          "DestroyableBridges": "yes"
+        }
+      }
     }
   ]
 }

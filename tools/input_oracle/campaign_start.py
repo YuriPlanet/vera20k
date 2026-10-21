@@ -833,16 +833,30 @@ def basic_start_cases():
 
 def special_controls():
     rows = []
-    for name, values in (("absent", {}), ("wrong_case", {"specialflags": {"TiberiumGrows": "yes"}}),
-                         ("keys_wrong_case", {"SpecialFlags": {"tiberiumgrows": "yes"}}),
-                         ("grows", {"SpecialFlags": {"TiberiumGrows": "yes"}}),
-                         ("spread_no", {"SpecialFlags": {"TiberiumSpreads": "no"}}),
-                         ("malformed", {"SpecialFlags": {"TiberiumGrows": "junk", "TiberiumSpreads": "junk"}})):
+    for name, values, prior in (
+        ("absent", {}, None),
+        ("wrong_case", {"specialflags": {"TiberiumGrows": "yes"}}, None),
+        ("keys_wrong_case", {"SpecialFlags": {"tiberiumgrows": "yes"}}, None),
+        ("grows", {"SpecialFlags": {"TiberiumGrows": "yes"}}, None),
+        ("spread_no", {"SpecialFlags": {"TiberiumSpreads": "no"}}, None),
+        ("malformed", {"SpecialFlags": {"TiberiumGrows": "junk", "TiberiumSpreads": "junk"}}, None),
+        # Separate DestroyableBridges bit15 from unrelated bit3; the cold
+        # constructor sets both and cannot distinguish an incorrect projection.
+        ("bridges_absent_bit3", {}, 0x0008),
+        ("bridges_absent_bit15", {}, 0x8000),
+        ("bridges_no", {"SpecialFlags": {"DestroyableBridges": "no"}}, 0x8008),
+        ("bridges_yes", {"SpecialFlags": {"DestroyableBridges": "yes"}}, 0x0008),
+    ):
         m = CampaignReader()
         m.invoke(0x6832C0, m.scenario)
+        if prior is not None:
+            m.u.mem_write(m.scenario, dwords(prior))
         before = m.read32(m.scenario)
+        rng_before = m.rng_state()
         m.ordered_ini(values)
         m.invoke(0x6B8CA0, m.scenario, (INI,))
+        if m.rng_state() != rng_before:
+            raise AssertionError(f"SpecialFlags reader changed RNG state: {name}")
         rows.append(dict(name=name, sections=values, before=before, after=m.read32(m.scenario), reads=list(m.reads)))
         m.check_code()
     return rows
