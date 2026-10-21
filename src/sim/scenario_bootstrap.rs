@@ -2428,7 +2428,7 @@ pub fn launch_mcv_type_for_country(country: LaunchCountry, rules: &RuleSet) -> O
         rules,
         &rules.general.base_unit_types,
         crate::rules::object_type::ObjectCategory::Vehicle,
-        crate::sim::ai_buildable::house_country_bit(rules, name),
+        rules.country_owner_mask(name),
     )
     .map(|object| object.id.as_str())
 }
@@ -2970,10 +2970,18 @@ pub fn initialize_map_roster_houses(
 mod tests {
     use super::*;
 
-    const CONTROLLED_STOCK_COUNTRIES: &str = "[Countries]\n0=Americans\n1=Alliance\n2=French\n3=Germans\n4=British\n5=Africans\n6=Arabs\n7=Confederation\n8=Russians\n9=YuriCountry\n[Sides]\nAllied=Americans,Alliance,French,Germans,British\nSoviet=Africans,Arabs,Confederation,Russians\nThirdSide=YuriCountry\n";
+    // Each stock Country reaches its section, so its ParentCountry defaults to
+    // its own ID as in retail; a sectionless Country keeps ctor-empty
+    // ParentCountry and owns nothing.
+    const CONTROLLED_STOCK_COUNTRIES: &str = "[Countries]\n0=Americans\n1=Alliance\n2=French\n3=Germans\n4=British\n5=Africans\n6=Arabs\n7=Confederation\n8=Russians\n9=YuriCountry\n[Sides]\nAllied=Americans,Alliance,French,Germans,British\nSoviet=Africans,Arabs,Confederation,Russians\nThirdSide=YuriCountry\n[Americans]\nParentCountry=Americans\n[Alliance]\nParentCountry=Alliance\n[French]\nParentCountry=French\n[Germans]\nParentCountry=Germans\n[British]\nParentCountry=British\n[Africans]\nParentCountry=Africans\n[Arabs]\nParentCountry=Arabs\n[Confederation]\nParentCountry=Confederation\n[Russians]\nParentCountry=Russians\n[YuriCountry]\nParentCountry=YuriCountry\n";
 
+    /// Layer a test's source over the Countries fixture, so its own Country
+    /// keys join the fixture's sections; a fresh load would keep only the
+    /// first of two same-named sections.
     fn launch_fixture_ini(source: &str) -> IniFile {
-        IniFile::from_str(&format!("{CONTROLLED_STOCK_COUNTRIES}{source}"))
+        let mut ini = IniFile::from_str(CONTROLLED_STOCK_COUNTRIES);
+        ini.merge(&IniFile::from_str(source));
+        ini
     }
 
     fn starting_country_native_fixture(passive: bool) -> (serde_json::Value, RuleSet) {
@@ -3131,6 +3139,13 @@ mod tests {
         {
             source.push_str(&format!("{index}={}\n", id.as_str().unwrap()));
         }
+        // The native House's Country reads its retained ParentCountry, which
+        // supplies the Owner-side bit; its actual index supplies the rest.
+        let actual_country = gate["actual_country"].as_str().unwrap();
+        source.push_str(&format!(
+            "[{actual_country}]\nParentCountry={}\n",
+            gate["owner_parent"].as_str().unwrap()
+        ));
         let type_id = gate["type_id"].as_str().unwrap();
         source.push_str(&format!(
             "[VehicleTypes]\n0={type_id}\n[{type_id}]\nTechLevel=1\n"
@@ -3145,12 +3160,17 @@ mod tests {
                 rules.house_type_mask(&object.owner),
                 gate["owner_mask"].as_u64().unwrap() as u32
             );
-            let index =
-                crate::rules::ruleset::CountryIdx(gate["actual_index"].as_u64().unwrap() as u16);
+            assert_eq!(
+                crate::sim::ai_buildable::house_country_bit(&rules, actual_country),
+                1 << gate["actual_index"].as_u64().unwrap()
+            );
             assert_eq!(
                 crate::sim::ai_buildable::candidate_allowed(
                     object,
-                    crate::sim::ai_buildable::country_bit(index),
+                    crate::sim::ai_buildable::CountryBuildMasks::for_country(
+                        &rules,
+                        actual_country
+                    ),
                     gate["planned_side"].as_i64().unwrap() as i32,
                     true,
                     &rules,
@@ -3163,9 +3183,7 @@ mod tests {
             // golden. Other production gates are open in this Rust scene.
             let mut sim = Simulation::new();
             let owner = sim.interner.intern("QualifierHouse");
-            let country = sim
-                .interner
-                .intern(gate["actual_country"].as_str().unwrap());
+            let country = sim.interner.intern(actual_country);
             sim.houses
                 .register(HouseState::new(owner, -1, Some(country), false, 0, 10));
             assert_eq!(

@@ -140,7 +140,8 @@ mod tests {
     #[test]
     fn raw_ground_occupation_in_the_yard_rect_moves_the_site() {
         let ini = IniFile::from_str(
-            "[Countries]\n0=Americans\n1=Russians\n[General]\nShipyard=GAYARD\n\
+            "[Countries]\n0=Americans\n1=Russians\n[Russians]\nParentCountry=Russians\n\
+             [General]\nShipyard=GAYARD\n\
              [BuildingTypes]\n0=GAYARD\n[GAYARD]\nOwner=Russians\nNaval=yes\n\
              [Water]\nFloat=100%\n",
         );

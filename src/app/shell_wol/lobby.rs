@@ -64,6 +64,9 @@ pub(crate) struct WolLobbyGlobals {
     pub(crate) page_last_control: u16,
     /// `[0xB76478..0xB76480]`: the in-match page's reply prefill window.
     pub(crate) page_reply_window: crate::ui::wol_page::PageReplyWindow,
+    /// `[0xB78608]`: the options sink's preview-request stamp in 16 ms
+    /// buckets, first set by its one-time init (`0x007A7EA0..0x007A7ED3`).
+    pub(crate) preview_stamp: Option<u32>,
 }
 
 /// The decoded result of a joined channel: its record and its users.
@@ -1818,6 +1821,20 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                 && let Err(error) = setup::player_ready(state, &from, value)
             {
                 log::warn!("WOL readiness from {from}: {error:#}");
+            }
+        }
+        WolServiceEvent::PreviewRequested { from } => {
+            // 0x7A82F8..0x7A833C: only from a user of this channel.
+            let member = lobby_mut(state)
+                .expect("checked")
+                .members
+                .iter()
+                .any(|member| member.name.eq_ignore_ascii_case(&from));
+            if member
+                && in_setup_channel(state)
+                && let Err(error) = setup::preview_request(state)
+            {
+                log::warn!("WOL preview request from {from}: {error:#}");
             }
         }
         WolServiceEvent::MapStatus { from, status } => {

@@ -34,7 +34,7 @@ use vera20k_core::headless_scenario::{HeadlessScenario, battle_session};
 use vera20k_core::map::entities::EntityCategory;
 use vera20k_core::rules::foundation::foundation_dimensions;
 use vera20k_core::rules::ruleset::RuleSet;
-use vera20k_core::sim::ai_buildable::{candidate_allowed, house_country_bit};
+use vera20k_core::sim::ai_buildable::{CountryBuildMasks, candidate_allowed};
 use vera20k_core::sim::combat::TargetKind;
 use vera20k_core::sim::command::{Command, CommandEnvelope};
 use vera20k_core::sim::intern::InternedId;
@@ -251,10 +251,10 @@ impl Arsenal {
         let side = *[&ALLIED, &SOVIET, &YURI]
             .get(usize::try_from(side_index).expect("benchmark requires a nonnegative stock side"))
             .expect("benchmark requires a stock side");
-        let bit = house_country_bit(rules, country);
+        let masks = CountryBuildMasks::for_country(rules, country);
         let ownable = |type_id: &str| {
             rules.object(type_id).is_some_and(|object| {
-                candidate_allowed(object, bit, side_index, super_weapons, rules)
+                candidate_allowed(object, masks, side_index, super_weapons, rules)
             })
         };
         let keep = |types: &[&'static str]| -> Vec<&'static str> {

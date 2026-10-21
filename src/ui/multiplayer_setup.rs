@@ -35,6 +35,8 @@ pub(crate) const STARTS: [u16; 8] = [0x6A3, 0x6A4, 0x6A5, 0x6A6, 0x6A7, 0x6A8, 0
 pub(crate) const PAGE: u16 = 0x5C2;
 pub(crate) const EMOTE: u16 = 0x3ED;
 pub(crate) const PING_ICONS: u16 = 0x754;
+/// C9's "Preview unavailable" static over the map thumbnail `0x468`.
+pub(crate) const NO_PREVIEW: u16 = 0x71F;
 
 /// The service whose setup dialog this is. Every shared helper keeps one
 /// code path and branches on GameMode 3/4 like the native helpers do.
@@ -326,6 +328,9 @@ pub(crate) struct SetupView {
     pub(crate) mode_label: String,
     pub(crate) map_label: String,
     pub(crate) selected_map_index: Option<usize>,
+    /// C9's `0x71F` shows, and `0x468` is hidden (WOL `Z3`).
+    pub(crate) no_preview: bool,
+    pub(crate) preview_hidden: bool,
     pub(crate) cooperative: bool,
     pub(crate) cooperative_description: Option<String>,
 }
@@ -479,6 +484,10 @@ pub(crate) struct MultiplayerSetupLayout {
     pub(crate) trackbars: [(u16, RectPx); 4],
     pub(crate) labels: Vec<(&'static str, RectPx)>,
     pub(crate) map_preview: RectPx,
+    /// C9's hidden `0x71F` static ("Preview unavailable"): placed by
+    /// `0x0060B950` alone, so it keeps its template place while `0x468`
+    /// is right-anchored. `None` on BC/BD/C2.
+    pub(crate) no_preview: Option<RectPx>,
     pub(crate) cooperative_description: RectPx,
     pub(crate) mode_label: RectPx,
     pub(crate) map_label: RectPx,
@@ -606,6 +615,7 @@ impl MultiplayerSetupLayout {
             ],
             labels,
             cooperative_description: rect(60, 98, 540, 143),
+            no_preview: (dialog.wol() && !host).then(|| rect(650, 37, 145, 113)),
             map_preview: scale.scale_rect(anchor_rect(
                 crate::ui::shell::descriptor::AnchorRule::RightAnchor,
                 RectPx::new(preview_x, 23, 96, 69),
@@ -649,6 +659,7 @@ impl MultiplayerSetupLayout {
             CHAT => Some(self.chat),
             CHAT_LOG => Some(self.chat_log),
             EMOTE => self.emote,
+            NO_PREVIEW => self.no_preview,
             _ => self.page.button_rect(id),
         }
     }

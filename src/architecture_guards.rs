@@ -126,7 +126,8 @@ fn raw_ini_walks_have_pinned_production_callers() {
             &[
                 ("rules/ini_parser.rs", 1), // the definition
                 ("rules/overlay_types.rs", 2),
-                ("rules/ruleset.rs", 2),
+                // Includes parse_registry copying already resolved stored IDs.
+                ("rules/ruleset.rs", 3),
                 ("rules/smudge_type.rs", 1),
                 ("rules/tiberium_type.rs", 1),
             ],

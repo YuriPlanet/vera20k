@@ -278,6 +278,12 @@ pub(crate) fn player_ready(state: &mut AppState, name: &str, value: i32) -> anyh
     if crate::app::shell_wol::in_match(state) || start_pending(state) {
         return Ok(());
     }
+    let result = ready_arm(state, name, value);
+    guest_sink_tail(state);
+    result
+}
+
+fn ready_arm(state: &mut AppState, name: &str, value: i32) -> anyhow::Result<()> {
     let Some(index) = participant(state, name) else {
         return Ok(());
     };
@@ -307,13 +313,97 @@ pub(crate) fn map_status(state: &mut AppState, name: &str, status: u8) -> anyhow
     if crate::app::shell_wol::in_match(state) || start_pending(state) {
         return Ok(());
     }
-    let Some(index) = participant(state, name) else {
-        return Ok(());
+    let result = match participant(state, name) {
+        Some(index) => service::service_event(
+            state,
+            service::NetworkSetupEvent::MapStatus { index, status },
+        ),
+        None => Ok(()),
     };
-    service::service_event(
-        state,
-        service::NetworkSetupEvent::MapStatus { index, status },
-    )
+    guest_sink_tail(state);
+    result
+}
+
+/// After the arm, a guest's `+0x58` runs its preview tail on every public
+/// text that passed its gates, whoever sent it (`0x007A7F14..0x007A8213`).
+fn guest_sink_tail(state: &mut AppState) {
+    if !state.match_state.session.host() {
+        options_preview(state, false);
+    }
+}
+
+/// The guest's options sink `+0x58` (`0x007A7EA0`) after its parse, for
+/// each public options text: the host's options, and any user's `A` or
+/// `K`. A preview hides `0x71F` and shows `0x468`
+/// (`0x007A8017..0x007A8025`). Without one it asks the first channel user
+/// for one (`P%s`) when the scenario is new; after 900 buckets with no
+/// download running it asks again on each options text, unrestamped,
+/// unless the map verifies (`0x007A802B..0x007A80D7`). A verified mixfile
+/// map has its own preview and returned above (`0x007A80EF..0x007A8143`).
+/// RESIDUAL: the clan/tournament auto-unaccept that follows
+/// (`0x007A8145..0x007A8196`) is chain H4's. The 900-bucket branch reads
+/// the verification of the last map change; native verifies again
+/// (`0x007A8090..0x007A80AF`), which differs only when a map arrives
+/// without a change, and WOL transfers no map here.
+pub(super) fn options_preview(state: &mut AppState, new_scenario: bool) {
+    let now = crate::ui::wol_page::reply_window_now(
+        crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+    ) as u32;
+    let globals = &mut state.frontend.wol_lobby_globals;
+    let stamp = *globals.preview_stamp.get_or_insert(now);
+    let map_named = state
+        .match_state
+        .session
+        .network_setup()
+        .and_then(|launch| launch.selected_map_file.as_deref())
+        .is_some_and(|file| !file.is_empty());
+    let protocol = state
+        .frontend
+        .network_setup_protocol
+        .as_mut()
+        .expect("setup owns protocol");
+    state.platform.window.request_redraw();
+    if protocol.received_preview.is_some() || protocol.local_preview() {
+        protocol.wol_no_preview = false;
+        protocol.wol_preview_hidden = false;
+        return;
+    }
+    let mut request = false;
+    if new_scenario {
+        request = true;
+        state.frontend.wol_lobby_globals.preview_stamp = Some(now);
+    } else if now.wrapping_sub(stamp) as i32 > 900 && !protocol.awaiting_preview_file {
+        if !map_named || protocol.local_map_verified {
+            state.frontend.wol_lobby_globals.preview_stamp = Some(now);
+        } else {
+            request = true;
+        }
+    }
+    if request {
+        protocol.requests.push(NetworkSetupRequest::RequestPreview);
+    }
+}
+
+/// The host's `+0x54` arm `'P'` (`0x007A8BF3..0x007A8D85`): a channel
+/// guest asks for the preview. The host that created the game answers
+/// through `0x005E7EB0` while no match runs and no start is pending; the
+/// scenario name after `P` is not read.
+/// INFERRED: a `P` during the offer's ack wait is dropped, as LAN's wait
+/// loop drops `0x1B`.
+pub(crate) fn preview_request(state: &mut AppState) -> anyhow::Result<()> {
+    if !state.match_state.session.host()
+        || crate::app::shell_wol::in_match(state)
+        || start_pending(state)
+        || state
+            .match_state
+            .session
+            .network_setup()
+            .is_none_or(|launch| launch.humans.len() < 2)
+        || service::preview_offer_pending(state)
+    {
+        return Ok(());
+    }
+    service::send_preview(state)
 }
 
 fn participant(state: &AppState, name: &str) -> Option<usize> {

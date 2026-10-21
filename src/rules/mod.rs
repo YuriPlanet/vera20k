@@ -124,6 +124,10 @@ pub mod color_add;
 pub mod color_scheme;
 pub mod combat_damage;
 pub mod crate_rules;
+#[cfg(test)]
+mod country_parent_tests;
+#[cfg(test)]
+mod country_veterancy_tests;
 pub mod effect_asset_catalog;
 pub mod error;
 pub mod flh;

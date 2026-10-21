@@ -235,6 +235,13 @@ pub enum WolTarget {
     /// The same, then another user joins and is kicked: its row and the
     /// `TXT_USER_KICKED` line in C9.
     GuestUserKicked,
+    /// The same, then the host changes to a map this guest cannot verify:
+    /// one `P`, re-sent on each options text after 900 buckets; the host's
+    /// `Z3` shows "Preview unavailable" in place of the thumbnail.
+    GuestNoPreview,
+    /// The same change, then the host's offer: the guest acks, takes
+    /// `Preview.bin`, and the next options text asks for nothing.
+    GuestPreviewReceived,
 }
 
 impl WolTarget {
@@ -344,6 +351,8 @@ impl WolTarget {
                 | Self::GuestHostLeft
                 | Self::GuestKicked
                 | Self::GuestUserKicked
+                | Self::GuestNoPreview
+                | Self::GuestPreviewReceived
         )
     }
 
@@ -532,6 +541,8 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-c9-host-left", WolTarget::GuestHostLeft),
     ("wol-c9-kicked", WolTarget::GuestKicked),
     ("wol-c9-user-kicked", WolTarget::GuestUserKicked),
+    ("wol-c9-nat-no-preview", WolTarget::GuestNoPreview),
+    ("wol-c9-preview-received", WolTarget::GuestPreviewReceived),
 ];
 
 /// The controlled guest of the C2 targets, the host of the C9 targets.
@@ -4606,6 +4617,148 @@ impl WolCapture {
         Ok(())
     }
 
+    /// The host's map changes to a version this guest cannot verify (its
+    /// digest differs), so the guest has no preview and asks for one.
+    fn guest_preview(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let preview = |state: &AppState| {
+            let protocol = state
+                .frontend
+                .network_setup_protocol
+                .as_ref()
+                .expect("C9 protocol");
+            (
+                protocol.local_preview(),
+                protocol.received_preview().is_some(),
+                protocol.wol_no_preview(),
+            )
+        };
+        ensure!(
+            preview(state) == (true, false, (false, false)),
+            "the host's first map did not preview locally: {:?}",
+            preview(state)
+        );
+        let launch = state
+            .match_state
+            .session
+            .network_setup()
+            .context("C9 setup")?
+            .clone();
+        let file = launch.selected_map_file.clone().context("host map")?;
+        let mut map_metadata = crate::app::shell_network_setup::local_map_metadata(state, &file)?;
+        map_metadata.digest = "another version".into();
+        let seed = state.match_state.session.network_start_seed();
+        let publish = |state: &mut AppState| {
+            setup::service_event(
+                state,
+                NetworkSetupEvent::HostSetup {
+                    launch: launch.clone(),
+                    map_metadata: map_metadata.clone(),
+                    vacancies: [crate::app::match_runtime::session::NetworkVacancy::Open; 8],
+                    observer_row: None,
+                    cooperative_difficulty: 0,
+                    seed,
+                },
+            )?;
+            let requests = setup_requests(state);
+            Ok::<_, anyhow::Error>(
+                requests
+                    .iter()
+                    .filter(|request| **request == NetworkSetupRequest::RequestPreview)
+                    .count(),
+            )
+        };
+        setup_requests(state);
+        ensure!(
+            publish(state)? == 1 && preview(state) == (false, false, (false, false)),
+            "the unverified map did not send one P: {:?}",
+            preview(state)
+        );
+        ensure!(publish(state)? == 0, "an unchanged options text sent P");
+        self.event(frame, json!({"P": file, "digest": "another version"}));
+        if self.target == WolTarget::GuestNoPreview {
+            // 0x7A8059..0x7A80D7: 900 buckets on, each options text asks
+            // again without restamping.
+            let stamp = state
+                .frontend
+                .wol_lobby_globals
+                .preview_stamp
+                .context("the sink's stamp")?;
+            state.frontend.wol_lobby_globals.preview_stamp = Some(stamp.wrapping_sub(901));
+            ensure!(
+                publish(state)? == 1 && publish(state)? == 1,
+                "the 900-bucket rule did not ask again on each options text"
+            );
+            self.event(frame, "P again on each options text after 900 buckets");
+            setup::service_event(state, NetworkSetupEvent::PreviewUnavailable)?;
+            let view = setup_view(state)?;
+            ensure!(
+                view.no_preview && view.preview_hidden,
+                "Z3 did not show 0x71F over a hidden 0x468"
+            );
+            self.event(frame, "Z3: 0x71F Preview unavailable, 0x468 hidden");
+            return Ok(());
+        }
+        setup::service_event(state, NetworkSetupEvent::PreviewOffered)?;
+        ensure!(
+            setup_requests(state)
+                == [
+                    NetworkSetupRequest::AcknowledgePreview,
+                    NetworkSetupRequest::RequestPreviewFile
+                ],
+            "the WOL offer did not ack and request the file"
+        );
+        let (width, height) = (96u32, 96u32);
+        let mut rgba = Vec::new();
+        for y in 0..height {
+            for x in 0..width {
+                rgba.extend_from_slice(&[
+                    (40 + x) as u8,
+                    (60 + y) as u8,
+                    ((x + y) / 2) as u8,
+                    0xFF,
+                ]);
+            }
+        }
+        let preview_bin =
+            crate::map::preview::preview_bin_bytes(&crate::map::preview::create_paletted_preview(
+                &crate::map::preview::DecodedPreview {
+                    width,
+                    height,
+                    rgba,
+                },
+                crate::map::preview::PALETTED_PREVIEW_COLORS,
+            ));
+        let root = super::lan::LanCapture::isolated_root(state)?;
+        std::fs::write(root.join("Preview.bin"), preview_bin)?;
+        setup::service_event(
+            state,
+            NetworkSetupEvent::PreviewFileReceived {
+                transferred_file: Some("Preview.bin".into()),
+            },
+        )?;
+        std::fs::remove_file(root.join("Preview.bin"))?;
+        ensure!(
+            preview(state) == (false, true, (false, false)) && publish(state)? == 0,
+            "the received preview: {:?}",
+            preview(state)
+        );
+        self.event(frame, "offer acked, Preview.bin taken, no further P");
+        // Another guest's Z3 hides even this preview; the next public text,
+        // here the host's A1, restores it (0x7A8227..0x7A824E).
+        setup::service_event(state, NetworkSetupEvent::PreviewUnavailable)?;
+        ensure!(
+            preview(state).2 == (true, true),
+            "Z3 did not hide the received preview"
+        );
+        setup::player_ready(state, "Tanya", 1)?;
+        ensure!(
+            preview(state).2 == (false, false),
+            "the host's A1 did not restore 0x468"
+        );
+        self.event(frame, "Z3 hid the preview; the host's A1 restored it");
+        Ok(())
+    }
+
     fn guest_options(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let launch = state
             .match_state
@@ -4704,6 +4857,9 @@ impl WolCapture {
                     "Boris's kick: row gone {gone}, line {expected:?}"
                 );
                 self.event(frame, "Boris joined, then was kicked");
+            }
+            WolTarget::GuestNoPreview | WolTarget::GuestPreviewReceived => {
+                self.guest_preview(state, frame)?;
             }
             _ => {}
         }

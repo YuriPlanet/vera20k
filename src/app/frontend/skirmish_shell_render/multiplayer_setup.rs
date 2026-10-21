@@ -425,8 +425,27 @@ pub(crate) fn render_multiplayer_setup(
                 SHELL_CONTROL_TEXT_DEPTH,
             ));
         }
+        // C9's 0x71F "Preview unavailable" after the host's Z3 (0x5E3D10),
+        // a left-aligned static at its template place.
+        if !sliding
+            && view.no_preview
+            && let Some(rect) = layout.no_preview
+        {
+            texts.push(text(
+                &localized_label(state, "TXT_NAT_NO_PREVIEW", "Preview unavailable"),
+                rect,
+                ShellAlign::NONE,
+                SHELL_LABEL_TEXT_RGB,
+                SHELL_CONTROL_TEXT_DEPTH,
+            ));
+        }
         if !sliding {
-            if let Some(preview) = state.frontend.skirmish_preview_texture.as_ref() {
+            if let Some(preview) = state
+                .frontend
+                .skirmish_preview_texture
+                .as_ref()
+                .filter(|_| !view.preview_hidden)
+            {
                 overlay.preview = build_preview_surface_instance(
                     layout.map_preview,
                     preview.width,
