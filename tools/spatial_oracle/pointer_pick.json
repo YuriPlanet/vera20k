@@ -1,0 +1,203 @@
+{
+  "controls": [
+    {
+      "cursor": [
+        100,
+        100
+      ],
+      "name": "weighted_Y_AB",
+      "picked": 1,
+      "positions": [
+        [
+          112,
+          100
+        ],
+        [
+          100,
+          116
+        ]
+      ],
+      "registration_order": [
+        0,
+        1
+      ]
+    },
+    {
+      "cursor": [
+        100,
+        100
+      ],
+      "name": "weighted_Y_BA",
+      "picked": 1,
+      "positions": [
+        [
+          112,
+          100
+        ],
+        [
+          100,
+          116
+        ]
+      ],
+      "registration_order": [
+        1,
+        0
+      ]
+    },
+    {
+      "cursor": [
+        100,
+        100
+      ],
+      "name": "close_weighted_Y",
+      "picked": 1,
+      "positions": [
+        [
+          106,
+          100
+        ],
+        [
+          100,
+          108
+        ]
+      ],
+      "registration_order": [
+        0,
+        1
+      ]
+    },
+    {
+      "cursor": [
+        100,
+        100
+      ],
+      "name": "closer_X_control",
+      "picked": 0,
+      "positions": [
+        [
+          108,
+          100
+        ],
+        [
+          100,
+          116
+        ]
+      ],
+      "registration_order": [
+        0,
+        1
+      ]
+    },
+    {
+      "cursor": [
+        100,
+        100
+      ],
+      "name": "equal_weighted_AB",
+      "picked": 0,
+      "positions": [
+        [
+          108,
+          104
+        ],
+        [
+          100,
+          112
+        ]
+      ],
+      "registration_order": [
+        0,
+        1
+      ]
+    },
+    {
+      "cursor": [
+        100,
+        100
+      ],
+      "name": "equal_weighted_BA",
+      "picked": 1,
+      "positions": [
+        [
+          108,
+          104
+        ],
+        [
+          100,
+          112
+        ]
+      ],
+      "registration_order": [
+        1,
+        0
+      ]
+    },
+    {
+      "cursor": [
+        100,
+        100
+      ],
+      "name": "strict_200_control",
+      "picked": 0,
+      "positions": [
+        [
+          114,
+          100
+        ],
+        [
+          100,
+          120
+        ]
+      ],
+      "registration_order": [
+        0,
+        1
+      ]
+    },
+    {
+      "cursor": [
+        378,
+        300
+      ],
+      "name": "bunker_overlap_points",
+      "picked": 0,
+      "positions": [
+        [
+          376,
+          284
+        ],
+        [
+          391,
+          302
+        ]
+      ],
+      "registration_order": [
+        0,
+        1
+      ]
+    },
+    {
+      "cursor": [
+        391,
+        301
+      ],
+      "name": "air_nearest_points",
+      "picked": 1,
+      "positions": [
+        [
+          376,
+          284
+        ],
+        [
+          391,
+          302
+        ]
+      ],
+      "registration_order": [
+        0,
+        1
+      ]
+    }
+  ],
+  "y_weight": 0.5
+}

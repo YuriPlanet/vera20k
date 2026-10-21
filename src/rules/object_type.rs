@@ -1564,6 +1564,14 @@ pub struct ObjectType {
     /// Immutable projection of the retained InfantryType Pip/OccupyPip state.
     infantry_pips: InfantryPips,
 
+    /// ReadSequenceData's sound pairs from every reached rules pass,
+    /// projected from the native type registry; bound by
+    /// [`Self::bind_sequence_sounds`].
+    sequence_sound_reads: Vec<crate::rules::infantry_sequence::SequenceSoundRead>,
+
+    /// The bound record sounds: at most two per DoType (record `+0x10`).
+    sequence_sounds: Vec<crate::rules::infantry_sequence::SequenceSound>,
+
     /// What pip display to render below the health bar (PipScale= in rules.ini).
     /// `Tiberium` shows per-bale cargo pips for harvesters using pips2.shp.
     pub pip_scale: PipScale,
@@ -1715,6 +1723,11 @@ pub struct ObjectType {
     /// the weapon arrays. `> 0` short-circuits weapon selection to
     /// `CurrentWeaponNumber` unless the type is gattling.
     pub turret_count: i32,
+
+    /// `HasTurretTooltips=` (`TechnoTypeClass+0x806`, ReadBool `0x00712837`,
+    /// ctor 0 @ `0x00711369`). With a positive TurretCount it selects the
+    /// turret formatter of `UnitClass::GetUIName @ 0x00746B20`.
+    pub has_turret_tooltips: bool,
 
     /// `Drainable=` (`TechnoTypeClass+0x5EF`, ReadINI `0x007143B0`).
     pub drainable: bool,
@@ -1869,10 +1882,20 @@ pub struct ObjectType {
     pub is_selectable_combatant: bool,
 
     /// `CanBeHidden=` (TechnoType `+0x724`): constructor `0x00711229` writes
-    /// true; ReadINI (`0x007121EB..0x00712202`) reads it with ReadBool, the
-    /// current byte as default. Gates the Behind indicator
-    /// (`TechnoClass::AI_Update @ 0x006FA2A2`).
+    /// true; ReadINI (`0x007121EB..0x00712202`) reads it with ReadBool from
+    /// the ART INI (`0x00887180`) under the type's own ID, never the rules
+    /// section. `RuleSet::project_art_data` sets it from
+    /// [`ArtRegistry::can_be_hidden`](crate::rules::art_data::ArtRegistry::can_be_hidden).
+    /// Gates the Behind indicator (`TechnoClass::AI_Update @ 0x006FA2A2`).
     pub can_be_hidden: bool,
+
+    /// Whether the type draws from the scenario's extra building palette
+    /// ([`RuleSet::extra_building_palette`](crate::rules::ruleset::RuleSet::extra_building_palette)):
+    /// art `Palette=` named one, so ReadINI (`0x00715852`, `0x00717820`)
+    /// pointed `+0xDF0` at its generated colour schemes. Set by
+    /// `RuleSet::project_art_data` from
+    /// [`ArtRegistry::techno_palette`](crate::rules::art_data::ArtRegistry::techno_palette).
+    pub custom_palette: bool,
 
     /// `RevealToAll=` (TechnoType `+0x5EE`): constructor `0x00710FFC` writes
     /// false; ReadINI (`0x00714382..0x00714396`) reads it with ReadBool
@@ -1988,6 +2011,11 @@ pub struct ObjectType {
     /// with **no stock-YR users** (the effect is dormant in stock). Default false.
     /// See [`ObjectType::emits_damage_spark`].
     pub cyborg: bool,
+
+    /// InfantryType `UseOwnName=` (`+0xECA`, ReadBool `0x00524634..0x0052464E`,
+    /// ctor 0 @ `0x005237DC`): an IFV carrying this infantryman names it in
+    /// its turret tooltip (`0x00746BB8`).
+    pub use_own_name: bool,
     /// `DestroyParticleSystems=` CSV list. Parsed for completeness;
     /// no live consumer in retail YR.
     pub destroy_particle_systems: Vec<String>,
@@ -2181,6 +2209,29 @@ impl ObjectType {
 
     pub(crate) fn project_infantry_pips(&mut self, pips: InfantryPips) {
         self.infantry_pips = pips;
+    }
+
+    pub(crate) fn project_sequence_sound_reads(
+        &mut self,
+        reads: &[crate::rules::infantry_sequence::SequenceSoundRead],
+    ) {
+        self.sequence_sound_reads = reads.to_vec();
+    }
+
+    /// Resolve the projected pairs through `find` (VocClass::FindByName).
+    pub(crate) fn bind_sequence_sounds(&mut self, find: impl FnMut(&str) -> Option<String>) {
+        self.sequence_sounds =
+            crate::rules::infantry_sequence::bind_sequence_sounds(&self.sequence_sound_reads, find);
+    }
+
+    /// The sounds of DoType `action`'s record, in slot order.
+    pub fn sequence_sounds(
+        &self,
+        action: i32,
+    ) -> impl Iterator<Item = &crate::rules::infantry_sequence::SequenceSound> {
+        self.sequence_sounds
+            .iter()
+            .filter(move |sound| i32::from(sound.action) == action)
     }
 
     pub(crate) fn project_infantry_infiltration(&mut self, flags: InfantryInfiltration) {
@@ -3162,6 +3213,8 @@ impl ObjectType {
             elite_occupy_weapon: None,
             // Constructor values; only the ordered Process owner reads them.
             infantry_pips: InfantryPips::default(),
+            sequence_sound_reads: Vec::new(),
+            sequence_sounds: Vec::new(),
             pip_scale: section
                 .read_name("PipScale", 0x20)
                 .map(PipScale::from_ini)
@@ -3215,6 +3268,7 @@ impl ObjectType {
                 is_gattling,
             ),
             turret_count: 0,
+            has_turret_tooltips: section.read_bool("HasTurretTooltips", false),
             drainable: section.read_bool("Drainable", false),
             // Constructor defaults UNCHECKED; stock authors write all three
             // on CAOILD only (rulesmd.ini:13949-13951) and comment them out
@@ -3264,7 +3318,9 @@ impl ObjectType {
             // `Selectable=no` turn it off.
             selectable: section.read_bool("Selectable", true),
             is_selectable_combatant: section.read_bool("IsSelectableCombatant", false),
-            can_be_hidden: section.read_bool("CanBeHidden", true),
+            // The constructor's value; ART supplies the key (`project_art_data`).
+            can_be_hidden: true,
+            custom_palette: false,
             reveal_to_all: section.read_bool("RevealToAll", false),
 
             // Naval flags
@@ -3301,6 +3357,8 @@ impl ObjectType {
             stupid_hunt: section.read_bool("StupidHunt", false),
             default_to_guard_area: section.read_bool("DefaultToGuardArea", false),
             cyborg: section.read_bool("Cyborg", false),
+            use_own_name: category == ObjectCategory::Infantry
+                && section.read_bool("UseOwnName", false),
             destroy_particle_systems: Vec::new(),
             damage_smoke_offset: IVec3::from_array(
                 section.read_coord_tokens("DamageSmokeOffset", [0; 3]),

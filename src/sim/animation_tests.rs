@@ -619,6 +619,16 @@ fn gsi_08_13_death_sequence_and_anim_arms_are_exclusive() {
 fn infantry_action_fixture(
     idle_hint: Option<&str>,
 ) -> (crate::sim::world::Simulation, RuleSet, u64) {
+    infantry_action_fixture_with(idle_hint, "", &[])
+}
+
+/// [`infantry_action_fixture`] with extra `GISequence` lines and the type
+/// sounds bound against a SOUNDMD `[SoundList]` of `sound_names`.
+fn infantry_action_fixture_with(
+    idle_hint: Option<&str>,
+    sequence_lines: &str,
+    sound_names: &[&str],
+) -> (crate::sim::world::Simulation, RuleSet, u64) {
     let ini = IniFile::from_str(
         "[InfantryTypes]\n0=E1\n\
          [E1]\nStrength=125\nSpeed=4\nImage=GI\n\
@@ -629,11 +639,22 @@ fn infantry_action_fixture(
         "[GI]\nCrawls=yes\nSequence=GISequence\n\
          [GISequence]\nReady=0,1,1,E\nGuard=0,1,1\nProne=86,1,6\nWalk=8,6,6\n\
          FireUp=164,6,6\nDown=260,2,2\nCrawl=86,6,6\nUp=276,2,2\nFireProne=212,6,6\n\
-         Idle1=56,15,0{hint}\nIdle2=71,15,0,E\nDie1=134,15,0\nDie2=149,15,0\n",
+         Idle1=56,15,0{hint}\nIdle2=71,15,0,E\nDie1=134,15,0\nDie2=149,15,0\n\
+         {sequence_lines}",
     ));
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
     rules.bind_animation_sequences(&parse_infantry_sequence_registry(&art));
+    if !sound_names.is_empty() {
+        let mut catalog = String::from("[SoundList]\n");
+        for (index, name) in sound_names.iter().enumerate() {
+            catalog.push_str(&format!("{index}={name}\n"));
+        }
+        rules.bind_type_sound_references(
+            &ini,
+            &crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(&catalog)),
+        );
+    }
     assert_eq!(
         rules
             .animation_sequence("E1")
@@ -904,6 +925,103 @@ fn gsi_05_07_unhinted_completion_preserves_body_facing() {
     let body = sim.substrate.entities.get(id).unwrap().body_facing;
     assert_eq!(body.destination(), 0x2000);
     assert_eq!(body.current(91), 0x2000);
+}
+
+/// DoType_Sequencer's sound tail (`0x00520E75..0x00520EF2`) for the
+/// current Doing's record: a FireUp sound on frame 2 of a 6-frame record
+/// plays only on a frame whose stage step passed (`+0xFC`) and whose stage
+/// modulo the count is 2. A completion that starts Ready reads Ready's record.
+#[test]
+fn sequence_sound_plays_on_its_stage_frame_after_a_step() {
+    use crate::sim::stage::StageClass;
+    use crate::sim::timer::CdTimer;
+    let (mut sim, rules, id) = infantry_action_fixture_with(
+        None,
+        "FireUpSounds= 2 SlaveAttack,4 Missing\n",
+        &["SlaveAttack"],
+    );
+    let run = |sim: &mut crate::sim::world::Simulation, value: i32, changed: u8| {
+        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        actor.mission_leaf.set_infantry_doing_verified(4).unwrap();
+        actor.install_native_stage_fixture(StageClass::from_native_fixture(
+            value,
+            changed,
+            CdTimer::from_raw(0, 2),
+            2,
+            1,
+        ));
+        sim.sound_events.clear_for_test();
+        assert!(!sim.infantry_sequencer(id, &rules, crate::sim::world::FrameEffects::default()));
+        sim.sound_events.as_slice().to_vec()
+    };
+    let played = run(&mut sim, 2, 1);
+    let actor = sim.substrate.entities.get(id).unwrap();
+    assert_eq!(played.len(), 1);
+    let crate::sim::world::SimSoundEvent::VocAt {
+        sound_id,
+        audible_to,
+        rx,
+        ry,
+        sub_x,
+        sub_y,
+        ..
+    } = &played[0]
+    else {
+        panic!("PlayAt is a located Voc request: {played:?}");
+    };
+    assert_eq!(sound_id, "SlaveAttack");
+    assert_eq!(*audible_to, None);
+    assert_eq!(
+        (*rx, *ry, *sub_x, *sub_y),
+        (
+            actor.position.rx(),
+            actor.position.ry(),
+            actor.position.sub_x(),
+            actor.position.sub_y()
+        )
+    );
+    // No step this frame, another frame, and the unresolved name's frame.
+    assert!(run(&mut sim, 2, 0).is_empty());
+    assert!(run(&mut sim, 3, 1).is_empty());
+    assert!(run(&mut sim, 4, 1).is_empty());
+    // Stage 6 completes FireUp; the tail then reads Ready's record.
+    assert!(run(&mut sim, 6, 1).is_empty());
+    let actor = sim.substrate.entities.get(id).unwrap();
+    assert_eq!(actor.mission_leaf.as_infantry().unwrap().doing(), 0);
+}
+
+/// A walking infantryman's Walk completion re-requests Walk, which leaves
+/// the stage growing past the count, so a Walk sound plays once per cycle of
+/// real stage steps (Techno `0x006FABC4`, then the sequencer).
+#[test]
+fn walk_sequence_sound_plays_once_per_cycle_of_stage_steps() {
+    use crate::sim::stage::StageClass;
+    use crate::sim::timer::CdTimer;
+    let (mut sim, rules, id) =
+        infantry_action_fixture_with(None, "WalkSounds= 2 TrexFoot\n", &["TrexFoot"]);
+    set_infantry_walk_motion(&mut sim, id, true);
+    let actor = sim.substrate.entities.get_mut(id).unwrap();
+    actor.mission_leaf.set_infantry_doing_verified(3).unwrap();
+    actor.install_native_stage_fixture(StageClass::from_native_fixture(
+        0,
+        0,
+        CdTimer::from_raw(0, 1),
+        1,
+        1,
+    ));
+    sim.sound_events.clear_for_test();
+    let mut played_at = Vec::new();
+    for now in 1..=14 {
+        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        assert!(actor.tick_native_stage(now));
+        assert!(!sim.infantry_sequencer(id, &rules, crate::sim::world::FrameEffects::default()));
+        let actor = sim.substrate.entities.get(id).unwrap();
+        assert_eq!(actor.mission_leaf.as_infantry().unwrap().doing(), 3);
+        for _ in sim.sound_events.take_for_test() {
+            played_at.push(actor.native_stage().value());
+        }
+    }
+    assert_eq!(played_at, [2, 8, 14]);
 }
 
 #[test]

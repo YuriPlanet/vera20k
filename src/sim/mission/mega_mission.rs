@@ -193,8 +193,9 @@ impl Simulation {
                 MissionType::Move
             };
         }
-        let resolved_target = self.resolve_event_token(target);
-        let resolved_destination = self.resolve_event_token(destination);
+        // Only the token stored is converted: the destination
+        // (`0x004DF141`), else the target (`0x004DF15F`).
+        let resolved = self.resolve_event_token(destination.or(target));
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return mission;
         };
@@ -202,11 +203,11 @@ impl Simulation {
         mega.have_attack_move_target = false;
         mega.attack_move = true;
         if destination.is_some() {
-            mega.destination = resolved_destination;
+            mega.destination = resolved;
             return MissionType::Move;
         }
         if target.is_some() {
-            mega.target = resolved_target;
+            mega.target = resolved;
             return MissionType::Attack;
         }
         self.substrate.foot_clear_all_tarcom(id);

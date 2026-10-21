@@ -11,6 +11,318 @@ use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::rng::SimRng;
 use crate::util::fixed_math::SimFixed;
 
+/// A supplied impact boundary. C4 hurts the adjacent unarmored observer;
+/// Crush hurts none, and both leave the lightly armored falling owner alive
+/// until its notice explicitly UnInits it. This makes the first blast visible
+/// independently of the common second C4 blast and nested death effects.
+fn lifted_impact_scene(kind: &str, overrides: &str) -> (Simulation, RuleSet, u64, u64, u64) {
+    let mut ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[AircraftTypes]\n0=DROP_AIR\n[VehicleTypes]\n0=DROP_UNIT\n1=OBSERVER\n2=HOLDER\n\
+         [Warheads]\n0=DropC4\n1=DropCrush\n\
+         [DROP_AIR]\nStrength=150\nArmor=light\nSpeed=8\nLandable=yes\n\
+         Locomotor={4A582746-9839-11d1-B709-00A024DDAFD1}\nJumpjetCrash=10\n\
+         [DROP_UNIT]\nStrength=150\nArmor=light\nSpeed=5\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+         [OBSERVER]\nStrength=2000\nArmor=none\nSpeed=5\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+         [HOLDER]\nStrength=2000\nSpeed=5\nPrimary=DropWeapon\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+         [CombatDamage]\nDeathWeapon=DropWeapon\nCrushWarhead=DropCrush\nC4Warhead=DropC4\n\
+         FallingDamageMultiplier=1\nCurrentStrengthDamage=yes\n\
+         [DropWeapon]\nDamage=1\nRange=1\nProjectile=Invisible\nWarhead=DropC4\n\
+         [Invisible]\nInviso=yes\n\
+         [DropC4]\nCellSpread=1\nPercentAtMax=1\n\
+         Verses=100%,0%,0%,0%,0%,0%,0%,0%,0%,0%,0%\n\
+         [DropCrush]\nCellSpread=1\nPercentAtMax=1\n\
+         Verses=0%,0%,0%,0%,0%,0%,0%,0%,0%,0%,0%\n\
+         [Clear]\nTrack=100%\nWheel=100%\nHover=100%\n",
+    );
+    ini.merge(&IniFile::from_str(overrides));
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    // ReadCombatDamage follows the type readers. Its references alone would
+    // allocate unread constructor defaults in this single-pass fixture.
+    assert_eq!(
+        rules.weapon("DropWeapon").unwrap().projectile.as_deref(),
+        Some("Invisible")
+    );
+    for (name, verses) in [("DropC4", 1.0), ("DropCrush", 0.0)] {
+        let warhead = rules.warhead(name).unwrap();
+        assert_eq!(warhead.cell_spread_f64, 1.0);
+        assert_eq!(warhead.percent_at_max_f64, 1.0);
+        assert_eq!(warhead.verses_f64[0], verses);
+        assert_eq!(warhead.verses_f64[3], 0.0);
+    }
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    let falling = sim
+        .spawn_object(kind, "Russians", 10, 16, 0, &rules)
+        .unwrap();
+    let observer = sim
+        .spawn_object("OBSERVER", "Russians", 11, 16, 0, &rules)
+        .unwrap();
+    let holder = sim
+        .spawn_object("HOLDER", "Americans", 18, 16, 0, &rules)
+        .unwrap();
+    assert_eq!(
+        rules.combat_damage.death_weapon.as_deref(),
+        Some("DropWeapon")
+    );
+    (sim, rules, falling, observer, holder)
+}
+
+/// Original Aircraft41BC30 uses C4 for BOTH impacts; Unit746209 uses Crush
+/// then C4. Exercise the production damage/expiry transaction, not just the
+/// selected warhead identifier. The native no-6AD Aircraft control answers
+/// no notice and must not construct either bullet or remove the aircraft.
+#[test]
+fn lifted_aircraft_impact_uses_two_c4_blasts_and_unlifted_notice_is_empty() {
+    use crate::sim::world::FrameEffects;
+    for (kind, lifted, remaining) in [
+        ("DROP_AIR", true, 1700),
+        ("DROP_UNIT", true, 1850),
+        ("DROP_AIR", false, 2000),
+    ] {
+        let (mut sim, rules, falling, observer, holder) = lifted_impact_scene(kind, "");
+        let before_locomotor = sim
+            .substrate
+            .entities
+            .get(falling)
+            .unwrap()
+            .locomotor
+            .clone();
+        if lifted {
+            let entity = sim.substrate.entities.get_mut(falling).unwrap();
+            entity.lift.set_swap_active_for_test(true);
+            entity.drop_credit.set_being_manipulated_for_test(true);
+            entity.drop_credit.set_manipulated_by_for_test(Some(holder));
+        }
+        let next_id = sim.next_stable_object_id();
+        assert!(!sim.jumpjet_crash_impact(falling, &rules, None, FrameEffects::default()));
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(observer)
+                .unwrap()
+                .health
+                .current(),
+            remaining,
+            "{kind}, lifted={lifted}: the first blast remains independently visible"
+        );
+        let entity = sim.substrate.entities.get(falling).unwrap();
+        assert_eq!(
+            entity.lifecycle.object_alive(),
+            !lifted,
+            "{kind}, lifted={lifted}"
+        );
+        assert!(
+            sim.projectiles.is_empty(),
+            "both temporary bullets were destroyed"
+        );
+        if !lifted {
+            assert_eq!(entity.health.current(), 150);
+            assert_eq!(sim.next_stable_object_id(), next_id);
+            assert_eq!(entity.locomotor, before_locomotor);
+        }
+    }
+}
+
+/// Replay the original notice's damage/guard inputs through real damage
+/// receivers. The native corpus observes the two bullet leaves; this scene
+/// supplies an adjacent ground observer outside the elevated second blast,
+/// so only the first C4 impact can reduce its health. XY is translated to
+/// the arena; native Z, strength, health and multiplier are retained.
+#[test]
+fn aircraft_lift_notice_damage_matches_original_controls() {
+    let corpus = crate::test_fixture::json("tools/spatial_oracle/magnetron_aircraft_lift.json");
+    let rows = corpus["impact_controls"].as_array().unwrap();
+    assert_eq!(rows.len(), 5);
+    for row in rows {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let overrides = format!(
+            "[CombatDamage]\nCurrentStrengthDamage={}\nFallingDamageMultiplier={}\n",
+            if input["current_strength_damage"].as_bool().unwrap() {
+                "yes"
+            } else {
+                "no"
+            },
+            input["multiplier"].as_f64().unwrap(),
+        );
+        let (mut sim, rules, falling, observer, holder) =
+            lifted_impact_scene("DROP_AIR", &overrides);
+        assert_eq!(
+            rules.object("DROP_AIR").unwrap().strength,
+            corpus["inputs"]["types"]["ORCA"]["strength"]
+        );
+        let lifted = input["lifted"].as_bool().unwrap();
+        sim.remove_entity_occupancy(falling);
+        let entity = sim.substrate.entities.get_mut(falling).unwrap();
+        entity
+            .health
+            .set_for_test(input["health"].as_i64().unwrap() as i32);
+        entity
+            .position
+            .set_exact_z_leptons_for_test(Some(input["z"].as_i64().unwrap() as i32));
+        entity.lift.set_swap_active_for_test(lifted);
+        if input["credit"].as_bool().unwrap() {
+            entity.drop_credit.set_manipulated_by_for_test(Some(holder));
+        }
+        sim.add_entity_occupancy(falling);
+        let calls = row["calls"].as_array().unwrap();
+        let bullets: Vec<_> = calls
+            .iter()
+            .filter(|call| call["call"] == "create_bullet")
+            .collect();
+        assert_eq!(bullets.len(), if lifted { 2 } else { 0 }, "{name}");
+        assert!(
+            bullets.iter().all(|call| call["warhead"] == "rules_c4"),
+            "{name}"
+        );
+        let ground_damage = bullets
+            .first()
+            .map_or(0, |call| call["damage"].as_i64().unwrap() as i32);
+        assert!(!sim.jumpjet_crash_impact(
+            falling,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default()
+        ));
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(observer)
+                .unwrap()
+                .health
+                .current(),
+            2000 - ground_damage,
+            "{name}"
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(falling)
+                .unwrap()
+                .lifecycle
+                .object_alive(),
+            row["return_value"] == 0,
+            "{name}"
+        );
+        assert!(
+            sim.projectiles.is_empty(),
+            "{name}: synchronous bullets retire"
+        );
+    }
+}
+
+/// The original54CE26..54CE6A controls keep Aircraft Can_Enter_Cell at0,
+/// then differ only in the Wheel passability row. Their supplied cell has no
+/// raw occupation, although Imbue has enabled Foot occupation. The native
+/// crop omits State5's preceding Mark work. This synthetic Rust scene disables
+/// occupation solely to retain that measured empty-cell input across its
+/// low-altitude State5 prefix; it does not reproduce the native Foot flag or
+/// takeoff/Mark history. At the gate, clear reaches descent and refusal
+/// reaches the impact notice instead of silently landing.
+#[test]
+fn aircraft_drop_landing_uses_original_wheel_controls() {
+    use crate::rules::locomotor_type::LocomotorKind;
+    use crate::rules::terrain_rules::SpeedCostProfile;
+    use crate::sim::movement::jumpjet_movement::jumpjet_flight::{
+        STATE_CRASH, STATE_CRASHED, STATE_DESCEND,
+    };
+    let corpus = crate::test_fixture::json("tools/spatial_oracle/magnetron_aircraft_lift.json");
+    let rows = corpus["landing_controls"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    for row in rows {
+        let input = &row["input"];
+        let (mut sim, rules, falling, _, _) = lifted_impact_scene("DROP_AIR", "");
+        let speeds = input["speed_rows"].as_array().unwrap();
+        assert_eq!(speeds.len(), 9);
+        assert!(speeds.iter().all(|speed| speed == &speeds[0]));
+        let percent = (speeds[0].as_f64().unwrap() * 100.0) as u8;
+        let cell = sim
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut_for_test(10, 16)
+            .unwrap();
+        cell.land_type = input["land_type"].as_u64().unwrap() as u8;
+        cell.speed_costs = SpeedCostProfile {
+            foot: Some(percent),
+            track: Some(percent),
+            wheel: Some(percent),
+            float: Some(percent),
+            amphibious: Some(percent),
+            float_beach: Some(percent),
+            hover: Some(percent),
+        };
+        cell.base_speed_costs = cell.speed_costs.clone();
+        assert_eq!(
+            sim.aircraft_can_enter(falling, (10, 16)),
+            row["can_enter_cell"]
+        );
+        sim.remove_entity_occupancy(falling);
+        let frame = sim.session.binary_frame();
+        let entity = sim.substrate.entities.get_mut(falling).unwrap();
+        entity.position.set_exact_z_leptons_for_test(Some(5));
+        entity.set_foot_occupation_enabled(false);
+        entity.lift.set_swap_active_for_test(true);
+        entity.drop_credit.set_being_manipulated_for_test(true);
+        entity.crash.set_crashing_for_test(true);
+        let locomotor = entity.locomotor.as_mut().unwrap();
+        assert!(locomotor.begin_piggyback_linked(
+            LocomotorKind::Jumpjet,
+            rules.object("DROP_AIR").unwrap(),
+            frame
+        ));
+        let runtime = locomotor.jumpjet_runtime_mut().unwrap();
+        *runtime = runtime
+            .clone()
+            .with_phase_for_test(STATE_CRASH)
+            .with_moving_for_test(false);
+        sim.add_entity_occupancy(falling);
+        assert_eq!(
+            sim.substrate.raw_cell_occupation.ground_bits(10, 16),
+            0,
+            "the supplied native gate cell has no raw occupation"
+        );
+        let stats = sim
+            .tick_air_movement_with_cell_lists_one(
+                falling,
+                Some(&rules),
+                None,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
+        let phase = sim
+            .substrate
+            .entities
+            .get(falling)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .jumpjet_runtime()
+            .unwrap()
+            .phase();
+        let admitted = row["entry"] == 0;
+        assert_eq!(row["wheel_clear"], admitted);
+        assert_eq!(
+            phase,
+            if admitted {
+                STATE_DESCEND
+            } else {
+                STATE_CRASHED
+            },
+            "{}",
+            input["name"]
+        );
+        assert_eq!(stats.impact, !admitted, "{}", input["name"]);
+    }
+}
+
 /// Original746100 executes both falling constructions and their complete
 /// Detonate/Release calls with a supplied Unit receiver. This comparison is
 /// deliberately the constructor/observer/destructor boundary; the real TELE

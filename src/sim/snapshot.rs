@@ -1235,7 +1235,11 @@ use crate::util::save_codec;
 // CommandEnvelope payloads.
 // 462 -> 463: retained ObjectType armor IDs, Ares armor registry and independent
 // Warhead extension records; the capability metadata header still starts at 459.
-const SNAPSHOT_VERSION: u32 = 463;
+// 463 -> 464: the retained type registry keeps each InfantryType's
+// ReadSequenceData sound pairs from every reached pass.
+// 464 -> 465: an Anim keeps its Temporal erase pause (+0x11A) and no longer
+// keeps a DoubleThick copy; DrawIt reads the type's.
+const SNAPSHOT_VERSION: u32 = 465;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -2022,112 +2026,85 @@ impl RestoredObjectIndex {
     fn build(
         sim: &Simulation,
     ) -> Result<(Self, BTreeMap<u64, &'static str>), SnapshotRestoreError> {
+        use crate::sim::world::ObjectKind;
         let mut identities = BTreeMap::new();
-        let mut highest_id = 0;
-
-        for (registry_id, entity) in sim.substrate.entities.iter_sorted() {
-            Self::register(
-                &mut identities,
-                "EntityStore",
-                registry_id,
-                entity.stable_id(),
-            )?;
-            highest_id = highest_id.max(registry_id);
-        }
-        for (&registry_id, anim) in sim.substrate.anims.iter() {
-            Self::register(&mut identities, "AnimStore", registry_id, anim.stable_id())?;
-            highest_id = highest_id.max(registry_id);
-        }
-        for (&registry_id, light) in sim.substrate.spotlights.iter() {
-            Self::register(
-                &mut identities,
-                "SpotlightStore",
-                registry_id,
-                light.stable_id(),
-            )?;
-            highest_id = highest_id.max(registry_id);
-        }
-        for (&registry_id, debris) in sim.substrate.voxel_anims.iter() {
-            Self::register(
-                &mut identities,
-                "VoxelAnimStore",
-                registry_id,
-                debris.stable_id(),
-            )?;
-            highest_id = highest_id.max(registry_id);
-        }
-        for (&registry_id, system) in sim.substrate.particle_systems.iter() {
-            Self::register(
-                &mut identities,
-                "ParticleSystemStore",
-                registry_id,
-                system.stable_id(),
-            )?;
-            highest_id = highest_id.max(registry_id);
-            // Individual particles retain AIR Display membership. Register
-            // their owning store's identities in the existing restore index.
-            for particle in system.particles() {
-                let id = particle.stable_id();
-                Self::register(&mut identities, "ParticleSystemStore.children", id, id)?;
-                highest_id = highest_id.max(id);
+        let registry = &mut identities;
+        for kind in ObjectKind::ALL {
+            match kind {
+                ObjectKind::Entity => {
+                    for (id, entity) in sim.substrate.entities.iter_sorted() {
+                        Self::register(registry, "EntityStore", id, entity.stable_id())?;
+                    }
+                }
+                ObjectKind::Anim => {
+                    for (&id, anim) in sim.substrate.anims.iter() {
+                        Self::register(registry, "AnimStore", id, anim.stable_id())?;
+                    }
+                }
+                ObjectKind::VoxelAnim => {
+                    for (&id, debris) in sim.substrate.voxel_anims.iter() {
+                        Self::register(registry, "VoxelAnimStore", id, debris.stable_id())?;
+                    }
+                }
+                ObjectKind::Spotlight => {
+                    for (&id, light) in sim.substrate.spotlights.iter() {
+                        Self::register(registry, "SpotlightStore", id, light.stable_id())?;
+                    }
+                }
+                ObjectKind::ParticleSystem => {
+                    for (&id, system) in sim.substrate.particle_systems.iter() {
+                        Self::register(registry, "ParticleSystemStore", id, system.stable_id())?;
+                    }
+                }
+                // Individual particles retain AIR Display membership.
+                ObjectKind::Particle => {
+                    for (_, system) in sim.substrate.particle_systems.iter() {
+                        for particle in system.particles() {
+                            let id = particle.stable_id();
+                            Self::register(registry, "ParticleSystemStore.children", id, id)?;
+                        }
+                    }
+                    for (id, particle, _, _) in sim.substrate.particle_systems.detached_particles()
+                    {
+                        Self::register(
+                            registry,
+                            "ParticleSystemStore.detached",
+                            id,
+                            particle.stable_id(),
+                        )?;
+                    }
+                }
+                ObjectKind::Terrain => {
+                    for (&id, terrain) in sim.terrain_objects.objects() {
+                        Self::register(registry, "TerrainObjectStore", id, terrain.stable_id())?;
+                    }
+                }
+                ObjectKind::Projectile => {
+                    for (&id, projectile) in sim.projectiles.iter() {
+                        Self::register(registry, "ProjectileStore", id, projectile.id())?;
+                    }
+                }
+                ObjectKind::Wave => {
+                    for (&id, wave) in sim.waves.iter() {
+                        Self::register(registry, "WaveStore", id, wave.id())?;
+                    }
+                }
+                ObjectKind::Smudge => {
+                    for (id, object) in sim.smudge_grid.iter().flat_map(|grid| grid.objects()) {
+                        Self::register(registry, "SmudgeGrid", id, object.stable_id())?;
+                    }
+                }
             }
         }
-        for (registry_id, particle, _, _) in sim.substrate.particle_systems.detached_particles() {
-            Self::register(
-                &mut identities,
-                "ParticleSystemStore.detached",
-                registry_id,
-                particle.stable_id(),
-            )?;
-            highest_id = highest_id.max(registry_id);
-        }
-        for (&registry_id, terrain) in sim.terrain_objects.objects() {
-            Self::register(
-                &mut identities,
-                "TerrainObjectStore",
-                registry_id,
-                terrain.stable_id(),
-            )?;
-            highest_id = highest_id.max(registry_id);
-        }
-        for (&registry_id, projectile) in sim.projectiles.iter() {
-            Self::register(
-                &mut identities,
-                "ProjectileStore",
-                registry_id,
-                projectile.id(),
-            )?;
-            highest_id = highest_id.max(registry_id);
-        }
-        for (&registry_id, wave) in sim.waves.iter() {
-            Self::register(&mut identities, "WaveStore", registry_id, wave.id())?;
-            highest_id = highest_id.max(registry_id);
-        }
+        // The other registries numbered from the same allocator.
         for shot in sim.disk_laser_observations() {
-            Self::register(&mut identities, "DiskLaserStore", shot.id, shot.id)?;
-            highest_id = highest_id.max(shot.id);
+            Self::register(registry, "DiskLaserStore", shot.id, shot.id)?;
         }
-        if let Some(grid) = &sim.smudge_grid {
-            for (registry_id, object) in grid.objects() {
-                Self::register(
-                    &mut identities,
-                    "SmudgeGrid",
-                    registry_id,
-                    object.stable_id(),
-                )?;
-                highest_id = highest_id.max(registry_id);
-            }
-        }
-        for registry_id in sim.load_objects.retained_overlay_ids() {
-            Self::register(
-                &mut identities,
-                "LoadObjectLifecycle",
-                registry_id,
-                registry_id,
-            )?;
-            highest_id = highest_id.max(registry_id);
+        for id in sim.load_objects.retained_overlay_ids() {
+            Self::register(registry, "LoadObjectLifecycle", id, id)?;
         }
 
+        let highest_id = identities.last_key_value().map_or(0, |(&id, _)| id);
         Ok((Self { highest_id }, identities))
     }
 
@@ -3149,12 +3126,7 @@ impl Simulation {
                 entity.parasite.restart_timers_after_load(frame);
             }
         }
-        Self::rebuild_logic_membership(
-            &mut self.terrain_objects,
-            &mut self.substrate,
-            &mut self.projectiles,
-            &mut self.waves,
-        );
+        self.rebuild_logic_membership();
         self.substrate.rebuild_building_anim_slot_indices();
         Self::rebuild_bomb_carriers(&self.substrate, &mut self.bombs);
         // The kamikaze tracker's Load (`0x0054E7B0`) follows its Clear.
@@ -3912,12 +3884,7 @@ mod tests {
         // monotonic allocators. Rebuild their substrate caches directly; the
         // production path uses `restore_after_snapshot_load`.
         sim.substrate.entities.rebuild_class_registries();
-        Simulation::rebuild_logic_membership(
-            &mut sim.terrain_objects,
-            &mut sim.substrate,
-            &mut sim.projectiles,
-            &mut sim.waves,
-        );
+        sim.rebuild_logic_membership();
         sim.substrate
             .occupancy
             .restore_memberships(&sim.substrate.entities)
@@ -9254,12 +9221,7 @@ mod tests {
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);
         let mut restored = GameSnapshot::load(&bytes).expect("load should succeed").sim;
-        Simulation::rebuild_logic_membership(
-            &mut restored.terrain_objects,
-            &mut restored.substrate,
-            &mut restored.projectiles,
-            &mut restored.waves,
-        );
+        restored.rebuild_logic_membership();
 
         let member = restored.substrate.entities.get(1).expect("member restored");
         assert!(member.in_logic_vector.is_member());
@@ -10252,6 +10214,8 @@ mod tests {
         // 460 -> 461: Tiberium queues hold the shared native heap.
         // 461 -> 462: the typed Enter and Harvest commands are gone.
         // 462 -> 463: retained armor IDs and Ares warhead extension records.
-        assert_eq!(super::SNAPSHOT_VERSION, 463);
+        // 463 -> 464: retained InfantryType sequence sound pairs.
+        // 464 -> 465: the Anim Temporal erase pause.
+        assert_eq!(super::SNAPSHOT_VERSION, 465);
     }
 }

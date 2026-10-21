@@ -1072,6 +1072,62 @@ fn a_placed_building_completes_its_buildup_after_the_command_frame() {
     }
 }
 
+/// A human player's placement follows the native `player` route rows
+/// (`tools/spatial_oracle/building_construction.json`) frame by frame: idle
+/// (BState 1) and unopened for a frame, then Construction. GetImage
+/// (`0x004513D0`) hands DrawBody the Buildup in every frame before the
+/// opening, the idle one included.
+#[test]
+fn a_human_placement_draws_its_buildup_until_it_opens() {
+    use crate::sim::building_art::{BuildingImage, building_image};
+    use crate::sim::building_construction::native_route;
+    let rows = native_route::rows("player");
+    assert!(!rows.is_empty());
+    for row in &rows {
+        let name = row["input"]["name"].as_str().unwrap();
+        let mut sim = placement_sim();
+        // The native rows run at GameSpeed 0.
+        sim.session.game_options_mut_for_test().game_speed = 0;
+        let mut rules = stock_power_contract_rules();
+        rules.set_buildup_control_for_test("GAPOWR", native_route::control(row));
+        let grid = PathGrid::new(64, 64);
+        let americans = sim.interner.intern("Americans");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                americans, 0, None, true, 10_000, 10,
+            ));
+        spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
+        let gapowr = sim.interner.intern("GAPOWR");
+        sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
+        ready_building(&mut sim, &rules, "Americans", "GAPOWR");
+        let place = place_event(americans, gapowr, (12, 10), sim.session.tick() + 1);
+        let tick = sim.advance_tick(&[place], Some(&rules), Some(&grid), None, 67);
+        assert_eq!(tick.executed_commands, 1, "{name}");
+        let placed = sim
+            .substrate
+            .entities
+            .values()
+            .find(|entity| entity.type_ref() == gapowr)
+            .map(|entity| entity.stable_id())
+            .expect("the command places GAPOWR");
+
+        for frame in row["frames"].as_array().unwrap() {
+            sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
+            let building = sim.substrate.entities.get(placed).unwrap();
+            let context = format!("{name} frame {}", frame["frame"]);
+            let native = if frame["bstate"] != 0 && frame["grand_opening"] == true {
+                BuildingImage::Body
+            } else {
+                BuildingImage::Buildup
+            };
+            assert_eq!(building_image(building, true), native, "{context}");
+            if native_route::assert_frame(building, frame, &context) {
+                break;
+            }
+        }
+    }
+}
+
 #[test]
 fn stock_gapowr_placement_restores_power_and_radar_during_buildup() {
     let mut sim = placement_sim();
@@ -2740,6 +2796,32 @@ fn build_off_ally_lends_an_eligible_allied_provider_only_while_enabled() {
             placed, admitted,
             "BuildOffAlly={build_off_ally}, {provider}"
         );
+    }
+}
+
+/// BuildOffAlly lends the area only when the provider's house is allied
+/// with the placer's (`HouseClass::IsAlliedWith @ 0x004F9A50`, asked by the
+/// provider's house at `0x004A900E`): the placer's own one-way alliance with
+/// the provider lends nothing.
+#[test]
+fn build_off_ally_asks_the_providers_house_about_the_placer() {
+    let rules = build_off_ally_rules();
+    for (asker, other, admitted) in [
+        ("Alliance", "Americans", true),
+        ("Americans", "Alliance", false),
+    ] {
+        let mut sim = placement_sim();
+        sim.session.game_options_mut_for_test().build_off_ally = true;
+        spawn_structure(&mut sim, &rules, 1, "Alliance", "GACNST", 10, 10);
+        spawn_structure(&mut sim, &rules, 2, "Americans", "GACNST", 50, 50);
+        sim.house_alliances_mut_for_test()
+            .entry(asker.to_ascii_uppercase())
+            .or_default()
+            .insert(other.to_ascii_uppercase());
+        ready_building(&mut sim, &rules, "Americans", "GAPOWR");
+
+        let placed = place_building(&mut sim, &rules, "Americans", "GAPOWR", (12, 10), None);
+        assert_eq!(placed, admitted, "{asker} allies {other}");
     }
 }
 

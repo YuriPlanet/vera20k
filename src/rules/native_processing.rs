@@ -803,6 +803,25 @@ impl ProcessedRulesLayers {
             .map(|member| (member.native_stored_id.as_str(), member.infantry_pips))
     }
 
+    /// Each InfantryType's sequence sound pairs from every reached pass, in
+    /// read order ([`crate::rules::infantry_sequence::read_sequence_sounds`]).
+    pub(crate) fn infantry_sequence_sound_reads(
+        &self,
+    ) -> impl Iterator<Item = (&str, &[crate::rules::infantry_sequence::SequenceSoundRead])> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Infantry)
+            .into_iter()
+            .flatten()
+            .map(|member| {
+                (
+                    member.native_stored_id.as_str(),
+                    member.infantry_sequence_sound_reads.as_slice(),
+                )
+            })
+    }
+
     /// Infantry52466E's postprocessed flags, including a prior role's latch
     /// when a later pass omits Infiltrate while clearing the role itself.
     pub(crate) fn infantry_infiltration_states(
@@ -2296,6 +2315,10 @@ struct ProcessedType {
     infantry_pips: InfantryPips,
     #[serde(default)]
     infantry_infiltration: InfantryInfiltration,
+    /// Every reached InfantryType ReadINI pass ends in ReadSequenceData
+    /// (`0x0052473A`), whose sound pairs append without a reset.
+    #[serde(default)]
+    infantry_sequence_sound_reads: Vec<crate::rules::infantry_sequence::SequenceSoundRead>,
     recoil: crate::rules::recoil::RecoilConfig,
     airstrike: crate::rules::airstrike::AirstrikeSettings,
     /// TechnoType constructor711134 and current-default ReadInt7147B4.
@@ -2681,6 +2704,7 @@ impl ProcessedType {
             gunner_turrets: GunnerTurrets::default(),
             infantry_pips: InfantryPips::default(),
             infantry_infiltration: InfantryInfiltration::default(),
+            infantry_sequence_sound_reads: Vec::new(),
             recoil: crate::rules::recoil::RecoilConfig::default(),
             airstrike: crate::rules::airstrike::AirstrikeSettings::default(),
             radial_fire_segments: 0,
@@ -4071,6 +4095,12 @@ impl RulesPassProcessor {
                             RulesTypeFamily::Animation,
                             0x80,
                         );
+                        let reads = crate::rules::infantry_sequence::read_sequence_sounds(
+                            fixed_art, &image,
+                        );
+                        self.family_mut(family)[index]
+                            .infantry_sequence_sound_reads
+                            .extend(reads);
                     }
                     _ => unreachable!("only Techno families enter the Techno reader"),
                 }

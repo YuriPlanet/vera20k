@@ -19,8 +19,17 @@ use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::terrain::{self, TILE_HEIGHT, TILE_WIDTH};
 use crate::render::batch::SpriteInstance;
 use crate::render::bridge_atlas::{BridgeAtlasLookup, is_high_bridge_body_identity};
+use crate::render::tactical_draw_plan::RenderZPolicy;
 
 use super::helpers::{compute_sprite_depth_params, in_view};
+use super::{CellBody, CellBodyAtlas, CellBodyDraw, cell_sweep_key};
+
+/// `0x0047F7DA..0x0047F80B`: a high-bridge body is a `0x4E00` SHP draw that
+/// reads and writes Z, as an ordinary body is.
+pub(crate) const HIGH_BRIDGE_BODY_DRAW: CellBodyDraw = CellBodyDraw {
+    atlas: CellBodyAtlas::Bridge,
+    render_z: RenderZPolicy::ReadWrite,
+};
 
 /// Latin-square jitter for healthy bridge body frames at base state byte 0
 /// (NS) or 9 (EW). Verified raw memory read at gamemd's `g_LatinSquare`
@@ -72,14 +81,14 @@ pub(super) fn cell_overlay_y_offset(overlay: u8, flags: u32, state: u8) -> f32 {
     }
 }
 
-/// Build sprite instances for the bridge body pass (RE doc §3.3, Step 5
+/// Build the high-bridge bodies for the cell body sweep (RE doc §3.3, Step 5
 /// pass 1). Reads the live CellClass identity and state byte post-tick from
 /// `live_grid`; without one no body draws.
 ///
 /// Takes only the fields the body builder actually needs from `AppState`
 /// so the function is exercisable in unit tests with a pure-data mock atlas
 /// (`BridgeAtlasLookup` trait). The shadow builder uses the same lookup seam.
-pub fn build_bridge_body_instances_inner(
+pub(crate) fn build_bridge_body_instances_inner(
     terrain: &ResolvedTerrainGrid,
     live_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
     atlas: &dyn BridgeAtlasLookup,
@@ -91,24 +100,13 @@ pub fn build_bridge_body_instances_inner(
     cam_y: f32,
     sw: f32,
     sh: f32,
-    out: &mut Vec<SpriteInstance>,
+    out: &mut Vec<CellBody>,
 ) {
-    let mut cells: Vec<_> = terrain
-        .iter()
-        .filter(|cell| {
-            // 0047F6A0 tests live Cell.flags 0x80, not structural admission or
-            // a decoded simulation damage state. Frozen overlays retain these live fields.
-            cell.bridge_facts.raw_flags & crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF != 0
-        })
-        .collect();
-    // Tactical::DrawAll body sweep: descending diagonals, then X.
-    // Original traversal/composition: bridge_body_render.json scenes[0].
-    // Strict Less means the first body owns equal-depth overlaps.
-    cells.sort_unstable_by_key(|cell| {
-        (
-            std::cmp::Reverse(u32::from(cell.rx) + u32::from(cell.ry)),
-            cell.rx,
-        )
+    // 0047F6A0 tests live Cell.flags 0x80, not structural admission or a
+    // decoded simulation damage state. Frozen overlays retain these live
+    // fields. The sweep orders the bodies (bridge_body_render.json scenes[0]).
+    let cells = terrain.iter().filter(|cell| {
+        cell.bridge_facts.raw_flags & crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF != 0
     });
     for cell in cells {
         let (rx, ry) = (cell.rx, cell.ry);
@@ -150,28 +148,32 @@ pub fn build_bridge_body_instances_inner(
         );
         let depth = compute_sprite_depth_params(origin_y, world_height, body_y, z);
         let tint: [f32; 3] = lighting_grid.bridge_body_tint_at((rx, ry));
-        out.push(SpriteInstance {
-            position: [body_x, body_y],
-            size: spr.pixel_size,
-            uv_origin: spr.uv_origin,
-            uv_size: spr.uv_size,
-            depth,
-            tint,
-            // Active high-bridge body 0047F7DA uses cell Convert/bottom10E.
-            palette_light: crate::render::palette_light::PaletteLight::cell(
-                lighting_grid,
-                (rx, ry),
-                false,
-            )
-            .with_brightness(
-                lighting_grid
-                    .cell_light_at((rx, ry))
-                    .map_or(1000, |l| l.bottom_scalar),
-            ),
-            alpha: 1.0,
-            z_adjust: z_adjust as f32,
-            z_gradient: crate::render::native_z::ZGradient::Flat as u32,
-            ..Default::default()
+        out.push(CellBody {
+            cell: (rx, ry),
+            draw: HIGH_BRIDGE_BODY_DRAW,
+            instance: SpriteInstance {
+                position: [body_x, body_y],
+                size: spr.pixel_size,
+                uv_origin: spr.uv_origin,
+                uv_size: spr.uv_size,
+                depth,
+                tint,
+                // Active high-bridge body 0047F7DA uses cell Convert/bottom10E.
+                palette_light: crate::render::palette_light::PaletteLight::cell(
+                    lighting_grid,
+                    (rx, ry),
+                    false,
+                )
+                .with_brightness(
+                    lighting_grid
+                        .cell_light_at((rx, ry))
+                        .map_or(1000, |l| l.bottom_scalar),
+                ),
+                alpha: 1.0,
+                z_adjust: z_adjust as f32,
+                z_gradient: crate::render::native_z::ZGradient::Flat as u32,
+                ..Default::default()
+            },
         });
     }
 }
@@ -182,7 +184,7 @@ pub(crate) fn build_bridge_body_instances(
     state: &AppState,
     sw: f32,
     sh: f32,
-    out: &mut Vec<SpriteInstance>,
+    out: &mut Vec<CellBody>,
 ) {
     let Some(sim) = state
         .match_state
@@ -327,12 +329,7 @@ pub(crate) fn build_bridge_shadow_instances_inner(
     // The native shadow sweep descends diagonals, advancing X within each.
     // Neither elevation, atlas frame nor the compatibility depth scalar owns
     // the order in which an overlap reads the previous color and Z stores.
-    cells.sort_unstable_by_key(|(cell, _, _, _, _, _)| {
-        (
-            std::cmp::Reverse(u32::from(cell.rx) + u32::from(cell.ry)),
-            cell.rx,
-        )
-    });
+    cells.sort_unstable_by_key(|(cell, _, _, _, _, _)| cell_sweep_key(cell.rx, cell.ry));
     for (cell, overlay, name, frame, raw_state, proxy) in cells {
         let (rx, ry) = (cell.rx, cell.ry);
         let Some(spr) = atlas.shadow_entry(&name, frame) else {
@@ -705,12 +702,15 @@ mod tests {
             );
             assert_eq!(out.len(), 1, "{}", row["name"]);
             assert_eq!(
-                out[0].z_adjust,
+                out[0].instance.z_adjust,
                 draw["z_adjust"].as_i64().unwrap() as f32,
                 "{}",
                 row["name"]
             );
-            assert_eq!(out[0].z_gradient, draw["gradient"].as_u64().unwrap() as u32);
+            assert_eq!(
+                out[0].instance.z_gradient,
+                draw["gradient"].as_u64().unwrap() as u32
+            );
         }
     }
 

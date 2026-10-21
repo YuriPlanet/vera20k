@@ -427,8 +427,9 @@ pub(crate) fn interpolated_screen_position_entity(
 /// Check whether an entity is visible to the local player based on shroud.
 ///
 /// In standard YR (FogOfWar=false), once a cell is explored it stays fully
-/// visible forever. Friendly entities are always visible. Enemy entities are
-/// visible if the cell they occupy has been explored (revealed).
+/// visible forever. Entities of the local player's allies, as its house
+/// counts them, are always visible (VERA's policy, with no native ally test).
+/// Others are visible if the cell they occupy has been explored (revealed).
 pub(crate) fn is_entity_visible_for_local_owner(
     local_owner: Option<&str>,
     fog: &FogState,
@@ -444,7 +445,7 @@ pub(crate) fn is_entity_visible_for_local_owner(
     let Some(local_owner) = local_owner else {
         return true;
     };
-    if crate::map::houses::are_houses_friendly(alliances, local_owner, owner) {
+    if crate::map::houses::is_allied_with(alliances, local_owner, owner) {
         return true;
     }
     let owner_id = local_owner_id.unwrap_or_default();

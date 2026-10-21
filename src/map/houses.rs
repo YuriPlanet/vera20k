@@ -162,25 +162,11 @@ impl HouseRoster {
     }
 }
 
-/// Returns true when two house names should be treated as friendly.
-pub fn are_houses_friendly(alliances: &HouseAllianceMap, a: &str, b: &str) -> bool {
-    if a.eq_ignore_ascii_case(b) {
-        return true;
-    }
-    with_house_key(a, |a| {
-        with_house_key(b, |b| {
-            alliances.get(a).is_some_and(|set| set.contains(b))
-                || alliances.get(b).is_some_and(|set| set.contains(a))
-        })
-    })
-}
-
 /// Directional alliance test: does `asker` consider `other` an ally?
 ///
 /// gamemd's `HouseClass::IsAlliedWith` reads only the *asker's* own ally
 /// bitfield, so alliance is one-way until both sides set their bit; a house is
-/// always allied with itself. [`are_houses_friendly`] keeps its symmetric OR
-/// for the call sites not yet traced to their native asker (#582).
+/// always allied with itself. Each caller names its native asker.
 pub fn is_allied_with(alliances: &HouseAllianceMap, asker: &str, other: &str) -> bool {
     ally_test(alliances, asker)(other)
 }
@@ -201,8 +187,8 @@ pub fn ally_test<'a>(
 /// Mutual-alliance test — both houses must name each other.
 ///
 /// This is the pairwise predicate the native game-over scan applies to every
-/// surviving house pair, and it is strictly stronger than
-/// [`are_houses_friendly`]: a one-way alliance does not end the match.
+/// surviving house pair, and it is strictly stronger than either house's
+/// [`is_allied_with`]: a one-way alliance does not end the match.
 pub fn are_houses_mutually_allied(alliances: &HouseAllianceMap, a: &str, b: &str) -> bool {
     is_allied_with(alliances, a, b) && is_allied_with(alliances, b, a)
 }
@@ -438,13 +424,16 @@ mod tests {
         assert_eq!(roster.houses[0].iq, 0);
         assert_eq!(roster.houses[1].allies, 1 << 31);
         let alliances = roster.alliance_map();
-        assert!(!are_houses_friendly(
-            &alliances,
-            "Russians",
-            "Confederation"
-        ));
-        assert!(!are_houses_friendly(&alliances, "YuriCountry", "Russians"));
-        assert!(!are_houses_friendly(&alliances, "Americans", "Russians"));
+        for (a, b) in [
+            ("Russians", "Confederation"),
+            ("YuriCountry", "Russians"),
+            ("Americans", "Russians"),
+        ] {
+            assert!(
+                !is_allied_with(&alliances, a, b) && !is_allied_with(&alliances, b, a),
+                "{a} {b}"
+            );
+        }
     }
 
     #[test]
@@ -466,8 +455,6 @@ mod tests {
             "Americans",
             "Russians"
         ));
-        // The symmetric helper still answers "friendly" for the same pair.
-        assert!(are_houses_friendly(&alliances, "Russians", "Americans"));
 
         alliances
             .entry("RUSSIANS".to_string())
@@ -678,6 +665,5 @@ mod tests {
             .insert("BRITISH".into());
         assert!(is_allied_with(&alliances, " americans", "British "));
         assert!(!is_allied_with(&alliances, "British", "Americans"));
-        assert!(are_houses_friendly(&alliances, "british", "AMERICANS "));
     }
 }

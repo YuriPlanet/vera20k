@@ -50,7 +50,20 @@ impl TargetKind {
                 ProjectileTarget::Terrain(id)
             }
             Self::Entity(id) => ProjectileTarget::Entity(id),
-            Self::Cell(rx, ry) => ProjectileTarget::Cell { rx, ry },
+            // The TarCom is a CellClass pointer: the shared dummy for a cell
+            // off the map ([`Self::cell_identity`]).
+            Self::Cell(rx, ry) => {
+                match world
+                    .resolved_terrain
+                    .as_ref()
+                    .and_then(|terrain| self.cell_identity(terrain))
+                {
+                    Some(crate::map::cell_index::NativeCellIdentity::Dummy) => {
+                        ProjectileTarget::DummyCell
+                    }
+                    _ => ProjectileTarget::Cell { rx, ry },
+                }
+            }
         }
     }
 
@@ -69,6 +82,48 @@ impl TargetKind {
             crate::map::cell_index::NativeCellIdentity::Dummy,
             crate::map::cell_index::NativeCellIdentity::Real,
         ))
+    }
+
+    /// The cell a Cell TarCom's GetCoords (+0x48) centres on, read through
+    /// [`Self::cell_identity`]: one off the map is wherever the shared dummy
+    /// was last stamped, with no lookup to restamp it. `None` for an Object.
+    pub(crate) fn tarcom_cell(self, terrain: Option<&ResolvedTerrainGrid>) -> Option<(u16, u16)> {
+        let Self::Cell(rx, ry) = self else {
+            return None;
+        };
+        Some(
+            match terrain.filter(|terrain| {
+                self.cell_identity(terrain)
+                    == Some(crate::map::cell_index::NativeCellIdentity::Dummy)
+            }) {
+                Some(terrain) => {
+                    let (x, y) = terrain.shared_cell_dummy().snapshot().coord;
+                    (x as u16, y as u16)
+                }
+                None => (rx, ry),
+            },
+        )
+    }
+
+    /// A Cell TarCom's +0x58 (`CellClass::GetTargetCoords @ 0x00486890`),
+    /// read through [`Self::cell_identity`]: one off the map reads the shared
+    /// dummy as it stands, with no lookup to restamp it. `None` for an Object.
+    pub(crate) fn cell_target_coord(
+        self,
+        terrain: Option<&ResolvedTerrainGrid>,
+    ) -> Option<crate::sim::projectile::ProjectileCoord> {
+        let Self::Cell(rx, ry) = self else {
+            return None;
+        };
+        let off_map = terrain.filter(|terrain| {
+            self.cell_identity(terrain) == Some(crate::map::cell_index::NativeCellIdentity::Dummy)
+        });
+        Some(match off_map {
+            Some(terrain) => {
+                crate::sim::projectile::dummy_cell_target_coord(&terrain.shared_cell_dummy())
+            }
+            None => crate::sim::projectile::cell_target_coord(terrain, rx, ry),
+        })
     }
 }
 
@@ -197,7 +252,9 @@ pub(crate) fn resolve_target_coords(
                     Some(target_xy_coords([target.x, target.y]))
                 })
         }
-        TargetKind::Cell(rx, ry) => Some(cell_center_coords(rx, ry)),
+        TargetKind::Cell(..) => target
+            .tarcom_cell(world.resolved_terrain.as_ref())
+            .map(|(rx, ry)| cell_center_coords(rx, ry)),
     }
 }
 
@@ -330,13 +387,54 @@ pub(super) fn attack_world_z_leptons(
         // FireAt6FE1FF and Get_Led_Target_Coords70BCB0 read Cell+58;
         // Bullet::Fire468707 freezes that same unled aim. The flight/impact
         // owners separately resolve ground contact and the final detonation.
-        TargetKind::Cell(rx, ry) => crate::sim::projectile::cell_target_coord(terrain, rx, ry).z,
+        TargetKind::Cell(..) => target.cell_target_coord(terrain).map_or(0, |coord| coord.z),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A Cell TarCom off the map is the shared fallback CellClass: the bullet
+    /// keeps that pointer, and reading its +0x58 reads the CellClass as it
+    /// stands, with no lookup to restamp it.
+    #[test]
+    fn an_off_map_cell_tarcom_is_the_shared_fallback_cellclass() {
+        use crate::map::resolved_terrain::ResolvedTerrainGrid;
+        use crate::sim::projectile::ProjectileTarget;
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(
+            32,
+            32,
+            (0..32)
+                .flat_map(|y| {
+                    (0..32).map(move |x| crate::map::resolved_terrain::test_flat_cell(x, y))
+                })
+                .collect(),
+        ));
+        let target = TargetKind::Cell(40, 41);
+        assert_eq!(target.projectile_target(&sim), ProjectileTarget::DummyCell);
+        assert_eq!(
+            TargetKind::Cell(3, 4).projectile_target(&sim),
+            ProjectileTarget::Cell { rx: 3, ry: 4 }
+        );
+
+        // Converting the order's token stamps the fallback, as
+        // `0x006E6E20` does.
+        assert_eq!(sim.resolve_event_token(Some(target)), Some(target));
+        let terrain = sim.resolved_terrain.as_ref().unwrap();
+        assert_eq!(terrain.shared_cell_dummy().snapshot().coord, (40, 41));
+        // Another lookup restamps it; every TarCom read follows, as native's
+        // pointer reads do.
+        crate::sim::projectile::cell_ground_coord(Some(terrain), 45, 46);
+        let coord = target.cell_target_coord(Some(terrain)).unwrap();
+        assert_eq!((coord.x, coord.y), (45 * 256 + 128, 46 * 256 + 128));
+        assert_eq!(
+            resolve_target_coords(&target, &sim).map(|(rx, ry, ..)| (rx, ry)),
+            Some((45, 46))
+        );
+        assert_eq!(terrain.shared_cell_dummy().snapshot().coord, (45, 46));
+    }
 
     /// The saved shape before [`TarCom`]: `Option<AttackTarget { target }>`.
     #[derive(serde::Serialize)]

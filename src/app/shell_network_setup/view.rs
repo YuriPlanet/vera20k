@@ -59,6 +59,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let protocol = state.frontend.network_setup_protocol.as_ref()?;
     let mode = mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)?;
     let host = session.host();
+    let host_name = protocol.wol_host.as_deref();
     let local = launch.humans.get(launch.local_player_index)?;
     // A guest shows its own copy of the map only when it verified
     // (0x005E74E0); otherwise its preview is the host's Preview.bin.
@@ -317,7 +318,13 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         if visible {
             row_icons[usize::from(row)] = Some(SetupRowIcon {
                 country: flag_pcx_for_side_item_data(country).map(str::to_owned),
-                host: human.is_some() && row == 0,
+                // 0x5EA3E0: wolhost.pcx on the human row named [0xA8D610];
+                // a WOL guest learns it from the user list, otherwise the
+                // host is row 0.
+                host: human.is_some_and(|(_, human)| match host_name {
+                    Some(host) => human.name == host,
+                    None => row == 0,
+                }),
                 accepted: ai.is_some()
                     || human.is_some_and(|(index, _)| session.network_player_ready(index)),
             });

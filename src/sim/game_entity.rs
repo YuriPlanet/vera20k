@@ -1380,10 +1380,9 @@ impl GameEntity {
     /// disguise flag (`+0x1D8`) and GetDisguiseHouse (vt+0xD0, `0x0041BE70`)
     /// none, whoever asks. `TechnoClass::Flash @ 0x006F9DD0` then starts the
     /// flash countdown (`+0xF0`) unless that flag is up. A building's
-    /// `0x00456E00` adds the redraw flag (`+0x80`) and relit slot anims,
-    /// presentation the draws derive from the countdown
-    /// (`app::presentation::lighting`). Foot objects go through
-    /// [`crate::sim::world::Simulation::flash_object`].
+    /// `0x00456E00` adds the redraw flag (`+0x80`) and relights its slot
+    /// anims ([`crate::sim::world::ObjectSubstrate::flash_building`]). Foot
+    /// objects go through [`crate::sim::world::Simulation::flash_object`].
     pub(crate) fn flash_base(&mut self, frames: i32) {
         if !self
             .disguise

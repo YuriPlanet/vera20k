@@ -35,6 +35,7 @@ RefundPercent=50%
 1=HALL
 2=SHED
 3=DEPOT
+4=STATUE
 [Warheads]
 0=KILLWH
 1=Super
@@ -109,6 +110,9 @@ Strength=100
 DestroyAnim=DESTA
 [SHED]
 Strength=100
+[STATUE]
+Strength=100
+DestroyAnim=DESTA
 [DEPOT]
 Strength=100
 Cost=800
@@ -134,6 +138,9 @@ Foundation=2x2
 Foundation=1x1
 [SHED]
 Foundation=1x1
+[STATUE]
+Foundation=1x1
+Palette=lib
 [DEPOT]
 Foundation=2x2
 [EXPA]
@@ -160,7 +167,7 @@ fn rules_from(text: &str) -> RuleSet {
     for name in ["EXPA", "EXPB", "EXPC", "DESTA"] {
         art.bind_anim_frame_count_for_test(name, 10);
     }
-    rules.replace_art_registry_for_test(art);
+    rules.install_art_fixture(art);
     rules
 }
 
@@ -666,6 +673,44 @@ fn gsi_08_11_killing_hits_play_the_types_death_anims() {
             .iter()
             .all(|anim| (anim.3, anim.4) == (0x600, 0))
     );
+}
+
+/// `0x00441D2F..0x00441D61`: a custom-palette type (`+0xDF0`) gives its
+/// DestroyAnim GetRemapColour's scheme from that palette for its owner; the
+/// same anim from an ordinary type keeps no remap.
+#[test]
+fn a_custom_palette_building_gives_its_destroy_anim_the_palette_scheme() {
+    use crate::sim::anim_class::AnimRemap;
+    let rules = rules();
+    assert_eq!(rules.extra_building_palette(), Some("lib"));
+    let remaps = |kind: &str| {
+        let mut sim = sim(5);
+        let building = spawn(&mut sim, &rules, kind, 10, 20);
+        kill(&mut sim, &rules, building);
+        let owner = sim.interner.intern("Americans");
+        let remaps: Vec<_> = sim
+            .substrate
+            .anims
+            .iter()
+            .map(|(_, anim)| {
+                (
+                    sim.interner.resolve(anim.type_id()).to_string(),
+                    anim.remap(),
+                )
+            })
+            .collect();
+        (remaps, owner)
+    };
+    let (statue, owner) = remaps("STATUE");
+    assert_eq!(
+        statue,
+        [(
+            "DESTA".to_string(),
+            Some(AnimRemap::ExtraBuildingScheme(owner))
+        )]
+    );
+    let (hall, _) = remaps("HALL");
+    assert_eq!(hall, [("DESTA".to_string(), None)]);
 }
 
 /// Through the production receiver: DestructionEffects draws each foundation
@@ -1519,12 +1564,13 @@ fn a_power_plant_killed_while_selling_outlives_the_blow_until_its_update() {
         return;
     };
     let now = sim.session.binary_frame();
-    sim.substrate.mission_assign_exact(
-        plant,
-        crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Selling),
-        now,
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            plant,
+            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Selling),
+            now,
+        )
+        .unwrap();
     kill_retail(&mut sim, &rules, plant, false);
     assert!(outlives(&sim, plant));
     tick(&mut sim, &rules, &grid);

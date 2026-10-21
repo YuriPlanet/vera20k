@@ -691,16 +691,17 @@ fn action_line_endpoints(
     })
 }
 
-/// With a Target (+2B4), the +300 pivot (argument 0) to 70BCB0's lead
-/// coordinate, projected: Foot4DC0C6/4DC0DF and the target laser's
-/// Techno6FF983/6FF9A4. FireAt shares the lead query; no presentation copy.
+/// With a Target (+2B4), the +300 pivot (argument 0; an infantryman's gun)
+/// to 70BCB0's lead coordinate, projected: Foot4DC0C6/4DC0DF and the target
+/// laser's Techno6FF983/6FF9A4. FireAt shares the lead query; no presentation
+/// copy.
 fn attack_line_points(
     entity: &GameEntity,
     sim: &Simulation,
     rules: &RuleSet,
 ) -> Option<[ScreenPoint; 2]> {
     let attack = entity.attack_target.target()?;
-    let start = crate::sim::combat::fire_coord::turret_pivot_coordinate(sim, rules, entity)?;
+    let start = crate::sim::combat::fire_coord::turret_pivot_coordinate(sim, rules, entity, 0)?;
     let end = crate::sim::combat::aim_coord::led_target_coordinate(
         sim,
         rules,

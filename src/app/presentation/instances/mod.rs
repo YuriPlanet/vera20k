@@ -9,6 +9,7 @@
 //! - `units` — voxel unit instance generation (turrets, harvest overlays)
 //! - `shp` — SHP building/infantry instances (building anims, bibs)
 //! - `overlays` — map overlays, AnimClass objects, fog snapshots
+//! - `cell_bodies` — the one native sweep order for every overlay body
 //! - `voxel_anims` — VoxelAnimClass debris (tumbling VXL pieces)
 //! - `tether_redraw` — an unloading building's redraw of its tethered contacts
 //!
@@ -27,6 +28,9 @@ pub(crate) use shp::*;
 
 mod overlays;
 pub(crate) use overlays::*;
+
+mod cell_bodies;
+pub(crate) use cell_bodies::*;
 
 mod projectiles;
 pub(crate) use projectiles::*;

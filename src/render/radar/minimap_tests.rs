@@ -610,6 +610,53 @@ fn radar_gate_fixture(
     (entities, interner, houses)
 }
 
+/// RenderCellPixel (`0x00655D06..0x00655D5B`) asks IsShrouded at the radar
+/// Cell's centre raised to its floor: a level-4 Cell at (10, 10) is tested at
+/// (8, 8).
+#[test]
+fn radar_pixel_shroud_is_tested_at_the_cells_floor() {
+    let local = test_intern("Local");
+    let (entities, interner, houses) = radar_gate_fixture("Enemy");
+    let terrain = crate::map::resolved_terrain::test_grid(32, 32, |rx, ry| {
+        crate::map::resolved_terrain::ResolvedTerrainCell {
+            level: 4,
+            ..crate::map::resolved_terrain::test_smudge_cell(rx, ry)
+        }
+    });
+    let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(&terrain);
+    let surface =
+        crate::render::radar::geometry::NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 300, 180)
+            .expect("wide generated surface");
+    let (x, y) = surface.cell_to_surface_pixel((10, 10));
+    let entry = RadarTrackerEntry { stable_id: 1, x, y };
+    let mut projection = radar_gate_projection();
+    projection.native_surface = Some(surface);
+    let rules = radar_gate_rules("");
+    let eligible = |revealed: (u16, u16)| {
+        let mut fog = FogState::default();
+        fog.mark_visible_for_owner(local, revealed.0, revealed.1);
+        radar_pixel_candidate_eligible(
+            entry,
+            &entities,
+            &houses,
+            Some(local),
+            &fog,
+            &Default::default(),
+            false,
+            true,
+            Some(&rules),
+            Some(&interner),
+            projection,
+            Some(&cells),
+        )
+    };
+    assert!(
+        !eligible((10, 10)),
+        "the raised Cell's own square stays shrouded"
+    );
+    assert!(eligible((8, 8)));
+}
+
 #[test]
 fn radar_pixel_shroud_exception_distinguishes_local_pointer_from_singleplayer_human() {
     let local = test_intern("Local");
@@ -638,6 +685,7 @@ fn radar_pixel_shroud_exception_distinguishes_local_pointer_from_singleplayer_hu
         Some(&rules),
         Some(&interner),
         radar_gate_projection(),
+        None,
     ));
     assert!(!radar_pixel_candidate_eligible(
         entry,
@@ -651,6 +699,7 @@ fn radar_pixel_shroud_exception_distinguishes_local_pointer_from_singleplayer_hu
         Some(&rules),
         Some(&interner),
         radar_gate_projection(),
+        None,
     ));
 }
 
@@ -679,12 +728,30 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         Some(&rules),
         Some(&interner),
         radar_gate_projection(),
+        None,
     ));
 
-    let allies = BTreeSet::from(["LOCAL".to_string(), "ENEMY".to_string()]);
-    alliances.insert("LOCAL".to_string(), allies.clone());
-    alliances.insert("ENEMY".to_string(), allies);
-    assert!(crate::map::houses::are_houses_friendly(
+    // RenderCellPixel asks from the current player's house (`0x00655E09`):
+    // the enemy's alliance with the player alone does not restore the dot.
+    alliances.insert("ENEMY".to_string(), BTreeSet::from(["LOCAL".to_string()]));
+    assert!(!radar_pixel_candidate_eligible(
+        entry,
+        &entities,
+        &houses,
+        Some(local),
+        &fog,
+        &alliances,
+        true,
+        true,
+        Some(&rules),
+        Some(&interner),
+        radar_gate_projection(),
+        None,
+    ));
+    // The player's alliance with the enemy alone restores it.
+    alliances.clear();
+    alliances.insert("LOCAL".to_string(), BTreeSet::from(["ENEMY".to_string()]));
+    assert!(crate::map::houses::is_allied_with(
         &alliances,
         interner.resolve(local),
         interner.resolve(enemy),
@@ -701,6 +768,7 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         Some(&rules),
         Some(&interner),
         radar_gate_projection(),
+        None,
     ));
 }
 
@@ -733,6 +801,7 @@ fn radar_pixel_insignificant_passive_owner_requires_radar_visible() {
         Some(&hidden),
         Some(&interner),
         radar_gate_projection(),
+        None,
     ));
     assert!(radar_pixel_candidate_eligible(
         entry,
@@ -746,6 +815,7 @@ fn radar_pixel_insignificant_passive_owner_requires_radar_visible() {
         Some(&restored),
         Some(&interner),
         radar_gate_projection(),
+        None,
     ));
 }
 
@@ -777,6 +847,7 @@ fn radar_pixel_fogged_but_explored_cell_passes_render_gate_without_gap_proxy() {
         Some(&radar_gate_rules("")),
         Some(&interner),
         radar_gate_projection(),
+        None,
     ));
 }
 

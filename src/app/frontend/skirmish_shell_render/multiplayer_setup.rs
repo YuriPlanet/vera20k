@@ -598,6 +598,16 @@ pub(crate) fn render_multiplayer_setup(
         overlay.controls.extend(page.controls);
         overlay.texts.extend(page.texts);
     }
+    // Start Game Now's 0x130 over the locked C2/C9.
+    if let Some(verify) = crate::app::shell_network_setup::verify(state) {
+        let paint = super::paint_wol_verify(
+            state,
+            verify,
+            &crate::app::shell_network_setup::verify_layout(state),
+        );
+        overlay.controls.extend(paint.controls);
+        overlay.texts.extend(paint.texts);
+    }
     in_game_shell::render_shell_frame(
         state,
         encoder,

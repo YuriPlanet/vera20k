@@ -644,6 +644,8 @@ impl Fixture {
             }
             runtime["frame_timer"] = json!({"start_frame": int(&runtime["frame_timer"][0]),
                 "duration": int(&runtime["frame_timer"][1])});
+            // The capture predates Anim+11A; no Temporal erase is live.
+            runtime["temporal_paused"] = json!(false);
             assert_eq!(
                 serde_json::to_value(&actual.runtime()).unwrap(),
                 runtime,

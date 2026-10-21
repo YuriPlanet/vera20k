@@ -636,9 +636,8 @@ pub(crate) fn target_get_target_coords(
     terrain: Option<&ResolvedTerrainGrid>,
 ) -> Option<DriveCoord> {
     match target {
-        crate::sim::combat::TargetKind::Cell(rx, ry) => {
-            let coord = crate::sim::projectile::cell_target_coord(terrain, rx, ry);
-            Some(DriveCoord {
+        crate::sim::combat::TargetKind::Cell(..) => {
+            target.cell_target_coord(terrain).map(|coord| DriveCoord {
                 x: coord.x,
                 y: coord.y,
                 z: coord.z,

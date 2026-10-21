@@ -2837,37 +2837,37 @@ impl Simulation {
         }
     }
 
-    /// Object-kind classification for the LogicVector dispatch (F13). Probes
-    /// the stores in the exact pre-consolidation order (anims → particle
-    /// systems → terrain → projectiles → waves → entities) and returns `None`
-    /// when the id is represented nowhere. Object IDs are unique across
-    /// stores, so first-match equals only-match.
+    /// The kind of the object `stable_id` names, or `None` when no store
+    /// holds it. Object IDs are unique across stores, so the probe order
+    /// ([`ObjectKind::ALL`]) is only a cost: entities first, as most Logic
+    /// slots are, and particles last, as finding one walks the systems.
     pub(crate) fn classify_object(&self, stable_id: u64) -> Option<ObjectKind> {
-        if self.substrate.anims.contains_key(stable_id) {
-            Some(ObjectKind::Anim)
-        } else if self.substrate.voxel_anims.contains_key(stable_id) {
-            Some(ObjectKind::VoxelAnim)
-        } else if self.substrate.spotlights.contains_key(stable_id) {
-            Some(ObjectKind::Spotlight)
-        } else if self.substrate.particle_systems.contains_key(stable_id) {
-            Some(ObjectKind::ParticleSystem)
-        } else if self.terrain_objects.objects().contains_key(&stable_id) {
-            Some(ObjectKind::Terrain)
-        } else if self.projectiles.get(stable_id).is_some() {
-            Some(ObjectKind::Projectile)
-        } else if self.waves.get(stable_id).is_some() {
-            Some(ObjectKind::Wave)
-        } else if self
-            .smudge_grid
-            .as_ref()
-            .and_then(|grid| grid.object(stable_id))
-            .is_some()
-        {
-            Some(ObjectKind::Smudge)
-        } else if self.substrate.entities.contains(stable_id) {
-            Some(ObjectKind::Entity)
-        } else {
-            None
+        ObjectKind::ALL
+            .into_iter()
+            .find(|&kind| self.object_store_holds(kind, stable_id))
+    }
+
+    /// Whether `kind`'s store holds `stable_id`.
+    fn object_store_holds(&self, kind: ObjectKind, stable_id: u64) -> bool {
+        match kind {
+            ObjectKind::Entity => self.substrate.entities.contains(stable_id),
+            ObjectKind::Anim => self.substrate.anims.contains_key(stable_id),
+            ObjectKind::VoxelAnim => self.substrate.voxel_anims.contains_key(stable_id),
+            ObjectKind::Spotlight => self.substrate.spotlights.contains_key(stable_id),
+            ObjectKind::ParticleSystem => self.substrate.particle_systems.contains_key(stable_id),
+            ObjectKind::Terrain => self.terrain_objects.objects().contains_key(&stable_id),
+            ObjectKind::Projectile => self.projectiles.get(stable_id).is_some(),
+            ObjectKind::Wave => self.waves.get(stable_id).is_some(),
+            ObjectKind::Smudge => self
+                .smudge_grid
+                .as_ref()
+                .and_then(|grid| grid.object(stable_id))
+                .is_some(),
+            ObjectKind::Particle => self
+                .substrate
+                .particle_systems
+                .particle(stable_id)
+                .is_some(),
         }
     }
 
@@ -2875,14 +2875,14 @@ impl Simulation {
     /// object. The flag lives on the object in its own store; this is the
     /// single dispatch the registration/removal contract reads through.
     /// For a Techno, `Object+0x98`: RegisterObject sets it (`0x0055BAC6`).
-    fn logic_membership_flag(&self, stable_id: u64, kind: ObjectKind) -> bool {
+    pub(super) fn logic_membership_flag(&self, stable_id: u64, kind: ObjectKind) -> bool {
         match kind {
             ObjectKind::Spotlight => self
                 .substrate
                 .spotlights
                 .get(stable_id)
                 .is_some_and(|l| l.in_logic_vector()),
-            ObjectKind::Smudge => false,
+            ObjectKind::Smudge | ObjectKind::Particle => false,
             ObjectKind::Anim => self
                 .substrate
                 .anims
@@ -2923,7 +2923,7 @@ impl Simulation {
     /// object. The single dispatch the registration/removal contract repairs
     /// the flag through. For a Techno it is RegisterObject's set (`0x0055BAC6`)
     /// or UnregisterObject's clear (`0x0055BB27`).
-    fn set_logic_membership_flag(
+    pub(super) fn set_logic_membership_flag(
         terrain_objects: &mut TerrainObjectStore,
         substrate: &mut ObjectSubstrate,
         projectiles: &mut ProjectileStore,
@@ -2938,7 +2938,9 @@ impl Simulation {
                     l.mark_logic_membership(member);
                 }
             }
-            ObjectKind::Smudge => assert!(!member, "Smudge {stable_id} never joins Logic"),
+            ObjectKind::Smudge | ObjectKind::Particle => {
+                assert!(!member, "{kind:?} {stable_id} never joins Logic");
+            }
             ObjectKind::Anim => {
                 if let Some(anim) = substrate.anims.get_mut(stable_id) {
                     anim.mark_logic_membership(member);
@@ -2988,7 +2990,7 @@ impl Simulation {
         let Some(kind) = kind else {
             return false;
         };
-        if kind == ObjectKind::Smudge {
+        if !kind.joins_logic() {
             return false;
         }
         if self.substrate.logic.try_push(stable_id).is_err() {
@@ -4497,46 +4499,39 @@ impl Simulation {
     /// the expiry index finds, in the same order.
     #[cfg(any(test, feature = "test-support"))]
     fn removal_listener_order(&self, entities: Vec<u64>) -> Vec<(u64, ObjectKind)> {
-        let mut listeners = Vec::with_capacity(
-            self.substrate.entities.len()
-                + self.substrate.anims.len()
-                + self.substrate.particle_systems.len()
-                + self.projectiles.len()
-                + self.waves.len()
-                + self
-                    .smudge_grid
-                    .as_ref()
-                    .map_or(0, |grid| grid.object_count()),
-        );
-        listeners.extend(
-            entities
-                .into_iter()
-                .map(|stable_id| (stable_id, ObjectKind::Entity)),
-        );
-        listeners.extend(
-            self.substrate
-                .anims
-                .iter()
-                .map(|(&stable_id, _)| (stable_id, ObjectKind::Anim)),
-        );
-        listeners.extend(
-            self.substrate
-                .particle_systems
-                .iter()
-                .map(|(&stable_id, _)| (stable_id, ObjectKind::ParticleSystem)),
-        );
-        listeners.extend(
-            self.projectiles
-                .iter()
-                .map(|(&stable_id, _)| (stable_id, ObjectKind::Projectile)),
-        );
-        listeners.extend(
-            self.waves
-                .iter()
-                .map(|(&stable_id, _)| (stable_id, ObjectKind::Wave)),
-        );
-        if let Some(grid) = &self.smudge_grid {
-            listeners.extend(grid.objects().map(|(id, _)| (id, ObjectKind::Smudge)));
+        let mut listeners = Vec::new();
+        for kind in ObjectKind::ALL {
+            match kind {
+                ObjectKind::Entity => listeners.extend(entities.iter().map(|&id| (id, kind))),
+                ObjectKind::Anim => {
+                    listeners.extend(self.substrate.anims.iter().map(|(&id, _)| (id, kind)));
+                }
+                ObjectKind::ParticleSystem => listeners.extend(
+                    self.substrate
+                        .particle_systems
+                        .iter()
+                        .map(|(&id, _)| (id, kind)),
+                ),
+                ObjectKind::Projectile => {
+                    listeners.extend(self.projectiles.iter().map(|(&id, _)| (id, kind)));
+                }
+                ObjectKind::Wave => {
+                    listeners.extend(self.waves.iter().map(|(&id, _)| (id, kind)));
+                }
+                ObjectKind::Smudge => {
+                    if let Some(grid) = &self.smudge_grid {
+                        listeners.extend(grid.objects().map(|(id, _)| (id, kind)));
+                    }
+                }
+                // ObjectClass's PointerExpired (`0x005F5230`), which these
+                // inherit, and Terrain's (`0x0071CFD0`), which adds only its
+                // type, clear nothing these stores hold. A Spotlight's
+                // (`0x00436A00`) runs apart, for every expiry.
+                ObjectKind::VoxelAnim
+                | ObjectKind::Particle
+                | ObjectKind::Terrain
+                | ObjectKind::Spotlight => {}
+            }
         }
         // Each store yields its IDs in order: the run-adaptive stable sort
         // merges those runs instead of sorting from scratch.
@@ -5234,25 +5229,8 @@ impl Simulation {
         {
             return ProjectileTarget::None;
         }
-        match terrain {
-            Some(terrain) => match crate::sim::cell_rect::get_cellclass_fallback(
-                Some(terrain),
-                i32::from(rx),
-                i32::from(ry),
-            ) {
-                crate::sim::cell_rect::CellRef::Real(cell) => ProjectileTarget::Cell {
-                    rx: cell.rx,
-                    ry: cell.ry,
-                },
-                crate::sim::cell_rect::CellRef::Dummy { .. } => ProjectileTarget::DummyCell,
-            },
-            // Preserve the existing terrainless fixture representation. Real
-            // worlds always query MapClass and retain its returned identity.
-            None => ProjectileTarget::Cell {
-                rx: rx as u16,
-                ry: ry as u16,
-            },
-        }
+        // Real worlds query MapClass and retain its returned identity.
+        ProjectileTarget::looked_up_cell(terrain, rx as u16, ry as u16)
     }
 
     /// Anim4's dedicated holder announcement725A16..725A4C, before Anim
@@ -5549,7 +5527,11 @@ impl Simulation {
                     .as_ref()
                     .and_then(|grid| grid.object(listener_id))
                     .is_some(),
-                ObjectKind::VoxelAnim | ObjectKind::Terrain | ObjectKind::Spotlight => false,
+                // Not on the roster ([`ObjectKind`]'s pointer-expiry column).
+                ObjectKind::VoxelAnim
+                | ObjectKind::Particle
+                | ObjectKind::Terrain
+                | ObjectKind::Spotlight => false,
             };
             if !present {
                 continue;
@@ -5794,6 +5776,14 @@ impl Simulation {
                     // owner is now null.
                     self.active_wave_links.remove(&expired_id);
                 }
+            } else {
+                // The one roster kind with no callback: a smudge's
+                // PointerExpired clears nothing it holds.
+                debug_assert_eq!(
+                    kind,
+                    ObjectKind::Smudge,
+                    "{listener_id} has no expiry callback"
+                );
             }
         }
         // The kamikaze tracker's Remove (`0x00725972`) follows the listeners
@@ -5829,23 +5819,38 @@ impl Simulation {
 
     pub fn uninit_with_context(&mut self, stable_id: u64, context: UninitContext<'_>) {
         self.planning_detach_actor(stable_id);
-        let spotlight = self.substrate.spotlights.contains_key(stable_id);
-        let smudge = self
-            .smudge_grid
-            .as_ref()
-            .and_then(|grid| grid.object(stable_id))
-            .is_some();
-        let particle = self
-            .substrate
-            .particle_systems
-            .detached_particle(stable_id)
-            .is_some();
+        let kind = match self.classify_object(stable_id) {
+            Some(kind @ (ObjectKind::Entity | ObjectKind::Spotlight | ObjectKind::Smudge)) => kind,
+            Some(ObjectKind::Particle)
+                if self
+                    .substrate
+                    .particle_systems
+                    .detached_particle(stable_id)
+                    .is_some() =>
+            {
+                ObjectKind::Particle
+            }
+            // A particle still in its system retires with it; the other kinds
+            // retire through their own owners, never this UnInit.
+            Some(
+                ObjectKind::Particle
+                | ObjectKind::Anim
+                | ObjectKind::VoxelAnim
+                | ObjectKind::ParticleSystem
+                | ObjectKind::Terrain
+                | ObjectKind::Projectile
+                | ObjectKind::Wave,
+            )
+            | None => return,
+        };
         // Ordinary Particle and Smudge instances have no Techno/Foot hooks
         // or passengers. Every represented family joins the one base tail.
-        if !smudge && !particle && !spotlight {
-            let Some(entity) = self.substrate.entities.get(stable_id) else {
-                return;
-            };
+        if let Some(entity) = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .filter(|_| kind == ObjectKind::Entity)
+        {
             // `FootClass::UnInit @ 0x004DE5DD` frees a controller's captives
             // first (a crushed or otherwise removed Yuri or Mastermind).
             let foot = matches!(
@@ -5905,25 +5910,36 @@ impl Simulation {
         Self::bomb_defuse(&mut self.substrate, &mut self.bombs, stable_id);
         self.notify_pointer_expired(stable_id, context);
 
-        if spotlight {
-            self.notify_pointer_expired(stable_id, context);
-            self.finish_spotlight_retirement(stable_id);
-        } else if smudge {
-            // Whole Smudge6B4A50 delegates to Object5F65F0. Its Mark(0)
-            // writes no cell data; preserve its existing fused Conceal tail.
-            self.notify_pointer_expired(stable_id, context);
-            self.smudge_grid.as_mut().unwrap().finish_uninit(stable_id);
-        } else if particle {
-            let _ = self.object_conceal_with_context(stable_id, context);
-            self.substrate
-                .particle_systems
-                .finish_particle_retirement(stable_id);
-        } else {
-            let _ = self.techno_limbo_with_context(stable_id, context);
-            if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                entity.lifecycle.object_alive = false;
-                entity.death.begin();
+        match kind {
+            ObjectKind::Spotlight => {
+                self.notify_pointer_expired(stable_id, context);
+                self.finish_spotlight_retirement(stable_id);
             }
+            ObjectKind::Smudge => {
+                // Whole Smudge6B4A50 delegates to Object5F65F0. Its Mark(0)
+                // writes no cell data; preserve its existing fused Conceal tail.
+                self.notify_pointer_expired(stable_id, context);
+                self.smudge_grid.as_mut().unwrap().finish_uninit(stable_id);
+            }
+            ObjectKind::Particle => {
+                let _ = self.object_conceal_with_context(stable_id, context);
+                self.substrate
+                    .particle_systems
+                    .finish_particle_retirement(stable_id);
+            }
+            ObjectKind::Entity => {
+                let _ = self.techno_limbo_with_context(stable_id, context);
+                if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+                    entity.lifecycle.object_alive = false;
+                    entity.death.begin();
+                }
+            }
+            ObjectKind::Anim
+            | ObjectKind::VoxelAnim
+            | ObjectKind::ParticleSystem
+            | ObjectKind::Terrain
+            | ObjectKind::Projectile
+            | ObjectKind::Wave => unreachable!("{kind:?} {stable_id} never reaches UnInit"),
         }
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::UninitAliveCleared { stable_id });
@@ -5973,45 +5989,63 @@ impl Simulation {
         self.trace_lifecycle_for_test(LifecycleTestEvent::PendingDeleteQueued { stable_id });
     }
 
+    /// A queued object's IsReadyToDelete (vt+0x44), by kind. An ID no store
+    /// holds is ready.
     fn pending_object_is_ready(&self, stable_id: u64) -> bool {
-        if let Some(alive) = self.spotlight_alive(stable_id) {
-            return !alive;
-        }
-        if let Some(smudge) = self
-            .smudge_grid
-            .as_ref()
-            .and_then(|grid| grid.object(stable_id))
-        {
-            return !smudge.object_alive();
-        }
-        if let Some(entity) = self.substrate.entities.get(stable_id) {
-            return !entity.lifecycle.object_alive;
-        }
-        if let Some(anim) = self.substrate.anims.get(stable_id) {
+        let Some(kind) = self.classify_object(stable_id) else {
+            return true;
+        };
+        match kind {
+            ObjectKind::Spotlight => self.spotlight_alive(stable_id) == Some(false),
+            ObjectKind::Smudge => self
+                .smudge_grid
+                .as_ref()
+                .and_then(|grid| grid.object(stable_id))
+                .is_some_and(|smudge| !smudge.object_alive()),
+            ObjectKind::Entity => self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| !entity.lifecycle.object_alive),
             // Every ordinary Anim retirement Conceals before queueing. Owner
             // expiry425196 only sets19B and leaves Logic live until its own AI;
             // that byte is not ObjectUnInit5F6625's readiness state.
-            return !anim.in_logic_vector();
-        }
-        if let Some(system) = self.substrate.particle_systems.get(stable_id) {
+            ObjectKind::Anim => self
+                .substrate
+                .anims
+                .get(stable_id)
+                .is_some_and(|anim| !anim.in_logic_vector()),
             // SystemVT7EFB9C+44 -> IsReadyToDelete62FE60: done+F8 and
             // count+CC==0, independently of the ObjectAlive byte.
-            return system.done_spawning() && system.particles().is_empty();
+            ObjectKind::ParticleSystem => self
+                .substrate
+                .particle_systems
+                .get(stable_id)
+                .is_some_and(|system| system.done_spawning() && system.particles().is_empty()),
+            // Particle+44 inherits Object5F6690: !ObjectAlive (+0x90). Only a
+            // detached particle is queued; one still in its system is alive.
+            ObjectKind::Particle => self
+                .substrate
+                .particle_systems
+                .detached_particle(stable_id)
+                .is_some_and(|(_, alive)| !alive),
+            ObjectKind::Terrain => self
+                .terrain_objects
+                .objects()
+                .get(&stable_id)
+                .is_some_and(|terrain| !terrain.is_live() && !terrain.in_logic_vector()),
+            ObjectKind::Projectile => self
+                .projectiles
+                .get(stable_id)
+                .is_some_and(|projectile| !projectile.in_logic_vector()),
+            ObjectKind::Wave => self
+                .waves
+                .get(stable_id)
+                .is_some_and(|wave| !wave.in_logic_vector()),
+            // Never queued: its AI's Delete verdict removes it at once
+            // (`visit_voxel_anim`).
+            ObjectKind::VoxelAnim => true,
         }
-        if let Some((_, alive)) = self.substrate.particle_systems.detached_particle(stable_id) {
-            // Particle+44 inherits Object5F6690: !ObjectAlive.
-            return !alive;
-        }
-        if let Some(terrain) = self.terrain_objects.objects().get(&stable_id) {
-            return !terrain.is_live() && !terrain.in_logic_vector();
-        }
-        if let Some(projectile) = self.projectiles.get(stable_id) {
-            return !projectile.in_logic_vector();
-        }
-        if let Some(wave) = self.waves.get(stable_id) {
-            return !wave.in_logic_vector();
-        }
-        true
     }
 
     /// Shared physical destructor owner, used by deferred retirement and
@@ -6023,7 +6057,8 @@ impl Simulation {
         context: UninitContext<'_>,
         game_state: i32,
     ) {
-        if self.substrate.spotlights.contains_key(stable_id) {
+        let kind = self.classify_object(stable_id);
+        if kind == Some(ObjectKind::Spotlight) {
             self.destroy_spotlight(stable_id, context);
             return;
         }
@@ -6087,7 +6122,7 @@ impl Simulation {
             }
             self.leave_team(stable_id, false, context.rules(), context.effects());
         }
-        if self.substrate.particle_systems.contains_key(stable_id) {
+        if kind == Some(ObjectKind::ParticleSystem) {
             // SystemDtor62E075/62E092 broadcasts control1 before its
             // delegated Limbo62E099 and before leaving object storage.
             // The ordinary done-empty AI already announced its earlier
@@ -6096,34 +6131,24 @@ impl Simulation {
             self.notify_pointer_expired(stable_id, context);
             self.conceal_particle_system(stable_id);
         }
-        if self
-            .substrate
-            .particle_systems
-            .detached_particle(stable_id)
-            .is_some()
-        {
+        if kind == Some(ObjectKind::Particle) {
             // ParticleDtor62D9A0: its already-limbo check does no work,
             // then62D9C8 announces again before ObjectDtor5F3B80 unregisters
             // and frees the body. No Particle-specific RNG/timer writes.
             self.notify_pointer_expired(stable_id, context);
         }
-        if self
-            .smudge_grid
-            .as_ref()
-            .and_then(|grid| grid.object(stable_id))
-            .is_some()
-        {
+        if kind == Some(ObjectKind::Smudge) {
             // Scalar Smudge6B4FA0 sends its third removed=true expiry at
             //6B4FC6 before leaving Smudge/Object registries. Place's cells
             // survive this destructor and Building Mark(0).
             self.notify_pointer_expired(stable_id, context);
         }
-        if self.terrain_objects.objects().contains_key(&stable_id) {
+        if kind == Some(ObjectKind::Terrain) {
             // Terrain destructor71B7D6 repeats expiry before leaving its
             // registry. This is later than the live lethal/UnInit callbacks.
             self.notify_pointer_expired(stable_id, context);
         }
-        if self.projectiles.get(stable_id).is_some() {
+        if kind == Some(ObjectKind::Projectile) {
             // BulletDtor466581 announces expiry before clearing construction
             // fields or leaving its registry, including never-Fired bullets.
             self.notify_pointer_expired(stable_id, context);
@@ -6278,7 +6303,7 @@ impl Simulation {
         // tail. Techno6F4607 destroys the distinct voice handle via405C00,
         // before its attached/deploy Anims6F468B. Keep the disposal marker in
         // the same stream as AI visits and those Anim sound callbacks.
-        if self.substrate.entities.contains(stable_id) {
+        if kind == Some(ObjectKind::Entity) {
             self.sound_events
                 .emit(super::SimSoundEvent::UnitVoiceDestroyed { owner: stable_id });
         }
@@ -6302,7 +6327,7 @@ impl Simulation {
             self.destroy_anim_with_context(anim, context.rules());
         }
         self.lighting_sources.destroy_building_light(stable_id);
-        if self.substrate.anims.contains_key(stable_id) {
+        if kind == Some(ObjectKind::Anim) {
             self.notify_anim_pointer_expired(stable_id);
             self.substrate.clear_damage_fire_anim_reference(stable_id);
             self.conceal_anim(stable_id);
@@ -6317,56 +6342,74 @@ impl Simulation {
         // (4CD4DE) resubmits even an owner concealed earlier in the frame.
         self.substrate.display.remove(stable_id);
         self.fog.forget_sight_source(stable_id);
-        let entity = self.substrate.entities.remove(stable_id);
-        if entity
-            .as_ref()
-            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
-        {
-            // Techno+3D3 (ctor6F2F4F) dies with the Building's storage. Limbo retains it;
-            // physical disposal removes this identity without electing a
-            // replacement or altering the House's Factory queue slots.
-            self.production.clear_primary_factory(stable_id);
-        }
-        let anim = self.substrate.anims.remove(stable_id);
-        let particle_system = self.substrate.particle_systems.finalize_remove(stable_id);
-        let particle = self.substrate.particle_systems.finalize_particle(stable_id);
-        if let Some(system) = particle_system.as_ref() {
-            // SystemDtor62E0AE..62E15D disposes retained children before its
-            // vector is freed. Ordinary AI retirement has no children left;
-            // direct disposal must still remove each individual AIR entry.
-            for particle in system.particles() {
-                self.substrate.conceal_particle(particle.stable_id());
-            }
-        }
-        let terrain = self.terrain_objects.remove(stable_id);
         self.drop_object_custom_sound(stable_id);
-        let projectile = self.projectiles.remove(stable_id);
-        if projectile.is_some() {
-            self.lifecycle_outputs
-                .emit(LifecycleOutput::LineTrailDetached { stable_id });
-        }
-        let wave = self.waves.remove(stable_id);
-        let smudge = self
-            .smudge_grid
-            .as_mut()
-            .and_then(|grid| grid.finalize_remove(stable_id));
-        if let Some(wave) = wave.as_ref()
-            && let Some(owner_id) = wave.owner_id()
-            && self.active_wave_links.get(&owner_id) == Some(&stable_id)
-        {
-            self.active_wave_links.remove(&owner_id);
-        }
+        let removed = match kind {
+            Some(ObjectKind::Entity) => {
+                let entity = self.substrate.entities.remove(stable_id);
+                if entity
+                    .as_ref()
+                    .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+                {
+                    // Techno+3D3 (ctor6F2F4F) dies with the Building's storage. Limbo retains it;
+                    // physical disposal removes this identity without electing a
+                    // replacement or altering the House's Factory queue slots.
+                    self.production.clear_primary_factory(stable_id);
+                }
+                entity.is_some()
+            }
+            Some(ObjectKind::Anim) => self.substrate.anims.remove(stable_id).is_some(),
+            Some(ObjectKind::ParticleSystem) => {
+                let system = self.substrate.particle_systems.finalize_remove(stable_id);
+                if let Some(system) = system.as_ref() {
+                    // SystemDtor62E0AE..62E15D disposes retained children before its
+                    // vector is freed. Ordinary AI retirement has no children left;
+                    // direct disposal must still remove each individual AIR entry.
+                    for particle in system.particles() {
+                        self.substrate.conceal_particle(particle.stable_id());
+                    }
+                }
+                system.is_some()
+            }
+            Some(ObjectKind::Particle) => self
+                .substrate
+                .particle_systems
+                .finalize_particle(stable_id)
+                .is_some(),
+            Some(ObjectKind::Terrain) => self.terrain_objects.remove(stable_id).is_some(),
+            Some(ObjectKind::Projectile) => {
+                let removed = self.projectiles.remove(stable_id).is_some();
+                if removed {
+                    self.lifecycle_outputs
+                        .emit(LifecycleOutput::LineTrailDetached { stable_id });
+                }
+                removed
+            }
+            Some(ObjectKind::Wave) => {
+                let wave = self.waves.remove(stable_id);
+                if let Some(wave) = wave.as_ref()
+                    && let Some(owner_id) = wave.owner_id()
+                    && self.active_wave_links.get(&owner_id) == Some(&stable_id)
+                {
+                    self.active_wave_links.remove(&owner_id);
+                }
+                wave.is_some()
+            }
+            Some(ObjectKind::Smudge) => self
+                .smudge_grid
+                .as_mut()
+                .and_then(|grid| grid.finalize_remove(stable_id))
+                .is_some(),
+            // A spotlight returned above. VERA removes a voxel anim on its AI's
+            // Delete (`visit_voxel_anim`), never through this destructor.
+            Some(ObjectKind::Spotlight | ObjectKind::VoxelAnim) => false,
+            // A stale deferred-delete ticket: a direct destructor already
+            // removed its object (`discard_constructed_limbo` keeps a queued
+            // constructor-owned child's ticket).
+            None => false,
+        };
         debug_assert!(
-            usize::from(entity.is_some())
-                + usize::from(anim.is_some())
-                + usize::from(particle_system.is_some())
-                + usize::from(particle.is_some())
-                + usize::from(terrain.is_some())
-                + usize::from(projectile.is_some())
-                + usize::from(wave.is_some())
-                + usize::from(smudge.is_some())
-                <= 1,
-            "object id {stable_id} was removed from multiple stores"
+            removed || kind.is_none(),
+            "{kind:?} {stable_id} left no store at its destructor"
         );
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::FinalizedCommon { stable_id });

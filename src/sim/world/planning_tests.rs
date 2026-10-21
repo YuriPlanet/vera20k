@@ -1487,6 +1487,25 @@ fn draw_graph_current_destination_uses_attack_target_and_mega_resume_latch() {
         crate::sim::components::DriveCoord::cell(16, 15, 0)
     );
     assert_eq!(actor.mega_badge, Some(super::PlanningBadgeKind::AttackMove));
+    // A MegaTarget off the map is read without leaving the lookup's stamp in
+    // the simulation.
+    sim.install_resolved_terrain_for_new_map(
+        crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
+            40,
+            40,
+            (0..40)
+                .flat_map(|y| {
+                    (0..40).map(move |x| crate::map::resolved_terrain::test_flat_cell(x, y))
+                })
+                .collect(),
+        ),
+    );
+    sim.substrate.entities.get_mut(1).unwrap().mega_mission =
+        MegaMission::for_test(true, Some(TargetKind::Cell(5, 600)), None, true);
+    let dummy = sim.effective_shared_cell_dummy().snapshot();
+    let graph = sim.planning_draw_graph(owner, &[], None, None);
+    assert!(graph.actors[0].mega_leg.is_some());
+    assert_eq!(sim.effective_shared_cell_dummy().snapshot(), dummy);
     sim.substrate
         .entities
         .get_mut(1)

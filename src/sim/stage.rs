@@ -67,6 +67,11 @@ impl StageClass {
         self.value
     }
 
+    /// Whether the last [`Self::advance`] passed its gate (`+0xFC`).
+    pub const fn changed(&self) -> bool {
+        self.changed != 0
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub const fn timer(&self) -> CdTimer {
         self.timer

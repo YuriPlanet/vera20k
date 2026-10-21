@@ -60,7 +60,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::map::houses::{HouseAllianceMap, are_houses_friendly};
+use crate::map::houses::{HouseAllianceMap, is_allied_with};
 use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::movement::ground_pose;
@@ -2921,7 +2921,7 @@ pub(crate) fn apply_gap_generator_sources_with_spy_sat(
             if generator.radius <= 0 {
                 continue;
             }
-            if !are_houses_friendly(
+            if !is_allied_with(
                 alliances,
                 interner.resolve(generator.owner),
                 interner.resolve(viewer),
@@ -2974,7 +2974,10 @@ fn gap_footprint(generator: GapGeneratorSource, width: usize, height: usize) -> 
 }
 
 /// One admitted6FB170/6FB470 event. The Building caller owns its269 latch;
-/// this ledger owns which viewer cell writes that deposit contributed.
+/// this ledger owns which viewer cell writes that deposit contributed. The
+/// generator's house asks whether it is allied with the viewer
+/// (`HouseClass::IsAlliedWith @ 0x004F9A50` at `0x006FB2CF`, `0x006FB5B9`,
+/// `0x006FB6B7`), as the other gap planes below do.
 pub(crate) fn publish_gap_generator_event(
     fog: &mut FogState,
     alliances: &HouseAllianceMap,
@@ -2992,7 +2995,7 @@ pub(crate) fn publish_gap_generator_event(
     if let Some(vis) = fog.by_owner.get_mut(&viewer) {
         let receipts = fog.gap_sources.entry(viewer).or_default();
         if active {
-            if !are_houses_friendly(
+            if !is_allied_with(
                 alliances,
                 interner.resolve(source.owner),
                 interner.resolve(viewer),
@@ -3050,7 +3053,7 @@ pub(crate) fn materialize_gap_generator_sources(
         fog.gap_sources.entry(viewer).or_default();
         vis.clear_gap_fog();
         for &source in sources.get(&viewer).into_iter().flatten() {
-            if are_houses_friendly(
+            if is_allied_with(
                 alliances,
                 interner.resolve(source.owner),
                 interner.resolve(viewer),
