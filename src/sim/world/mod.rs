@@ -6192,16 +6192,13 @@ impl Simulation {
             production::update_factory_queue(self, rules, old_owner, factory_category, effects);
             production::update_factory_queue(self, rules, new_owner, factory_category, effects);
         }
-        // RESIDUAL: the computer's sale of a captured building
-        // (`0x004492D7..0x0044936E`) is unported, since VERA keeps no
-        // InitialOwner. Outside campaign (GameMode != 0), a new owner no human
-        // controls sells a building whose InitialOwner is another house that
-        // is not `MultiplayPassive`: each upgrade is refunded in full to it
-        // (`GetRefund`, type vt+0xB8) and removed (`RemoveLastUpgrade`), then
-        // `Sell_Back(1)` (vt+0x1A0). Trigger: an AI engineer captures another
-        // side's building in skirmish. Effect: the AI keeps the building.
-        // Frequency: each such capture. Risk: the AI gains its factory, power
-        // or prerequisites.
+        // Building4492D7..449368: the computer's captured-building sale is
+        // after both factory queue updates and before the house rechecks.
+        if category == EntityCategory::Structure
+            && let Some(rules) = rules
+        {
+            production::sell_after_owner_change(self, rules, stable_id, registry, effects);
+        }
         //44936E/449379: both houses' retained1FC asks their next House tail.
         if category == EntityCategory::Structure {
             self.houses.request_house_tech_tree_recheck(old_owner);
@@ -8056,6 +8053,9 @@ mod slave_manager_cycle_tests;
 mod building_sale_oracle_tests;
 
 #[cfg(test)]
+mod ai_captured_building_sale_tests;
+
+#[cfg(test)]
 #[path = "building_repair_oracle_tests.rs"]
 mod building_repair_oracle_tests;
 
@@ -8078,6 +8078,9 @@ mod passenger_escape_oracle_tests;
 #[cfg(test)]
 #[path = "vehicle_passenger_escape_oracle_tests.rs"]
 mod vehicle_passenger_escape_oracle_tests;
+
+#[cfg(test)]
+mod bunker_entry_oracle_tests;
 
 #[cfg(test)]
 #[path = "world_orders_bridge_repair_tests.rs"]

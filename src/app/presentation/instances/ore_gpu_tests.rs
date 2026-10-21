@@ -1,7 +1,8 @@
 //! Original Cell rasters through the production ordinary overlay
 //! atlas, live identity/frame owner and submission. Lifecycle checks use real
 //! retail maps and the bound runtime's ordinary harvest, growth and fire paths.
-use super::{CellOverlayInputs, build_cell_overlay_instances};
+use super::{CellOverlayInputs, build_cell_overlay_bodies};
+use crate::app::presentation::instances::submit_cell_body_sweep;
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::headless_scenario::HeadlessScenario;
 use crate::map::lighting::CellLightGrid;
@@ -10,7 +11,6 @@ use crate::render::batch::{BatchRenderer, InstanceBufferPool, SpriteInstance};
 use crate::render::bridge_atlas::{BridgeAtlas, build_bridge_atlas};
 use crate::render::overlay_atlas::{OverlayAtlas, build_overlay_atlas_on_device};
 use crate::render::shroud_buffer::ShroudBuffer;
-use crate::render::tactical_draw_plan::RenderZPolicy;
 use crate::render::terrain_draw::TerrainDrawRenderer;
 use crate::render::terrain_draw_gpu_tests::{
     Gpu, assert_native_color_and_depth, camera, clear, encoded, extent,
@@ -294,9 +294,10 @@ impl Probe {
                 self.live_a.as_ref().map(|(source, _, _)| source),
             );
             let mut instances: Vec<SpriteInstance> = Vec::new();
-            let mut policies: Vec<RenderZPolicy> = Vec::new();
+            let mut draws = Vec::new();
             if piece != CellRasterPiece::Shadow {
-                build_cell_overlay_instances(
+                let mut bodies = Vec::new();
+                build_cell_overlay_bodies(
                     &CellOverlayInputs {
                         entries,
                         atlas,
@@ -314,9 +315,9 @@ impl Probe {
                         origin_y: camera.world_origin_y,
                         world_height: camera.world_height,
                     },
-                    &mut instances,
-                    &mut policies,
+                    &mut bodies,
                 );
+                submit_cell_body_sweep(bodies, &mut instances, &mut draws);
             }
             let mut shadow_instances = Vec::new();
             if piece != CellRasterPiece::Body {
@@ -412,13 +413,14 @@ impl Probe {
                 let clip: [u32; 4] =
                     std::array::from_fn(|i| input["clip"][i].as_u64().unwrap() as u32);
                 pass.set_scissor_rect(clip[0], clip[1], clip[2], clip[3]);
-                crate::app::presentation::render::draw_pooled_overlay_bodies(
+                crate::app::presentation::render::draw_pooled_cell_bodies(
                     &mut pass,
                     batch,
                     &pool,
                     Some(atlas),
+                    None,
                     "cell-overlay-native",
-                    &policies,
+                    &draws,
                 );
             }
             if piece != CellRasterPiece::Body {

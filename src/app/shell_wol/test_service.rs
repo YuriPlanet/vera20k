@@ -8,11 +8,14 @@
 //! transition runs: like a real service, a reply arrives after the page that
 //! asked has slid out. Any login is accepted. The lobbies, games and users
 //! are fixed stand-ins. Two of them say one line each when a chat lobby is
-//! joined, and a locate finds them; nobody else ever joins or starts, so a
-//! created game cannot be started and a joined game never receives its
-//! host's options. The buddy list starts with four stand-ins whose locates
-//! answer a chat lobby, a game, offline and find-disabled; Add and Remove
-//! change it for the process.
+//! joined, and a locate finds them. A created game is joined by one
+//! stand-in guest who picks, has the map and accepts; the joined game's
+//! host answers the guest's first choices with its options. A start with
+//! that guest gets OnGameStart and the connection verify, then the scenario
+//! negotiation fails ("Scenarios don't match"): nobody can play a match
+//! here. The buddy list starts with four stand-ins whose locates answer a
+//! chat lobby, a game, offline and find-disabled; Add and Remove change it
+//! for the process.
 
 use super::lobby::WolJoined;
 use super::service::WolLadderRecord;
@@ -112,12 +115,134 @@ fn answer_setup(state: &mut AppState, request: NetworkSetupRequest) {
         return;
     }
     // C9 Back waits for the leave's OnPart; C2 Back closes at once.
-    if request == NetworkSetupRequest::Leave
-        && !state.match_state.session.host()
-        && let Err(error) =
-            crate::app::shell_network_setup::service_event(state, NetworkSetupEvent::ChannelLeft)
-    {
-        log::warn!("WOL test service: channel left refused: {error:#}");
+    if request == NetworkSetupRequest::Leave && !state.match_state.session.host() {
+        service_event(state, WolServiceEvent::ChannelLeft);
+        return;
+    }
+    if state.match_state.session.host() {
+        guest_answer(state, &request);
+    }
+}
+
+/// The stand-in guest who joins a game this user created.
+const GUEST: &str = "Natasha";
+
+/// The stand-in guest of a created game: none, expected once C2 publishes
+/// its first options, joined, or kicked.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum WolTestGuest {
+    #[default]
+    None,
+    Expected,
+    Joined,
+    Kicked,
+}
+
+/// The stand-in guest joins after C2's first options, sends its first `R`
+/// (Korea, colour 3), `K1` and accepts. Each later options parse sends `K1`
+/// again, and accepts again when the change cleared its acceptance. A
+/// host's kick reaches it as the server's kick echo.
+fn guest_answer(state: &mut AppState, request: &NetworkSetupRequest) {
+    let local = nickname(state);
+    match (state.frontend.wol_test_guest, request) {
+        (WolTestGuest::Expected, NetworkSetupRequest::PublishOptions) => {
+            state.frontend.wol_test_guest = WolTestGuest::Joined;
+            service_event(state, WolServiceEvent::UserJoined(member(GUEST, 0)));
+            let slot = crate::skirmish_launch::SkirmishLocalSlot {
+                country: crate::skirmish_launch::LaunchCountry::Korea,
+                country_random: false,
+                color_index: 3,
+                color_random: false,
+                start_position: crate::skirmish_launch::LaunchStartPosition::Auto,
+                team: crate::skirmish_launch::LaunchTeam::None,
+            };
+            service_event(
+                state,
+                WolServiceEvent::PlayerChoices {
+                    from: GUEST.into(),
+                    slot,
+                    observer: false,
+                },
+            );
+            guest_map_status(state);
+            guest_accepts(state);
+        }
+        (WolTestGuest::Joined, NetworkSetupRequest::PublishOptions) => {
+            guest_map_status(state);
+            guest_accepts(state);
+        }
+        (WolTestGuest::Joined, NetworkSetupRequest::RequestAcceptance) => guest_accepts(state),
+        (WolTestGuest::Joined, NetworkSetupRequest::StartGame { users }) => {
+            // OnGameStart for the requested users, then Start Game Now: the
+            // guest answers the verify, but nobody can play here, so the
+            // negotiation fails as for a map the guest lacks.
+            let users = users
+                .iter()
+                .map(|name| crate::app::shell_network_setup::WolStartUser {
+                    name: name.clone(),
+                    flags: u32::from(*name == local),
+                })
+                .collect();
+            let mut pings = [-1; 8];
+            pings[1] = 60;
+            for event in [
+                NetworkSetupEvent::GameStarted { users, pings },
+                NetworkSetupEvent::VerifyStarted { pairs: true },
+                NetworkSetupEvent::PeerConnected { node: 1 },
+                NetworkSetupEvent::Negotiated { result: 2 },
+            ] {
+                if let Err(error) = crate::app::shell_network_setup::service_event(state, event) {
+                    log::warn!("WOL test service: game start refused: {error:#}");
+                    return;
+                }
+            }
+        }
+        (WolTestGuest::Joined, NetworkSetupRequest::Kick { name }) if name == GUEST => {
+            state.frontend.wol_test_guest = WolTestGuest::Kicked;
+            let Some(channel) = super::lobby::current_channel(state) else {
+                return;
+            };
+            service_event(
+                state,
+                WolServiceEvent::Kicked {
+                    channel,
+                    user: member(GUEST, 0),
+                    by: member(&local, MEMBER_OPERATOR),
+                },
+            );
+        }
+        _ => {}
+    }
+}
+
+/// The guest's options parse finds the map and sends `K1`.
+fn guest_map_status(state: &mut AppState) {
+    service_event(
+        state,
+        WolServiceEvent::MapStatus {
+            from: GUEST.into(),
+            status: 1,
+        },
+    );
+}
+
+fn guest_accepts(state: &mut AppState) {
+    let ready = state
+        .match_state
+        .session
+        .network_setup()
+        .and_then(|launch| {
+            let index = launch.humans.iter().position(|human| human.name == GUEST)?;
+            Some(state.match_state.session.network_player_ready(index))
+        });
+    if ready == Some(false) {
+        service_event(
+            state,
+            WolServiceEvent::PlayerReady {
+                from: GUEST.into(),
+                value: 1,
+            },
+        );
     }
 }
 
@@ -293,6 +418,7 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
             WolServiceEvent::ChannelLeft
         }
         WolServiceRequest::CreateChannel { .. } => {
+            state.frontend.wol_test_guest = WolTestGuest::Expected;
             let local = nickname(state);
             WolServiceEvent::Created(Ok(vec![member(&local, MEMBER_OPERATOR)]))
         }
@@ -323,6 +449,7 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         // Nothing to cancel or deliver: nobody is online.
         WolServiceRequest::SetLocale(_)
         | WolServiceRequest::LeaveChannel
+        | WolServiceRequest::Logout
         | WolServiceRequest::CancelWait
         | WolServiceRequest::Chat { .. }
         | WolServiceRequest::Emote { .. }

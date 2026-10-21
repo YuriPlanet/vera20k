@@ -1,0 +1,1276 @@
+{
+  "joined_cases": [
+    {
+      "after": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 19,
+        "owner": "NEW",
+        "power_dirty": true,
+        "queued": -1,
+        "radar_dirty": true,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "before": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "INITIAL",
+        "power_dirty": true,
+        "queued": -1,
+        "radar_dirty": true,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "calls": [
+        {
+          "force": true,
+          "mission": 5,
+          "op": "queue"
+        },
+        {
+          "op": "commence"
+        },
+        {
+          "force": false,
+          "mission": 5,
+          "op": "queue"
+        },
+        {
+          "control": 1,
+          "op": "sell_back"
+        },
+        {
+          "force": false,
+          "mission": 19,
+          "op": "queue"
+        },
+        {
+          "op": "commence"
+        }
+      ],
+      "command": {
+        "destination": "building",
+        "mission": 8,
+        "target": "building"
+      },
+      "constructor": {
+        "entry": "0x0043B740",
+        "initial_owner": "INITIAL",
+        "initial_owner_store": "0x006F3241",
+        "result_is_receiver": true
+      },
+      "engineer_after": {
+        "alive": false,
+        "limbo": true
+      },
+      "initial_owner_unchanged": true,
+      "input": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "current_owner": "INITIAL",
+        "game_mode": 3,
+        "initial_owner": "INITIAL",
+        "initial_owner_passive": false,
+        "mission": 5,
+        "name": "ai_capture",
+        "new_owner_human": false,
+        "new_owner_player": false,
+        "queued": -1,
+        "upgrades": []
+      },
+      "object_id_counter_delta": 0,
+      "required_reached": [
+        "0x0075AEC0",
+        "0x00519630",
+        "0x00448260",
+        "0x007014A0",
+        "0x004492D7"
+      ],
+      "rng_unchanged": true,
+      "unchanged_class_vtables": true,
+      "unchanged_executable_sections": true
+    },
+    {
+      "after": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "NEW",
+        "power_dirty": true,
+        "queued": -1,
+        "radar_dirty": true,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "before": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "INITIAL",
+        "power_dirty": true,
+        "queued": -1,
+        "radar_dirty": true,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "calls": [
+        {
+          "force": true,
+          "mission": 5,
+          "op": "queue"
+        },
+        {
+          "op": "commence"
+        },
+        {
+          "force": false,
+          "mission": 5,
+          "op": "queue"
+        }
+      ],
+      "command": {
+        "destination": "building",
+        "mission": 8,
+        "target": "building"
+      },
+      "constructor": {
+        "entry": "0x0043B740",
+        "initial_owner": "INITIAL",
+        "initial_owner_store": "0x006F3241",
+        "result_is_receiver": true
+      },
+      "engineer_after": {
+        "alive": false,
+        "limbo": true
+      },
+      "initial_owner_unchanged": true,
+      "input": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "current_owner": "INITIAL",
+        "game_mode": 3,
+        "initial_owner": "INITIAL",
+        "initial_owner_passive": false,
+        "mission": 5,
+        "name": "human_capture",
+        "new_owner_human": true,
+        "new_owner_player": true,
+        "queued": -1,
+        "upgrades": []
+      },
+      "object_id_counter_delta": 0,
+      "required_reached": [
+        "0x0075AEC0",
+        "0x00519630",
+        "0x00448260",
+        "0x007014A0",
+        "0x004492D7"
+      ],
+      "rng_unchanged": true,
+      "unchanged_class_vtables": true,
+      "unchanged_executable_sections": true
+    },
+    {
+      "after": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "NEW",
+        "power_dirty": true,
+        "queued": -1,
+        "radar_dirty": true,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "before": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "INITIAL",
+        "power_dirty": true,
+        "queued": -1,
+        "radar_dirty": true,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "calls": [
+        {
+          "force": true,
+          "mission": 5,
+          "op": "queue"
+        },
+        {
+          "op": "commence"
+        },
+        {
+          "force": false,
+          "mission": 5,
+          "op": "queue"
+        }
+      ],
+      "command": {
+        "destination": "building",
+        "mission": 8,
+        "target": "building"
+      },
+      "constructor": {
+        "entry": "0x0043B740",
+        "initial_owner": "INITIAL",
+        "initial_owner_store": "0x006F3241",
+        "result_is_receiver": true
+      },
+      "engineer_after": {
+        "alive": false,
+        "limbo": true
+      },
+      "initial_owner_unchanged": true,
+      "input": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "current_owner": "INITIAL",
+        "game_mode": 0,
+        "initial_owner": "INITIAL",
+        "initial_owner_passive": false,
+        "mission": 5,
+        "name": "campaign_capture",
+        "new_owner_human": false,
+        "new_owner_player": false,
+        "queued": -1,
+        "upgrades": []
+      },
+      "object_id_counter_delta": 0,
+      "required_reached": [
+        "0x0075AEC0",
+        "0x00519630",
+        "0x00448260",
+        "0x007014A0",
+        "0x004492D7"
+      ],
+      "rng_unchanged": true,
+      "unchanged_class_vtables": true,
+      "unchanged_executable_sections": true
+    },
+    {
+      "after": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "NEW",
+        "mission": 5,
+        "owner": "NEW",
+        "power_dirty": true,
+        "queued": -1,
+        "radar_dirty": true,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "before": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "NEW",
+        "mission": 5,
+        "owner": "INITIAL",
+        "power_dirty": true,
+        "queued": -1,
+        "radar_dirty": true,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "calls": [
+        {
+          "force": true,
+          "mission": 5,
+          "op": "queue"
+        },
+        {
+          "op": "commence"
+        },
+        {
+          "force": false,
+          "mission": 5,
+          "op": "queue"
+        }
+      ],
+      "command": {
+        "destination": "building",
+        "mission": 8,
+        "target": "building"
+      },
+      "constructor": {
+        "entry": "0x0043B740",
+        "initial_owner": "NEW",
+        "initial_owner_store": "0x006F3241",
+        "result_is_receiver": true
+      },
+      "engineer_after": {
+        "alive": false,
+        "limbo": true
+      },
+      "initial_owner_unchanged": true,
+      "input": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "current_owner": "INITIAL",
+        "game_mode": 3,
+        "initial_owner": "NEW",
+        "initial_owner_passive": false,
+        "mission": 5,
+        "name": "initial_owner_recapture",
+        "new_owner_human": false,
+        "new_owner_player": false,
+        "queued": -1,
+        "upgrades": []
+      },
+      "object_id_counter_delta": 0,
+      "required_reached": [
+        "0x0075AEC0",
+        "0x00519630",
+        "0x00448260",
+        "0x007014A0",
+        "0x004492D7"
+      ],
+      "rng_unchanged": true,
+      "unchanged_class_vtables": true,
+      "unchanged_executable_sections": true
+    },
+    {
+      "after": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "NEW",
+        "power_dirty": true,
+        "queued": -1,
+        "radar_dirty": true,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "before": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "INITIAL",
+        "power_dirty": true,
+        "queued": -1,
+        "radar_dirty": true,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "calls": [
+        {
+          "force": true,
+          "mission": 5,
+          "op": "queue"
+        },
+        {
+          "op": "commence"
+        },
+        {
+          "force": false,
+          "mission": 5,
+          "op": "queue"
+        }
+      ],
+      "command": {
+        "destination": "building",
+        "mission": 8,
+        "target": "building"
+      },
+      "constructor": {
+        "entry": "0x0043B740",
+        "initial_owner": "INITIAL",
+        "initial_owner_store": "0x006F3241",
+        "result_is_receiver": true
+      },
+      "engineer_after": {
+        "alive": false,
+        "limbo": true
+      },
+      "initial_owner_unchanged": true,
+      "input": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "current_owner": "INITIAL",
+        "game_mode": 3,
+        "initial_owner": "INITIAL",
+        "initial_owner_passive": true,
+        "mission": 5,
+        "name": "passive_initial_owner",
+        "new_owner_human": false,
+        "new_owner_player": false,
+        "queued": -1,
+        "upgrades": []
+      },
+      "object_id_counter_delta": 0,
+      "required_reached": [
+        "0x0075AEC0",
+        "0x00519630",
+        "0x00448260",
+        "0x007014A0",
+        "0x004492D7"
+      ],
+      "rng_unchanged": true,
+      "unchanged_class_vtables": true,
+      "unchanged_executable_sections": true
+    },
+    {
+      "after": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 19,
+        "owner": "NEW",
+        "power_dirty": true,
+        "queued": -1,
+        "radar_dirty": true,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "before": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "PREVIOUS",
+        "power_dirty": true,
+        "queued": -1,
+        "radar_dirty": true,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "calls": [
+        {
+          "force": true,
+          "mission": 5,
+          "op": "queue"
+        },
+        {
+          "op": "commence"
+        },
+        {
+          "force": false,
+          "mission": 5,
+          "op": "queue"
+        },
+        {
+          "control": 1,
+          "op": "sell_back"
+        },
+        {
+          "force": false,
+          "mission": 19,
+          "op": "queue"
+        },
+        {
+          "op": "commence"
+        }
+      ],
+      "command": {
+        "destination": "building",
+        "mission": 8,
+        "target": "building"
+      },
+      "constructor": {
+        "entry": "0x0043B740",
+        "initial_owner": "INITIAL",
+        "initial_owner_store": "0x006F3241",
+        "result_is_receiver": true
+      },
+      "engineer_after": {
+        "alive": false,
+        "limbo": true
+      },
+      "initial_owner_unchanged": true,
+      "input": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "current_owner": "PREVIOUS",
+        "game_mode": 3,
+        "initial_owner": "INITIAL",
+        "initial_owner_passive": false,
+        "mission": 5,
+        "name": "third_owner_capture",
+        "new_owner_human": false,
+        "new_owner_player": false,
+        "queued": -1,
+        "upgrades": []
+      },
+      "object_id_counter_delta": 0,
+      "required_reached": [
+        "0x0075AEC0",
+        "0x00519630",
+        "0x00448260",
+        "0x007014A0",
+        "0x004492D7"
+      ],
+      "rng_unchanged": true,
+      "unchanged_class_vtables": true,
+      "unchanged_executable_sections": true
+    }
+  ],
+  "native_type": {
+    "cost": 800,
+    "name": "GAPOWR",
+    "strength": 750
+  },
+  "retail_files": [
+    {
+      "name": "ARTMD.INI",
+      "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31",
+      "size": 336535
+    },
+    {
+      "name": "audio.bag",
+      "sha256": "8917fb579eb9f312b09f626e8b6b085958a36d0aa86b4e7db3f4cfb87016f69f",
+      "size": 37625632
+    },
+    {
+      "name": "audio.idx",
+      "sha256": "b3be1ac75032d062dce3d7415cb7dbe7ceec0b479bc6450241dee3148b7c12c1",
+      "size": 82272
+    },
+    {
+      "name": "ENGINEER.SHP",
+      "sha256": "f8eb0dc0156a877028ac2ed57bf2e71a9445ffcb6ef6a4caf3b0dbb7b111834c",
+      "size": 114032
+    },
+    {
+      "name": "GGCNST_A.SHP",
+      "sha256": "f7ddb3c50e2a44894db6d0e6b455ba57a6c252eec3b4daba79363daa04135559",
+      "size": 6344
+    },
+    {
+      "name": "GGCNST_B.SHP",
+      "sha256": "aa037ee1329c2ea6db5275485c0d864554452f2f4b871a4f2c5d38e2f3f8fe25",
+      "size": 320968
+    },
+    {
+      "name": "GGPILE_A.SHP",
+      "sha256": "37bd29c741fbe235411c8416e78abd41a59c57f935f60a4fbf091e501462c23e",
+      "size": 23584
+    },
+    {
+      "name": "GGPOWR_A.SHP",
+      "sha256": "4761e4c39be2683362baa8987fbbcff9ab0deacda75344848b9427e84c621724",
+      "size": 49480
+    },
+    {
+      "name": "GTCNSTMK.SHP",
+      "sha256": "cfefb3b412c48ffd57852ec4e22b1109affdaac62b3061e2a58a7c071daeed46",
+      "size": 428080
+    },
+    {
+      "name": "GTPILEMK.SHP",
+      "sha256": "bacb42b4048a5077101c6f35fb403a1835def1348567aafb67356f52b6c92297",
+      "size": 181888
+    },
+    {
+      "name": "GTPOWRMK.SHP",
+      "sha256": "0ae9b81804b725ff662a56c81d23b3af031d66ac273554651bb0ccf189fdc873",
+      "size": 101960
+    },
+    {
+      "name": "Hills.mmx",
+      "sha256": "96de259a741f1fc4d0d4bc4de1a1582755e90a77c2404978814149113fc42f22",
+      "size": 144760
+    },
+    {
+      "name": "MPBattleMD.ini",
+      "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963",
+      "size": 295
+    },
+    {
+      "name": "RULESMD.INI",
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+      "size": 743215
+    },
+    {
+      "name": "SOUNDMD.INI",
+      "sha256": "0a8e85381aef1a0f97074c953bfe99504da00c6220fae1a023a1afd857023232",
+      "size": 99392
+    }
+  ],
+  "schema": 1,
+  "source": "unicorn/gamemd.exe",
+  "tail_cases": [
+    {
+      "after": {
+        "buildup": true,
+        "c4": true,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "NEW",
+        "power_dirty": false,
+        "queued": -1,
+        "radar_dirty": false,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "before": {
+        "buildup": true,
+        "c4": true,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "NEW",
+        "power_dirty": false,
+        "queued": -1,
+        "radar_dirty": false,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "calls": [
+        {
+          "control": 1,
+          "op": "sell_back"
+        }
+      ],
+      "constructor": {
+        "entry": "0x0043B740",
+        "initial_owner": "INITIAL",
+        "initial_owner_store": "0x006F3241",
+        "result_is_receiver": true
+      },
+      "initial_owner_unchanged": true,
+      "input": {
+        "buildup": true,
+        "c4": true,
+        "credits": 1000,
+        "current_owner": "INITIAL",
+        "game_mode": 3,
+        "initial_owner": "INITIAL",
+        "initial_owner_passive": false,
+        "mission": 5,
+        "name": "computer_c4_refusal",
+        "new_owner_human": false,
+        "new_owner_player": false,
+        "queued": -1,
+        "upgrades": []
+      },
+      "object_id_counter_delta": 0,
+      "required_reached": [
+        "0x004492D7"
+      ],
+      "rng_unchanged": true,
+      "unchanged_class_vtables": true,
+      "unchanged_executable_sections": true
+    },
+    {
+      "after": {
+        "buildup": false,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "NEW",
+        "power_dirty": false,
+        "queued": -1,
+        "radar_dirty": false,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "before": {
+        "buildup": false,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "NEW",
+        "power_dirty": false,
+        "queued": -1,
+        "radar_dirty": false,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "calls": [
+        {
+          "control": 1,
+          "op": "sell_back"
+        }
+      ],
+      "constructor": {
+        "entry": "0x0043B740",
+        "initial_owner": "INITIAL",
+        "initial_owner_store": "0x006F3241",
+        "result_is_receiver": true
+      },
+      "initial_owner_unchanged": true,
+      "input": {
+        "buildup": false,
+        "c4": false,
+        "credits": 1000,
+        "current_owner": "INITIAL",
+        "game_mode": 3,
+        "initial_owner": "INITIAL",
+        "initial_owner_passive": false,
+        "mission": 5,
+        "name": "no_buildup_refusal",
+        "new_owner_human": false,
+        "new_owner_player": false,
+        "queued": -1,
+        "upgrades": []
+      },
+      "object_id_counter_delta": 0,
+      "required_reached": [
+        "0x004492D7"
+      ],
+      "rng_unchanged": true,
+      "unchanged_class_vtables": true,
+      "unchanged_executable_sections": true
+    },
+    {
+      "after": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 19,
+        "owner": "NEW",
+        "power_dirty": false,
+        "queued": -1,
+        "radar_dirty": false,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "before": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 19,
+        "owner": "NEW",
+        "power_dirty": false,
+        "queued": -1,
+        "radar_dirty": false,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "calls": [
+        {
+          "control": 1,
+          "op": "sell_back"
+        }
+      ],
+      "constructor": {
+        "entry": "0x0043B740",
+        "initial_owner": "INITIAL",
+        "initial_owner_store": "0x006F3241",
+        "result_is_receiver": true
+      },
+      "initial_owner_unchanged": true,
+      "input": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "current_owner": "INITIAL",
+        "game_mode": 3,
+        "initial_owner": "INITIAL",
+        "initial_owner_passive": false,
+        "mission": 19,
+        "name": "already_selling_refusal",
+        "new_owner_human": false,
+        "new_owner_player": false,
+        "queued": -1,
+        "upgrades": []
+      },
+      "object_id_counter_delta": 0,
+      "required_reached": [
+        "0x004492D7"
+      ],
+      "rng_unchanged": true,
+      "unchanged_class_vtables": true,
+      "unchanged_executable_sections": true
+    },
+    {
+      "after": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "NEW",
+        "power_dirty": false,
+        "queued": -1,
+        "radar_dirty": false,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "before": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "NEW",
+        "power_dirty": false,
+        "queued": -1,
+        "radar_dirty": false,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "calls": [],
+      "constructor": {
+        "entry": "0x0043B740",
+        "initial_owner": "INITIAL",
+        "initial_owner_store": "0x006F3241",
+        "result_is_receiver": true
+      },
+      "initial_owner_unchanged": true,
+      "input": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "current_owner": "INITIAL",
+        "game_mode": 3,
+        "initial_owner": "INITIAL",
+        "initial_owner_passive": false,
+        "mission": 5,
+        "name": "nonlocal_human_refusal",
+        "new_owner_human": true,
+        "new_owner_player": false,
+        "queued": -1,
+        "upgrades": []
+      },
+      "object_id_counter_delta": 0,
+      "required_reached": [
+        "0x004492D7"
+      ],
+      "rng_unchanged": true,
+      "unchanged_class_vtables": true,
+      "unchanged_executable_sections": true
+    },
+    {
+      "after": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 19,
+        "owner": "NEW",
+        "power_dirty": false,
+        "queued": -1,
+        "radar_dirty": false,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "before": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "NEW",
+        "power_dirty": false,
+        "queued": -1,
+        "radar_dirty": false,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "calls": [
+        {
+          "control": 1,
+          "op": "sell_back"
+        },
+        {
+          "force": false,
+          "mission": 19,
+          "op": "queue"
+        },
+        {
+          "op": "commence"
+        }
+      ],
+      "constructor": {
+        "entry": "0x0043B740",
+        "initial_owner": "INITIAL",
+        "initial_owner_store": "0x006F3241",
+        "result_is_receiver": true
+      },
+      "initial_owner_unchanged": true,
+      "input": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "current_owner": "INITIAL",
+        "game_mode": 3,
+        "initial_owner": "INITIAL",
+        "initial_owner_passive": false,
+        "mission": 5,
+        "name": "local_computer_is_still_computer",
+        "new_owner_human": false,
+        "new_owner_player": true,
+        "queued": -1,
+        "upgrades": []
+      },
+      "object_id_counter_delta": 0,
+      "required_reached": [
+        "0x004492D7"
+      ],
+      "rng_unchanged": true,
+      "unchanged_class_vtables": true,
+      "unchanged_executable_sections": true
+    },
+    {
+      "after": {
+        "buildup": true,
+        "c4": false,
+        "credits": 2300,
+        "initial_owner": "INITIAL",
+        "mission": 19,
+        "owner": "NEW",
+        "power_dirty": true,
+        "queued": -1,
+        "radar_dirty": true,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "before": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "NEW",
+        "power_dirty": false,
+        "queued": -1,
+        "radar_dirty": false,
+        "status": 0,
+        "upgrade_count": 2,
+        "upgrade_slots": [
+          "GAPOWR",
+          "GAPILE",
+          null
+        ]
+      },
+      "calls": [
+        {
+          "full": true,
+          "op": "get_refund",
+          "owner": "NEW",
+          "type": "GAPILE"
+        },
+        {
+          "amount": 500,
+          "op": "add_credits",
+          "owner": "NEW"
+        },
+        {
+          "op": "remove_upgrade"
+        },
+        {
+          "full": true,
+          "op": "get_refund",
+          "owner": "NEW",
+          "type": "GAPOWR"
+        },
+        {
+          "amount": 800,
+          "op": "add_credits",
+          "owner": "NEW"
+        },
+        {
+          "op": "remove_upgrade"
+        },
+        {
+          "control": 1,
+          "op": "sell_back"
+        },
+        {
+          "force": false,
+          "mission": 19,
+          "op": "queue"
+        },
+        {
+          "op": "commence"
+        }
+      ],
+      "constructor": {
+        "entry": "0x0043B740",
+        "initial_owner": "INITIAL",
+        "initial_owner_store": "0x006F3241",
+        "result_is_receiver": true
+      },
+      "initial_owner_unchanged": true,
+      "input": {
+        "buildup": true,
+        "c4": false,
+        "credits": 1000,
+        "current_owner": "INITIAL",
+        "game_mode": 3,
+        "initial_owner": "INITIAL",
+        "initial_owner_passive": false,
+        "mission": 5,
+        "name": "upgrade_full_refund_then_sale",
+        "new_owner_human": false,
+        "new_owner_player": false,
+        "queued": -1,
+        "upgrades": [
+          {
+            "cost": 800,
+            "name": "GAPOWR"
+          },
+          {
+            "cost": 500,
+            "name": "GAPILE"
+          }
+        ]
+      },
+      "object_id_counter_delta": 0,
+      "required_reached": [
+        "0x004492D7"
+      ],
+      "rng_unchanged": true,
+      "unchanged_class_vtables": true,
+      "unchanged_executable_sections": true
+    },
+    {
+      "after": {
+        "buildup": true,
+        "c4": true,
+        "credits": 1500,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "NEW",
+        "power_dirty": true,
+        "queued": -1,
+        "radar_dirty": true,
+        "status": 0,
+        "upgrade_count": 0,
+        "upgrade_slots": [
+          null,
+          null,
+          null
+        ]
+      },
+      "before": {
+        "buildup": true,
+        "c4": true,
+        "credits": 1000,
+        "initial_owner": "INITIAL",
+        "mission": 5,
+        "owner": "NEW",
+        "power_dirty": false,
+        "queued": -1,
+        "radar_dirty": false,
+        "status": 0,
+        "upgrade_count": 1,
+        "upgrade_slots": [
+          "GAPILE",
+          null,
+          null
+        ]
+      },
+      "calls": [
+        {
+          "full": true,
+          "op": "get_refund",
+          "owner": "NEW",
+          "type": "GAPILE"
+        },
+        {
+          "amount": 500,
+          "op": "add_credits",
+          "owner": "NEW"
+        },
+        {
+          "op": "remove_upgrade"
+        },
+        {
+          "control": 1,
+          "op": "sell_back"
+        }
+      ],
+      "constructor": {
+        "entry": "0x0043B740",
+        "initial_owner": "INITIAL",
+        "initial_owner_store": "0x006F3241",
+        "result_is_receiver": true
+      },
+      "initial_owner_unchanged": true,
+      "input": {
+        "buildup": true,
+        "c4": true,
+        "credits": 1000,
+        "current_owner": "INITIAL",
+        "game_mode": 3,
+        "initial_owner": "INITIAL",
+        "initial_owner_passive": false,
+        "mission": 5,
+        "name": "upgrade_full_refund_before_c4_refusal",
+        "new_owner_human": false,
+        "new_owner_player": false,
+        "queued": -1,
+        "upgrades": [
+          {
+            "cost": 500,
+            "name": "GAPILE"
+          }
+        ]
+      },
+      "object_id_counter_delta": 0,
+      "required_reached": [
+        "0x004492D7"
+      ],
+      "rng_unchanged": true,
+      "unchanged_class_vtables": true,
+      "unchanged_executable_sections": true
+    }
+  ],
+  "upgrade_types": [
+    {
+      "cost": 800,
+      "name": "GAPOWR",
+      "super_weapon": -1,
+      "turret": false
+    },
+    {
+      "cost": 500,
+      "name": "GAPILE",
+      "super_weapon": -1,
+      "turret": false
+    }
+  ]
+}

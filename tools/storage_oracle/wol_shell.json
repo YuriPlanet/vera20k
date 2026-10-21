@@ -117,6 +117,17 @@
       "0x71B": null,
       "0x71C": null
     },
+    "0x130": {
+      "0x5B2": null,
+      "0x761": null,
+      "0x762": null,
+      "0x764": null,
+      "0x765": null,
+      "0x766": null,
+      "0x767": null,
+      "0x768": null,
+      "0x769": null
+    },
     "0x2BC": {
       "0x1": "STT:WOLOptionsOk",
       "0x2": "STT:WOLOptionsCancel",
@@ -8932,6 +8943,663 @@
             0,
             800,
             600
+          ]
+        }
+      }
+    },
+    "0x130": {
+      "background_mode": 2,
+      "kind": "popup",
+      "sizes": {
+        "1024x768": {
+          "controls": {
+            "0x5B2": {
+              "caption": "GUI:ConnectingToPlayers",
+              "class": "Static",
+              "rect": [
+                89,
+                16,
+                271,
+                58
+              ],
+              "screen_rect": [
+                376,
+                237,
+                271,
+                58
+              ],
+              "style": 1342308865,
+              "template": [
+                59,
+                10,
+                180,
+                35
+              ]
+            },
+            "0x761": {
+              "caption": "GUI:Player1",
+              "class": "Button",
+              "rect": [
+                50,
+                114,
+                352,
+                24
+              ],
+              "screen_rect": [
+                337,
+                335,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                70,
+                234,
+                14
+              ]
+            },
+            "0x762": {
+              "caption": "GUI:Player3",
+              "class": "Button",
+              "rect": [
+                50,
+                159,
+                352,
+                24
+              ],
+              "screen_rect": [
+                337,
+                380,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                98,
+                234,
+                14
+              ]
+            },
+            "0x764": {
+              "caption": "GUI:Player2",
+              "class": "Button",
+              "rect": [
+                50,
+                137,
+                352,
+                24
+              ],
+              "screen_rect": [
+                337,
+                358,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                84,
+                234,
+                14
+              ]
+            },
+            "0x765": {
+              "caption": "GUI:Player4",
+              "class": "Button",
+              "rect": [
+                50,
+                182,
+                352,
+                24
+              ],
+              "screen_rect": [
+                337,
+                403,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                112,
+                234,
+                14
+              ]
+            },
+            "0x766": {
+              "caption": "GUI:Player6",
+              "class": "Button",
+              "rect": [
+                50,
+                228,
+                352,
+                24
+              ],
+              "screen_rect": [
+                337,
+                449,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                140,
+                234,
+                14
+              ]
+            },
+            "0x767": {
+              "caption": "GUI:Player7",
+              "class": "Button",
+              "rect": [
+                50,
+                250,
+                352,
+                24
+              ],
+              "screen_rect": [
+                337,
+                471,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                154,
+                234,
+                14
+              ]
+            },
+            "0x768": {
+              "caption": "GUI:Player5",
+              "class": "Button",
+              "rect": [
+                50,
+                205,
+                352,
+                24
+              ],
+              "screen_rect": [
+                337,
+                426,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                126,
+                234,
+                14
+              ]
+            },
+            "0x769": {
+              "caption": "GUI:Player0",
+              "class": "Button",
+              "rect": [
+                50,
+                91,
+                352,
+                24
+              ],
+              "screen_rect": [
+                337,
+                312,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                56,
+                234,
+                14
+              ]
+            }
+          },
+          "dialog": [
+            287,
+            221,
+            451,
+            326
+          ]
+        },
+        "640x480": {
+          "controls": {
+            "0x5B2": {
+              "caption": "GUI:ConnectingToPlayers",
+              "class": "Static",
+              "rect": [
+                89,
+                16,
+                271,
+                58
+              ],
+              "screen_rect": [
+                184,
+                93,
+                271,
+                58
+              ],
+              "style": 1342308865,
+              "template": [
+                59,
+                10,
+                180,
+                35
+              ]
+            },
+            "0x761": {
+              "caption": "GUI:Player1",
+              "class": "Button",
+              "rect": [
+                50,
+                114,
+                352,
+                24
+              ],
+              "screen_rect": [
+                145,
+                191,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                70,
+                234,
+                14
+              ]
+            },
+            "0x762": {
+              "caption": "GUI:Player3",
+              "class": "Button",
+              "rect": [
+                50,
+                159,
+                352,
+                24
+              ],
+              "screen_rect": [
+                145,
+                236,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                98,
+                234,
+                14
+              ]
+            },
+            "0x764": {
+              "caption": "GUI:Player2",
+              "class": "Button",
+              "rect": [
+                50,
+                137,
+                352,
+                24
+              ],
+              "screen_rect": [
+                145,
+                214,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                84,
+                234,
+                14
+              ]
+            },
+            "0x765": {
+              "caption": "GUI:Player4",
+              "class": "Button",
+              "rect": [
+                50,
+                182,
+                352,
+                24
+              ],
+              "screen_rect": [
+                145,
+                259,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                112,
+                234,
+                14
+              ]
+            },
+            "0x766": {
+              "caption": "GUI:Player6",
+              "class": "Button",
+              "rect": [
+                50,
+                228,
+                352,
+                24
+              ],
+              "screen_rect": [
+                145,
+                305,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                140,
+                234,
+                14
+              ]
+            },
+            "0x767": {
+              "caption": "GUI:Player7",
+              "class": "Button",
+              "rect": [
+                50,
+                250,
+                352,
+                24
+              ],
+              "screen_rect": [
+                145,
+                327,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                154,
+                234,
+                14
+              ]
+            },
+            "0x768": {
+              "caption": "GUI:Player5",
+              "class": "Button",
+              "rect": [
+                50,
+                205,
+                352,
+                24
+              ],
+              "screen_rect": [
+                145,
+                282,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                126,
+                234,
+                14
+              ]
+            },
+            "0x769": {
+              "caption": "GUI:Player0",
+              "class": "Button",
+              "rect": [
+                50,
+                91,
+                352,
+                24
+              ],
+              "screen_rect": [
+                145,
+                168,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                56,
+                234,
+                14
+              ]
+            }
+          },
+          "dialog": [
+            95,
+            77,
+            451,
+            326
+          ]
+        },
+        "800x600": {
+          "controls": {
+            "0x5B2": {
+              "caption": "GUI:ConnectingToPlayers",
+              "class": "Static",
+              "rect": [
+                89,
+                16,
+                271,
+                58
+              ],
+              "screen_rect": [
+                264,
+                153,
+                271,
+                58
+              ],
+              "style": 1342308865,
+              "template": [
+                59,
+                10,
+                180,
+                35
+              ]
+            },
+            "0x761": {
+              "caption": "GUI:Player1",
+              "class": "Button",
+              "rect": [
+                50,
+                114,
+                352,
+                24
+              ],
+              "screen_rect": [
+                225,
+                251,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                70,
+                234,
+                14
+              ]
+            },
+            "0x762": {
+              "caption": "GUI:Player3",
+              "class": "Button",
+              "rect": [
+                50,
+                159,
+                352,
+                24
+              ],
+              "screen_rect": [
+                225,
+                296,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                98,
+                234,
+                14
+              ]
+            },
+            "0x764": {
+              "caption": "GUI:Player2",
+              "class": "Button",
+              "rect": [
+                50,
+                137,
+                352,
+                24
+              ],
+              "screen_rect": [
+                225,
+                274,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                84,
+                234,
+                14
+              ]
+            },
+            "0x765": {
+              "caption": "GUI:Player4",
+              "class": "Button",
+              "rect": [
+                50,
+                182,
+                352,
+                24
+              ],
+              "screen_rect": [
+                225,
+                319,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                112,
+                234,
+                14
+              ]
+            },
+            "0x766": {
+              "caption": "GUI:Player6",
+              "class": "Button",
+              "rect": [
+                50,
+                228,
+                352,
+                24
+              ],
+              "screen_rect": [
+                225,
+                365,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                140,
+                234,
+                14
+              ]
+            },
+            "0x767": {
+              "caption": "GUI:Player7",
+              "class": "Button",
+              "rect": [
+                50,
+                250,
+                352,
+                24
+              ],
+              "screen_rect": [
+                225,
+                387,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                154,
+                234,
+                14
+              ]
+            },
+            "0x768": {
+              "caption": "GUI:Player5",
+              "class": "Button",
+              "rect": [
+                50,
+                205,
+                352,
+                24
+              ],
+              "screen_rect": [
+                225,
+                342,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                126,
+                234,
+                14
+              ]
+            },
+            "0x769": {
+              "caption": "GUI:Player0",
+              "class": "Button",
+              "rect": [
+                50,
+                91,
+                352,
+                24
+              ],
+              "screen_rect": [
+                225,
+                228,
+                352,
+                24
+              ],
+              "style": 1342177283,
+              "template": [
+                33,
+                56,
+                234,
+                14
+              ]
+            }
+          },
+          "dialog": [
+            175,
+            137,
+            451,
+            326
           ]
         }
       }

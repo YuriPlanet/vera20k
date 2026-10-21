@@ -108,8 +108,8 @@ pub(crate) struct MatchPresentationState {
     /// Target/action lines — colored lines from selected units to command destinations.
     pub(crate) target_lines: crate::app::presentation::target_lines::TargetLineState,
     // -- Reusable per-frame scratch buffers (avoid allocation each frame) --
-    /// Overlay instance scratch vec — cleared and refilled each frame.
-    pub(crate) cached_overlay_instances: Vec<crate::render::batch::SpriteInstance>,
+    /// Cell body instance scratch vec — cleared and refilled each frame.
+    pub(crate) cached_cell_body_instances: Vec<crate::render::batch::SpriteInstance>,
     /// Animated power bar — segment-by-segment transition matching original PowerClass.
     pub(crate) power_bar_anim: crate::ui::sidebar::PowerBarAnimState,
     /// Persistent flash + mode state for in-game sidebar gadgets. Ticked from

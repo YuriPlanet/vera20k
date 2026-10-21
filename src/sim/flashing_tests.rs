@@ -318,3 +318,47 @@ fn the_order_flash_prefers_the_destination_object() {
     );
     assert_eq!((flash(&sim, tank), flash(&sim, other)), (0, 7));
 }
+
+/// A building's slot anims take their light from the flash phase its body
+/// draws. Flash (`0x00456E00`) relights them at once, and each flip of the
+/// countdown's phase relights them in the Techno AI
+/// (`0x006FAC62..0x006FACC8`), after UpdateAnimation's relight
+/// (`0x00450A47`) ran on the old phase.
+#[test]
+fn a_flashing_buildings_anims_follow_its_flash_phase() {
+    let rules = rules();
+    let mut sim = Simulation::with_seed(7);
+    let americans = sim.interner.intern("Americans");
+    sim.houses
+        .register(HouseState::new(americans, 0, None, true, 0, 10));
+    sim.session.set_current_house_for_test(Some(americans));
+    let power = spawn(&mut sim, &rules, "GAPOWR", "Americans", 10, 10);
+    let tick = |sim: &mut Simulation| sim.advance_tick(&[], Some(&rules), None, None, 33);
+    let phases = |sim: &Simulation| {
+        let building = sim.substrate.entities.get(power).unwrap();
+        (
+            building
+                .building_art
+                .tint_sample()
+                .map(|sample| sample.flashed()),
+            building.flashing.flashed(),
+        )
+    };
+    tick(&mut sim);
+    assert_eq!(phases(&sim), (Some(false), false));
+    Simulation::flash_object(
+        &sim.interner,
+        &sim.session,
+        &sim.fog,
+        &sim.house_alliances,
+        &mut sim.substrate,
+        power,
+        7,
+    );
+    assert_eq!(phases(&sim), (Some(true), true), "Flash relights at once");
+    for step in 1..=7 {
+        tick(&mut sim);
+        let (anims, body) = phases(&sim);
+        assert_eq!(anims, Some(body), "step {step}");
+    }
+}

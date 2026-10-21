@@ -882,6 +882,13 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
                     anim.runtime().frame_timer.start_frame(),
                     anim.runtime().frame_timer.duration(),
                 ]);
+                // The capture predates Anim+11A; no Temporal erase is live.
+                assert_eq!(
+                    runtime["temporal_paused"],
+                    json!(false),
+                    "native slot{index}"
+                );
+                runtime.as_object_mut().unwrap().remove("temporal_paused");
                 assert_eq!(runtime, native_anim["runtime"], "native slot{index} clock");
             }
         }

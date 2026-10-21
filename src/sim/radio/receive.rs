@@ -27,7 +27,6 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::NavTargetRef;
-use crate::sim::docking::bunker_install::BunkerState;
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::StringInterner;
 use crate::sim::mission::authority::EntityReadyInputProvider;
@@ -308,13 +307,9 @@ pub(crate) fn can_load(
     }
     // 0x0043C506..0x0043C541, a `Bunker=` building (+0x16AB): CanEnterBunker
     // (0x0070FB50) on the sender, then IS_OCCUPIED (0x23) to it, whose ROGER
-    // refuses. VERA's entry adapter keeps no radio contact, so the contacts
-    // gate above passes; [`bunker_admits`] stands in for the slot the
-    // installing or installed tank holds natively.
+    // refuses. The common contact-capacity gate above owns reservation.
     if building_type.bunker {
-        if !crate::sim::docking::bunker_link::can_auto_deploy_here(sim, from, rules)
-            || !bunker_admits(sim, building_id, from)
-        {
+        if !crate::sim::docking::bunker_link::can_auto_deploy_here(sim, from, rules) {
             return CanLoad::Answer(RadioResponse::Negatory);
         }
         return CanLoad::AskOccupied;
@@ -485,10 +480,7 @@ fn building_docking(
     // UnitRepair43C814..849 asks the existing contact whether its
     // signed Health/Strength is full before any HELLO or movement probe.
     let unit_repair = object.unit_repair;
-    if object.bunker {
-        // This docking mechanism retains its existing adapter.
-        return RadioResponse::None;
-    }
+    let bunker = object.bunker;
     if unit_repair
         && building.radio_contacts.contains(from)
         && transmit(
@@ -500,6 +492,18 @@ fn building_docking(
             Some(rules),
             effects,
         ) == RadioResponse::Negatory
+    {
+        return RadioResponse::Negatory;
+    }
+    // 43C84C..43C87F: a bunker rechecks CanEnterBunker only for a
+    // sender already in its contacts, before the common HELLO below.
+    if bunker
+        && sim
+            .substrate
+            .entities
+            .get(building_id)
+            .is_some_and(|building| building.radio_contacts.contains(from))
+        && !crate::sim::docking::bunker_link::can_auto_deploy_here(sim, from, rules)
     {
         return RadioResponse::Negatory;
     }
@@ -608,10 +612,10 @@ fn building_docking(
                     )
                     .map(|(x, y)| NavTargetRef::cell(x, y))
         });
-    // 43C93F..C9F0: a repair contact more than128 native leptons away
+    // 43C93F..C9F0: a repair or bunker contact more than128 native leptons away
     // forces the same movement probe. Reuse the native deterministic distance
     // owner; the original sqrt approximation changes the129-lepton boundary.
-    let repair_force = unit_repair
+    let repair_force = (unit_repair || bunker)
         && sim
             .substrate
             .entities
@@ -744,7 +748,7 @@ fn building_dock_now(
         return RadioResponse::Roger;
     }
     // 0x0043C732..0x0043C785: the repair and reload docks and Bunker queue
-    // their own mission; VERA's depot and bunker flows own those links.
+    // their own mission; the radio contacts retain the admitted sender.
     // Hospital43C746 also queues Repair/Sleep; cargo arrival is owned by
     // Infantry PerCell51A21F. Armory remains a separate training mechanism.
     if object.unit_repair || object.unit_reload || object.hospital {
@@ -771,14 +775,10 @@ fn building_dock_now(
         return RadioResponse::Roger;
     }
     // 0x0043C75A..0x0043C785, a `Bunker=` building: ready to commence, then
-    // Queue_Mission(Repair, 0), whose visits run UpdateBunker. VERA's entry
-    // adapter records the sender in place of radio contact 0.
+    // Queue_Mission(Repair, 0), whose visits run UpdateBunker using contact 0.
     if object.bunker {
         if let Some(building) = sim.substrate.entities.get_mut(building_id) {
             building.mission_leaf.set_building_ready_latch(1);
-            if let Some(runtime) = building.bunker_runtime.as_mut() {
-                runtime.dock_now(from);
-            }
         }
         let _ = sim.mission_queue_exact(
             building_id,
@@ -2101,32 +2101,6 @@ fn radio_hello(
     }
 }
 
-/// VERA's entry adapter's own bunker admission, in [`can_load`]'s Bunker arm:
-/// the bunker's own Unit, a live bunker, no occupant and no install in
-/// progress (natively the radio contact slot the tank holds).
-fn bunker_admits(sim: &Simulation, bld: u64, unit: u64) -> bool {
-    let Some(unit) = sim.substrate.entities.get(unit) else {
-        return false;
-    };
-    let unit_owner = unit.owner();
-    let Some(b) = sim.substrate.entities.get(bld) else {
-        return false;
-    };
-    if b.death.is_dying() || b.health.current() == 0 {
-        return false;
-    }
-    if b.owner() != unit_owner {
-        return false;
-    }
-    if b.bunker.occupant().is_some() {
-        return false;
-    }
-    matches!(
-        b.bunker_runtime.map(|rt| rt.state()),
-        Some(BunkerState::Idle)
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use crate::map::entities::EntityCategory;
@@ -2532,11 +2506,10 @@ mod tests {
 
     /// CAN_LOAD on a bunker (`0x0043C2F8..0x0043C541`): the common gates
     /// (ally, Construction or Selling mission, BState), then the Bunker arm
-    /// (CanEnterBunker, IS_OCCUPIED), with VERA's adapter refusing a bunker
-    /// already occupied or installing.
+    /// (CanEnterBunker, IS_OCCUPIED). The common contact-capacity gate
+    /// reserves the bunker throughout approach and installation.
     #[test]
     fn bunker_can_load_runs_the_common_gates_then_its_bunker_arm() {
-        use crate::sim::docking::bunker_install::BunkerState;
         use crate::sim::mission::{MissionId, MissionType};
         let rules = bunker_rules();
         let mut sim = Simulation::new();
@@ -2544,6 +2517,7 @@ mod tests {
         spawn_tank(&mut sim, 1, "Americans", "TANK");
         spawn_tank(&mut sim, 3, "Soviets", "TANK");
         spawn_tank(&mut sim, 4, "Americans", "NOGUN");
+        spawn_tank(&mut sim, 5, "Americans", "TANK");
 
         assert_eq!(can_enter(&mut sim, 1, 2, &rules), RadioResponse::Roger);
         // 0x0043C311..0x0043C323: a sender of a house it is not allied with.
@@ -2573,35 +2547,66 @@ mod tests {
         // 0x0043C512: CanEnterBunker refuses an unarmed unit.
         assert_eq!(can_enter(&mut sim, 4, 2, &rules), RadioResponse::Negatory);
 
-        // Occupied → rejected.
-        sim.substrate
-            .entities
-            .get_mut(2)
-            .unwrap()
-            .bunker
-            .set_bunker_occupant_for_test(Some(99));
+        // Another tank's real HELLO reserves the single contact slot.
+        assert_eq!(hello(&mut sim, 5, 2), RadioResponse::Roger);
         assert_eq!(can_enter(&mut sim, 1, 2, &rules), RadioResponse::Negatory);
-        sim.substrate
-            .entities
-            .get_mut(2)
-            .unwrap()
-            .bunker
-            .set_bunker_occupant_for_test(None);
+        transmit(
+            &mut sim,
+            5,
+            2,
+            RadioMessage::Break,
+            RadioPayload::default(),
+            Some(&rules),
+            crate::sim::world::FrameEffects::default(),
+        );
+        assert_eq!(can_enter(&mut sim, 1, 2, &rules), RadioResponse::Roger);
+    }
 
-        // Installing (non-Idle) → rejected.
-        sim.substrate
-            .entities
-            .get_mut(2)
-            .unwrap()
-            .bunker_runtime
-            .as_mut()
-            .unwrap()
-            .set_state_for_test(BunkerState::ArriveWait);
-        assert_eq!(can_enter(&mut sim, 1, 2, &rules), RadioResponse::Negatory);
+    /// 43C84C..43C87F checks CanEnterBunker before HELLO, and only for an
+    /// existing contact. A newly contacted unarmed sender is refused on
+    /// its next DOCKING probe, rather than before the first handshake.
+    #[test]
+    fn bunker_docking_rechecks_eligibility_only_for_an_existing_contact() {
+        let rules = bunker_rules();
+        let mut sim = Simulation::new();
+        spawn_bunker(&mut sim, 2, "Americans");
+        spawn_tank(&mut sim, 1, "Americans", "NOGUN");
+        let docking = |sim: &mut Simulation| {
+            transmit(
+                sim,
+                1,
+                2,
+                RadioMessage::CanDock,
+                RadioPayload::default(),
+                Some(&rules),
+                crate::sim::world::FrameEffects::default(),
+            )
+        };
+        assert_eq!(docking(&mut sim), RadioResponse::Roger);
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .radio_contacts
+                .slot(0),
+            Some(2)
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(2)
+                .unwrap()
+                .radio_contacts
+                .slot(0),
+            Some(1)
+        );
+        assert_eq!(docking(&mut sim), RadioResponse::Negatory);
     }
 
     /// DOCK_NOW on a bunker (`0x0043C6F2..0x0043C785`): refused while it is
-    /// sold; otherwise ready to commence, Repair queued, the sender recorded.
+    /// sold; otherwise ready to commence and Repair queued. It neither
+    /// creates a contact nor changes UpdateBunker's status.
     #[test]
     fn bunker_dock_now_queues_repair_unless_selling() {
         use crate::sim::docking::bunker_install::BunkerState;
@@ -2656,8 +2661,8 @@ mod tests {
             MissionId::from_known(MissionType::Repair)
         );
         assert_eq!(bunker.building_ready_latch(), 1);
-        assert_eq!(runtime(&sim).state(), BunkerState::ArriveWait);
-        assert_eq!(runtime(&sim).installing_unit(), Some(1));
+        assert_eq!(runtime(&sim).state(), BunkerState::Idle);
+        assert!(bunker.radio_contacts.is_empty());
     }
 
     #[test]

@@ -262,10 +262,7 @@ fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm(
     let brightness = lights.grid.cell_light_at((0, 0)).unwrap().top_scalar;
     let expected = PaletteLight::color_scheme([1200, 800, 600], brightness);
     assert_eq!(body_palette_light(&lights.grid, (0, 0), 0), expected);
-    assert_eq!(
-        building_palette_light(&lights.grid, (0, 0), None, false),
-        expected
-    );
+    assert_eq!(building_palette_light(&lights.grid, (0, 0), None), expected);
     let art = ArtRegistry::from_ini(&IniFile::from_str("[ALT]\nAltPalette=yes\n"));
     // Default N1 schemes are skipped by53AD4D, independently of N53 and
     // cell caches (68C710 RGB1000;4232E2 selects B054D4[0]+30C).

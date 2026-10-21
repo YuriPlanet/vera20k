@@ -536,6 +536,26 @@ pub fn wol_add_buddy_layout(screen_w: i32, screen_h: i32) -> WolAddBuddyLayout {
     }
 }
 
+/// The connection verify `0x130` (`0x00794C5B`), the same 451x326 centred
+/// box: the title `0x5B2` and node `i`'s checkbox 14 DLU below node `i-1`'s
+/// ([`crate::ui::wol_verify::BOXES`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WolVerifyLayout {
+    pub dialog: RectPx,
+    pub title: RectPx,
+    pub boxes: [RectPx; 8],
+}
+
+pub fn wol_verify_layout(screen_w: i32, screen_h: i32) -> WolVerifyLayout {
+    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
+    WolVerifyLayout {
+        dialog,
+        title: child(59, 10, 180, 35),
+        boxes: std::array::from_fn(|node| child(33, 56 + 14 * node as i32, 234, 14)),
+    }
+}
+
 /// Center a modal panel of `(w, h)` on the live screen. Byte-identical to the
 /// skirmish validation-modal centering (`((screen - size) + 1) / 2`, clamped >= 0).
 fn centered_modal_dialog(screen_w: i32, screen_h: i32, w: i32, h: i32) -> RectPx {
@@ -934,5 +954,34 @@ mod tests {
             }
         }
         assert_eq!(checked, 15);
+    }
+
+    #[test]
+    fn wol_verify_follows_the_executed_0x130_table() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/wol_shell.json",
+        ))
+        .unwrap();
+        let rect = |value: &serde_json::Value| {
+            let a: Vec<i32> = serde_json::from_value(value.clone()).unwrap();
+            RectPx::new(a[0], a[1], a[2], a[3])
+        };
+        let mut checked = 0;
+        for (size, case) in corpus["layouts"]["0x130"]["sizes"].as_object().unwrap() {
+            let (w, h) = size.split_once('x').unwrap();
+            let layout = wol_verify_layout(w.parse().unwrap(), h.parse().unwrap());
+            assert_eq!(layout.dialog, rect(&case["dialog"]), "{size}");
+            for (id, child) in case["controls"].as_object().unwrap() {
+                let id = u16::from_str_radix(id.trim_start_matches("0x"), 16).unwrap();
+                let actual = match crate::ui::wol_verify::BOXES.iter().position(|b| *b == id) {
+                    Some(node) => layout.boxes[node],
+                    None if id == 0x5B2 => layout.title,
+                    None => panic!("{id:#x}"),
+                };
+                assert_eq!(actual, rect(&child["screen_rect"]), "{size} {id:#x}");
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, 27);
     }
 }

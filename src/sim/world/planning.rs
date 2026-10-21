@@ -570,7 +570,23 @@ impl Simulation {
     /// PlanMgr63B150 and node63CAE0 traverse shared nodes before actor links.
     /// Association634CC0/634E10 groups predecessor records by their live XYZ;
     /// the first remaining occurrence of a node supplies each actor's index.
+    ///
+    /// Only the presentation and input ask this. A target read looks its
+    /// cell up, which stamps the fallback CellClass on a miss; the stamp
+    /// stays private to the query, so drawing cannot change the simulation.
     pub fn planning_draw_graph(
+        &self,
+        viewer: InternedId,
+        selected: &[u64],
+        hover_point: Option<[i32; 2]>,
+        retained_highlighted_node: Option<u64>,
+    ) -> PlanningDrawGraph {
+        self.effective_shared_cell_dummy().detached(|| {
+            self.build_planning_draw_graph(viewer, selected, hover_point, retained_highlighted_node)
+        })
+    }
+
+    fn build_planning_draw_graph(
         &self,
         viewer: InternedId,
         selected: &[u64],

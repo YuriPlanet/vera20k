@@ -116,7 +116,7 @@ pub fn get_cellclass_fallback<'a>(
 }
 
 /// The view of one identity a Map lookup returned through `query`.
-fn native_cell_ref<'a>(
+pub(crate) fn native_cell_ref<'a>(
     query: &crate::map::resolved_terrain::NativeCellQuery<'a>,
     cell: crate::map::cell_index::NativeCellIdentity,
 ) -> CellRef<'a> {

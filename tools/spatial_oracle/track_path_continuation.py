@@ -59,7 +59,7 @@ def install_zone_inputs(u, read32, far_zone=()):
     u.mem_write(MAP + 0x18, dwords(ZONE_TABLE))
 
 
-def query(case):
+def query(case, *, before_process=None):
     family = case['family']
     u, call, read32 = make_destination_fixture(dict(family=family, head=[0, 0, 0],
                                                     mission=case.get('mission', 5)))
@@ -137,6 +137,10 @@ def query(case):
 
     u.hook_add(UC_HOOK_CODE, observe)
     u.mem_write(0xA8ED84, dwords(PROCESS_FRAME))
+    if before_process is not None:
+        # Additive composed observers may supply a declared prestate and watch
+        # the original wrapper. The default corpus has no callback.
+        before_process(u, read32)
     entry = read32(read32(LOCO + 4) + 0x40)
     assert entry == PROCESS[family]
     u.mem_write(SP, dwords(RET_MAGIC, LOCO + 4))
