@@ -52,9 +52,3 @@ The Rust checks consume those outputs and separately exercise ordinary
 construction, capture, limbo, deletion, rules restoration and snapshot hashing.
 These are bounded component and integration checks, not complete Ares/MO,
 native SAV-format or downstream death/scheduler parity.
-
-Known inherited input limitation: the ordinary crew owner does not yet set the
-Nominal building-survivor flag (`Infantry+0x6D9`, original `0x00443111` and
-`0x0044A747`). Added_To_Game therefore counts some survivors that native skips,
-which can change the normal-game class-total gate. The new predicate does not
-repair that original-game producer; exhaustive normal-game parity is not claimed.
