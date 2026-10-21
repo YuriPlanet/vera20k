@@ -135,7 +135,7 @@ impl Simulation {
         // restore never enters this fresh-only owner or repeats its credits.
         if input.fill_silos {
             for owner in self.houses.order().to_vec() {
-                let income = crate::sim::house_state::income_ppm_for_owner(
+                let income = crate::sim::house_state::income_mult_for_owner(
                     &self.houses,
                     &self.interner,
                     input.rules,

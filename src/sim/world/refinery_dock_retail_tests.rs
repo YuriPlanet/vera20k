@@ -6,7 +6,6 @@
 
 use crate::rules::foundation::foundation_id;
 use crate::rules::mission_data::MissionType;
-use crate::rules::ruleset::INCOME_PPM_SCALE;
 use serde_json::Value;
 
 fn int(value: &Value) -> i32 {
@@ -319,8 +318,8 @@ fn retail_docking_inputs_match_original_readers_and_installed_art() {
         "native dump gate -> immutable frame threshold"
     );
 
-    // ReadDouble66FC6B narrows through FSTP float. Check both the native stored
-    // width and the immutable ppm representation, without another INI parser.
+    // ReadDouble66FC70 narrows through FSTP66FC75. Check both the native stored
+    // width and the immutable raw field, without another INI parser.
     let purifier = f32::from_le_bytes(bytes(&stock["purifier_bonus_bits"]));
     let constructor_purifier =
         f32::from_le_bytes(bytes(&input["constructor"]["purifier_bonus_bits"]));
@@ -331,9 +330,9 @@ fn retail_docking_inputs_match_original_readers_and_installed_art() {
         purifier.to_bits()
     );
     assert_eq!(
-        general.purifier_bonus_ppm as f64 / INCOME_PPM_SCALE as f64,
-        f64::from(purifier),
-        "stock native float -> ppm representation"
+        general.purifier_bonus.bits(),
+        purifier.to_bits(),
+        "stock native float retained unchanged"
     );
 
     for (name, native) in stock["buildings"].as_object().unwrap() {

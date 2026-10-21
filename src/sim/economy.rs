@@ -24,7 +24,7 @@
 //! Never depends on render/ui/audio/net (sim invariant #1). The wallet is
 //! serialized and hashed.
 
-use crate::rules::ruleset::INCOME_PPM_SCALE;
+use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF32Bits};
 
 /// Per-house wallet and statistics. There is no second house credit balance.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -117,13 +117,13 @@ impl Economy {
         &mut self,
         value: i32,
         capacity: i32,
-        income_ppm: i64,
+        income: NativeF32Bits,
     ) {
         let mut budget = self.available_money();
         // Preserve signed comparison and SUB32, including custom zero/negative
         // Values. A division shortcut or safety clamp changes native behavior.
         while budget > value && capacity > 0 {
-            self.add_tiberium_credits(value, 1, INCOME_PPM_SCALE, income_ppm);
+            self.add_tiberium_credits(value, NativeF32Bits::ONE, income);
             budget = budget.wrapping_sub(value);
         }
     }
@@ -157,32 +157,28 @@ impl Economy {
     }
 
     /// `HouseClass::Add_Tiberium_Credits @ 0x004F9610` for `amount` units
-    /// of a tiberium: `score = ftol(amount * 5 + score)` and `balance =
-    /// ftol(value * IncomeMult * amount + balance)`, `value` being
-    /// the tiberium's `Value=`. VERA's amount is `bales * scale_ppm / 1e6`
-    /// (the deposit passes 1.0, its purifier bonus `P * PurifierBonus`), its
-    /// `value` the bales' summed worth and the IncomeMult `income_ppm / 1e6`;
-    /// each sum truncates toward zero once and keeps its low 32 bits, as the
-    /// `ftol @ 0x007C5F00` does. Native multiplies floats: an IncomeMult or
-    /// PurifierBonus a float cannot hold, such as 0.9, can pay a credit
-    /// less there (the oracle's `IncomeMult 0.9` row); retail's
-    /// PurifierBonus .25 and IncomeMult values a float holds pay the same.
+    /// of a tiberium. Each operation follows4F9610..4F9664 in native PC53/chop
+    /// order, with the caller's stored float amount and HouseType+148 income.
+    /// The signed per-type Value is read at payment, not summed from cargo.
+    /// Both sums include their prior integer before _ftol's low32 result.
     pub(crate) fn add_tiberium_credits(
         &mut self,
         value: i32,
-        bales: i32,
-        scale_ppm: i64,
-        income_ppm: i64,
+        amount: NativeF32Bits,
+        income: NativeF32Bits,
     ) {
-        let scale = i128::from(INCOME_PPM_SCALE);
-        let score = (i128::from(self.score) * scale
-            + i128::from(bales) * i128::from(scale_ppm) * 5)
-            / scale;
-        let credits = (i128::from(self.credits) * scale * scale
-            + i128::from(value) * i128::from(scale_ppm) * i128::from(income_ppm))
-            / (scale * scale);
-        self.score = score as i32;
-        self.credits = credits as i32;
+        let amount = X87::load_f32(amount);
+        self.score = X87::ftol_i32_low_masked(X87::add(
+            X87::mul(amount, X87::load_i32(5)),
+            X87::load_i32(self.score),
+        ));
+        self.credits = X87::ftol_i32_low_masked(X87::add(
+            X87::mul(
+                X87::mul(X87::load_i32(value), X87::load_f32(income)),
+                amount,
+            ),
+            X87::load_i32(self.credits),
+        ));
     }
 
     /// A captured or authored balance for a test.
@@ -218,6 +214,43 @@ mod tests {
 
     fn int(value: &Value) -> i32 {
         i32::try_from(value.as_i64().unwrap()).unwrap()
+    }
+
+    /// Historical oracle supplies already-stored floats from Python pack('f').
+    /// INI reader narrowing is exercised separately through RuleSet.
+    fn supplied_float(value: f64) -> NativeF32Bits {
+        NativeF32Bits::from_bits((value as f32).to_bits())
+    }
+
+    #[test]
+    fn original_raw_tiberium_credit_calls_match_wallet_and_score() {
+        let corpus = crate::test_fixture::json("tools/spatial_oracle/refinery_income.json");
+        let bits = |value: &Value| {
+            NativeF32Bits::from_bits(u32::from_str_radix(value.as_str().unwrap(), 16).unwrap())
+        };
+        let rows = corpus["primitive_rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 191);
+        for row in rows {
+            let input = &row["input"];
+            let mut wallet = Economy::new(int(&input["balance"]));
+            wallet.set_score_for_test(int(&input["score"]));
+            wallet.set_spent_for_test(7);
+            wallet.add_tiberium_credits(
+                int(&input["values"][input["slot"].as_u64().unwrap() as usize]),
+                bits(&input["amount_bits"]),
+                bits(&input["income_bits"]),
+            );
+            assert_eq!(
+                (wallet.credits(), wallet.score(), wallet.spent_credits()),
+                (
+                    int(&row["output"]["balance"]),
+                    int(&row["output"]["score"]),
+                    int(&row["output"]["spent"]),
+                ),
+                "{}",
+                input["name"]
+            );
+        }
     }
 
     #[test]
@@ -257,21 +290,14 @@ mod tests {
             wallet.set_score_for_test(int(&row["score"]));
             let bales = int(&row["bales"]);
             wallet.add_tiberium_credits(
-                int(&row["value"]) * bales,
-                bales,
-                row["scale_ppm"].as_i64().unwrap(),
-                row["income_ppm"].as_i64().unwrap(),
+                int(&row["value"]),
+                supplied_float(f64::from(bales) * row["scale_ppm"].as_f64().unwrap() / 1e6),
+                supplied_float(row["income_ppm"].as_f64().unwrap() / 1e6),
             );
             let expected = &row["expected"];
-            let mut balance = int(&expected["balance"]);
-            if row["name"] == "IncomeMult 0.9 is a float" {
-                // The documented float residual: ftol(25 * 0.9f * 40) = 899.
-                assert_eq!(balance, 899);
-                balance = 900;
-            }
             assert_eq!(
                 (wallet.credits(), wallet.score()),
-                (balance, int(&expected["score"])),
+                (int(&expected["balance"]), int(&expected["score"])),
                 "{}",
                 row["name"]
             );
@@ -306,7 +332,7 @@ mod tests {
             wallet.fill_silos_fresh_empty_store(
                 int(&row["value"]),
                 int(&row["capacity"]),
-                row["income_ppm"].as_i64().unwrap(),
+                supplied_float(row["income_ppm"].as_f64().unwrap() / 1e6),
             );
             let expected = &row["expected"];
             assert_eq!(

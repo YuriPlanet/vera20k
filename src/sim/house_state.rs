@@ -2735,21 +2735,18 @@ pub fn house_state_for_owner_mut<'a>(
     houses.get_mut(&id)
 }
 
-/// Resolve an owner's ore-income `IncomeMult` (parts-per-million; 1_000_000 = 1.0×) by
-/// routing through its country: `HouseState.country` (InternedId) -> country name ->
-/// `RuleSet::country_income_ppm`. An owner with no house, no country, or an unknown
-/// country resolves to the neutral 1.0 (no income change) — so stock YR (all countries
-/// 1.0, the key commented out) is the identity.
-pub fn income_ppm_for_owner(
+/// Resolve the live owner's HouseType+148 float through its current country.
+/// Unknown diagnostic owners/countries use the constructor's neutral1.0.
+pub fn income_mult_for_owner(
     houses: &crate::sim::houses::Houses,
     interner: &crate::sim::intern::StringInterner,
     rules: &crate::rules::ruleset::RuleSet,
     owner: &str,
-) -> i64 {
+) -> crate::util::native_x87::NativeF32Bits {
     house_state_for_owner(houses, owner, interner)
         .and_then(|h| h.country)
-        .map(|c| rules.country_income_ppm(interner.resolve(c)))
-        .unwrap_or(crate::rules::ruleset::INCOME_PPM_SCALE)
+        .map(|c| rules.country_income_mult(interner.resolve(c)))
+        .unwrap_or(crate::util::native_x87::NativeF32Bits::ONE)
 }
 
 /// Map side name string to numeric index.

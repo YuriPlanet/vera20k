@@ -1326,5 +1326,5 @@ pub(crate) fn effective_purifier_count(
     }
     let table = rules.general.ai_virtual_purifiers;
     let virtual_count = table[house.difficulty().table_index()];
-    real + virtual_count
+    real.wrapping_add(virtual_count)
 }

@@ -30,12 +30,9 @@
 //!   refinery consumers; retained controls/histories compare their native
 //!   cadence, contact, cargo and cleanup boundaries in refinery_dock.json.
 //! - Weeder= types (`GiveWeed 0x004F9700`) are not represented; no stock type.
-//! - The payout keeps VERA's integer economy (`economy.rs`): identical to
-//!   native for every retail value (whole bales, IncomeMult 1.0, PurifierBonus
-//!   .25); a non-exact IncomeMult differs (native 0.9f pays 899 per 1000 ore,
-//!   VERA 900 — `unload_gate_income_mult` row).
 //! - Storage preserves native type identity and slot order, using whole
-//!   bales/u16 values rather than native float amounts/signed32 type values.
+//!   bales rather than native fractional float amounts. Payment reads each
+//!   slot's current signed32 type value and the native income/bonus floats.
 //! - The Per_Cell DOCK_NOW refusal's Unit Scatter (`0x0073A5CE..0x0073A5E4`,
 //!   answered by a refinery in its Selling mission) is not wired. Frequency:
 //!   zero today — VERA's sale is synchronous, so no refinery is ever seen
@@ -185,8 +182,8 @@ fn unload_dumping(
             .get_mut(id)
             .and_then(|entity| entity.miner.as_mut())
             .and_then(|miner| drain_first_slot(&mut miner.cargo));
-        if let Some((value, bales)) = drained {
-            pay_refinery_owner(sim, rules, building, value, bales);
+        if let Some((slot, bales)) = drained {
+            pay_refinery_owner(sim, rules, building, slot, bales);
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 // `Unit+0xF8 = 0` (`0x0073E493`).
                 entity.set_native_stage_value(0);
@@ -450,20 +447,20 @@ fn epilogue(
 /// StorageClass FindFirstUsedSlot6C9820 scans native type slots in ascending
 /// order; RemoveAmount6C96B0 removes that slot only. Both vehicle Unload and
 /// slave deposit use this owner. Native controls: refinery_dock.json.
-pub(crate) fn drain_first_slot(cargo: &mut Vec<super::CargoBale>) -> Option<(i32, i32)> {
+pub(crate) fn drain_first_slot(
+    cargo: &mut Vec<super::CargoBale>,
+) -> Option<(crate::rules::tiberium_type::TiberiumTypeId, i32)> {
     let slot = cargo.iter().map(|bale| bale.tiberium_type).min()?;
-    let mut value: i32 = 0;
     let mut bales: i32 = 0;
     cargo.retain(|bale| {
         if bale.tiberium_type == slot {
-            value = value.saturating_add(i32::from(bale.value));
             bales += 1;
             false
         } else {
             true
         }
     });
-    Some((value, bales))
+    Some((slot, bales))
 }
 
 /// The two `HouseClass::Add_Tiberium_Credits` calls (`0x004F9610`, at
@@ -478,27 +475,76 @@ pub(crate) fn pay_refinery_owner(
     sim: &mut Simulation,
     rules: &RuleSet,
     building: u64,
-    value: i32,
+    slot: crate::rules::tiberium_type::TiberiumTypeId,
     bales: i32,
 ) {
-    use crate::rules::ruleset::INCOME_PPM_SCALE;
-    use crate::sim::house_state::income_ppm_for_owner;
+    use crate::sim::house_state::income_mult_for_owner;
+    use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering};
     let Some(owner) = sim.substrate.entities.get(building).map(|b| b.owner()) else {
         return;
     };
     let owner_name = sim.interner.resolve(owner).to_string();
-    let income_ppm = income_ppm_for_owner(&sim.houses, &sim.interner, rules, &owner_name);
+    let income = income_mult_for_owner(&sim.houses, &sim.interner, rules, &owner_name);
     let purifiers = super::miner_system::effective_purifier_count(sim, rules, &owner_name);
-    let bonus_ppm = i64::from(purifiers) * rules.general.purifier_bonus_ppm;
+    let amount = X87::store_f32_masked_chop(X87::load_i32(bales));
+    //73E42B..73E441 /522DCD..522DE3: count * bonus * amount,
+    //stored to float BEFORE the base payment and positive-bonus test.
+    let bonus = purifier_bonus_amount(amount, purifiers, rules.general.purifier_bonus);
+    let value = rules
+        .tiberium_types
+        .get(slot)
+        .expect("native refinery payment requires its live Tiberium slot")
+        .value;
     let Some(house) = sim.houses.get_mut(&owner) else {
         return;
     };
     house
         .economy_mut()
-        .add_tiberium_credits(value, bales, INCOME_PPM_SCALE, income_ppm);
-    if bonus_ppm > 0 {
+        .add_tiberium_credits(value, amount, income);
+    if X87::compare(X87::load_f32(bonus), X87::load_i32(0)) == MaskedX87Ordering::Greater {
         house
             .economy_mut()
-            .add_tiberium_credits(value, bales, bonus_ppm, income_ppm);
+            .add_tiberium_credits(value, bonus, income);
+    }
+}
+
+fn purifier_bonus_amount(
+    amount: crate::util::native_x87::NativeF32Bits,
+    purifiers: i32,
+    bonus: crate::util::native_x87::NativeF32Bits,
+) -> crate::util::native_x87::NativeF32Bits {
+    use crate::util::native_x87::MaskedX87Chop53 as X87;
+    X87::store_f32_masked_chop(X87::mul(
+        X87::mul(X87::load_i32(purifiers), X87::load_f32(bonus)),
+        X87::load_f32(amount),
+    ))
+}
+
+#[cfg(test)]
+mod income_tests {
+    use super::purifier_bonus_amount;
+    use crate::util::native_x87::NativeF32Bits;
+
+    #[test]
+    fn original_bonus_float_store_matches_all_numeric_caller_controls() {
+        let corpus = crate::test_fixture::json("tools/spatial_oracle/refinery_income.json");
+        let bits = |value: &serde_json::Value| {
+            NativeF32Bits::from_bits(u32::from_str_radix(value.as_str().unwrap(), 16).unwrap())
+        };
+        let rows = corpus["unit_rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 258);
+        for row in rows {
+            let input = &row["input"];
+            assert_eq!(
+                purifier_bonus_amount(
+                    bits(&input["amount_bits"]),
+                    input["effective_purifiers"].as_i64().unwrap() as i32,
+                    bits(&input["purifier_bits"]),
+                ),
+                bits(&row["output"]["bonus_bits"]),
+                "{}",
+                input["name"]
+            );
+        }
     }
 }
