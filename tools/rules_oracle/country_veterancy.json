@@ -1,3056 +1,616 @@
 {
-  "binary_sha256": "7cd005d263fde203d9c84548200a057a8df61d724da3c6bd1e521eeb61cd0747",
-  "cameo_controls": [
-    {
-      "country_match": true,
-      "id": "infantry_country_only",
-      "infiltrated": false,
-      "kind": "infantry",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": false,
-      "result": 286331153,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": true,
-      "undeploy": false
-    },
-    {
-      "country_match": false,
-      "id": "infantry_spy_trainable",
-      "infiltrated": true,
-      "kind": "infantry",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": false,
-      "result": 572662306,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": true,
-      "undeploy": true
-    },
-    {
-      "country_match": true,
-      "id": "infantry_spy_untrainable",
-      "infiltrated": true,
-      "kind": "infantry",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": false,
-      "result": 286331153,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": false,
-      "undeploy": true
-    },
-    {
-      "country_match": false,
-      "id": "infantry_spy_naval",
-      "infiltrated": true,
-      "kind": "infantry",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": true,
-      "result": 572662306,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": true,
-      "undeploy": true
-    },
-    {
-      "country_match": true,
-      "id": "infantry_building_no_undeploy",
-      "infiltrated": true,
-      "kind": "infantry",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": false,
-      "result": 572662306,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": true,
-      "undeploy": false
-    },
-    {
-      "country_match": true,
-      "id": "unit_country_only",
-      "infiltrated": false,
-      "kind": "unit",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": false,
-      "result": 286331153,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": true,
-      "undeploy": false
-    },
-    {
-      "country_match": false,
-      "id": "unit_spy_trainable",
-      "infiltrated": true,
-      "kind": "unit",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": false,
-      "result": 572662306,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": true,
-      "undeploy": true
-    },
-    {
-      "country_match": true,
-      "id": "unit_spy_untrainable",
-      "infiltrated": true,
-      "kind": "unit",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": false,
-      "result": 286331153,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": false,
-      "undeploy": true
-    },
-    {
-      "country_match": false,
-      "id": "unit_spy_naval",
-      "infiltrated": true,
-      "kind": "unit",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": true,
-      "result": 572662306,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": true,
-      "undeploy": true
-    },
-    {
-      "country_match": true,
-      "id": "unit_building_no_undeploy",
-      "infiltrated": true,
-      "kind": "unit",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": false,
-      "result": 572662306,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": true,
-      "undeploy": false
-    },
-    {
-      "country_match": true,
-      "id": "aircraft_country_only",
-      "infiltrated": false,
-      "kind": "aircraft",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": false,
-      "result": 286331153,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": true,
-      "undeploy": false
-    },
-    {
-      "country_match": false,
-      "id": "aircraft_spy_trainable",
-      "infiltrated": true,
-      "kind": "aircraft",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": false,
-      "result": 286331153,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": true,
-      "undeploy": true
-    },
-    {
-      "country_match": true,
-      "id": "aircraft_spy_untrainable",
-      "infiltrated": true,
-      "kind": "aircraft",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": false,
-      "result": 286331153,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": false,
-      "undeploy": true
-    },
-    {
-      "country_match": false,
-      "id": "aircraft_spy_naval",
-      "infiltrated": true,
-      "kind": "aircraft",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": true,
-      "result": 286331153,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": true,
-      "undeploy": true
-    },
-    {
-      "country_match": true,
-      "id": "aircraft_building_no_undeploy",
-      "infiltrated": true,
-      "kind": "aircraft",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": false,
-      "result": 286331153,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": true,
-      "undeploy": false
-    },
-    {
-      "country_match": true,
-      "id": "building_country_only",
-      "infiltrated": false,
-      "kind": "building",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": false,
-      "result": 286331153,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": true,
-      "undeploy": false
-    },
-    {
-      "country_match": false,
-      "id": "building_spy_trainable",
-      "infiltrated": true,
-      "kind": "building",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": false,
-      "result": 572662306,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": true,
-      "undeploy": true
-    },
-    {
-      "country_match": true,
-      "id": "building_spy_untrainable",
-      "infiltrated": true,
-      "kind": "building",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": false,
-      "result": 286331153,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": false,
-      "undeploy": true
-    },
-    {
-      "country_match": false,
-      "id": "building_spy_naval",
-      "infiltrated": true,
-      "kind": "building",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": true,
-      "result": 572662306,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": true,
-      "undeploy": true
-    },
-    {
-      "country_match": true,
-      "id": "building_building_no_undeploy",
-      "infiltrated": true,
-      "kind": "building",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "naval": false,
-      "result": 286331153,
-      "rng_unchanged": true,
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
-      "trainable": true,
-      "undeploy": false
-    }
-  ],
-  "constructor_lists": {
-    "VeteranAircraft": {
-      "capacity": 0,
-      "capacity_increment": 10,
-      "count": 0,
-      "names": [],
-      "pointers": []
-    },
-    "VeteranInfantry": {
-      "capacity": 0,
-      "capacity_increment": 10,
-      "count": 0,
-      "names": [],
-      "pointers": []
-    },
-    "VeteranUnits": {
-      "capacity": 0,
-      "capacity_increment": 10,
-      "count": 0,
-      "names": [],
-      "pointers": []
-    }
-  },
   "rank_controls": [
     {
-      "calls": [],
       "country_match": false,
-      "entry": "0x517ce7",
       "id": "infantry_empty",
       "infiltrated": false,
       "kind": "infantry",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 0,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x517d51",
-      "stores": [],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": true
     },
     {
-      "calls": [
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x517d20",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff8",
-          "name": "SetVeteran",
-          "return_eax": 604113409,
-          "return_fpcw": 3711,
-          "return_pc": "0x517d20",
-          "return_sp": "0x10080000"
-        }
-      ],
       "country_match": true,
-      "entry": "0x517ce7",
       "id": "infantry_country_untrainable_naval",
       "infiltrated": false,
       "kind": "infantry",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": true,
       "raw_after": 1065353216,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x517d51",
-      "stores": [
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        }
-      ],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": false
     },
     {
-      "calls": [
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x517d20",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff8",
-          "name": "SetVeteran",
-          "return_eax": 604113409,
-          "return_fpcw": 3711,
-          "return_pc": "0x517d20",
-          "return_sp": "0x10080000"
-        }
-      ],
       "country_match": true,
-      "entry": "0x517ce7",
       "id": "infantry_country_replaces_elite",
       "infiltrated": false,
       "kind": "infantry",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 1065353216,
       "raw_before": 1073741824,
-      "rng_unchanged": true,
-      "stop": "0x517d51",
-      "stores": [
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        }
-      ],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": false
     },
     {
-      "calls": [
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x517d20",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff8",
-          "name": "SetVeteran",
-          "return_eax": 604113409,
-          "return_fpcw": 3711,
-          "return_pc": "0x517d20",
-          "return_sp": "0x10080000"
-        },
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x517d51",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff8",
-          "name": "SetVeteran",
-          "return_eax": 604108033,
-          "return_fpcw": 3711,
-          "return_pc": "0x517d51",
-          "return_sp": "0x10080000"
-        }
-      ],
       "country_match": true,
-      "entry": "0x517ce7",
       "id": "infantry_country_and_spy",
       "infiltrated": true,
       "kind": "infantry",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 1065353216,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x517d51",
-      "stores": [
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        },
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        }
-      ],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": true
     },
     {
-      "calls": [
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x517d51",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff8",
-          "name": "SetVeteran",
-          "return_eax": 604108033,
-          "return_fpcw": 3711,
-          "return_pc": "0x517d51",
-          "return_sp": "0x10080000"
-        }
-      ],
       "country_match": false,
-      "entry": "0x517ce7",
       "id": "infantry_spy_only",
       "infiltrated": true,
       "kind": "infantry",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 1065353216,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x517d51",
-      "stores": [
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        }
-      ],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": true
     },
     {
-      "calls": [
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x517d51",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff8",
-          "name": "SetVeteran",
-          "return_eax": 604108033,
-          "return_fpcw": 3711,
-          "return_pc": "0x517d51",
-          "return_sp": "0x10080000"
-        }
-      ],
       "country_match": false,
-      "entry": "0x517ce7",
       "id": "infantry_spy_naval",
       "infiltrated": true,
       "kind": "infantry",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": true,
       "raw_after": 1065353216,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x517d51",
-      "stores": [
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        }
-      ],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": true
     },
     {
-      "calls": [],
       "country_match": false,
-      "entry": "0x517ce7",
       "id": "infantry_spy_untrainable",
       "infiltrated": true,
       "kind": "infantry",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 0,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x517d51",
-      "stores": [],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": false
     },
     {
-      "calls": [],
       "country_match": false,
-      "entry": "0x735604",
       "id": "unit_ctor_empty",
       "infiltrated": false,
       "kind": "unit_ctor",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 0,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x735678",
-      "stores": [],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": true
     },
     {
-      "calls": [
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x73563d",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff8",
-          "name": "SetVeteran",
-          "return_eax": 604117249,
-          "return_fpcw": 3711,
-          "return_pc": "0x73563d",
-          "return_sp": "0x10080000"
-        }
-      ],
       "country_match": true,
-      "entry": "0x735604",
       "id": "unit_ctor_country_untrainable_naval",
       "infiltrated": false,
       "kind": "unit_ctor",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": true,
       "raw_after": 1065353216,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x735678",
-      "stores": [
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        }
-      ],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": false
     },
     {
-      "calls": [
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x73563d",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff8",
-          "name": "SetVeteran",
-          "return_eax": 604117249,
-          "return_fpcw": 3711,
-          "return_pc": "0x73563d",
-          "return_sp": "0x10080000"
-        }
-      ],
       "country_match": true,
-      "entry": "0x735604",
       "id": "unit_ctor_country_replaces_elite",
       "infiltrated": false,
       "kind": "unit_ctor",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 1065353216,
       "raw_before": 1073741824,
-      "rng_unchanged": true,
-      "stop": "0x735678",
-      "stores": [
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        }
-      ],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": false
     },
     {
-      "calls": [
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x73563d",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff8",
-          "name": "SetVeteran",
-          "return_eax": 604117249,
-          "return_fpcw": 3711,
-          "return_pc": "0x73563d",
-          "return_sp": "0x10080000"
-        },
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x735678",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff8",
-          "name": "SetVeteran",
-          "return_eax": 604113665,
-          "return_fpcw": 3711,
-          "return_pc": "0x735678",
-          "return_sp": "0x10080000"
-        }
-      ],
       "country_match": true,
-      "entry": "0x735604",
       "id": "unit_ctor_country_and_spy",
       "infiltrated": true,
       "kind": "unit_ctor",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 1065353216,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x735678",
-      "stores": [
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        },
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        }
-      ],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": true
     },
     {
-      "calls": [
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x735678",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff8",
-          "name": "SetVeteran",
-          "return_eax": 604113665,
-          "return_fpcw": 3711,
-          "return_pc": "0x735678",
-          "return_sp": "0x10080000"
-        }
-      ],
       "country_match": false,
-      "entry": "0x735604",
       "id": "unit_ctor_spy_only",
       "infiltrated": true,
       "kind": "unit_ctor",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 1065353216,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x735678",
-      "stores": [
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        }
-      ],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": true
     },
     {
-      "calls": [],
       "country_match": false,
-      "entry": "0x735604",
       "id": "unit_ctor_spy_naval",
       "infiltrated": true,
       "kind": "unit_ctor",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": true,
       "raw_after": 0,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x735678",
-      "stores": [],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": true
     },
     {
-      "calls": [],
       "country_match": false,
-      "entry": "0x735604",
       "id": "unit_ctor_spy_untrainable",
       "infiltrated": true,
       "kind": "unit_ctor",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 0,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x735678",
-      "stores": [],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": false
     },
     {
-      "calls": [],
       "country_match": false,
-      "entry": "0x746827",
       "id": "unit_init_empty",
       "infiltrated": false,
       "kind": "unit_init",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 0,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x74689b",
-      "stores": [],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": true
     },
     {
-      "calls": [
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x746860",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff8",
-          "name": "SetVeteran",
-          "return_eax": 604117249,
-          "return_fpcw": 3711,
-          "return_pc": "0x746860",
-          "return_sp": "0x10080000"
-        }
-      ],
       "country_match": true,
-      "entry": "0x746827",
       "id": "unit_init_country_untrainable_naval",
       "infiltrated": false,
       "kind": "unit_init",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": true,
       "raw_after": 1065353216,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x74689b",
-      "stores": [
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        }
-      ],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": false
     },
     {
-      "calls": [
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x746860",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff8",
-          "name": "SetVeteran",
-          "return_eax": 604117249,
-          "return_fpcw": 3711,
-          "return_pc": "0x746860",
-          "return_sp": "0x10080000"
-        }
-      ],
       "country_match": true,
-      "entry": "0x746827",
       "id": "unit_init_country_replaces_elite",
       "infiltrated": false,
       "kind": "unit_init",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 1065353216,
       "raw_before": 1073741824,
-      "rng_unchanged": true,
-      "stop": "0x74689b",
-      "stores": [
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        }
-      ],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": false
     },
     {
-      "calls": [
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x746860",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff8",
-          "name": "SetVeteran",
-          "return_eax": 604117249,
-          "return_fpcw": 3711,
-          "return_pc": "0x746860",
-          "return_sp": "0x10080000"
-        },
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x74689b",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff8",
-          "name": "SetVeteran",
-          "return_eax": 604113665,
-          "return_fpcw": 3711,
-          "return_pc": "0x74689b",
-          "return_sp": "0x10080000"
-        }
-      ],
       "country_match": true,
-      "entry": "0x746827",
       "id": "unit_init_country_and_spy",
       "infiltrated": true,
       "kind": "unit_init",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 1065353216,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x74689b",
-      "stores": [
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        },
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        }
-      ],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": true
     },
     {
-      "calls": [
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x74689b",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff8",
-          "name": "SetVeteran",
-          "return_eax": 604113665,
-          "return_fpcw": 3711,
-          "return_pc": "0x74689b",
-          "return_sp": "0x10080000"
-        }
-      ],
       "country_match": false,
-      "entry": "0x746827",
       "id": "unit_init_spy_only",
       "infiltrated": true,
       "kind": "unit_init",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 1065353216,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x74689b",
-      "stores": [
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        }
-      ],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": true
     },
     {
-      "calls": [],
       "country_match": false,
-      "entry": "0x746827",
       "id": "unit_init_spy_naval",
       "infiltrated": true,
       "kind": "unit_init",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": true,
       "raw_after": 0,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x74689b",
-      "stores": [],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": true
     },
     {
-      "calls": [],
       "country_match": false,
-      "entry": "0x746827",
       "id": "unit_init_spy_untrainable",
       "infiltrated": true,
       "kind": "unit_init",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 0,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x74689b",
-      "stores": [],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": false
     },
     {
-      "calls": [],
       "country_match": false,
-      "entry": "0x413f98",
       "id": "aircraft_init_empty",
       "infiltrated": false,
       "kind": "aircraft_init",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 0,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x413fd2",
-      "stores": [],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": true
     },
     {
-      "calls": [
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x413fd2",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff4",
-          "name": "SetVeteran",
-          "return_eax": 604121089,
-          "return_fpcw": 3711,
-          "return_pc": "0x413fd2",
-          "return_sp": "0x1007fffc"
-        }
-      ],
       "country_match": true,
-      "entry": "0x413f98",
       "id": "aircraft_init_country_untrainable_naval",
       "infiltrated": false,
       "kind": "aircraft_init",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": true,
       "raw_after": 1065353216,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x413fd2",
-      "stores": [
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        }
-      ],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": false
     },
     {
-      "calls": [
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x413fd2",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff4",
-          "name": "SetVeteran",
-          "return_eax": 604121089,
-          "return_fpcw": 3711,
-          "return_pc": "0x413fd2",
-          "return_sp": "0x1007fffc"
-        }
-      ],
       "country_match": true,
-      "entry": "0x413f98",
       "id": "aircraft_init_country_replaces_elite",
       "infiltrated": false,
       "kind": "aircraft_init",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 1065353216,
       "raw_before": 1073741824,
-      "rng_unchanged": true,
-      "stop": "0x413fd2",
-      "stores": [
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        }
-      ],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": false
     },
     {
-      "calls": [
-        {
-          "args": [
-            1
-          ],
-          "caller": "0x413fd2",
-          "cleanup": 4,
-          "ecx": "0x24022a10",
-          "entry": "0x750090",
-          "entry_fpcw": 3711,
-          "entry_sp": "0x1007fff4",
-          "name": "SetVeteran",
-          "return_eax": 604121089,
-          "return_fpcw": 3711,
-          "return_pc": "0x413fd2",
-          "return_sp": "0x1007fffc"
-        }
-      ],
       "country_match": true,
-      "entry": "0x413f98",
       "id": "aircraft_init_country_and_spy",
       "infiltrated": true,
       "kind": "aircraft_init",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 1065353216,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x413fd2",
-      "stores": [
-        {
-          "address": "0x150",
-          "pc": "0x750098",
-          "size": 4,
-          "value": 1065353216
-        }
-      ],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": true
     },
     {
-      "calls": [],
       "country_match": false,
-      "entry": "0x413f98",
       "id": "aircraft_init_spy_only",
       "infiltrated": true,
       "kind": "aircraft_init",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 0,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x413fd2",
-      "stores": [],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": true
     },
     {
-      "calls": [],
       "country_match": false,
-      "entry": "0x413f98",
       "id": "aircraft_init_spy_naval",
       "infiltrated": true,
       "kind": "aircraft_init",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": true,
       "raw_after": 0,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x413fd2",
-      "stores": [],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": true
     },
     {
-      "calls": [],
       "country_match": false,
-      "entry": "0x413f98",
       "id": "aircraft_init_spy_untrainable",
       "infiltrated": true,
       "kind": "aircraft_init",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
       "naval": false,
       "raw_after": 0,
       "raw_before": 0,
-      "rng_unchanged": true,
-      "stop": "0x413fd2",
-      "stores": [],
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": [],
       "trainable": false
     }
   ],
   "reader_controls": [
     {
-      "admitted": true,
-      "events": [
-        {
-          "buffer": "ONE,TWO",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranInfantry",
-          "kind": "ReadString",
-          "returned": 7,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "entry": "0x524cb0",
-          "kind": "FindOrAllocate",
-          "returned": 604108224,
-          "token": "ONE"
-        },
-        {
-          "entry": "0x524cb0",
-          "kind": "FindOrAllocate",
-          "returned": 604113584,
-          "token": "TWO"
-        },
-        {
-          "buffer": "ONE,TWO",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranUnits",
-          "kind": "ReadString",
-          "returned": 7,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "entry": "0x7480d0",
-          "kind": "FindOrAllocate",
-          "returned": 604118992,
-          "token": "ONE"
-        },
-        {
-          "entry": "0x7480d0",
-          "kind": "FindOrAllocate",
-          "returned": 604122752,
-          "token": "TWO"
-        },
-        {
-          "buffer": "ONE,TWO",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranAircraft",
-          "kind": "ReadString",
-          "returned": 7,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "entry": "0x41cef0",
-          "kind": "FindOrAllocate",
-          "returned": 604126560,
-          "token": "ONE"
-        },
-        {
-          "entry": "0x41cef0",
-          "kind": "FindOrAllocate",
-          "returned": 604130208,
-          "token": "TWO"
-        }
-      ],
       "id": "synthetic_names",
       "lists": {
         "VeteranAircraft": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 2,
           "names": [
             "ONE",
             "TWO"
-          ],
-          "pointers": [
-            604126560,
-            604130208
           ]
         },
         "VeteranInfantry": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 2,
           "names": [
             "ONE",
             "TWO"
-          ],
-          "pointers": [
-            604108224,
-            604113584
           ]
         },
         "VeteranUnits": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 2,
           "names": [
             "ONE",
             "TWO"
-          ],
-          "pointers": [
-            604118992,
-            604122752
           ]
         }
       },
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "rng_unchanged": true,
       "sections": {
         "SYNTHCOUNTRY": {
           "VeteranAircraft": "ONE,TWO",
           "VeteranInfantry": "ONE,TWO",
           "VeteranUnits": "ONE,TWO"
         }
-      },
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
+      }
     },
     {
-      "admitted": true,
-      "events": [
-        {
-          "buffer": "",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranInfantry",
-          "kind": "ReadString",
-          "returned": 0,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "buffer": "",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranUnits",
-          "kind": "ReadString",
-          "returned": 0,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "buffer": "",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranAircraft",
-          "kind": "ReadString",
-          "returned": 0,
-          "section": "SYNTHCOUNTRY"
-        }
-      ],
       "id": "missing",
       "lists": {
         "VeteranAircraft": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 2,
           "names": [
             "ONE",
             "TWO"
-          ],
-          "pointers": [
-            604126560,
-            604130208
           ]
         },
         "VeteranInfantry": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 2,
           "names": [
             "ONE",
             "TWO"
-          ],
-          "pointers": [
-            604108224,
-            604113584
           ]
         },
         "VeteranUnits": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 2,
           "names": [
             "ONE",
             "TWO"
-          ],
-          "pointers": [
-            604118992,
-            604122752
           ]
         }
       },
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "rng_unchanged": true,
       "sections": {
         "SYNTHCOUNTRY": {}
-      },
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
+      }
     },
     {
-      "admitted": true,
-      "events": [
-        {
-          "buffer": "",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranInfantry",
-          "kind": "ReadString",
-          "returned": 0,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "buffer": "",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranUnits",
-          "kind": "ReadString",
-          "returned": 0,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "buffer": "",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranAircraft",
-          "kind": "ReadString",
-          "returned": 0,
-          "section": "SYNTHCOUNTRY"
-        }
-      ],
       "id": "stored_empty",
       "lists": {
         "VeteranAircraft": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 2,
           "names": [
             "ONE",
             "TWO"
-          ],
-          "pointers": [
-            604126560,
-            604130208
           ]
         },
         "VeteranInfantry": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 2,
           "names": [
             "ONE",
             "TWO"
-          ],
-          "pointers": [
-            604108224,
-            604113584
           ]
         },
         "VeteranUnits": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 2,
           "names": [
             "ONE",
             "TWO"
-          ],
-          "pointers": [
-            604118992,
-            604122752
           ]
         }
       },
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "rng_unchanged": true,
       "sections": {
         "SYNTHCOUNTRY": {
           "VeteranAircraft": "",
           "VeteranInfantry": "",
           "VeteranUnits": ""
         }
-      },
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
+      }
     },
     {
-      "admitted": true,
-      "events": [
-        {
-          "buffer": "",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranInfantry",
-          "kind": "ReadString",
-          "returned": 0,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "buffer": "",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranUnits",
-          "kind": "ReadString",
-          "returned": 0,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "buffer": "",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranAircraft",
-          "kind": "ReadString",
-          "returned": 0,
-          "section": "SYNTHCOUNTRY"
-        }
-      ],
       "id": "whitespace",
       "lists": {
         "VeteranAircraft": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 2,
           "names": [
             "ONE",
             "TWO"
-          ],
-          "pointers": [
-            604126560,
-            604130208
           ]
         },
         "VeteranInfantry": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 2,
           "names": [
             "ONE",
             "TWO"
-          ],
-          "pointers": [
-            604108224,
-            604113584
           ]
         },
         "VeteranUnits": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 2,
           "names": [
             "ONE",
             "TWO"
-          ],
-          "pointers": [
-            604118992,
-            604122752
           ]
         }
       },
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "rng_unchanged": true,
       "sections": {
         "SYNTHCOUNTRY": {
           "VeteranAircraft": "   ",
           "VeteranInfantry": "   ",
           "VeteranUnits": "   "
         }
-      },
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
+      }
     },
     {
-      "admitted": true,
-      "events": [
-        {
-          "buffer": ",,,",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranInfantry",
-          "kind": "ReadString",
-          "returned": 3,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "buffer": ",,,",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranUnits",
-          "kind": "ReadString",
-          "returned": 3,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "buffer": ",,,",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranAircraft",
-          "kind": "ReadString",
-          "returned": 3,
-          "section": "SYNTHCOUNTRY"
-        }
-      ],
       "id": "delimiters",
       "lists": {
         "VeteranAircraft": {
-          "capacity": 0,
-          "capacity_increment": 10,
-          "count": 0,
-          "names": [],
-          "pointers": []
+          "names": []
         },
         "VeteranInfantry": {
-          "capacity": 0,
-          "capacity_increment": 10,
-          "count": 0,
-          "names": [],
-          "pointers": []
+          "names": []
         },
         "VeteranUnits": {
-          "capacity": 0,
-          "capacity_increment": 10,
-          "count": 0,
-          "names": [],
-          "pointers": []
+          "names": []
         }
       },
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "rng_unchanged": true,
       "sections": {
         "SYNTHCOUNTRY": {
           "VeteranAircraft": ",,,",
           "VeteranInfantry": ",,,",
           "VeteranUnits": ",,,"
         }
-      },
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
+      }
     },
     {
-      "admitted": true,
-      "events": [
-        {
-          "buffer": "ONE,none,NONE,<none>, TWO,one",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranInfantry",
-          "kind": "ReadString",
-          "returned": 29,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "entry": "0x524cb0",
-          "kind": "FindOrAllocate",
-          "returned": 604108224,
-          "token": "ONE"
-        },
-        {
-          "entry": "0x524cb0",
-          "kind": "FindOrAllocate",
-          "returned": 0,
-          "token": "none"
-        },
-        {
-          "entry": "0x524cb0",
-          "kind": "FindOrAllocate",
-          "returned": 0,
-          "token": "NONE"
-        },
-        {
-          "entry": "0x524cb0",
-          "kind": "FindOrAllocate",
-          "returned": 0,
-          "token": "<none>"
-        },
-        {
-          "entry": "0x524cb0",
-          "kind": "FindOrAllocate",
-          "returned": 604136512,
-          "token": " TWO"
-        },
-        {
-          "entry": "0x524cb0",
-          "kind": "FindOrAllocate",
-          "returned": 604108224,
-          "token": "one"
-        },
-        {
-          "buffer": "ONE,none,NONE,<none>, TWO,one",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranUnits",
-          "kind": "ReadString",
-          "returned": 29,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "entry": "0x7480d0",
-          "kind": "FindOrAllocate",
-          "returned": 604118992,
-          "token": "ONE"
-        },
-        {
-          "entry": "0x7480d0",
-          "kind": "FindOrAllocate",
-          "returned": 0,
-          "token": "none"
-        },
-        {
-          "entry": "0x7480d0",
-          "kind": "FindOrAllocate",
-          "returned": 0,
-          "token": "NONE"
-        },
-        {
-          "entry": "0x7480d0",
-          "kind": "FindOrAllocate",
-          "returned": 0,
-          "token": "<none>"
-        },
-        {
-          "entry": "0x7480d0",
-          "kind": "FindOrAllocate",
-          "returned": 604141968,
-          "token": " TWO"
-        },
-        {
-          "entry": "0x7480d0",
-          "kind": "FindOrAllocate",
-          "returned": 604118992,
-          "token": "one"
-        },
-        {
-          "buffer": "ONE,none,NONE,<none>, TWO,one",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranAircraft",
-          "kind": "ReadString",
-          "returned": 29,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "entry": "0x41cef0",
-          "kind": "FindOrAllocate",
-          "returned": 604126560,
-          "token": "ONE"
-        },
-        {
-          "entry": "0x41cef0",
-          "kind": "FindOrAllocate",
-          "returned": 0,
-          "token": "none"
-        },
-        {
-          "entry": "0x41cef0",
-          "kind": "FindOrAllocate",
-          "returned": 0,
-          "token": "NONE"
-        },
-        {
-          "entry": "0x41cef0",
-          "kind": "FindOrAllocate",
-          "returned": 0,
-          "token": "<none>"
-        },
-        {
-          "entry": "0x41cef0",
-          "kind": "FindOrAllocate",
-          "returned": 604145824,
-          "token": " TWO"
-        },
-        {
-          "entry": "0x41cef0",
-          "kind": "FindOrAllocate",
-          "returned": 604126560,
-          "token": "one"
-        }
-      ],
       "id": "duplicates_none_case",
       "lists": {
         "VeteranAircraft": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 3,
           "names": [
             "ONE",
             " TWO",
             "ONE"
-          ],
-          "pointers": [
-            604126560,
-            604145824,
-            604126560
           ]
         },
         "VeteranInfantry": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 3,
           "names": [
             "ONE",
             " TWO",
             "ONE"
-          ],
-          "pointers": [
-            604108224,
-            604136512,
-            604108224
           ]
         },
         "VeteranUnits": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 3,
           "names": [
             "ONE",
             " TWO",
             "ONE"
-          ],
-          "pointers": [
-            604118992,
-            604141968,
-            604118992
           ]
         }
       },
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "rng_unchanged": true,
       "sections": {
         "SYNTHCOUNTRY": {
           "VeteranAircraft": "ONE,none,NONE,<none>, TWO,one",
           "VeteranInfantry": "ONE,none,NONE,<none>, TWO,one",
           "VeteranUnits": "ONE,none,NONE,<none>, TWO,one"
         }
-      },
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
+      }
     },
     {
-      "admitted": true,
-      "events": [
-        {
-          "buffer": "ONE TWO\tTHREE,FOUR",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranInfantry",
-          "kind": "ReadString",
-          "returned": 18,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "entry": "0x524cb0",
-          "kind": "FindOrAllocate",
-          "returned": 604149952,
-          "token": "ONE TWO\tTHREE"
-        },
-        {
-          "entry": "0x524cb0",
-          "kind": "FindOrAllocate",
-          "returned": 604155312,
-          "token": "FOUR"
-        },
-        {
-          "buffer": "ONE TWO\tTHREE,FOUR",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranUnits",
-          "kind": "ReadString",
-          "returned": 18,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "entry": "0x7480d0",
-          "kind": "FindOrAllocate",
-          "returned": 604160720,
-          "token": "ONE TWO\tTHREE"
-        },
-        {
-          "entry": "0x7480d0",
-          "kind": "FindOrAllocate",
-          "returned": 604164480,
-          "token": "FOUR"
-        },
-        {
-          "buffer": "ONE TWO\tTHREE,FOUR",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranAircraft",
-          "kind": "ReadString",
-          "returned": 18,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "entry": "0x41cef0",
-          "kind": "FindOrAllocate",
-          "returned": 604168288,
-          "token": "ONE TWO\tTHREE"
-        },
-        {
-          "entry": "0x41cef0",
-          "kind": "FindOrAllocate",
-          "returned": 604171936,
-          "token": "FOUR"
-        }
-      ],
       "id": "mixed_delimiters",
       "lists": {
         "VeteranAircraft": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 2,
           "names": [
             "ONE TWO\tTHREE",
             "FOUR"
-          ],
-          "pointers": [
-            604168288,
-            604171936
           ]
         },
         "VeteranInfantry": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 2,
           "names": [
             "ONE TWO\tTHREE",
             "FOUR"
-          ],
-          "pointers": [
-            604149952,
-            604155312
           ]
         },
         "VeteranUnits": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 2,
           "names": [
             "ONE TWO\tTHREE",
             "FOUR"
-          ],
-          "pointers": [
-            604160720,
-            604164480
           ]
         }
       },
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "rng_unchanged": true,
       "sections": {
         "SYNTHCOUNTRY": {
           "VeteranAircraft": "ONE TWO\tTHREE,FOUR",
           "VeteranInfantry": "ONE TWO\tTHREE,FOUR",
           "VeteranUnits": "ONE TWO\tTHREE,FOUR"
         }
-      },
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
+      }
     },
     {
-      "admitted": true,
-      "events": [
-        {
-          "buffer": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranInfantry",
-          "kind": "ReadString",
-          "returned": 127,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "entry": "0x524cb0",
-          "kind": "FindOrAllocate",
-          "returned": 604176400,
-          "token": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-        },
-        {
-          "buffer": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranUnits",
-          "kind": "ReadString",
-          "returned": 127,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "entry": "0x7480d0",
-          "kind": "FindOrAllocate",
-          "returned": 604181856,
-          "token": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-        },
-        {
-          "buffer": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranAircraft",
-          "kind": "ReadString",
-          "returned": 127,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "entry": "0x41cef0",
-          "kind": "FindOrAllocate",
-          "returned": 604185712,
-          "token": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-        }
-      ],
       "id": "long_buffer",
       "lists": {
         "VeteranAircraft": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 1,
           "names": [
             "AAAAAAAAAAAAAAAAAAAAAAAA"
-          ],
-          "pointers": [
-            604185712
           ]
         },
         "VeteranInfantry": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 1,
           "names": [
             "AAAAAAAAAAAAAAAAAAAAAAAA"
-          ],
-          "pointers": [
-            604176400
           ]
         },
         "VeteranUnits": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 1,
           "names": [
             "AAAAAAAAAAAAAAAAAAAAAAAA"
-          ],
-          "pointers": [
-            604181856
           ]
         }
       },
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "rng_unchanged": true,
       "sections": {
         "SYNTHCOUNTRY": {
           "VeteranAircraft": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,Z",
           "VeteranInfantry": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,Z",
           "VeteranUnits": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,Z"
         }
-      },
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
+      }
     },
     {
-      "admitted": true,
-      "events": [
-        {
-          "buffer": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranInfantry",
-          "kind": "ReadString",
-          "returned": 127,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "entry": "0x524cb0",
-          "kind": "FindOrAllocate",
-          "returned": 604190224,
-          "token": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
-        },
-        {
-          "buffer": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranUnits",
-          "kind": "ReadString",
-          "returned": 127,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "entry": "0x7480d0",
-          "kind": "FindOrAllocate",
-          "returned": 604195680,
-          "token": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
-        },
-        {
-          "buffer": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranAircraft",
-          "kind": "ReadString",
-          "returned": 127,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "entry": "0x41cef0",
-          "kind": "FindOrAllocate",
-          "returned": 604199536,
-          "token": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
-        }
-      ],
       "id": "long_token",
       "lists": {
         "VeteranAircraft": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 1,
           "names": [
             "BBBBBBBBBBBBBBBBBBBBBBBB"
-          ],
-          "pointers": [
-            604199536
           ]
         },
         "VeteranInfantry": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 1,
           "names": [
             "BBBBBBBBBBBBBBBBBBBBBBBB"
-          ],
-          "pointers": [
-            604190224
           ]
         },
         "VeteranUnits": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 1,
           "names": [
             "BBBBBBBBBBBBBBBBBBBBBBBB"
-          ],
-          "pointers": [
-            604195680
           ]
         }
       },
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "rng_unchanged": true,
       "sections": {
         "SYNTHCOUNTRY": {
           "VeteranAircraft": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
           "VeteranInfantry": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
           "VeteranUnits": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
         }
-      },
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
+      }
     },
     {
-      "admitted": true,
-      "events": [
-        {
-          "buffer": "",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranInfantry",
-          "kind": "ReadString",
-          "returned": 0,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "buffer": "",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranUnits",
-          "kind": "ReadString",
-          "returned": 0,
-          "section": "SYNTHCOUNTRY"
-        },
-        {
-          "buffer": "",
-          "capacity": 128,
-          "default": "",
-          "key": "VeteranAircraft",
-          "kind": "ReadString",
-          "returned": 0,
-          "section": "SYNTHCOUNTRY"
-        }
-      ],
       "id": "wrong_key_case",
       "lists": {
         "VeteranAircraft": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 1,
           "names": [
             "BBBBBBBBBBBBBBBBBBBBBBBB"
-          ],
-          "pointers": [
-            604199536
           ]
         },
         "VeteranInfantry": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 1,
           "names": [
             "BBBBBBBBBBBBBBBBBBBBBBBB"
-          ],
-          "pointers": [
-            604190224
           ]
         },
         "VeteranUnits": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 1,
           "names": [
             "BBBBBBBBBBBBBBBBBBBBBBBB"
-          ],
-          "pointers": [
-            604195680
           ]
         }
       },
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "rng_unchanged": true,
       "sections": {
         "SYNTHCOUNTRY": {
           "veteranaircraft": "OTHER",
           "veteraninfantry": "OTHER",
           "veteranunits": "OTHER"
         }
-      },
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
+      }
     },
     {
-      "admitted": false,
-      "events": [],
       "id": "wrong_section_case",
       "lists": {
         "VeteranAircraft": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 1,
           "names": [
             "BBBBBBBBBBBBBBBBBBBBBBBB"
-          ],
-          "pointers": [
-            604199536
           ]
         },
         "VeteranInfantry": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 1,
           "names": [
             "BBBBBBBBBBBBBBBBBBBBBBBB"
-          ],
-          "pointers": [
-            604190224
           ]
         },
         "VeteranUnits": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 1,
           "names": [
             "BBBBBBBBBBBBBBBBBBBBBBBB"
-          ],
-          "pointers": [
-            604195680
           ]
         }
       },
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "rng_unchanged": true,
       "sections": {
         "synthcountry": {
           "VeteranAircraft": "OTHER",
           "VeteranInfantry": "OTHER",
           "VeteranUnits": "OTHER"
         }
-      },
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
+      }
     },
     {
-      "admitted": false,
-      "events": [],
       "id": "absent_section",
       "lists": {
         "VeteranAircraft": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 1,
           "names": [
             "BBBBBBBBBBBBBBBBBBBBBBBB"
-          ],
-          "pointers": [
-            604199536
           ]
         },
         "VeteranInfantry": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 1,
           "names": [
             "BBBBBBBBBBBBBBBBBBBBBBBB"
-          ],
-          "pointers": [
-            604190224
           ]
         },
         "VeteranUnits": {
-          "capacity": 10,
-          "capacity_increment": 10,
-          "count": 1,
           "names": [
             "BBBBBBBBBBBBBBBBBBBBBBBB"
-          ],
-          "pointers": [
-            604195680
           ]
         }
       },
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "rng_unchanged": true,
-      "sections": {},
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
+      "sections": {}
     }
   ],
-  "rng_state_hex": {
-    "main": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
-    "mapgen": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
-    "scenario": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
-  },
-  "schema": 1,
-  "stored_id_admission_controls": [
-    {
-      "abstract_type_read_admitted": false,
-      "family_key": "VeteranInfantry",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "provided_section": "TWO",
-      "rng_unchanged": true,
-      "stored_id": " TWO",
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
-    },
-    {
-      "abstract_type_read_admitted": true,
-      "family_key": "VeteranInfantry",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "provided_section": " TWO",
-      "rng_unchanged": true,
-      "stored_id": " TWO",
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
-    },
-    {
-      "abstract_type_read_admitted": false,
-      "family_key": "VeteranUnits",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "provided_section": "TWO",
-      "rng_unchanged": true,
-      "stored_id": " TWO",
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
-    },
-    {
-      "abstract_type_read_admitted": true,
-      "family_key": "VeteranUnits",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "provided_section": " TWO",
-      "rng_unchanged": true,
-      "stored_id": " TWO",
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
-    },
-    {
-      "abstract_type_read_admitted": false,
-      "family_key": "VeteranAircraft",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "provided_section": "TWO",
-      "rng_unchanged": true,
-      "stored_id": " TWO",
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
-    },
-    {
-      "abstract_type_read_admitted": true,
-      "family_key": "VeteranAircraft",
-      "main_next_four": [
-        2025287381,
-        660436142,
-        3663968561,
-        2901129938
-      ],
-      "provided_section": " TWO",
-      "rng_unchanged": true,
-      "stored_id": " TWO",
-      "timer_after": [
-        995,
-        0,
-        25
-      ],
-      "timer_writes": []
-    }
-  ]
+  "schema": 1
 }

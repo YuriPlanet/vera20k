@@ -1,20 +1,16 @@
 # Original country starting veterancy
 
 `country_veterancy.py` reuses the shared `BulletReader` native runtime and
-`native_oracle` checked runner. All fixture names, cameo pointers and object
-priors are synthetic. No game asset, MO rule or configuration is included.
+`native_oracle` checked runner. All fixture names and object priors are
+synthetic. No game asset, MO rule or configuration is included.
 
-```powershell
-$env:VERA20K_GAMEMD_EXE = 'C:/your-retail-install/gamemd.exe'
+```sh
 python -m tools.rules_oracle.country_veterancy --check
 ```
 
-The recorded executable SHA-256 is
-`7cd005d263fde203d9c84548200a057a8df61d724da3c6bd1e521eeb61cd0747`.
-The payload records the actual selected executable hash, independently of the
-shared runner's legacy fixed identity label. Ghidra was unavailable; evidence
-uses original file-backed instructions through `tools.native_inspect` and
-execution through Unicorn 2.1.4. No original instruction was patched.
+`VERA20K_GAMEMD_EXE` or `RA2_DIR` selects the original executable. Evidence uses
+original file-backed instructions through `tools.native_inspect` and execution
+through Unicorn; no original instruction is patched.
 
 ## Native reader and storage
 
@@ -41,11 +37,8 @@ internal token whitespace, duplicates and order. It does not trim each token.
 The original family factories reject case-insensitive `none` and `<none>`,
 reuse case-insensitive existing IDs and otherwise construct that family's type.
 Their stored IDs are limited to 24 characters. For example
-`ONE,none,NONE,<none>, TWO,one` produces `ONE`, ` TWO`, `ONE`. A later original
-base reader uses that exact stored ID for section admission: ` TWO` does not
-admit `[TWO]`. This is a shared type-identity property, not a country-specific
-normalization rule. The six `stored_id_admission_controls` execute original
-`410A60` for both section names on each of the three native family types.
+`ONE,none,NONE,<none>, TWO,one` produces `ONE`, ` TWO`, `ONE`; the shared type
+registry keeps those exact stored IDs.
 
 The 12 `reader_controls` are sequential full `511850` reads on one retained
 Country and registries. They cover replacement, missing/empty/whitespace
@@ -88,40 +81,18 @@ Map percent writes occur later in the map readers, before Unlimbo. Existing
 `input_oracle/selection_navigation` owns their original `atoi`/`7500E0`
 numeric goldens and caller intervals; this fixture does not duplicate that owner.
 
-## Original cameo selector remains separate
-
-Whole original `GetCameo712040..7120C6` reads the current House at `A83D4C`,
-Barracks/WarFactory infiltration and actual type virtual `+2C` category leaves.
-It selects nonnull `AltCameo+710` only for trainable Infantry after Barracks,
-trainable Units after WarFactory, or a trainable Building with nonnull
-`UndeploysInto` after WarFactory. Its Unit/Building cameo branch has no Naval
-gate. Aircraft returns normal `Cameo+6F0`. Country lists do not affect this body.
-
-The 20 whole-selector controls use original type vtables, rather than supplied
-category returns. Ares' separate `CameoIsElite1003D800` country/extension checks
-must use their own evidence; they do not change the original selector contract.
-
 ## Execution limits and validation
 
-All three complete initial RNG objects are retained once in `rng_state_hex`.
-Every row's measured before and after bytes must equal them; `rng_unchanged`
-records that assertion. Per-row original Main next-four values, action timer
-sentinel `[995,0,25]`, and observed timer writes are retained. All 66 rows keep
-all three streams unchanged and record no timer writes. The selected rank and
-cameo bodies contain no RNG or detach call. This says nothing about the whole
-object constructors' separate RNG/timer/detach chronology.
+The generator asserts that every reader and rank control leaves all three RNG
+streams byte-identical, writes no action-timer byte and keeps the sentinel
+`[995,0,25]`. The selected rank bodies contain no RNG or detach call. This says
+nothing about the whole object constructors' separate RNG/timer/detach
+chronology. The corpus keeps only what the Rust comparisons read: each reader
+control's sections and resulting lists, and each rank control's inputs and
+raw rank before and after.
 
-Native behavior is established within these reader, pointer-match and selector
+Native behavior is established within these reader and pointer-match
 boundaries. Rust regression checks must exercise the production retained-list
 and shared construction owners against these rows. Parity demonstrated by
 those comparisons is bounded to their declared inputs, rather than all creation
 paths or a complete native scenario.
-
-An additional scratch-only stock check executes the selected list reads for
-all 14 `[Countries]` entries in the machine's original `RULESMD.INI`
-(`3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef`):
-none sets any of the three keys, and all three native lists remain empty.
-No `LANGRULE.INI` is present there. Mode/map physical layers were unavailable
-to that check; earlier `selection_navigation` retail controls separately retain
-empty Americans/Yuri lists across their declared Battle/map layers. These
-retail observations do not make authored country lists unreachable.
