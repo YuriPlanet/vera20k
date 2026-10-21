@@ -34,7 +34,10 @@ fn fixture() -> (TestDirectory, ProcessAssets, LoadingSession) {
             .country_loading(launch.local_slot().country.index())
             .is_none()
     );
-    crate::app::cncnet::prepare_external_skirmish_countries(&mut assets, &launch);
+    crate::app::frontend::skirmish_session::prepare_external_skirmish_countries(
+        &mut assets,
+        &launch,
+    );
     assert_eq!(request.seed, Some(77));
     let mut session = LoadingSession::from_request(LoadingRequest::unverified_legacy_skirmish(
         *launch,

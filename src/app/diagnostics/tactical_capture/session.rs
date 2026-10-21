@@ -331,6 +331,11 @@ impl TacticalCaptureSession {
                 bail!("sealed tactical launch was not accepted: {reason:?}")
             }
         };
+        #[cfg(feature = "ares")]
+        crate::app::frontend::skirmish_session::prepare_external_skirmish_countries(
+            &mut state.process_assets,
+            &launch,
+        );
         let correlation = crate::app::match_bootstrap::allocate_match_correlation(
             &mut state.frontend.next_match_correlation,
         )

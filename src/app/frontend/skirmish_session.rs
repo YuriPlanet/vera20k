@@ -41,6 +41,20 @@ const MULTIPLAYER_HANDLE_LIMIT_BYTES: usize = 19;
 const DEFAULT_MULTIPLAYER_HANDLE: &[u8] = b"[New Player]";
 const DEFAULT_MULTIPLAYER_GAME_MODE: i32 = 1;
 
+/// Direct launch adapters bypass PrepareSession52E11E/123. Share its Country
+/// allocation/body #1 without cached shell settings or the PortPool RNG draw.
+#[cfg(feature = "ares")]
+pub(crate) fn prepare_external_skirmish_countries(
+    assets: &mut crate::app::process_assets::ProcessAssets,
+    session: &SkirmishLaunchSession,
+) {
+    assets.read_multiplayer_country(
+        &IniFile::empty(),
+        i32::from(session.local_slot().country.raw_index()),
+    );
+    assets.refresh_multiplayer_country_bodies();
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LocalMultiplayerPreferences {
     handle_bytes: Vec<u8>,
