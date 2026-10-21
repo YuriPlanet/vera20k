@@ -1136,7 +1136,7 @@ mod tests {
         crate::sim::scenario_bootstrap::initialize_map_roster_houses(
             &mut saved,
             &roster,
-            Some(&rules),
+            &rules,
             Some(&roster_ini),
         );
         saved.initialize_campaign_current_house_for_test(&roster_ini);
@@ -1151,7 +1151,7 @@ mod tests {
         crate::sim::scenario_bootstrap::initialize_map_roster_houses(
             &mut current,
             &roster,
-            Some(&rules),
+            &rules,
             Some(&roster_ini),
         );
         current.initialize_campaign_current_house_for_test(&IniFile::from_str(

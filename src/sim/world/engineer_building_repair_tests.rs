@@ -257,7 +257,7 @@ impl Fixture {
                     engineer_id: id,
                     target_building_id: building,
                 },
-                Some(&rules),
+                &rules,
                 Some(&registry),
                 crate::sim::world::FrameEffects::default()
             ));
@@ -596,7 +596,7 @@ impl Fixture {
                 x: head.x - 16,
                 ..head
             },
-            Some(&self.rules),
+            &self.rules,
             Some(&self.registry),
             crate::sim::world::FrameEffects::default(),
         );
@@ -808,7 +808,7 @@ fn original_nine_routes_ten_walk_arrivals_repair_capture_and_deferred_cleanup() 
                     .run_completed_walk_step(
                         id,
                         head,
-                        Some(&fixture.rules),
+                        &fixture.rules,
                         Some(&fixture.registry),
                         crate::sim::world::FrameEffects::default(),
                     )
@@ -866,7 +866,7 @@ fn original_nine_routes_ten_walk_arrivals_repair_capture_and_deferred_cleanup() 
             arrivals += 1;
         }
         fixture.sim.process_pending_delete_with(
-            Some(&fixture.rules),
+            &fixture.rules,
             Some(&fixture.registry),
             crate::sim::world::FrameEffects::default(),
             1,
@@ -949,7 +949,7 @@ fn original_engineer_receiver_terminal_branches_return_before_foot_tail() {
             fixture.sim.run_walk_boundary(
                 id,
                 head,
-                Some(&fixture.rules),
+                &fixture.rules,
                 Some(&fixture.registry),
                 crate::sim::world::FrameEffects::default(),
             );

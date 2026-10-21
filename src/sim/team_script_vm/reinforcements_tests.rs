@@ -1120,11 +1120,7 @@ fn full_reinforcement_members_cargo_and_scalar_cleanup_match_original() {
             "scalar_scope1" => {
                 sim.with_object_placement_scope(|sim| {
                     assert!(sim.object_placement_scope_active());
-                    assert!(sim.discard_constructed_limbo(
-                        head,
-                        Some(&rules),
-                        FrameEffects::default()
-                    ));
+                    assert!(sim.discard_constructed_limbo(head, &rules, FrameEffects::default()));
                 });
                 // Native row supplies the retained1 prior. The Rust caller's
                 // existing RAII scope restores its own prior after the call.

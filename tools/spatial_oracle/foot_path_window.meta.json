@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Unit destination -> Drive/Ship Process -> Foot Find_Path wrapper and its 24-dword REP copy. Short,23,24,25 movement-word AStar outputs plus a nonadjacent tube word inside a long output. Observed copy count/writes/all24words, transient canaries, wrapper return and outer Process boundary. Not an AStar search, route optimality, tube traversal, full trip or append-prefix parity claim.",
+  "assumptions": [
+    "Reuse track_path_continuation.query without changing its default corpus. Its original Unit/Drive-or-Ship/Cell vtables, real locomotor constructors, flat32x32 map, human House, selected Rules/zone inputs and frame100 setter/frame101 Process are retained.",
+    "The full supplied AStar route remains available in the wrapper stack buffer. PathType cost is the movement-word count; length is that count plus the supplied -1 terminator, as documented by original reconstruction42AA90. Native wrapper code alone determines how many words are copied. The route_cells list is input geometry for Rust installation, with an explicit nonadjacent jump for word8; no original reconstruction/search or TubeArray lookup runs.",
+    "The initial Foot backing has live head-1 followed by distinct stale values. Snapshot live_words stops at the first native -1, or includes all24 when no terminator is copied. Untouched backing beyond a short terminator is observed, not required of Rust Vec storage.",
+    "Immediately before REP MOVSD only, distinctive dwords are supplied at Foot+5DC and+640. Their unchanged post-copy values are captured, then both prior values are restored before native Mark/timers continue. This measures copy containment without treating neighboring timer storage as a permanent canary.",
+    "All native text and selected vtables are checked unchanged. Copy writes are captured from native memory-write events, and execution must reach the original reference-cell store and successful wrapper RET. Post-copy, wrapper-return and outer-Process snapshots are separate boundaries. Prefix0 only; IsTrain append remains outside scope."
+  ],
+  "substitutions": [
+    "Existing track_path_continuation AStar4CBBA0 hook supplies PathType and the complete directions-plus-terminator buffer, with native24-byte argument cleanup. Find_Path itself, Unit callback, Mark, timer/reference writes and Process continuation execute unchanged.",
+    "Only the existing OS Interlocked imports are otherwise substituted. No copy count, copied word, canary result, wrapper return or path-consumption result is supplied."
+  ],
+  "entry_points": {
+    "unit_destination": "0x00741970",
+    "find_path": "0x004D3920",
+    "supplied_astar": "0x004CBBA0",
+    "copy": "0x004D3E9F",
+    "copy_done": "0x004D3EA1",
+    "reference_store": "0x004D4003",
+    "wrapper_ret": "0x004D4013",
+    "drive_process": "0x004B0500",
+    "ship_process": "0x0069FC10"
+  },
+  "replay_command": "python -m tools.spatial_oracle.foot_path_window",
+  "payload_sha256": "c54ff1c357726574ac4e9e2eca6d534f8fed3ef51b7deb0b16d7882e44857e7f"
+}

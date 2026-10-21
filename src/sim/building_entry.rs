@@ -63,35 +63,10 @@
 //! - Mission_Unload's eject clears the latch of a human house's passenger
 //!   (`0x0044DBEA`); the absorber Unload path calls
 //!   [`Simulation::clear_human_absorber_seek_on_unload`].
-//! - A tank bunker entry runs through VERA's bunker adapter
-//!   ([`crate::sim::docking::bunker_link::begin_entry`]), as a player's
-//!   Enter click on it does. In place of the destination (vt+0x480(bunker,
-//!   1)), whose setter sends the bunker DOCKING (for a unit
-//!   `0x00741DCC..0x00741DDA`), the HELLO that makes the Foot the bunker's
-//!   first radio contact, and the receiver's DOCKING arm with its bunker
-//!   branch (`0x0043C7E9`, `0x0043C84C..`), the bunker answers CAN_LOAD and
-//!   DOCK_NOW and holds the Foot as its installing unit, which the seek's
-//!   walk reads as that contact, and the Foot drives to the bunker's cell.
-//!   While the adapter carries the Foot, Mission_Enter (`0x004D9290`) is not
-//!   run, so its DOCKING probe and its Rate epilogue draw (RandomRanged(0,
-//!   2), Scenario stream) are skipped each dispatch; once the adapter lets
-//!   it go (its bunker gone), the body's no-target arm idles it. The
-//!   adapter's CAN_LOAD repeats the walk's tests and also wants the bunker
-//!   alive and its install machine idle, so a true answer comes without the
-//!   entry, leaving the Foot out of its team on its old orders, when the
-//!   bunker is dying, or is being sold or erased (whose release clears its
-//!   occupant but leaves the machine occupied). Trigger: one of the nine
-//!   retail "Yuri Unit Hunter" TeamTypes reaching action 61 while its house
-//!   has a free Yuri Tank Bunker (`ThirdBaseDefenses=`). Effect: the
-//!   Scenario stream misses one draw per approaching unit per dispatch.
-//!   Frequency: AI Yuri games with Tank Bunkers. Player retasks and Stop
-//!   explicitly cancel this contact-free approach through
-//!   [`bunker_link::cancel_approach`]. An owner change does not clear it,
-//!   and the install does not check the unit's owner, so a seeker
-//!   mind-controlled on its way still installs
-//!   into its old house's bunker; what native ChangeOwner does to radio
-//!   contacts is unverified (the DOCKING arm's head, `0x0043C7E9..0x0043C882`,
-//!   has no house test).
+//!
+//! Tank-bunker entry uses the object destination, HELLO and shared Enter
+//! mission. Unit PerCellProcess sends DOCK_NOW on arrival, which starts
+//! Building Mission_Repair and its UpdateBunker visits.
 //!
 //! Script60 and CaptureManager share Foot's grinder seek (4DFA70).
 //! Infantry51973C..519948 and Unit739F7D..73A234 share the Eaten arrival
@@ -100,7 +75,7 @@
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::NavTargetRef;
-use crate::sim::docking::bunker_link::{self, can_auto_deploy_here};
+use crate::sim::docking::bunker_link::can_auto_deploy_here;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::houses::Houses;
 use crate::sim::mission::authority::LiveReadyInputProvider;
@@ -236,7 +211,7 @@ impl Simulation {
         let _ = self.assign_destination_represented(
             id,
             Some(NavTargetRef::object(best)),
-            Some(rules),
+            rules,
             registry,
             effects,
         );
@@ -290,7 +265,7 @@ impl Simulation {
             y: coordinate.y,
             z: coordinate.z,
         };
-        let context = UninitContext::new(Some(rules), registry).with_effects(effects);
+        let context = UninitContext::new(rules, registry).with_effects(effects);
         self.dispatch_object_tag_event(building_id, 1, Some(id), None, context);
 
         //519790..519865: VoiceDie (local human only), then DieSound.
@@ -310,7 +285,7 @@ impl Simulation {
             {
                 self.sound_events
                     .emit(SimSoundEvent::voc_at_world_coord(sound_id, entry_world));
-                effects.flush_sound(self, Some(rules));
+                effects.flush_sound(self, rules);
             }
         }
         // Infantry51986A / Unit73A0A5: the actor's refund comes first.
@@ -359,7 +334,7 @@ impl Simulation {
                         z: coordinate.z,
                     },
                 ));
-                effects.flush_sound(self, Some(rules));
+                effects.flush_sound(self, rules);
             }
             //5198CE gates the animation switch on the existing Active3
             //instance, not on the presence of a SpecialAnim declaration.
@@ -392,8 +367,7 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) {
         use crate::sim::passenger::{DepartureRoute, depart_cargo_head};
-        let context =
-            crate::sim::world::UninitContext::new(Some(rules), registry).with_effects(effects);
+        let context = crate::sim::world::UninitContext::new(rules, registry).with_effects(effects);
         while self
             .substrate
             .entities
@@ -467,7 +441,7 @@ impl Simulation {
                 absorber,
                 RadioMessage::CanEnter,
                 RadioPayload::default(),
-                Some(rules),
+                rules,
                 effects,
             ) == RadioResponse::Roger;
             let distance = match (
@@ -512,7 +486,7 @@ impl Simulation {
         let _ = self.assign_destination_represented(
             id,
             Some(NavTargetRef::object(best)),
-            Some(rules),
+            rules,
             registry,
             effects,
         );
@@ -556,7 +530,7 @@ impl Simulation {
         let _ = self.assign_destination_represented(
             id,
             Some(NavTargetRef::object(best)),
-            Some(rules),
+            rules,
             registry,
             effects,
         );
@@ -618,7 +592,7 @@ impl Simulation {
         let _ = self.assign_destination_represented(
             id,
             Some(NavTargetRef::object(best)),
-            Some(rules),
+            rules,
             registry,
             effects,
         );
@@ -657,31 +631,38 @@ impl Simulation {
             return false;
         };
         let walk = self.walk_from_last(foot, self.house_bunkers(foot.owner(), rules));
-        // The bunker adapter holds an approaching unit as its installing
-        // unit, where native holds it as the first radio contact (module
-        // residual).
         let best = pick_nearest_admitted(walk, |bunker| {
             self.substrate.entities.get(bunker).is_some_and(|bunker| {
-                bunker.radio_contacts.slot(0).is_none()
-                    && bunker
-                        .bunker_runtime
-                        .is_none_or(|runtime| runtime.installing_unit().is_none())
-                    && bunker.bunker.occupant().is_none()
+                bunker.radio_contacts.slot(0).is_none() && bunker.bunker.occupant().is_none()
             })
         });
         let Some(best) = best else {
             return false;
         };
+        let _ = self.assign_destination_represented(
+            id,
+            Some(NavTargetRef::object(best)),
+            rules,
+            registry,
+            effects,
+        );
+        transmit(
+            self,
+            id,
+            best,
+            RadioMessage::Hello,
+            RadioPayload::default(),
+            rules,
+            effects,
+        );
         let now = self.session.binary_frame();
-        let _ = bunker_link::begin_entry(self, id, best, rules, registry, effects, |sim| {
-            let _ = sim.mission_queue_exact(
-                id,
-                MissionId::from_known(MissionType::Enter),
-                1,
-                now,
-                &LiveReadyInputProvider { rules },
-            );
-        });
+        let _ = self.mission_queue_exact(
+            id,
+            MissionId::from_known(MissionType::Enter),
+            1,
+            now,
+            &LiveReadyInputProvider { rules },
+        );
         true
     }
 

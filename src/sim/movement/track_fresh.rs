@@ -163,12 +163,7 @@ impl Simulation {
                 .expect("same Process_Movement owner");
             clear_track_head(actor);
             if mission == Some(MissionType::Move) {
-                return Ok(self.unit_enter_idle_mode(
-                    id,
-                    Some(call.rules),
-                    false,
-                    call.frame_effects,
-                ));
+                return Ok(self.unit_enter_idle_mode(id, call.rules, false, call.frame_effects));
             }
             return Ok(false);
         }
@@ -251,7 +246,7 @@ impl Simulation {
         let request = self.track_path_request(call, destination, 0)?;
         match self.run_track_path_request(
             &request,
-            Some(call.rules),
+            call.rules,
             call.registry,
             call.frame_effects,
         )? {
@@ -350,9 +345,9 @@ impl Simulation {
             return Ok(false);
         }
         //4B345B..4B34D1: Mark0, Unit+1AC(cell, dir, height, 0, 1), Mark1.
-        self.foot_mark_remove(id, Some(rules), call.registry, call.frame_effects);
+        self.foot_mark_remove(id, rules, call.registry, call.frame_effects);
         let code = self.track_can_enter(call, cell, direction, height)?;
-        self.foot_mark_put(id, Some(rules), call.registry, call.frame_effects);
+        self.foot_mark_put(id, rules, call.registry, call.frame_effects);
         let object = self.track_object(id, rules)?;
         let overlay = self.track_overlay(cell);
         //4B34D7..4B351D: the train and crusher coercions.
@@ -541,7 +536,7 @@ impl Simulation {
             return Ok(false);
         }
         //4B3A3E..4B3A56: SetDestination(NULL, 1).
-        self.set_unit_null_destination(id, Some(rules), None, call.frame_effects);
+        self.set_unit_null_destination(id, rules, None, call.frame_effects);
         Ok(false)
     }
 
@@ -598,7 +593,7 @@ impl Simulation {
                     }
                     //4B3F58..4B3F6E: an unreachable live destination clears.
                     if !self.foot_path_zone_precheck(id, self.live_track_destination(id), rules)? {
-                        self.set_unit_null_destination(id, Some(rules), None, call.frame_effects);
+                        self.set_unit_null_destination(id, rules, None, call.frame_effects);
                     }
                 }
                 second = self
@@ -682,7 +677,7 @@ impl Simulation {
         let picked = self.pickup_crate_at(
             id,
             coord_cell(candidate),
-            Some(call.rules),
+            call.rules,
             call.registry,
             call.frame_effects,
         );
@@ -863,13 +858,8 @@ impl Simulation {
             loco.store_track_head(call.family, Some(candidate));
         }
         //4B46DF..4B46FA: the crate question on the head, then limbo.
-        let picked = self.pickup_crate_at(
-            id,
-            reference,
-            Some(call.rules),
-            call.registry,
-            call.frame_effects,
-        );
+        let picked =
+            self.pickup_crate_at(id, reference, call.rules, call.registry, call.frame_effects);
         let actor = self
             .substrate
             .entities

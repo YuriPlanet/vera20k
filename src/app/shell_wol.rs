@@ -346,6 +346,38 @@ pub(crate) fn in_match(state: &AppState) -> bool {
     state.frontend.wol.as_ref().is_some_and(|visit| visit.in_game)
 }
 
+/// A WOL box (`0x005E2CD0` style 0) with a CSF body.
+pub(crate) fn message_box(state: &AppState, key: &str) -> crate::ui::wol_shell::WolMessageBox {
+    service::message_box(state, key, false)
+}
+
+/// Start Game Now's abort (`0x00794D13..0x00794E64`): `0x130` closes,
+/// `[0xB77DC1]` is set and the game channel is left (API+0x24 at
+/// `0x00794E00`); event 6 then ends the runner (`0x00787F49..0x00787F95`,
+/// one more leave), every dialog closes and `WOL_Main` runs mode 0, whose
+/// category change logs out before the welcome.
+/// RESIDUAL: the Buddy List runner's handling of event 6 is not traced; it
+/// ends the same way here.
+pub(crate) fn start_aborted(state: &mut AppState) {
+    crate::app::shell_network_setup::abandon_for_wol_runner(state);
+    if let Some(visit) = state.frontend.wol.as_mut() {
+        visit.in_game = true;
+    }
+    lobby::start_aborted(state);
+}
+
+/// `0x00785EA0`: `[0xB77DC0]` set (not connected), the WOLAPI logout
+/// (API+0x34), `0x11E` and the wait box close. The caller clears the
+/// login category `[0xB73678]`.
+/// RESIDUAL: the logout's wait (`TXT_WOL_LOGGING_OUT` behind the hidden
+/// `0xC4`, up to five events for event 0 or 9) is not modelled; it shows
+/// only after 7 s.
+fn logout(visit: &mut WolVisit) {
+    visit.connected = false;
+    visit.requests.push(service::WolServiceRequest::Logout);
+    visit.page_received = None;
+}
+
 /// The runner handed over to a WOL match (`[0xB77DC1]` set).
 pub(crate) fn match_started(state: &mut AppState) {
     if let Some(visit) = state.frontend.wol.as_mut() {
@@ -766,6 +798,12 @@ impl App {
         visit.status_help = None;
         visit.relogin = None;
         visit.flow = None;
+        // 0x0077B4D3..0x0077B519: mode 0 needs no login category, so a
+        // held one logs out and clears.
+        if visit.authenticated {
+            logout(visit);
+            visit.authenticated = false;
+        }
         visit.page = WolPage::Welcome;
         persona::fill_welcome(state);
         // The mode-loop pass (0x0077B402) before the welcome runs.

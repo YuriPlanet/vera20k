@@ -558,12 +558,12 @@ pub(super) fn spawn_structure(
     ge.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(
         crate::map::entities::EntityCategory::Structure,
         rules.object(type_id),
-        Some(rules),
+        rules,
     );
     sim.substrate.entities.insert(ge);
     // Use the lifecycle boundary so the fixture is a placed (not factory-held)
     // structure and raw-store consumers see the same Mark state as gameplay.
-    sim.add_entity_occupancy(sid);
+    let _ = sim.mark_entity_put(sid, crate::sim::world::UninitContext::with_rules(rules));
     sim.append_house_base_building_for_test(sid);
     // Its house counts it as tracked and on the map, as CanBuild's
     // prerequisites read them.

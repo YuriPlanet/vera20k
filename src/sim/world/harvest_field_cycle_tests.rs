@@ -141,7 +141,7 @@ fn order(s: &mut Scene, command: crate::sim::command::Command) {
     assert!(s.sim.apply_command_with_overlays(
         "Americans",
         &command,
-        Some(&s.rules),
+        &s.rules,
         Some(registry()),
         crate::sim::world::FrameEffects::default(),
     ));
@@ -213,7 +213,7 @@ fn retail_war_miner_area_guard_returns_to_harvesting() {
         assert!(s.sim.apply_command_with_overlays(
             "Americans",
             &command.payload,
-            Some(&s.rules),
+            &s.rules,
             Some(&registry),
             Default::default(),
         ));
@@ -271,7 +271,7 @@ fn retail_war_miner_attacks_without_cutting_ore_and_resumes_its_idle_mission() {
             assert!(s.sim.apply_command_with_overlays(
                 "Americans",
                 &command,
-                Some(&s.rules),
+                &s.rules,
                 Some(&registry),
                 crate::sim::world::FrameEffects::default(),
             ));

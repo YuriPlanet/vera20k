@@ -175,7 +175,12 @@ const DEFENSE_AI: &str = "AlliedBaseDefenses=PILL,SAM,TESL,GGUN,FORN,HITK,BUNK,N
     SovietBaseDefenses=BUNK,PILL,SAM,PILL\nThirdBaseDefenses=GGUN\n\
     BuildPower=POWR\nBuildRefinery=YARD\nBuildBarracks=YARD\nBuildWeapons=YARD\n\
     BuildRadar=TECH\nBuildTech=TECH\n";
-const DEFENSE_COUNTRIES: &str = "[Countries]\n0=C0\n1=C1\n2=C2\n3=C3\n";
+// The native choice fixture supplies the current country as its parent. A
+// registered Country with no reached INI section instead retains ctor-empty
+// ParentCountry, so initialize the same names through the production reader.
+const DEFENSE_COUNTRIES: &str = "[Countries]\n0=C0\n1=C1\n2=C2\n3=C3\n\
+    [C0]\nParentCountry=C0\n[C1]\nParentCountry=C1\n\
+    [C2]\nParentCountry=C2\n[C3]\nParentCountry=C3\n";
 
 /// The `[BuildingTypes]` list and sections of [`DEFENSE_TYPES`].
 fn defense_building_types() -> String {

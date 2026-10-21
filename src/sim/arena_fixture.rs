@@ -387,13 +387,21 @@ pub fn retail_harrier_dock_scene(
         resources,
     } = &mut scenario.runtime;
     let rules = &resources.rules;
-    // Both houses human, so no house AI moves the Rhino.
+    // The normal Battle loader already registers Player. Reuse that house
+    // rather than replacing its bootstrap state; both scene houses are human,
+    // so no house AI moves the Rhino.
     let mut owners = Vec::new();
     for (index, name) in ["Player", "Enemy"].into_iter().enumerate() {
         let id = sim.interner.intern(name);
-        let mut house = HouseState::new(id, index as i32, None, true, 0, 10);
+        let house = sim.houses.get_or_register_for_test(id, || {
+            let mut house = HouseState::new(id, index as i32, None, true, 0, 10);
+            // An extra house in an admitted scenario needs its native name
+            // for snapshot restore. Existing bootstrap names stay intact.
+            house.initialize_scenario_name(name);
+            house
+        });
+        assert!(house.is_human(), "retail dock scene's {name} is human");
         house.set_multiplay_passive_for_test(true);
-        sim.houses.register(house);
         owners.push(id);
     }
     let mut cells: Vec<(u16, u16)> = sim

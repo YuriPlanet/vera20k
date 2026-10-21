@@ -128,7 +128,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
         })
         .collect();
     let mut ordinary = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut ordinary, Some(&rules), Some(&registry));
+    sim.adjust_staged_megamission_destinations(&mut ordinary, &rules, Some(&registry));
     assert!(
         ordinary
             .iter()
@@ -147,7 +147,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
                 CommandEnvelope::new(owner, 1, Command::PlanningRecord { record })
             })
             .collect();
-        sim.adjust_staged_megamission_destinations(&mut planned, Some(&rules), Some(&registry));
+        sim.adjust_staged_megamission_destinations(&mut planned, &rules, Some(&registry));
         for (actual, expected) in planned.iter().zip(&ordinary) {
             let Command::PlanningRecord { record } = &actual.payload else {
                 unreachable!()

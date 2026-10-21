@@ -121,7 +121,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
     ) {
         let generated = self.house_rung(
-            rules,
+            rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
             registry,
             true,
             crate::sim::world::FrameEffects::default(),
@@ -181,7 +181,7 @@ impl Simulation {
     /// skipped.
     pub(super) fn house_rung(
         &mut self,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         defeat_pass: bool,
         frame_effects: FrameEffects<'_>,
@@ -193,17 +193,16 @@ impl Simulation {
             && (self.session.binary_frame() as i32) > 0;
         // The interner resolves names case-insensitively, as native type
         // lookups do.
-        let base_units = rules.map_or([None; 3], |rules| {
-            std::array::from_fn(|slot| {
-                rules
-                    .general
-                    .base_unit_types
-                    .get(slot)
-                    .and_then(|name| self.interner.get(name))
-            })
+        let base_units = std::array::from_fn(|slot| {
+            rules
+                .general
+                .base_unit_types
+                .get(slot)
+                .and_then(|name| self.interner.get(name))
         });
         let build_refinery_2 = rules
-            .and_then(|rules| rules.build_refinery_types.get(2))
+            .build_refinery_types
+            .get(2)
             .and_then(|name| self.interner.get(name));
         // Logic55B68D reloads the live House count after each complete body.
         // A House's power/radar and activation must precede its own teams,
@@ -211,9 +210,7 @@ impl Simulation {
         let mut index = 0;
         while index < self.houses.order().len() {
             let owner = self.houses.order()[index];
-            if let Some(rules) = rules {
-                self.assess_house_derived_state(owner, rules);
-            }
+            self.assess_house_derived_state(owner, rules);
             self.update_house_anger_and_activation(owner, rules);
             // House4F85BE/4F86FE precedes team creation, defeat and this
             // House's Tags. Result countdown and AllowWin-tag teardown share
@@ -230,7 +227,7 @@ impl Simulation {
                 .houses
                 .get_mut(&owner)
                 .is_some_and(|house| house.take_due_to_die(self.session.binary_frame() as i32));
-            if to_die && let Some(rules) = rules {
+            if to_die {
                 self.house_blowup(
                     owner,
                     HouseBlowupSubset::All,
@@ -242,45 +239,32 @@ impl Simulation {
             if let Some(power) = self.power_states.get_mut(&owner) {
                 power.clamp_negative_totals();
             }
-            if let Some(rules) = rules {
-                crate::sim::ai_team_creation::update_team_creation(
-                    self,
-                    rules,
+            crate::sim::ai_team_creation::update_team_creation(self, rules, owner, frame_effects);
+            crate::sim::house_eva::update_house_eva(self, rules, owner);
+            crate::sim::superweapon::tick_house_superweapon_instances(self, rules, owner);
+            if defeat_gate && self.house_holds_nothing(owner, &base_units, build_refinery_2) {
+                self.house_blowup(
                     owner,
+                    HouseBlowupSubset::All,
+                    rules,
+                    registry,
                     frame_effects,
                 );
-                crate::sim::house_eva::update_house_eva(self, rules, owner);
-                crate::sim::superweapon::tick_house_superweapon_instances(self, rules, owner);
-            }
-            if defeat_gate && self.house_holds_nothing(owner, &base_units, build_refinery_2) {
-                if let Some(rules) = rules {
-                    self.house_blowup(
-                        owner,
-                        HouseBlowupSubset::All,
-                        rules,
-                        registry,
-                        frame_effects,
-                    );
-                }
                 generated.extend(self.mplayer_defeated(
                     owner,
                     UninitContext::new(rules, registry).with_effects(frame_effects),
                 ));
             }
             self.raise_house_tags(owner, rules, registry, frame_effects);
-            if let Some(rules) = rules {
-                crate::sim::house_strategy::update_strategy(
-                    self,
-                    rules,
-                    owner,
-                    registry,
-                    frame_effects,
-                );
-                crate::sim::ai_base_building::update_production_choices(
-                    self, rules, owner, registry,
-                );
-                generated.extend(self.recheck_house_tech_tree(owner, rules));
-            }
+            crate::sim::house_strategy::update_strategy(
+                self,
+                rules,
+                owner,
+                registry,
+                frame_effects,
+            );
+            crate::sim::ai_base_building::update_production_choices(self, rules, owner, registry);
+            generated.extend(self.recheck_house_tech_tree(owner, rules));
             if let Some(house) = self.houses.get_mut(&owner) {
                 house.release_repair_latch(self.session.binary_frame());
             }
@@ -337,8 +321,8 @@ impl Simulation {
         // under `[AI] Paranoid` in a nonzero game mode, turns the computers
         // left paranoid.
         let game_mode_nonzero = self.session.game_mode_nonzero();
-        if let Some(rules) = context.rules()
-            && game_mode_nonzero
+        let rules = context.rules();
+        if game_mode_nonzero
             && rules.general.paranoid
             && self.houses.get(&owner).is_some_and(|house| {
                 house.current_iq() == rules.general.max_iq_levels
@@ -381,11 +365,7 @@ impl Simulation {
     /// before later House visits. A defeated human (including an observer)
     /// continues watching while hostile survivors and a human remain. Only
     /// this process's PlayerPtr receives the final Win/Lose flags.
-    fn complete_multiplayer_after_defeat(
-        &mut self,
-        rules: Option<&RuleSet>,
-        effects: FrameEffects<'_>,
-    ) {
+    fn complete_multiplayer_after_defeat(&mut self, rules: &RuleSet, effects: FrameEffects<'_>) {
         let alive: Vec<_> = self
             .houses
             .order()
@@ -444,10 +424,9 @@ impl Simulation {
     /// FlagWin4FCA5C..E7 /FlagLose4FCC45..D0 apply MaxAhead and then align
     /// the signed wrapping absolute expiry to ten frames. CdTimer owns the
     /// paused-sentinel and negative-duration semantics used by both bodies.
-    fn outcome_savour_frames(&self, rules: Option<&RuleSet>) -> i32 {
-        let duration = crate::rules::ruleset::native_minutes_to_frames(
-            rules.map_or(0.03, |rules| rules.general.savour_delay_minutes),
-        );
+    fn outcome_savour_frames(&self, rules: &RuleSet) -> i32 {
+        let duration =
+            crate::rules::ruleset::native_minutes_to_frames(rules.general.savour_delay_minutes);
         // Native applies this for any GameMode other than 0 or 5 (4FCA5C..6C).
         // Only LAN/WOL admit a MaxAhead; the other raw modes are unreachable.
         if !self.session.game_mode().is_network() {
@@ -476,7 +455,7 @@ impl Simulation {
     pub(crate) fn flag_house_to_win(
         &mut self,
         owner: InternedId,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         skip_timer: bool,
         effects: FrameEffects<'_>,
     ) -> bool {
@@ -501,7 +480,7 @@ impl Simulation {
     pub(crate) fn flag_house_to_lose(
         &mut self,
         owner: InternedId,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         skip_timer: bool,
         effects: FrameEffects<'_>,
     ) -> bool {
@@ -529,7 +508,7 @@ impl Simulation {
         &mut self,
         owner: InternedId,
         kind: crate::sim::house_state::HouseOutcomeKind,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
         let campaign = !self.session.game_mode_nonzero();
@@ -570,7 +549,7 @@ impl Simulation {
         &mut self,
         action_kind: i32,
         country_index: i32,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) -> bool {
         let Some(owner) = self
@@ -582,9 +561,6 @@ impl Simulation {
         };
         match action_kind {
             1 | 2 => {
-                let Some(rules) = rules else {
-                    return false;
-                };
                 let native_country = self.houses[&owner]
                     .country()
                     .and_then(|country| rules.country_index(self.interner.resolve(country)))
@@ -594,9 +570,9 @@ impl Simulation {
                 };
                 let win = (native_country == country_index) == (action_kind == 1);
                 if win {
-                    self.flag_house_to_win(owner, Some(rules), false, effects);
+                    self.flag_house_to_win(owner, rules, false, effects);
                 } else {
-                    self.flag_house_to_lose(owner, Some(rules), false, effects);
+                    self.flag_house_to_lose(owner, rules, false, effects);
                 }
             }
             67 => {
@@ -628,7 +604,7 @@ impl Simulation {
     /// the dev chord's capture routes reach it; shipping builds omit it.
     #[cfg(feature = "dev-overlays")]
     pub fn dev_trigger_current_house_lose(&mut self, rules: &RuleSet) -> bool {
-        self.trigger_house_outcome(68, -1, Some(rules), FrameEffects::empty())
+        self.trigger_house_outcome(68, -1, rules, FrameEffects::empty())
     }
 
     /// Session `+0x300` (`0x00A8B538`), written when the current house is

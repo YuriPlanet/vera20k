@@ -12,8 +12,9 @@ mod wol;
 pub(crate) use actions::{apply_action, commit_map_selection, commit_start, open_choose_map};
 pub(crate) use view::view;
 pub(crate) use wol::{
-    WolStartUser, guest_users_listed, kicked_key, local_left, play_player_left, player_choices,
-    player_ready, send_first_choices, user_joined, user_kicked, user_left,
+    WolStartUser, guest_users_listed, kicked_key, local_left, map_status, play_player_left,
+    player_choices, player_ready, preview_request, send_first_choices, user_joined, user_kicked,
+    user_left, verify, verify_cursor_moved, verify_layout, verify_mouse,
 };
 
 use super::{App, AppState};
@@ -38,8 +39,9 @@ pub(crate) enum NetworkSetupRequest {
     PrepareMapForHandoff {
         received_budget: i32,
     },
-    /// The guest's preview request, type `0x1B` (`0x005E7586..0x005E759D`):
-    /// sent once per material map change it cannot verify.
+    /// The guest's preview request: LAN type `0x1B` (`0x005E7586..0x005E759D`),
+    /// sent once per material map change it cannot verify; WOL `P<scenario
+    /// file>` privately to the first channel user (`0x007A81B8..0x007A8213`).
     RequestPreview,
     /// The host's `'W'` start staging, type `0x17` to every guest
     /// (`0x005E3720`).
@@ -98,7 +100,8 @@ pub(crate) enum NetworkSetupRequest {
 pub(crate) struct NetworkSetupProtocol {
     locked: bool,
     /// WOL `00B77DEC`/`00B77E28` after the host's StartGame request, until
-    /// the server's OnGameStart answers or rejects it.
+    /// the server's OnGameStart rejects it; a matching OnGameStart holds it
+    /// (`[0xB77E28] = 2`) until the abort or the match.
     wol_start_pending: bool,
     /// WOL host `SetTimer(0x14AF8, 5000)` (`0x7914FF`).
     ping_deadline: Option<Instant>,
@@ -107,6 +110,9 @@ pub(crate) struct NetworkSetupProtocol {
     /// WOL guest `[0xA8D610]`: the first other user the user-list sink
     /// added (`0x7A7627..0x7A763D`); its row shows `wolhost.pcx`.
     wol_host: Option<String>,
+    /// WOL Start Game Now's connection verify `0x130` over C2/C9, from
+    /// OnGameStart until the negotiation ends.
+    wol_verify: Option<crate::ui::wol_verify::WolVerifyDialog>,
     start_requested: bool,
     accept_eligible: bool,
     go_deadline: Option<Instant>,
@@ -121,9 +127,16 @@ pub(crate) struct NetworkSetupProtocol {
     preview_offer: Option<PreviewOffer>,
     /// A guest's offered `Preview.bin` is being received.
     awaiting_preview_file: bool,
-    /// The guest verified the host's map locally at its last change, so its
-    /// preview is the local map's.
+    /// The guest verified the host's map locally at its last change
+    /// (`0x006951F0`).
     local_map_verified: bool,
+    /// WOL C9: the verified map is a loose file on disk (`RawFileClass`
+    /// exists, `0x005E7604..0x005E76E8`), so no local preview loads.
+    local_map_loose: bool,
+    /// WOL C9's `0x71F` "Preview unavailable" is shown, and `0x468` hidden,
+    /// by the host's public `Z3` (`0x005E3D4E..0x005E3DC2`).
+    wol_no_preview: bool,
+    wol_preview_hidden: bool,
     /// The guest's `[0xAC1154]` from the host's `Preview.bin`, numbered so
     /// the renderer rebuilds its texture once per arrival.
     received_preview: Option<(u32, crate::map::preview::DecodedPreview)>,
@@ -151,6 +164,7 @@ impl NetworkSetupProtocol {
             ping_deadline: wol_host.then(|| Instant::now() + wol::PING_PERIOD),
             pings: Vec::new(),
             wol_host: None,
+            wol_verify: None,
             start_requested: false,
             accept_eligible: false,
             go_deadline: None,
@@ -161,6 +175,9 @@ impl NetworkSetupProtocol {
             preview_offer: None,
             awaiting_preview_file: false,
             local_map_verified: false,
+            local_map_loose: false,
+            wol_no_preview: false,
+            wol_preview_hidden: false,
             received_preview: None,
             received_preview_count: 0,
             requests: if wol_host {
@@ -203,8 +220,15 @@ impl NetworkSetupProtocol {
             .map(|(count, preview)| (*count, preview))
     }
 
-    pub(crate) fn local_map_verified(&self) -> bool {
-        self.local_map_verified
+    /// The guest's `[0xAC1154]` comes from its own copy of the map
+    /// (`0x005E74E0`).
+    pub(crate) fn local_preview(&self) -> bool {
+        self.local_map_verified && !self.local_map_loose
+    }
+
+    /// C9's `0x71F` shows, and whether `0x468` is hidden.
+    pub(crate) fn wol_no_preview(&self) -> (bool, bool) {
+        (self.wol_no_preview, self.wol_preview_hidden)
     }
 
     fn drop_preview_offer(&mut self) {

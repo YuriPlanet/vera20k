@@ -1533,7 +1533,7 @@ fn retail_berserk_gi_shoots_its_own_house() {
         MissionId::from_known(MissionType::Hunt),
         0,
         sim.session.binary_frame(),
-        &crate::sim::mission::authority::EntityReadyInputProvider,
+        &crate::sim::mission::authority::LiveReadyInputProvider { rules: &rules },
     );
     let shot = |sim: &Simulation| {
         sim.substrate
@@ -6447,7 +6447,7 @@ fn crusher_driveover_destroys_wall_but_noncrusher_does_not() {
     sim.per_cell_process(
         2,
         crate::sim::movement::PerCellReason::TurnComplete,
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default(),
     )
@@ -6489,7 +6489,7 @@ fn crusher_driveover_destroys_wall_but_noncrusher_does_not() {
     sim.per_cell_process(
         2,
         crate::sim::movement::PerCellReason::TurnComplete,
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default(),
     )
@@ -6555,7 +6555,7 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
     sim.per_cell_process(
         2,
         crate::sim::movement::PerCellReason::TurnComplete,
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default(),
     )
@@ -6572,7 +6572,7 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
     sim.per_cell_process(
         2,
         crate::sim::movement::PerCellReason::TurnComplete,
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default(),
     )
@@ -6590,7 +6590,7 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
     sim.per_cell_process(
         2,
         crate::sim::movement::PerCellReason::TurnComplete,
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default(),
     )
@@ -6607,7 +6607,7 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
     sim.per_cell_process(
         2,
         crate::sim::movement::PerCellReason::TurnComplete,
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default(),
     )
@@ -11019,7 +11019,7 @@ fn a_drive_crusher_without_crusherall_leaves_a_plain_wall_standing() {
     tank.per_cell_process(
         2,
         crate::sim::movement::PerCellReason::TurnComplete,
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default(),
     )
@@ -11035,7 +11035,7 @@ fn a_drive_crusher_without_crusherall_leaves_a_plain_wall_standing() {
         .per_cell_process(
             2,
             crate::sim::movement::PerCellReason::TurnComplete,
-            Some(&rules),
+            &rules,
             Some(&registry),
             crate::sim::world::FrameEffects::default(),
         )

@@ -65,14 +65,14 @@ impl LocalDefeatBoundary for FrameClientBoundary<'_> {
     fn leave_planning(
         &self,
         sim: &Simulation,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) -> Option<crate::sim::command::CommandEnvelope> {
         let mut input = self.planning.as_ref()?.borrow_mut();
         let (planning, selection) = &mut *input;
         planning.set_active(
             false,
             Some(sim),
-            rules,
+            Some(rules),
             selection,
             &mut self.output.borrow_mut(),
         )

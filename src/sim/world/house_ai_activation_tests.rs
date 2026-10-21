@@ -21,7 +21,7 @@ fn advance(sim: &mut Simulation, rules: Option<&RuleSet>, lane: TickLane) {
     let result = sim
         .advance_master_frame(
             &[],
-            rules,
+            rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
             None,
             67,
             lane,

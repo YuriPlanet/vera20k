@@ -184,14 +184,14 @@ fn native_marked_foundation_entry_parking_and_retry_match_shared_owners() {
                         scene.depot,
                         RadioMessage::Break,
                         RadioPayload::default(),
-                        Some(&scene.rules),
+                        &scene.rules,
                         crate::sim::world::FrameEffects::default(),
                     );
                 }
                 "null_destination_on_foundation" => {
                     scene.sim.set_unit_null_destination(
                         scene.tank,
-                        Some(&scene.rules),
+                        &scene.rules,
                         None,
                         crate::sim::world::FrameEffects::default(),
                     );
@@ -326,7 +326,7 @@ fn native_actual_ally_entry_near_stop_preserves_pending_until_foundation_refusal
         scene.depot,
         RadioMessage::Break,
         RadioPayload::default(),
-        Some(&scene.rules),
+        &scene.rules,
         crate::sim::world::FrameEffects::default(),
     );
     try_pending_entry(

@@ -47,12 +47,7 @@ fn attack_friendlies_uses_native_boolean_defaults_layers_and_retail_inputs() {
 fn unmatched_go_berzerk_does_not_abort_the_following_trigger_action() {
     let (mut sim, rules, registry, houses) = fixture(false);
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(
-        houses[1],
-        Some(&rules),
-        Some(&registry),
-        FrameEffects::default(),
-    );
+    sim.raise_house_tags(houses[1], &rules, Some(&registry), FrameEffects::default());
     assert!(sim.trigger_runtime.globals_set.contains(&7));
 }
 
@@ -111,7 +106,7 @@ fn run(
             input: TagEventInput::default(),
         },
         &mut Vec::new(),
-        Some(rules),
+        rules,
         Some(registry),
         FrameEffects::default(),
     )
@@ -237,12 +232,7 @@ fn ordered_go_berzerk_survives_snapshot_tag_removal_and_reconstruction_starts_cl
     sim.attach_object_trigger_tag(actor, Some("CONTROLTAG"));
     let before = rng(&sim);
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(
-        houses[1],
-        Some(&rules),
-        Some(&registry),
-        FrameEffects::default(),
-    );
+    sim.raise_house_tags(houses[1], &rules, Some(&registry), FrameEffects::default());
     assert!(psycho(&sim, actor));
     assert!(sim.trigger_runtime.globals_set.contains(&7));
     assert_eq!(rng(&sim), before);
@@ -272,7 +262,7 @@ fn ordered_go_berzerk_survives_snapshot_tag_removal_and_reconstruction_starts_cl
     loaded.resolve_type_handles(&rules);
     loaded.uninit_with_context(
         actor,
-        crate::sim::world::UninitContext::new(Some(&rules), Some(&registry)),
+        crate::sim::world::UninitContext::new(&rules, Some(&registry)),
     );
     loaded.flush_pending_delete();
     let fresh = spawn(&mut loaded, &rules, "SHOOTER", "House0", 18);

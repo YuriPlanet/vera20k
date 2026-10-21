@@ -258,7 +258,7 @@ impl PaidHead {
                 let commands = std::mem::take(&mut self.pending);
                 let (executed, spawned) = sim.apply_due_commands(
                     &commands,
-                    Some(rules),
+                    rules,
                     sim.session.tick(),
                     None,
                     FrameEffects::default(),

@@ -453,7 +453,7 @@ fn set_target_matches_the_original() {
         sim.assign_target_represented(
             building,
             requested,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -505,10 +505,10 @@ fn enter_idle_mode_matches_the_unlimbo_rows() {
         let enter = |sim: &mut Simulation| {
             if bypass {
                 sim.with_buildup_bypass(|sim| {
-                    sim.building_enter_idle_mode(building, initial, Some(&rules))
+                    sim.building_enter_idle_mode(building, initial, &rules)
                 })
             } else {
-                sim.building_enter_idle_mode(building, initial, Some(&rules))
+                sim.building_enter_idle_mode(building, initial, &rules)
             }
         };
         let returned = if input["scenario_init"] == 1 {
@@ -690,7 +690,7 @@ fn building_dispatch_cadence_matches_the_original() {
                     sim.assign_target_represented(
                         building,
                         Some(TargetKind::Entity(target)),
-                        Some(&rules),
+                        &rules,
                         None,
                         crate::sim::world::FrameEffects::default(),
                     )
@@ -700,7 +700,7 @@ fn building_dispatch_cadence_matches_the_original() {
                     sim.assign_target_represented(
                         building,
                         None,
-                        Some(&rules),
+                        &rules,
                         None,
                         crate::sim::world::FrameEffects::default(),
                     )

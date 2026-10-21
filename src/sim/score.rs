@@ -397,8 +397,10 @@ mod tests {
         sim.houses.register(human_house);
         sim.session.set_current_house_for_test(Some(human));
 
+        // A second human: an AI House draws Scenario RNG in every frame's
+        // House AI, which these tests keep apart from the score's draws.
         let opponent = sim.interner.intern("Opponent");
-        let mut opponent_house = HouseState::new(opponent, 1, None, false, 0, 10);
+        let mut opponent_house = HouseState::new(opponent, 1, None, true, 0, 10);
         opponent_house.economy_mut().set_score_for_test(100);
         sim.houses.register(opponent_house);
         sim

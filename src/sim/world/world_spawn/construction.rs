@@ -84,7 +84,7 @@ impl Simulation {
             &self.houses,
             &mut ge,
             Some(obj),
-            Some(rules),
+            rules,
             ComponentOrigin::Runtime,
         );
         Ok(Some(ge))
@@ -96,7 +96,7 @@ impl Simulation {
         houses: &Houses,
         ge: &mut GameEntity,
         obj: Option<&ObjectType>,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         origin: ComponentOrigin,
     ) {
         let category = ge.category();
@@ -189,18 +189,14 @@ impl Simulation {
         }
         // BuildingClass::Init_Managers, from the constructor (`0x0043BB29`):
         // no Buildup SHP clears the AI sale byte (`0x00442CBC`).
-        if category == EntityCategory::Structure
-            && let Some(rules) = rules
-        {
+        if category == EntityCategory::Structure {
             ge.bind_building_construction_control(rules.buildup_control(&obj.id));
             if matches!(origin, ComponentOrigin::Authored { .. }) {
                 ge.initialize_building_idle_body(session.binary_frame() as i32);
             }
         }
-        ge.ai_sell_repair.construct(
-            category == EntityCategory::Structure
-                && rules.is_some_and(|rules| rules.has_buildup(&obj.id)),
-        );
+        ge.ai_sell_repair
+            .construct(category == EntityCategory::Structure && rules.has_buildup(&obj.id));
         if should_construct_locomotor(category, obj) {
             ge.locomotor = Some(LocomotorState::from_object_type(
                 obj,
@@ -228,20 +224,18 @@ impl Simulation {
         }
         // InitManagers6F40FC..6F414E: a weapon-0 Parasite warhead owns its
         // ParasiteClass (Foot+69C) from construction, not from the first shot.
-        if let Some(rules) = rules
-            && crate::sim::combat::parasite::type_allocates_parasite(
-                rules,
-                obj,
-                category,
-                ge.veterancy.rank(),
-            )
-        {
+        if crate::sim::combat::parasite::type_allocates_parasite(
+            rules,
+            obj,
+            category,
+            ge.veterancy.rank(),
+        ) {
             ge.parasite.allocate_class(session.binary_frame());
         }
         install_authored_bridge(ge, origin);
 
         if let Some(kind) = miner_kind_for_object(obj) {
-            let mcfg: MinerConfig = rules.map(MinerConfig::from_rules).unwrap_or_default();
+            let mcfg = MinerConfig::from_rules(rules);
             let storage = obj.storage.max(0) as u16;
             ge.miner = Some(Miner::new(kind, &mcfg, storage));
         }
@@ -262,36 +256,34 @@ impl Simulation {
         stamp_building_cell_profile(ge, Some(obj));
         // TechnoClass::Init_Managers — manager-owned children are committed
         // after this parent enters the limbo store and before its Unlimbo.
-        if let Some(rules) = rules {
-            ge.capture_manager = crate::sim::capture_manager::init_capture_manager(obj, rules);
-            ge.temporal = crate::sim::temporal::init_temporal(obj, rules);
-            ge.spawn_manager = crate::sim::spawn_manager::init_spawn_manager(
-                obj,
-                rules,
-                interner,
-                session.binary_frame(),
-            );
-            // 0x006F41FE..0x006F4271: a CanDisguise=/PermaDisguise= type (stock
-            // SPY) starts disguised as its owner, wearing the Rules disguise
-            // of the owner's side (House+0x1E8: 0, 1, else Third). Native has
-            // no owner guard; a Techno without a represented house is a
-            // fixture case. Rust never re-runs this InitFromType tail (Unit
-            // slot +0x24 can); only retail [SPY], an Infantry, sets the keys.
-            if obj.can_disguise
-                && obj.perma_disguise
-                && let Some(side) = houses.get(&ge.owner()).map(|h| h.side_index())
-            {
-                let worn = rules.general.infantry_disguises[match side {
-                    0 => 0,
-                    1 => 1,
-                    _ => 2,
-                }]
-                .as_deref()
-                .map(|name| interner.intern(name));
-                let owner = ge.owner();
-                let frame = session.binary_frame();
-                ge.disguise_mut(frame).wear_from_construction(worn, owner);
-            }
+        ge.capture_manager = crate::sim::capture_manager::init_capture_manager(obj, rules);
+        ge.temporal = crate::sim::temporal::init_temporal(obj, rules);
+        ge.spawn_manager = crate::sim::spawn_manager::init_spawn_manager(
+            obj,
+            rules,
+            interner,
+            session.binary_frame(),
+        );
+        // 0x006F41FE..0x006F4271: a CanDisguise=/PermaDisguise= type (stock
+        // SPY) starts disguised as its owner, wearing the Rules disguise
+        // of the owner's side (House+0x1E8: 0, 1, else Third). Native has
+        // no owner guard; a Techno without a represented house is a
+        // fixture case. Rust never re-runs this InitFromType tail (Unit
+        // slot +0x24 can); only retail [SPY], an Infantry, sets the keys.
+        if obj.can_disguise
+            && obj.perma_disguise
+            && let Some(side) = houses.get(&ge.owner()).map(|h| h.side_index())
+        {
+            let worn = rules.general.infantry_disguises[match side {
+                0 => 0,
+                1 => 1,
+                _ => 2,
+            }]
+            .as_deref()
+            .map(|name| interner.intern(name));
+            let owner = ge.owner();
+            let frame = session.binary_frame();
+            ge.disguise_mut(frame).wear_from_construction(worn, owner);
         }
         // After the managers, InitFromType makes the object veteran
         // (`SetVeteran(1)`, `0x00750090`) where its house's spies entered a
@@ -301,10 +293,17 @@ impl Simulation {
         // constructor `0x0073563D..0x00735678` and InitFromType
         // `0x00746860..0x0074689B` alike) and such a building that undeploys
         // (`BuildingClass::Init_Managers`, `0x00442CD8..0x00442D0F`).
-        // Aircraft read neither. The countries' `VeteranInfantry=` and
-        // `VeteranUnits=` lists before them (`0x00517CE8`, `0x0074682B`) are
-        // dormant: no retail country sets one.
+        // Country list membership runs first and has no Trainable/Naval
+        // restriction: Infantry517CE7, Unit735604/746827, and the reached
+        // Aircraft InitFromType413F98 called by constructor413E2E.
+        // Aircraft read VeteranAircraft but neither of the spy flags below.
+        // Evidence: tools/rules_oracle/country_veterancy.md.
         let house = houses.get(&ge.owner());
+        if let Some(house) = house
+            && rules.country_starts_veteran(interner.resolve(house.house_type_id()), obj)
+        {
+            ge.veterancy.set_veteran();
+        }
         let veteran = obj.trainable
             && house.is_some_and(|house| match category {
                 EntityCategory::Infantry => house.veteran_infantry(),
@@ -346,7 +345,7 @@ fn install_authored_bridge(ge: &mut GameEntity, origin: ComponentOrigin) {
 fn stamp_scoring_flags(
     ge: &mut GameEntity,
     obj: Option<&crate::rules::object_type::ObjectType>,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
 ) {
     ge.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(ge.category(), obj, rules);
 }
@@ -515,9 +514,9 @@ fn default_true() -> bool {
     true
 }
 
-/// Facts the object's type fixes, copied when the object is built so paths
-/// without a RuleSet can read them: the cell-list exits of UnInit and Limbo,
-/// the House base lists, BasePlan and owner transfer. Natively a building
+/// Facts the object's type fixes, copied when the object is built. The
+/// cell-list exits of UnInit and Limbo, the House base lists, BasePlan and
+/// owner transfer read the copies. Natively a building
 /// reads each through its type pointer (`BuildingClass+0x520`); the rules
 /// reader owns the native reads (the matching `ObjectType` fields). Only the
 /// construction stamp writes them.

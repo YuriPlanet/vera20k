@@ -307,7 +307,7 @@ fn command_paid_fv(
             target_rx: 87,
             target_ry: 54,
         },
-        Some(&runtime.resources.rules),
+        &runtime.resources.rules,
         Some(&runtime.resources.overlay_registry),
         crate::sim::world::FrameEffects::default(),
     ));
@@ -365,7 +365,7 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
                         assert!(sim.apply_command_with_overlays(
                             &owner,
                             &Command::Stop { entity_id: id },
-                            Some(&runtime.resources.rules),
+                            &runtime.resources.rules,
                             Some(&runtime.resources.overlay_registry),
                             crate::sim::world::FrameEffects::default(),
                         ));

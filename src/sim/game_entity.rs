@@ -177,6 +177,11 @@ pub struct GameEntity {
     /// `TechnoClass::ChangeOwner @ 0x007014A0` moves it; here only the store's
     /// owner-change path does ([`Self::set_owner_from_store`]).
     owner: InternedId,
+    /// The Techno constructor's House argument, retained at +0x14C
+    /// (`0x006F322B..0x006F3241`). ChangeOwner never replaces it; Building's
+    /// capture-sale tail compares it with the current owner (4492EF).
+    /// Houses remain registered for the scenario's lifetime.
+    initial_owner: InternedId,
     /// The object's health (`ObjectClass+0x6C`), a [`Health`] that
     /// `combat::object_health` owns.
     pub health: Health,
@@ -1245,6 +1250,11 @@ impl GameEntity {
         self.owner
     }
 
+    /// Constructor House identity, preserved across ownership transfers and load.
+    pub(crate) fn initial_owner(&self) -> InternedId {
+        self.initial_owner
+    }
+
     /// Immutable indexed type identity, established by construction/decoding.
     pub fn type_ref(&self) -> InternedId {
         self.type_ref
@@ -1305,11 +1315,13 @@ impl GameEntity {
         self.techno_ctor_random_word = word;
     }
 
-    /// Before insertion only: a stored entity changes owner through
+    /// Before insertion only: supply the constructor and current House
+    /// together. A stored entity changes only its current owner through
     /// [`EntityStore::change_owner`](crate::sim::entity_store::EntityStore::change_owner),
     /// which keeps the store's owner column.
     pub fn set_owner_for_test(&mut self, owner: InternedId) {
         self.owner = owner;
+        self.initial_owner = owner;
     }
 
     pub fn set_type_ref_for_test(&mut self, type_ref: InternedId) {
@@ -1380,10 +1392,9 @@ impl GameEntity {
     /// disguise flag (`+0x1D8`) and GetDisguiseHouse (vt+0xD0, `0x0041BE70`)
     /// none, whoever asks. `TechnoClass::Flash @ 0x006F9DD0` then starts the
     /// flash countdown (`+0xF0`) unless that flag is up. A building's
-    /// `0x00456E00` adds the redraw flag (`+0x80`) and relit slot anims,
-    /// presentation the draws derive from the countdown
-    /// (`app::presentation::lighting`). Foot objects go through
-    /// [`crate::sim::world::Simulation::flash_object`].
+    /// `0x00456E00` adds the redraw flag (`+0x80`) and relights its slot
+    /// anims ([`crate::sim::world::ObjectSubstrate::flash_building`]). Foot
+    /// objects go through [`crate::sim::world::Simulation::flash_object`].
     pub(crate) fn flash_base(&mut self, frames: i32) {
         if !self
             .disguise
@@ -1513,6 +1524,7 @@ impl GameEntity {
             body_frame_counter: Default::default(),
             unit_firing_counter: Default::default(),
             owner,
+            initial_owner: owner,
             health,
             estimated_health: crate::sim::estimated_health::EstimatedHealth::from_raw(
                 health.current(),

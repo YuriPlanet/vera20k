@@ -302,7 +302,7 @@ fn multiplayer_eligible_slot(
 /// tracked building, more than 1500 available credits and no tracked first
 /// ownable `BaseUnit=` is forced onto the Unit slot.
 fn mcv_preempt(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> bool {
-    use crate::sim::ai_buildable::{first_owner_compatible, house_country_bit};
+    use crate::sim::ai_buildable::first_owner_compatible;
     let Some(house) = sim.houses.get(&owner) else {
         return false;
     };
@@ -312,7 +312,7 @@ fn mcv_preempt(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> bool {
     if house.economy().available_money() <= MCV_PREEMPT_CREDITS {
         return false;
     }
-    let country_bit = house_country_bit(rules, sim.interner.resolve(house.house_type_id()));
+    let country_bit = rules.country_owner_mask(sim.interner.resolve(house.house_type_id()));
     let mcv_tracked = first_owner_compatible(
         rules,
         &rules.general.base_unit_types,
@@ -377,7 +377,7 @@ pub(crate) fn pickup_crate(
             49,
             Some(actor_id),
             None,
-            crate::sim::world::UninitContext::new(Some(rules), Some(registry))
+            crate::sim::world::UninitContext::new(rules, Some(registry))
                 .with_effects(frame_effects),
         );
         if had_tag

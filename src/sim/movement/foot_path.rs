@@ -25,7 +25,7 @@ use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::components::DriveCoord;
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::mission::MissionId;
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellObjectMember;
 use crate::sim::pathfinding::CODE2_CHAIN_MAX_HOPS;
@@ -395,7 +395,7 @@ impl Simulation {
     pub(crate) fn run_foot_path_request(
         &mut self,
         request: &FootPathRequest,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<FootPathOutcome, String> {
@@ -535,7 +535,7 @@ impl Simulation {
                 self.infantry_stop_driver(id, rules, registry, frame_effects)
             }
             EntityCategory::Unit | EntityCategory::Aircraft => {
-                self.locomotor_stop_moving(id, Some(rules), registry, frame_effects)
+                self.locomotor_stop_moving(id, rules, registry, frame_effects)
             }
             EntityCategory::Structure => {
                 Err("Foot +0x500 receiver for this class is not represented".into())
@@ -559,7 +559,7 @@ impl Simulation {
         if self.path_grid.is_none() {
             return Err("Find_Path core requires PathGrid; no native failure inferred".into());
         }
-        self.foot_mark_remove(id, Some(rules), registry, frame_effects);
+        self.foot_mark_remove(id, rules, registry, frame_effects);
         #[cfg(test)]
         self.export_bridge_engineer_entry_inputs(id, rules, "mark0");
         let searched = match self.take_batched_search(request, goal) {
@@ -576,7 +576,7 @@ impl Simulation {
                     self.resolved_terrain.as_ref(),
                     self.overlay_grid.as_ref(),
                     &self.interner,
-                    Some(rules),
+                    rules,
                 );
                 let counts = self.movement_pass_cache.current_blocker_plane();
                 //The track_fresh_response oracle substitutes the whole AStar
@@ -607,7 +607,7 @@ impl Simulation {
             }
         };
         //4D3EAC restores Mark1 before inspecting the core result.
-        self.foot_mark_put(id, Some(rules), registry, frame_effects);
+        self.foot_mark_put(id, rules, registry, frame_effects);
         if let Err(super::movement_path::MovePathFailure::Search(
             crate::sim::pathfinding::zone_search::PathSearchFailure::CellEntryUnavailable(cause),
         )) = &searched
@@ -674,13 +674,13 @@ impl Simulation {
         let mover_peer = super::path_markers::bridge_marker_peer(
             &self.substrate.entities,
             id,
-            Some(rules),
+            rules,
             &self.interner,
         );
         let marker_context = super::path_markers::DeferredBridgeMarker {
             mover_id: id,
             mover: mover_peer.as_ref(),
-            rules: Some(rules),
+            rules,
             interner: &self.interner,
             grid,
             terrain: self.resolved_terrain.as_ref(),
@@ -818,16 +818,16 @@ impl Simulation {
                 }
             };
             drive_end(self, false);
-            self.leave_team(id, false, Some(rules), frame_effects);
+            self.leave_team(id, false, rules, frame_effects);
             drive_end(self, true);
         }
         //0x4D413A: the class SetDestination(NULL, true): Infantry 0x51AA40 ->
         //Foot 0x4D94B0 -> Walk 0x75ADA0, or Unit 0x741970 -> Foot 0x4D94B0 ->
         //Drive 0x4AFE00 / Ship 0x69F510.
-        self.assign_null_destination(id, Some(rules), registry, frame_effects);
+        self.assign_null_destination(id, rules, registry, frame_effects);
         //4D4149 dispatches the concrete target setter, including an owned
         //Airstrike's cancellation before its TarCom changes.
-        self.assign_target_represented(id, None, Some(rules), registry, frame_effects)
+        self.assign_target_represented(id, None, rules, registry, frame_effects)
             .map_err(|_| "retired failed Find_Path actor")?;
         let human = self.owner_is_human(owner);
         let mission = if human {
@@ -843,7 +843,7 @@ impl Simulation {
             MissionId::from_known(mission),
             0,
             now,
-            &EntityReadyInputProvider,
+            &LiveReadyInputProvider { rules },
         );
         //0x4D4174..0x4D41C2: with GameMode ([0xA8B238]) nonzero, a nonhuman
         //actor asks its own House (ecx = +0x21C) for a post, House500200 at
@@ -856,7 +856,7 @@ impl Simulation {
             self.assign_destination_represented(
                 id,
                 Some(crate::sim::components::NavTargetRef::cell(rx, ry)),
-                Some(rules),
+                rules,
                 registry,
                 frame_effects,
             )
@@ -1263,14 +1263,8 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), String> {
         let requested = crate::sim::components::NavTargetRef::cell(cell.0 as u16, cell.1 as u16);
-        self.assign_destination_represented(
-            id,
-            Some(requested),
-            Some(rules),
-            registry,
-            frame_effects,
-        )
-        .map_err(|cause| format!("Find_Path redirect: {cause}"))
+        self.assign_destination_represented(id, Some(requested), rules, registry, frame_effects)
+            .map_err(|cause| format!("Find_Path redirect: {cause}"))
     }
 
     /// Foot+320/4DA1D0, shared by class admission and the path-zone precheck.

@@ -952,7 +952,7 @@ impl Simulation {
         };
         let unit_is_foot = unit.category() != EntityCategory::Structure;
         if unit_is_foot {
-            self.leave_team(unit_id, false, Some(rules), frame_effects);
+            self.leave_team(unit_id, false, rules, frame_effects);
         }
         // 0x004723E4..0x004723F3: a unit holding a Temporal target lets go.
         Self::temporal_release_if_warping(

@@ -1807,23 +1807,21 @@ impl Default for VisionConfig {
 }
 
 impl VisionConfig {
-    /// The rules' sight keys (none in a fixture without rules: no veteran
-    /// or elevation sight, `RevealByHeight=` and `AllyReveal=` at their
-    /// constructor defaults), the map's `Size=` diamond, whether a Techno
+    /// The rules' sight keys, the map's `Size=` diamond, whether a Techno
     /// needs the stored playfield byte, and the `MultiplayPassive=` houses.
     pub(crate) fn new(
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         map_size: Option<(i32, i32)>,
         require_playfield_membership: bool,
         passive_owners: Vec<InternedId>,
     ) -> Self {
         Self {
             require_playfield_membership,
-            veteran_sight: rules.map_or(0.0, |r| r.general.veteran_sight),
-            leptons_per_sight_increase: rules.map_or(0, |r| r.general.leptons_per_sight_increase),
-            reveal_by_height: rules.is_none_or(|r| r.general.reveal_by_height),
+            veteran_sight: rules.general.veteran_sight,
+            leptons_per_sight_increase: rules.general.leptons_per_sight_increase,
+            reveal_by_height: rules.general.reveal_by_height,
             map_size,
-            ally_reveal: rules.is_none_or(|r| r.general.ally_reveal),
+            ally_reveal: rules.general.ally_reveal,
             passive_owners,
         }
     }
@@ -1844,7 +1842,7 @@ impl VisionConfig {
         &self,
         entity: &crate::sim::game_entity::GameEntity,
         interner: &StringInterner,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
     ) -> bool {
         self.veteran_sight != 0.0 && entity_has_sight_ability(entity, interner, rules)
     }
@@ -1888,15 +1886,14 @@ impl VisionConfig {
 
 /// The `SIGHT`-ability half of `TechnoClass::UpdateReveal @ 0x0070AF50`'s
 /// veteran gate (`0x0070B01E..0x0070B07A`), resolved off the type's ability
-/// arrays through the shared `HasWeaponAbility` predicate. No rules — as in
-/// headless fixtures — reads as no ability.
+/// arrays through the shared `HasWeaponAbility` predicate.
 fn entity_has_sight_ability(
     entity: &crate::sim::game_entity::GameEntity,
     interner: &crate::sim::intern::StringInterner,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
 ) -> bool {
-    rules
-        .and_then(|rules| interner.object_type(entity.type_ref(), rules))
+    interner
+        .object_type(entity.type_ref(), rules)
         .is_some_and(|object| {
             crate::sim::combat::veterancy::has_weapon_ability(
                 entity.veterancy.rank_kind(),

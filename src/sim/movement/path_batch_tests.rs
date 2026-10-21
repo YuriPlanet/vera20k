@@ -55,7 +55,7 @@ fn send(sim: &mut Simulation, rules: &RuleSet, id: u64, cell: (u16, u16)) {
     sim.assign_destination_represented(
         id,
         Some(NavTargetRef::cell(cell.0, cell.1)),
-        Some(rules),
+        rules,
         None,
         FrameEffects::default(),
     )
@@ -153,7 +153,7 @@ fn a_batched_answer_is_the_serial_search() {
                         id,
                         kind
                     ));
-                    sim.answer_batched_path_searches(Some(&rules), None);
+                    sim.answer_batched_path_searches(&rules, None);
                     assert!(
                         !crate::sim::world::Simulation::defer_path_search(
                             &mut sim.path_batch,
@@ -215,7 +215,7 @@ fn an_answer_for_another_request_is_not_used() {
         tank,
         CODE2
     ));
-    sim.answer_batched_path_searches(Some(&rules), None);
+    sim.answer_batched_path_searches(&rules, None);
     assert!(
         !crate::sim::world::Simulation::defer_path_search(
             &mut sim.path_batch,
@@ -257,7 +257,7 @@ fn a_left_out_code2_repath_keeps_its_urgency() {
             ));
         }
         sim.path_batch.as_mut().unwrap().next_turn = others.start;
-        sim.answer_batched_path_searches(Some(&rules), None);
+        sim.answer_batched_path_searches(&rules, None);
         sim.finish_batched_path_searches();
     };
     assert!(crate::sim::world::Simulation::defer_path_search(
@@ -323,7 +323,7 @@ fn a_left_out_code2_repath_keeps_its_urgency() {
         "only the code-2 re-path is kept"
     );
     // A pass with no registration at all keeps nothing.
-    sim.answer_batched_path_searches(Some(&rules), None);
+    sim.answer_batched_path_searches(&rules, None);
     sim.finish_batched_path_searches();
     assert!(sim.path_batch.as_ref().unwrap().left_out_code2.is_empty());
     assert!(crate::sim::world::Simulation::defer_path_search(
@@ -449,7 +449,7 @@ fn a_redirected_request_is_left_to_find_path() {
         tank,
         CODE2
     ));
-    sim.answer_batched_path_searches(Some(&rules), None);
+    sim.answer_batched_path_searches(&rules, None);
     assert_eq!(sim.path_batch.as_ref().unwrap().ready[&tank].answer, None);
     let request = sim.code2_ladder_request(tank, 1).unwrap();
     sim.foot_find_path(&request, &rules, None, FrameEffects::default())
@@ -489,7 +489,7 @@ fn batched_answers_do_not_depend_on_the_threads() {
             request
         ));
     }
-    sim.answer_batched_path_searches(Some(&rules), None);
+    sim.answer_batched_path_searches(&rules, None);
     let grid = sim.path_grid_snapshot().unwrap();
     let counts = sim.movement_pass_cache.current_blocker_plane();
     let dummy = sim.resolved_terrain.as_ref().unwrap().shared_cell_dummy();
@@ -664,7 +664,7 @@ fn registrations_survive_a_save_and_answers_do_not() {
         tank,
         CODE2
     ));
-    sim.answer_batched_path_searches(Some(&rules), None);
+    sim.answer_batched_path_searches(&rules, None);
     assert!(crate::sim::world::Simulation::defer_path_search(
         &mut sim.path_batch,
         &sim.resolved_terrain,
@@ -737,7 +737,7 @@ fn a_foots_first_request_in_a_frame_claims_its_answer() {
         tank,
         WaitingRequest::NoQueue
     ));
-    sim.answer_batched_path_searches(Some(&rules), None);
+    sim.answer_batched_path_searches(&rules, None);
     assert!(
         !crate::sim::world::Simulation::defer_path_search(
             &mut sim.path_batch,
@@ -779,7 +779,7 @@ fn a_foots_first_request_in_a_frame_claims_its_answer() {
         tank,
         WaitingRequest::NoQueue
     ));
-    sim.answer_batched_path_searches(Some(&rules), None);
+    sim.answer_batched_path_searches(&rules, None);
     let slot = &sim.path_batch.as_ref().unwrap().ready[&tank];
     assert!(slot.answer.is_some());
     assert_eq!(
@@ -815,7 +815,7 @@ fn a_refused_walk_retry_waits_for_the_next_batch() {
             .mission_leaf
             .set_infantry_doing_verified(3)
             .unwrap();
-        sim.run_foot_path_request(request, Some(&rules), None, FrameEffects::default())
+        sim.run_foot_path_request(request, &rules, None, FrameEffects::default())
             .expect("the request runs");
         let entity = sim.substrate.entities.get(infantry).unwrap();
         entity.mission_leaf.as_infantry().unwrap().doing()
@@ -832,7 +832,7 @@ fn a_refused_walk_retry_waits_for_the_next_batch() {
     );
     assert!(route(&sim, infantry).is_empty(), "the request waited");
 
-    sim.answer_batched_path_searches(Some(&rules), None);
+    sim.answer_batched_path_searches(&rules, None);
     run(&mut sim, &request);
     assert_eq!(sim.path_batch.as_ref().unwrap().used, [1, 0]);
     assert!(!route(&sim, infantry).is_empty(), "the answer routes");
@@ -851,7 +851,7 @@ fn a_refused_walk_retry_waits_for_the_next_batch() {
         "the retry cleared the path"
     );
 
-    sim.answer_batched_path_searches(Some(&rules), None);
+    sim.answer_batched_path_searches(&rules, None);
     let repeated = sim.no_queue_request(infantry).unwrap();
     run(&mut sim, &repeated);
     assert_eq!(sim.path_batch.as_ref().unwrap().used, [2, 0]);
@@ -890,7 +890,7 @@ fn a_drive_retry_recursion_waits_after_the_frames_answer() {
         "without an answer the recursion waits"
     );
 
-    sim.answer_batched_path_searches(Some(&rules), None);
+    sim.answer_batched_path_searches(&rules, None);
     process(&mut sim, ProcessMovementArgs::OUTER);
     assert_eq!(sim.path_batch.as_ref().unwrap().used, [1, 0]);
     // The retry's own preparation: no path left and the timer run out.
@@ -951,7 +951,7 @@ fn a_pass_answers_at_most_its_cap_and_the_rest_wait() {
             WaitingRequest::NoQueue
         ));
     }
-    sim.answer_batched_path_searches(Some(&rules), None);
+    sim.answer_batched_path_searches(&rules, None);
     let batch = sim.path_batch.as_ref().unwrap();
     assert_eq!(batch.answered, (first..first + cap).collect::<Vec<_>>());
     assert_eq!(batch.next_turn, first + cap);
@@ -996,7 +996,7 @@ fn a_pass_answers_at_most_its_cap_and_the_rest_wait() {
             WaitingRequest::NoQueue
         ));
     }
-    sim.answer_batched_path_searches(Some(&rules), None);
+    sim.answer_batched_path_searches(&rules, None);
     let batch = sim.path_batch.as_ref().unwrap();
     let mut second: Vec<u64> = (first + cap..end).chain(first..first + cap - 10).collect();
     second.sort_unstable();
@@ -1050,7 +1050,7 @@ fn a_pass_answers_urgency2_repaths_within_its_budget() {
             // Without a budget every re-path is answered; alone, each makes
             // the expansions it makes in the batch.
             register(&mut sim, &ladders);
-            sim.answer_path_searches_within(Some(&rules), None, u64::MAX);
+            sim.answer_path_searches_within(&rules, None, u64::MAX);
             assert_eq!(sim.path_batch.as_ref().unwrap().answered, ladders);
             let grid = sim.path_grid_snapshot().unwrap();
             let counts = sim.movement_pass_cache.current_blocker_plane();
@@ -1076,7 +1076,7 @@ fn a_pass_answers_urgency2_repaths_within_its_budget() {
             sim.finish_batched_path_searches();
             register(&mut sim, &ladders);
             let budget = alone[0].1 + alone[1].1 + 1;
-            sim.answer_path_searches_within(Some(&rules), None, budget);
+            sim.answer_path_searches_within(&rules, None, budget);
             let batch = sim.path_batch.as_ref().unwrap();
             assert_eq!(batch.answered, ladders[..3]);
             for (id, (answer, _)) in ladders.iter().zip(&alone).take(3) {
@@ -1102,7 +1102,7 @@ fn a_pass_answers_urgency2_repaths_within_its_budget() {
             // budget.
             sim.finish_batched_path_searches();
             register(&mut sim, &ladders[..1]);
-            sim.answer_path_searches_within(Some(&rules), None, 1);
+            sim.answer_path_searches_within(&rules, None, 1);
             let batch = sim.path_batch.as_ref().unwrap();
             assert_eq!(batch.answered, [ladders[3]]);
             let waiting: Vec<_> = batch
@@ -1152,7 +1152,7 @@ fn the_urgency2_budget_leaves_the_caps_turn_alone() {
             URGENT
         ));
     }
-    sim.answer_path_searches_within(Some(&rules), None, 1);
+    sim.answer_path_searches_within(&rules, None, 1);
     let batch = sim.path_batch.as_ref().unwrap();
     assert_eq!(batch.next_turn, first + cap);
     let answered: Vec<u64> = std::iter::once(ladders[0])

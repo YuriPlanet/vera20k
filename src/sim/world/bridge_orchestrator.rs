@@ -780,7 +780,7 @@ pub(super) fn blow_up_bridge_cell_fallout(
         sim,
         rx,
         ry,
-        super::UninitContext::new(Some(rules), overlay_registry).with_effects(frame_effects),
+        super::UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
     );
     //47DDD5..47DE2B publishes after ground/deck receivers, before debris
     //draws/constructors. Direct callers also leave pending entries for save;
@@ -1117,7 +1117,7 @@ mod tests {
         while !sim.advance_fall(
             id,
             -8,
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             crate::sim::world::FrameEffects::default(),
         ) {

@@ -186,7 +186,7 @@ fn paid_ready_fixture() -> Option<Fixture> {
     for _ in 0..4096 {
         sim.advance_app_frame(
             &[],
-            Some(&rules),
+            &rules,
             Some(&overlays),
             67,
             TickLane::Ordinary,
@@ -603,7 +603,7 @@ fn advance_commands(fixture: &mut Fixture, commands: &[CommandEnvelope]) -> SimF
         .sim
         .advance_app_frame(
             &due,
-            Some(&fixture.rules),
+            &fixture.rules,
             Some(&fixture.overlays),
             67,
             TickLane::Ordinary,
@@ -1802,7 +1802,7 @@ fn mixed_infantry_terminal_delivery_clears_old_cameo_before_same_factory_promoti
             producer,
             crate::sim::radio::RadioMessage::Hello,
             crate::sim::radio::RadioPayload::default(),
-            Some(&fixture.rules),
+            &fixture.rules,
             FrameEffects::default(),
         )
         .code(),

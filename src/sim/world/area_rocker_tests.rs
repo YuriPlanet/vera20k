@@ -15,7 +15,7 @@ fn ordinary_frame(sim: &mut Simulation, rules: &RuleSet) -> Vec<super::SimFireEv
     let output = sim
         .advance_app_frame(
             &commands,
-            Some(rules),
+            rules,
             None,
             33,
             TickLane::Ordinary,

@@ -100,7 +100,7 @@ fn native_foot_archive_expiry_matches_all_22_original_class_rows() {
             } else {
                 PointerExpiryControl::Uninit
             },
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             crate::sim::world::FrameEffects::default(),
         );

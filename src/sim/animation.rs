@@ -175,11 +175,11 @@ impl Animation {
 
 fn sequence_set_for_type<'a>(
     sequences: &'a BTreeMap<String, SequenceSet>,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
     type_name: &str,
 ) -> Option<&'a SequenceSet> {
     sequences.get(type_name).or_else(|| {
-        let canonical = rules?.object(type_name)?.id.as_str();
+        let canonical = rules.object(type_name)?.id.as_str();
         sequences.get(canonical)
     })
 }
@@ -375,7 +375,7 @@ pub(crate) fn commit_unit_firing_counter(
 /// controls: tools/spatial_oracle/unit_simple_deploy.json.
 pub(crate) fn tick_foot_body_frame_counter(
     entity: &mut crate::sim::game_entity::GameEntity,
-    rules: Option<crate::sim::movement::SpeedRules<'_>>,
+    rules: crate::sim::movement::SpeedRules<'_>,
     cadence: FootBodyCadence,
     hover_attack: bool,
     deploy_to_land: bool,
@@ -528,7 +528,7 @@ pub fn advance_animation(
 fn tick_animations_impl(
     entities: &mut crate::sim::entity_store::EntityStore,
     sequences: &BTreeMap<String, SequenceSet>,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
     game_options: &crate::sim::game_options::GameOptions,
     interner: &crate::sim::intern::StringInterner,
     binary_frame: u32,
@@ -640,7 +640,7 @@ pub fn tick_animations(
     tick_animations_impl(
         entities,
         sequences,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         game_options,
         interner,
         binary_frame,
@@ -667,7 +667,7 @@ pub(crate) fn snap_completion_facing(
 pub(crate) fn tick_non_dying_animations(
     entities: &mut crate::sim::entity_store::EntityStore,
     sequences: &BTreeMap<String, SequenceSet>,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
     game_options: &crate::sim::game_options::GameOptions,
     interner: &crate::sim::intern::StringInterner,
     binary_frame: u32,

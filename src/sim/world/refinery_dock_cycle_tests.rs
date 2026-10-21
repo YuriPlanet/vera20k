@@ -121,7 +121,7 @@ fn admission_owner_uses_actual_sparse_contact_slots() {
             s.refinery,
             crate::sim::radio::RadioMessage::CanEnter,
             crate::sim::radio::RadioPayload::default(),
-            Some(&s.rules),
+            &s.rules,
             crate::sim::world::FrameEffects::default(),
         ),
         crate::sim::radio::RadioResponse::Roger,

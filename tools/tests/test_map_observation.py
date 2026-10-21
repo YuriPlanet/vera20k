@@ -243,7 +243,8 @@ class MapObservationTests(unittest.TestCase):
                         'runtime': {'current_frame': 0, 'frame_step': 1, 'delay_remaining': 0,
                             'rate_reload': 4, 'frame_timer': {'start_frame': 50, 'duration': 4},
                             'loop_remaining': 255, 'first_ai_guard': False,
-                            'constructor_reverse': False, 'inactive': False, 'paused': False}}}]}
+                            'constructor_reverse': False, 'inactive': False, 'paused': False,
+                            'temporal_paused': False}}}]}
 
     @staticmethod
     def unit():
@@ -396,7 +397,8 @@ class MapObservationTests(unittest.TestCase):
                      'runtime': {'current_frame': 0, 'frame_step': 1, 'delay_remaining': 1,
                                  'rate_reload': 2, 'frame_timer': {'start_frame': 1, 'duration': 2},
                                  'loop_remaining': 1, 'first_ai_guard': False,
-                                 'constructor_reverse': False, 'inactive': False, 'paused': False}}
+                                 'constructor_reverse': False, 'inactive': False, 'paused': False,
+                                 'temporal_paused': False}}
         self.effect_frames = {
             1: {'scenario_rng_cursor': [0, 103], 'projectiles': [projectile], 'animations': [animation]},
             2: {'scenario_rng_cursor': [0, 103], 'projectiles': [], 'animations': [deepcopy(animation)]}}

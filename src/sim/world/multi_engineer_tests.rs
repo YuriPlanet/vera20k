@@ -50,7 +50,7 @@ fn enter(sim: &mut Simulation, rules: &RuleSet, building: u64) -> bool {
             y: 10 * 256 + 128,
             z: 0,
         },
-        Some(rules),
+        rules,
         None,
         FrameEffects::default(),
     );

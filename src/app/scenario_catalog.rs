@@ -21,13 +21,7 @@ use std::path::Path;
 /// No record is fabricated for an unavailable or transferred file.
 pub(crate) struct VerifiedNetworkMap<'a> {
     pub record: &'a SkirmishScenarioRecord,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "tests assert which physical source verification read"
-        )
-    )]
+    /// A WOL guest previews only a map read from a mixfile.
     pub source: LoadedMapSource,
 }
 

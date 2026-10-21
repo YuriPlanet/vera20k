@@ -675,13 +675,7 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
         );
         crate::sim::movement::target_cell_coord(at.0, at.1, Some(&cells))
     };
-    sim.foot_set_location_marked(
-        id,
-        position,
-        Some(rules),
-        Some(registry),
-        FrameEffects::default(),
-    );
+    sim.foot_set_location_marked(id, position, rules, Some(registry), FrameEffects::default());
     assert_eq!(
         sim.overlay_grid
             .as_ref()
@@ -693,7 +687,7 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
     sim.per_cell_process(
         id,
         crate::sim::movement::PerCellReason::Arrival,
-        Some(rules),
+        rules,
         Some(registry),
         FrameEffects::for_sound(&cue),
     )
@@ -1015,13 +1009,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
         );
         // Original native controls reseed all three streams after setup. These
         // explicit component inputs do not claim native whole-load RNG parity.
-        sim.process_pending_delete_with(
-            Some(rules),
-            Some(registry),
-            FrameEffects::default(),
-            0,
-            true,
-        );
+        sim.process_pending_delete_with(rules, Some(registry), FrameEffects::default(), 0, true);
         for expected in case["initial_patch"].as_array().unwrap() {
             assert_cell(sim, expected, &neighbor_domain);
         }
@@ -1222,7 +1210,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
                 expected_tactical
             );
             sim.process_pending_delete_with(
-                Some(rules),
+                rules,
                 Some(registry),
                 FrameEffects::default(),
                 0,

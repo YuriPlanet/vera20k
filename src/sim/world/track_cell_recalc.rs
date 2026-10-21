@@ -14,10 +14,10 @@ impl Simulation {
     pub(crate) fn recalculate_track_cell(
         &mut self,
         coord: (u16, u16),
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
-        let (Some(rules), Some(registry)) = (rules, registry) else {
+        let Some(registry) = registry else {
             return;
         };
         let Some(index) = self

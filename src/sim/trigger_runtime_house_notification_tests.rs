@@ -171,7 +171,7 @@ fn house_notification_predicates_replay_twenty_original_controls() {
                     },
                     incoming.map(|i| houses[i]),
                     &mut persistence,
-                    Some(&rules),
+                    &rules,
                     live,
                 )
             };
@@ -208,12 +208,7 @@ fn discovered_house_event_runs_from_real_discovery_poll_and_saved_notification()
     let (_, live) = install(&mut sim, &rules, 5, 7);
     assert!(!sim.houses[&houses[1]].discovered_by_current_house());
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(
-        houses[0],
-        Some(&rules),
-        Some(&registry),
-        FrameEffects::default(),
-    );
+    sim.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
     assert!(!sim.trigger_runtime.globals_set.contains(&7));
 
     // TechnoDiscovered6F4A25 writes the object's owner, independently of
@@ -221,26 +216,16 @@ fn discovered_house_event_runs_from_real_discovery_poll_and_saved_notification()
     assert!(sim.discover_techno(
         building,
         houses[0],
-        crate::sim::world::UninitContext::new(Some(&rules), Some(&registry))
+        crate::sim::world::UninitContext::new(&rules, Some(&registry))
     ));
     assert!(sim.houses[&houses[1]].discovered_by_current_house());
     assert!(!sim.houses[&houses[0]].discovered_by_current_house());
     let rng = sim.rng_state();
     sim.session.set_binary_frame_for_test(9);
-    sim.raise_house_tags(
-        houses[0],
-        Some(&rules),
-        Some(&registry),
-        FrameEffects::default(),
-    );
+    sim.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
     assert!(!sim.trigger_runtime.globals_set.contains(&7));
     sim.session.set_binary_frame_for_test(16);
-    sim.raise_house_tags(
-        houses[0],
-        Some(&rules),
-        Some(&registry),
-        FrameEffects::default(),
-    );
+    sim.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
     assert!(sim.trigger_runtime.globals_set.contains(&7));
     assert_eq!(sim.trigger_runtime.trigger(live).unwrap().completed, 0);
     assert_eq!(
@@ -264,12 +249,7 @@ fn discovered_house_event_runs_from_real_discovery_poll_and_saved_notification()
         false
     ));
     restored.session.set_binary_frame_for_test(24);
-    restored.raise_house_tags(
-        houses[0],
-        Some(&rules),
-        Some(&registry),
-        FrameEffects::default(),
-    );
+    restored.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
     assert!(
         restored.trigger_runtime.globals_set.contains(&7),
         "the saved, nonlatching notification can refire"
@@ -314,7 +294,7 @@ fn captured_house_event_uses_engineer_notification_and_keeps_the_original_raise_
             y: 16 * 256 + 128,
             z: 0,
         },
-        Some(&rules),
+        &rules,
         Some(&registry),
         FrameEffects::default(),
     );
@@ -336,12 +316,7 @@ fn captured_house_event_uses_engineer_notification_and_keeps_the_original_raise_
     // 71EC9A requires3 even with House244=true. The existing ordinary
     // House poll8 must remain unable to satisfy it; do not invent a producer.
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(
-        houses[0],
-        Some(&rules),
-        Some(&registry),
-        FrameEffects::default(),
-    );
+    sim.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
     assert!(!sim.trigger_runtime.globals_set.contains(&7));
     let mut persistence = false;
     let rng = sim.rng_state();
@@ -353,7 +328,7 @@ fn captured_house_event_uses_engineer_notification_and_keeps_the_original_raise_
         },
         Some(houses[1]),
         &mut persistence,
-        Some(&rules),
+        &rules,
         live
     ));
     assert!(!persistence);
@@ -365,7 +340,7 @@ fn captured_house_event_uses_engineer_notification_and_keeps_the_original_raise_
             ..Default::default()
         },
         &mut effects,
-        Some(&rules),
+        &rules,
         Some(&registry),
         FrameEffects::default()
     ));
@@ -387,7 +362,7 @@ fn captured_house_event_uses_engineer_notification_and_keeps_the_original_raise_
         },
         None,
         &mut persistence,
-        Some(&rules),
+        &rules,
         live
     ));
 }

@@ -46,11 +46,7 @@ fn stock_cloak_tick_facts(
         && !(object.cloak_stop
             && crate::sim::movement::motion_query::is_moving_now(
                 entity,
-                Some(crate::sim::movement::SpeedRules::new(
-                    rules,
-                    &sim.interner,
-                    &sim.houses,
-                )),
+                crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
                 sim.session.binary_frame(),
             ));
 
@@ -364,7 +360,7 @@ pub(crate) fn sensor_reevaluate_stock_cloak(
         let _ = sim.assign_target_represented(
             targeter_id,
             Some(TargetKind::Entity(id)),
-            Some(rules),
+            rules,
             registry,
             FrameEffects::default(),
         );
@@ -476,7 +472,7 @@ fn start_cloaking_detach(
     sim.detach_all(
         id,
         false,
-        UninitContext::new(Some(rules), registry).with_effects(effects),
+        UninitContext::new(rules, registry).with_effects(effects),
     );
     let player = sim.session.current_house();
     if let Some(entity) = sim.substrate.entities.get_mut(id)
@@ -735,13 +731,13 @@ pub(super) fn tick_stock_cloak_producer(
         sim.detach_all(
             id,
             false,
-            UninitContext::new(Some(rules), registry).with_effects(effects),
+            UninitContext::new(rules, registry).with_effects(effects),
         );
         for targeter_id in retained {
             let _ = sim.assign_target_represented(
                 targeter_id,
                 Some(TargetKind::Entity(id)),
-                Some(rules),
+                rules,
                 registry,
                 effects,
             );

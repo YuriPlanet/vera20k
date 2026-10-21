@@ -583,6 +583,45 @@ impl ProcessedRulesLayers {
                 "Ares armor state in retail rules",
             ));
         }
+        if families.iter().any(|(&family, members)| {
+            members.iter().any(|member| {
+                member.country_parent.chars().count() > 24
+                    || (family != RulesTypeFamily::Country && !member.country_parent.is_empty())
+            })
+        }) {
+            return Err(RulesError::InvalidSavedState(
+                "invalid retained Country parent",
+            ));
+        }
+        for (&family, members) in &registry.families {
+            for member in members {
+                let veteran = &member.country_veterancy;
+                if family != RulesTypeFamily::Country
+                    && *veteran != CountryVeterancyLists::default()
+                {
+                    return Err(RulesError::InvalidSavedState(
+                        "country veterancy stored on another type family",
+                    ));
+                }
+                for (family, references) in [
+                    (RulesTypeFamily::Infantry, &veteran.infantry),
+                    (RulesTypeFamily::Vehicle, &veteran.units),
+                    (RulesTypeFamily::Aircraft, &veteran.aircraft),
+                ] {
+                    if references.iter().any(|id| {
+                        !registry.families.get(&family).is_some_and(|types| {
+                            types
+                                .iter()
+                                .any(|entry| entry.native_stored_id.eq_ignore_ascii_case(id))
+                        })
+                    }) {
+                        return Err(RulesError::InvalidSavedState(
+                            "country veteran reference is outside its type registry",
+                        ));
+                    }
+                }
+            }
+        }
         registry.validate_techno_type_order()?;
         registry.validate_prerequisites()?;
         let families = &registry.families;
@@ -1300,8 +1339,9 @@ impl ProcessedRulesLayers {
 
     /// Ordered live Country identities, Color+C0 and Side+BC. Side672440
     /// writes BC before HouseType511850 can override it in ReadTypeData.
-    /// A constructor-only Country retains BC=-1, not an invented side.
-    pub(crate) fn country_projection(&self) -> impl Iterator<Item = (&str, &IniSection, i32, i32)> {
+    /// A constructor-only Country retains BC=-1 (not an invented side), an
+    /// empty ParentCountry and empty veteran lists.
+    pub(crate) fn country_projection(&self) -> impl Iterator<Item = CountryProjection<'_>> {
         self.native_type_construction_trace
             .registry_state()
             .country_projection()
@@ -1694,6 +1734,43 @@ impl NativeTypeConstructionTrace {
     }
 }
 
+/// HouseType511D16..51208C retains these three pointer vectors in this order.
+/// One live Country as [`NativeRulesRegistryState::country_projection`] yields
+/// it: ID, body, Color+C0, Side+BC, ParentCountry+98 and its veteran lists.
+pub(crate) type CountryProjection<'a> = (
+    &'a str,
+    &'a IniSection,
+    i32,
+    i32,
+    &'a str,
+    &'a CountryVeterancyLists,
+);
+
+/// The process registry owns resolved stored IDs; RuleSet clones an immutable view.
+/// As in its other Type projections, distinct native pointers sharing a truncated
+/// stored ID are not distinguished here. This chain covers unique stored IDs.
+/// Constructor51147B/511511/511530 starts each vector empty. List membership
+/// drives Infantry517CE7, Unit735604/746827 and Aircraft413F98 starting rank.
+/// Native evidence: tools/rules_oracle/country_veterancy.md.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct CountryVeterancyLists {
+    infantry: Vec<String>,
+    units: Vec<String>,
+    aircraft: Vec<String>,
+}
+
+impl CountryVeterancyLists {
+    pub(crate) fn contains(&self, category: ObjectCategory, type_id: &str) -> bool {
+        let members = match category {
+            ObjectCategory::Infantry => &self.infantry,
+            ObjectCategory::Vehicle => &self.units,
+            ObjectCategory::Aircraft => &self.aircraft,
+            ObjectCategory::Building => return false,
+        };
+        members.iter().any(|id| id.eq_ignore_ascii_case(type_id))
+    }
+}
+
 /// Process-resident live Type registries after one or more Rules passes.
 ///
 /// The vectors are ordered native stored IDs plus the bodies that have actually
@@ -1838,7 +1915,7 @@ impl Default for NativeRulesRegistryState {
 }
 
 impl NativeRulesRegistryState {
-    pub(crate) fn country_projection(&self) -> impl Iterator<Item = (&str, &IniSection, i32, i32)> {
+    pub(crate) fn country_projection(&self) -> impl Iterator<Item = CountryProjection<'_>> {
         self.families
             .get(&RulesTypeFamily::Country)
             .into_iter()
@@ -1849,6 +1926,8 @@ impl NativeRulesRegistryState {
                     &member.body,
                     member.country_color_scheme,
                     member.country_side_index,
+                    member.country_parent.as_str(),
+                    &member.country_veterancy,
                 )
             })
     }
@@ -2282,6 +2361,10 @@ struct ProcessedType {
     /// HouseType ctor511416 writes-1. Side67259A and the late Side reader
     /// 51209E/4756F0 update this binding on the same retained Country.
     country_side_index: i32,
+    /// Country+98: ctor511404 clears its first byte; reached5118CF reads
+    /// ParentCountry with current ID default, capacity25.
+    country_parent: String,
+    country_veterancy: CountryVeterancyLists,
     /// Side+9C ordered Country indexes. ReadHouses4767C0 retains the prior
     /// vector on count0 and otherwise replaces it without deduplication.
     /// Signed entries preserve `<random>`=-2 before the full-reader boundary.
@@ -2691,6 +2774,8 @@ impl ProcessedType {
             native_stored_id,
             country_color_scheme: 0,
             country_side_index: -1,
+            country_parent: String::new(),
+            country_veterancy: CountryVeterancyLists::default(),
             side_country_members: Vec::new(),
             anim_art_read: false,
             building_foundation: 0,
@@ -3662,14 +3747,36 @@ impl RulesPassProcessor {
                     .families
                     .get_mut(&RulesTypeFamily::Country)
                     .expect("the live Country exists")[index];
+                // ReadINI5118CF..511928 always reads with the current ID
+                // default, not the previous parent. Whole-section failure
+                // skips this body and retains the prior Country+98.
+                member.country_parent =
+                    raw.read_string("ParentCountry", &member.native_stored_id, 25);
                 member.country_color_scheme = raw.read_color_scheme(
                     "Color",
                     member.country_color_scheme,
                     self.colors.iter().map(|(name, _)| name.as_str()),
                 );
-                self.allocate_list_from(&raw, "VeteranInfantry", RulesTypeFamily::Infantry, 0x80);
-                self.allocate_list_from(&raw, "VeteranUnits", RulesTypeFamily::Vehicle, 0x80);
-                self.allocate_list_from(&raw, "VeteranAircraft", RulesTypeFamily::Aircraft, 0x80);
+                // HouseType511D16/511E20/511F56: each reached nonempty
+                // ReadString128 replaces its vector after FindOrAllocate;
+                // missing or cached-empty input retains it. Keep the original
+                // Infantry -> Unit -> Aircraft constructor allocation order.
+                for (key, family) in [
+                    ("VeteranInfantry", RulesTypeFamily::Infantry),
+                    ("VeteranUnits", RulesTypeFamily::Vehicle),
+                    ("VeteranAircraft", RulesTypeFamily::Aircraft),
+                ] {
+                    if let Some(resolved) = self.resolve_list_from(&raw, key, family, 0x80) {
+                        let veteran =
+                            &mut self.family_mut(RulesTypeFamily::Country)[index].country_veterancy;
+                        match family {
+                            RulesTypeFamily::Infantry => veteran.infantry = resolved,
+                            RulesTypeFamily::Vehicle => veteran.units = resolved,
+                            RulesTypeFamily::Aircraft => veteran.aircraft = resolved,
+                            _ => unreachable!("Country starting-veterancy family"),
+                        }
+                    }
+                }
                 let current = self.families[&RulesTypeFamily::Country][index].country_side_index;
                 let side = self.read_side_index(&raw, "Side", current);
                 if let Ok(side) = usize::try_from(side) {

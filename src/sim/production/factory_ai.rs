@@ -316,11 +316,10 @@ impl AiPlacementTimer {
 /// `BuildingClass::Detach_All(1) @ 0x0044EBF0`'s factory arm
 /// (`0x0044EC01..0x0044EC21`) and `BuildingClass::ChangeOwner`'s
 /// (`0x004486DF..0x00448701`): the building's factory is abandoned, its
-/// object refunded and destroyed, and deleted. Without rules (fixtures) the
-/// object is destroyed unrefunded.
+/// object refunded and destroyed, and deleted.
 pub(crate) fn detach_all(
     sim: &mut Simulation,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     building: u64,
     effects: FrameEffects<'_>,
 ) {
@@ -328,33 +327,13 @@ pub(crate) fn detach_all(
         return;
     };
     let owner = factory.owner();
-    match rules {
-        Some(rules) => abandon_production(
-            sim,
-            rules,
-            FactoryHolder::Building(building),
-            owner,
-            effects,
-        ),
-        None => {
-            let holder = FactoryHolder::Building(building);
-            let object = sim
-                .production
-                .factories()
-                .pending_abandonment(holder)
-                .and_then(|abandoned| abandoned.entity_id);
-            sim.production
-                .factories_mut()
-                .reset_for_abandon(holder, sim.session.binary_frame());
-            sim.with_object_placement_scope(|sim| {
-                if let Some(object) = object {
-                    let _ = sim.discard_constructed_limbo(object, rules, effects);
-                }
-                sim.production.factories_mut().finish_abandon(holder);
-            });
-            sim.production.factories_mut().remove_factory(holder);
-        }
-    }
+    abandon_production(
+        sim,
+        rules,
+        FactoryHolder::Building(building),
+        owner,
+        effects,
+    );
 }
 
 #[cfg(test)]

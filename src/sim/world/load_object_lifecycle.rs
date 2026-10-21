@@ -544,7 +544,7 @@ mod tests {
         sim.load_objects = std::mem::take(lifecycle);
         sim.substrate.pending_delete = std::mem::take(queue);
         sim.process_pending_delete_with(
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             crate::sim::world::FrameEffects::default(),
             1,

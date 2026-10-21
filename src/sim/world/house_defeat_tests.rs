@@ -261,9 +261,9 @@ fn native_flag_result_and_savour_controls() {
         }
         let skip = input["skip_timer"].as_bool().unwrap_or(false);
         let returned = match input["operation"].as_str().unwrap() {
-            "win" => sim.flag_house_to_win(owner, Some(&rules), skip, Default::default()),
-            "lose" => sim.flag_house_to_lose(owner, Some(&rules), skip, Default::default()),
-            "end" => sim.trigger_house_outcome(69, 0, Some(&rules), Default::default()),
+            "win" => sim.flag_house_to_win(owner, &rules, skip, Default::default()),
+            "lose" => sim.flag_house_to_lose(owner, &rules, skip, Default::default()),
+            "end" => sim.trigger_house_outcome(69, 0, &rules, Default::default()),
             other => panic!("unhandled control {other}"),
         };
         let house = &sim.houses[&owner];

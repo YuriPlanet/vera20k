@@ -2315,7 +2315,10 @@ fn resolve_selection_mutation(
     let mut successful_adds = Vec::new();
     let mut first_select_adds = 0;
     let mut select = |id: u64, ordered: &mut VecDeque<u64>, adds: &mut Vec<u64>| {
-        if placement_armed || members.contains(&id) || !sim.can_select_object(id, rules) {
+        if placement_armed
+            || members.contains(&id)
+            || !rules.is_some_and(|rules| sim.can_select_object(id, rules))
+        {
             return false;
         }
         members.insert(id);
@@ -2588,6 +2591,11 @@ mod item83_selection_order_tests {
     fn a_planning_select_adds_the_tail_node_members_who_speak_with_it() {
         use super::{SelectionMutation, SelectionVoicePolicy, resolve_selection_mutation};
         use crate::sim::command::Command;
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[VehicleTypes]\n0=TESTUNIT\n[TESTUNIT]\n",
+            ))
+            .expect("selection fixture rules");
         let mut sim = Simulation::new();
         let local = sim.intern("Local");
         let kind = sim.intern("TESTUNIT");
@@ -2626,13 +2634,13 @@ mod item83_selection_order_tests {
                 )
                 .unwrap();
             let command = sim.decode_native_command_record(&record, 0).unwrap();
-            assert!(sim.apply_command("Local", &command.payload, None));
+            assert!(sim.apply_command("Local", &command.payload, Some(&rules)));
         }
         assert_eq!(sim.planning_tail_members(42), vec![42, 43]);
         let resolve = |current: Vec<u64>, select: Vec<u64>, planning| {
             resolve_selection_mutation(
                 &sim,
-                None,
+                Some(&rules),
                 current,
                 None,
                 false,

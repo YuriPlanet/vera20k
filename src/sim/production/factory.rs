@@ -1924,7 +1924,7 @@ mod tests {
             producer.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(
                 EntityCategory::Structure,
                 rules.object("PRODUCER"),
-                Some(&rules),
+                &rules,
             );
             sim.substrate.entities.insert(producer);
             crate::sim::world::Simulation::update_house_tracking(

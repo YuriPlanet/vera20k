@@ -89,7 +89,7 @@ impl Simulation {
                 world,
             });
         }
-        effects.flush_sound(self, Some(rules));
+        effects.flush_sound(self, rules);
     }
 
     /// The `0x00750D40` re-drive coordinate of a `+0x6B4` owner: the
@@ -108,7 +108,7 @@ impl Simulation {
         substrate: &ObjectSubstrate,
         sound_events: &mut FrameChannel<SimSoundEvent>,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) {
         let Some(entity) = substrate.entities.get(id) else {
             return;
@@ -116,8 +116,8 @@ impl Simulation {
         if entity.category() != EntityCategory::Structure {
             return;
         }
-        let authored = rules
-            .and_then(|rules| interner.object_type(entity.type_ref(), rules))
+        let authored = interner
+            .object_type(entity.type_ref(), rules)
             .is_some_and(|object| {
                 object.working_sound.is_some() || object.not_working_sound.is_some()
             });

@@ -185,9 +185,7 @@ impl Simulation {
         if self.fog.whole_map_revealed_for_owner(viewer) {
             return true;
         }
-        let Some(rules) = context.rules() else {
-            return false;
-        };
+        let rules = context.rules();
         let cell = self.session.waypoint_cell(index).unwrap_or((0, 0));
         let coord = {
             let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref()) else {
@@ -493,9 +491,7 @@ impl Simulation {
     /// Ledger: no RNG draws, timer writes or detach calls. A negative radius
     /// natively indexes before the count table; VERA maps no cells (retail9).
     pub fn trigger_reveal_at_waypoint(&mut self, index: i32, context: UninitContext<'_>) -> bool {
-        let Some(rules) = context.rules() else {
-            return false;
-        };
+        let rules = context.rules();
         let Some(viewer) = self.session.current_house() else {
             return false;
         };
@@ -522,7 +518,7 @@ impl Simulation {
         );
         let z = level * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
         let radius = rules.reveal_trigger_radius().clamp(0, i32::from(u16::MAX)) as u16;
-        let config = self.sight_reveal_config(Some(rules));
+        let config = self.sight_reveal_config(rules);
         let height_grid = self.sight_height_grid(&config);
         // Outline/unreveal/arg6 are zero and by-height is one. Native final0
         // followed by final1 leaves knowledge with no sustained sight source.
@@ -565,11 +561,10 @@ impl Simulation {
         if self.fog.whole_map_revealed_for_owner(viewer) {
             return true;
         }
-        let (Some(rules), Some(waypoint), Some(bounds)) = (
-            context.rules(),
-            self.session.waypoint_cell(index),
-            self.playfield_bounds,
-        ) else {
+        let rules = context.rules();
+        let (Some(waypoint), Some(bounds)) =
+            (self.session.waypoint_cell(index), self.playfield_bounds)
+        else {
             return false;
         };
         let target_zone = {
@@ -593,7 +588,7 @@ impl Simulation {
         };
         self.native_local_cell_cursor = Some(NativeLocalCellCursor::reset(bounds));
         let mut height_source = self.path_grid.clone();
-        let mut height_grid = self.sight_height_grid(&self.sight_reveal_config(Some(rules)));
+        let mut height_grid = self.sight_height_grid(&self.sight_reveal_config(rules));
         loop {
             // No borrow/cursor snapshot spans a reveal callback. A nested18
             // resets this same cursor; a nested40 changes the next bounds.
@@ -651,7 +646,7 @@ impl Simulation {
                 let Some(viewer) = self.session.current_house() else {
                     return false;
                 };
-                let config = self.sight_reveal_config(Some(rules));
+                let config = self.sight_reveal_config(rules);
                 // Navigation publishes a new immutable Arc when heights
                 // change. Reuse its snapshot across small radius2 passes;
                 // a synchronous discovery callback can republish it, so
@@ -1089,9 +1084,7 @@ impl Simulation {
                     entity.discovery.discovered_by_current_house()
                 } else {
                     entity.category() == EntityCategory::Structure
-                        && context
-                            .rules()
-                            .is_some_and(|rules| rules.general.ally_reveal)
+                        && context.rules().general.ally_reveal
                         && self.session.current_house().is_some_and(|viewer| {
                             crate::map::houses::is_allied_with(
                                 self.house_alliances.as_map(),
@@ -1173,7 +1166,7 @@ impl Simulation {
             // `0x004ADCD0` re-admits each through `UpdateReveal`
             // (`0x004ADD4C`, `0x004ADDE4`) where it stands now, not where
             // its last reveal left it.
-            let config = self.sight_reveal_config(Some(rules));
+            let config = self.sight_reveal_config(rules);
             let heights = self.sight_height_grid(&config);
             let sources: std::collections::BTreeMap<u64, Option<vision::SightAdmission>> = self
                 .substrate
@@ -1197,7 +1190,7 @@ impl Simulation {
                             &config,
                             heights.cell_levels(self.resolved_terrain.as_ref()),
                             self.resolved_terrain.as_ref(),
-                            config.sight_ability(entity, &self.interner, Some(rules)),
+                            config.sight_ability(entity, &self.interner, rules),
                         )
                     })
                     .flatten();
@@ -1716,11 +1709,7 @@ impl Simulation {
     /// then takes the admission its Unlimbo (`0x006F6D27`) would have made
     /// (`Self::admit_sight_on_sized_fog`). A launched scenario sizes its fog
     /// at construction and never gets there, so only test builds keep it.
-    pub(crate) fn refresh_sight_sources(
-        &mut self,
-        config: &vision::VisionConfig,
-        rules: Option<&RuleSet>,
-    ) {
+    pub(crate) fn refresh_sight_sources(&mut self, config: &vision::VisionConfig, rules: &RuleSet) {
         let frame = self
             .fog
             .begin_sight_frame(&self.substrate.entities, self.path_grid.as_deref());
@@ -1776,7 +1765,7 @@ impl Simulation {
     /// stored playfield byte gates a Techno's, as a `MultiplayPassive=`
     /// house does, the map's `Size=` diamond bounds them, and the rules'
     /// sight keys and `AllyReveal=` shape them.
-    pub(crate) fn sight_reveal_config(&self, rules: Option<&RuleSet>) -> vision::VisionConfig {
+    pub(crate) fn sight_reveal_config(&self, rules: &RuleSet) -> vision::VisionConfig {
         let passive_owners = self
             .houses
             .iter()
@@ -1805,12 +1794,7 @@ impl Simulation {
     /// Carryall_Pickup's pair (`0x00416C6D`/`0x00416C81`) is dormant, as the
     /// pickup is: it needs an AircraftType with `Carryall=`, which no retail
     /// type sets (`retail_aircraft_types_are_not_carryalls`).
-    pub(crate) fn refresh_object_sight(
-        &mut self,
-        stable_id: u64,
-        rules: Option<&RuleSet>,
-        radius: i32,
-    ) {
+    pub(crate) fn refresh_object_sight(&mut self, stable_id: u64, rules: &RuleSet, radius: i32) {
         let config = self.sight_reveal_config(rules);
         if !self
             .substrate
@@ -1997,7 +1981,7 @@ impl Simulation {
         if !Self::passes_alternate_reveal_gates(entity, config) {
             return None;
         }
-        let ability = config.sight_ability(entity, &self.interner, Some(rules));
+        let ability = config.sight_ability(entity, &self.interner, rules);
         vision::entity_sight_footprint(
             &self.fog,
             entity,
@@ -2037,7 +2021,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
-        let config = self.sight_reveal_config(Some(rules));
+        let config = self.sight_reveal_config(rules);
         let height_grid = self.sight_height_grid(&config);
         let Some(footprint) =
             self.current_house_sight_footprint(entity, current, &config, Some(&height_grid), rules)
@@ -2090,7 +2074,7 @@ impl Simulation {
         let Some(current) = self.session.current_house() else {
             return;
         };
-        let config = self.sight_reveal_config(Some(rules));
+        let config = self.sight_reveal_config(rules);
         if !self
             .substrate
             .entities
@@ -2171,7 +2155,7 @@ impl Simulation {
         let Some(current) = self.session.current_house() else {
             return footprints;
         };
-        let config = self.sight_reveal_config(Some(rules));
+        let config = self.sight_reveal_config(rules);
         if !self
             .reveal_viewers
             .direct(
@@ -2222,7 +2206,7 @@ impl Simulation {
     pub(super) fn refresh_high_flying_sight_before_process(
         &mut self,
         stable_id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) {
         let frame = self.session.binary_frame();
         let Some(entity) = self.substrate.entities.get(stable_id) else {
@@ -2236,9 +2220,7 @@ impl Simulation {
             )
             || !crate::sim::movement::motion_query::is_moving_now(
                 entity,
-                rules.map(|rules| {
-                    crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses)
-                }),
+                crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses),
                 frame,
             )
         {
@@ -2247,7 +2229,7 @@ impl Simulation {
         let high = crate::sim::movement::air_movement::is_high_flying(
             entity,
             self.resolved_terrain.as_ref(),
-            rules.map(|rules| (rules, &self.interner)),
+            Some((rules, &self.interner)),
         );
         if !high {
             return;

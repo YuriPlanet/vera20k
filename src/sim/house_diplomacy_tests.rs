@@ -38,7 +38,7 @@ fn sim_with(rules: &RuleSet, houses: &[(&str, &str, bool)]) -> (Simulation, Vec<
             let country_id = sim.interner.intern(country);
             let mut house = HouseState::new(id, side, Some(country_id), human, 0, 10);
             house.set_multiplay_passive_for_test(
-                crate::sim::house_state::resolve_multiplay_passive(Some(rules), Some(country)),
+                crate::sim::house_state::resolve_multiplay_passive(rules, Some(country)),
             );
             sim.houses.register(house);
             id

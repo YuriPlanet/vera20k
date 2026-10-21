@@ -61,8 +61,7 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
     fn invoke(&mut self, callback: super::object_health::HealthCallback) {
         use super::object_health::HealthCallback;
         let id = self.event.target_id;
-        let context =
-            UninitContext::new(Some(self.rules), self.registry).with_effects(self.effects);
+        let context = UninitContext::new(self.rules, self.registry).with_effects(self.effects);
         match callback {
             //5F5486: a heal that changed Strength calls vt+148 Flash(7).
             HealthCallback::Changed => {

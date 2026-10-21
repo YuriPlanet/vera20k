@@ -76,11 +76,8 @@ impl DestinationTiming {
         }
     }
 
-    pub fn from_rules(binary_frame: u32, rules: Option<&crate::rules::ruleset::RuleSet>) -> Self {
-        Self::new(
-            binary_frame,
-            rules.map_or(60, |r| r.general.blockage_path_delay_ticks),
-        )
+    pub fn from_rules(binary_frame: u32, rules: &crate::rules::ruleset::RuleSet) -> Self {
+        Self::new(binary_frame, rules.general.blockage_path_delay_ticks)
     }
 
     /// Set_Destination_Internal 0x004D94B0 tail 0x4D96C2..0x4D9707: +6B7 = 0,

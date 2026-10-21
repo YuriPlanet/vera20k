@@ -362,7 +362,7 @@ pub(crate) fn enter_idle_mode_for(
         &sim.substrate.entities,
         Some((rules, &sim.interner)),
     );
-    let landed = sim.entity_display_layer(id, Some(rules)) == Some(DisplayLayer::GROUND)
+    let landed = sim.entity_display_layer(id, rules) == Some(DisplayLayer::GROUND)
         || crate::sim::movement::air_movement::current_fly_height(
             entity,
             sim.resolved_terrain.as_ref(),
@@ -436,12 +436,7 @@ impl IdleHost for WorldIdle<'_> {
 
     fn restore(&mut self) -> MissionId {
         self.sim
-            .mission_restore_represented(
-                self.id,
-                Some(self.rules),
-                self.registry,
-                self.frame_effects,
-            )
+            .mission_restore_represented(self.id, self.rules, self.registry, self.frame_effects)
             .expect("Restore setters accept a live aircraft's archived Target and NavCom");
         self.entity().mission.current()
     }
@@ -463,7 +458,7 @@ impl IdleHost for WorldIdle<'_> {
 
     fn foot_enter_idle(&mut self) -> bool {
         self.sim
-            .foot_enter_idle_base(self.id, Some(self.rules), self.registry, self.frame_effects)
+            .foot_enter_idle_base(self.id, self.rules, self.registry, self.frame_effects)
     }
 
     fn team(&mut self) -> bool {
@@ -481,7 +476,7 @@ impl IdleHost for WorldIdle<'_> {
 
     fn leave_team(&mut self) {
         self.sim
-            .leave_team(self.id, false, Some(self.rules), self.frame_effects);
+            .leave_team(self.id, false, self.rules, self.frame_effects);
     }
 
     fn target(&mut self) -> bool {
@@ -502,13 +497,7 @@ impl IdleHost for WorldIdle<'_> {
 
     fn clear_target(&mut self) {
         self.sim
-            .assign_target_represented(
-                self.id,
-                None,
-                Some(self.rules),
-                None,
-                FrameEffects::default(),
-            )
+            .assign_target_represented(self.id, None, self.rules, None, FrameEffects::default())
             .expect("idle-mode aircraft");
     }
 
@@ -528,7 +517,7 @@ impl IdleHost for WorldIdle<'_> {
             dock,
             RadioMessage::Hello,
             RadioPayload::default(),
-            Some(self.rules),
+            self.rules,
             self.frame_effects,
         ) == RadioResponse::Roger
     }

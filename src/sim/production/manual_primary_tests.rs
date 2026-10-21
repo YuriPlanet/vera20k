@@ -138,7 +138,7 @@ fn assert_native_primary_type(rules: &RuleSet, name: &str, expected: &serde_json
             "infantry_absorb": u8::from(object.infantry_absorb),
             "invisible_in_game": u8::from(object.invisible_in_game),
             "naval": u8::from(object.naval),
-            "ownable": crate::sim::ai_buildable::house_token_mask(&object.owner, rules),
+            "ownable": rules.house_type_mask(&object.owner),
             "passengers": object.passengers,
             "strength": object.strength,
             "unit_absorb": u8::from(object.unit_absorb),
@@ -232,7 +232,7 @@ fn manual_primary_case_rules(
         manual_primary_corpus()["query_unit"]["naval"]
     );
     assert_eq!(
-        crate::sim::ai_buildable::house_token_mask(&query.owner, &rules),
+        rules.house_type_mask(&query.owner),
         manual_primary_corpus()["query_unit"]["ownable"]
             .as_u64()
             .unwrap() as u32

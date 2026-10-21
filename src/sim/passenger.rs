@@ -906,7 +906,7 @@ pub(crate) fn board_passenger(
     if absorber_entry {
         sim.substrate.set_infantry_absorber_entry(pax_id, true);
     }
-    let context = UninitContext::new(Some(rules), registry).with_effects(effects);
+    let context = UninitContext::new(rules, registry).with_effects(effects);
     if sim.techno_limbo_with_context(pax_id, context) != ConcealOutcome::Concealed {
         if absorber_entry {
             sim.substrate.set_infantry_absorber_entry(pax_id, false);
@@ -924,7 +924,7 @@ pub(crate) fn board_passenger(
                 carrier_id,
                 crate::sim::radio::RadioMessage::Hello,
                 crate::sim::radio::RadioPayload::default(),
-                Some(rules),
+                rules,
                 effects,
             );
         }
@@ -1008,7 +1008,7 @@ pub(crate) fn board_passenger(
                 coordinate,
                 flags: 0,
             });
-            effects.flush_sound(sim, Some(rules));
+            effects.flush_sound(sim, rules);
         }
     }
     if let Some((sound_id, coordinate)) = bio_reactor_entry_sound {
@@ -1103,7 +1103,7 @@ pub fn add_garrison_occupant(
     {
         return false;
     }
-    let context = UninitContext::new(Some(rules), registry).with_effects(effects);
+    let context = UninitContext::new(rules, registry).with_effects(effects);
     if sim.techno_limbo_with_context(pax_id, context) != ConcealOutcome::Concealed {
         return false;
     }
@@ -1386,7 +1386,7 @@ impl Simulation {
             let _ = self.assign_target_represented(
                 passenger,
                 target,
-                Some(rules),
+                rules,
                 overlay_registry,
                 frame_effects,
             );
@@ -1521,7 +1521,7 @@ fn tick_entry_arrival(sim: &mut Simulation, rules: &RuleSet) {
         sim.per_cell_process(
             id,
             crate::sim::movement::PerCellReason::Arrival,
-            Some(rules),
+            rules,
             None,
             FrameEffects::default(),
         )

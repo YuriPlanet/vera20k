@@ -309,7 +309,7 @@ impl Simulation {
         let _ = self.assign_destination_represented(
             id,
             Some(destination),
-            Some(rules),
+            rules,
             registry,
             frame_effects,
         );
@@ -527,9 +527,9 @@ impl Simulation {
                         || human && mission == Some(MissionType::AreaGuard)
                         || !human && mission == Some(MissionType::Hunt)))
         {
-            self.assign_target_represented(id, None, Some(rules), registry, frame_effects)
+            self.assign_target_represented(id, None, rules, registry, frame_effects)
                 .map_err(|e| format!("Approach target clear: {e}"))?;
-            self.assign_null_destination(id, Some(rules), registry, frame_effects);
+            self.assign_null_destination(id, rules, registry, frame_effects);
             return Ok(None);
         }
 
@@ -573,14 +573,8 @@ impl Simulation {
         // object) is taken (vt+0x480 with 0), leaves the queue and is the
         // answer.
         if let Some(entry) = actor.navigation.nav_queue().first().copied() {
-            self.assign_destination_keeping_queue(
-                id,
-                Some(entry),
-                Some(rules),
-                registry,
-                frame_effects,
-            )
-            .map_err(|e| format!("Approach queued destination: {e}"))?;
+            self.assign_destination_keeping_queue(id, Some(entry), rules, registry, frame_effects)
+                .map_err(|e| format!("Approach queued destination: {e}"))?;
             self.substrate
                 .entities
                 .get_mut(id)
@@ -611,7 +605,7 @@ impl Simulation {
                 self.assign_target_represented(
                     id,
                     Some(redirected),
-                    Some(rules),
+                    rules,
                     registry,
                     frame_effects,
                 )
@@ -836,7 +830,7 @@ impl Simulation {
             self.assign_destination_represented(
                 id,
                 Some(NavTargetRef::cell(cell.0 as u16, cell.1 as u16)),
-                Some(rules),
+                rules,
                 registry,
                 frame_effects,
             )
@@ -855,7 +849,7 @@ impl Simulation {
             self.assign_destination_represented(
                 id,
                 Some(target_reference),
-                Some(rules),
+                rules,
                 registry,
                 frame_effects,
             )
@@ -864,19 +858,19 @@ impl Simulation {
         }
         let cells = NativeCellQuery::canonical(self.resolved_terrain.as_ref().unwrap());
         let fallback = self.approach_fallback(id, retained_candidate, rules, &cells)?;
-        self.assign_target_represented(id, None, Some(rules), registry, frame_effects)
+        self.assign_target_represented(id, None, rules, registry, frame_effects)
             .map_err(|e| format!("Approach exhausted target clear: {e}"))?;
         if let Some(cell) = fallback {
             self.assign_destination_represented(
                 id,
                 Some(NavTargetRef::cell(cell.0, cell.1)),
-                Some(rules),
+                rules,
                 registry,
                 frame_effects,
             )
             .map_err(|e| format!("Approach fallback destination: {e}"))?;
         } else {
-            self.assign_null_destination(id, Some(rules), registry, frame_effects);
+            self.assign_null_destination(id, rules, registry, frame_effects);
         }
         Ok(None)
     }
@@ -1042,7 +1036,7 @@ impl Simulation {
             return Ok(false);
         }
         //4D5F2E..5F5F: Locomotor (+0x674) vt+0x78.
-        self.foot_force_immediate_destination(id, spot, Some(rules), registry, frame_effects)?;
+        self.foot_force_immediate_destination(id, spot, rules, registry, frame_effects)?;
         Ok(true)
     }
 
@@ -1112,7 +1106,7 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> Result<bool, String> {
         if close_range {
-            self.foot_mark_remove(id, Some(rules), registry, frame_effects);
+            self.foot_mark_remove(id, rules, registry, frame_effects);
         }
         let cells = NativeCellQuery::canonical(
             self.resolved_terrain
@@ -1121,7 +1115,7 @@ impl Simulation {
         );
         let clear = self.approach_cell_is_clear(id, candidate, rules, &cells);
         if close_range {
-            self.foot_mark_put(id, Some(rules), registry, frame_effects);
+            self.foot_mark_put(id, rules, registry, frame_effects);
         }
         clear
     }

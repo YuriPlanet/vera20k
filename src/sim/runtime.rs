@@ -181,7 +181,7 @@ impl SimRuntime {
     ) -> Result<crate::sim::world::SimFrameOutput, crate::sim::world::FrameAdvanceError> {
         self.simulation.advance_app_frame(
             commands,
-            Some(&self.resources.rules),
+            &self.resources.rules,
             Some(&self.resources.overlay_registry),
             tick_ms,
             lane,
@@ -226,7 +226,7 @@ mod tests {
             &map,
             &terrain,
             "TEMPERATE",
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             None,
             crate::map::basic::BridgeDestroyabilityMode::CampaignOrEditor,
@@ -283,7 +283,7 @@ mod tests {
             &map,
             &terrain,
             "TEMPERATE",
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             None,
             crate::map::basic::BridgeDestroyabilityMode::CampaignOrEditor,
@@ -291,7 +291,10 @@ mod tests {
             None,
             |sim| {
                 crate::sim::scenario_bootstrap::initialize_map_roster_houses(
-                    sim, &roster, None, None,
+                    sim,
+                    &roster,
+                    crate::rules::ruleset::RuleSet::empty_for_test(),
+                    None,
                 );
                 crate::sim::scenario_bootstrap::initialize_campaign_current_house(
                     &mut sim.session,
@@ -449,7 +452,7 @@ mod tests {
         let before = sim.scenario_rng.logical_state();
 
         assert_eq!(
-            project_map_entities(&mut sim, &[entity], Some(&rules), None, None, Some(&inits),)
+            project_map_entities(&mut sim, &[entity], &rules, None, None, Some(&inits),)
                 .expect("generated funnel projection"),
             1
         );
@@ -468,7 +471,7 @@ mod tests {
 fn project_map_entities(
     sim: &mut Simulation,
     entities: &[crate::map::entities::MapEntity],
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
     resolved_terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     generated_inits: Option<&crate::sim::world::GeneratedTechnoInitTable>,
@@ -476,7 +479,7 @@ fn project_map_entities(
     if let Some(generated_inits) = generated_inits {
         sim.spawn_generated_from_map_with_resolved(
             entities,
-            rules.expect("generated-map projection requires loaded rules"),
+            rules,
             resolved_terrain,
             generated_inits,
         )
@@ -579,7 +582,7 @@ pub fn populate_staged_scenario_with_generated_inits<F>(
     map_data: &crate::map::map_file::MapFile,
     resolved_terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
     theater_name: &str,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
     bridge_destroyability_mode: crate::map::basic::BridgeDestroyabilityMode,
@@ -617,7 +620,7 @@ fn populate_staged_scenario_inner<F>(
     map_data: &crate::map::map_file::MapFile,
     resolved_terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
     theater_name: &str,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
     authored_overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
@@ -678,9 +681,7 @@ where
     }
     // Wire the cliff/slope coefficients from [General] into the live World config;
     // it otherwise holds compiled vanilla defaults and never sees a modded INI.
-    if let Some(rules) = rules {
-        sim.install_terrain_speed_rules(&rules.general);
-    }
+    sim.install_terrain_speed_rules(&rules.general);
     // Normal loading first clips/normalizes LocalSize through
     // `MapClass::Set_Clipped_LocalSize @ 0x00567230`; every playfield consumer
     // then shares those stored fields and the same isometric-diamond test.
@@ -689,9 +690,7 @@ where
     let bridge_destroyable = map_data
         .special_flags
         .effective_destroyable_bridges(bridge_destroyability_mode);
-    let bridge_strength = rules
-        .map(|rules| rules.bridge_rules.strength)
-        .unwrap_or(1000);
+    let bridge_strength = rules.bridge_rules.strength;
     sim.install_bridge_runtime(
         crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain_with_map_size(
             resolved_terrain,
@@ -700,39 +699,32 @@ where
             (map_data.header.width as i32, map_data.header.height as i32),
         ),
     );
-    match rules {
-        Some(rules) => sim.resolve_rule_animation_lists(rules),
-        None => sim.clear_rule_animation_lists(),
-    }
+    sim.resolve_rule_animation_lists(rules);
     // gamemd `TerrainClass::Read_Map_Section` runs while the map sections are
     // walked, ahead of `[Units]`/`[Aircraft]`/`[Infantry]`/`[Structures]`: every
     // tree owns its cell before the first map object is placed on it. The
     // ore-spawner animation index is attached later, once the terrain SHP frame
     // counts are known.
-    if let Some(rules) = rules {
-        let constructed = if let Some(overlay_registry) = authored_overlay_registry {
-            crate::sim::terrain_spawn::construct_authored_terrain_objects(
-                sim,
-                &map_data.terrain_objects,
-                rules,
-                theater_name.eq_ignore_ascii_case("SNOW"),
-                overlay_registry,
-            )?
-        } else {
-            crate::sim::terrain_spawn::construct_terrain_objects(
-                sim,
-                &map_data.terrain_objects,
-                rules,
-                theater_name.eq_ignore_ascii_case("SNOW"),
-            )
-        };
-        if constructed > 0 {
-            log::info!("Constructed {constructed} map terrain objects before map entities");
-        }
+    let constructed = if let Some(overlay_registry) = authored_overlay_registry {
+        crate::sim::terrain_spawn::construct_authored_terrain_objects(
+            sim,
+            &map_data.terrain_objects,
+            rules,
+            theater_name.eq_ignore_ascii_case("SNOW"),
+            overlay_registry,
+        )?
     } else {
-        log::warn!("No rules loaded — skipping terrain object construction");
+        crate::sim::terrain_spawn::construct_terrain_objects(
+            sim,
+            &map_data.terrain_objects,
+            rules,
+            theater_name.eq_ignore_ascii_case("SNOW"),
+        )
+    };
+    if constructed > 0 {
+        log::info!("Constructed {constructed} map terrain objects before map entities");
     }
-    if let (Some(rules), Some(overlay_registry)) = (rules, authored_overlay_registry) {
+    if let Some(overlay_registry) = authored_overlay_registry {
         // The live grid is read through a temporary view and handed back.
         let live_grid = sim.take_overlay_grid_for_load();
         let stats = initialize_native_tiberium_queues(
@@ -775,7 +767,6 @@ where
         log::info!("Miner components attached: {}", miner_count);
     }
     if authored_overlay_registry.is_none() && !resolved_terrain.tile_animations().is_empty() {
-        let rules = rules.expect("resolved terrain animations require bound art/rules data");
         let spawned = spawn_terrain_tile_animations(sim, rules, resolved_terrain.tile_animations());
         log::info!(
             "Spawned {} terrain-attached animations after map objects",
@@ -981,7 +972,7 @@ where
         map_data,
         &terrain,
         theater_name,
-        Some(rules),
+        rules,
         Some(overlay_registry),
         Some(&overlay_grid),
         Some(overlay_registry),
@@ -1179,7 +1170,7 @@ pub fn finalize_constructed_scenario(
                 map_wall_owner_candidate_from_building(
                     entity,
                     rt,
-                    crate::sim::house_state::resolve_wall_owner(Some(rules), country),
+                    crate::sim::house_state::resolve_wall_owner(rules, country),
                 )
             })
             .collect();

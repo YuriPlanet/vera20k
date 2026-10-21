@@ -96,11 +96,11 @@ impl Simulation {
             now,
             &LiveReadyInputProvider { rules },
         );
-        let _ = self.assign_target_represented(id, None, Some(rules), registry, effects);
+        let _ = self.assign_target_represented(id, None, rules, registry, effects);
         let _ = self.assign_destination_represented(
             id,
             Some(NavTargetRef::object(station)),
-            Some(rules),
+            rules,
             registry,
             effects,
         );
@@ -129,7 +129,7 @@ impl Simulation {
                 station,
                 RadioMessage::CanEnter,
                 RadioPayload::default(),
-                Some(rules),
+                rules,
                 effects,
             );
             if answer == RadioResponse::None {

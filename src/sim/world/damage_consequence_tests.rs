@@ -139,10 +139,12 @@ fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
         ["DEATHREPORT", "DESTROYREPORT", "DieA"]
     );
     assert!(sim.substrate.entities.get(victim).is_none());
-    // Existing Rust stream regressions remain unchanged; native numeric body
-    // comparisons live with the constructor owner rather than a serialized
-    // Rust fingerprint that changes whenever its wire layout gains a field.
-    assert_eq!(sim.scenario_rng.state(), 3954386809370758752);
+    // Rust stream regressions: 16 Scenario words, three of them the Guard
+    // cadence of the idle mission both units take at Unlimbo, and 2 Main
+    // words. Native numeric body comparisons live with the constructor owner
+    // rather than a serialized Rust fingerprint that changes whenever its wire
+    // layout gains a field.
+    assert_eq!(sim.scenario_rng.state(), 2039729963231954301);
     assert_eq!(sim.main_rng.state(), 8272706873942388551);
     let debris_native = sim.voxel_anims().get(ids[0]).unwrap().native_unique_id();
     let death_native = sim

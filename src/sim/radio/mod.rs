@@ -106,7 +106,7 @@ pub fn take_transmit_log() -> Vec<TransmitRecord> {
 pub(crate) fn broadcast_break(
     sim: &mut Simulation,
     sender_sid: u64,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     effects: FrameEffects<'_>,
 ) {
     broadcast(sim, sender_sid, RadioMessage::Break, rules, effects);
@@ -118,7 +118,7 @@ pub(crate) fn broadcast(
     sim: &mut Simulation,
     sender_sid: u64,
     message: RadioMessage,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     effects: FrameEffects<'_>,
 ) {
     let capacity = sim
@@ -166,8 +166,7 @@ pub(crate) fn broadcast(
 /// HELLO and OVER_OUT bookkeeping, then the receiver's class chain
 /// ([`receive_radio`]). Every other opcode returns the receiver's answer
 /// unchanged. The receiver only ever sees an RTTI-filtered (Techno) sender
-/// (`As_Techno @ 0x0040DD70`). `rules` reaches the type-aware receivers; a
-/// caller without it gets their rules-free answers.
+/// (`As_Techno @ 0x0040DD70`). `rules` reaches the type-aware receivers.
 /// The borrowed frame effects follow synchronous nested dispatch and are
 /// never retained in contacts or the wire payload.
 pub fn transmit(
@@ -176,7 +175,7 @@ pub fn transmit(
     target_sid: u64,
     msg: RadioMessage,
     payload: RadioPayload,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     effects: FrameEffects<'_>,
 ) -> RadioResponse {
     #[cfg(any(test, feature = "test-support"))]
@@ -215,7 +214,7 @@ pub(crate) fn transmit_to_contact(
     sim: &mut Simulation,
     sender_sid: u64,
     msg: RadioMessage,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     effects: FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(target_sid) = sim
@@ -259,7 +258,7 @@ fn transmit_hello(
     sender_sid: u64,
     target_sid: u64,
     filtered: Option<u64>,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     effects: FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(sender) = sim.substrate.entities.get(sender_sid) else {
@@ -310,7 +309,7 @@ fn transmit_over_out(
     sender_sid: u64,
     target_sid: u64,
     filtered: Option<u64>,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     effects: FrameEffects<'_>,
 ) -> RadioResponse {
     if let Some(sender) = sim.substrate.entities.get_mut(sender_sid) {

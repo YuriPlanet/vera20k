@@ -220,7 +220,9 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        runtime.simulation.apply_debug_tools(None);
+        runtime
+            .simulation
+            .apply_debug_tools(crate::rules::ruleset::RuleSet::empty_for_test());
         assert!(diagnostics.get_or_begin_replay(&runtime).is_none());
         assert!(diagnostics.replay_log.is_none());
         runtime.simulation.clear_debug_tools();

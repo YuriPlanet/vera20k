@@ -247,7 +247,7 @@ fn ground_command_fixture(
     // occupation projection. These setup calls are outside the comparison.
     assert!(sim.foot_mark_remove(
         id,
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default()
     ));
@@ -255,12 +255,12 @@ fn ground_command_fixture(
         &mut sim.substrate.entities,
         id,
         location,
-        Some(&rules),
+        &rules,
         &sim.interner,
     );
     assert!(sim.foot_mark_put(
         id,
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default()
     ));
@@ -316,7 +316,7 @@ fn ground_command_fixture(
         sim.assign_target_represented(
             id,
             Some(TargetKind::Entity(target)),
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -1021,7 +1021,7 @@ pub fn check_initialized_unit_shift_resolver(produce: GroundCommandProducer) {
 
 pub fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandProducer) {
     use crate::sim::mission::MissionId;
-    use crate::sim::mission::authority::EntityReadyInputProvider;
+    use crate::sim::mission::authority::LiveReadyInputProvider;
 
     let corpus = ground_command_corpus();
     for &name in names {
@@ -1057,7 +1057,9 @@ pub fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandP
                     MissionId::from_raw(producer["args"][0].as_i64().unwrap().try_into().unwrap()),
                     producer["args"][1].as_i64().unwrap().try_into().unwrap(),
                     sim.session.binary_frame(),
-                    &EntityReadyInputProvider,
+                    &LiveReadyInputProvider {
+                        rules: crate::rules::ruleset::RuleSet::empty_for_test(),
+                    },
                 )
                 .unwrap();
                 assert_ground_command_fields(&sim, id, row, &producer["after"]);
@@ -1109,7 +1111,7 @@ pub fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandP
             assert!(sim.apply_command_with_overlays(
                 "Americans",
                 &decoded.payload,
-                Some(&rules),
+                &rules,
                 Some(&registry),
                 crate::sim::world::FrameEffects::default()
             ));
@@ -1150,7 +1152,7 @@ pub fn check_initialized_unit_paid_reissues(produce: GroundCommandProducer) {
             assert!(sim.apply_command_with_overlays(
                 "Americans",
                 &Command::Stop { entity_id: id },
-                Some(&rules),
+                &rules,
                 Some(&registry),
                 crate::sim::world::FrameEffects::default()
             ));
@@ -1170,7 +1172,7 @@ pub fn check_initialized_unit_paid_reissues(produce: GroundCommandProducer) {
         assert!(sim.apply_command_with_overlays(
             "Americans",
             &decoded.payload,
-            Some(&rules),
+            &rules,
             Some(&registry),
             crate::sim::world::FrameEffects::default()
         ));
@@ -1221,7 +1223,7 @@ fn initialized_unit_delayed_move_reaches_original_class_refusal() {
                 target_rx: rx,
                 target_ry: ry,
             },
-            Some(&rules),
+            &rules,
             Some(&registry),
             crate::sim::world::FrameEffects::default()
         ),
@@ -1274,7 +1276,7 @@ fn initialized_gi_move_clears_original_archive_before_destination() {
             target_rx: resolved.0,
             target_ry: resolved.1,
         },
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default()
     ));
@@ -1354,7 +1356,7 @@ fn initialized_gi_retained_priors_and_stop_reissues_match_original_returns() {
                 target_rx: resolved.0,
                 target_ry: resolved.1,
             },
-            Some(&rules),
+            &rules,
             Some(&registry),
             crate::sim::world::FrameEffects::default()
         ));
@@ -1645,7 +1647,7 @@ fn initialized_gi_non_deployer_input_reaches_original_class_refusal() {
             target_rx: resolved.0,
             target_ry: resolved.1,
         },
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default(),
     ));
@@ -2018,7 +2020,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
             let mut output = sim
                 .advance_app_frame(
                     &due,
-                    Some(&rules),
+                    &rules,
                     Some(&registry),
                     TICK_MS,
                     super::TickLane::Ordinary,

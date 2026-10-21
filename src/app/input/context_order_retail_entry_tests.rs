@@ -503,6 +503,108 @@ fn a_damaged_tank_sent_to_the_depot_is_repaired() {
     assert_eq!(sim.entities().get(tank).unwrap().health.current(), strength);
 }
 
+/// Issue2235's actual pointer overlap, through normal retail flight, shared
+/// picking, cursor/action dispatch and the production bunker install loop.
+#[test]
+fn screen_overlap_with_hovering_rocketeer_keeps_bunker_enter_action() {
+    let Some((retail, registry)) = retail() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, bunker, tank, _) = scene_with(rules, "NATBNK", "Americans");
+    let rocketeer = sim
+        .spawn_object("JUMPJET", "Americans", 24, 19, 0, rules)
+        .expect("Rocketeer");
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Move {
+            entity_id: rocketeer,
+            target_rx: 23,
+            target_ry: 19,
+        },
+        Some(rules),
+    ));
+    for _ in 0..400 {
+        sim.advance_tick(&[], Some(rules), None, None, 67);
+    }
+    assert_eq!(
+        crate::sim::movement::air_movement::current_fly_height(
+            sim.entities().get(rocketeer).unwrap(),
+            sim.resolved_terrain(),
+        ),
+        500,
+        "the normal Move must establish stock hover height"
+    );
+    let (x, y) =
+        crate::render::locomotor_visual::screen_position(sim.entities().get(bunker).unwrap());
+    // Original6D9CE0 registers Building Location. At this platform point,
+    // Tactical6DA380 prefers the bunker; the old unweighted hover preferred
+    // the Rocketeer and prevented the Enter action before selection repicked.
+    let picked = crate::app::input::entity_pick::hover_target_at_point(
+        &sim,
+        x + 2.,
+        y + 16.,
+        "Americans",
+        true,
+        Some(rules),
+    )
+    .expect("bunker platform target");
+    assert_eq!(picked, hover(bunker));
+    let (air_x, air_y) =
+        crate::render::locomotor_visual::screen_position(sim.entities().get(rocketeer).unwrap());
+    assert_eq!(
+        crate::app::input::entity_pick::hover_target_at_point(
+            &sim,
+            air_x,
+            air_y,
+            "Americans",
+            true,
+            Some(rules),
+        )
+        .map(|hover| hover.stable_id),
+        Some(rocketeer),
+        "a genuinely nearer air target remains selectable"
+    );
+    assert_eq!(
+        cursor_id_for_feedback(capability_cursor_for_hover(
+            &sim,
+            &[tank],
+            Some(tank),
+            &picked,
+            Some(rules),
+            Some(&registry),
+            OrderModifier::Normal,
+            false,
+            false,
+        )),
+        Some(CursorId::Enter)
+    );
+    let mut selected = vec![tank];
+    let orders = entry_orders(
+        &sim,
+        rules,
+        &[tank],
+        &mut selected,
+        &picked,
+        OrderModifier::Normal,
+        false,
+        Some(&registry),
+    )
+    .expect("screen-picked bunker admits the tank");
+    assert_eq!(orders, [enter(tank, bunker)]);
+    assert!(sim.apply_command("Americans", &orders[0], Some(rules)));
+    for _ in 0..1500 {
+        sim.advance_tick(&[], Some(rules), None, None, 67);
+        if sim.entities().get(bunker).unwrap().bunker.occupant() == Some(tank) {
+            break;
+        }
+    }
+    assert_eq!(
+        sim.entities().get(bunker).unwrap().bunker.occupant(),
+        Some(tank)
+    );
+}
+
 /// Each Grizzly over an empty Tank Bunker answers Enter on its own
 /// What_Action, so both are sent in, as `Selection__DispatchMultiUnitOrder`
 /// asks every receiver. Once one is installed, the bunker's CAN_LOAD

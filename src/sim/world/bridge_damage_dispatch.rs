@@ -290,7 +290,7 @@ impl DamageHost for LiveDamage<'_> {
         self.drivers.sim.stop_all_targeting_cell(
             rx as u16,
             ry as u16,
-            Some(rules),
+            rules,
             self.drivers.registry,
             self.drivers.frame_effects,
         );

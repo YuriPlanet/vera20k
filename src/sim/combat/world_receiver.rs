@@ -586,7 +586,7 @@ pub(crate) fn commit_terrain(
     // the three later DetachAll/UnInit/Limbo announcements.
     world.notify_pointer_expired(
         lethal.stable_id,
-        crate::sim::world::UninitContext::new(Some(rules), overlay_registry),
+        crate::sim::world::UninitContext::new(rules, overlay_registry),
     );
 
     if lethal.spawns_tiberium
@@ -614,7 +614,7 @@ pub(crate) fn commit_terrain(
         lethal,
         &mut run.finalizing_terrain,
         &mut run.navigation_changed_cells,
-        crate::sim::world::UninitContext::new(Some(rules), overlay_registry),
+        crate::sim::world::UninitContext::new(rules, overlay_registry),
     );
     (effects, under_attack_events)
 }
@@ -776,7 +776,7 @@ pub(crate) fn commit_entities(
                 .get(target_id)
                 .is_some_and(|target| !target.berserk.is_active());
         if starts_berserk {
-            world.leave_team(target_id, false, Some(rules), run.effects());
+            world.leave_team(target_id, false, rules, run.effects());
         }
         let Some(receiver_health::ReceiverHealthCommit {
             building_entry_frame,
@@ -846,7 +846,7 @@ pub(crate) fn commit_entities(
             let _ = world.assign_target_represented(
                 target_id,
                 None,
-                Some(rules),
+                rules,
                 overlay_registry,
                 run.effects(),
             );
@@ -855,7 +855,7 @@ pub(crate) fn commit_entities(
                 MissionId::from_known(MissionType::Hunt),
                 0,
                 world.session.binary_frame(),
-                &crate::sim::mission::authority::EntityReadyInputProvider,
+                &crate::sim::mission::authority::LiveReadyInputProvider { rules },
             );
         }
 
@@ -886,7 +886,7 @@ pub(crate) fn commit_entities(
                         //executed coordinate_attempts retain args[0].
                         flags: 0,
                     });
-                    run.effects().flush_sound(world, Some(rules));
+                    run.effects().flush_sound(world, rules);
                 }
             }
         }
@@ -1134,6 +1134,7 @@ pub(crate) fn commit_entities(
                         crate::sim::docking::bunker_link::release_sell_destroy(
                             world,
                             target_id,
+                            rules,
                             run.effects(),
                         );
                     } else {
@@ -1186,7 +1187,7 @@ pub(crate) fn commit_entities(
                 //4426E1 PUSH0 before750E20 at442706 (same executed owner).
                 flags: 0,
             });
-            run.effects().flush_sound(world, Some(rules));
+            run.effects().flush_sound(world, rules);
         }
 
         // `BuildingClass::ReceiveDamage`'s retaliation block
@@ -1524,7 +1525,7 @@ pub(crate) fn handle_death(
                 if callbacks_enabled(world) {
                     world.techno_death_stun(
                         dead_id,
-                        crate::sim::world::UninitContext::new(Some(rules), overlay_registry)
+                        crate::sim::world::UninitContext::new(rules, overlay_registry)
                             .with_effects(run.effects()),
                     );
                 }
@@ -1774,7 +1775,7 @@ fn finish_concrete_death(
             .object_type(type_id, rules)
             .is_some_and(|object| object.crashable);
     if category == EntityCategory::Unit && callbacks_enabled(world) {
-        world.foot_mark_remove(dead_id, Some(rules), overlay_registry, frame_effects);
+        world.foot_mark_remove(dead_id, rules, overlay_registry, frame_effects);
         let dying = crate::sim::crew_survival::DyingTransport {
             attacker: killing_attacker(world, damage_events, dead_id),
             ignore_defenses,
@@ -1842,7 +1843,7 @@ fn finish_concrete_death(
         // Unit's receiver runs it next), so its sight leaves now.
         world.release_object_sight_with_context(
             dead_id,
-            crate::sim::world::UninitContext::new(Some(rules), overlay_registry)
+            crate::sim::world::UninitContext::new(rules, overlay_registry)
                 .with_effects(frame_effects),
         );
         // The corpse stays in the store for its death animation; the death
@@ -1897,7 +1898,7 @@ fn finish_concrete_death(
         match plan {
             ConcreteDeathSmudgePlan::Infantry(postlude) => {
                 let uninit = callbacks_enabled(world).then(|| {
-                    crate::sim::world::UninitContext::new(Some(rules), overlay_registry)
+                    crate::sim::world::UninitContext::new(rules, overlay_registry)
                         .with_effects(frame_effects)
                 });
                 postlude.commit(world, rules, effects, uninit);

@@ -500,7 +500,7 @@ fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
     fx.sim.foot_set_location_marked(
         passenger,
         arrival,
-        Some(&fx.rules),
+        &fx.rules,
         None,
         crate::sim::world::FrameEffects::default(),
     );
@@ -517,7 +517,7 @@ fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
         .per_cell_process(
             passenger,
             crate::sim::movement::PerCellReason::Arrival,
-            Some(&fx.rules),
+            &fx.rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )

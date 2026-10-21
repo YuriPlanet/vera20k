@@ -1,9 +1,16 @@
 //! VERA20k — entry point.
 //!
-//! Creates the winit event loop and delegates everything to App.
-//! This file should stay minimal (~50 lines). All application logic lives in the app facade and its modules.
+//! Initializes process diagnostics, then hands the winit event loop to App.
+//! Application logic lives in the app facade and its modules.
 //!
 //! Module declarations live in lib.rs so integration tests can import them.
+
+// Release games are GUI applications. Keep the console for development builds;
+// the file logger below retains diagnostics when Windows supplies no console.
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
 
 use anyhow::Result;
 use winit::event_loop::EventLoop;
@@ -23,12 +30,26 @@ fn main() -> Result<()> {
 
     vera20k::util::logging::install_panic_hook(log_path.as_deref());
 
-    log::info!("VERA20k starting");
+    log::info!(
+        "VERA20k {} starting ({}/{})",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+    );
     log::info!("Ares support compiled in: {}", vera20k::rules::ARES_ENABLED);
     if let Some(path) = &log_path {
         log::info!("Log file: {}", path.display());
     }
 
+    let result = run();
+    if let Err(error) = &result {
+        log::error!("VERA20k exited with an error: {error:#}");
+    }
+    log::logger().flush();
+    result
+}
+
+fn run() -> Result<()> {
     let launch_mode =
         vera20k::app::frontend::launch::parse_launch_args(std::env::args_os().skip(1))?;
 
@@ -105,6 +126,5 @@ fn main() -> Result<()> {
     app.finish_capture()?;
 
     log::info!("VERA20k shut down cleanly");
-    log::logger().flush();
     Ok(())
 }

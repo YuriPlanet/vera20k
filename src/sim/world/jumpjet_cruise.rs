@@ -42,7 +42,7 @@ struct CruiseHost<'a> {
     sim: &'a mut Simulation,
     frame: u32,
     trig: &'a TrigTable,
-    rules: Option<&'a RuleSet>,
+    rules: &'a RuleSet,
     registry: Option<&'a OverlayTypeRegistry>,
     frame_effects: FrameEffects<'a>,
     stable_id: u64,
@@ -67,11 +67,9 @@ impl CruiseHost<'_> {
     }
 
     fn object_type(&self) -> Option<&crate::rules::object_type::ObjectType> {
-        self.rules.and_then(|rules| {
-            self.sim
-                .interner
-                .object_type(self.owner().type_ref(), rules)
-        })
+        self.sim
+            .interner
+            .object_type(self.owner().type_ref(), self.rules)
     }
 
     fn slot_holder(&self, cell: (i16, i16)) -> Option<u64> {
@@ -221,12 +219,11 @@ impl JumpjetFlightHost for CruiseHost<'_> {
                     .substrate
                     .entities
                     .get(id)
-                    .zip(self.rules)
-                    .and_then(|(building, rules)| {
+                    .and_then(|building| {
                         self.sim
                             .interner
-                            .object_type(building.type_ref(), rules)
-                            .map(|object| rules.building_dimensions(object)[2])
+                            .object_type(building.type_ref(), self.rules)
+                            .map(|object| self.rules.building_dimensions(object)[2])
                     })
                     .unwrap_or(0)
             });
@@ -292,7 +289,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         // Jumpjet arrival705D60 ->6385C0, at the state transition sites
         //54BE2F/54BE97/54BEDB and54C28C/54C2D2/54C2F0. The path owner
         //queues Wait before publishing the next event; it does not land here.
-        self.sim.planning_start_actor(self.stable_id);
+        self.sim.planning_start_actor(self.stable_id, self.rules);
     }
     /// `FacingClass::UpdateFacing @ 0x004C9300` on the body facing (`+0x388`).
     fn snap_body_facing(&mut self, facing: u16) {
@@ -371,20 +368,17 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         });
     }
     fn can_enter_cell(&self, cell: (i16, i16)) -> i32 {
-        let answer = match self.rules {
-            Some(rules) => self.sim.mover_can_enter(
-                self.stable_id,
-                cell,
-                InfantryEntryArgs::REPAIR,
-                crate::sim::movement::infantry_entry::EntryQueryMode::CheckLocomotor,
-                rules,
-                self.registry,
-            ),
-            None => Err("no rules".into()),
-        };
+        let answer = self.sim.mover_can_enter(
+            self.stable_id,
+            cell,
+            InfantryEntryArgs::REPAIR,
+            crate::sim::movement::infantry_entry::EntryQueryMode::CheckLocomotor,
+            self.rules,
+            self.registry,
+        );
         answer.map_or_else(
             |error| {
-                // Existing no-rules/type/map fallback; native always has an answer.
+                // Existing type/map fallback; native always has an answer.
                 log::warn!("Jumpjet {} landing entry: {error}", self.stable_id);
                 0
             },
@@ -419,9 +413,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     fn factory_contact_notify(&mut self, runtime: &mut JumpjetRuntime) {
         //54BC59 reads Contacts[0];54BC6D..54BCA1 wants a Building of one of
         // the four factory classes before the owner's Notify at54BCB3.
-        let Some(rules) = self.rules else {
-            return;
-        };
+        let rules = self.rules;
         let factory_contact = self
             .owner()
             .radio_contacts
@@ -468,8 +460,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.owner().landing_for_deploy()
     }
     fn deploy_facing(&self) -> Option<u16> {
-        self.rules
-            .map(|rules| u16::from(rules.general.deploy_dir as u8) << 8)
+        Some(u16::from(self.rules.general.deploy_dir as u8) << 8)
     }
     fn touchdown(&mut self, runtime: &mut JumpjetRuntime) -> bool {
         self.touched_down = true;
@@ -597,9 +588,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.owner().drop_credit.being_manipulated()
     }
     fn crush_below(&mut self, runtime: &mut JumpjetRuntime) -> bool {
-        let Some(rules) = self.rules else {
-            return false;
-        };
+        let rules = self.rules;
         let id = self.stable_id;
         let registry = self.registry;
         let frame_effects = self.frame_effects;
@@ -636,9 +625,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         })
     }
     fn sink(&mut self, runtime: &mut JumpjetRuntime) {
-        let Some(rules) = self.rules else {
-            return;
-        };
+        let rules = self.rules;
         let id = self.stable_id;
         let registry = self.registry;
         let frame_effects = self.frame_effects;
@@ -733,7 +720,7 @@ impl Simulation {
             self,
             id,
             crate::sim::radio::RadioMessage::RequestClearance,
-            Some(rules),
+            rules,
             frame_effects,
         );
         let Some(owner) = self.substrate.entities.get(id) else {
@@ -752,7 +739,7 @@ impl Simulation {
             let _ = self.assign_destination_represented(
                 id,
                 Some(crate::sim::components::NavTargetRef::from(archive)),
-                Some(rules),
+                rules,
                 registry,
                 frame_effects,
             );
@@ -777,7 +764,7 @@ impl Simulation {
     pub(crate) fn tick_jumpjet_cruise_one(
         &mut self,
         stable_id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<Option<AirMovementTickStats>, super::FrameAdvanceError> {
@@ -816,7 +803,6 @@ impl Simulation {
             let entity = host.sim.substrate.entities.get_mut(stable_id).unwrap();
             if host.crash_latched
                 && entity.category() == EntityCategory::Infantry
-                && let Some(rules) = rules
                 && let Err(cause) = host.sim.infantry_do_action(
                     stable_id,
                     crate::sim::movement::infantry_action::DO_AIR_DEATH_START,
@@ -930,6 +916,7 @@ mod tests {
         }
         entity.locomotor = Some(locomotor);
         sim.substrate.entities.insert(entity);
+        sim.interner = crate::sim::intern::test_interner();
         Simulation::set_object_height_unmarked(&mut sim.substrate, &sim.resolved_terrain, 1, 500);
         sim
     }
@@ -953,7 +940,7 @@ mod tests {
             .expect("jumpjet")
             .navigation
             .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::cell(16, 10)));
-        sim.jumpjet_move_to(1, request, None)
+        sim.jumpjet_move_to(1, request, crate::rules::ruleset::RuleSet::empty_for_test())
             .expect("Move_To on the fixture map");
     }
 
@@ -999,7 +986,7 @@ mod tests {
                 sim,
                 frame: 0,
                 trig: TrigTable::embedded(),
-                rules: Some(rules),
+                rules,
                 registry: Some(registry),
                 frame_effects: FrameEffects::default(),
                 stable_id: 1,
@@ -1168,7 +1155,7 @@ mod tests {
             .with_destination_for_test(DriveCoord::cell(15, 15, 0));
         sim.process_active_locomotor(
             id,
-            Some(&rules),
+            &rules,
             super::super::techno_ai::ObjectAiCtx {
                 overlay_registry: Some(&registry),
                 ..Default::default()
@@ -1219,7 +1206,7 @@ mod tests {
             sim.session.set_binary_frame_for_test(1001 + frame);
             sim.tick_air_movement_with_cell_lists_one(
                 1,
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
                 crate::sim::world::FrameEffects::default(),
             )
@@ -1256,7 +1243,7 @@ mod tests {
             sim.session.set_binary_frame_for_test(1001 + frame);
             sim.tick_air_movement_with_cell_lists_one(
                 1,
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
                 crate::sim::world::FrameEffects::default(),
             )
@@ -1330,7 +1317,7 @@ mod tests {
         order_east(&mut sim);
         sim.tick_air_movement_with_cell_lists_one(
             1,
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -1379,7 +1366,7 @@ mod tests {
             let stats = sim
                 .tick_air_movement_with_cell_lists_one(
                     1,
-                    None,
+                    crate::rules::ruleset::RuleSet::empty_for_test(),
                     None,
                     crate::sim::world::FrameEffects::default(),
                 )
@@ -1463,7 +1450,7 @@ mod tests {
         let stats = sim
             .tick_air_movement_with_cell_lists_one(
                 1,
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
                 crate::sim::world::FrameEffects::default(),
             )
@@ -1509,7 +1496,7 @@ mod tests {
             sim.session.set_binary_frame_for_test(1001 + frame);
             sim.tick_air_movement_with_cell_lists_one(
                 1,
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
                 crate::sim::world::FrameEffects::default(),
             )
@@ -1539,12 +1526,17 @@ mod tests {
         assert!(entity.navigation.nav_com().is_some());
         let here = (entity.position.rx(), entity.position.ry());
         assert!(here.0 < 16, "still on its way");
-        sim.assign_null_destination(1, None, None, crate::sim::world::FrameEffects::default());
+        sim.assign_null_destination(
+            1,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
 
         sim.session.set_binary_frame_for_test(1021);
         sim.tick_air_movement_with_cell_lists_one(
             1,
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -1566,7 +1558,7 @@ mod tests {
             sim.session.set_binary_frame_for_test(1022 + frame);
             sim.tick_air_movement_with_cell_lists_one(
                 1,
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
                 crate::sim::world::FrameEffects::default(),
             )
@@ -1628,7 +1620,7 @@ mod tests {
             fresh_oracle_seam::install(vec![code], Vec::new());
             sim.tick_air_movement_with_cell_lists_one(
                 1,
-                Some(&rules),
+                &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             )

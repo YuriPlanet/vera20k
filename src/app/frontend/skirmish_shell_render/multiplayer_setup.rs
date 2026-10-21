@@ -425,8 +425,27 @@ pub(crate) fn render_multiplayer_setup(
                 SHELL_CONTROL_TEXT_DEPTH,
             ));
         }
+        // C9's 0x71F "Preview unavailable" after the host's Z3 (0x5E3D10),
+        // a left-aligned static at its template place.
+        if !sliding
+            && view.no_preview
+            && let Some(rect) = layout.no_preview
+        {
+            texts.push(text(
+                &localized_label(state, "TXT_NAT_NO_PREVIEW", "Preview unavailable"),
+                rect,
+                ShellAlign::NONE,
+                SHELL_LABEL_TEXT_RGB,
+                SHELL_CONTROL_TEXT_DEPTH,
+            ));
+        }
         if !sliding {
-            if let Some(preview) = state.frontend.skirmish_preview_texture.as_ref() {
+            if let Some(preview) = state
+                .frontend
+                .skirmish_preview_texture
+                .as_ref()
+                .filter(|_| !view.preview_hidden)
+            {
                 overlay.preview = build_preview_surface_instance(
                     layout.map_preview,
                     preview.width,
@@ -597,6 +616,16 @@ pub(crate) fn render_multiplayer_setup(
     if let Some(page) = crate::app::frontend::wol_welcome_render::page_dialogs_paint(state) {
         overlay.controls.extend(page.controls);
         overlay.texts.extend(page.texts);
+    }
+    // Start Game Now's 0x130 over the locked C2/C9.
+    if let Some(verify) = crate::app::shell_network_setup::verify(state) {
+        let paint = super::paint_wol_verify(
+            state,
+            verify,
+            &crate::app::shell_network_setup::verify_layout(state),
+        );
+        overlay.controls.extend(paint.controls);
+        overlay.texts.extend(paint.texts);
     }
     in_game_shell::render_shell_frame(
         state,

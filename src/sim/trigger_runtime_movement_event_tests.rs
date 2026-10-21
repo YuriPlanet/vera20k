@@ -102,7 +102,7 @@ fn team(
         sim.team_script_vm.mark_member_team_leaving_map(actor);
     }
     if !head {
-        sim.team_remove_member(id, actor, true, Some(rules), FrameEffects::default());
+        sim.team_remove_member(id, actor, true, rules, FrameEffects::default());
     }
     id
 }
@@ -236,7 +236,7 @@ fn twelve_original_team_predicates_keep_type_head_leaving_house_and_persistence_
                 },
                 house.then_some(houses[0]),
                 &mut persistence,
-                Some(&rules),
+                &rules,
                 live,
             )
         };
@@ -311,14 +311,7 @@ fn fourteen_original_near_waypoint_distance_controls_reuse_the_numeric_owner() {
             ..Default::default()
         };
         assert_eq!(
-            sim.has_occurred(
-                0,
-                input,
-                Some(houses[0]),
-                &mut persistence,
-                Some(&rules),
-                live
-            ),
+            sim.has_occurred(0, input, Some(houses[0]), &mut persistence, &rules, live),
             expected,
             "{delta:?}"
         );
@@ -329,7 +322,7 @@ fn fourteen_original_near_waypoint_distance_controls_reuse_the_numeric_owner() {
                 TagEventInput { kind: 8, ..input },
                 Some(houses[0]),
                 &mut persistence,
-                Some(&rules),
+                &rules,
                 live
             ));
             assert!(!sim.with_buildup_bypass(|sim| sim.has_occurred(
@@ -337,7 +330,7 @@ fn fourteen_original_near_waypoint_distance_controls_reuse_the_numeric_owner() {
                 input,
                 Some(houses[0]),
                 &mut persistence,
-                Some(&rules),
+                &rules,
                 live
             )));
         }
@@ -392,7 +385,7 @@ fn ordinary_per_cell_arrival_raises_attached_near_event_before_next_poll_and_sur
         sim.per_cell_process(
             actor,
             crate::sim::movement::PerCellReason::TurnComplete,
-            Some(&rules),
+            &rules,
             Some(&registry),
             FrameEffects::default(),
         )
@@ -401,7 +394,7 @@ fn ordinary_per_cell_arrival_raises_attached_near_event_before_next_poll_and_sur
         sim.per_cell_process(
             actor,
             crate::sim::movement::PerCellReason::Arrival,
-            Some(&rules),
+            &rules,
             Some(&registry),
             FrameEffects::default(),
         )
@@ -444,7 +437,7 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
     let _ = sim.assign_destination_represented(
         infantry,
         Some(crate::sim::components::NavTargetRef::object(reactor)),
-        Some(&rules),
+        &rules,
         Some(&registry),
         FrameEffects::default(),
     );
@@ -465,14 +458,14 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
             y: 16 * 256 + 128,
             z: 0,
         },
-        Some(&rules),
+        &rules,
         Some(&registry),
         FrameEffects::default(),
     );
     sim.per_cell_process(
         infantry,
         crate::sim::movement::PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         Some(&registry),
         FrameEffects::default(),
     )

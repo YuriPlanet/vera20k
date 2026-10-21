@@ -1114,11 +1114,11 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
                     assert!(
                         crate::sim::movement::ready_producer::ready_state_for(
                             tank,
-                            Some(crate::sim::movement::SpeedRules::new(
+                            crate::sim::movement::SpeedRules::new(
                                 &rules,
                                 &rec.interner,
                                 &rec.houses
-                            )),
+                            ),
                             rec.session.binary_frame(),
                         )
                         .is_some_and(|state| state.is_moving_now())

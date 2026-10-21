@@ -273,16 +273,31 @@ pub(crate) fn build_shp_instances(
         }
         let Some(atlas) = atlas else { continue };
         // Determine if this building is in its make/build-up or build-down animation.
-        // Only BState 0 draws the construction animation: a human player's
-        // placement shows its idle body for one frame before its mission
-        // starts, and a pack-up until Sell's stage 1 starts the animation
-        // again (`Begin_Mode(0)`).
+        // Only BState 0 runs the construction animation; a pack-up shows
+        // the completed body until Sell's stage 1 starts it again
+        // (`Begin_Mode(0)`).
         let is_building_up: bool = entity.category() == EntityCategory::Structure
             && !entity.building_down()
             && entity.in_construction_bstate();
         let is_building_down: bool = entity.category() == EntityCategory::Structure
             && entity.building_down()
             && entity.in_construction_bstate();
+        // The image DrawBody draws. A building not yet opened outside BState
+        // 0 (a human player's placement, idle for a frame before its
+        // Construction mission begins) draws its Buildup at the completed
+        // body's frame; a null Buildup draws neither body nor bib.
+        let image = (entity.category() == EntityCategory::Structure).then(|| {
+            crate::sim::building_art::building_image(
+                entity,
+                state
+                    .rules()
+                    .is_none_or(|rules| rules.has_buildup(type_str)),
+            )
+        });
+        let null_image = image == Some(crate::sim::building_art::BuildingImage::Null);
+        let draws_buildup =
+            image.is_some_and(|image| image != crate::sim::building_art::BuildingImage::Body);
+        let unopened_buildup = draws_buildup && !is_building_up && !is_building_down;
         // The construction animation's stage is the Buildup frame drawn,
         // reversed while selling (`BuildingClass::GetCurrentFrame`'s BState 0
         // arm, `sim::building_art::body_frame`).
@@ -368,7 +383,10 @@ pub(crate) fn build_shp_instances(
                     } else {
                         0
                     };
-                    (frame, None)
+                    (
+                        frame,
+                        unopened_buildup.then(|| format!("{}_MAKE", type_str)),
+                    )
                 }
                 _ => {
                     let Some(frame) = resolve_object_shp_frame_with_facing(
@@ -424,6 +442,7 @@ pub(crate) fn build_shp_instances(
         // building still draws (Approach A in the design doc). Non-garrisonable
         // misses keep their existing skip path.
         let (body_key, entry) = match atlas.get(&key) {
+            _ if null_image => (key.clone(), None),
             Some(e) => (key.clone(), Some(e)),
             None if shp_frame != 0
                 && entity.category() == EntityCategory::Structure
@@ -502,7 +521,6 @@ pub(crate) fn build_shp_instances(
                 state.match_state.match_presentation.lighting.grid(),
                 (pos.rx(), pos.ry()),
                 art,
-                is_building_up || is_building_down,
             )
         } else {
             selected_palette_light
@@ -636,7 +654,7 @@ pub(crate) fn build_shp_instances(
         if entity.category() == EntityCategory::Structure {
             if let Some((target, instance)) = body {
                 building_pieces.push(PlannedBuildingPieceInstance {
-                    kind: if is_building_up || is_building_down {
+                    kind: if draws_buildup {
                         BuildingPieceKind::BuildupOrSpecial
                     } else {
                         BuildingPieceKind::Body
@@ -647,9 +665,9 @@ pub(crate) fn build_shp_instances(
                     target,
                     instance,
                 });
-                if !is_building_up
-                    && !is_building_down
-                    && let Some(body_entry) = entry
+                // DrawSHP's shadow arm (`0x00705E00`) follows whichever
+                // image GetImage returned, the Buildup included.
+                if let Some(body_entry) = entry
                     && let Some(shadow) = embedded_shp_shadow_piece(
                         atlas,
                         state.rules().and_then(|rules| rules.object(type_str)),
@@ -709,7 +727,9 @@ pub(crate) fn build_shp_instances(
         // Bibs and anims use the raw cell position (sy) — their own SHP offsets
         // (baked into the canvas) handle correct placement relative to the cell.
         if entity.category() == EntityCategory::Structure && !is_building_up && !is_building_down {
-            if let Some(art) = art_reg {
+            if let Some(art) = art_reg
+                && !null_image
+            {
                 // Bib is drawn INSIDE BuildingClass_DrawBody in the original engine,
                 // right after the main body sprite, as part of the same object pass.
                 // It overwrites the body's terrain-colored pixels at the ramp area.
@@ -1417,7 +1437,7 @@ pub(crate) fn build_building_anim_instances(
         // Preserve the existing slot material selector. The parent's
         // lifecycle/viewport/body visibility is not this Anim's admission;
         // its own retained Display member and hidden byte decide that.
-        let material = DrawState::for_entity(
+        let material = DrawState::for_building_slot_anims(
             building,
             sim.session().binary_frame(),
             super::units::house_color_to_remap_row(house_color),
@@ -1461,6 +1481,11 @@ pub(crate) fn build_building_anim_instances(
             axis.world_height,
             viewport,
             draw_state,
+            state
+                .match_state
+                .match_presentation
+                .in_game_options
+                .detail_level as i32,
         );
     }
 }
@@ -1506,6 +1531,7 @@ fn emit_building_anims(
     world_height: f32,
     viewport: [f32; 4],
     draw_state: DrawState,
+    detail_level: i32,
 ) {
     let rules_image: String = rules
         .and_then(|r| r.object(building_type))
@@ -1538,6 +1564,24 @@ fn emit_building_anims(
         if !runtime_config.art_body_read {
             continue;
         }
+        // DrawIt's translucency selection (`0x00423061`): a building being
+        // erased draws its slot anims at 50%, or 75% for `DoubleThick=`.
+        let Some(alpha) = super::overlays::anim_instance_alpha_with_flags(
+            Some(runtime_config),
+            instance.draw_flags(),
+            instance.runtime().current_frame,
+            i32::from(
+                super::overlays::presentation_anim_frame_count(
+                    &atlas.active_anim_frame_counts,
+                    anim_name,
+                )
+                .unwrap_or(0),
+            ),
+            detail_level,
+            instance.draw_runtime(),
+        ) else {
+            continue;
+        };
         // Anim+AC is relative to this instance's current type Start. Replacement
         // copies only AC; its timer/loop state remains the new constructor's.
         let Ok(frame) = u16::try_from(
@@ -1648,7 +1692,7 @@ fn emit_building_anims(
                     depth: anim_depth,
                     tint: anim_tint,
                     palette_light,
-                    alpha: 1.0,
+                    alpha,
                     draw_state,
                     // The anim's YDrawOffset is baked into the atlas offset, so it
                     // also rides the Z term (native `YDrawOffset + ZAdjust - 2`).

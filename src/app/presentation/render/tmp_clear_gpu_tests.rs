@@ -555,7 +555,7 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
             assert!(
                 runtime
                     .simulation
-                    .change_visible_map_area([2, 2, 1, 1], Some(&runtime.resources.rules),)
+                    .change_visible_map_area([2, 2, 1, 1], &runtime.resources.rules,)
             );
             assert!(
                 !runtime
@@ -568,7 +568,7 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
             assert!(
                 runtime
                     .simulation
-                    .change_visible_map_area(restore_local_size, Some(&runtime.resources.rules),)
+                    .change_visible_map_area(restore_local_size, &runtime.resources.rules,)
             );
             assert!(
                 runtime

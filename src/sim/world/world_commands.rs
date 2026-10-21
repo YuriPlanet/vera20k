@@ -147,7 +147,7 @@ impl Simulation {
             self.sound_events.emit(SimSoundEvent::VocCentered {
                 sound_id: sound_id.to_owned(),
             });
-            effects.flush_sound(self, Some(rules));
+            effects.flush_sound(self, rules);
         }
     }
 
@@ -968,7 +968,7 @@ impl Simulation {
 
         // House4FD018 calls70D4A0, not7258D0 pointer expiry: Restore runs
         // before the conditional target clear, then Team targets detach.
-        self.stop_all_targeting_cell(rx, ry, Some(rules), Some(overlays), effects);
+        self.stop_all_targeting_cell(rx, ry, rules, Some(overlays), effects);
 
         if let Some(tail_grid) = tail_grid {
             if self.zone_grid.is_some() {
@@ -999,7 +999,7 @@ impl Simulation {
         self.apply_command_with_overlays(
             command_owner,
             cmd,
-            rules,
+            rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -1009,7 +1009,7 @@ impl Simulation {
         &mut self,
         command_owner: &str,
         cmd: &Command,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
@@ -1090,9 +1090,6 @@ impl Simulation {
                 if !admitted {
                     return false;
                 }
-                let Some(rules) = rules else {
-                    return false;
-                };
                 // Native also writes +6B2. Its observed consumers are class
                 // CRC4DBD60 and raw native Save/Load41035E/4103CD, not active
                 // peer checksum64DAB0. No unread Rust bookkeeping shadow is
@@ -1179,7 +1176,6 @@ impl Simulation {
                 // at4C75E0), before NULL destination4C75ED/target4C75F8.
                 // Unlike MEGAMISSION it never clears Foot pending-entry+500.
                 crate::sim::radio::broadcast_break(self, *entity_id, rules, frame_effects);
-                crate::sim::docking::bunker_link::cancel_approach(self, *entity_id);
                 // `0x004C75ED`: the class setter's null destination, which
                 // reaches the active locomotor's Stop_Moving (a Teleport's
                 // drops only an armed warp, a moving Jumpjet's re-targets the
@@ -1204,13 +1200,12 @@ impl Simulation {
                 // `0x004C75FE..0x004C7624`: a `BalloonHover=` type takes both
                 // again. Its setter's arm (`0x00741983`) kept the NavCom while
                 // the Target stood; without the Target this one clears it.
-                let balloon = rules.is_some_and(|rules| {
-                    self.substrate
-                        .entities
-                        .get(*entity_id)
-                        .and_then(|entity| self.object_type(entity.type_ref(), rules))
-                        .is_some_and(|object| object.balloon_hover)
-                });
+                let balloon = self
+                    .substrate
+                    .entities
+                    .get(*entity_id)
+                    .and_then(|entity| self.object_type(entity.type_ref(), rules))
+                    .is_some_and(|object| object.balloon_hover);
                 if balloon {
                     self.assign_null_destination(
                         *entity_id,
@@ -1268,21 +1263,17 @@ impl Simulation {
                 //
                 // `0x004C7639..0x004C7650`: an open-topped transport's riders
                 // let go of their targets too.
-                if let Some(rules) = rules {
-                    self.open_topped_passengers_take_target(
-                        *entity_id,
-                        None,
-                        rules,
-                        overlay_registry,
-                        frame_effects,
-                    );
-                }
-                self.commit_stop_miner_guard(*entity_id);
+                self.open_topped_passengers_take_target(
+                    *entity_id,
+                    None,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                );
+                self.commit_stop_miner_guard(*entity_id, rules);
                 // `0x004C769C..0x004C76AC`: Stop takes a Slave Miner off its
                 // hunt (`sim::slave_manager`).
-                if let Some(rules) = rules {
-                    self.reset_slave_manager(*entity_id, rules, frame_effects);
-                }
+                self.reset_slave_manager(*entity_id, rules, frame_effects);
                 true
             }
             // A Cell target is the Ctrl click on the ground.
@@ -1342,7 +1333,6 @@ impl Simulation {
                 )
                 .accepted(),
             Command::DeployMcv { entity_id } => {
-                let Some(rules) = rules else { return false };
                 if !self.entity_owned_by_id(command_owner, *entity_id) {
                     return false;
                 }
@@ -1353,7 +1343,6 @@ impl Simulation {
             // keep it. The cell-click path sends SetRally followed by
             // SellBuilding, preserving native event1E/16.
             Command::UndeployBuilding { entity_id } => {
-                let Some(rules) = rules else { return false };
                 if !self.entity_owned_by_id(command_owner, *entity_id) {
                     return false;
                 }
@@ -1369,7 +1358,6 @@ impl Simulation {
                 if !self.entity_owned_by_id(command_owner, *entity_id) {
                     return false;
                 }
-                let Some(rules) = rules else { return false };
                 let Some(actor) = self.substrate.entities.get(*entity_id) else {
                     return false;
                 };
@@ -1385,7 +1373,7 @@ impl Simulation {
                     MissionType::Unload,
                     None,
                     None,
-                    Some(rules),
+                    rules,
                     overlay_registry,
                     frame_effects,
                 )
@@ -1399,7 +1387,6 @@ impl Simulation {
             // Production events act on the event's own house (the
             // EventClass header's house id); the payload names no owner.
             Command::QueueProduction { type_id } => {
-                let Some(rules) = rules else { return false };
                 let type_s = self.interner.resolve(*type_id).to_string();
                 production::enqueue_by_type(
                     self,
@@ -1432,12 +1419,9 @@ impl Simulation {
                     return false;
                 }
                 // The issuer adds no ownership/online/limbo/HP admission.
-                rules.is_some_and(|rules| {
-                    production::toggle_factory_primary(self, rules, *entity_id)
-                })
+                production::toggle_factory_primary(self, rules, *entity_id)
             }
             Command::CycleProducerFocus { category } => {
-                let Some(rules) = rules else { return false };
                 production::cycle_active_producer_for_owner_category(
                     self,
                     rules,
@@ -1446,7 +1430,6 @@ impl Simulation {
                 )
             }
             Command::PlaceReadyBuilding { type_id, rx, ry } => {
-                let Some(rules) = rules else { return false };
                 let type_s = self.interner.resolve(*type_id).to_string();
                 production::place_production_with_overlays(
                     self,
@@ -1461,9 +1444,6 @@ impl Simulation {
                 )
             }
             Command::PlaceProducedMobile { category } => {
-                let Some(rules) = rules else {
-                    return false;
-                };
                 production::place_production_with_overlays(
                     self,
                     rules,
@@ -1476,7 +1456,6 @@ impl Simulation {
                 )
             }
             Command::CancelProductionByType { type_id, all } => {
-                let Some(rules) = rules else { return false };
                 let type_s = self.interner.resolve(*type_id).to_string();
                 production::cancel_production_for_owner(
                     self,
@@ -1494,7 +1473,6 @@ impl Simulation {
             // owner must be the event's house (`0x004C6F45`); a building
             // takes `Sell_Back(-1)` (`0x004C6FA2`).
             Command::SellBuilding { entity_id } => {
-                let Some(rules) = rules else { return false };
                 if !self.entity_owned_by_id(command_owner, *entity_id) {
                     return false;
                 }
@@ -1508,7 +1486,7 @@ impl Simulation {
                 )
             }
             Command::SellWallAtCell { x, y } => {
-                let (Some(rules), Some(overlays)) = (rules, overlay_registry) else {
+                let Some(overlays) = overlay_registry else {
                     return false;
                 };
                 // Event 0x4C6FC4 passes 0; ordinary SELL remains audible.
@@ -1521,7 +1499,7 @@ impl Simulation {
             // Stuff flag, factory queue refresh, EVA line for a human house). The
             // dispatch has no owner check, and none is added here.
             Command::SetBuildingOnLine { entity_id, on } => {
-                let (Some(rules), Some(owner)) = (rules, self.interner.get(command_owner)) else {
+                let Some(owner) = self.interner.get(command_owner) else {
                     return false;
                 };
                 if !self.houses.contains_key(&owner) {
@@ -1551,7 +1529,7 @@ impl Simulation {
             // EventClass tail, before any House check.
             Command::LiveGameSpeed { speed } => self.session.apply_in_game_speed(*speed),
             Command::Cheer => {
-                let (Some(owner), Some(rules)) = (self.interner.get(command_owner), rules) else {
+                let Some(owner) = self.interner.get(command_owner) else {
                     return false;
                 };
                 if !self.houses.contains_key(&owner) {
@@ -1606,18 +1584,15 @@ impl Simulation {
                 }
                 true
             }
-            Command::MoveFlash { rx, ry } => {
-                rules.is_some_and(|rules| self.spawn_move_flash(rules, (*rx, *ry)))
-            }
+            Command::MoveFlash { rx, ry } => self.spawn_move_flash(rules, (*rx, *ry)),
             Command::Ally { house_index } => {
                 // EventClass::Execute 0x004C6DEE..0x004C6E23: no admission
                 // gate; the sender toggles on its own mask, announced.
-                let (Some(owner), Some(other), Some(rules)) = (
+                let (Some(owner), Some(other)) = (
                     self.interner.get(command_owner),
                     usize::try_from(*house_index)
                         .ok()
                         .and_then(|index| self.houses.order().get(index).copied()),
-                    rules,
                 ) else {
                     return false;
                 };
@@ -1665,14 +1640,12 @@ impl Simulation {
                 {
                     return false;
                 }
-                rules.is_some_and(|rules| {
-                    production::toggle_repair(
-                        self,
-                        rules,
-                        *entity_id,
-                        production::RepairControl::Toggle,
-                    )
-                })
+                production::toggle_repair(
+                    self,
+                    rules,
+                    *entity_id,
+                    production::RepairControl::Toggle,
+                )
             }
             Command::UnloadPassengers { transport_id } => {
                 if !self.entity_owned_by_id(command_owner, *transport_id) {
@@ -1739,7 +1712,6 @@ impl Simulation {
                         // Vehicle/aircraft transports unload through the Unload
                         // mission (`UnitClass::Mission_Unload @ 0x0073D630`
                         // transport branch; Aircraft slot `0x004151E0`).
-                        let Some(rules) = rules else { return false };
                         let is_transport = self
                             .substrate
                             .entities
@@ -1797,7 +1769,7 @@ impl Simulation {
                             MissionType::Unload,
                             None,
                             None,
-                            Some(rules),
+                            rules,
                             overlay_registry,
                             frame_effects,
                         )
@@ -1810,7 +1782,6 @@ impl Simulation {
                 attacker_id,
                 target_building_id,
             } => {
-                let Some(rules) = rules else { return false };
                 if !self.entity_owned_by_id(command_owner, *attacker_id) {
                     return false;
                 }
@@ -1891,7 +1862,7 @@ impl Simulation {
                     MissionType::Sabotage,
                     None,
                     Some(combat::TargetKind::Entity(*target_building_id)),
-                    Some(rules),
+                    rules,
                     overlay_registry,
                     frame_effects,
                 )
@@ -1901,7 +1872,6 @@ impl Simulation {
                 engineer_id,
                 target_building_id,
             } => {
-                let Some(rules) = rules else { return false };
                 if !self.entity_owned_by_id(command_owner, *engineer_id) {
                     return false;
                 }
@@ -1940,7 +1910,7 @@ impl Simulation {
                     MissionType::Capture,
                     None,
                     Some(combat::TargetKind::Entity(*target_building_id)),
-                    Some(rules),
+                    rules,
                     overlay_registry,
                     frame_effects,
                 )
@@ -1951,7 +1921,6 @@ impl Simulation {
                 target_rx,
                 target_ry,
             } => {
-                let Some(rules) = rules else { return false };
                 // The SPECIAL_PLACE event (`EventClass::Execute 0x004C78D6`).
                 let owner = self.interner.intern(command_owner);
                 self.fire_super_weapon(
@@ -1969,9 +1938,6 @@ impl Simulation {
                 target_rx,
                 target_ry,
             } => {
-                let Some(rules) = rules else {
-                    return false;
-                };
                 let owner = self.interner.intern(command_owner);
                 self.fire_super_weapon_selected(
                     rules,
@@ -1985,9 +1951,6 @@ impl Simulation {
                 )
             }
             Command::CancelPaidSuperWeapon { selection } => {
-                let Some(rules) = rules else {
-                    return false;
-                };
                 let owner = self.interner.intern(command_owner);
                 Self::cancel_paid_super_weapon_selection(
                     &mut self.substrate,
@@ -2003,9 +1966,6 @@ impl Simulation {
                 target_rx,
                 target_ry,
             } => {
-                let Some(rules) = rules else {
-                    return false;
-                };
                 let owner = self.interner.intern(command_owner);
                 self.fire_super_weapon_selected(
                     rules,
@@ -2019,7 +1979,6 @@ impl Simulation {
                 )
             }
             Command::EjectBunker { bunker_id } => {
-                let Some(rules) = rules else { return false };
                 if !self.entity_owned_by_id(command_owner, *bunker_id) {
                     return false;
                 }
@@ -2056,11 +2015,8 @@ impl Simulation {
         producer_ids: &[u64],
         rx: u16,
         ry: u16,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) -> bool {
-        let Some(rules) = rules else {
-            return true;
-        };
         let mut ids = producer_ids.to_vec();
         ids.sort_unstable();
         ids.dedup();
@@ -2137,7 +2093,7 @@ impl Simulation {
     /// Its disguise arm (+C8 with a NULL +D0(1)) is
     /// [`crate::sim::game_entity::GameEntity::disguise_hides_house_from`]; it
     /// does not treat current fog as selectability.
-    pub fn object_is_selectable(&self, stable_id: u64, rules: Option<&RuleSet>) -> bool {
+    pub fn object_is_selectable(&self, stable_id: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
         };
@@ -2156,25 +2112,22 @@ impl Simulation {
         }) {
             return false;
         }
-        rules.is_none_or(|r| {
-            self.interner
-                .object_type(entity.type_ref(), r)
-                .is_none_or(|object| object.selectable)
-        })
+        self.interner
+            .object_type(entity.type_ref(), rules)
+            .is_none_or(|object| object.selectable)
     }
 
     /// Object5F4520's state/type admission, shared by provisional local input
     /// and committed selection. Membership and pending placement are caller
     /// state: input checks its newest ledger/placement, the sim its stored bit.
     /// Original does not read Alive or Health here; search/click callers do.
-    pub fn can_select_object(&self, stable_id: u64, rules: Option<&RuleSet>) -> bool {
+    pub fn can_select_object(&self, stable_id: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
         };
         !entity.lifecycle.in_limbo()
             && self.object_is_selectable(stable_id, rules)
-            && !(entity.is_mission_only()
-                && rules.is_some_and(|rules| self.techno_player_controllable(stable_id, rules)))
+            && !(entity.is_mission_only() && self.techno_player_controllable(stable_id, rules))
             && !entity.is_warped_out()
     }
 
@@ -2238,9 +2191,8 @@ impl Simulation {
         if !self.try_select_object(stable_id, context) {
             return false;
         }
-        if let Some(rules) = context.rules()
-            && let Some(sound_id) = self.selection_voice_request(rules, stable_id, voice_latch)
-        {
+        let rules = context.rules();
+        if let Some(sound_id) = self.selection_voice_request(rules, stable_id, voice_latch) {
             let sound_id = sound_id.to_owned();
             self.sound_events.emit(SimSoundEvent::UnitVoiceRequested {
                 owner: stable_id,
@@ -2453,9 +2405,8 @@ impl Simulation {
     /// `0x004C71F6..0x004C74BA`) and its one port. Move, Attack (Ctrl and
     /// Cell clicks included), attack-move (mission 29), Area Guard, a vehicle
     /// transport's Unload and Enter, Capture and Sabotage onto their object
-    /// and Harvest run here. A tank bunker's Enter uses its existing
-    /// reservation adapter within this owner; the native Unit setter's Bunker
-    /// arm remains unported.
+    /// and Harvest run here. A tank bunker's Enter uses the same destination
+    /// and radio owners.
     /// A garrison's ordinary Unload (one command
     /// for the self-click and the deploy key's DEPLOY event) and the dormant
     /// aircraft Unload retain their adapters. In native order:
@@ -2505,7 +2456,7 @@ impl Simulation {
         mission: MissionType,
         target: Option<combat::TargetKind>,
         destination: Option<combat::TargetKind>,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> MegaMissionExecution {
@@ -2528,64 +2479,6 @@ impl Simulation {
         }
         if mission == MissionType::Enter && self.duplicate_enter_is_noop(entity_id, destination) {
             return MegaMissionExecution::RepeatedEnter;
-        }
-        // The existing bunker adapter represents the unported Unit741D49
-        // setter arm. Keep it in this event owner so a planned Enter has the
-        // same reservation/approach lifecycle as an ordinary bunker click.
-        if mission == MissionType::Enter
-            && let Some(bunker) = self.event_token_object(destination)
-            && self
-                .substrate
-                .entities
-                .get(bunker)
-                .is_some_and(|target| target.bunker_runtime.is_some())
-        {
-            let Some(rules) = rules else {
-                return MegaMissionExecution::Refused;
-            };
-            Self::flash_order_object(
-                &self.interner,
-                &self.session,
-                &self.fog,
-                &self.house_alliances,
-                &mut self.substrate,
-                entity_id,
-                target,
-                destination,
-            );
-            if !crate::sim::docking::bunker_link::can_auto_deploy_here(self, entity_id, rules) {
-                return MegaMissionExecution::Refused;
-            }
-            let entered = crate::sim::docking::bunker_link::begin_entry(
-                self,
-                entity_id,
-                bunker,
-                rules,
-                overlay_registry,
-                frame_effects,
-                |sim| {
-                    sim.queue_megamission(
-                        entity_id,
-                        MissionType::Enter,
-                        None,
-                        None,
-                        Some(rules),
-                        frame_effects,
-                    );
-                    let _ = sim.assign_target_represented(
-                        entity_id,
-                        None,
-                        Some(rules),
-                        overlay_registry,
-                        frame_effects,
-                    );
-                },
-            );
-            return if entered {
-                MegaMissionExecution::Executed
-            } else {
-                MegaMissionExecution::Refused
-            };
         }
         // Assign_Target_Command reads the event tokens only for mission 29.
         // The destination/radio owners handle any existing dock contact.
@@ -2665,7 +2558,7 @@ impl Simulation {
         ) {
             log::warn!("MegaMission destination {entity_id}: {cause}");
         }
-        if let (Some(target), Some(rules)) = (target, rules) {
+        if let Some(target) = target {
             self.open_topped_passengers_take_target(
                 entity_id,
                 Some(target),
@@ -2885,6 +2778,16 @@ mod tests {
             5,
             true,
         );
+        // The native Unit setter dispatches through an installed locomotor.
+        ge.locomotor = Some(
+            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Drive,
+            ),
+        );
+        ge.locomotor
+            .as_mut()
+            .unwrap()
+            .ensure_installed_track_state();
         // Revealed object: order admission reads the limbo byte.
         ge.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(ge);
@@ -2944,10 +2847,11 @@ mod tests {
         }
     }
 
-    /// An unarmed unit (no Primary, so CanAutoDeployHere rejects it) and an
-    /// enemy bunker each refuse admission and leave the machine idle.
+    /// What_Action's CAN_LOAD query refuses an unarmed unit (no Primary,
+    /// so CanAutoDeployHere rejects it) and an enemy bunker. This is input
+    /// admission; the MEGAMISSION event does not repeat the query.
     #[test]
-    fn enter_bunker_rejects_an_unarmed_unit_or_an_enemy_bunker() {
+    fn bunker_click_query_rejects_an_unarmed_unit_or_an_enemy_bunker() {
         use crate::sim::docking::bunker_install::BunkerState;
         use crate::sim::docking::bunker_link::BunkerLink;
         let rules = bunker_rules();
@@ -2956,13 +2860,11 @@ mod tests {
             spawn_bunker_struct(&mut sim, 2, bunker_owner, 10, 10);
             spawn_bunkerable(&mut sim, 1, "Americans", unit_type, 14, 14);
 
-            let applied = sim.apply_command(
-                "Americans",
-                &Command::clicked_mission(1, MissionType::Enter, combat::TargetKind::Entity(2)),
-                Some(&rules),
+            assert_ne!(
+                crate::sim::radio::receive::can_load_query(&sim, 2, 1, &rules),
+                crate::sim::radio::RadioResponse::Roger,
+                "{bunker_owner} bunker, {unit_type}"
             );
-
-            assert!(!applied, "{bunker_owner} bunker, {unit_type}");
             assert_eq!(
                 sim.substrate.entities.get(1).unwrap().bunker.link(),
                 BunkerLink::None
@@ -2982,13 +2884,12 @@ mod tests {
     }
 
     /// CAN_LOAD refuses a bunker under Construction or being sold
-    /// (`0x0043C326..0x0043C346`) before the adapter releases the tank's
-    /// current seek or sends DOCK_NOW, so the bunker's buildup is not cut
-    /// short by DOCK_NOW's ready latch and the tank keeps its seek.
+    /// (`0x0043C326..0x0043C346`) without mutating the tank's current seek
+    /// or the target's ready latch. This compares the query only; no
+    /// replacement event or UI click is executed.
     #[test]
-    fn enter_bunker_refuses_a_bunker_building_up_or_being_sold() {
+    fn bunker_click_query_preserves_seek_while_target_builds_up_or_is_sold() {
         use crate::sim::docking::bunker_install::BunkerState;
-        use crate::sim::docking::bunker_link::BunkerLink;
         let rules = bunker_rules();
         for mission in [MissionType::Construction, MissionType::Selling] {
             let mut sim = Simulation::new();
@@ -3008,13 +2909,11 @@ mod tests {
                 .mission
                 .set_current_for_test(MissionId::from_known(mission), 1);
 
-            let applied = sim.apply_command(
-                "Americans",
-                &Command::clicked_mission(1, MissionType::Enter, combat::TargetKind::Entity(2)),
-                Some(&rules),
+            assert_eq!(
+                crate::sim::radio::receive::can_load_query(&sim, 2, 1, &rules),
+                crate::sim::radio::RadioResponse::Negatory,
+                "{mission:?}"
             );
-
-            assert!(!applied, "{mission:?}");
             let building = sim.substrate.entities.get(2).unwrap();
             assert_eq!(building.building_ready_latch(), 0, "{mission:?}");
             assert_eq!(building.mission.queued(), MissionId::NONE, "{mission:?}");
@@ -3024,8 +2923,13 @@ mod tests {
                 "{mission:?}"
             );
             assert_eq!(
-                sim.substrate.entities.get(1).unwrap().bunker.link(),
-                BunkerLink::Approaching(3),
+                sim.substrate
+                    .entities
+                    .get(1)
+                    .unwrap()
+                    .radio_contacts
+                    .slot(0),
+                Some(3),
                 "{mission:?} keeps the current seek"
             );
             assert_eq!(
@@ -3033,9 +2937,8 @@ mod tests {
                     .entities
                     .get(3)
                     .unwrap()
-                    .bunker_runtime
-                    .unwrap()
-                    .installing_unit(),
+                    .radio_contacts
+                    .slot(0),
                 Some(1),
                 "{mission:?}"
             );
@@ -3104,28 +3007,37 @@ mod tests {
             crate::sim::world::RevealOutcome::Revealed { .. }
         ));
 
-        // 1) Enter, after the approach: CAN_LOAD's IS_OCCUPIED (0x0043C526)
-        // refuses an order from inside the foundation, so the fixture starts
-        // where the adapter leaves an arrived tank. The bunker's production
-        // DOCK_NOW starts the install; the tank keeps its approach link.
-        assert_eq!(
-            crate::sim::radio::transmit(
-                &mut sim,
-                1,
-                2,
-                crate::sim::radio::RadioMessage::DockNow,
-                crate::sim::radio::RadioPayload::default(),
-                Some(&rules),
-                crate::sim::world::FrameEffects::default(),
-            ),
-            crate::sim::radio::RadioResponse::Roger
-        );
+        // The supplied arrival retains Enter, object NavCom and contact
+        // zero, as in the original bunker_entry history. Run its real
+        // PerCell receiver to queue Repair and power off the Drive.
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        unit.mission
+            .set_current_for_test(MissionId::from_known(MissionType::Enter), 0);
+        unit.navigation
+            .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::object(2)));
+        unit.radio_contacts.set_slot(0, 2);
         sim.substrate
             .entities
-            .get_mut(1)
+            .get_mut(2)
             .unwrap()
-            .bunker
-            .set_bunker_link_for_test(BunkerLink::Approaching(2));
+            .radio_contacts
+            .set_slot(0, 1);
+        assert!(sim.unit_dock_now(1, &rules, None, FrameEffects::default()));
+        // This fixture starts at a completed, stopped arrival. Give the
+        // building its first visit before a new Drive Process: a fresh
+        // Process with Enter/NavCom but no retained destination re-aims the
+        // Drive (4B0971..4B09A6), so it is no longer this stopped boundary.
+        update_bunker(&mut sim, &rules, None, 2, FrameEffects::default());
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(2)
+                .unwrap()
+                .bunker_runtime
+                .unwrap()
+                .state(),
+            BunkerState::ClearWait,
+        );
         // Prepared same-cell arrival, then the real production locomotor
         // corridor and installer, in their production order, one frame at a
         // time. No head/position writes or Facing::Snap complete the motion.

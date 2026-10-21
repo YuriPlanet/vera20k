@@ -64,7 +64,7 @@ impl Simulation {
     pub(crate) fn process_track_turn(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> TrackProcessEntry {
@@ -153,7 +153,7 @@ impl Simulation {
     pub(crate) fn drive_process_rest_tail(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
@@ -202,7 +202,7 @@ impl Simulation {
     fn track_movement_gates(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -232,7 +232,7 @@ impl Simulation {
                     Some(id),
                     self,
                     self.resolved_terrain.as_ref(),
-                    rules.map(|rules| (rules, &self.interner)),
+                    Some((rules, &self.interner)),
                 )
             {
                 let terrain = self.resolved_terrain.as_ref();
@@ -252,9 +252,6 @@ impl Simulation {
         // takes the next waypoint; either way the tail follows.
         if entity.in_playfield() && mission != Some(MissionType::Enter) && moving {
             let destination = super::track_path::track_destination_or_null(entity);
-            let Some(rules) = rules else {
-                return true;
-            };
             // Unrepresented precheck inputs (no zone topology or bounds in a
             // component fixture) admit Process_Movement unchanged.
             if let Ok(false) = self.foot_path_zone_precheck(id, destination, rules) {

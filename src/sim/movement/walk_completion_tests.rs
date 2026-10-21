@@ -79,7 +79,7 @@ fn completed_path_head_speed_matches_original_pre_percell_gate() {
         sim.run_completed_walk_step(
             id,
             head,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -142,7 +142,7 @@ fn completed_corner_keeps_heading_until_next_head_is_accepted() {
     sim.run_completed_walk_step(
         id,
         head,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -303,7 +303,7 @@ fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
             .register(HouseState::new(owner, 0, None, input["human"] == 1, 0, 0));
         sim.substrate.entities.insert(actor);
 
-        sim.finish_walk_navigation(1, Some(&rules), crate::sim::world::FrameEffects::default())
+        sim.finish_walk_navigation(1, &rules, crate::sim::world::FrameEffects::default())
             .unwrap();
 
         let actor = sim.substrate.entities.get(1).unwrap();
@@ -432,7 +432,7 @@ fn paid_walk_world_scold_tails_match_original_boundaries() {
                 sim.run_completed_walk_step(
                     1,
                     head,
-                    None,
+                    crate::rules::ruleset::RuleSet::empty_for_test(),
                     None,
                     crate::sim::world::FrameEffects::default(),
                 )
@@ -449,15 +449,19 @@ fn paid_walk_world_scold_tails_match_original_boundaries() {
             "common_return" => sim.run_walk_boundary(
                 1,
                 head,
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
                 crate::sim::world::FrameEffects::default(),
             ),
             _ => {
                 // Supplied post-PerCell liveness is the native corpus boundary;
                 // these rows do not claim to execute a death/limbo producer.
-                sim.finish_walk_navigation(1, None, crate::sim::world::FrameEffects::default())
-                    .unwrap();
+                sim.finish_walk_navigation(
+                    1,
+                    crate::rules::ruleset::RuleSet::empty_for_test(),
+                    crate::sim::world::FrameEffects::default(),
+                )
+                .unwrap();
             }
         }
         assert_eq!(

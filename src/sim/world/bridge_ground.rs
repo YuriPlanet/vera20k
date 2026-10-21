@@ -263,7 +263,7 @@ mod tests {
                 break;
             }
             sim.session.set_binary_frame_for_test(frame);
-            sim.advance_live_object_turn(terror, Some(&rules), Default::default())
+            sim.advance_live_object_turn(terror, &rules, Default::default())
                 .expect("the corpse's ordinary turn completes");
         }
         let head = sim.substrate.entities.get(terror).unwrap();

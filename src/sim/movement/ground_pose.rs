@@ -284,7 +284,7 @@ impl Simulation {
         &mut self,
         id: u64,
         z: i32,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
@@ -431,7 +431,7 @@ pub(crate) fn foot_set_location(
     entities: &mut crate::sim::entity_store::EntityStore,
     id: u64,
     coord: DriveCoord,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
 ) {
     let Some(entity) = entities.get_mut(id) else {
@@ -439,7 +439,7 @@ pub(crate) fn foot_set_location(
     };
     let changed = position_world_coord(&entity.position) != coord;
     entity.position.put_location(coord);
-    if let (true, Some(rules)) = (changed, rules) {
+    if changed {
         crate::sim::passenger::open_topped_riders_follow(entities, id, rules, interner);
     }
 }
@@ -801,7 +801,7 @@ impl Simulation {
         &mut self,
         id: u64,
         coord: DriveCoord,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
@@ -837,7 +837,7 @@ impl Simulation {
         &mut self,
         id: u64,
         height: i32,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {

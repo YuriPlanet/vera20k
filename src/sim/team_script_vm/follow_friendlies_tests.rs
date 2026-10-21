@@ -99,7 +99,7 @@ impl Fixture {
 
     fn target(&mut self, id: u64, target: Option<TargetKind>) {
         self.sim
-            .assign_target_represented(id, target, Some(&self.rules), None, FrameEffects::default())
+            .assign_target_represented(id, target, &self.rules, None, FrameEffects::default())
             .unwrap();
     }
 }

@@ -1,0 +1,299 @@
+{
+  "base_units": [
+    "V_BASE"
+  ],
+  "budget_rows": [
+    {
+      "actual_country_mask": 1,
+      "alliance_passive": false,
+      "budget": 804,
+      "name": "american_only",
+      "participants": [
+        "Americans"
+      ]
+    },
+    {
+      "actual_country_mask": 2,
+      "alliance_passive": false,
+      "budget": 2608,
+      "name": "alliance_only",
+      "participants": [
+        "Alliance"
+      ]
+    },
+    {
+      "actual_country_mask": 3,
+      "alliance_passive": false,
+      "budget": 1524,
+      "name": "both_countries",
+      "participants": [
+        "Americans",
+        "Alliance"
+      ]
+    },
+    {
+      "actual_country_mask": 1,
+      "alliance_passive": true,
+      "budget": 804,
+      "name": "passive_alliance",
+      "participants": [
+        "Americans",
+        "Alliance"
+      ]
+    },
+    {
+      "actual_country_mask": 0,
+      "alliance_passive": true,
+      "budget": 0,
+      "name": "passive_only",
+      "participants": [
+        "Alliance"
+      ]
+    }
+  ],
+  "candidate_house_tech_controls": [
+    {
+      "country": "Americans",
+      "house_tech_level": 0,
+      "infantry": [],
+      "vehicles": []
+    }
+  ],
+  "candidate_lists": {
+    "Alliance": {
+      "infantry": [
+        "I_PARENT"
+      ],
+      "vehicles": [
+        "V_PARENT"
+      ]
+    },
+    "Americans": {
+      "infantry": [
+        "I_ALIAS",
+        "I_EXACT"
+      ],
+      "vehicles": [
+        "V_CASE"
+      ]
+    }
+  },
+  "country_inputs": [
+    {
+      "actual_index": 0,
+      "id": "Americans",
+      "name": "AmericaAlias",
+      "parent": "Alliance",
+      "passive": false
+    },
+    {
+      "actual_index": 1,
+      "id": "Alliance",
+      "name": "AllianceAlias",
+      "parent": "Americans",
+      "passive": false
+    }
+  ],
+  "passive_layer": "[Alliance]\nName=AllianceAlias\nParentCountry=Americans\nMultiplay=yes\nMultiplayPassive=yes\n",
+  "qualifier_gates": {
+    "actual_country": "Alliance",
+    "actual_index": 1,
+    "alternate_owner_masks": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "extra_country_layer": "[Countries]\n0=A\n1=B\n2=C\n3=D\n4=E\n5=F\n6=G\n7=H\n8=I\n9=J\n10=K\n11=L\n12=M\n13=N\n14=O\n15=P\n16=Q\n17=R\n18=S\n19=T\n20=U\n21=V\n22=W\n23=X\n24=Y\n25=Z\n26=0\n27=1\n28=2\n29=3\n",
+    "owner": "Americans,Alliance",
+    "owner_layer": "[REQ_CONTROL]\nOwner=Americans,Alliance\n",
+    "owner_mask": 3,
+    "owner_parent": "Americans",
+    "planned_side": -1,
+    "rows": [
+      {
+        "can_build_qualifier_gate": true,
+        "can_build_stop": "004F7A9A",
+        "first_buildable_result": "REQ_CONTROL",
+        "forbidden_mask": 4294967295,
+        "name": "default_omitted",
+        "physical_layer": "[REQ_CONTROL]\nName=KeepSection\n",
+        "required_mask": 4294967295
+      },
+      {
+        "can_build_qualifier_gate": false,
+        "can_build_stop": "004F7994",
+        "first_buildable_result": null,
+        "forbidden_mask": 0,
+        "name": "explicit_none",
+        "physical_layer": "[REQ_CONTROL]\nName=KeepSection\nRequiredHouses=<none>\nForbiddenHouses=<none>\n",
+        "required_mask": 0
+      },
+      {
+        "can_build_qualifier_gate": false,
+        "can_build_stop": "004F7994",
+        "first_buildable_result": null,
+        "forbidden_mask": 0,
+        "name": "explicit_unknown",
+        "physical_layer": "[REQ_CONTROL]\nName=KeepSection\nRequiredHouses=Unknown\nForbiddenHouses=Unknown\n",
+        "required_mask": 0
+      },
+      {
+        "can_build_qualifier_gate": true,
+        "can_build_stop": "004F7A9A",
+        "first_buildable_result": "REQ_CONTROL",
+        "forbidden_mask": 0,
+        "name": "actual_required",
+        "physical_layer": "[REQ_CONTROL]\nName=KeepSection\nRequiredHouses=Alliance\nForbiddenHouses=<none>\n",
+        "required_mask": 2
+      },
+      {
+        "can_build_qualifier_gate": false,
+        "can_build_stop": "004F7994",
+        "first_buildable_result": null,
+        "forbidden_mask": 2,
+        "name": "actual_forbidden",
+        "physical_layer": "[REQ_CONTROL]\nName=KeepSection\nRequiredHouses=Alliance\nForbiddenHouses=Alliance\n",
+        "required_mask": 2
+      },
+      {
+        "can_build_qualifier_gate": true,
+        "can_build_stop": "004F7A9A",
+        "first_buildable_result": "REQ_CONTROL",
+        "forbidden_mask": 4294967295,
+        "name": "nonempty_all_forbidden",
+        "physical_layer": "[REQ_CONTROL]\nName=KeepSection\nRequiredHouses=Alliance\nForbiddenHouses=Americans,Alliance,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z,0,1,2,3\n",
+        "required_mask": 2
+      }
+    ],
+    "sentinel_registry_ids": [
+      "Americans",
+      "Alliance",
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H",
+      "I",
+      "J",
+      "K",
+      "L",
+      "M",
+      "N",
+      "O",
+      "P",
+      "Q",
+      "R",
+      "S",
+      "T",
+      "U",
+      "V",
+      "W",
+      "X",
+      "Y",
+      "Z",
+      "0",
+      "1",
+      "2",
+      "3"
+    ],
+    "type_id": "REQ_CONTROL"
+  },
+  "rng_entries": [],
+  "rng_state_sha256": {
+    "main": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+    "mapgen": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+    "scenario": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+  },
+  "rng_unchanged": true,
+  "root": "[Countries]\n0=Americans\n1=Alliance\n[Americans]\nName=AmericaAlias\nParentCountry=Alliance\nMultiplay=yes\nMultiplayPassive=no\n[Alliance]\nName=AllianceAlias\nParentCountry=Americans\nMultiplay=yes\nMultiplayPassive=no\n[V_CASE]\nOwner=americans\nRequiredHouses=Alliance\nForbiddenHouses=Americans\nTechLevel=1\nCost=101\nAllowedToStartInMultiplayer=yes\n[V_PARENT]\nOwner=Alliance\nRequiredHouses=Americans\nForbiddenHouses=Alliance\nTechLevel=1\nCost=901\nAllowedToStartInMultiplayer=yes\n[V_UNKNOWN]\nOwner=Unknown\nRequiredHouses=Alliance\nForbiddenHouses=Americans\nTechLevel=1\nCost=10000\nAllowedToStartInMultiplayer=yes\n[V_BASE]\nOwner=Americans\nRequiredHouses=Alliance\nForbiddenHouses=Americans\nTechLevel=1\nCost=10000\nAllowedToStartInMultiplayer=yes\n[I_ALIAS]\nOwner=AMERICAALIAS\nRequiredHouses=Alliance\nForbiddenHouses=Americans\nTechLevel=1\nCost=200\nAllowedToStartInMultiplayer=yes\n[I_EXACT]\nOwner=Americans\nRequiredHouses=Alliance\nForbiddenHouses=Americans\nTechLevel=1\nCost=302\nAllowedToStartInMultiplayer=yes\n[I_PARENT]\nOwner=Alliance\nRequiredHouses=Americans\nForbiddenHouses=Alliance\nTechLevel=1\nCost=402\nAllowedToStartInMultiplayer=yes\n[I_NONE]\nOwner=<none>\nRequiredHouses=Alliance\nForbiddenHouses=Americans\nTechLevel=1\nCost=10000\nAllowedToStartInMultiplayer=yes\n[I_RANDOM]\nOwner=<random>\nRequiredHouses=Alliance\nForbiddenHouses=Americans\nTechLevel=1\nCost=10000\nAllowedToStartInMultiplayer=yes\n",
+  "schema_version": 1,
+  "tech_level": 10,
+  "type_inputs": [
+    {
+      "allowed_to_start": true,
+      "cost": 101,
+      "forbidden_mask": 1,
+      "id": "V_CASE",
+      "owner_mask": 1,
+      "required_mask": 2,
+      "tech_level": 1
+    },
+    {
+      "allowed_to_start": true,
+      "cost": 901,
+      "forbidden_mask": 2,
+      "id": "V_PARENT",
+      "owner_mask": 2,
+      "required_mask": 1,
+      "tech_level": 1
+    },
+    {
+      "allowed_to_start": true,
+      "cost": 10000,
+      "forbidden_mask": 1,
+      "id": "V_UNKNOWN",
+      "owner_mask": 0,
+      "required_mask": 2,
+      "tech_level": 1
+    },
+    {
+      "allowed_to_start": true,
+      "cost": 10000,
+      "forbidden_mask": 1,
+      "id": "V_BASE",
+      "owner_mask": 1,
+      "required_mask": 2,
+      "tech_level": 1
+    },
+    {
+      "allowed_to_start": true,
+      "cost": 200,
+      "forbidden_mask": 1,
+      "id": "I_ALIAS",
+      "owner_mask": 1,
+      "required_mask": 2,
+      "tech_level": 1
+    },
+    {
+      "allowed_to_start": true,
+      "cost": 302,
+      "forbidden_mask": 1,
+      "id": "I_EXACT",
+      "owner_mask": 1,
+      "required_mask": 2,
+      "tech_level": 1
+    },
+    {
+      "allowed_to_start": true,
+      "cost": 402,
+      "forbidden_mask": 2,
+      "id": "I_PARENT",
+      "owner_mask": 2,
+      "required_mask": 1,
+      "tech_level": 1
+    },
+    {
+      "allowed_to_start": true,
+      "cost": 10000,
+      "forbidden_mask": 1,
+      "id": "I_NONE",
+      "owner_mask": 0,
+      "required_mask": 2,
+      "tech_level": 1
+    },
+    {
+      "allowed_to_start": true,
+      "cost": 10000,
+      "forbidden_mask": 1,
+      "id": "I_RANDOM",
+      "owner_mask": 1073741824,
+      "required_mask": 2,
+      "tech_level": 1
+    }
+  ],
+  "unit_count": 4
+}

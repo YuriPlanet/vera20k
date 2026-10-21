@@ -5,6 +5,7 @@
 //! shells that reuse the same cursor/key plumbing). Sim-authoritative input —
 //! queued commands — lives in the simulation, never here.
 
+use crate::render::upscale_pass::ZoomGeometry;
 use crate::sim::intern::InternedId;
 use crate::sim::snapshot::saved_local_view::{
     CONTROL_GROUP_SLOTS, SavedCursorModes, SavedLocalView, SavedLocalViewError, SavedTargeting,
@@ -208,6 +209,10 @@ pub(crate) struct MatchInputState {
     /// The match zoom `cursor_x`/`cursor_y` are in; `None` is window pixels.
     /// `AppState::sync_cursor_space` keeps it matching the current screen.
     pub(crate) cursor_zoom: Option<crate::render::upscale_pass::ZoomGeometry>,
+    /// Last physical window event, used only to measure confined cursor motion.
+    /// The source cursor above remains authoritative; this anchor is neither
+    /// saved nor simulation state and is discarded when pointer focus changes.
+    last_cursor_window: Option<(f32, f32)>,
     pub(crate) keys_held: HashSet<KeyCode>,
     pub(crate) hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings,
     pub(crate) hotkey_modifiers: ModifiersState,
@@ -261,6 +266,61 @@ pub(crate) struct MatchInputState {
 mod ready_building_placement_tests;
 
 impl MatchInputState {
+    /// Record physical window input in the current screen's coordinate space.
+    pub(crate) fn set_cursor_from_window(
+        &mut self,
+        point: (f32, f32),
+        zoom: Option<ZoomGeometry>,
+        confined: bool,
+    ) {
+        self.sync_cursor_space(zoom);
+        (self.cursor_x, self.cursor_y) = match (zoom, self.last_cursor_window) {
+            (Some(zoom), Some(previous)) if confined => {
+                // The hidden OS pointer can enter the letterbox bars even
+                // while confined to the client area. Clamp each movement so
+                // reversing it immediately moves the visible cursor. Using
+                // window events also works without a platform cursor warp.
+                let current = zoom.source_to_window(self.cursor_x, self.cursor_y);
+                zoom.window_to_source(
+                    current.0 + (point.0 - previous.0),
+                    current.1 + (point.1 - previous.1),
+                )
+            }
+            (Some(zoom), _) => zoom.window_to_source(point.0, point.1),
+            (None, _) => point,
+        };
+        self.last_cursor_window = Some(point);
+    }
+
+    /// Begin a fresh physical pointer history after focus or client entry changes.
+    pub(crate) fn reset_window_cursor_motion(&mut self) {
+        self.last_cursor_window = None;
+    }
+
+    /// Re-express a retained cursor after a resize or screen transition.
+    pub(crate) fn sync_cursor_space(&mut self, zoom: Option<ZoomGeometry>) {
+        if self.cursor_zoom != zoom {
+            // Tactical install already initializes source coordinates on entry.
+            // Leaving or resizing a match maps through physical window pixels.
+            if let Some(from) = self.cursor_zoom {
+                let rendered = from.source_to_window(self.cursor_x, self.cursor_y);
+                // Outside the match the OS cursor becomes visible again. Use
+                // its actual position; capture-only source input has no such
+                // anchor and keeps the existing rendered-position fallback.
+                let point = if zoom.is_none() {
+                    self.last_cursor_window.unwrap_or(rendered)
+                } else {
+                    rendered
+                };
+                (self.cursor_x, self.cursor_y) =
+                    zoom.map_or(point, |to| to.window_to_source(point.0, point.1));
+            } else {
+                self.reset_window_cursor_motion();
+            }
+            self.cursor_zoom = zoom;
+        }
+    }
+
     /// Construct the match input owner with the ordinary startup defaults.
     pub(crate) fn new(hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings) -> Self {
         Self {
@@ -290,6 +350,7 @@ impl MatchInputState {
             cursor_x: 0.0,
             cursor_y: 0.0,
             cursor_zoom: None,
+            last_cursor_window: None,
             keys_held: HashSet::new(),
             hotkey_bindings,
             hotkey_modifiers: ModifiersState::empty(),
@@ -605,6 +666,10 @@ impl MatchInputState {
         )
     }
 }
+
+#[cfg(test)]
+#[path = "pointer_resolution_tests.rs"]
+mod pointer_resolution_tests;
 
 #[cfg(test)]
 #[path = "saved_local_view_tests.rs"]

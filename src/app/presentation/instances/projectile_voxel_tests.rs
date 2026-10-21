@@ -134,7 +134,7 @@ pub(crate) fn launched_stock_submarine_torpedo(
         let output = sim
             .advance_app_frame(
                 &commands,
-                Some(&rules),
+                &rules,
                 None,
                 33,
                 TickLane::Ordinary,
@@ -261,7 +261,7 @@ fn stock_submarine_attack_has_a_visible_flat_voxel_torpedo(elite: bool) {
         let commands = sim.take_due_commands();
         sim.advance_app_frame(
             &commands,
-            Some(&rules),
+            &rules,
             None,
             33,
             crate::sim::world::TickLane::Ordinary,

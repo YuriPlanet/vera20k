@@ -607,7 +607,7 @@ fn unit_setter_teleporter_arm_matches_the_original_assign_destination() {
             None => {
                 s.sim.set_unit_null_destination(
                     s.miner,
-                    Some(&s.rules),
+                    &s.rules,
                     None,
                     crate::sim::world::FrameEffects::default(),
                 );
@@ -772,7 +772,7 @@ fn teleport_warp_matches_the_original_process() {
             s.sim.session.set_binary_frame_for_test(now);
             let sounds_before = s.sim.sound_events.len();
             s.sim
-                .advance_live_object_turn(s.miner, Some(&s.rules), ObjectAiCtx::default())
+                .advance_live_object_turn(s.miner, &s.rules, ObjectAiCtx::default())
                 .unwrap();
             let Some(tick) = checked.next_if(|t| t["frame"].as_u64() == Some(u64::from(now)))
             else {
@@ -914,14 +914,12 @@ fn mission_harvest_teleporter_arms_match_the_original_dispatch() {
         radio::take_transmit_log();
         let before = active(&s);
         let mut stream = s.sim.scenario_rng.clone();
-        let config = crate::sim::miner::MinerConfig::from_rules(&s.rules);
         let frame = s.sim.session.binary_frame();
         crate::sim::world::dispatch_foot_mission(
             &mut s.sim,
             s.miner,
             &s.rules,
             crate::sim::world::ObjectAiCtx {
-                miner_config: Some(&config),
                 overlay_registry: Some(crate::sim::tiberium::test_support::overlay_registry()),
                 ..Default::default()
             },

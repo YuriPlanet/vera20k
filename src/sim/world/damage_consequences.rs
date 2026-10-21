@@ -153,12 +153,13 @@ impl DamageConsequences {
                 crate::sim::docking::bunker_link::release_sell_destroy(
                     world,
                     dead_id,
+                    rules,
                     frame_effects,
                 );
             }
             world.uninit_with_context(
                 dead_id,
-                UninitContext::new(Some(rules), overlay_registry).with_effects(frame_effects),
+                UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
             );
         }
 

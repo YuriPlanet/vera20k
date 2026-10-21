@@ -16,7 +16,7 @@ fn complete(
             target_rx: cell.0,
             target_ry: cell.1,
         },
-        Some(rules),
+        rules,
         None,
         FrameEffects::default(),
     )
@@ -32,7 +32,7 @@ fn cancel(
     sim.apply_command_with_overlays(
         &name,
         &Command::CancelPaidSuperWeapon { selection },
-        Some(rules),
+        rules,
         None,
         FrameEffects::default(),
     )
@@ -367,7 +367,7 @@ fn superweapon_money_two_stage_begin_cancel_reselect_in_one_saved_command_batch(
             loaded.apply_command_with_overlays(
                 "Americans",
                 &command.payload,
-                Some(&rules),
+                &rules,
                 None,
                 FrameEffects::default()
             ),
@@ -381,7 +381,7 @@ fn superweapon_money_two_stage_begin_cancel_reselect_in_one_saved_command_batch(
     assert!(!loaded.apply_command_with_overlays(
         "Americans",
         &commands[0].payload,
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default()
     ));
@@ -459,7 +459,7 @@ fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
     assert!(!sim.apply_command_with_overlays(
         "Americans",
         &request,
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default()
     ));
@@ -480,7 +480,7 @@ fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
     assert!(sim.apply_command_with_overlays(
         "Americans",
         &request,
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default()
     ));

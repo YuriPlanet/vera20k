@@ -521,11 +521,7 @@ fn record_last_built_enforces_map_authored_negative_limit() {
         super::can_build::can_build(&sim, rules, other, e2, true, true),
         super::can_build::CanBuild::Yes
     );
-    sim.discard_constructed_limbo(
-        product,
-        Some(rules),
-        crate::sim::world::FrameEffects::default(),
-    );
+    sim.discard_constructed_limbo(product, rules, crate::sim::world::FrameEffects::default());
     assert!(sim.entities().get(product).is_none());
     assert_eq!(sim.houses[&owner].stats().built(), 1);
     assert_eq!(sim.houses[&other].stats().built(), 0);

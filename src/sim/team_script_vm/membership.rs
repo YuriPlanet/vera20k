@@ -228,7 +228,7 @@ impl Simulation {
             return false;
         };
         if let Some(old_team) = self.team_script_vm.member_team.get(&entity_id).copied() {
-            self.team_remove_member(old_team, entity_id, false, Some(rules), frame_effects);
+            self.team_remove_member(old_team, entity_id, false, rules, frame_effects);
         }
         let vm = &mut self.team_script_vm;
         let (recruitable, on_trans_only) = vm
@@ -295,14 +295,13 @@ impl Simulation {
     /// `+0x2B8`) and, active, not falling (`+0x425`), out of limbo and
     /// unless `no_idle`, enters its idle mode (`vt+0x484(0, 1)`). If no
     /// member left is initiated, the head is, and the team loses its centre.
-    /// The team is marked altered. Without rules (lifecycle tests) the idle
-    /// order is not given.
+    /// The team is marked altered.
     pub(crate) fn team_remove_member(
         &mut self,
         team_id: u64,
         entity_id: u64,
         no_idle: bool,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         frame_effects: FrameEffects<'_>,
     ) {
         if self.team_script_vm.member_team.get(&entity_id) != Some(&team_id) {
@@ -355,10 +354,7 @@ impl Simulation {
                     && !entity.crash.is_crashing()
                     && !entity.lifecycle.in_limbo()
             });
-        if idles
-            && !no_idle
-            && let Some(rules) = rules
-        {
+        if idles && !no_idle {
             crate::sim::world::enter_idle_mode(self, entity_id, rules, None, frame_effects);
         }
         if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
@@ -390,7 +386,7 @@ impl Simulation {
         &mut self,
         entity_id: u64,
         no_idle: bool,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         frame_effects: FrameEffects<'_>,
     ) {
         if let Some(team_id) = self.team_script_vm.member_team.get(&entity_id).copied() {
@@ -414,7 +410,7 @@ impl Simulation {
             .and_then(|team| team.members.first())
             .map(|member| member.id)
         {
-            self.team_remove_member(team_id, head, false, Some(rules), frame_effects);
+            self.team_remove_member(team_id, head, false, rules, frame_effects);
             // The member index and the lists change together, so the head
             // left; a stale head would otherwise stop this loop.
             let vm = &mut self.team_script_vm;
