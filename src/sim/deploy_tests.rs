@@ -14,6 +14,9 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseAiActivationLatches;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
+#[path = "ground_transport_deploy_tests.rs"]
+mod ground_transport_deploy_tests;
+
 const SPLIT_AI_ACTIVATION: HouseAiActivationLatches = HouseAiActivationLatches {
     production: true,
     autocreate_allowed: false,
