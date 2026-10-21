@@ -546,6 +546,8 @@ pub(crate) enum NativeLoadingArt {
 pub(crate) struct NativeLoadingScreenState {
     pub variant: NativeLoadingArt,
     local_side_index: i32,
+    #[cfg(feature = "ares")]
+    country_loading: Option<crate::rules::country_loading::AresCountryLoading>,
     /// Local player's MP color scheme — source of the progress outline and bar
     /// remap. Derived from the launch session, not the country variant.
     pub color_index: HouseColorIndex,
@@ -580,6 +582,8 @@ impl NativeLoadingScreenState {
         Self {
             variant: NativeLoadingArt::StockOffline(variant),
             local_side_index,
+            #[cfg(feature = "ares")]
+            country_loading: None,
             color_index,
             // Static placeholders; replaced by `resolve_player_colors` once rules load.
             backing_rgb: FALLBACK_BACKING_RGB,
@@ -601,6 +605,8 @@ impl NativeLoadingScreenState {
             // BeginProgress684620 passes Campaign.CD; color resolver642B30
             // distinguishes exactly zero from all nonzero values.
             local_side_index: cd,
+            #[cfg(feature = "ares")]
+            country_loading: None,
             color_index: HouseColorIndex(0),
             backing_rgb: FALLBACK_BACKING_RGB,
             text_rgb: [1.0; 3],
@@ -646,6 +652,17 @@ impl NativeLoadingScreenState {
             self.text_rgb = normalize_rgb(hsv_to_rgb(hsv));
         } else {
             log::warn!("Missing loading text color scheme {text_scheme}; using white");
+        }
+        // Ares1002F8F0 publishes this signed index once for the loading
+        // attempt; negative resumes the stock side-color branch above.
+        #[cfg(feature = "ares")]
+        if let Some(index) = self
+            .country_loading
+            .as_ref()
+            .and_then(|country| usize::try_from(country.color_index()).ok())
+            && let Some(hsv) = scheme_hsv_by_entry(schemes, index / 2)
+        {
+            self.text_rgb = normalize_rgb(hsv_to_rgb(hsv));
         }
         self.progress_ramp = *ramps.ramp(self.color_index);
         for row in &mut self.progress_row.participants {
@@ -830,6 +847,23 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
                 .country_name(country.index())
                 .and_then(|id| rules.country_side_index(id))
                 .map_or(-1, |side| i32::from(side.0));
+        }
+        // Ares553412 and6847B7 bind the first session participant's actual
+        // retained Country. Snapshot before Full_Init's destructive reset;
+        // never re-read final map Rules or infer Country from a stock ordinal.
+        #[cfg(feature = "ares")]
+        if let Some(launch) = session.stage.startup().launch_session()
+            && !launch.local_player().is_observer()
+        {
+            if let Some((country, side)) = launch.humans.first().and_then(|human| {
+                state
+                    .process_assets
+                    .native_rules()
+                    .and_then(|owner| owner.country_loading(human.slot.country.index()))
+            }) {
+                native.country_loading = Some(country.clone());
+                native.local_side_index = side;
+            }
         }
         native.resolve_player_colors(&rules.color_schemes, &rules.house_color_ramps);
     }
@@ -1607,7 +1641,7 @@ pub(crate) fn selected_map_start_assignments(
 /// snapshot on the branch (as this used to) dropped the country name, the
 /// special-unit line, the briefing and "Loading..." from every random-map load.
 fn ensure_loading_composition_snapshot(state: &mut AppState) {
-    let snapshot = {
+    let mut snapshot = {
         let Some(session) = state.frontend.loading_session.as_ref() else {
             return;
         };
@@ -1671,6 +1705,10 @@ fn ensure_loading_composition_snapshot(state: &mut AppState) {
         .as_mut()
         .and_then(|session| session.native.as_mut())
     {
+        #[cfg(feature = "ares")]
+        if let Some(country) = native.country_loading.as_ref() {
+            snapshot.bind_country_loading(country, state.process_assets.csf.as_ref());
+        }
         native.composition = Some(snapshot);
     }
 }
@@ -1897,11 +1935,34 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
             },
         )
         .collect();
+    #[cfg(feature = "ares")]
+    let country_background = state
+        .frontend
+        .loading_session
+        .as_ref()
+        .and_then(|session| session.native.as_ref())
+        .and_then(|native| native.country_loading.as_ref())
+        .map(|country| {
+            let file = country
+                .background_file(width == LoadingScreenWidth::W640)
+                .ok_or_else(|| anyhow::anyhow!("Unsupported Country loading printf template"))?;
+            Ok::<_, anyhow::Error>((file, country.files().1.to_owned()))
+        })
+        .transpose()?;
+    let art = crate::render::loading_screen_chrome::LoadingScreenArtInput {
+        variant,
+        #[cfg(feature = "ares")]
+        background: country_background
+            .as_ref()
+            .map(|(file, palette)| (file.as_str(), palette.as_str())),
+        #[cfg(not(feature = "ares"))]
+        background: None,
+    };
     let atlas = build_loading_screen_atlas_with_composition(
         &state.renderer.gpu,
         &state.renderer.batch_renderer,
         assets,
-        variant,
+        art,
         width,
         &progress_ramp,
         composition_input,

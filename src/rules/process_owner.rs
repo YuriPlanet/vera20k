@@ -286,6 +286,22 @@ impl NativeRulesProcessOwner {
             .map(|(id, _)| id)
     }
 
+    /// Ares loading hooks read the actual retained Country before Full_Init
+    /// destroys the registry. Consumers clone this view once per loading attempt.
+    #[cfg(feature = "ares")]
+    pub(crate) fn country_loading(
+        &self,
+        index: crate::rules::ruleset::CountryIdx,
+    ) -> Option<(&crate::rules::country_loading::AresCountryLoading, i32)> {
+        self.registry
+            .as_ref()
+            .expect("Rules transition reentered")
+            .registry_state()
+            .country_projection()
+            .nth(usize::from(index.0))
+            .map(|(_, _, _, side, _, country)| (country.loading(), side))
+    }
+
     /// Refresh derived frontend country/side fields without replaying Process
     /// or allocating through the compatibility RuleSet.
     pub fn project_multiplayer_countries(&self, rules: &mut RuleSet) {

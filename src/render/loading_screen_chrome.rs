@@ -149,19 +149,22 @@ impl LoadingArtVariant {
     }
 
     pub fn manifest(self) -> LoadingArtManifest {
-        match self {
-            Self::Yuri => LoadingArtManifest::new("yuri", "MPYLS.PAL"),
-            Self::Observer => LoadingArtManifest::new("obs", "MPLSOBS.PAL"),
-            Self::Americans => LoadingArtManifest::new("ustates", "MPLSU.PAL"),
-            Self::Russians => LoadingArtManifest::new("russia", "MPLSR.PAL"),
-            Self::Africans => LoadingArtManifest::new("libya", "MPLSL.PAL"),
-            Self::Alliance => LoadingArtManifest::new("korea", "MPLSK.PAL"),
-            Self::Arabs => LoadingArtManifest::new("iraq", "MPLSI.PAL"),
-            Self::Germans => LoadingArtManifest::new("germany", "MPLSG.PAL"),
-            Self::French => LoadingArtManifest::new("france", "MPLSF.PAL"),
-            Self::Confederation => LoadingArtManifest::new("cuba", "MPLSC.PAL"),
-            Self::British => LoadingArtManifest::new("ukingdom", "MPLSUK.PAL"),
-        }
+        let index = match self {
+            Self::Americans => 0,
+            Self::Alliance => 1,
+            Self::French => 2,
+            Self::Germans => 3,
+            Self::British => 4,
+            Self::Africans => 5,
+            Self::Arabs => 6,
+            Self::Confederation => 7,
+            Self::Russians => 8,
+            Self::Yuri => 9,
+            Self::Observer => return LoadingArtManifest::new("obs", "MPLSOBS.PAL"),
+        };
+        let row = crate::rules::country_loading::stock_country_loading(index)
+            .expect("stock loading variant has a literal row");
+        LoadingArtManifest::new(row.token, row.palette)
     }
 }
 
@@ -219,6 +222,30 @@ pub struct LoadingScreenCompositionAtlasInput<'a> {
     pub marker_remaps: &'a [MmpbMarkerRemap],
 }
 
+/// Named background replaces only the country SHP/PAL, never progress or icons.
+/// Borrowed names are decoded once into the loading attempt's existing atlas;
+/// dropping that atlas on success/failure retires its palette as well.
+#[derive(Debug, Clone, Copy)]
+pub struct LoadingScreenArtInput<'a> {
+    pub variant: Option<LoadingArtVariant>,
+    pub background: Option<(&'a str, &'a str)>,
+}
+
+impl From<Option<LoadingArtVariant>> for LoadingScreenArtInput<'_> {
+    fn from(variant: Option<LoadingArtVariant>) -> Self {
+        Self {
+            variant,
+            background: None,
+        }
+    }
+}
+
+impl From<LoadingArtVariant> for LoadingScreenArtInput<'_> {
+    fn from(variant: LoadingArtVariant) -> Self {
+        Some(variant).into()
+    }
+}
+
 pub struct LoadingParticipantArtInput {
     pub variant: Option<LoadingArtVariant>,
     pub ramp: [Color; 16],
@@ -269,28 +296,39 @@ struct RenderedLoadingEntry {
 /// presentation domain has no background layer. Progress is mandatory. Invalid preview input,
 /// missing `mmpb.shp`, or an unavailable color variant only removes optional
 /// layers.
-pub fn build_loading_screen_atlas_with_composition(
+pub fn build_loading_screen_atlas_with_composition<'a>(
     gpu: &GpuContext,
     batch: &BatchRenderer,
     assets: &AssetManager,
-    variant: impl Into<Option<LoadingArtVariant>>,
+    art: impl Into<LoadingScreenArtInput<'a>>,
     width: LoadingScreenWidth,
     progress_ramp: &[Color; 16],
     composition: Option<LoadingScreenCompositionAtlasInput<'_>>,
     participants: &[LoadingParticipantArtInput],
 ) -> Option<LoadingScreenAtlas> {
-    let variant = variant.into();
-    // Native5534CE leaves the stock filename unwritten for country>=10.
-    // Omit that undefined layer safely; never substitute another country's art.
-    let background = variant.map(|variant| {
+    let art = art.into();
+    let variant = art.variant;
+    let background = if let Some((name, palette_name)) = art.background {
+        // An explicitly cleared Country field never selects stock art.
+        if name.is_empty() || palette_name.is_empty() {
+            None
+        } else {
+            let palette = load_named_ui_palette(assets, palette_name)?;
+            Some(mandatory_shp(assets, name, &palette, 0, palette_name)?)
+        }
+    } else if let Some(variant) = variant {
         let manifest = variant.manifest();
         let name = manifest.background_asset(width);
         let palette = load_named_ui_palette(assets, manifest.palette_name)?;
-        mandatory_shp(assets, &name, &palette, 0, manifest.palette_name)
-    });
-    let background = match background {
-        Some(entry) => Some(entry?),
-        None => None,
+        Some(mandatory_shp(
+            assets,
+            &name,
+            &palette,
+            0,
+            manifest.palette_name,
+        )?)
+    } else {
+        None
     };
     let background_label = background.as_ref().map(|entry| entry.label.clone());
     // gamemd draws the Skirmish meter and the map-preview house-colour markers through
