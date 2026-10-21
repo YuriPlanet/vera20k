@@ -595,6 +595,12 @@ impl ProcessedRulesLayers {
         }
         for (&family, members) in &registry.families {
             for member in members {
+                #[cfg(feature = "ares")]
+                if member.side_sidebar.is_some() != (family == RulesTypeFamily::Side) {
+                    return Err(RulesError::InvalidSavedState(
+                        "retained Side sidebar extension belongs to the wrong family",
+                    ));
+                }
                 let veteran = &member.country_veterancy;
                 if family != RulesTypeFamily::Country
                     && *veteran != CountryVeterancyLists::default()
@@ -1347,14 +1353,10 @@ impl ProcessedRulesLayers {
             .country_projection()
     }
 
-    pub(crate) fn side_registry_names(&self) -> impl Iterator<Item = &str> {
+    pub(crate) fn side_projection(&self) -> impl Iterator<Item = SideProjection<'_>> {
         self.native_type_construction_trace
             .registry_state()
-            .families
-            .get(&RulesTypeFamily::Side)
-            .into_iter()
-            .flatten()
-            .map(|member| member.native_stored_id.as_str())
+            .side_projection()
     }
 
     pub(crate) fn prism_support(&self) -> PrismSupportRules {
@@ -1759,6 +1761,49 @@ pub(crate) struct CountryVeterancyLists {
     aircraft: Vec<String>,
 }
 
+/// Live Side identity plus the immutable selected extension fields. The
+/// retained ProcessedType owns initialization and reads; the RuleSet view does
+/// not replay either. No extension exists in an ordinary retail build.
+pub(crate) type SideProjection<'a> = (&'a str, Option<(i32, bool)>);
+
+/// Ares3.0 SideExt constructor1002D9F0 and dispatcher1002B450 retain the phase
+/// with selected fields+88/+8C. The first ReadTypeData entry initializes defaults
+/// by stored ID at1002E190, then reads the current INI at1002E450; later calls
+/// retain current fields. Evidence: tools/rules_oracle/ares_side_sidebar.md.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+struct SideSidebarState {
+    phase: i32,
+    mix_file_index: i32,
+    yuri_file_names: bool,
+}
+
+#[cfg(feature = "ares")]
+impl SideSidebarState {
+    fn read_pass(&mut self, id: &str, pass: &IniFile) {
+        if !(0..=2).contains(&self.phase) {
+            return;
+        }
+        if self.phase == 0 {
+            self.mix_file_index =
+                if id.eq_ignore_ascii_case("Nod") || id.eq_ignore_ascii_case("ThirdSide") {
+                    2
+                } else {
+                    1
+                };
+            self.yuri_file_names = id.eq_ignore_ascii_case("ThirdSide");
+            self.phase = 1;
+        }
+        if let Some(section) = pass.section(id) {
+            self.mix_file_index =
+                section.read_ares_int("Sidebar.MixFileIndex", self.mix_file_index);
+            self.yuri_file_names =
+                section.read_ares_bool("Sidebar.YuriFileNames", self.yuri_file_names);
+        }
+        self.phase = 2;
+    }
+}
+
 impl CountryVeterancyLists {
     pub(crate) fn contains(&self, category: ObjectCategory, type_id: &str) -> bool {
         let members = match category {
@@ -1932,12 +1977,21 @@ impl NativeRulesRegistryState {
             })
     }
 
-    pub(crate) fn side_projection_names(&self) -> impl Iterator<Item = &str> {
+    pub(crate) fn side_projection(&self) -> impl Iterator<Item = SideProjection<'_>> {
         self.families
             .get(&RulesTypeFamily::Side)
             .into_iter()
             .flatten()
-            .map(|member| member.native_stored_id.as_str())
+            .map(|member| {
+                #[cfg(feature = "ares")]
+                let sidebar = member
+                    .side_sidebar
+                    .as_ref()
+                    .map(|state| (state.mix_file_index, state.yuri_file_names));
+                #[cfg(not(feature = "ares"))]
+                let sidebar = None;
+                (member.native_stored_id.as_str(), sidebar)
+            })
     }
 
     fn validate_techno_type_order(&self) -> Result<(), RulesError> {
@@ -2369,6 +2423,11 @@ struct ProcessedType {
     /// vector on count0 and otherwise replaces it without deduplication.
     /// Signed entries preserve `<random>`=-2 before the full-reader boundary.
     side_country_members: Vec<i32>,
+    /// SideExt only: constructor values remain uninitialized until the
+    /// complete ReadTypeData entry, not Country-only prepasses. Ordinary
+    /// Process, failures and saved Rules retain this same owner.
+    #[cfg(feature = "ares")]
+    side_sidebar: Option<SideSidebarState>,
     /// False until the native AnimType ART-body boundary has been entered.
     /// Kept on the process-resident type so subsequent Rules passes retain it.
     anim_art_read: bool,
@@ -2777,6 +2836,8 @@ impl ProcessedType {
             country_parent: String::new(),
             country_veterancy: CountryVeterancyLists::default(),
             side_country_members: Vec::new(),
+            #[cfg(feature = "ares")]
+            side_sidebar: None,
             anim_art_read: false,
             building_foundation: 0,
             building_target_coord_offset: [0; 3],
@@ -3169,6 +3230,10 @@ impl RulesPassProcessor {
         let native_stored_id = abstract_type_stored_id(incoming);
         let index = members.len();
         members.push(ProcessedType::new(native_stored_id.clone()));
+        #[cfg(feature = "ares")]
+        if family == RulesTypeFamily::Side {
+            members[index].side_sidebar = Some(SideSidebarState::default());
+        }
         if family == RulesTypeFamily::Terrain {
             members[index].armor_id = ArmorId::WOOD;
         }
@@ -3681,6 +3746,18 @@ impl RulesPassProcessor {
     }
 
     fn process_type_data(&mut self, pass: &IniFile, fixed_art: &IniFile) {
+        // Ares ReadTypeData679A10 hook1002EFC0 sweeps every Side before
+        // Country bodies. It does not require [Sides] or a Side section.
+        // Country-only prepasses do not enter this hook. The live loop sees
+        // only Sides allocated now, not any allocated by later Country reads.
+        #[cfg(feature = "ares")]
+        for member in self.family_mut(RulesTypeFamily::Side) {
+            member
+                .side_sidebar
+                .as_mut()
+                .expect("allocated Side owns its Ares extension")
+                .read_pass(&member.native_stored_id, pass);
+        }
         // Installed BeforeTypeData679A15 reads ArmorTypes/defaults before
         // any ordinary ObjectType/Warhead body in this Process pass.
         #[cfg(feature = "ares")]
@@ -5052,6 +5129,10 @@ mod tests;
 #[cfg(test)]
 #[path = "side_registry_tests.rs"]
 mod side_registry_tests;
+
+#[cfg(test)]
+#[path = "ares_side_sidebar_tests.rs"]
+mod ares_side_sidebar_tests;
 
 #[cfg(test)]
 #[path = "native_tech_level_tests.rs"]

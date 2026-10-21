@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Installed Ares Side selected sidebar defaults/retained reads, phase and existing-Side traversal, independent MIX/Yuri filename selection, bounded archive controller and palette cache retirement.",
+  "assumptions": [
+    "Synthetic existing Side arrays/SideExt associations, lexical ASCII ReadString values and initial phase are declared inputs; no physical INI ingestion, whole Process or full DLL startup.",
+    "Constructor control is only the literal-store prefix1002D9F0..1002DA89; four full selected initializers execute with an empty Aircraft registry.",
+    "Retained controls enter dispatcher at supplied phase2 and stop before1002E57B. Actual selected reader/numeric/Boolean instructions execute; later unrelated fields and final phase store are excluded.",
+    "Phase and read-all controls execute actual controller/initializer; complete reader is a recorded returning sink. This establishes call order/phase stores, not reader-tail effects.",
+    "Positive archive controls execute original formatting, optional/required branches and old-slot retirement; no actual archive byte parser, global registration, file search or GPU execution.",
+    "Fallback result is bounded to the actual enrolled executable selector bytes. INT_MIN dec/add wrapping and negative numeric formatting execute.",
+    "Five palette-key retirement calls clear four unique CRC values; a non-UI cache entry survives. Raw payload free/surface destruction, Yuri palette special lifetimes and whole scenario reload remain unexecuted.",
+    "Whole SideExt stream persistence is established separately by instruction spans1002D410/1002D1D0 and hooks; this corpus does not execute the whole extension stream.",
+    "Selected controls reject observed RNG/detach entries; no whole-startup random-order, pixel or full Ares compatibility claim."
+  ],
+  "substitutions": [
+    "Public ares_prerequisites.Probe/native_oracle own PE mapping, arena and execution; no copied mapper or numeric parser.",
+    "ReadString lexical returns, existing SideExt lookup, inherited ASCII comparison/copy and diagnostic leaves are supplied; Ares integer/Boolean parser and linked scanner execute.",
+    "Ares CRT thread accessor10085F5C reuses ini_token_readers.Crt.thread_block to return declared per-thread storage. Actual initializer10085839 selects the file-backed C locale; PTD+4C is supplied that same locale pointer, following10085D5E initialization. No numeric scanner result is supplied.",
+    "Archive file availability, constructor/destructor, successful heap backing and log leaves are explicit transport sinks.",
+    "Phase/read-all whole-reader callback returns without emulating field writes; cache control supplies only existing nodes and zero UI payload/surface globals."
+  ],
+  "entry_points": {
+    "constructor": "0x1002D9F0",
+    "initializer": "0x1002E190",
+    "dispatcher": "0x1002B450",
+    "read_prefix": "0x1002E450",
+    "read_all": "0x1002EFC0",
+    "mix_hook": "0x1002FA00",
+    "yuri_helper": "0x1002EAA0",
+    "archive_controller": "0x00534FA0",
+    "archive_suffix": "0x00535003",
+    "ui_reload": "0x0072F350",
+    "palette_retire": "0x00730400",
+    "cache_key_retire": "0x005B4270"
+  },
+  "replay_command": "python -m tools.rules_oracle.ares_side_sidebar",
+  "payload_sha256": "b0bfe6350a394386d2c1911f5f9cc440189e4b7ae190e7431d4ccc84233760f0"
+}

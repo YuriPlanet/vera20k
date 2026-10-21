@@ -28,7 +28,7 @@ use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::mission_data::MissionControl;
 use crate::rules::native_processing::{
     CountryProjection, CountryVeterancyLists, ProcessedRulesLayers, RulesLayerStack,
-    house_type_index_of_name,
+    SideProjection, house_type_index_of_name,
 };
 use crate::rules::object_type::{BuildCategory, FactoryType, ObjectCategory, ObjectType};
 use crate::rules::particle_system_type::{ParticleSystemType, ParticleSystemTypeId};
@@ -3958,6 +3958,10 @@ pub struct RuleSet {
     /// Side identities in native `[Sides]` registration order, including
     /// sides allocated later by a per-country `Side=` override.
     side_ids: Vec<String>,
+    /// Read-only projection of the live SideExt owner, in the same native
+    /// array order as side_ids. Rebuilt after every Process/reset/save restore.
+    #[cfg(feature = "ares")]
+    side_sidebar: Vec<(i32, bool)>,
     /// Uppercase side identity -> source-order index.
     side_indices: HashMap<String, SideIdx>,
     /// Effective side for each country after `[Sides]` membership and the
@@ -4203,7 +4207,7 @@ impl RuleSet {
             processed,
             project_country_side_registry(
                 processed.country_projection(),
-                processed.side_registry_names(),
+                processed.side_projection(),
             ),
         )?;
         let mut native_identity_counts = HashMap::new();
@@ -5325,6 +5329,8 @@ impl RuleSet {
             country_ids: country_side_registry.country_ids,
             country_indices: country_side_registry.country_indices,
             side_ids: country_side_registry.side_ids,
+            #[cfg(feature = "ares")]
+            side_sidebar: country_side_registry.side_sidebar,
             side_indices: country_side_registry.side_indices,
             country_sides: country_side_registry.country_sides,
             color_schemes,
@@ -5805,6 +5811,12 @@ impl RuleSet {
             .map(|(id, country)| (id.to_ascii_uppercase(), &country.veteran_types))
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
+        #[cfg(feature = "ares")]
+        {
+            b"ares-side-sidebar-v1".hash(&mut hasher);
+            self.side_ids.hash(&mut hasher);
+            self.side_sidebar.hash(&mut hasher);
+        }
         self.object_list
             .iter()
             .filter(|object| object.category == ObjectCategory::Building)
@@ -6635,13 +6647,17 @@ impl RuleSet {
     pub(crate) fn refresh_country_side_projection<'a>(
         &mut self,
         countries: impl Iterator<Item = CountryProjection<'a>>,
-        sides: impl Iterator<Item = &'a str>,
+        sides: impl Iterator<Item = SideProjection<'a>>,
     ) {
         let projection = project_country_side_registry(countries, sides);
         self.countries = projection.rules;
         self.country_ids = projection.country_ids;
         self.country_indices = projection.country_indices;
         self.side_ids = projection.side_ids;
+        #[cfg(feature = "ares")]
+        {
+            self.side_sidebar = projection.side_sidebar;
+        }
         self.side_indices = projection.side_indices;
         self.country_sides = projection.country_sides;
     }
@@ -6861,6 +6877,48 @@ impl RuleSet {
     /// Resolve a side index back to its source spelling.
     pub fn side_name(&self, index: SideIdx) -> Option<&str> {
         self.side_ids.get(index.0 as usize).map(String::as_str)
+    }
+
+    /// The already-allocated Side array, including constructor-only entries;
+    /// querying it never rereads an INI or creates a missing side.
+    pub fn allocated_sides(&self) -> impl Iterator<Item = (SideIdx, &str)> {
+        self.side_ids.iter().enumerate().map(|(index, id)| {
+            (
+                SideIdx(u8::try_from(index).expect("[Sides] exceeds u8 identity space")),
+                id.as_str(),
+            )
+        })
+    }
+
+    /// Signed SideExt+88. Zero and negative values are intentional native
+    /// selector inputs, not missing values or an instruction to clamp to one.
+    /// An ordinary retail build has no SideExt configuration.
+    pub fn side_sidebar_mix_file_index(&self, index: SideIdx) -> Option<i32> {
+        #[cfg(feature = "ares")]
+        return self
+            .side_sidebar
+            .get(usize::from(index.0))
+            .map(|&(mix, _)| mix);
+        #[cfg(not(feature = "ares"))]
+        {
+            let _ = index;
+            None
+        }
+    }
+
+    /// SideExt+8C selects Yuri-specific sidebar filenames independently of
+    /// the Side array index and Sidebar.MixFileIndex.
+    pub fn side_sidebar_yuri_file_names(&self, index: SideIdx) -> Option<bool> {
+        #[cfg(feature = "ares")]
+        return self
+            .side_sidebar
+            .get(usize::from(index.0))
+            .map(|&(_, yuri)| yuri);
+        #[cfg(not(feature = "ares"))]
+        {
+            let _ = index;
+            None
+        }
     }
 
     /// Return the country's effective side after its optional `Side=`
@@ -7654,6 +7712,8 @@ struct ProjectedCountrySideRegistry {
     country_ids: Vec<String>,
     country_indices: HashMap<String, CountryIdx>,
     side_ids: Vec<String>,
+    #[cfg(feature = "ares")]
+    side_sidebar: Vec<(i32, bool)>,
     side_indices: HashMap<String, SideIdx>,
     country_sides: Vec<Option<SideIdx>>,
 }
@@ -7664,9 +7724,15 @@ struct ProjectedCountrySideRegistry {
 /// invent Countries, lose prior Side vectors and change allocation chronology.
 fn project_country_side_registry<'a>(
     countries: impl Iterator<Item = CountryProjection<'a>>,
-    sides: impl Iterator<Item = &'a str>,
+    sides: impl Iterator<Item = SideProjection<'a>>,
 ) -> ProjectedCountrySideRegistry {
-    let side_ids: Vec<String> = sides.map(str::to_owned).collect();
+    let sides = sides.collect::<Vec<_>>();
+    let side_ids: Vec<String> = sides.iter().map(|(id, _)| (*id).to_owned()).collect();
+    #[cfg(feature = "ares")]
+    let side_sidebar = sides
+        .iter()
+        .map(|(_, sidebar)| sidebar.expect("allocated Side owns its Ares extension"))
+        .collect();
     let mut side_indices = HashMap::with_capacity(side_ids.len());
     for (index, id) in side_ids.iter().enumerate() {
         side_indices
@@ -7705,6 +7771,8 @@ fn project_country_side_registry<'a>(
         country_ids,
         country_indices,
         side_ids,
+        #[cfg(feature = "ares")]
+        side_sidebar,
         side_indices,
         country_sides,
     }

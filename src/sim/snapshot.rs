@@ -1256,7 +1256,8 @@ use crate::util::save_codec;
 // 472 -> 473: Ares HouseTracking retains its signed KeepAlive event count;
 // constructor-bound TrackingFacts retains each object's removal admission.
 // 473 -> 474: retain Building+53C across save/load and live sale callbacks.
-const SNAPSHOT_VERSION: u32 = 474;
+// 474 -> 475: optional Ares SideExt phase/MIX/Yuri filename retained state.
+const SNAPSHOT_VERSION: u32 = 475;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -10359,6 +10360,7 @@ mod tests {
         // 471 -> 472: independent saved Scenario.Side.
         // 472 -> 473: retained Ares KeepAlive count and per-object input.
         // 473 -> 474: retained Building+53C.
-        assert_eq!(super::SNAPSHOT_VERSION, 474);
+        // 474 -> 475: optional retained Ares Side sidebar fields.
+        assert_eq!(super::SNAPSHOT_VERSION, 475);
     }
 }

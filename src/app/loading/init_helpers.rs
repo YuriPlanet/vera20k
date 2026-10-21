@@ -560,7 +560,7 @@ pub(crate) fn finish_presentation_assets(
     overlays: crate::app::frontend::skirmish::OverlayPresentationAssets,
     house_color_map: HouseColorMap,
     csf: Option<crate::assets::csf_file::CsfFile>,
-) -> crate::app::loading::init::PresentationLoadAssets {
+) -> anyhow::Result<crate::app::loading::init::PresentationLoadAssets> {
     // These nested MIXes live inside local.mix/localmd.mix and are not
     // auto-extracted by the two-level archive discovery pass.
     for cameo_mix in ["cameomd.mix", "cameo.mix"] {
@@ -570,8 +570,13 @@ pub(crate) fn finish_presentation_assets(
         }
     }
     let sidebar_cameo_atlas = build_sidebar_cameo_atlas(gpu, batch, asset_manager, Some(rules));
-    let sidebar_chrome =
-        crate::render::sidebar_chrome::build_sidebar_chrome_set(gpu, batch, asset_manager);
+    let sidebar_chrome = crate::render::sidebar_chrome::build_sidebar_chrome_set(
+        gpu,
+        batch,
+        asset_manager,
+        rules,
+        simulation.session().scenario_side(),
+    )?;
     let fnt_file = asset_manager.get_ref("GAME.FNT").and_then(|data| {
         crate::assets::fnt_file::FntFile::from_bytes(data)
             .map_err(|error| log::warn!("Failed to parse GAME.FNT: {error}"))
@@ -595,7 +600,7 @@ pub(crate) fn finish_presentation_assets(
         Some(simulation),
         detail_level,
     );
-    crate::app::loading::init::PresentationLoadAssets {
+    Ok(crate::app::loading::init::PresentationLoadAssets {
         tile_atlas,
         building_zshape,
         unit_atlas: manifest.unit_atlas,
@@ -612,7 +617,7 @@ pub(crate) fn finish_presentation_assets(
         lighting_grid,
         csf,
         fnt_file,
-    }
+    })
 }
 
 #[cfg(test)]

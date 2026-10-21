@@ -80,7 +80,7 @@ fn side_route_prefers_md_then_base_then_neutral() {
     assert_eq!(resolved.bytes, b"neutral");
 }
 
-fn resolved_shp(route: SidebarSideRoute<'_>, name: &str) -> (&'static str, ShpFile) {
+fn resolved_shp<'a>(route: SidebarSideRoute<'a>, name: &str) -> (&'a str, ShpFile) {
     let resolved = route.resolve_generic_shp(name).expect(name);
     let shp = ShpFile::from_bytes(resolved.bytes).expect(name);
     (resolved.archive_name, shp)
@@ -313,9 +313,14 @@ fn retail_modal_backgrounds_use_ui_palette_for_every_theme_and_size() {
         ),
     ] {
         let archive = assets.archive(archive_name).unwrap();
-        let (entries, identity) =
-            super::in_game_shell::load_backgrounds(&assets, archive, archive_name, theme, names)
-                .unwrap();
+        let (entries, identity) = super::in_game_shell::load_backgrounds(
+            &assets,
+            archive,
+            archive_name,
+            names,
+            super::SidebarArtNames::for_yuri(theme == SidebarTheme::Yuri).background_palette,
+        )
+        .unwrap();
         assert_eq!(identity.logical_name, palette_name);
         assert_eq!(identity.source_archive.as_deref(), Some(archive_name));
         let raw_palette = archive.get_by_name(palette_name).unwrap();

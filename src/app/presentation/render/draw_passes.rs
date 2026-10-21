@@ -53,17 +53,13 @@ fn draw_sidebar_surface(
     encoder: &mut wgpu::CommandEncoder,
     data: &DrawPassData<'_>,
 ) {
-    let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
+    let side_index = crate::app::presentation::sidebar_render::current_sidebar_side(state);
     let presentation = &state.match_state.match_presentation;
-    let chrome = presentation.sidebar_chrome.as_ref().and_then(|set| {
-        crate::render::sidebar_chrome::select_sidebar_theme(
-            theme,
-            set.allied.as_ref(),
-            set.soviet.as_ref(),
-            set.yuri.as_ref(),
-        )
-        .map(|(_, atlas)| atlas)
-    });
+    let chrome = presentation
+        .sidebar_chrome
+        .as_ref()
+        .and_then(|set| set.resolve_side(side_index))
+        .map(|resolved| resolved.atlas);
     let renderer = &mut state.renderer;
     let Some(surface) = renderer.sidebar_surface.as_ref() else {
         return;

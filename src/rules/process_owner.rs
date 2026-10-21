@@ -295,7 +295,7 @@ impl NativeRulesProcessOwner {
             .registry_state();
         rules.refresh_country_side_projection(
             registry.country_projection(),
-            registry.side_projection_names(),
+            registry.side_projection(),
         );
     }
 

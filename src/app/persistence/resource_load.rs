@@ -316,7 +316,8 @@ impl PreparedSavedGame {
             overlays,
             map.house_colors().clone(),
             csf,
-        );
+        )
+        .map_err(|error| PreparedLoadError::Resources(error.to_string()))?;
         Ok(Self {
             candidate,
             presentation,

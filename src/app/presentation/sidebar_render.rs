@@ -622,23 +622,35 @@ pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar
 pub(crate) fn current_sidebar_theme(
     state: &AppState,
 ) -> crate::render::sidebar_chrome::SidebarTheme {
+    crate::render::sidebar_chrome::sidebar_theme_for_side(current_sidebar_side(state))
+}
+
+/// The active native Scenario.Side owns Ares MIX selection. The retail sandbox
+/// retains its development owner switch. Neither path rewrites House identity.
+pub(crate) fn current_sidebar_side(state: &AppState) -> i32 {
+    let sim = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|rt| &rt.simulation);
+    #[cfg(feature = "ares")]
+    if let Some(sim) = sim {
+        return sim.session().scenario_side();
+    }
     preferred_local_owner_name(state)
-        .and_then(|owner| {
-            sidebar_theme_for_owner(
-                state
-                    .match_state
-                    .sim_runtime
-                    .as_ref()
-                    .map(|rt| &rt.simulation),
-                &owner,
-            )
+        .as_deref()
+        .zip(sim)
+        .and_then(|(owner, sim)| {
+            crate::sim::house_state::house_state_for_owner(sim.houses(), owner, sim.interner())
+                .map(|house| house.side_index())
         })
-        .unwrap_or(crate::render::sidebar_chrome::SidebarTheme::Allied)
+        .unwrap_or(0)
 }
 
 /// Shared installed-owner and atlas fallback projection for chrome and radar.
 /// The map loader calls the final sidebar refresh only after installing the
 /// new simulation and pinned owner; this helper never reads old load inputs.
+#[cfg(test)]
 pub(crate) fn project_sidebar_source<'a, T>(
     simulation: Option<&crate::sim::world::Simulation>,
     owner: Option<&str>,
@@ -666,23 +678,7 @@ fn current_sidebar_resolution(
         .match_presentation
         .sidebar_chrome
         .as_ref()?;
-    let owner = preferred_local_owner_name(state);
-    let (requested_theme, actual_theme, atlas) = project_sidebar_source(
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        owner.as_deref(),
-        set.allied.as_ref(),
-        set.soviet.as_ref(),
-        set.yuri.as_ref(),
-    )?;
-    Some(crate::render::sidebar_chrome::ResolvedSidebarChrome {
-        requested_theme,
-        actual_theme,
-        atlas,
-    })
+    set.resolve_side(current_sidebar_side(state))
 }
 
 pub(crate) fn current_sidebar_chrome(

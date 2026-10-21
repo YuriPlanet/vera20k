@@ -3579,7 +3579,7 @@ pub(crate) fn load_map_from_initial(
         overlay_assets,
         house_color_map,
         csf,
-    );
+    )?;
     // Final post-map-init milestones (cell attributes, beacon art, post-map
     // init, tactical cleanup, final pre-render refresh). 100 is emitted by the
     // pump at Finished.
