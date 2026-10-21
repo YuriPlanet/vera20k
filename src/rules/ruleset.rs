@@ -5844,34 +5844,49 @@ impl RuleSet {
         self.source_ini_hash
     }
 
-    /// Resolve the original singleton's first successfully loaded retained
-    /// request, returning the binding identity with its palette. A failed
-    /// request must not shadow another type's valid group:626DA0 counts
-    /// non-null groups (626F47..626F62), not request names. This covers the
-    /// legal one-successful-group path; multiple successful groups and cache
-    /// history retain the documented compatibility-policy residual.
-    /// Shared by the client atlas and authoritative effect-asset binding.
-    pub fn load_extra_building_palette(
-        &self,
+    /// Resolve one retained palette request. Ares715857->715876 removes
+    /// only the original successful-group limit: a supplied request resolves
+    /// its own file; a failed file never inherits another type's group.
+    /// Without Ares, retain the original one-successful-group compatibility
+    /// policy and admit a supplied request only if it matches that group.
+    /// None selects the singleton for the original effect/legacy consumers.
+    /// This is the sole resource lookup/decoder used by core and client.
+    pub fn load_extra_building_palette<'a>(
+        &'a self,
         assets: &crate::assets::asset_manager::AssetManager,
         theater_ext: &str,
-    ) -> Option<(&str, crate::assets::pal_file::Palette)> {
-        self.object_list.iter().find_map(|object| {
-            let name = object.custom_palette_name()?;
+        requested_name: Option<&'a str>,
+    ) -> Option<(&'a str, crate::assets::pal_file::Palette)> {
+        let load = |name: &'a str| {
             let data = assets.get_ref(&format!("{name}{theater_ext}.pal"))?;
             crate::assets::pal_file::Palette::from_bytes(data)
                 .ok()
                 .map(|palette| (name, palette))
-        })
+        };
+        #[cfg(feature = "ares")]
+        if let Some(name) = requested_name {
+            return load(name);
+        }
+        let selected = self
+            .object_list
+            .iter()
+            .find_map(|object| load(object.custom_palette_name()?));
+        if requested_name.is_some_and(|name| {
+            selected
+                .as_ref()
+                .is_none_or(|(loaded, _)| !name.eq_ignore_ascii_case(loaded))
+        }) {
+            return None;
+        }
+        selected
     }
 
-    /// Building441D25 tests this type's actual DF0 group, not DD0 text or
-    /// whether an unrelated type loaded a palette. The immutable asset owner
-    /// records the selected successful name for the active scenario/theater.
-    pub(crate) fn has_loaded_custom_palette(&self, object: &ObjectType) -> bool {
-        object.custom_palette_name().is_some_and(|name| {
-            self.effect_assets.loaded_extra_building_palette_name() == Some(name)
-        })
+    /// Techno705D70 reads this type's actual DF0 group, not DD0 text or
+    /// another type's success. The immutable asset owner qualifies and
+    /// returns the retained name for a producer to freeze on its animation.
+    pub(crate) fn loaded_custom_palette_name(&self, object: &ObjectType) -> Option<&str> {
+        self.effect_assets
+            .loaded_extra_building_palette_name(object.custom_palette_name()?)
     }
 
     /// Compatibility identity for processed rules plus the resolved animation,

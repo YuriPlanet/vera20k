@@ -32,15 +32,14 @@ pub struct EffectAssetFrameCounts {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct EffectAssetCatalog {
     entries: BTreeMap<String, EffectAssetFrameCounts>,
-    /// Selected successfully loaded singleton group, derived from retained
-    /// type requests and the active assets/theater. Rebuilt with this entire
-    /// catalog; None until resources bind. Other failed requests do not gain
-    /// this group's capability merely because one type loaded it.
-    extra_building_palette_name: Option<String>,
+    /// Successfully loaded groups admitted by the shared resource resolver:
+    /// all names with Ares, only the selected singleton otherwise. Rebuilt
+    /// with this catalog so failed requests never borrow another group.
+    extra_building_palette_names: BTreeSet<String>,
 }
 
 impl EffectAssetCatalog {
-    /// Bind every particle image root and the singleton custom palette capability.
+    /// Bind every particle image root and the admitted custom palette groups.
     ///
     /// Missing or malformed assets are optional at this layer: the entry is
     /// omitted after a warning and each simulation consumer retains its
@@ -53,12 +52,19 @@ impl EffectAssetCatalog {
         theater_ext: &str,
         theater_name: &str,
     ) -> Self {
-        let mut catalog = Self {
-            extra_building_palette_name: rules
-                .load_extra_building_palette(asset_manager, theater_ext)
-                .map(|(name, _palette)| name.to_owned()),
-            ..Self::default()
-        };
+        let requests: BTreeSet<_> = rules
+            .all_objects()
+            .filter_map(|object| object.custom_palette_name())
+            .collect();
+        let mut catalog = Self::default();
+        for name in requests {
+            if rules
+                .load_extra_building_palette(asset_manager, theater_ext, Some(name))
+                .is_some()
+            {
+                catalog.extra_building_palette_names.insert(name.to_owned());
+            }
+        }
 
         for name in authoritative_effect_roots(rules) {
             let image_id = rules.art().resolve_effective_image_id(&name, &name);
@@ -101,8 +107,10 @@ impl EffectAssetCatalog {
         catalog
     }
 
-    pub(crate) fn loaded_extra_building_palette_name(&self) -> Option<&str> {
-        self.extra_building_palette_name.as_deref()
+    pub(crate) fn loaded_extra_building_palette_name(&self, name: &str) -> Option<&str> {
+        self.extra_building_palette_names
+            .get(name)
+            .map(String::as_str)
     }
 
     /// Consumer-visible frame count (particle image timing).

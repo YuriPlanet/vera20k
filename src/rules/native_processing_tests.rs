@@ -3419,16 +3419,35 @@ fn palette_binding_survives_image_changes_handoff_and_asset_refresh() {
     let root = TestDirectory::new("palette-binding-refresh");
     let assets = AssetManager::from_loose_root_for_test(root.path());
     rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
-    assert!(!rules.has_loaded_custom_palette(rules.object("TYPE").unwrap()));
-    assert!(rules.load_extra_building_palette(&assets, "tem").is_none());
+    assert!(
+        rules
+            .loaded_custom_palette_name(rules.object("TYPE").unwrap())
+            .is_none()
+    );
+    assert!(
+        rules
+            .load_extra_building_palette(&assets, "tem", None)
+            .is_none()
+    );
     std::fs::write(root.path().join("LIBTEM.PAL"), [0u8; 768]).unwrap();
     let assets = AssetManager::from_loose_root_for_test(root.path());
     rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
-    assert!(rules.has_loaded_custom_palette(rules.object("TYPE").unwrap()));
-    assert!(rules.load_extra_building_palette(&assets, "tem").is_some());
+    assert_eq!(
+        rules.loaded_custom_palette_name(rules.object("TYPE").unwrap()),
+        Some("lib")
+    );
+    assert!(
+        rules
+            .load_extra_building_palette(&assets, "tem", None)
+            .is_some()
+    );
     // A new theater binding replaces the entire capability catalog.
     rules.bind_effect_assets(&assets, "sno", "SNOW");
-    assert!(!rules.has_loaded_custom_palette(rules.object("TYPE").unwrap()));
+    assert!(
+        rules
+            .loaded_custom_palette_name(rules.object("TYPE").unwrap())
+            .is_none()
+    );
 
     let (_, trace) = continued.into_ini_and_native_type_construction_trace();
     let reset = RulesLayerStack::new(IniFile::from_str(
@@ -3471,4 +3490,60 @@ fn palette_binding_requires_a_reached_type_read_and_replaces_nonempty_names() {
         Some("none")
     );
     assert_eq!(rules.object("UNREAD").unwrap().custom_palette_name(), None);
+}
+
+/// The optional Ares limit hook changes group admission, not the retained
+/// Image/Palette reader or missing-file fallback (715857 ->715876).
+#[test]
+fn ares_palette_requests_use_retained_names_and_resolve_each_loaded_group() {
+    use crate::assets::asset_manager::{AssetManager, test_support::TestDirectory};
+    use crate::rules::{art_data::ArtRegistry, ruleset::RuleSet};
+    let art = IniFile::from_str(
+        "[FIRST]\nPalette=first\n[EMPTY]\n[A]\nPalette=wrong\n[B]\nPalette=second\n[MISS]\nPalette=absent\n",
+    );
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[BuildingTypes]\n0=A\n1=B\n2=MISS\n[A]\nImage=FIRST\nStrength=10\n[B]\nStrength=10\n[MISS]\nStrength=10\n",
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[A]\nImage=EMPTY\n"),
+    );
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    assert_eq!(rules.object("A").unwrap().image, "EMPTY");
+    assert_eq!(
+        rules.object("A").unwrap().custom_palette_name(),
+        Some("first")
+    );
+    assert_eq!(
+        rules.object("B").unwrap().custom_palette_name(),
+        Some("second")
+    );
+    let root = TestDirectory::new("ares-per-type-palette");
+    std::fs::write(root.path().join("FIRSTTEM.PAL"), [1u8; 768]).unwrap();
+    std::fs::write(root.path().join("SECONDTEM.PAL"), [2u8; 768]).unwrap();
+    let assets = AssetManager::from_loose_root_for_test(root.path());
+    let (first_name, first) = rules
+        .load_extra_building_palette(&assets, "tem", Some("first"))
+        .unwrap();
+    assert_eq!(first_name, "first");
+    let second = rules.load_extra_building_palette(&assets, "tem", Some("second"));
+    assert_eq!(second.is_some(), crate::rules::ARES_ENABLED);
+    if let Some((name, palette)) = second {
+        assert_eq!(name, "second");
+        assert_ne!(palette.to_rgba_bytes(), first.to_rgba_bytes());
+    }
+    assert!(
+        rules
+            .load_extra_building_palette(&assets, "tem", Some("absent"))
+            .is_none()
+    );
+    assert_eq!(
+        rules
+            .load_extra_building_palette(&assets, "tem", None)
+            .unwrap()
+            .0,
+        "first"
+    );
 }

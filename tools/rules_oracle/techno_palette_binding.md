@@ -68,11 +68,18 @@ separate global requested-name owner. The single public Rules resource resolver
 selects the first retained name whose palette actually loads, and returns both
 name and decoded palette. Body/MAKE only apply it to a type requesting that
 same name. EffectAssetCatalog is rebuilt from the active assets/theater and
-retains the successful name, None before binding; DestroyAnim checks the same
-per-type eligibility. A failed request cannot shadow or inherit a different
+retains the successful names (one without Ares), empty before binding;
+DestroyAnim checks the same per-type eligibility. A failed request cannot shadow or inherit a different
 type's valid group. Missing or invalid palette data uses the existing ordinary
 body palette fallback. The resolver is public because the client atlas consumes
 it across the core crate boundary.
+
+The optional Ares producer correction is documented in
+[per-type palettes](../../docs/ares-building-palettes.md). Its441D25 hook resumes
+at441D37, making the GetRemapColour assignment unconditional. Each surviving
+animation stores the selected house and custom palette identity, or the ordinary
+house conversion when no custom group loaded. TerrainPalette only changes the
+source body's palette selection.
 
 Focused Rust regressions (execution results must be reported separately):
 

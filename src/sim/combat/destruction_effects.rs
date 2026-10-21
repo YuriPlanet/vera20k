@@ -112,9 +112,9 @@ impl DeathAnimSpawn {
     }
 }
 
-/// An infantry death arm's writes on its anim after the constructor
-/// (`InfantryClass::ReceiveDamage @ 0x00517FA0`). Each takes the killing
-/// source's owner (`+0x21C`), else the receiver's house argument.
+/// Death producers' writes on their anim after the constructor. Infantry
+/// ReceiveDamage517FA0 takes the killing source's owner, else the receiver's
+/// house argument; Building DestructionEffects441D37 uses its own remap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeathAnimFollowUp {
     /// InfDeath 8 (`0x0051887B..0x005188A9`): SetOwnerHouse
@@ -125,16 +125,15 @@ pub enum DeathAnimFollowUp {
     /// scheme's `+0x30C` from the array `0x00B054D4`); then, house or not,
     /// the anim's MarkCellOccupancy (vt+0xF0 = `0x00426270`).
     Mutate(Option<InternedId>),
-    /// BuildingClass::DestructionEffects' DestroyAnim of a custom-palette
-    /// type (`0x00441D2F..0x00441D61`): GetRemapColour's scheme from the
-    /// extra building palette as the remap (`+0xD4`); the palette name it
-    /// copies to `+0xDC` is the scenario's one.
+    /// BuildingClass::DestructionEffects' frozen GetRemapColour result
+    /// (`0x00441D37..0x00441D41`). Original441D2F requires a custom group;
+    /// Ares441D25 ->441D37 assigns the result for ordinary types as well.
     ///
     /// RESIDUAL: AnimClass::Save (`0x004253B0`) finds no global index for
     /// this scheme, so Load (`0x00425280`) regenerates the palette by name and
     /// takes its scheme 0; a restored VERA anim keeps the owner's. Retail's
     /// only such anim, CANY04DM, has no 16..31 pixels and draws at full light.
-    ExtraBuildingRemap(InternedId),
+    Remap(crate::sim::anim_class::AnimRemap),
 }
 
 impl Simulation {
@@ -250,10 +249,8 @@ impl Simulation {
                 }
                 Self::anim_mark_cell_occupancy(&mut self.substrate, &self.resolved_terrain, anim);
             }
-            Some(DeathAnimFollowUp::ExtraBuildingRemap(house)) => {
-                self.substrate
-                    .anims
-                    .set_anim_extra_building_remap(anim, house);
+            Some(DeathAnimFollowUp::Remap(remap)) => {
+                self.substrate.anims.set_anim_remap(anim, remap);
             }
         }
         Some(anim)
@@ -564,9 +561,21 @@ impl Simulation {
                 },
                 0,
             );
-            let follow_up = rules
-                .has_loaded_custom_palette(object)
-                .then_some(DeathAnimFollowUp::ExtraBuildingRemap(owner));
+            // Ares441D25 ->441D37 removes the DF0 gate, not the assignment.
+            // GetRemapColour705D70 selects the actual loaded group, else the
+            // house's ordinary scheme. TerrainPalette belongs to body DrawSHP
+            // and does not alter this result. Freeze the resource identity now.
+            let remap = if let Some(name) = rules.loaded_custom_palette_name(object) {
+                Some(crate::sim::anim_class::AnimRemap::ExtraBuildingScheme {
+                    house: owner,
+                    palette: self.interner.intern(name),
+                })
+            } else if crate::rules::ARES_ENABLED {
+                Some(crate::sim::anim_class::AnimRemap::House(owner))
+            } else {
+                None
+            };
+            let follow_up = remap.map(DeathAnimFollowUp::Remap);
             self.emit_death_anim(rules, anims, anim, DeathAnimSpawn { follow_up, ..spawn });
         }
         // `0x00441EFC..0x00441F0B`: after the Health 0 write (`0x00441F00`),

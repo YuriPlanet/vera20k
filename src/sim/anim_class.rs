@@ -335,9 +335,13 @@ impl AnimDisplayState {
 pub enum AnimRemap {
     ColorScheme(HouseColorIndex),
     House(InternedId),
-    /// The house's scheme from the extra building palette
-    /// (`RuleSet::extra_building_palette`), Techno705D70's `+0xDF0` arm.
-    ExtraBuildingScheme(InternedId),
+    /// Techno705D70's loaded `+0xDF0` group and house colour, frozen when
+    /// the producer assigns the Convert. The palette name survives the
+    /// source building's destruction and distinguishes simultaneous groups.
+    ExtraBuildingScheme {
+        house: InternedId,
+        palette: InternedId,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -888,21 +892,16 @@ impl AnimStore {
     /// the house's colour scheme's (`0x00518AB5..0x00518AC9`,
     /// `0x00518AE4..0x00518AF9`).
     pub fn set_anim_house_remap(&mut self, id: AnimId, house: InternedId) -> bool {
-        let Some(anim) = self.get_mut(id) else {
-            return false;
-        };
-        anim.remap = Some(AnimRemap::House(house));
-        true
+        self.set_anim_remap(id, AnimRemap::House(house))
     }
 
-    /// [`Self::set_anim_house_remap`] from a custom-palette type: the
-    /// house's scheme from the extra building palette, as
-    /// `BuildingClass::DestructionEffects` writes it (`0x00441D2F..0x00441D41`).
-    pub fn set_anim_extra_building_remap(&mut self, id: AnimId, house: InternedId) -> bool {
+    /// Assign the producer's frozen Convert identity (`Anim+0xD4`). Custom
+    /// groups also retain their resource name, independently of any owner.
+    pub fn set_anim_remap(&mut self, id: AnimId, remap: AnimRemap) -> bool {
         let Some(anim) = self.get_mut(id) else {
             return false;
         };
-        anim.remap = Some(AnimRemap::ExtraBuildingScheme(house));
+        anim.remap = Some(remap);
         true
     }
 
