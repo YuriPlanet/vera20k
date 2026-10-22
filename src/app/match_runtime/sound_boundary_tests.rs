@@ -9,6 +9,100 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::radar::{RadarEventRequest, RadarEventType};
 use crate::sim::world::{SimSoundEvent, Simulation, SoundBoundary};
 
+/// Foot4DADF0/750D40 must use the reached phase coordinate and must not
+/// recreate a handle released by a later lifecycle callback. No PCM service
+/// runs here; this checks the production client/SFX handle and gain boundary.
+#[test]
+#[ignore = "requires an audio output device; run when changing Foot sound delivery"]
+fn foot_phase_position_updates_the_existing_client_handle_without_recreating_a_release() {
+    use crate::app::presentation::building_anim::SoundPlaybackInputs;
+    use crate::audio::sfx::{SfxPlayer, SpatialGain, SpatialListener};
+    use crate::sim::anim_class::AnimWorldCoord;
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+    let mut process = crate::app::process_assets::ProcessAssets::new(
+        crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
+        true,
+    );
+    process.initialize_sources_if_needed(&assets).unwrap();
+    let catalog = process.audio_catalog().unwrap();
+    let mut player =
+        SfxPlayer::new().expect("selected device-dependent regression needs audio output");
+    player.set_volume(0.0);
+    let near = AnimWorldCoord {
+        x: 2688,
+        y: 2688,
+        z: 0,
+    };
+    let source = super::anim_world_sound_source(near);
+    let inputs = || SoundPlaybackInputs {
+        assets: &assets,
+        catalog,
+        listener: SpatialListener {
+            tactical_width: 640,
+            tactical_height: 480,
+            origin_x: source.screen_x - 320.0,
+            origin_y: source.screen_y - 240.0,
+            zoom: 1.0,
+        },
+    };
+    assert!(player.play_animation_sound_spatial(
+        41,
+        "YuriPrimeMoveLoop",
+        SpatialGain::CENTRED_FULL,
+        catalog.sounds()
+    ));
+    assert_eq!(player.active_count(), 1);
+    let sim = Simulation::new();
+    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let mut output = SoundEventQueue::new();
+    let mut radar = |_, _, _: &RuleSet| false;
+    {
+        let boundary =
+            FrameClientBoundary::new(Some((&mut player, inputs())), None, &mut output, &mut radar);
+        boundary.update_looping_sound(
+            &sim,
+            41,
+            AnimWorldCoord {
+                y: near.y + 25600,
+                ..near
+            },
+        );
+    }
+    // Stopped pool records are reaped by the later service; the owner's
+    // live-event binding is what this synchronous boundary changes.
+    assert!(
+        player.loop_handle_sound_id(41).is_none(),
+        "inaudible phase clears the live-event binding"
+    );
+    assert!(
+        player.handle_sound_id(41).is_some(),
+        "loop identity remains kept"
+    );
+    {
+        let boundary =
+            FrameClientBoundary::new(Some((&mut player, inputs())), None, &mut output, &mut radar);
+        boundary.update_looping_sound(&sim, 41, near);
+    }
+    assert!(
+        player.loop_handle_sound_id(41).is_some(),
+        "audible phase resumes the kept loop"
+    );
+    {
+        let boundary =
+            FrameClientBoundary::new(Some((&mut player, inputs())), None, &mut output, &mut radar);
+        boundary.consume(
+            &sim,
+            &rules,
+            &[SimSoundEvent::ObjectSoundReleased { owner: 41 }],
+        );
+        boundary.update_looping_sound(&sim, 41, near);
+    }
+    assert!(
+        player.handle_sound_id(41).is_none(),
+        "a released owner cannot be resurrected"
+    );
+}
+
 /// Original6D2140 controls execute the registered Tactical startup writer,
 /// signed XY arithmetic, height rounding and view subtraction. The app's
 /// existing projection owner supplies the retained750E20 request coordinate;

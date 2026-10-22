@@ -18,6 +18,7 @@ struct Encounter {
     squid: u64,
     ship: u64,
     elite: bool,
+    last_sound_events: Vec<super::SimSoundEvent>,
 }
 
 impl Encounter {
@@ -172,6 +173,7 @@ impl Encounter {
             squid,
             ship,
             elite,
+            last_sound_events: Vec::new(),
         })
     }
 
@@ -189,6 +191,7 @@ impl Encounter {
             )
             .expect("ordinary open-water Squid combat frame");
         assert!(output.tick.frame_committed);
+        self.last_sound_events = output.sound_events;
         output.fire_events
     }
 
@@ -495,6 +498,24 @@ fn entire_grapple(elite: bool) {
                 previous_z - 5,
                 "cull sinks in the victim's same Unit turn"
             );
+            let lowered_z = position_world_coord(&ship.position).z;
+            let sinking_sound = scene
+                .rules
+                .object("DEST")
+                .unwrap()
+                .sinking_sound
+                .as_ref()
+                .or(scene.rules.general.sinking_sound.as_ref())
+                .unwrap()
+                .clone();
+            // Foot4DABC7 precedes ParasiteAI629FD0's cull. Unit7364A1
+            // then lowers the hull; the NEXT Foot edge plays at that Z.
+            assert!(
+                !scene.last_sound_events.iter().any(|event| matches!(event,
+                super::SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
+                    if *anim_id == scene.ship && sound_id.eq_ignore_ascii_case(&sinking_sound))),
+                "culling cannot retroactively run the earlier sinking-sound edge"
+            );
             scene.assert_released(anim);
             assert!(
                 !scene
@@ -507,6 +528,14 @@ fn entire_grapple(elite: bool) {
                     .is_paralyzed(scene.sim.session.binary_frame())
             );
             culled = true;
+            scene.step();
+            assert!(
+                scene.last_sound_events.iter().any(|event| matches!(event,
+                super::SimSoundEvent::AnimationStarted { anim_id, sound_id, world }
+                    if *anim_id == scene.ship && sound_id.eq_ignore_ascii_case(&sinking_sound)
+                        && world.z == lowered_z)),
+                "next Foot visit uses the already-lowered hull coordinate"
+            );
             break;
         }
         if ship.health.current() < previous_health {
