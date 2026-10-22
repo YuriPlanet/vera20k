@@ -168,8 +168,16 @@ impl CampaignLaunchOptions {
 /// Keep the supplied physical spelling for case-sensitive loose-file lookup.
 fn prepare_campaign_scenario(
     scenario: &str,
+    campaign: &crate::rules::campaigns::CampaignDefinition,
     launch_options: Option<&CampaignLaunchOptions>,
 ) -> (String, Option<String>) {
+    // Start_Scenario683AC8..683AF8: a null/empty requested name falls back
+    // to the retained campaign entry, including after failed MapSelect.
+    let scenario = if scenario.is_empty() {
+        campaign.scenario()
+    } else {
+        scenario
+    };
     let logical_name = scenario.to_ascii_uppercase();
     let source = launch_options
         .and_then(|options| options.loose_scenario_file(scenario))
@@ -354,7 +362,7 @@ impl PreparedCampaignStartup {
         clock: &mut impl MatchSeedClock,
     ) -> Self {
         let (scenario, scenario_file) =
-            prepare_campaign_scenario(&scenario, self.launch_options.as_ref());
+            prepare_campaign_scenario(&scenario, &self.campaign, self.launch_options.as_ref());
         Self {
             campaign_index: self.campaign_index,
             campaign: self.campaign.clone(),
@@ -410,9 +418,8 @@ pub(crate) fn prepare_campaign_startup_at_index(
 ) -> Option<PreparedCampaignStartup> {
     let campaign = campaigns.get(campaign_index)?.clone();
     let (scenario, scenario_file) = prepare_campaign_scenario(
-        scenario
-            .filter(|filename| !filename.is_empty())
-            .unwrap_or_else(|| campaign.scenario()),
+        scenario.unwrap_or_default(),
+        &campaign,
         launch_options.as_ref(),
     );
     Some(PreparedCampaignStartup {
@@ -999,6 +1006,17 @@ mod tests {
         assert_eq!(next.game_options().unwrap().game_speed, 4);
         assert!(!next.game_options().unwrap().build_off_ally);
         assert!(startup.plays_action_movie() && next.plays_action_movie());
+        // SkipMapSelect clears FileName on an unmatched destination. Native
+        // Start_Scenario683AC8..683AF8 then chooses the retained campaign entry.
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.set_campaign_map_stage(17);
+        let record = sim.save_campaign_carry_over();
+        let fallback = next.next_mission(String::new(), 3, 2, 4, record, &mut clock);
+        assert_eq!(fallback.scenario(), "ALL01UMD.MAP");
+        assert_eq!(fallback.campaign_index(), startup.campaign_index());
+        assert_eq!(fallback.mission_counter(), 3);
+        assert_eq!(fallback.carry_over(), Some(&record));
+        assert_eq!(fallback.carry_over().unwrap().map_stage(), 17);
     }
 
     /// Restart and the defeat retry re-enter Start_Scenario with the same

@@ -86,6 +86,10 @@ pub struct BasicSection {
     /// Scenario+0x34B0 (`0x0068A20C`): MapSelect takes NextScenario instead
     /// of the MAPSELMD stage following the current map.
     pub skip_map_select: Option<bool>,
+    /// Read_INI_Basic689FD6/689FF4: current-default ReadString into the
+    /// Scenario+4/+108 buffers (260 bytes). Fresh constructor683407/40A clears them.
+    pub next_scenario: Option<String>,
+    pub alt_next_scenario: Option<String>,
     /// Scenario+0x1448 movie (`ReadMovie` at `0x0068A0A2`), after the score.
     pub post_score: Option<String>,
     /// Scenario+0x144C movie (`ReadMovie` at `0x0068A0C0`), before MapSelect.
@@ -229,6 +233,12 @@ pub fn parse_basic_section(ini: &IniFile) -> BasicSection {
         end_of_game: section.read_bool_value("EndOfGame"),
         one_time_only: section.read_bool_value("OneTimeOnly"),
         skip_map_select: section.read_bool_value("SkipMapSelect"),
+        next_scenario: section
+            .is_present("NextScenario")
+            .then(|| section.read_string("NextScenario", "", 0x104)),
+        alt_next_scenario: section
+            .is_present("AltNextScenario")
+            .then(|| section.read_string("AltNextScenario", "", 0x104)),
         post_score: section
             .is_present("PostScore")
             .then(|| section.read_string("PostScore", "", 128)),

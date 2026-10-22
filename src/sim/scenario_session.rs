@@ -775,6 +775,9 @@ pub struct ScenarioSession {
     start_header: crate::map::preview::ScenarioStartHeader,
     #[serde(default)]
     campaign: Option<CampaignScenarioState>,
+    /// Scenario+35A0: SetDefaults6839C7 clears the raw stage word. MapSelect
+    /// 5AE1FA/5AE0B8 writes the selected index; Scenario save/load retains it.
+    campaign_map_stage: u16,
     /// Scenario+35A2. Trigger actions46/47 own this retained input lock;
     /// presentation reads it and applies the ordered mouse/keyboard effects.
     #[serde(default)]
@@ -1378,6 +1381,14 @@ impl ScenarioSession {
         self.campaign.map(|campaign| campaign.campaign_index)
     }
 
+    pub fn campaign_map_stage(&self) -> u16 {
+        self.campaign_map_stage
+    }
+
+    pub(super) fn set_campaign_map_stage(&mut self, stage: u16) {
+        self.campaign_map_stage = stage;
+    }
+
     pub fn campaign_restart_carry_over(
         &self,
     ) -> Option<crate::sim::campaign_carry_over::CampaignCarryOver> {
@@ -1467,6 +1478,10 @@ impl ScenarioSession {
         if let Some(campaign) = s.campaign {
             b"scenario-campaign-startup-v1".hash(hasher);
             campaign.hash(hasher);
+        }
+        if s.campaign_map_stage != 0 {
+            b"scenario-map-stage-v1".hash(hasher);
+            s.campaign_map_stage.hash(hasher);
         }
         if s.scenario_paused() || s.scenario_pause_timed() {
             b"scenario-pause-v1".hash(hasher);
@@ -1692,6 +1707,7 @@ impl ScenarioSession {
             network_max_ahead_frames: None,
             start_header: crate::map::preview::ScenarioStartHeader::default(),
             campaign: None,
+            campaign_map_stage: 0,
             input_locked: false,
             chrono_screen: crate::sim::superweapon::chrono_screen::ChronoScreenState::default(),
             scenario_pause: pause::ScenarioPause::default(),

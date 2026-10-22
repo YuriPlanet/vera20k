@@ -117,6 +117,7 @@ struct Mission {
     countdown: Option<(i32, String)>,
     /// Wallet and native starting-credit baseline, read from their one owner.
     money: Option<[i32; 2]>,
+    map_stage: u16,
 }
 
 #[derive(Debug)]
@@ -159,6 +160,7 @@ impl Mission {
                 .campaign_mission_counter()
                 .context("runtime has no campaign mission counter")?,
             seed: sim.session().seed(),
+            map_stage: sim.session().campaign_map_stage(),
             money: sim
                 .session()
                 .current_house()
@@ -190,7 +192,7 @@ impl Mission {
             "mission_counter": self.mission_counter, "seed": self.seed,
             "menu_difficulty_row": self.menu_difficulty,
             "player_house_difficulty_row": self.player_difficulty, "countdown": self.countdown,
-            "money": self.money})
+            "money": self.money, "map_stage": self.map_stage})
     }
 }
 
@@ -369,6 +371,7 @@ impl RestartCapture {
                 loaded.map_name == before.map_name
                     && loaded.campaign_index == before.campaign_index
                     && loaded.mission_counter == before.mission_counter
+                    && loaded.map_stage == before.map_stage
                     && loaded.money == before.money,
                 "saved campaign identity or wallet changed"
             );
@@ -1039,6 +1042,7 @@ impl RestartCapture {
                         "mission_counter": startup.mission_counter(),
                         "plays_action_movie": startup.plays_action_movie(),
                         "incoming_countdown_frames": startup.carry_over().map(|record| record.countdown_frames()),
+                        "incoming_map_stage": startup.carry_over().map(|record| record.map_stage()),
                         "incoming_money": startup.carry_over().map(|record| record.money())}));
                     route.push(json!({"frame": frame, "action": "restart loading admitted"}));
                 }
@@ -1048,6 +1052,31 @@ impl RestartCapture {
                         "the restarted mission was not observed loading"
                     );
                     let after = Mission::observe(state)?;
+                    if self.target == RestartTarget::SavedVictory {
+                        ensure!(
+                            after.map_stage == 1,
+                            "ALL02 did not retain its MAPSELMD stage"
+                        );
+                        let path = crate::app::persistence::commands::save_game(
+                            state,
+                            "Campaign next-stage",
+                            None,
+                        )?;
+                        state
+                            .match_state
+                            .sim_runtime
+                            .as_mut()
+                            .unwrap()
+                            .simulation
+                            .set_campaign_map_stage(0);
+                        crate::app::persistence::commands::try_load_save_file(state, &path)?;
+                        ensure!(
+                            Mission::observe(state)?.map_stage == after.map_stage,
+                            "save/load lost the nonzero receiving stage"
+                        );
+                        route.push(json!({"frame":frame,"action":"next mission stage restored",
+                            "map_stage":after.map_stage}));
+                    }
                     ensure!(
                         after.campaign_index == self.before.campaign_index
                             && if let Some(next) = self.target.next_scenario() {

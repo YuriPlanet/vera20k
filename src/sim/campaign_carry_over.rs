@@ -20,7 +20,6 @@
 //!   to write/read all 0x44 bytes. ScenarioSession retains this incoming
 //!   record separately from the current mission's changing global flags.
 //!
-//! Residual: Scenario+0x35A0 (read by `SkipMapSelect=yes`) is not carried.
 //! Money uses the existing Available_Money owner's represented storage domain;
 //! this does not add its separate, pre-existing nonempty-silo mechanism.
 
@@ -42,6 +41,8 @@ pub struct CampaignCarryOver {
     /// Record+34: player IHouse+18 -> Available_Money4F6990.
     #[serde(default)]
     money: i32,
+    /// Evade record+40, raw Scenario+35A0 stage word (Save4C61F5/Do4C630D).
+    map_stage: u16,
 }
 
 mod saved_globals {
@@ -92,6 +93,7 @@ impl CampaignCarryOver {
         player_difficulty: HouseDifficulty::Normal,
         countdown_frames: 0,
         money: 0,
+        map_stage: 0,
     };
 
     pub const fn globals(&self) -> &[bool; SCENARIO_GLOBAL_COUNT] {
@@ -108,6 +110,10 @@ impl CampaignCarryOver {
 
     pub const fn money(&self) -> i32 {
         self.money
+    }
+
+    pub const fn map_stage(&self) -> u16 {
+        self.map_stage
     }
 }
 
@@ -128,6 +134,7 @@ impl Simulation {
             player_difficulty,
             countdown_frames: self.session.campaign_countdown_frames(),
             money: player.map_or(0, |house| house.economy().available_money()),
+            map_stage: self.session.campaign_map_stage(),
         }
     }
 
@@ -191,6 +198,7 @@ impl Simulation {
         }
         self.session
             .inherit_campaign_countdown(record.countdown_frames);
+        self.session.set_campaign_map_stage(record.map_stage);
     }
 }
 
@@ -199,6 +207,31 @@ mod tests {
     use super::*;
     use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioTimerAction};
     use crate::util::native_x87::NativeF64Bits;
+
+    #[test]
+    fn saved_stage_and_incoming_restart_stage_remain_distinct() {
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str("")).unwrap();
+        let mut sim = timer_campaign(&crate::rules::ini_parser::IniFile::from_str(""));
+        assert_eq!(sim.session().campaign_map_stage(), 0);
+        sim.set_campaign_map_stage(u16::MAX);
+        let incoming = sim.save_campaign_carry_over();
+        sim.session.initialize_campaign_for_test(0, 2, incoming);
+        sim.set_campaign_map_stage(1);
+        let hash = sim.state_hash();
+        let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "stage", 0);
+        let mut loaded = crate::sim::snapshot::GameSnapshot::load(&bytes)
+            .unwrap()
+            .sim;
+        assert_eq!(loaded.state_hash(), hash);
+        assert_eq!(loaded.session().campaign_map_stage(), 1);
+        let restart = loaded.session().campaign_restart_carry_over().unwrap();
+        assert_eq!(restart.map_stage(), u16::MAX);
+        loaded.restore_campaign_carry_over(&restart, &rules);
+        assert_eq!(loaded.session().campaign_map_stage(), u16::MAX);
+        assert_ne!(loaded.state_hash(), hash);
+        loaded.restore_campaign_carry_over(&CampaignCarryOver::CLEARED, &rules);
+        assert_eq!(loaded.session().campaign_map_stage(), 0);
+    }
 
     fn timer_campaign(ini: &crate::rules::ini_parser::IniFile) -> Simulation {
         let basic = crate::map::basic::parse_basic_section(ini);

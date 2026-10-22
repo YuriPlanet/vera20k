@@ -3518,6 +3518,11 @@ impl Simulation {
         self.session.reset_campaign_mission_counter_on_shell_exit();
     }
 
+    /// MapSelect5AE1FA/5AE0B8 publishes the selected stage before EvadeSave4C6180.
+    pub fn set_campaign_map_stage(&mut self, stage: u16) {
+        self.session.set_campaign_map_stage(stage);
+    }
+
     /// The outgoing scene's live ambient Rules writes, returned once it stops
     /// ([`ScenarioLightingState::retire_ambient_change_inputs`]).
     pub fn retire_ambient_change_inputs(

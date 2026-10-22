@@ -27,9 +27,8 @@
 //!   credits do; the theme native plays when Main_Game returns is not traced.
 //! - the carry-over record is written after installation and is not part of
 //!   the startup the diagnostic replay records.
-//! - SkipMapSelect=yes (`0x005ADE20`) matches NextScenario against the stage
-//!   recorded in Scenario+0x35A0, which VERA does not track; such a map
-//!   returns to the shell. Every retail map has `SkipMapSelect=no`.
+//! SkipMapSelect5ADE20 matches the selected NextScenario against the saved
+//! stage's choices; both paths publish Scenario+35A0 before EvadeSave4C6180.
 //! Saved campaigns retain their Scenario index and incoming carry-over;
 //! their wins enter this same continuation after saved-world admission.
 
@@ -90,12 +89,15 @@ enum VictoryEnd {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum MapSelectPick {
     /// The chosen stage's `Scenario=` replaces the map.
-    Next(String),
+    Next { scenario: String, stage: u16 },
     /// Scenario+0x125C keeps the current map, which Start_Scenario replays.
     KeepCurrent,
     /// Init5AE220 failed. Wrapper5ADD10 shows MSG:UnableMapSelect; victory
     /// ignores its return and reloads the current map without rearming ABCE08.
     InitFailed,
+    /// SkipMapSelect found the saved stage but no matching destination after
+    /// clearing Scenario+125C (5AE013). Show the notice, then attempt that name.
+    DestinationMissing,
     /// SetNextScenario dereferences a missing choice after successful Init.
     Fault(&'static str),
 }
@@ -107,7 +109,7 @@ fn map_select_stages(mapsel: &IniFile, side: &str) -> Vec<String> {
     let Some(section) = mapsel.section(side) else {
         return Vec::new();
     };
-    (1..)
+    (1..=100)
         .map(|stage: u32| section.read_string(&stage.to_string(), "", MAP_SELECT_VALUE_CAPACITY))
         .take_while(|name| !name.is_empty())
         .collect()
@@ -128,7 +130,12 @@ pub(crate) fn map_select(
     mapsel: Option<&IniFile>,
     side: Option<&str>,
     current: &str,
+    skip: Option<(u16, &str)>,
 ) -> MapSelectPick {
+    // FUN_005ADF20 rejects an empty NextScenario before opening MAPSELMD.
+    if skip.is_some_and(|(_, next)| next.is_empty()) {
+        return MapSelectPick::InitFailed;
+    }
     let stages = match (mapsel, side) {
         (Some(mapsel), Some(side)) => map_select_stages(mapsel, side),
         _ => Vec::new(),
@@ -139,45 +146,62 @@ pub(crate) fn map_select(
     };
     // `0x005CF760`: the stage whose Scenario equals the current map, both
     // uppercased (`0x007B5B30`).
-    let Some(stage) = stages
-        .iter()
-        .find(|stage| map_select_value(mapsel, stage, "Scenario").eq_ignore_ascii_case(current))
-    else {
+    let stage = match skip {
+        // 5CF810 masks the saved word and indexes the loaded vector.
+        Some((index, _)) => stages.get(usize::from(index)),
+        None => stages.iter().find(|stage| {
+            map_select_value(mapsel, stage, "Scenario").eq_ignore_ascii_case(current)
+        }),
+    };
+    let Some(stage) = stage else {
         // gamemd FUN_005AE220 @0x005AE220,5AE31C..5AE369 rejects the
         // current stage before SetNextScenario5AE126 rearms the save latch.
         return MapSelectPick::InitFailed;
     };
     // `0x005AE15C`: only a stage with a MapVQ chooses.
-    if map_select_value(mapsel, stage, "MapVQ").is_empty() {
+    if skip.is_none() && map_select_value(mapsel, stage, "MapVQ").is_empty() {
         return MapSelectPick::KeepCurrent;
     }
     // Choices are keys `0..=255`, lowest first (`0x005CFF81..0x005D0040`);
     // `0x005AE188` takes the first.
-    let Some(choice) = (0..=255u32)
+    let choices = (0..=255u32)
         .map(|key| map_select_value(mapsel, stage, &key.to_string()))
-        .find(|choice| !choice.is_empty())
-    else {
-        return MapSelectPick::Fault("the current MAPSELMD stage has no choice");
-    };
-    // `0x005CF6B0` finds the chosen stage by name.
-    let Some(next) = stages
-        .iter()
-        .find(|stage| stage.eq_ignore_ascii_case(&choice))
-    else {
-        return MapSelectPick::Fault("the MAPSELMD choice is no stage");
-    };
-    let scenario = map_select_value(mapsel, next, "Scenario");
-    if scenario.is_empty() {
-        // `0x005AE1DD` skips Set_Scenario_Name.
-        return MapSelectPick::KeepCurrent;
+        .filter(|choice| !choice.is_empty());
+    for choice in choices {
+        // 5CF6B0 finds the stage; 5CF830 -> vtable5D11D0 returns its index.
+        let Some((index, next)) = stages
+            .iter()
+            .enumerate()
+            .find(|(_, stage)| stage.eq_ignore_ascii_case(&choice))
+        else {
+            return MapSelectPick::Fault("the MAPSELMD choice is no stage");
+        };
+        let scenario = map_select_value(mapsel, next, "Scenario");
+        if let Some((_, desired)) = skip {
+            // 5AE025..5AE096 compares lowercased scenario strings, visiting
+            // every authored choice, independently of MapVQ.
+            if !scenario.eq_ignore_ascii_case(desired) {
+                continue;
+            }
+        } else if scenario.is_empty() {
+            return MapSelectPick::KeepCurrent;
+        }
+        return MapSelectPick::Next {
+            scenario,
+            stage: index as u16,
+        };
     }
-    MapSelectPick::Next(scenario)
+    if skip.is_some() {
+        MapSelectPick::DestinationMissing
+    } else {
+        MapSelectPick::Fault("the current MAPSELMD stage has no choice")
+    }
 }
 
 /// GameExit::Victory's branch once the score has returned.
 #[derive(Debug, PartialEq, Eq)]
 enum VictoryBranch {
-    /// OneTimeOnly (`0x006859B9`), or SkipMapSelect, which VERA cannot run.
+    /// OneTimeOnly (`0x006859B9`).
     Shell,
     /// EndOfGame (`0x006859C7`).
     Credits,
@@ -202,9 +226,6 @@ fn victory_plan(
     } else if basic.end_of_game.unwrap_or(false) {
         movies.extend(final_movie);
         VictoryBranch::Credits
-    } else if basic.skip_map_select.unwrap_or(false) {
-        log::warn!("SkipMapSelect needs the MapSelect stage VERA does not track");
-        VictoryBranch::Shell
     } else {
         VictoryBranch::MapSelect
     };
@@ -214,10 +235,10 @@ fn victory_plan(
 impl App {
     /// Read everything the victory tail needs while the won Simulation is
     /// still resident. Only a won mission of an installed campaign qualifies.
-    pub(super) fn take_campaign_victory(state: &AppState) -> Option<CampaignVictory> {
+    pub(super) fn take_campaign_victory(state: &mut AppState) -> Option<CampaignVictory> {
         let campaign = state.match_state.startup.installed_campaign()?;
-        let runtime = state.match_state.sim_runtime.as_ref()?;
-        let sim = &runtime.simulation;
+        let runtime = state.match_state.sim_runtime.as_mut()?;
+        let sim = &mut runtime.simulation;
         let owner = sim.session().current_house()?;
         let won = sim.ready_outcome_for_owner(owner).is_some_and(|outcome| {
             outcome.kind == crate::sim::house_state::HouseOutcomeKind::Victory
@@ -260,10 +281,30 @@ impl App {
                             ))
                     });
                 let current = sim.session().map_name();
-                let pick = map_select(mapsel.as_ref().map(|selected| &selected.ini), side, current);
-                let init_failed = pick == MapSelectPick::InitFailed;
+                // Victory685A38..685A5C selects +108 with Global0, otherwise +4.
+                let skip = state.match_state.map_basic.skip_map_select.unwrap_or(false);
+                let next = if sim.global_variables()[0] {
+                    state.match_state.map_basic.alt_next_scenario.as_deref()
+                } else {
+                    state.match_state.map_basic.next_scenario.as_deref()
+                }
+                .unwrap_or("");
+                let pick = map_select(
+                    mapsel.as_ref().map(|selected| &selected.ini),
+                    side,
+                    current,
+                    skip.then_some((sim.session().campaign_map_stage(), next)),
+                );
+                let init_failed = matches!(
+                    pick,
+                    MapSelectPick::InitFailed | MapSelectPick::DestinationMissing
+                );
                 let scenario = match pick {
-                    MapSelectPick::Next(scenario) => Some(scenario),
+                    MapSelectPick::Next { scenario, stage } => {
+                        sim.set_campaign_map_stage(stage);
+                        Some(scenario)
+                    }
+                    MapSelectPick::DestinationMissing => Some(String::new()),
                     MapSelectPick::KeepCurrent | MapSelectPick::InitFailed => {
                         log::warn!("MapSelect chose no new map; {current} is replayed");
                         Some(current.to_owned())
@@ -288,7 +329,7 @@ impl App {
                         } else {
                             VictoryEnd::NextMission {
                                 startup,
-                                rearm_initial_save: true,
+                                rearm_initial_save: !skip,
                             }
                         }
                     }
@@ -393,20 +434,94 @@ Scenario=ALL03umd.MAP
 ";
 
     fn pick(text: &str, side: &str, current: &str) -> MapSelectPick {
-        map_select(Some(&IniFile::from_str(text)), Some(side), current)
+        map_select(Some(&IniFile::from_str(text)), Some(side), current, None)
     }
 
     #[test]
     fn the_stage_after_the_current_map_names_the_next_scenario() {
         assert_eq!(
             pick(MAPSEL, "GDI", "all01UMD.map"),
-            MapSelectPick::Next("ALL02umd.MAP".into())
+            MapSelectPick::Next {
+                scenario: "ALL02umd.MAP".into(),
+                stage: 1
+            }
         );
         // The lowest-numbered choice wins, not the first written.
         assert_eq!(
             pick(MAPSEL, "GDI", "ALL02umd.MAP"),
-            MapSelectPick::Next("ALL03umd.MAP".into())
+            MapSelectPick::Next {
+                scenario: "ALL03umd.MAP".into(),
+                stage: 2
+            }
         );
+    }
+
+    #[test]
+    fn skip_map_select_uses_saved_stage_and_the_parsed_destination() {
+        let basic =
+            basic("SkipMapSelect=yes\nNextScenario=all02UMD.map\nAltNextScenario=all03UMD.map");
+        let mapsel = IniFile::from_str(MAPSEL);
+        // The saved stage wins over the current filename. Neither MapVQ nor
+        // the normal first-choice rule gates the explicit destination search.
+        assert_eq!(
+            map_select(
+                Some(&mapsel),
+                Some("GDI"),
+                "ALL03umd.MAP",
+                Some((0, basic.next_scenario.as_deref().unwrap()))
+            ),
+            MapSelectPick::Next {
+                scenario: "ALL02umd.MAP".into(),
+                stage: 1
+            }
+        );
+        assert_eq!(
+            map_select(
+                Some(&mapsel),
+                Some("GDI"),
+                "ALL01umd.MAP",
+                Some((1, basic.alt_next_scenario.as_deref().unwrap()))
+            ),
+            MapSelectPick::Next {
+                scenario: "ALL03umd.MAP".into(),
+                stage: 2
+            }
+        );
+        assert_eq!(
+            map_select(
+                Some(&mapsel),
+                Some("GDI"),
+                "ALL01umd.MAP",
+                Some((u16::MAX, "ALL02umd.MAP"))
+            ),
+            MapSelectPick::InitFailed
+        );
+        assert_eq!(
+            map_select(Some(&mapsel), Some("GDI"), "ALL01umd.MAP", Some((0, ""))),
+            MapSelectPick::InitFailed
+        );
+        assert_eq!(
+            map_select(
+                Some(&mapsel),
+                Some("GDI"),
+                "ALL01umd.MAP",
+                Some((0, "ALL03umd.MAP"))
+            ),
+            MapSelectPick::DestinationMissing
+        );
+    }
+
+    #[test]
+    fn next_scenario_readers_keep_native_capacity_and_fresh_defaults() {
+        let parsed = basic(&format!(
+            "NextScenario={}\nAltNextScenario=alt.MAP",
+            "x".repeat(300)
+        ));
+        assert_eq!(parsed.next_scenario.as_ref().unwrap().len(), 259);
+        assert_eq!(parsed.alt_next_scenario.as_deref(), Some("alt.MAP"));
+        let defaults = basic("");
+        assert_eq!(defaults.next_scenario, None);
+        assert_eq!(defaults.alt_next_scenario, None);
     }
 
     #[test]
@@ -416,7 +531,7 @@ Scenario=ALL03umd.MAP
             MapSelectPick::InitFailed
         );
         assert_eq!(
-            map_select(None, Some("GDI"), "ALL01umd.MAP"),
+            map_select(None, Some("GDI"), "ALL01umd.MAP", None),
             MapSelectPick::InitFailed
         );
         assert_eq!(pick(MAPSEL, "GDI", "OTHER.MAP"), MapSelectPick::InitFailed);
@@ -508,7 +623,7 @@ Scenario=ALL03umd.MAP
         let (movies, branch) = plan("PostScore=<none>\nEndOfGame=yes\nOneTimeOnly=yes");
         assert!(movies.is_empty());
         assert_eq!(branch, VictoryBranch::Shell);
-        assert_eq!(plan("SkipMapSelect=yes").1, VictoryBranch::Shell);
+        assert_eq!(plan("SkipMapSelect=yes").1, VictoryBranch::MapSelect);
         assert_eq!(
             plan("SkipMapSelect=no\nEndOfGame=no").1,
             VictoryBranch::MapSelect
@@ -537,6 +652,14 @@ Scenario=ALL03umd.MAP
                     &assets,
                 )
                 .expect("retail campaign map");
+                if index == 0 {
+                    assert_eq!(loaded.map.basic.next_scenario.as_deref(), Some("GDI2A.map"));
+                    assert_eq!(
+                        loaded.map.basic.alt_next_scenario.as_deref(),
+                        Some("GDI9C.MAP")
+                    );
+                    assert_eq!(loaded.map.basic.skip_map_select, Some(false));
+                }
                 assert_eq!(loaded.map.basic.win.as_deref(), Some("<none>"), "{name}");
                 let (movies, branch) = victory_plan(&loaded.map.basic, catalog, None);
                 if index + 1 < maps.len() {
@@ -567,7 +690,7 @@ Scenario=ALL03umd.MAP
         campaigns.apply_ini(&battle.ini, &crate::rules::movies::MovieRegistry::default());
         let mut clock = crate::app::match_bootstrap::OrdinaryMatchSeedClock;
         assert_eq!(
-            map_select(Some(&mapsel.ini), Some("GDI"), "UNLISTED.MAP"),
+            map_select(Some(&mapsel.ini), Some("GDI"), "UNLISTED.MAP", None),
             MapSelectPick::InitFailed
         );
         for (side, name, maps) in [("GDI", "ALL1", ALLIED), ("Nod", "SOV1", SOVIET)] {
@@ -577,8 +700,8 @@ Scenario=ALL03umd.MAP
             .expect("retail campaign");
             for pair in maps.windows(2) {
                 let current = startup.scenario().to_owned();
-                match map_select(Some(&mapsel.ini), Some(side), &current) {
-                    MapSelectPick::Next(next) => {
+                match map_select(Some(&mapsel.ini), Some(side), &current, None) {
+                    MapSelectPick::Next { scenario: next, .. } => {
                         assert!(
                             next.eq_ignore_ascii_case(&format!("{}.MAP", pair[1])),
                             "{current} -> {next}"
