@@ -473,7 +473,7 @@ fn successful_ares_launch_history_limits_commands_survives_save_and_keeps_fallba
     // Original scene has no attached Art body. Bind a synthetic registered
     // slot14 to check unavailable-Super fallback through the real slot owner.
     let art = IniFile::from_str(
-        "[LAUNCHER]\nFoundation=1x1\nSuperAnim=RESTING\n[TARGET]\nFoundation=1x1\n[RESTING]\n",
+        "[LAUNCHER]\nFoundation=1x1\nSuperAnim=RESTING\n[TARGET]\nFoundation=1x1\n[RESTING]\nEnd=1\n",
     );
     let mut ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
     ini.merge(&IniFile::from_str(
