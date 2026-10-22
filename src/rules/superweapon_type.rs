@@ -196,13 +196,11 @@ pub struct SuperWeaponType {
     /// stores VocClass::FindIndex (`0x007514D0`) of the name; an absent key
     /// or an unknown name keeps the field (`0x006CEB96`), the constructor's
     /// -1 or an earlier layer's sound.
-    /// RESIDUAL: the last non-empty name wins here, so a later layer naming
-    /// an unknown sound silences a cue an earlier layer set, where native
-    /// keeps it. Trigger: a mode INI or map naming an unknown sound after an
-    /// earlier layer named a known one. Effect: the cue does not play.
+    /// The process audio binder resolves the reached read history against
+    /// the fixed SOUNDMD catalog, retaining the last valid cue.
     pub special_sound: Option<String>,
     /// `StartSound=` (`+0xC4`, `0x006CEBB0`, read as `SpecialSound=` with
-    /// the same residual, `0x006CEBD8`): the cue the Force Shield's launch
+    /// the same retention, `0x006CEBD8`): the cue the Force Shield's launch
     /// plays (`0x006CD176`).
     pub start_sound: Option<String>,
     /// `AIDefendAgainst=` (`+0xEC`, ReadBool at `0x006CEAF7`, constructor

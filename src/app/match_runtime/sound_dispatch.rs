@@ -2267,6 +2267,31 @@ mod tests {
         assert_eq!(unset.sound_id, None);
         let empty = superweapon_launch_cue(K::ForceShield, &g, Some("  "));
         assert_eq!(empty.sound_id, None);
+
+        //6CEBCE..6CEBD8 retains the resolved type cue across an unknown
+        // later read; the actual case10 consumer receives that same cue.
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::sound_ini::SoundRegistry;
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[SuperWeaponTypes]\n0=Shield\n[Shield]\nType=ForceShield\n\
+             StartSound=forceshieldstarting\n",
+        ));
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[Shield]\nStartSound=MissingStart\n"),
+        );
+        let processed = layers.process_with_fixed_art(&IniFile::empty()).unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        let sounds =
+            SoundRegistry::from_ini(&IniFile::from_str("[SoundList]\n0=ForceShieldStarting\n"));
+        rules.bind_type_sound_references(processed.ini(), &sounds);
+        let shield = rules.super_weapon("Shield").unwrap();
+        let retained =
+            superweapon_launch_cue(shield.kind, &rules.general, shield.start_sound.as_deref());
+        assert_eq!(retained.sound_id.as_deref(), Some("ForceShieldStarting"));
+        assert!(retained.positional);
+        assert_eq!(retained.eva_event, None);
     }
 
     /// ClickFire's refusal lines (`LightningStorm::PrintMessage @

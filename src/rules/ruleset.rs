@@ -4891,8 +4891,15 @@ impl RuleSet {
         self.general.scold_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "ScoldSound"));
-        #[cfg(feature = "ares")]
         for sw in self.super_weapons.values_mut() {
+            let section = ini.section(&sw.id);
+            // Original6CEB74..6CEBD8 keeps each current Voc ID when
+            // ReadString128 or FindIndex7514D0 finds no replacement.
+            sw.special_sound =
+                section.and_then(|section| sounds.read_rules_reference(section, "SpecialSound"));
+            sw.start_sound =
+                section.and_then(|section| sounds.read_rules_reference(section, "StartSound"));
+            #[cfg(feature = "ares")]
             if let Some(delivery) = sw.unit_delivery.as_mut() {
                 // Ares NullableIdx<VocClass>: unknown retains the previous
                 // resolved cue; an explicit none sentinel clears it. The
