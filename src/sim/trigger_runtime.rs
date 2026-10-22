@@ -4777,6 +4777,20 @@ impl TriggerRuntime {
         }
         tag.is_some()
     }
+    /// Unit7399EE..739A07 / Building44A0B4..44A0D4 move the exact current
+    /// live Tag through Object5F5B50, then clear the source reference. A NULL
+    /// source skips the branch; no Tag is resolved, rearmed or queued here.
+    pub(crate) fn transfer_object_trigger_tag(&mut self, source: u64, replacement: u64) {
+        let Some(tag) = self
+            .attachments
+            .get(&TagAttachment::Object(source))
+            .copied()
+        else {
+            return;
+        };
+        self.replace_trigger_tag_attachment(TagAttachment::Object(replacement), Some(tag));
+        self.replace_trigger_tag_attachment(TagAttachment::Object(source), None);
+    }
     /// Physical Object storage disappears without a SetTag5F5B50 call.
     /// Steam gamemd Object5F3B80, including actual scalar/drain controls in
     /// tag_lifecycle --damage-events, leaves Tag+2C and the Tag itself intact.
@@ -4936,6 +4950,10 @@ fn count_techtype(sim: &Simulation, type_id: &str) -> usize {
 #[cfg(test)]
 #[path = "trigger_runtime_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "mcv_conversion_tag_tests.rs"]
+mod mcv_conversion_tag_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_zone_entry_tests.rs"]

@@ -2302,10 +2302,10 @@ impl Simulation {
     /// already facing it, becomes that building. False when it refuses.
     ///
     /// Not carried over to the building: the unit's Group (`+0x214`,
-    /// `0x007397C6`; VERA's control groups live in the app), its AttachedTag
-    /// (`+0x34`, `0x007399EE`), its looping sound handles (`+0x4DC..+0x4F4`,
-    /// `0x00739971`), `DiscoveredBy(owner)` (vt+0x198, `0x00739848`) and the
-    /// turret facing a `+0x16CA`/`+0x16C4` type starts at (`0x007397FB`).
+    /// `0x007397C6`; VERA's control groups live in the app), its looping sound
+    /// handles (`+0x4DC..+0x4F4`, `0x00739971`), `DiscoveredBy(owner)`
+    /// (vt+0x198, `0x00739848`) and the turret facing a `+0x16CA`/`+0x16C4`
+    /// type starts at (`0x007397FB`).
     pub(crate) fn deploy_mcv(
         &mut self,
         stable_id: u64,
@@ -2559,14 +2559,6 @@ impl Simulation {
         // slot initialization. Otherwise full-health animations consume IDs/RNG
         // here and ActuallyPlaced suppresses the real completion callback.
         converted_health.apply(&mut destination);
-        // RESIDUAL: native Selects the placed building (vt+0x14C,
-        // `0x007399D4`) after its Unlimbo with the voice latch cleared
-        // (`0x007399BD`) and before the MCV's tag moves over (`0x007399F8`),
-        // so only its discovery/IsHumanPlayer gate differs from this raw
-        // flag; `techno_select` would refuse the still-limboed building here.
-        if was_selected {
-            destination.selection.select();
-        }
         // Construction is queued before the Unlimbo (0x007396D5), so its
         // cell-put and owner discoveries leave the yard shut while that
         // Unlimbo begins its build-up.
@@ -2718,10 +2710,17 @@ impl Simulation {
         #[cfg(feature = "ares")]
         self.transfer_factory_country(stable_id, new_sid);
         self.transfer_slave_manager(stable_id, new_sid, true, rules, registry, frame_effects);
-        self.uninit_with_context(
-            stable_id,
-            super::UninitContext::new(rules, registry).with_effects(frame_effects),
-        );
+        let context = super::UninitContext::new(rules, registry).with_effects(frame_effects);
+        // Unit7399D4 Selects the placed building with voice disabled, before
+        // source Stun7399E8 and tag transfer7399EE..739A07. Selected33 and
+        // Stun callbacks remain synchronous; read the source's live Tag after.
+        if was_selected {
+            self.techno_select(new_sid, false, context);
+        }
+        self.techno_death_stun(stable_id, context);
+        self.trigger_runtime
+            .transfer_object_trigger_tag(stable_id, new_sid);
+        self.uninit_with_context(stable_id, context);
 
         // UnitClass::Deploy 0x00739A19..0x00739A54 plays Type+0x56C
         // (DeploySound) at the source MCV's location, only after the yard's
@@ -2781,9 +2780,8 @@ impl Simulation {
     /// (`0x0044A091..0x0044A0AE`), and the listed attackers target the unit
     /// (`0x0044A146..0x0044A167`). The building's UnInit comes last. Not
     /// carried over: its Group (`+0x214`, `0x0044A04C`; VERA's control groups
-    /// live in the app), AttachedTag (`+0x34`, `0x0044A0B4`) and looping sound
-    /// handles (`+0x4DC..+0x4F4`); a refused Unlimbo does not refund the
-    /// building's value (`0x0044A16B`).
+    /// live in the app) and looping sound handles (`+0x4DC..+0x4F4`);
+    /// a refused Unlimbo does not refund the building's value (`0x0044A16B`).
     pub(crate) fn finish_undeploy(
         &mut self,
         sid: u64,
@@ -2903,13 +2901,6 @@ impl Simulation {
         self.add_unit_sensor_after_unlimbo(new_sid, rules, overlay_registry);
         if let Some(unit) = self.substrate.entities.get_mut(new_sid) {
             converted_health.apply(unit);
-            // RESIDUAL: native Selects the new unit (vt+0x14C, `0x0044A137`)
-            // with the voice latch cleared (`0x0044A123`); this raw flag
-            // skips its discovery/IsHumanPlayer gate, ObjectClass::Select and
-            // tag event 0x21.
-            if was_selected {
-                unit.selection.select();
-            }
             // The VeterancyClass (`+0x150`); the rank cache (`+0x13C`) stays
             // the unit's own.
             unit.veterancy.inherit(&veterancy);
@@ -2934,6 +2925,18 @@ impl Simulation {
                     ),
                 );
             }
+        }
+        // Building44A0B4..44A0D4 moves the live Tag after the archive, before
+        // Select44A137 with voice disabled. Selected33 actions see the inherited
+        // attachment and may mutate/retire either physical object immediately.
+        self.trigger_runtime
+            .transfer_object_trigger_tag(sid, new_sid);
+        if was_selected {
+            self.techno_select(
+                new_sid,
+                false,
+                super::UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
+            );
         }
         let target = Some(TargetKind::Entity(new_sid));
         for targeter in targeters {
