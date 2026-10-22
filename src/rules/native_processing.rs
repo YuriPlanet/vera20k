@@ -2105,6 +2105,9 @@ impl CountryVeterancyState {
 pub(crate) struct AresGlobalControls {
     phase: i32,
     allow_bypass_build_limit: [bool; 3],
+    // RulesExt+160/+164: constructor zero/unset; retained by the global
+    // Rules owner, independently of per-Type reset.
+    emp_ai_recover_mission: Option<crate::rules::mission_data::MissionType>,
 }
 
 #[cfg(feature = "ares")]
@@ -2114,6 +2117,23 @@ impl AresGlobalControls {
             .get(difficulty_index)
             .copied()
             .unwrap_or(false)
+    }
+
+    pub(crate) fn emp_ai_recover_mission(&self) -> Option<crate::rules::mission_data::MissionType> {
+        self.emp_ai_recover_mission
+    }
+
+    /// Installed679A15 ->1002C9C0/1002B356 ->1002AB60/1002AECF.
+    /// Unlike the Process-entry controls above, this unconditional reader
+    /// runs immediately before Type data. The native named lookup is5B3910.
+    fn read_before_type_data(&mut self, pass: &IniFile) {
+        if let Some(mission) = pass
+            .section("CombatDamage")
+            .and_then(|section| section.read_name("EMPAIRecoverMission", 2048))
+            .and_then(crate::rules::mission_data::MissionType::from_map_name)
+        {
+            self.emp_ai_recover_mission = Some(mission);
+        }
     }
 
     fn read_pass(&mut self, pass: &IniFile) {
@@ -3534,6 +3554,8 @@ impl RulesPassProcessor {
         self.allocate_ai_references(pass);
         self.read_prerequisite_lists(pass);
         self.allocate_general_references(pass);
+        #[cfg(feature = "ares")]
+        self.ares_global_controls.read_before_type_data(pass);
         self.process_type_data(pass, fixed_art, fixed_eva, primary_rules);
 
         // ReadDifficulty66D270 skips an absent section. Once present, each

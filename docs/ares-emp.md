@@ -2,7 +2,7 @@
 
 This optional chain requires the compile-time `ares` feature. Default builds do
 not read the extension keys or run its Bullet/AI producers. It covers ordinary
-human-controlled Drive/Walk victims without Team, Spawn, Slave, Capture, Temporal,
+human-controlled Drive/Walk and ordinary AI Drive victims without Team, Spawn, Slave, Capture, Temporal,
 war-factory contact, harvester or falling/death-threshold dependencies. Other
 victims are not treated as generic offline objects. This is partial EMP support.
 
@@ -28,6 +28,16 @@ tolerant SHP binder supplies their physical frame bounds before Anim constructio
 its scheduler-bound set also supplies the renderer's effect-atlas roots. ART
 metadata existing by name alone does not supply those bounds. This is a required
 dependency of the new Ares producer, not a claim about an active retail EMP path.
+
+The existing global `AresGlobalControls` owner retains nullable
+`[CombatDamage]EMPAIRecoverMission`. Constructor1002A360 initializes its value0
+and present=false. The unconditional before-Type-data reader679A15 ->1002B356
+->1002AB60/1002AECF uses ReadString2048 and the existing named Mission lookup
+5B3910. Missing, empty and invalid values retain the previous selection through
+RULESMD, LANGRULE, mode and scenario passes; named values set it. Numeric strings
+and `none` are not mission aliases. This read is distinct from the earlier
+Process-entry phase-gated GlobalControls read. New Rules construction/reset clears
+the nullable setting; the same owner supplies the rules compatibility hash.
 
 `GameEntity::EmpState` privately owns Techno+504, the held Anim reference and
 LastMission (constructor -1). Existing Deactivation owns the shared offline latch,
@@ -87,6 +97,14 @@ consumers read the same counter. Runtime checksum and current-layout snapshots
 include its state; rules compatibility includes the effective extension fields.
 This change does not promise old binary-save layout compatibility.
 
+After that expiry prefix, installed disable100627F0's1006293A block uses the
+existing ControlledByHuman50B730 decision. Ordinary AI Drive victims queue the
+configured recovery mission, or Hunt15 when unset, through the existing
+QueueMission5B35E0 owner with force=false. It does not Commence, restore the saved
+old order, reset a timer or draw RNG. A same-current Guard queue keeps the
+original queue/bypass guards. Campaign PlayerControl counts as human; in
+non-campaign modes only the IsHuman flag does. Human victims skip this block.
+
 The feature also extends the existing shared `techno_reactivate` owner with
 Activate1004CCB0's admission. The selected ordinary live Drive/Walk path vetoes
 while Techno70EFD0 reports positive EMP; PoweredUnit100454F0 additionally requires
@@ -145,6 +163,29 @@ private; the public corpus contains only generic names. The runtime observation 
 dependency showed a successful EMP state cycle with no Anim instance, not a
 renderer visibility defect.
 
+The additional `ai_mission_readers` histories and `ai_expiry` controls execute the
+installed nullable reader and the original QueueMission body. The
+`ares_emp_ai_recovery_queue_matches_native_post_reactivate_controls` regression
+compares only the explicit post-Reactivate service boundary, preserving its
+timer sentinels and all three RNG streams. It does not certify Reactivate
+internals from a substituted service. A separate
+`ares_emp_ai_drive_hit_and_actual_visits_queue_recovery_after_sparkle` regression
+connects delivery, two real object AI visits, shared Reactivate, sparkle retirement
+and queued-only Area Guard recovery. These Rust checks require execution before
+claiming a tested implementation; rendered gameplay comparison remains separate.
+The AI MCV regression reuses the same shared MCV scene, exercises autonomous
+Hunt visits during the positive counter, then expiry, queued Hunt and conversion.
+No MCV category exclusion or second deployment guard is used. Its mission-handler
+visits retain the existing Hunt cadence RNG draws; the new admission comparison
+itself draws nothing and performs no timer or detach writes.
+
+The same-named global-mission/hash regression lives inside the RuleSet owner.
+Different physical layer histories legitimately have different `source_ini_hash`
+values, even with the same final text. The test first checks that distinction,
+then normalizes only that private test input before checking retained Ares state
+changes the effective hash ON and leaves it equal OFF. Production hashing and
+visibility remain unchanged.
+
 Rust regressions named `ares_emp_` consume these native outputs, exercise the
 production layered reader and occupancy/coordinate owners, and cover hit,
 current-layout save/load, expiry and pointer clearing. The asset frame count in
@@ -169,12 +210,13 @@ squared lengths to avoid platform sqrt differences; exact zero/half-cell and XYZ
 boundary controls are pinned, while arbitrary FSQRT rounding boundaries remain a
 small unproven precision residual.
 
-Ledger: selected delivery/AI paths draw no RNG and call no DetachAll; the reused
-Anim constructor can draw for authored RandomRate/bounce settings. Counter writes
+Ledger: the EMP delivery/expiry blocks draw no RNG and call no DetachAll; the
+reused Hunt handler retains its existing cadence draw and the Anim constructor
+can draw for authored RandomRate/bounce settings. Counter writes
 are delivery/cap and one decrement per actual AI visit; Deactivate/Reactivate keep
 their existing mission/destination timer writes. Anim expiry writes loop_remaining=0.
 
-Still open: AI mission/task resumption, buildings/aircraft and airborne half-distance
+Still open: AI Walk and Team/task resumption, buildings/aircraft and airborne half-distance
 collection, positive threshold death, managers/temporal/capture/harvester interactions.
 Their trigger is an EMP hit on those victims; the current producer omits the EMP
 effect there, which can change combat and scripted behavior whenever such victims

@@ -415,6 +415,95 @@ def tick_case(images,name,fixture,missions):
     return dict(name=name,fixture=fixture,missions=missions,result=states,services=p.services)
 
 
+class AiEmpProbe(EmpProbe):
+    """Opt-in actual MissionClass queue owner for ordinary unteamed AI expiry."""
+
+    def __init__(self, images):
+        self.order = []
+        self.queues = []
+        super().__init__(images)
+
+    def hook(self, u, pc, size, data):
+        if pc in (0x100627f0, 0x100487d0, 0x10063070, 0x10062fd0,
+                  0x1006293c, 0x5b35e0, 0x5b3614, 0x5b3641):
+            self.order.append(f'{pc:08X}')
+        if self.world and pc == 0x30000360:
+            sp = u.reg_read(UC_X86_REG_ESP)
+            self.queues.append(dict(mission=signed(self.read(sp+4)),
+                                    force_low_byte=self.read(sp+8) & 255))
+            # Preserve thiscall arguments/return: the original queue body runs.
+            u.reg_write(UC_X86_REG_EIP, 0x5b35e0)
+            return
+        return super().hook(u, pc, size, data)
+
+    def rules_extension(self):
+        ext = self.alloc(0x180)
+        self.call(0x1002a360, self.read(0x8871e0), ecx=ext)
+        self.write(0x100c1b80, ext)
+        return ext
+
+    def mission_value(self, ext):
+        return dict(value=signed(self.read(ext+0x160)),
+                    present=bool(self.u.mem_read(ext+0x164, 1)[0]))
+
+    def read_mission(self, ext, raw):
+        ini = self.alloc(4)
+        self.write(ini, 0x887048)
+        self.reads = {} if raw is None else {('CombatDamage', 'EMPAIRecoverMission'):raw}
+        result = self.call(0x1002b4f0, ini, self.text('CombatDamage'),
+                           self.text('EMPAIRecoverMission'), ecx=ext+0x160)
+        return dict(raw=raw, **self.mission_value(ext), success=bool(result & 255))
+
+    def mission_state(self):
+        return dict(counter=signed(self.read(self.actor+0x504)),
+            deactivated=bool(self.u.mem_read(self.actor+0x1c8, 1)[0]),
+            current_mission=signed(self.read(self.actor+0xac)),
+            queued_mission=signed(self.read(self.actor+0xb4)),
+            bypass=self.u.mem_read(self.actor+0xb8, 1)[0],
+            mission_timer=list(struct.unpack('<III', self.u.mem_read(self.actor+0xc0, 12))))
+
+
+def ai_mission_reader_cases(images):
+    rows = []
+    histories = [('missing_default', [None]),
+        ('guard_retention_then_hunt', ['Guard', None, '', 'junk', 'Hunt']),
+        ('area_guard', ['Area Guard']), ('move', ['Move']), ('attack', ['Attack']),
+        ('numeric_rejected', ['2']), ('none_rejected', ['none']),
+        ('case_insensitive_hunt', ['hUnT'])]
+    for name, raw_steps in histories:
+        p = AiEmpProbe(images)
+        ext = p.rules_extension()
+        initial = p.mission_value(ext)
+        steps = [p.read_mission(ext, raw) for raw in raw_steps]
+        rows.append(dict(name=name, fixture=dict(raw_steps=raw_steps), initial=initial,
+                         result=steps, code_unchanged=True, rng_streams_unchanged=True))
+    return rows
+
+
+def ai_expiry_case(images, name, raw, mode, human_a, human_b):
+    p = AiEmpProbe(images).subject(dict(old=1, deactivated=True, selected=False))
+    ext = p.rules_extension()
+    parsed = p.read_mission(ext, raw)
+    house = p.read(p.actor+0x21c)
+    p.u.mem_write(house+0x1ec, bytes([human_a, human_b]))
+    p.write(0xa8b238, mode)
+    p.write(p.actor+0xac, 5)
+    p.write(p.actor+0xb4, -1)
+    p.u.mem_write(p.actor+0xb8, b'\1')
+    # Distinct explicit input sentinels expose a spurious mission-timer reset.
+    p.u.mem_write(p.actor+0xc0, struct.pack('<III', 0x11111111, 0x22222222, 0x33333333))
+    p.write(p.read(p.actor+0x154)+0x14, 2)
+    shim = p.alloc(0x40)
+    p.write(shim+0xc, p.actor)
+    p.order = []
+    p.queues = []
+    before = p.mission_state()
+    p.call(0x10053df0, shim)
+    return dict(name=name, fixture=dict(raw=raw, mode=mode, house_1ec=human_a,
+        house_1ed=human_b, stored_old_mission=2), parsed=parsed, before=before,
+        after=p.mission_state(), queue_calls=p.queues, order=p.order,
+        services=p.services, code_unchanged=True, rng_streams_unchanged=True)
+
 def sparkle_refresh_case(images, name, fixture):
     p = EmpProbe(images).subject(fixture)
     p.call(0x10062320, p.actor, p.firer, p.whext)
@@ -576,6 +665,15 @@ def generate(ares):
                            connected_case(images,'zero_duration_no_producer',0)],
                 constructor_defaults=constructor_defaults(images),
                 pointer_expiry=[pointer_expiry_case(images,matching) for matching in (False,True)],
+                ai_mission_readers=ai_mission_reader_cases(images),
+                ai_expiry=[ai_expiry_case(images,*row) for row in
+                    [('skirmish_AI_default',None,3,0,0),
+                     ('skirmish_AI_Guard','Guard',3,0,0),
+                     ('skirmish_AI_AreaGuard','Area Guard',3,0,0),
+                     ('skirmish_human',None,3,1,0),
+                     ('campaign_flagB_control',None,0,0,1),
+                     ('skirmish_flagB_not_human',None,3,0,1)]],
+
                 sparkle_refresh=[sparkle_refresh_case(images,name,dict(duration=120,**fixture))
                     for name,fixture in
                     [('unchanged_explicit',dict(cap=120,sparkle=True)),
@@ -596,7 +694,7 @@ def metadata():
             'Synthetic ground victim/type/house/WarheadExtension and linked-cell backing are explicit inputs; no mod assets, physical INI loader or full type registration. Collector controls bound zero/half/unit/two-cell spread, ground/deck lists and signed UID order/dedup; air/building-specific paths are excluded.',
             'ReadString lexical transport supplies values, actual Ares int/double/threshold parser and CRT sscanf execute. CRT per-thread accessor10085F5C returns a supplied C-locale thread block; original locale initializer10085839 executes. No scanner result is supplied.',
             'Original Ares deliver10062320, affect-house10051B70, immunity10062D90, enable10062B40, disable100627F0 and AI10053DF0 execute; synthetic virtual queries supply type/category/mission/ground/iron-curtain and empty-cell-building interfaces.',
-            'Native Deactivate/Reactivate are existing downstream owner boundaries; supplied effects only update their deactivated/selection flags. Select and QueueMission are recorded interfaces; actual queue execution is excluded.',
+            'Native Deactivate/Reactivate are existing downstream owner boundaries; supplied effects only update their deactivated/selection flags. Select and baseline QueueMission are recorded interfaces. Only ai_expiry redirects that virtual interface to unchanged native MissionClass QueueMission5B35E0, preserving arguments and recording its actual writes.',
             'Victims have no Team, Temporal, Capture, Spawn or Slave manager; threshold0. Spawn-manager is a sink. Actual sparkle selection/one-instance guard/expiry execute; animation storage/constructor/owner interface are supplied. Animation internal timers/RNG/rendering are not covered.',
             'FPCW0E7F is established explicitly. Original100772B0 conversion executes with declared CPU dispatch0 and selected SSE3 dispatch2 controls; out-of-i32 conversions yield INT_MIN, not a universal safe numeric input policy.',
             'SSE3 out-of-range FISTTP is deliberately excluded: Unicorn2.1.4 returned INT_MAX where an isolated actual-host execution of the original opcode returned INT_MIN. Software dispatch overflow rows are bounded to that executed original branch; no complete hardware/game numeric equivalence claim.',
@@ -605,6 +703,9 @@ def metadata():
             'Collector UID ordering is signed native Abstract+10; negative-ID row is structural comparator evidence, not ID-allocation reachability. Full3D FSQRT compare rejects dx128,z1 at radius128 whereas integer-truncated distance would incorrectly admit it.',
             'Connected controls execute actual pre-effect10052870→Create10062240→collector10076660→deliver10062320 and two AI visits on one ground victim; full Bullet detonation and original downstream Deactivate/Anim internals remain excluded.',
             'Pointer-expiry10046F20 controls clear only the matching TechnoExt sparkle reference, retaining counter and animation iteration byte. The animation is an external already-expiring owner input; whole retirement/destructor/detach scheduling is excluded.',
+            'AI mission controls execute RulesExt constructor1002A360 and nullable mission reader1002B4F0 with ReadString2048 lexical inputs for [CombatDamage] EMPAIRecoverMission; native MissionNameToType5B3910 parses named missions. Missing/empty/invalid retention is executed, not supplied. Physical INI layers and the full rules loader are excluded.',
+            'AI expiry controls bound an ordinary unteamed Drive victim with no complex managers: actual10053DF0→100627F0→QueueMission5B35E0 executes. Configured/default mission selection, human-mode gates, queue/current distinction and explicit mission-timer input bytes are recorded; ReadyToCommence/Commence and subsequent mission AI are not executed. Existing Reactivate/SpawnManager/Anim boundaries still apply, and no Team/harvester/air/building or whole-game AI parity is claimed.',
+
             'Sparkle refresh controls execute first activation, actual pointer expiry10046F20, then unchanged/changed positive delivery. Warhead-explicit versus Type/General fallback branches execute native1006256D/10062608/10062625; constructor/owner services remain supplied, not animation lifecycle/rendering parity.',
             'Activation controls execute actual Syringe export1004CCB0 with frame+20 victim and return70FC85; original PoweredUnit100454F0 and PoweredBy10045440 gates read supplied object/type/owner-list backing. Retail Unit vtable7F5C70+37C supplies actual746C90 (DeathFrame input-1 then signed-positive counter70EFD0), and Building vtable7E3EBC+37C supplies actual70EFD0. Virtual3D0 and locomotor COM activation are recorded downstream interfaces. No runtime hook installation or whole70FBE0 parity is claimed, and original Deactivate/Reactivate remain boundaries in the other groups.',
             'Registered-animation controls supply spare backing capacity for the native AnimType/AbstractType vectors, then actual constructor427530 writes IDs, registry entries, counts and indices. Actual Ares Valueable pointer reader1000EB20→1000C9C0→Find1000D3E0 resolves these constructed objects or rejects an unregistered name without allocation. Generic IDs are explicit inputs; physical registry enumeration, ART/image binding and animation lifetime are excluded. No returned pointer or lookup decision is supplied.',
@@ -615,6 +716,9 @@ def metadata():
             threshold_entry=0x1003e557,threshold_end_exclusive=0x1003e5b7,
             collector=0x10076660,cell_walker=0x10035ac0,pre_effect=0x10052870,
             create=0x10062240,sparkle=0x10062fd0,pointer_expiry=0x10046f20,
+            rules_constructor=0x1002a360,nullable_mission_reader=0x1002b4f0,
+            mission_name_lookup=0x5b3910,queue_mission=0x5b35e0,
+
             activation_hook=0x1004ccb0,powered_unit_gate=0x100454f0,
             powered_by_gate=0x10045440,unit_under_emp=0x746c90,
             techno_under_emp=0x70efd0,animation_type_constructor=0x427530,

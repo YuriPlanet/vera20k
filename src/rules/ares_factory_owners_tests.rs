@@ -502,6 +502,7 @@ fn retained_global_controls_match_native_constructor_and_eight_read_history_cont
         let mut state = AresGlobalControls {
             phase,
             allow_bypass_build_limit: [true; 3],
+            ..Default::default()
         };
         state.read_pass(&IniFile::from_str(
             "[GlobalControls]\nAllowBypassBuildLimit=no,bad,yes\n",

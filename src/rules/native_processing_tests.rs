@@ -3,6 +3,39 @@
 use super::*;
 use crate::util::save_codec;
 
+#[cfg(feature = "ares")]
+#[test]
+fn ares_emp_ai_named_mission_reader_matches_native_histories() {
+    let corpus = crate::test_fixture::json("tools/rules_oracle/ares_emp.json");
+    for row in corpus["ai_mission_readers"].as_array().unwrap() {
+        let mut controls = AresGlobalControls::default();
+        assert!(controls.emp_ai_recover_mission().is_none());
+        for (raw, result) in row["fixture"]["raw_steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(row["result"].as_array().unwrap())
+        {
+            let text = raw
+                .as_str()
+                .map_or(String::new(), |raw| format!("EMPAIRecoverMission={raw}\n"));
+            controls.read_before_type_data(&IniFile::from_str(&format!("[CombatDamage]\n{text}")));
+            let expected = result["present"]
+                .as_bool()
+                .unwrap()
+                .then(|| result["value"].as_i64().unwrap() as i32);
+            assert_eq!(
+                controls
+                    .emp_ai_recover_mission()
+                    .map(|mission| mission as i32),
+                expected,
+                "{}: {result}",
+                row["name"]
+            );
+        }
+    }
+}
+
 #[test]
 fn cold_root_colors_exist_without_langrule_or_rules_process() {
     let native = crate::test_fixture::json("tools/rules_oracle/cold_colors.json");
