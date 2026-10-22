@@ -14,6 +14,10 @@ use crate::sim::production;
 #[path = "ground_command_native_tests.rs"]
 mod ground_command_native_tests;
 
+#[cfg(test)]
+#[path = "repair_command_tests.rs"]
+mod repair_command_tests;
+
 /// Default owner name when no playable house is found.
 const DEFAULT_OWNER: &str = "Americans";
 
@@ -205,12 +209,20 @@ fn own_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
         .as_ref()
         .map(|rt| &rt.simulation)?;
     let owner = preferred_local_owner(state)?;
+    own_building_id_for_owner(sim, &owner, stable_id)
+}
+
+fn own_building_id_for_owner(
+    sim: &crate::sim::world::Simulation,
+    owner: &str,
+    stable_id: u64,
+) -> Option<u64> {
     let entity = sim.entities().get(stable_id)?;
     (entity.category() == EntityCategory::Structure
         && sim
             .interner()
             .resolve(entity.owner())
-            .eq_ignore_ascii_case(&owner))
+            .eq_ignore_ascii_case(owner))
     .then_some(stable_id)
 }
 
@@ -229,9 +241,19 @@ pub(crate) fn own_repairable_building_under_point(
 }
 
 fn own_repairable_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
-    let id = own_building_id(state, stable_id)?;
     let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
-    crate::sim::production::can_repair_building(sim, state.rules()?, id).then_some(id)
+    let owner = preferred_local_owner(state)?;
+    own_repairable_building_id_for_owner(sim, state.rules()?, &owner, stable_id)
+}
+
+fn own_repairable_building_id_for_owner(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    owner: &str,
+    stable_id: u64,
+) -> Option<u64> {
+    let id = own_building_id_for_owner(sim, owner, stable_id)?;
+    production::can_repair_building(sim, rules, id).then_some(id)
 }
 
 /// The local player's own building under the given world point when the sell
@@ -1188,15 +1210,16 @@ pub(crate) fn object_move_destination(
         })
 }
 
-/// Make ordinary local mission bytes authoritative at issue time.
+/// Make the represented ordinary local command bytes authoritative at issue time.
 ///
 /// Active YR routes a cell click through `ClickedAction` (`0x004D7D50`), and a
 /// Move over an object through `0x004D74E0`, to
 /// `EventClass__BuildMegaMissionEnvelope` (`0x004C6860`). Guard key730D60
 /// reaches the same producer through QueueMegaMission6FFBE0. Move, to a Cell
 /// or an object, AreaGuard and self-click Unload share this codec. The D key
-/// constructs its distinct Event9 before reaching this boundary. Other
-/// semantic commands pass through until their native record is established.
+/// constructs its distinct Event9 before reaching this boundary. Stop and the
+/// admitted repair click (`BandBox_LeftUp 0x004AC187`) use EventCtor4C65E0's
+/// object token. Other semantic commands pass through until their record is established.
 pub(crate) fn encode_ordinary_local_command(
     sim: &crate::sim::world::Simulation,
     envelope: CommandEnvelope,
@@ -1218,6 +1241,10 @@ pub(crate) fn encode_ordinary_local_command(
         }
         Command::Stop { entity_id } => {
             let record = sim.encode_stop_record(owner, entity_id)?;
+            Some(CommandEnvelope::synchronized(record, execute_tick))
+        }
+        Command::ToggleRepair { entity_id } => {
+            let record = sim.encode_repair_record(owner, entity_id)?;
             Some(CommandEnvelope::synchronized(record, execute_tick))
         }
         payload => Some(CommandEnvelope::new(owner, execute_tick, payload)),

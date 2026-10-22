@@ -191,6 +191,245 @@ fn stop_or_uninit_detaches_only_its_actor_from_shared_nodes() {
     }
 }
 
+// These are accepted-REPAIR receiver priors, not mouse-created Building plans.
+// Native Event4C6ED2 calls6386E0 before Alive90; the native repair controls
+// supply a Building token too, without establishing its input producer.
+fn repair_receiver_fixture() -> (Simulation, RuleSet, InternedId, u64, u64) {
+    let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[BuildingTypes]\n1=REPAIR\n[REPAIR]\nStrength=100\nRepairable=yes\nClickRepairable=yes\nCapturable=yes\n",
+    );
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    sim.session.set_current_house_for_test(Some(owner));
+    let actor = sim
+        .spawn_object("REPAIR", "Americans", 15, 15, 0, &rules)
+        .unwrap();
+    let survivor = sim
+        .spawn_object("REPAIR", "Americans", 17, 15, 0, &rules)
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(actor)
+        .unwrap()
+        .health
+        .set_for_test(50);
+    (sim, rules, owner, actor, survivor)
+}
+
+#[test]
+fn accepted_repair_detaches_shared_plan_before_resolved_actors_alive_gate() {
+    for alive in [true, false] {
+        let (mut sim, rules, owner, actor, survivor) = repair_receiver_fixture();
+        for id in [actor, survivor] {
+            append(&mut sim, &rules, owner, id, (17, 16));
+            append(&mut sim, &rules, owner, id, (17, 17));
+        }
+        for path in sim.planning.paths.values_mut() {
+            path.commit();
+        }
+        let survivor_before = save_codec::serialize(&sim.planning.paths[&survivor]).unwrap();
+        assert_eq!(sim.planning.paths[&actor].nodes.len(), 2);
+        assert_eq!(sim.planning.nodes.len(), 2);
+        let record = sim.encode_repair_record(owner, actor).unwrap();
+        // Supply Alive=false without Uninit, which would detach the plan itself.
+        sim.substrate
+            .entities
+            .get_mut(actor)
+            .unwrap()
+            .lifecycle
+            .set_object_alive_for_test(alive);
+        let envelope = sim
+            .decode_native_command_record(&record, sim.session.tick())
+            .expect("a resolved dead actor still reaches planning cleanup");
+        assert!(
+            matches!(&envelope.payload, Command::ToggleRepair { entity_id } if *entity_id == actor)
+        );
+        assert_eq!(
+            sim.apply_command("Americans", &envelope.payload, Some(&rules)),
+            alive,
+            "alive={alive}"
+        );
+        assert!(!sim.planning.paths.contains_key(&actor), "alive={alive}");
+        assert_eq!(
+            save_codec::serialize(&sim.planning.paths[&survivor]).unwrap(),
+            survivor_before,
+            "alive={alive}"
+        );
+        assert_eq!(sim.planning.nodes.len(), 2);
+        for node in sim.planning.nodes.values() {
+            assert_eq!(node.orders.keys().copied().collect::<Vec<_>>(), [survivor]);
+        }
+        assert_eq!(
+            sim.substrate.entities.get(actor).unwrap().repairing.is_on(),
+            alive
+        );
+        sim.validate_planning_references().unwrap();
+    }
+}
+
+#[test]
+fn accepted_repair_discards_empty_executing_token_before_alive_gate() {
+    for alive in [true, false] {
+        let (mut sim, rules, owner, actor, survivor) = repair_receiver_fixture();
+        append(&mut sim, &rules, owner, survivor, (17, 16));
+        // Explicit prior matching the native repair receiver controls: an empty
+        // token whose executing latch remains set, without a guessed producer.
+        sim.planning.paths.insert(
+            actor,
+            PlanningPath {
+                nodes: Vec::new(),
+                pending: -1,
+                loop_start: None,
+                loop_changed: false,
+                executing: true,
+                current: None,
+            },
+        );
+        let survivor_before = save_codec::serialize(&sim.planning.paths[&survivor]).unwrap();
+        let nodes_before = save_codec::serialize(&sim.planning.nodes).unwrap();
+        assert!(sim.planning.paths[&actor].executing);
+        let record = sim.encode_repair_record(owner, actor).unwrap();
+        sim.substrate
+            .entities
+            .get_mut(actor)
+            .unwrap()
+            .lifecycle
+            .set_object_alive_for_test(alive);
+        let envelope = sim
+            .decode_native_command_record(&record, sim.session.tick())
+            .unwrap();
+        assert_eq!(
+            sim.apply_command("Americans", &envelope.payload, Some(&rules)),
+            alive,
+            "alive={alive}"
+        );
+        assert!(!sim.planning.paths.contains_key(&actor), "alive={alive}");
+        assert_eq!(
+            save_codec::serialize(&sim.planning.paths[&survivor]).unwrap(),
+            survivor_before
+        );
+        assert_eq!(
+            save_codec::serialize(&sim.planning.nodes).unwrap(),
+            nodes_before
+        );
+        assert_eq!(
+            sim.substrate.entities.get(actor).unwrap().repairing.is_on(),
+            alive
+        );
+        sim.validate_planning_references().unwrap();
+    }
+}
+
+#[test]
+fn unresolved_repair_token_does_not_detach_another_actors_plan() {
+    for wrong_kind in [false, true] {
+        let (mut sim, rules, owner, actor, survivor) = repair_receiver_fixture();
+        for id in [actor, survivor] {
+            append(&mut sim, &rules, owner, id, (17, 16));
+        }
+        let before = save_codec::serialize(&sim.planning).unwrap();
+        let missing = 999;
+        assert!(sim.substrate.entities.get(missing).is_none());
+        let mut record = sim
+            .encode_repair_record(owner, if wrong_kind { actor } else { missing })
+            .unwrap();
+        if wrong_kind {
+            // Keep the real planned actor's numeric UID; kind33 must not be
+            // projected into the object-kind34 token accepted by Target6E6F20.
+            record.payload_mut()[4] = 0x33;
+        }
+        let decoded = sim.decode_native_command_record(&record, sim.session.tick());
+        if wrong_kind {
+            assert!(decoded.is_none());
+        } else {
+            let envelope = decoded.expect("missing IDs remain accepted receiver no-ops");
+            assert!(
+                matches!(&envelope.payload, Command::ToggleRepair { entity_id } if *entity_id == missing)
+            );
+            assert!(!sim.apply_command("Americans", &envelope.payload, Some(&rules)));
+        }
+        assert_eq!(save_codec::serialize(&sim.planning).unwrap(), before);
+        assert!(!sim.substrate.entities.get(actor).unwrap().repairing.is_on());
+        assert!(
+            !sim.substrate
+                .entities
+                .get(survivor)
+                .unwrap()
+                .repairing
+                .is_on()
+        );
+        sim.validate_planning_references().unwrap();
+    }
+}
+
+#[test]
+fn accepted_repair_old_issuer_detaches_plan_created_after_capture() {
+    let (mut sim, rules, owner, actor, survivor) = repair_receiver_fixture();
+    let new_owner = sim.interner.intern("Russians");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            new_owner, 1, None, true, 0, 10,
+        ));
+    for id in [actor, survivor] {
+        append(&mut sim, &rules, owner, id, (17, 16));
+    }
+    let repair = sim.encode_repair_record(owner, actor).unwrap();
+    sim.change_owner_with_rules(
+        actor,
+        new_owner,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(
+        sim.substrate.entities.get(actor).unwrap().owner(),
+        new_owner
+    );
+    assert!(!sim.planning.paths.contains_key(&actor));
+    let survivor_before = save_codec::serialize(&sim.planning.paths[&survivor]).unwrap();
+    // Capture already detached the old plan. Append a supplied receiver plan
+    // for the current owner so that capture cannot mask the REPAIR cleanup.
+    let record = sim
+        .encode_planning_order_record(
+            new_owner,
+            &Command::Move {
+                entity_id: actor,
+                target_rx: 17,
+                target_ry: 14,
+            },
+        )
+        .unwrap();
+    let envelope = sim
+        .decode_native_command_record(&record, sim.session.tick())
+        .unwrap();
+    assert!(sim.apply_command("Russians", &envelope.payload, Some(&rules)));
+    sim.planning.paths.get_mut(&actor).unwrap().commit();
+    assert_eq!(sim.planning.paths[&actor].nodes.len(), 1);
+    // Human House plans project through the current-player UI identity; the
+    // receiver assertion observes the exact actor/node graph instead.
+    let new_node = sim.planning.paths[&actor].nodes[0];
+    assert!(sim.planning.nodes.contains_key(&new_node));
+    let envelope = sim
+        .decode_native_command_record(&repair, sim.session.tick())
+        .unwrap();
+    assert_eq!(
+        envelope.owner, owner,
+        "the accepted event retains its issuer"
+    );
+    assert!(sim.apply_command("Americans", &envelope.payload, Some(&rules)));
+    assert!(!sim.planning.paths.contains_key(&actor));
+    assert!(!sim.planning.nodes.contains_key(&new_node));
+    assert_eq!(
+        save_codec::serialize(&sim.planning.paths[&survivor]).unwrap(),
+        survivor_before
+    );
+    assert!(sim.substrate.entities.get(actor).unwrap().repairing.is_on());
+    sim.validate_planning_references().unwrap();
+}
+
 fn special_ordinary_retask_cancels_shared_route(kind: &str) {
     let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
         "[VehicleTypes]\n0=PLANNER\n1=CARRIER\n[PLANNER]\nStrength=100\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\nHarvester=yes\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n[CARRIER]\nStrength=200\nSpeed=6\nSpeedType=Track\nPassengers=5\nSizeLimit=10\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n[BuildingTypes]\n1=DEPOT\n[DEPOT]\nStrength=800\nUnitRepair=yes\n",

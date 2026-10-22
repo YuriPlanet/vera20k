@@ -21,7 +21,7 @@ use crate::sim::command::{
     BUILDING_OFF_LINE_OPCODE, BUILDING_ON_LINE_OPCODE, BuildingOnLineRecord, COMMAND_RECORD_LEN,
     Command, CommandEnvelope, CommandRecord, DeployRecord, ExitRecord, GameSpeedRecord,
     MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, PlaceRecord, ProductionEvent,
-    ProductionRecord, ScatterRecord, SellWallAtCellRecord, StopRecord,
+    ProductionRecord, RepairRecord, ScatterRecord, SellWallAtCellRecord, StopRecord,
 };
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::{InternedId, StringInterner};
@@ -346,6 +346,26 @@ impl Simulation {
             naval: u32::from(selection.naval),
             x: cell.0 as i16,
             y: cell.1 as i16,
+        }
+        .write_into(&mut record);
+        Some(record)
+    }
+
+    /// The repair-mode click4AC187 emits EventCtor4C65E0 with its saved issuer
+    /// and actor token. Delivery resolves the actor again, so construction does
+    /// not repeat ownership, liveness or CanRepair admission.
+    pub fn encode_repair_record(
+        &self,
+        command_owner: InternedId,
+        entity_id: u64,
+    ) -> Option<CommandRecord> {
+        let entity_id = i32::try_from(entity_id).ok()?;
+        let mut record =
+            self.encode_header_event(command_owner, crate::sim::command::REPAIR_OPCODE)?;
+        RepairRecord {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id,
         }
         .write_into(&mut record);
         Some(record)
@@ -732,6 +752,14 @@ impl Simulation {
                         record: record.clone(),
                     },
                 )
+            });
+        }
+        if let Some(typed) = RepairRecord::decode(record) {
+            let house_index = usize::try_from(typed.house_id).ok()?;
+            let owner = *self.houses.order().get(house_index)?;
+            let entity_id = u64::try_from(typed.entity_id).ok()?;
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(owner, execute_tick, Command::ToggleRepair { entity_id })
             });
         }
         if let Some(typed) = StopRecord::decode(record) {
@@ -1963,16 +1991,16 @@ impl Simulation {
                 self.flag_house_to_die(owner);
                 true
             }
-            // `EventClass::Execute 0x004C6ED2..0x004C6F01`: a live target
-            // (`+0x90`) toggles (`ToggleRepair(-1)`).
+            // Event4C6ED2 clears a resolved Techno's planning BEFORE the
+            // Alive90 gate, then calls ToggleRepair(-1). It does not repeat
+            // the input owner's ownership or CanRepair checks after capture.
             Command::ToggleRepair { entity_id } => {
-                if !self.entity_owned_by_id(command_owner, *entity_id)
-                    || !self
-                        .substrate
-                        .entities
-                        .get(*entity_id)
-                        .is_some_and(|entity| entity.lifecycle.object_alive())
-                {
+                let Some(entity) = self.substrate.entities.get(*entity_id) else {
+                    return false;
+                };
+                let alive = entity.lifecycle.object_alive();
+                self.planning_detach_actor(*entity_id);
+                if !alive {
                     return false;
                 }
                 production::toggle_repair(

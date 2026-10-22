@@ -65,6 +65,8 @@ pub(crate) fn stage_megamission<T: Clone>(stage: &mut Vec<T>, command: &T) -> bo
 pub const SCATTER_OPCODE: u8 = 0x07;
 /// IDLE6, issued by StopCommand730EA0 through ClickedEvent6FFE00.
 pub const IDLE_OPCODE: u8 = 0x06;
+/// REPAIR21, emitted by the repair-mode click at4AC187 through4C65E0.
+pub const REPAIR_OPCODE: u8 = 0x15;
 /// Selected-object DEPLOY, issued by the D key through ClickedEvent6FFE00.
 pub const DEPLOY_OPCODE: u8 = 0x09;
 pub const PLACE_OPCODE: u8 = 0x0b;
@@ -404,8 +406,9 @@ impl CommandRecord {
         self.bytes[COMMAND_RECORD_FLAGS_OFFSET] &= !COMMAND_RECORD_PROCESSED_FLAG;
     }
 
-    /// EventClass constructor4C65E0, shared by IDLE6, SCATTER7 and DEPLOY9 through
-    /// ClickedEvent6FFE34. Target6E6AB0 supplies the identifier and kind0x34;
+    /// EventClass constructor4C65E0, shared by IDLE6/SCATTER7/DEPLOY9 through
+    /// ClickedEvent6FFE34 and REPAIR21 through4AC187.
+    /// Target6E6AB0 supplies the identifier and kind0x34;
     /// the constructor writes only the header and this five-byte token.
     /// Source: original gamemd.exe instructions4C6608..4C663D.
     fn write_object_target(&mut self, opcode: u8, house_id: i8, frame: i32, entity_id: i32) {
@@ -688,6 +691,33 @@ fn read_production_fields(record: &CommandRecord) -> (i32, i32, u32) {
         i32::from_le_bytes(payload[4..8].try_into().expect("type index DWORD")),
         u32::from_le_bytes(payload[8..12].try_into().expect("Naval DWORD")),
     )
+}
+
+/// REPAIR21 uses EventCtor4C65E0's object token. Its receiver4C6ED2 resolves
+/// that token at execution, clears planning, then tests Object.Alive before
+/// calling ToggleRepair(-1). Ownership and CanRepair belong to input admission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RepairRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub entity_id: i32,
+}
+
+impl RepairRecord {
+    pub fn write_into(self, record: &mut CommandRecord) {
+        record.write_object_target(REPAIR_OPCODE, self.house_id, self.frame, self.entity_id);
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != REPAIR_OPCODE {
+            return None;
+        }
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: record.object_target_id()?,
+        })
+    }
 }
 
 /// The represented ordinary orders of native MegaMission opcode `0x04`.
@@ -1319,8 +1349,8 @@ mod tests {
         ABSTRACT_OBJECT_TARGET_KIND, COMMAND_RECORD_LEN, COMMAND_RECORD_PAYLOAD_LEN, CommandRecord,
         CommandRecordError, EXIT_OPCODE, ExitRecord, IDLE_OPCODE, MOVE_ACTION,
         MegaMissionCellTokenError, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget,
-        NULL_TARGET_KIND, SCATTER_OPCODE, SELL_WALL_AT_CELL_OPCODE, ScatterRecord,
-        SellWallAtCellRecord, StopRecord,
+        NULL_TARGET_KIND, REPAIR_OPCODE, RepairRecord, SCATTER_OPCODE, SELL_WALL_AT_CELL_OPCODE,
+        ScatterRecord, SellWallAtCellRecord, StopRecord,
     };
 
     fn native_record(value: &serde_json::Value) -> CommandRecord {
@@ -1335,10 +1365,10 @@ mod tests {
     }
 
     #[test]
-    fn idle_and_scatter_constructor_preserve_flags_and_unwritten_payload() {
+    fn object_target_constructors_preserve_flags_and_unwritten_payload() {
         // Original4C65E0 writes header plus one five-byte token. Negative
         // issuers instead write the null header, leaving the payload intact.
-        for opcode in [IDLE_OPCODE, SCATTER_OPCODE] {
+        for opcode in [IDLE_OPCODE, SCATTER_OPCODE, REPAIR_OPCODE] {
             for house_id in [-1, 3] {
                 for entity_id in [-17, 0x0102_0304] {
                     let mut actual =
@@ -1351,8 +1381,15 @@ mod tests {
                             entity_id,
                         }
                         .write_into(&mut actual);
-                    } else {
+                    } else if opcode == SCATTER_OPCODE {
                         ScatterRecord {
+                            house_id,
+                            frame,
+                            entity_id,
+                        }
+                        .write_into(&mut actual);
+                    } else {
+                        RepairRecord {
                             house_id,
                             frame,
                             entity_id,
@@ -1394,6 +1431,25 @@ mod tests {
         record.set_issue_header(SCATTER_OPCODE, 2, -19);
         assert!(StopRecord::decode(&record).is_none());
         assert_eq!(ScatterRecord::decode(&record).unwrap().entity_id, i32::MIN);
+    }
+
+    #[test]
+    fn repair_decode_keeps_signed_identifier_and_requires_its_object_token() {
+        let typed = RepairRecord {
+            house_id: 1,
+            frame: -19,
+            entity_id: i32::MIN,
+        };
+        let mut record = CommandRecord::decode_exact(&[0xa5; COMMAND_RECORD_LEN]).unwrap();
+        typed.write_into(&mut record);
+        assert_eq!(RepairRecord::decode(&record), Some(typed));
+        for kind in [0, 0x0b, 0x33] {
+            let mut invalid = record.clone();
+            invalid.payload_mut()[4] = kind;
+            assert!(RepairRecord::decode(&invalid).is_none());
+        }
+        record.set_issue_header(IDLE_OPCODE, 1, -19);
+        assert!(RepairRecord::decode(&record).is_none());
     }
 
     #[test]

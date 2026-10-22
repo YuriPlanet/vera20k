@@ -8387,6 +8387,10 @@ mod ai_captured_building_sale_tests;
 mod building_repair_oracle_tests;
 
 #[cfg(test)]
+#[path = "building_repair_event_tests.rs"]
+mod building_repair_event_tests;
+
+#[cfg(test)]
 #[path = "refinery_dock_cycle_tests.rs"]
 mod refinery_dock_cycle_tests;
 
