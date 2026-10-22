@@ -151,6 +151,9 @@ pub struct SuperWeaponType {
     pub line_multiplier: i32,
     /// Charge time in game frames. INI value is minutes × 900.
     pub recharge_time_frames: i32,
+    /// `FlashSidebarTabFrames=` (+E8): constructor -1 means always; 0 never.
+    /// Other signed values use ReadyFrame + this duration (6CE1A0).
+    pub flash_sidebar_tab_frames: i32,
     /// Whether charging pauses when the owner has low power.
     pub is_powered: bool,
     /// Cursor action name for targeting (e.g., "LightningStorm").
@@ -257,6 +260,7 @@ impl SuperWeaponType {
                 },
             ),
             is_powered: section.read_bool("IsPowered", true),
+            flash_sidebar_tab_frames: section.read_int("FlashSidebarTabFrames", -1),
             // Ares LoadFromRulesFile installs its custom action for new SWs;
             // InitializeConstants supplies an Attack cursor. Stock ReadAction
             // keeps its 0x20-byte ReadString (`0x00474EE0`).
@@ -444,6 +448,15 @@ DisableableFromShell=yes
         let nuke = retail.rules.super_weapon("NukeSpecial").unwrap();
         assert_eq!(nuke.range, 7.0);
         assert_eq!(nuke.line_multiplier, 2);
+        assert_eq!(nuke.flash_sidebar_tab_frames, -1);
+        assert_eq!(
+            retail
+                .rules
+                .super_weapon("ForceShieldSpecial")
+                .unwrap()
+                .flash_sidebar_tab_frames,
+            120,
+        );
     }
 
     #[test]

@@ -559,7 +559,7 @@ fn collect_build_entries(
                 queued_count: 0,
                 is_building_this_type: !sw.is_ready && sw.is_online && sw.progress > 0.0,
                 is_ready: sw.is_ready,
-                is_on_hold: false,
+                is_on_hold: !sw.is_online,
                 is_armed: armed_sw_section
                     .is_some_and(|s| s.eq_ignore_ascii_case(&sw.display_name)),
                 is_superweapon: true,
@@ -663,6 +663,7 @@ mod tests {
                 progress: 1.0,
                 is_ready: true,
                 is_online: online,
+                should_flash_tab: online,
                 can_fire: online,
                 can_afford: affordable,
                 sidebar_image: None,
@@ -679,6 +680,7 @@ mod tests {
             assert_eq!(entries.len(), 1);
             assert_eq!(entries[0].enabled, online && affordable);
             assert!(entries[0].is_ready, "cash does not erase the charged Super");
+            assert_eq!(entries[0].is_on_hold, !online);
         }
     }
 

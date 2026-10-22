@@ -3,6 +3,7 @@
 //!
 //! Building/Defense tabs pulse while retained Factory links hold completed
 //! buildings; Defense also pulses for a ready Super. Infantry never pulses.
+//! Supers qualify through ShouldFlashTab, including hold and finite duration.
 //! Vehicle's aircraft-waiting predicate remains a separate existing residual.
 //! Phase, catch-up and gadget state belong to `SidebarGadgetState`.
 
@@ -73,7 +74,7 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState) {
     });
     let flags = [
         ready[0],
-        ready[1] || has_charged_sw_for_owner(sim, rules, &owner),
+        ready[1] || has_flashing_superweapon_for_owner(sim, rules, &owner),
         false,
         false,
     ];
@@ -85,7 +86,7 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState) {
         .update_tab_flashes(tick, frame, flags);
 }
 
-fn has_charged_sw_for_owner(
+pub(crate) fn has_flashing_superweapon_for_owner(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     owner: &str,
@@ -93,7 +94,7 @@ fn has_charged_sw_for_owner(
     let owner_iid = sim.interner().get(owner).unwrap_or_default();
     crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner_iid)
         .iter()
-        .any(|sw| sw.is_ready)
+        .any(|sw| sw.should_flash_tab)
 }
 
 #[cfg(test)]

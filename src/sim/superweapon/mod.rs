@@ -774,6 +774,18 @@ impl SuperWeaponInstance {
             }
     }
 
+    /// SuperClass::ShouldFlashTab6CE1A0: CanFire's hold/readiness gates,
+    /// followed by a signed, wrapping ReadyFrame deadline. Holding does not
+    /// pause or renew this window; the retained ready_tick remains its owner.
+    fn should_flash_tab(&self, sw: &SuperWeaponType, frame: u32) -> bool {
+        self.can_fire(sw)
+            && match sw.flash_sidebar_tab_frames {
+                -1 => true,
+                0 => false,
+                frames => (frame as i32) < self.ready_tick.wrapping_add(frames),
+            }
+    }
+
     /// `SuperClass::ClickFire @ 0x006CB920`'s admission without charge drain
     /// (`0x006CB933..0x006CB95F`): a running recharge timer on a granted,
     /// charged Super. A timer held for low power does not run.
@@ -852,22 +864,32 @@ impl SuperWeaponInstance {
         self.store_charge_timer(timer);
     }
 
-    /// Compute charge progress as 0.0–1.0 for sidebar display.
-    /// Only valid when is_active and not is_ready.
-    ///
-    /// gamemd.exe parity: standard `SuperClass::AnimStage` at `0x006CBEE0`
-    /// (active caller `StripClass::Draw` at `0x006A99AC`) derives progress from
-    /// the instance's effective recharge time and the live `CDTimer` remainder.
+    /// Ordinary `SuperClass::AnimStage @ 0x006CBEE0`, projected as stage/54
+    /// for the shared sidebar clock lowerer. Native x87 PC53/chop truncates
+    /// before the upper cap; a continuous fraction would round a stage early
+    /// in that lowerer. The caller supplies the effective recharge time.
     pub fn charge_progress(&self, current_frame: u32, full_recharge_frames: i32) -> f32 {
-        if self.is_ready {
-            return 1.0;
+        self.ordinary_charge_stage(current_frame, full_recharge_frames) as f32 / 54.0
+    }
+
+    fn ordinary_charge_stage(&self, current_frame: u32, full_recharge_frames: i32) -> i32 {
+        if !self.is_active {
+            return 0;
         }
-        if full_recharge_frames <= 0 {
-            return 0.0;
+        if self.is_ready {
+            return 54;
         }
         let remaining = self.charge_timer().remaining(current_frame as i32);
-        let elapsed = full_recharge_frames.wrapping_sub(remaining) as f32;
-        (elapsed / full_recharge_frames as f32).clamp(0.0, 1.0)
+        let elapsed = full_recharge_frames.wrapping_sub(remaining);
+        let fraction = X87Chop53::div(
+            X87Chop53::load_i32(elapsed),
+            X87Chop53::load_i32(full_recharge_frames),
+        );
+        // With zero total, the masked native divide yields infinity or NaN;
+        // ftol's integer-indefinite has a zero low dword in either case.
+        fraction.map_or(0, |value| {
+            X87Chop53::ftol_i32_low_masked(X87Chop53::mul(value, X87Chop53::load_i32(54))).min(53)
+        })
     }
 }
 
@@ -1125,6 +1147,8 @@ pub struct SuperWeaponView {
     pub progress: f32,
     pub is_ready: bool,
     pub is_online: bool,
+    /// Native ShouldFlashTab, independent of affordability/fire admission.
+    pub should_flash_tab: bool,
     /// Native CanFire6CC360, independently of the raw charge/display flags.
     pub can_fire: bool,
     /// Derived from the same wallet predicate used at launch, not readiness.
@@ -1159,6 +1183,7 @@ pub fn superweapon_views_for_owner(
             progress: inst.charge_progress(sim.session.binary_frame(), inst.recharge_time(sw_type)),
             is_ready: inst.is_ready,
             is_online: !inst.is_suspended,
+            should_flash_tab: inst.should_flash_tab(sw_type, sim.session.binary_frame()),
             can_fire: if paid_source.is_some() {
                 sim.paid_super_weapon_selection(*owner)
                     .is_some_and(|selection| selection.destination == inst.type_id)

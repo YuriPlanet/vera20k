@@ -351,7 +351,11 @@ fn cameo_status_text<'a>(
     ready_text: &'a str,
     hold_text: &'a str,
 ) -> Option<&'a str> {
-    if item.is_ready {
+    // Super NameReadiness6CC2B0 gives HOLD priority even while charged.
+    // Ordinary factory products retain their existing READY-first policy.
+    if item.is_superweapon && item.is_on_hold {
+        Some(hold_text)
+    } else if item.is_ready {
         Some(ready_text)
     } else if item.is_on_hold {
         Some(hold_text)
@@ -373,6 +377,11 @@ fn shows_queue_badge(item: &crate::ui::sidebar::SidebarItem) -> bool {
 /// `0x006A9812..0x006A981D`) and draws frame `progress + 1`, so a build shows
 /// its clock from the frame it starts, before its first step.
 fn shows_build_clock(item: &crate::ui::sidebar::SidebarItem) -> bool {
+    if item.is_superweapon {
+        // Ordinary Super ShouldDrawProgress6CDE90 is !IsReady, including
+        // a just-started charge at progress zero. Hold does not erase ready.
+        return !item.is_ready;
+    }
     !item.is_ready && (item.is_building_this_type || item.is_on_hold || item.progress > 0.0)
 }
 
@@ -418,12 +427,14 @@ pub(crate) fn build_gclock_instance(
     camera_offset: [f32; 2],
 ) -> Option<SpriteInstance> {
     let last_frame = gclock_frames.len().checked_sub(1)?;
-    let progress = progress.clamp(0.0, 1.0);
-    // StripDraw6A9E97 uses actual Factory stage +1: unfinished stages0..53
-    // select frames1..54. Atlas length is not the production stage scale.
+    let progress = progress.clamp(f32::NEG_INFINITY, 1.0);
+    // StripDraw6A9E97 uses the actual Factory/Super stage +1: unfinished
+    // ordinary stages0..53 select frames1..54. Custom Super recharge changes
+    // can produce stage-1 (valid frame0) or lower (native SHP bounds reject
+    // the negative frame). Atlas length is not the production stage scale.
     // A custom short atlas retains the existing final-frame clamp residual.
-    let stage = (progress * f32::from(crate::sim::production::PRODUCTION_STEPS)).round() as usize;
-    let frame_index = (stage + 1).min(last_frame);
+    let stage = (progress * f32::from(crate::sim::production::PRODUCTION_STEPS)).round() as i32;
+    let frame_index = usize::try_from(stage.checked_add(1)?).ok()?.min(last_frame);
     let gclock_entry = &gclock_frames[frame_index];
     let gclock_rect = place_canvas_crop_in_slot(
         slot,
@@ -745,6 +756,61 @@ mod tests {
     }
 
     #[test]
+    fn super_clock_uses_truncated_stages_and_signed_frame_admission() {
+        use crate::sim::intern::StringInterner;
+        use crate::sim::superweapon::SuperWeaponInstance;
+
+        let frames: Vec<_> = (0..55)
+            .map(|frame| SidebarChromeEntry {
+                uv_origin: [frame as f32, 0.0],
+                uv_size: [1.0; 2],
+                pixel_size: [60.0, 48.0],
+            })
+            .collect();
+        let slot = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 60.0,
+            h: 48.0,
+        };
+        let mut interner = StringInterner::new();
+        let owner = interner.intern("Americans");
+        let id = interner.intern("Test");
+        let mut instance = SuperWeaponInstance::new(id, owner, 0);
+        instance.set_is_active_for_test(true);
+        instance.set_charge_start_tick_for_test(0);
+        instance.set_charge_duration_for_test(9000);
+        let draw = |instance: &SuperWeaponInstance, frame, total| {
+            build_gclock_instance(
+                &frames,
+                instance.charge_progress(frame, total),
+                slot,
+                [0.0; 2],
+            )
+        };
+        // AnimStage6CBEE0 truncates before StripDraw selects stage+1;
+        // a continuous fraction rounded by this lowerer advances too soon.
+        assert_eq!(
+            draw(&instance, 100, 9000).unwrap().uv_origin,
+            frames[1].uv_origin
+        );
+        assert_eq!(
+            draw(&instance, 167, 9000).unwrap().uv_origin,
+            frames[2].uv_origin
+        );
+        // A changed effective recharge can make stage-1: frame0 remains
+        // valid, while a lower signed frame is rejected by SHP bounds.
+        instance.set_charge_start_tick_for_test(-1);
+        instance.set_charge_duration_for_test(1019);
+        assert_eq!(
+            draw(&instance, 0, 1000).unwrap().uv_origin,
+            frames[0].uv_origin
+        );
+        instance.set_charge_duration_for_test(1038);
+        assert!(draw(&instance, 0, 1000).is_none());
+    }
+
+    #[test]
     fn gclock_selects_executed_native_frames_and_short_art_clamps() {
         let frames: Vec<_> = (0..55)
             .map(|frame| SidebarChromeEntry {
@@ -834,6 +900,19 @@ mod tests {
         // Ready wins when a slot somehow reports both.
         item.is_ready = true;
         assert_eq!(cameo_status_text(&item, "Ready", "On Hold"), Some("Ready"));
+
+        item.is_superweapon = true;
+        assert_eq!(
+            cameo_status_text(&item, "Ready", "On Hold"),
+            Some("On Hold")
+        );
+        assert!(!super::shows_build_clock(&item));
+        item.is_ready = false;
+        item.progress = 0.0;
+        assert!(
+            super::shows_build_clock(&item),
+            "uncharged Supers draw from stage0"
+        );
     }
 
     /// A build shows its clock from its start frame, at progress 0, and while

@@ -175,6 +175,15 @@ fn retail_supers_recheck_live_admission_after_power_loss_and_recovery() {
         );
         let cached_online_item = sidebar_item(&sim, &rules, owner, name);
         assert!(cached_online_item.enabled && cached_online_item.is_ready);
+        assert!(!cached_online_item.is_on_hold);
+        let ready_tick = sim.super_weapons()[&owner][&id].ready_tick();
+        assert!(
+            superweapon_views_for_owner(&sim, &rules, &owner)
+                .iter()
+                .find(|view| view.type_id == id)
+                .unwrap()
+                .should_flash_tab
+        );
         command(
             &mut sim,
             owner,
@@ -199,6 +208,19 @@ fn retail_supers_recheck_live_admission_after_power_loss_and_recovery() {
         );
         let offline_item = sidebar_item(&sim, &rules, owner, name);
         assert!(offline_item.is_ready);
+        assert_eq!(
+            offline_item.is_on_hold, sw.is_powered,
+            "{name}: HOLD projection"
+        );
+        assert_eq!(
+            superweapon_views_for_owner(&sim, &rules, &owner)
+                .iter()
+                .find(|view| view.type_id == id)
+                .unwrap()
+                .should_flash_tab,
+            !sw.is_powered,
+            "{name}: held tab attention"
+        );
         assert_eq!(
             offline_item.enabled, !sw.is_powered,
             "{name}: draw availability"
@@ -257,6 +279,12 @@ fn retail_supers_recheck_live_admission_after_power_loss_and_recovery() {
         assert!(sim.super_weapons()[&owner][&id].is_ready());
         assert!(!sim.super_weapons()[&owner][&id].is_suspended());
         let restored_item = sidebar_item(&sim, &rules, owner, name);
+        assert!(!restored_item.is_on_hold);
+        assert_eq!(
+            sim.super_weapons()[&owner][&id].ready_tick(),
+            ready_tick,
+            "{name}: hold/release must not renew ReadyFrame"
+        );
         assert_eq!(
             click(
                 &sim,
@@ -291,6 +319,41 @@ fn retail_supers_recheck_live_admission_after_power_loss_and_recovery() {
             input.targeting_mode.is_none(),
             "{name}: stale/offline right-click cancels"
         );
+        if sw.flash_sidebar_tab_frames == 120 {
+            use crate::app::presentation::sidebar_gadgets::has_flashing_superweapon_for_owner;
+            // The supplied clock advances only after the real charge, sale,
+            // power sampling and restoration above; no readiness/hold write.
+            let last_flash_frame = (ready_tick + 119) as u32;
+            assert!(sim.session().binary_frame() <= last_flash_frame);
+            sim.session_mut_for_test()
+                .set_binary_frame_for_test(last_flash_frame);
+            assert_eq!(
+                superweapon_views_for_owner(&sim, &rules, &owner).len(),
+                1,
+                "{name}: isolate this provider's tab qualifier"
+            );
+            let qualifies = has_flashing_superweapon_for_owner(&sim, &rules, "Americans");
+            assert!(qualifies, "{name}: ready+119 still flashes");
+            gadgets.update_tab_flashes(
+                sim.session().tick(),
+                last_flash_frame as i32,
+                [false, qualifies, false, false],
+            );
+            assert!(gadgets.tab_flashes[1].is_active());
+            frame(&mut sim, &rules);
+            let qualifies = has_flashing_superweapon_for_owner(&sim, &rules, "Americans");
+            assert!(!qualifies, "{name}: ready+120 ends flashing");
+            gadgets.update_tab_flashes(
+                sim.session().tick(),
+                sim.session().binary_frame() as i32,
+                [false, qualifies, false, false],
+            );
+            assert!(!gadgets.tab_flashes[1].is_active());
+            assert!(
+                sim.super_weapons()[&owner][&id].is_ready(),
+                "expiry does not spend charge"
+            );
+        }
         if name == "NukeSpecial" {
             command(
                 &mut sim,
