@@ -1863,7 +1863,6 @@ impl ArtRegistry {
     /// Normal and promoted Ares PCX filenames, including their extensions.
     /// Ares3.0 reads the rules ImageFile section1003E81F..1003E856, without
     /// following the art section's own Image redirect or retrying the type ID.
-    /// https://github.com/Ares-Developers/Ares/blob/master/src/Ext/TechnoType/Body.cpp
     #[cfg(feature = "ares")]
     pub fn resolve_declared_pcx_cameos(
         &self,
