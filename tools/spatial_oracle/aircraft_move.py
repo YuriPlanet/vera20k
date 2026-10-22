@@ -90,12 +90,20 @@ class Run:
         self.row = row
         self.f, _ = fixture(dict(cell=row.get('owner_cell', [60, 64]), z=row.get('z', 0)))
         f, u = self.f, self.f.u
-        # Every cell a real flat Clear CellClass without overlay, Track land cost 1.0.
+        # Real flat CellClass values: Clear by default; bridge controls use
+        # Water (land2) with its zero Track cost and an empty structural deck.
         for y in range(SIDE):
             for x in range(SIDE):
                 u.mem_write(cell(x, y), dwords(CELL_VT))
                 u.mem_write(cell(x, y) + 0x44, dwords(0xFFFFFFFF))
-        u.mem_write(0x89EA40, struct.pack('<90f', *[1.0] * 90))
+                if row.get('water', False):
+                    u.mem_write(cell(x, y) + 0xEC, dwords(2))
+        costs = [1.0] * 90
+        if row.get('water', False):
+            costs[18:27] = [0.0] * 9  #4835D5..DE: land*9 + SpeedType.
+        u.mem_write(0x89EA40, struct.pack('<90f', *costs))
+        for x, y in row.get('bridge_cells', []):
+            u.mem_write(cell(x, y) + 0x140, dwords(0x100))
         u.mem_write(RULES + 0x1478, dwords(RING_RADIUS))
         u.mem_write(0x87F7E8 + 0xFC, dwords(*row.get('local', [0, 0, 64, 64])))
         u.mem_write(TYPE + 0xD54, bytes([row.get('spawned', False)]))
@@ -104,6 +112,7 @@ class Run:
         bx, by = row.get('blocker_at', [1, 1])
         u.mem_write(BLOCKER + 0x9C, dwords(bx * 256 + 128, by * 256 + 128, 0))
         u.mem_write(BLOCKER + 0x90, b'\1')
+        u.mem_write(BLOCKER + 0x74, bytes([row.get('blocker_marked', True)]))
         u.mem_write(BLOCKER + 0x21C, dwords(HOUSE))
         u.mem_write(BLOCKER + 0x2D0, dwords(int(row.get('blocker_spawn_manager', False))))
         u.mem_write(BLOCKER_TYPE + 0xD54, bytes([row.get('blocker_spawned', False)]))
@@ -194,6 +203,16 @@ def find_attack_cell(row):
     return run.finish(result=name(pointer))
 
 
+def bridge_hull_rows():
+    """Query controls after a hull's ground-list removal, not its fatal replay."""
+    common = dict(owner_cell=[59, 65], param=[59, 64], blocker_at=[59, 64],
+                  spawned=True, water=True, seed=91)
+    decks = [[58, 64], [59, 64], [60, 64]]
+    return [dict(common, name='bridge_hull_unmarked', blocker_marked=False, bridge_cells=decks),
+            dict(common, name='bridge_hull_marked', blocker_marked=True, bridge_cells=decks),
+            dict(common, name='water_hull_unmarked', blocker_marked=False)]
+
+
 def mission_move(row):
     run = Run(row)
     f, u = run.f, run.f.u
@@ -252,6 +271,7 @@ def find_rows():
     ]
     rows += [dict(name=f'blocked_ring1_seed_{seed}', param=[64, 64], occupied=ring1, seed=seed)
              for seed in (1, 7, 12345, 0x5EED)]
+    rows += bridge_hull_rows()
     return rows
 
 
@@ -282,6 +302,7 @@ def move_rows():
              blocker_at=[66, 64], blocker_destination=[70 * 256 + 128, 64 * 256 + 128, 0],
              reserved=[[70, 64]]),
     ]
+    rows += [dict(row, state=0, moving=True) for row in bridge_hull_rows()]
     return rows
 
 
@@ -296,7 +317,9 @@ if __name__ == '__main__':
               'reserved parameters, blocked first and second rings, the blocker object, the '
               "owner's own cell, a playfield edge, five seeds) and Mission_Move states 0..5 with "
               'a null, cell and object NavCom, moving or not, plus occupied and reserved NavCom '
-              'cells and a second Rate. Not the Carryall arm (0x00416D50), the planning-path '
+              'cells and a second Rate. Includes live marked/unmarked hull query controls over '
+              'Water with/without three structural bridge decks, in both search and Move0. '
+              'Not a native launch/fatal lifecycle replay, the Carryall arm (0x00416D50), the planning-path '
               'branch of state 2, Assign_Destination, Enter_Idle_Mode or the locomotors.',
         entry_points={'find_attack_cell': FIND_ATTACK_CELL, 'mission_move': MISSION_MOVE,
                       'land_zone_clear': 0x4DDC60, 'cell_free_for_landing': 0x419B00,
@@ -305,7 +328,11 @@ if __name__ == '__main__':
                      'with real Cell/Map vtables, its Fly locomotor replaced for Mission_Move; '
                      'MapSize width 64; Rules+0x1478 = 0x2000, the RulesClass constructor value '
                      '(no INI reader writes it); MissionControl[Move].Rate the float-widened row '
-                     'rate; no team (+0x5D4) and no planning path (+0x520 = -1).'],
+                     'rate; no team (+0x5D4) and no planning path (+0x520 = -1).',
+                     'Bridge controls supply Water land2 with zero terrain costs, Flags0x100, '
+                     'empty deck/ground lists, Spawned=true/AirportBound=false and a live Foot '
+                     'in the registry whose Marked+74 varies. The marked contrast is a query '
+                     'control after ground-list removal, not a whole-world placement claim.'],
         substitutions=['Aircraft vt+0x480 and vt+0x484 record their arguments and return; the '
                        "owner's ILocomotion is a scratch interface answering Is_Moving from the "
                        'row and recording Move_To.'],
