@@ -95,8 +95,10 @@ mod receiver {
         ))
     }
     fn advisable(entity: &GameEntity) -> bool {
+        // Installed10062D60 calls vt184: original5B3040 returns current+AC,
+        // or queued+B4 when current is NONE. LastMission separately saves rawAC.
         !matches!(
-            entity.mission.current().known(),
+            entity.mission.effective().known(),
             Some(MissionType::Unload | MissionType::Selling | MissionType::Construction)
         )
     }
@@ -660,7 +662,11 @@ mod receiver {
             if remaining == 0 {
                 self.disable_ares_emp(target, rules, effects);
             } else if delayed {
-                self.enable_ares_emp(target, rules, effects);
+                // Installed10053E1A..3E: deferred deactivation saves rawAC then
+                // calls only Deactivate. First-hit House/Stuff writes and the
+                // Building Focus save/restore belong to10062B40, not this tail.
+                entity.emp.last_mission = entity.mission.current().raw();
+                self.techno_deactivate(target, rules, effects);
             }
         }
         fn ares_emp_sparkle(&mut self, target: u64, name: Option<&str>, rules: &RuleSet) {
@@ -1399,13 +1405,18 @@ mod receiver {
                     .collect();
                 assert_eq!(actual, expected, "{}", row["name"]);
             }
-            for row in native["building_chains"].as_array().unwrap() {
+            for row in native["building_chains"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .chain(native["building_deferred_deactivation"].as_array().unwrap())
+            {
                 let (mut sim, rules, target, source, slot) = building_scene("");
                 let owner = sim.entities().get(target).unwrap().owner();
                 sim.houses
                     .get_mut(&owner)
                     .unwrap()
-                    .set_is_human_for_test(row["fixture"]["human"].as_bool().unwrap());
+                    .set_is_human_for_test(row["fixture"]["human"].as_bool().unwrap_or(false));
                 let before = &row["result"][0];
                 let focus = Some(TargetKind::Entity(source));
                 {
@@ -1441,6 +1452,7 @@ mod receiver {
                 let rng = sim.rng_state();
                 for (index, step) in row["steps"].as_array().unwrap().iter().enumerate() {
                     match step["action"].as_str().unwrap() {
+                        "prepared" => {}
                         "head" => {
                             sim.update_ares_emp_operability(target, &rules, FrameEffects::empty())
                         }
@@ -1477,6 +1489,23 @@ mod receiver {
                             .mission
                             .set_current_for_test(MissionId::from_raw(int(&step["value"])), 0),
                         "ack_dirty" => settle(&mut sim, output),
+                        "queue_guard_and_ack" => {
+                            // Native producer input: queued+B4 changes without
+                            // Commence or QueueMission; House acknowledges dirty.
+                            let mission =
+                                &mut sim.substrate.entities.get_mut(target).unwrap().mission;
+                            mission.apply_test_fixture(MissionTestFixture {
+                                current: mission.current(),
+                                queued: MissionId::from_known(MissionType::Guard),
+                                suspended: MissionId::NONE,
+                                movement_bypass_latch: mission.movement_bypass_latch(),
+                                handler_state: 0,
+                                mission_start_frame: 0,
+                                ai_counter: mission.ai_counter(),
+                                dispatch_timer: mission.dispatch_timer(),
+                            });
+                            settle(&mut sim, output);
+                        }
                         action => panic!("unhandled native Building action {action}"),
                     }
                     let expected = &row["result"][index];
@@ -1518,6 +1547,13 @@ mod receiver {
                         int(&expected["queued_mission"]),
                         "{label}"
                     );
+                    if let Some(effective) = expected["effective_mission"].as_i64() {
+                        assert_eq!(
+                            victim.mission.effective().raw(),
+                            effective as i32,
+                            "{label}"
+                        );
+                    }
                     assert_eq!(
                         i32::from(victim.mission.movement_bypass_latch()),
                         int(&expected["bypass"]),

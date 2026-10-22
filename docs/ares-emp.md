@@ -14,11 +14,18 @@ The Building path uses the same private `EmpState`, house and animation owners.
 Installed10062B40 dirties House+1FC/+5778, disables Stuff through original452480,
 and preserves Focus+218 across the shared Deactivate/ResetOrdersToGuard.
 `BuildingOnline`+660 remains independent and unchanged. Only the first activation
-saves LastMission and performs those transitions; nonzero refreshes and capped
-hits retain them. The existing4555D0 operational adapter now reads the shared EMP
+performs those House/Stuff transitions and initially saves raw LastMission;
+nonzero refreshes and capped hits retain them. The existing4555D0 operational adapter now reads the shared EMP
 counter, so fire admission, target admission and powered-slot consumers see the
 same value. Existing Building GetFireError and delayed-fire callers remain the
-fire authorities.
+fire authorities. First-hit and deferred admission both use the existing
+Mission effective selector5B3040: current when present, otherwise queued.
+A freshly Unlimboed building with current=-1 and queued Construction18 retains
+that queue; LastMission still records raw current, not the effective mission.
+Once a deferred victim's effective mission permits deactivation, AI tail
+10053E1A..3E saves raw current and calls only the shared Deactivate. It does not
+repeat House invalidation/DisableStuff or the first-hit Building Focus
+save/restore; the shared Stun therefore clears Focus on that deferred path.
 
 Building43FE56 calls the common Techno AI. Its category branch6FABBC..C2 skips
 only generic Stage advancement (the existing UpdateAnimation4509DE owner already
@@ -62,7 +69,14 @@ hooks, including nonempty powered slot3. The producer's supplied House dirty
 acknowledgement and mission input changes remain explicit fixture inputs. It
 bounds no RNG/Detach calls on this no-manager path, not whole weapon parity.
 `ares_emp_building_native_admission_refresh_and_slot_lifecycle` consumes those
-controls. The parent-Bullet/actual-AI test additionally connects fire refusal,
+controls, plus two original effective-getter/deferred histories. Those use
+actual Construction18, contrast present Move2 with a queued Construction, and
+compare the acknowledged House dirty flags, raw LastMission, cleared Focus,
+mission timer, retained powered slot and untouched RNG. Their supplied queue
+change remains an explicit input, not a full player-placement replay. The
+existing production Unlimbo -> Enter_Idle_Mode44D6A0 queue owner establishes
+where current=-1/queued Construction arises. The parent-Bullet/actual-AI test
+additionally connects fire refusal,
 low-power expiry, next-head recovery and a restored tower shot; synthetic image
 bounds are not a retail drawing comparison. Server Rust checks and a release
 production capture are separate validation steps, not native-corpus claims.
@@ -73,6 +87,11 @@ EMP runs before ordinary damage and the later native Airburst tail; absence of
 a child-fan consumer is not a reason to suppress the parent's EMP. No complete
 Raccoon, factory, Radar/SpySat, Gap, superweapon, PowersUnit, LaserFence,
 Tesla charging, occupied building, undeploy or linked Prism behavior is claimed.
+Positive-output buildings (including explicit ImmuneToEMP=no providers and
+upgrade-added output) are not covered by the negative-power tower comparisons.
+Their EMP/output accounting and downstream House effects remain unproved;
+frequency is unknown and explicit use may expose incorrect power availability.
+No native immunity/output behavior is inferred from that coverage gap.
 
 ## Input and state ownership
 
@@ -156,8 +175,9 @@ read control-flow findings, with production regressions for source filtering,
 both event pairs, callback death/detachment and natural-expiry exclusion.
 
 The actual Techno AI tail6FAF0D ->10053DF0 decrements once per visited object.
-Unload, Construction and Selling defer deactivation. A later ordinary mission
-can deactivate without restoring selection. Expiry invokes the existing
+Effective Unload, Construction and Selling defer deactivation. A later ordinary
+mission can deactivate without restoring selection or repeating first-hit
+Building side effects. Expiry invokes the existing
 Reactivate/Guard behavior when powering permits; it does not resume an old human
 move or attack order. It ends the held Anim's remaining loops and releases the
 reference rather than hard-deleting the animation. Control, fire-error and cloak
