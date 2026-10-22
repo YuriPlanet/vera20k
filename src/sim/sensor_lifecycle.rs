@@ -41,7 +41,8 @@ impl SensorDeposit {
         self.owner
     }
 
-    /// The stamped cell.
+    /// The latest add's cell. Native removals use their caller's cell, which
+    /// can differ after flight or owner change; this is not removal authority.
     pub(crate) fn center(&self) -> (u16, u16) {
         self.center
     }
@@ -115,6 +116,67 @@ fn unit_sensor_radius(entity_category: EntityCategory, object: &ObjectType) -> O
 }
 
 impl Simulation {
+    fn unit_sensor_parameters(
+        &self,
+        id: u64,
+        rules: &RuleSet,
+    ) -> Option<(InternedId, (u16, u16), u16)> {
+        let entity = self.substrate.entities.get(id)?;
+        let object = self.interner.object_type(entity.type_ref(), rules)?;
+        Some((
+            entity.owner(),
+            (entity.position.rx(), entity.position.ry()),
+            unit_sensor_radius(entity.category(), object)?,
+        ))
+    }
+
+    /// FootClass::RemoveSensorsAt @ 0x004DE940 reads the live type and
+    /// owner. NullCell resolves current GetCoords; PerCell supplies +55C.
+    /// No deposit-presence check may suppress the native counter operation.
+    fn remove_unit_sensors_at(
+        &mut self,
+        id: u64,
+        cell: Option<(i16, i16)>,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
+        let Some((owner, current, radius)) = self.unit_sensor_parameters(id, rules) else {
+            return;
+        };
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.sensor_deposit = None;
+        }
+        let center = cell.map_or(current, |(x, y)| (x as u16, y as u16));
+        self.apply_unit_sensor_remove(owner, center, radius, rules, registry);
+    }
+
+    /// FootClass::AddSensorsAt @ 0x004DE7B0 adds at the freshly sampled
+    /// current cell. It neither removes an earlier add nor changes +55C.
+    pub(crate) fn add_unit_sensors_at_current(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
+        let Some((owner, center, radius)) = self.unit_sensor_parameters(id, rules) else {
+            return;
+        };
+        self.apply_sensor_add(owner, center, radius, rules, registry);
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.sensor_deposit = Some(SensorDeposit::unit(owner, center, radius));
+        }
+    }
+
+    /// Foot Limbo4DB376 and ChangeOwner4DBEFB remove at current coordinates,
+    /// even when an airborne sensor circle was last added elsewhere.
+    pub(crate) fn remove_unit_sensors_at_current(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
+        self.remove_unit_sensors_at(id, None, rules, registry);
+    }
     fn sensor_residents_in_native_order(&self, cell: (u16, u16)) -> Vec<u64> {
         self.substrate
             .occupancy
@@ -225,14 +287,12 @@ impl Simulation {
     /// overwrites that pointer (`param_1[0x87] = param_2`), so the live owner
     /// is whoever holds the object now.
     ///
-    /// For units the two agree: `FootClass::ChangeOwner @ 0x004DBED0` dispatches
-    /// the remove (`vt+0x4EC`) BEFORE the pointer flip and the add
-    /// (`vt+0x4E8`) after, and VERA calls
-    /// `transfer_sensor_before_owner_change` from the same slot. For BUILDINGS
-    /// they diverge permanently, and that asymmetry is native map state:
+    /// This cached footprint belongs to the Building path. Foot callers use
+    /// their own explicit/current cell and live radius instead. For BUILDINGS
+    /// the recorded and live owner can diverge permanently:
     /// construction credits the builder, `ChangeOwner` dispatches neither add
-    /// nor remove, and Limbo debits the CAPTOR. See the residual on
-    /// `transfer_sensor_before_owner_change`.
+    /// nor remove, and Limbo debits the CAPTOR. Its old owner keeps phantom
+    /// coverage and its captor can acquire negative array/disguise counts.
     fn remove_cached_sensor_deposit(
         &mut self,
         stable_id: u64,
@@ -300,26 +360,13 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
-        let Some((owner, center, radius, in_limbo)) =
-            self.substrate.entities.get(stable_id).and_then(|entity| {
-                let object = self.interner.object_type(entity.type_ref(), rules)?;
-                Some((
-                    entity.owner(),
-                    (entity.position.rx(), entity.position.ry()),
-                    unit_sensor_radius(entity.category(), object)?,
-                    entity.lifecycle.in_limbo(),
-                ))
-            })
-        else {
-            return;
-        };
-        if in_limbo {
-            return;
-        }
-        let _ = self.remove_cached_sensor_deposit(stable_id, rules, registry);
-        self.apply_sensor_add(owner, center, radius, rules, registry);
-        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            entity.sensor_deposit = Some(SensorDeposit::unit(owner, center, radius));
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| !entity.lifecycle.in_limbo())
+        {
+            self.add_unit_sensors_at_current(stable_id, rules, registry);
         }
     }
 
@@ -410,14 +457,24 @@ impl Simulation {
         }
     }
 
-    /// Exact cached remove used by Foot/Building Limbo.
-    pub(crate) fn remove_sensor_before_limbo(
+    /// Building Limbo retains its separate sensor-array/disguise footprints.
+    /// BuildingChangeOwner448260/Techno7014A0 dispatch no Building sensor
+    /// slots: the builder keeps both circles, and Limbo debits the captor's
+    /// live owner. Preserve that native counter asymmetry.
+    pub(crate) fn remove_building_sensor_before_limbo(
         &mut self,
         stable_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
-        let _ = self.remove_cached_sensor_deposit(stable_id, rules, registry);
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+        {
+            let _ = self.remove_cached_sensor_deposit(stable_id, rules, registry);
+        }
     }
 
     /// Foot4D8611/4D8621 executes both receivers for PerCellProcess(2),
@@ -428,81 +485,14 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
-        let had_unit_deposit = self
+        let old = self
             .substrate
             .entities
             .get(stable_id)
-            .and_then(|entity| entity.sensor_deposit)
-            .is_some_and(|deposit| !deposit.building_array);
-        if had_unit_deposit {
-            let _ = self.remove_cached_sensor_deposit(stable_id, rules, registry);
-        }
-        self.add_unit_sensor_after_unlimbo(stable_id, rules, registry);
-    }
-
-    /// `FootClass::ChangeOwner @ 0x004DBED0` old-remove/new-add pair — both
-    /// arms gated on `TechnoTypeClass+0x5F0` (`SensorsSight=`), removing for
-    /// the old house through vtable `+0x4EC` at `0x004DBEFB` and adding for the
-    /// new one through `+0x4E8` at `0x004DBF81`.
-    ///
-    /// A BUILDING deposit is deliberately left untouched. Neither
-    /// `BuildingClass::ChangeOwner @ 0x00448260` nor the
-    /// `TechnoClass::ChangeOwner @ 0x007014A0` it calls at `0x00448BE8`
-    /// dispatches any of the four BuildingClass sensor slots, and the
-    /// program-wide `search_instructions` for `call [..+0x4f4/0x4f8/0x4fc/
-    /// 0x500]` finds no BuildingClass dispatcher outside
-    /// `OnConstructionComplete` and `Limbo`. So gamemd leaves BOTH the sensor
-    /// array and the disguise-detect circle stamped for the CONSTRUCTING house
-    /// until the building is limboed: capturing a Psychic Sensor transfers
-    /// neither.
-    ///
-    /// DRIFT-BY-DESIGN — this reproduces a permanent native counter skew, it
-    /// does not avoid one. Limbo's removes read the LIVE owner
-    /// (`RemoveDetectDisguiseAt @ 0x00455980` opens `0045598A MOV
-    /// EDX,[ECX+0x21C]` / `004559A1 MOV EAX,[EDX+0x30]`; `RemoveSensorArrayAt
-    /// @ 0x004556D0` repeats the read) and
-    /// `CellClass::DecrementDisguiseDetectCount @ 0x00487180` decrements
-    /// unconditionally. So selling or losing a captured Psychic Sensor debits
-    /// the CAPTOR for the circles the BUILDER was credited with.
-    /// *Trigger:* engineer capture of a building carrying `SensorArray=` or
-    /// `DetectDisguise=` (stock: NAPSIS only), then its limbo. *Player effect:*
-    /// the constructing house keeps a phantom detection circle over that ground
-    /// for the rest of the match, and the capturing house's counters go negative
-    /// there, silently cancelling the detection of the next such building it
-    /// puts on the same cells. *Frequency:* uncommon per match, but the state is
-    /// permanent once it happens. *Downstream risk:* none new — the asymmetric
-    /// `CloakRadiusInCells=` remove radius already produces negative sensor
-    /// fringe counts without a capture, so no reader gains an unseen case.
-    pub(crate) fn transfer_sensor_before_owner_change(
-        &mut self,
-        stable_id: u64,
-        new_owner: InternedId,
-        rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-    ) {
-        let building_deposit = self
-            .substrate
-            .entities
-            .get(stable_id)
-            .and_then(|entity| entity.sensor_deposit)
-            .is_some_and(|deposit| deposit.building_array);
-        if building_deposit {
-            return;
-        }
-        let Some(mut deposit) = self.remove_cached_sensor_deposit(stable_id, rules, registry)
-        else {
-            return;
-        };
-        deposit.owner = new_owner;
-        self.apply_sensor_add(
-            new_owner,
-            deposit.center,
-            deposit.add_radius,
-            rules,
-            registry,
-        );
-        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            entity.sensor_deposit = Some(deposit);
+            .map(|entity| entity.navigation.neighbor_state().cell());
+        if let Some(old) = old {
+            self.remove_unit_sensors_at(stable_id, Some(old), rules, registry);
+            self.add_unit_sensors_at_current(stable_id, rules, registry);
         }
     }
 }
@@ -543,7 +533,7 @@ mod tests {
     }
 
     #[test]
-    fn unit_sensor_unlimbo_move_owner_limbo_and_overlap_use_cached_deposits() {
+    fn unit_sensor_unlimbo_move_owner_limbo_and_overlap_use_native_callbacks() {
         let rules = rules();
         let mut sim = sim_with_map_authority();
         let first = sim
@@ -562,6 +552,13 @@ mod tests {
             sim.fog.has_sensor_for_house(americans, 33, 30),
             "the overlapping second deposit remains positive"
         );
+        let counters = sim.fog.sensors_by_house().clone();
+        sim.techno_limbo_with_rules(first, &rules, None);
+        assert_eq!(
+            sim.fog.sensors_by_house(),
+            &counters,
+            "repeated Limbo must not debit the second unit's positive coverage"
+        );
 
         sim.substrate
             .entities
@@ -573,35 +570,19 @@ mod tests {
         assert!(!sim.fog.has_sensor_for_house(americans, 33, 30));
         assert!(sim.fog.has_sensor_for_house(americans, 57, 30));
 
-        sim.change_owner(second, soviet);
+        sim.change_owner_with_rules(
+            second,
+            soviet,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
         assert!(!sim.fog.has_sensor_for_house(americans, 57, 30));
         assert!(sim.fog.has_sensor_for_house(soviet, 57, 30));
 
-        // Drift every live fact after the deposit. The cached center still
-        // decides WHICH cells the removal walks, but the HOUSE is re-read live:
-        // `FootClass::RemoveSensorsAt @ 0x004DE940` opens with
-        // `*(int *)(param_1[0x87] + 0x30)`, the same read as the BuildingClass
-        // pair. gamemd cannot reach this state for a Foot — only
-        // `FootClass::ChangeOwner @ 0x004DBED0` moves `+0x21C`, and it dispatches
-        // `vt+0x4EC` first — so this pins the read, not a reachable scenario.
-        let neutral = sim.interner.intern("Neutral");
-        sim.substrate.entities.change_owner(second, neutral);
-        {
-            let entity = sim.substrate.entities.get_mut(second).unwrap();
-            entity.position.set_rx_for_test(5);
-            entity.position.set_ry_for_test(5);
-        }
+        // FootLimbo4DB376 removes the live owner's current-coordinate circle.
         sim.techno_limbo_with_rules(second, &rules, None);
-        assert!(
-            sim.fog.has_sensor_for_house(soviet, 57, 30),
-            "the removal debits the live owner, not the deposit's recorded house"
-        );
-        let index = 30 * usize::from(sim.fog.width()) + 57;
-        assert_eq!(
-            sim.fog.sensors_by_house()[&neutral][index],
-            0,
-            "and the unit remove's positive pre-count gate leaves no negative residue"
-        );
+        assert!(!sim.fog.has_sensor_for_house(soviet, 57, 30));
     }
 
     #[test]

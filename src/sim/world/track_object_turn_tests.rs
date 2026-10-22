@@ -52,6 +52,8 @@ fn fixture() -> (Simulation, RuleSet) {
     sim.substrate.occupancy =
         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
     crate::sim::arena_fixture::supply_native_map(&mut sim);
+    sim.spatial_threat_after_unlimbo(1, &rules, None);
+    sim.foot_neighbors_after_unlimbo(1, &rules);
     (sim, rules)
 }
 
@@ -116,7 +118,14 @@ fn terminal_sensor_receiver_finishes_before_shp_and_is_not_deferred_to_cell_chan
         .unwrap()
         .position
         .set_rx_for_test(5);
-    sim.add_unit_sensor_after_unlimbo(1, &rules, None);
+    sim.per_cell_process(
+        1,
+        movement::PerCellReason::Arrival,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     let owner = sim.substrate.entities.get(1).unwrap().owner();
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     entity.position.set_rx_for_test(10);
