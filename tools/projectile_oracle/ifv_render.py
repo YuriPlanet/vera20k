@@ -1,13 +1,51 @@
 """Original DRAGON frame selection and physical shape drawing for IFV flight.
 Shared launch is independently rerun; shape buffers/camera remain supplied.
 """
-import hashlib,json,math,struct
+import hashlib,json,struct
 from pathlib import Path
 from tools.native_oracle import finish_vectors,provenance
 from tools.projectile_oracle import ifv_launch,guided_step,bridge_render_shape as shape
 from tools.projectile_oracle.bridge_render_inputs import assets_root
 from tools.projectile_oracle.bridge_render_inputs_palette import PaletteReader,initialize
 from tools.spatial_oracle.building_body_rules import dwords
+
+# Supplied direction-center inputs from this corpus's original generation.
+# Freeze their binary64 bits: host libm sin/cos can differ by one ULP. These
+# are fixture inputs only; original code still selects every frame and pixel.
+DIRECTION_CENTER_BITS=(
+ (0x4024000000000000,0x0000000000000000),
+ (0x40239d9ee1fa99ee,0x3fff36e64b840f8c),
+ (0x40227a43617f984c,0x400e9d5b505a53bc),
+ (0x4020a11fd9a92506,0x4016390a081a02fa),
+ (0x401c48c6001f0ac0,0x401c48c6001f0abf),
+ (0x4016390a081a02fb,0x4020a11fd9a92506),
+ (0x400e9d5b505a53bd,0x40227a43617f984c),
+ (0x3fff36e64b840f90,0x40239d9ee1fa99ee),
+ (0x3cc60fafbfd97309,0x4024000000000000),
+ (0xbfff36e64b840f8a,0x40239d9ee1fa99ee),
+ (0xc00e9d5b505a53ba,0x40227a43617f984c),
+ (0xc016390a081a02f8,0x4020a11fd9a92506),
+ (0xc01c48c6001f0abf,0x401c48c6001f0ac0),
+ (0xc020a11fd9a92506,0x4016390a081a02fa),
+ (0xc0227a43617f984c,0x400e9d5b505a53be),
+ (0xc0239d9ee1fa99ee,0x3fff36e64b840f9d),
+ (0xc024000000000000,0x3cd60fafbfd97309),
+ (0xc0239d9ee1fa99ee,0xbfff36e64b840f92),
+ (0xc0227a43617f984c,0xc00e9d5b505a53b9),
+ (0xc020a11fd9a92507,0xc016390a081a02f8),
+ (0xc01c48c6001f0ac2,0xc01c48c6001f0abf),
+ (0xc016390a081a02fa,0xc020a11fd9a92506),
+ (0xc00e9d5b505a53c8,0xc0227a43617f984a),
+ (0xbfff36e64b840f9f,0xc0239d9ee1fa99ed),
+ (0xbce08bc3cfe31646,0xc024000000000000),
+ (0x3fff36e64b840f8f,0xc0239d9ee1fa99ee),
+ (0x400e9d5b505a53c1,0xc0227a43617f984b),
+ (0x4016390a081a02f6,0xc020a11fd9a92507),
+ (0x401c48c6001f0abe,0xc01c48c6001f0ac2),
+ (0x4020a11fd9a92506,0xc016390a081a02fa),
+ (0x40227a43617f984a,0xc00e9d5b505a53ca),
+ (0x40239d9ee1fa99ed,0xbfff36e64b840fa2),
+)
 
 def generate():
  flight=ifv_launch.generate()
@@ -35,10 +73,10 @@ def generate():
    position=state['position'];flags=256 if (position[0]//256,position[1]//256) in live else 0
    capture(f'case{i}_frame{f}',position,state['velocity'],f,flags)
  directions=[]
- for i in range(32):
+ for i,(x_bits,y_bits) in enumerate(DIRECTION_CENTER_BITS):
   # Supplied direction-center inputs; selected frames and all colors are native.
-  angle=math.tau*i/32;values=[10*math.cos(angle),10*math.sin(angle),0.]
-  velocity=dict(value=values,bits=[f'{v:016x}' for v in struct.unpack('<3Q',struct.pack('<3d',*values))])
+  bits=(x_bits,y_bits,0);values=list(struct.unpack('<3d',struct.pack('<3Q',*bits)))
+  velocity=dict(value=values,bits=[f'{v:016x}' for v in bits])
   capture(f'direction{i}',[2688,5248,800],velocity,1,0,kind='direction')
   directions.append(frames[-1]['native_frame'])
  assert len(set(directions))==32,directions

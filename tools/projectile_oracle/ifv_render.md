@@ -25,7 +25,10 @@ The physical reader establishes DRAGON's 32 frames, 24×16 canvas, rotating
 selection and no shadow. Its unchanged SHP hash and the native palette load
 hashes are retained. The native frame getter executes original atan2 and integer
 conversion; host atan2 does not supply any expectation. Direction centers use
-explicit host-generated binary64 inputs and are not movement producer claims.
+explicit binary64 inputs frozen from the original corpus generation. Their bits
+are constants in the producer so host math-library rounding cannot change a
+replay's inputs. Frame and pixel expectations still come from original native
+code; these controls are not movement producer claims.
 
 Drawing reuses prepared 64×96 RGB565 surfaces, A127, a 32768 depth baseline and
 65535 old depth. The explicit body screen point determines a camera through
