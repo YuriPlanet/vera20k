@@ -293,6 +293,24 @@ impl SuperWeapons {
         self.by_house.is_empty()
     }
 
+    /// Native 100226D0 always writes the count and frame together. A restored
+    /// nonzero count cannot omit the frame used to hash that retained pair.
+    /// Signed counts may wrap; their sign is not an admission constraint.
+    #[cfg(feature = "ares")]
+    pub(crate) fn validate_ares_launch_history(&self) -> Result<(), &'static str> {
+        if self
+            .by_house
+            .values()
+            .flat_map(|weapons| weapons.values())
+            .any(|instance| {
+                instance.ares_launch_count != 0 && instance.ares_last_launch_frame.is_none()
+            })
+        {
+            return Err("nonzero successful-launch count without a last frame");
+        }
+        Ok(())
+    }
+
     /// The HouseClass constructor's Supers vector: each House's set, once.
     fn install_house(&mut self, house: InternedId, supers: HouseSuperWeapons) {
         assert!(

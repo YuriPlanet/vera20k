@@ -285,6 +285,9 @@ pub enum SnapshotRestoreError {
     InvalidUnitDelivery(&'static str),
     #[error("invalid paid two-stage selection: {0}")]
     InvalidPaidSuperWeaponSelection(&'static str),
+    #[cfg(feature = "ares")]
+    #[error("invalid superweapon launch history: {0}")]
+    InvalidSuperWeaponLaunchHistory(&'static str),
     #[error("invalid detached Particle {object_id}: {reason}")]
     InvalidDetachedParticleState {
         object_id: u64,
@@ -1638,6 +1641,10 @@ impl Simulation {
         }
         self.validate_paid_super_weapon_selections()
             .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
+        #[cfg(feature = "ares")]
+        self.super_weapons
+            .validate_ares_launch_history()
+            .map_err(SnapshotRestoreError::InvalidSuperWeaponLaunchHistory)?;
         self.unit_deliveries
             .validate(self)
             .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;

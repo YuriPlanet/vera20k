@@ -82,3 +82,11 @@ python -m tools.rules_oracle.ares_super_anims --ares-dll <Ares.dll> --gamemd-exe
 Ares-only persisted fields change that build's saved layout; the existing save
 layout guard rejects incompatible saves. The OFF struct layout/hash path is
 unchanged. This is not a rendered parity claim or exhaustive Ares SW support.
+
+The SuperWeapons restore owner also rejects a nonzero retained launch count
+without a last-launch frame. Native 100226D0 writes both together; admitting
+that damaged pair would let `SW.Shots` affect admission while the history hash
+omits it. This is a Rust snapshot invariant, not an additional native load port.
+Signed wrapping counts remain valid when their frame is present. The focused
+`ares_super_launch_history_rejects_incomplete_restored_pair` regression crosses
+the save codec and production restore admission; it adds no native controls.
