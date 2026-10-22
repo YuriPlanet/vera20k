@@ -839,7 +839,8 @@ fn an_object_archive_whose_target_is_gone_clears_the_archive() {
         Some(&rules)
     ));
     assert_eq!(sim.entities().get(yard).unwrap().archive_target(), None);
-    assert!(!sim.apply_command(
+    // This is an already accepted receiver call; ownership belongs to input.
+    assert!(sim.apply_command(
         "Russians",
         &Command::ArchiveObject {
             entity_id: yard,
@@ -847,6 +848,10 @@ fn an_object_archive_whose_target_is_gone_clears_the_archive() {
         },
         Some(&rules)
     ));
+    assert_eq!(
+        sim.entities().get(yard).unwrap().archive_target(),
+        Some(TargetKind::Entity(yard))
+    );
 }
 
 /// Alt or Ctrl+Alt over a Terrain object with a building selected: Techno

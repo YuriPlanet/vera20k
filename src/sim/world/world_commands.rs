@@ -18,10 +18,10 @@ use crate::sim::combat;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::combat::combat_aoe::CellTargetDetach;
 use crate::sim::command::{
-    BUILDING_OFF_LINE_OPCODE, BUILDING_ON_LINE_OPCODE, BuildingOnLineRecord, COMMAND_RECORD_LEN,
-    Command, CommandEnvelope, CommandRecord, DeployRecord, ExitRecord, GameSpeedRecord,
-    MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, PlaceRecord, ProductionEvent,
-    ProductionRecord, ScatterRecord, SellWallAtCellRecord, StopRecord,
+    ArchiveRecord, BUILDING_OFF_LINE_OPCODE, BUILDING_ON_LINE_OPCODE, BuildingOnLineRecord,
+    COMMAND_RECORD_LEN, Command, CommandEnvelope, CommandRecord, DeployRecord, ExitRecord,
+    GameSpeedRecord, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, PlaceRecord,
+    ProductionEvent, ProductionRecord, ScatterRecord, SellWallAtCellRecord, StopRecord,
 };
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::{InternedId, StringInterner};
@@ -246,6 +246,35 @@ impl Simulation {
             house_id: record.house_id(),
             frame: record.frame_stamp(),
             entity_id: i32::try_from(entity_id).ok()?,
+        }
+        .write_into(&mut record);
+        Some(record)
+    }
+
+    /// Building443683/4439CD and GrandOpening446A56 issue ARCHIVE through
+    /// EventCtor4C6780. Preserve prepared tokens until execution; input owns
+    /// selection/ownership and the nearby-passable search, not this encoder.
+    pub fn encode_archive_record(
+        &self,
+        command_owner: InternedId,
+        entity_id: u64,
+        target: MegaMissionTarget,
+    ) -> Option<CommandRecord> {
+        let (source_id, source_kind) = MegaMissionTarget::Object {
+            id: i32::try_from(entity_id).ok()?,
+        }
+        .token()
+        .ok()?;
+        let (target_id, target_kind) = target.token().ok()?;
+        let mut record =
+            self.encode_header_event(command_owner, crate::sim::command::ARCHIVE_OPCODE)?;
+        ArchiveRecord {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            source_id,
+            source_kind,
+            target_id,
+            target_kind,
         }
         .write_into(&mut record);
         Some(record)
@@ -670,13 +699,16 @@ impl Simulation {
         record: &CommandRecord,
         execute_tick: u64,
     ) -> Option<CommandEnvelope> {
-        if ProductionRecord::decode(record).is_some() || PlaceRecord::decode(record).is_some() {
+        if ProductionRecord::decode(record).is_some()
+            || PlaceRecord::decode(record).is_some()
+            || ArchiveRecord::decode(record).is_some()
+        {
             let owner = *self
                 .houses
                 .order()
                 .get(usize::try_from(record.house_id()).ok()?)?;
-            // Keep selectors raw: a category-only semantic view loses Naval,
-            // RTTI aliases and the -1 wildcard before the House receiver runs.
+            // Keep selectors/tokens raw: a category-only view loses Naval,
+            // RTTI aliases and -1; ARCHIVE needs true NULL and Terrain tokens.
             return self.houses.contains_key(&owner).then(|| {
                 CommandEnvelope::new(
                     owner,
@@ -1388,7 +1420,11 @@ impl Simulation {
                 self.apply_planning_record(command_owner, record, rules)
             }
             Command::SynchronizedRecord { record } => {
-                self.apply_production_record(record, rules, overlay_registry, frame_effects)
+                if let Some(event) = ArchiveRecord::decode(record) {
+                    self.apply_archive_record(event)
+                } else {
+                    self.apply_production_record(record, rules, overlay_registry, frame_effects)
+                }
             }
             Command::Select { entity_ids, .. } => self.apply_selection_snapshot(
                 entity_ids,
@@ -1714,7 +1750,10 @@ impl Simulation {
             Command::ArchiveObject {
                 entity_id,
                 target_id,
-            } => self.archive_object(command_owner, *entity_id, *target_id),
+            } => self.execute_archive_event(
+                *entity_id,
+                Some(crate::sim::combat::TargetKind::Entity(*target_id)),
+            ),
             // Production events act on the event's own house (the
             // EventClass header's house id); the payload names no owner.
             Command::QueueProduction { type_id } => {
@@ -2341,7 +2380,10 @@ impl Simulation {
         ids.sort_unstable();
         ids.dedup();
         for stable_id in ids {
-            self.execute_archive_event(stable_id, crate::sim::combat::TargetKind::Cell(rx, ry));
+            self.execute_archive_event(
+                stable_id,
+                Some(crate::sim::combat::TargetKind::Cell(rx, ry)),
+            );
         }
         // `EVA_NewRallyPointEstablished` is not a sim fact: `BuildingClass::
         // SetRallyPoint 0x00443A69` speaks inside the click handler, after the
@@ -2349,28 +2391,48 @@ impl Simulation {
         true
     }
 
-    /// The object click's event 0x1E for a non-factory building
-    /// ([`Command::ArchiveObject`]), run by [`Self::execute_archive_event`].
-    /// The owner test is VERA's command admission.
-    ///
-    /// [`Command::ArchiveObject`]: crate::sim::command::Command::ArchiveObject
-    fn archive_object(&mut self, command_owner: &str, entity_id: u64, target_id: u64) -> bool {
-        self.entity_owned_by_id(command_owner, entity_id)
-            && self
-                .execute_archive_event(entity_id, crate::sim::combat::TargetKind::Entity(target_id))
+    /// Execute4C6DAA resolves the first token as Techno6E6F20. Wrong kinds
+    /// must not detach a real actor whose UID merely matches the token value.
+    fn apply_archive_record(&mut self, event: ArchiveRecord) -> bool {
+        let Some(MegaMissionTarget::Object { id }) =
+            MegaMissionTarget::from_token(event.source_id, event.source_kind)
+        else {
+            return false;
+        };
+        let Ok(entity_id) = u64::try_from(id) else {
+            return false;
+        };
+        // This only projects bytes. The shared receiver resolves the target
+        // after planning cleanup and Alive, including fallback Cell writes.
+        let target = match MegaMissionTarget::from_token(event.target_id, event.target_kind) {
+            Some(MegaMissionTarget::Object { id }) => u64::try_from(id)
+                .ok()
+                .map(crate::sim::combat::TargetKind::Entity),
+            Some(MegaMissionTarget::Cell { x, y }) => {
+                Some(crate::sim::combat::TargetKind::Cell(x as u16, y as u16))
+            }
+            _ => None,
+        };
+        self.execute_archive_event(entity_id, target)
     }
 
     /// `EventClass::Execute @ 0x004C6DAA`'s event 0x1E (ARCHIVE) for
     /// `entity_id`: its planning tokens are cleared (`0x006386E0`, event
     /// NULL), a dead object (`+0x90`) is skipped, and otherwise
     /// `Set_ArchiveTarget @ 0x0070C610` stores `target` as the event resolves
-    /// it ([`Self::resolve_event_token`]): null for an object no longer
-    /// present, while a Cell always resolves. Returns whether it archived.
+    /// it ([`Self::resolve_event_token`]): NULL for an invalid/missing target,
+    /// while a Cell always resolves. Input ownership is not checked again.
+    /// Source: original gamemd.exe instructions4C6DAA..4C6DDE.
     fn execute_archive_event(
         &mut self,
         entity_id: u64,
-        target: crate::sim::combat::TargetKind,
+        target: Option<crate::sim::combat::TargetKind>,
     ) -> bool {
+        // EntityStore holds Technos; Terrain tokens cannot resolve here.
+        // Resolve before 6386E0, including a still-registered dead actor.
+        if self.substrate.entities.get(entity_id).is_none() {
+            return false;
+        }
         self.planning_detach_actor(entity_id);
         // The target resolves only for a live object (`0x004C6DCD` precedes
         // `0x006E6E20`), so a dead one stamps no fallback Cell.
@@ -2382,7 +2444,7 @@ impl Simulation {
         {
             return false;
         }
-        let target = self.resolve_event_token(Some(target));
+        let target = self.resolve_event_token(target);
         if let Some(object) = self.substrate.entities.get_mut(entity_id) {
             object.set_archive_target(target);
         }

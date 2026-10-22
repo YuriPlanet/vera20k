@@ -8383,6 +8383,10 @@ mod building_sale_oracle_tests;
 mod ai_captured_building_sale_tests;
 
 #[cfg(test)]
+#[path = "building_archive_event_tests.rs"]
+mod building_archive_event_tests;
+
+#[cfg(test)]
 #[path = "building_repair_oracle_tests.rs"]
 mod building_repair_oracle_tests;
 

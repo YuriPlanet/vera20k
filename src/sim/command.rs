@@ -67,6 +67,8 @@ pub const SCATTER_OPCODE: u8 = 0x07;
 pub const IDLE_OPCODE: u8 = 0x06;
 /// Selected-object DEPLOY, issued by the D key through ClickedEvent6FFE00.
 pub const DEPLOY_OPCODE: u8 = 0x09;
+/// Building rally/object clicks issue ARCHIVE through EventCtor4C6780.
+pub const ARCHIVE_OPCODE: u8 = 0x1e;
 pub const PLACE_OPCODE: u8 = 0x0b;
 pub const PRODUCE_OPCODE: u8 = 0x0e;
 pub const SUSPEND_OPCODE: u8 = 0x0f;
@@ -596,6 +598,47 @@ impl ProductionEvent {
             ABANDON_ALL_OPCODE => Some(Self::AbandonAll),
             _ => None,
         }
+    }
+}
+
+/// EventCtor4C6780 writes two five-byte TargetClass tokens at +7 and +C.
+/// Keep their kinds raw: Execute4C6DAA resolves the source as Techno, but an
+/// invalid destination still clears a live actor's archive through 70C610.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ArchiveRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub source_id: i32,
+    pub source_kind: u8,
+    pub target_id: i32,
+    pub target_kind: u8,
+}
+
+impl ArchiveRecord {
+    pub fn write_into(self, record: &mut CommandRecord) {
+        record.set_issue_header(ARCHIVE_OPCODE, i32::from(self.house_id), self.frame);
+        if self.house_id >= 0 {
+            let payload = record.payload_mut();
+            payload[..4].copy_from_slice(&self.source_id.to_le_bytes());
+            payload[4] = self.source_kind;
+            payload[5..9].copy_from_slice(&self.target_id.to_le_bytes());
+            payload[9] = self.target_kind;
+        }
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != ARCHIVE_OPCODE {
+            return None;
+        }
+        let payload = record.payload();
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            source_id: i32::from_le_bytes(payload[..4].try_into().ok()?),
+            source_kind: payload[4],
+            target_id: i32::from_le_bytes(payload[5..9].try_into().ok()?),
+            target_kind: payload[9],
+        })
     }
 }
 

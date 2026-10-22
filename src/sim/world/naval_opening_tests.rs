@@ -6,7 +6,7 @@ use super::Simulation;
 use crate::rules::retail_ini_fixture::retail_battle_rules_for_map;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
-use crate::sim::command::Command;
+use crate::sim::command::{ArchiveRecord, Command, MegaMissionTarget};
 use crate::sim::world::{FrameEffects, PlacementEvidence};
 
 fn yard_fixture(rules: &RuleSet, name: &str, water: bool) -> (Simulation, u64) {
@@ -67,6 +67,23 @@ fn dispatch(sim: &mut Simulation, rules: &RuleSet) {
     }
 }
 
+fn rally_event(command: &Command) -> (u64, (u16, u16)) {
+    let Command::SynchronizedRecord { record } = command else {
+        panic!("rally must retain its native record")
+    };
+    let event = ArchiveRecord::decode(record).unwrap();
+    assert_eq!(event.source_kind, 0x34);
+    let Some(MegaMissionTarget::Cell { x, y }) =
+        MegaMissionTarget::from_token(event.target_id, event.target_kind)
+    else {
+        panic!("rally must name a Cell")
+    };
+    (
+        u64::try_from(event.source_id).unwrap(),
+        (x as u16, y as u16),
+    )
+}
+
 #[test]
 fn retail_shipyard_opening_queues_a_quiet_default_rally_until_the_command_tail() {
     let Some(retail) = retail_battle_rules_for_map("Hills.mmx") else {
@@ -81,16 +98,8 @@ fn retail_shipyard_opening_queues_a_quiet_default_rally_until_the_command_tail()
         open(&mut sim, id, false, rules);
         let pending = sim.pending_command_snapshot();
         assert_eq!(pending.len(), 1, "{name}: opening publishes ARCHIVE");
-        let Command::SetRally {
-            rx,
-            ry,
-            producer_ids,
-        } = &pending[0].payload
-        else {
-            panic!("opening must use the shared rally event")
-        };
-        let destination = (*rx, *ry);
-        assert_eq!(producer_ids, &[id]);
+        let (source, destination) = rally_event(&pending[0].payload);
+        assert_eq!(source, id);
         assert_eq!(
             pending[0].owner,
             sim.substrate.entities.get(id).unwrap().owner()
@@ -194,10 +203,9 @@ fn an_accepted_default_survives_capture_when_the_replacement_event_is_refused() 
     open(&mut sim, id, false, rules);
     let accepted = sim.pending_command_snapshot();
     assert_eq!(accepted.len(), 128);
-    let expected = match accepted.last().unwrap().payload {
-        Command::SetRally { rx, ry, .. } => Some((rx, ry)),
-        _ => panic!("the last slot belongs to the default rally"),
-    };
+    let (source, destination) = rally_event(&accepted.last().unwrap().payload);
+    assert_eq!(source, id);
+    let expected = Some(destination);
     let new_owner = sim.intern("French");
     sim.houses
         .register(crate::sim::house_state::HouseState::new(
@@ -406,6 +414,10 @@ fn two_searches_and_event_birth_match_the_original_supplied_map_control() {
         let (terrain, zones, raw) = native_fixture(&json!({"zero_speed_table":zero_speeds}));
         let mut sim = Simulation::new();
         let owner = sim.intern("Local");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
         let type_ref = sim.intern("YARD");
         let mut actor = GameEntity::new_at_frame_zero_for_test(
             1,
@@ -434,14 +446,7 @@ fn two_searches_and_event_birth_match_the_original_supplied_map_control() {
         let pending = sim.pending_command_snapshot();
         assert_eq!(pending.len(), usize::from(!zero_speeds));
         if !zero_speeds {
-            assert_eq!(
-                pending[0].payload,
-                Command::SetRally {
-                    rx: 7,
-                    ry: 7,
-                    producer_ids: vec![1]
-                }
-            );
+            assert_eq!(rally_event(&pending[0].payload), (1, (7, 7)));
         }
         assert_eq!(sim.entities().get(1).unwrap().archive_target(), None);
     }

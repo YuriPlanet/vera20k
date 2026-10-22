@@ -19,7 +19,7 @@ use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::MovementZone;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::command::{Command, CommandEnvelope};
+use crate::sim::command::{Command, CommandEnvelope, MegaMissionTarget};
 use crate::sim::intern::InternedId;
 use crate::sim::movement::group_destination;
 use crate::sim::movement::infantry_entry::InfantryEntryArgs;
@@ -79,19 +79,44 @@ impl Simulation {
         {
             let mut accepted = true;
             for &producer in producer_ids {
+                // SetRally443860 has already searched separately for each
+                // producer. EventCtor4C6780 stamps the current native frame;
+                // QueueAI647260 transfers it in this frame's post-Logic tail.
+                let Some(record) = self.encode_archive_record(
+                    command.owner,
+                    producer,
+                    MegaMissionTarget::Cell {
+                        x: *rx as i16,
+                        y: *ry as i16,
+                    },
+                ) else {
+                    accepted = false;
+                    continue;
+                };
                 accepted &= self.local_commands.try_push(QueuedCommand::from_envelope(
-                    CommandEnvelope::new(
-                        command.owner,
-                        command.execute_tick,
-                        Command::SetRally {
-                            rx: *rx,
-                            ry: *ry,
-                            producer_ids: vec![producer],
-                        },
-                    ),
+                    CommandEnvelope::synchronized(record, command.execute_tick),
                 ));
             }
             return accepted;
+        }
+        if let Command::ArchiveObject {
+            entity_id,
+            target_id,
+        } = &command.payload
+        {
+            let Ok(target_id) = i32::try_from(*target_id) else {
+                return false;
+            };
+            let Some(record) = self.encode_archive_record(
+                command.owner,
+                *entity_id,
+                MegaMissionTarget::Object { id: target_id },
+            ) else {
+                return false;
+            };
+            return self.local_commands.try_push(QueuedCommand::from_envelope(
+                CommandEnvelope::synchronized(record, command.execute_tick),
+            ));
         }
         self.local_commands
             .try_push(QueuedCommand::from_envelope(command))
