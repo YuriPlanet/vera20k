@@ -460,6 +460,66 @@ mod tests {
         );
     }
 
+    /// The 0x01/0x02 Building On/Off Line opcodes reach the same 21-slot walk
+    /// from the wire: GoOnline `0x00452260` inlines the enable loop
+    /// (`0x004522E3..0x00452313`) and GoOffline `0x00452360` reaches the
+    /// disable loop through DisableStuff `0x00452480` (`0x00452508..`). Both
+    /// step Building+0x55C (dword stride) against the type row at
+    /// BuildingType+0xF4C + 0x44*i, read byte +0x40 of that row
+    /// (`0x004522F1`/`0x00452516` = `+0xF8C`) as the slot's `Powered=`, and
+    /// store Anim+0x19E through `0x00425270` (resume) or `0x00425260` (pause).
+    #[test]
+    fn building_on_off_line_opcodes_pause_and_resume_powered_slot_anims() {
+        let rules = rules(100, "Powered=yes\nPower=-10");
+        let (mut sim, id) = building(100);
+        let owner = sim.entities().get(id).unwrap().owner();
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
+        sim.grand_opening(
+            id,
+            false,
+            true,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        sim.visit_building_operational(
+            id,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        let anim = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
+        assert!(
+            !sim.anim(anim).unwrap().runtime().paused,
+            "an operational building plays its Powered ActiveAnim"
+        );
+
+        let off = crate::sim::command::Command::SetBuildingOnLine {
+            entity_id: id,
+            on: false,
+        };
+        assert!(sim.apply_command("A", &off, Some(&rules)));
+        assert!(!sim.entities().get(id).unwrap().building_online());
+        assert!(
+            sim.anim(anim).unwrap().runtime().paused,
+            "0x02 pauses every Powered slot through DisableStuff 0x00452480"
+        );
+
+        let on = crate::sim::command::Command::SetBuildingOnLine {
+            entity_id: id,
+            on: true,
+        };
+        assert!(sim.apply_command("A", &on, Some(&rules)));
+        assert!(sim.entities().get(id).unwrap().building_online());
+        assert!(
+            !sim.anim(anim).unwrap().runtime().paused,
+            "0x01 resumes them through GoOnline's inlined loop"
+        );
+    }
+
     /// Retail inputs and the normal House assessment / Building / Anim Logic
     /// visits. Native 4555D0 + 4549B0 require Type.Powered and positive drain;
     /// 4547C0 pauses each Powered slot, 4545D0 resumes it. GAAIRC/AMRADR omit
