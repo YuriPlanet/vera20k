@@ -2782,8 +2782,9 @@ impl Simulation {
     /// (`0x0044A146..0x0044A167`). The building's UnInit comes last. Not
     /// carried over: its Group (`+0x214`, `0x0044A04C`; VERA's control groups
     /// live in the app), AttachedTag (`+0x34`, `0x0044A0B4`) and looping sound
-    /// handles (`+0x4DC..+0x4F4`); a refused Unlimbo does not refund the
-    /// building's value (`0x0044A16B`).
+    /// handles (`+0x4DC..+0x4F4`). A refused Unit Unlimbo refunds the cached
+    /// building value to its current owner and retains the limbo constructor
+    /// (`0x0044A16B..0x0044A176`).
     pub(crate) fn finish_undeploy(
         &mut self,
         sid: u64,
@@ -2855,6 +2856,9 @@ impl Simulation {
             return;
         };
         let (new_sid, position) = self.store_with_constructor_managers(unit, rules, frame_effects);
+        // Selling449E74/449E80 caches the building's refund before its Limbo
+        // and the new Unit's Unlimbo. Those callbacks may change the owner.
+        let failed_unlimbo_refund = production::techno_refund(self, rules, sid);
         let targeters: Vec<u64> = self
             .substrate
             .entities
@@ -2886,7 +2890,18 @@ impl Simulation {
             outcome,
             RevealOutcome::Revealed { .. } | RevealOutcome::Consumed
         ) {
-            self.discard_constructed_limbo(new_sid, rules, frame_effects);
+            //44A16B..44A176 pays the cached signed amount to the live owner.
+            //The following tail never deletes the new Unit: its existing
+            //limbo identity/Tracking remain, including ShortGame's BaseUnit count.
+            if let Some(refund) = failed_unlimbo_refund
+                && let Some(owner) = self
+                    .substrate
+                    .entities
+                    .get(sid)
+                    .map(|entity| entity.owner())
+            {
+                crate::sim::credit_income::add_credits(&mut self.houses, owner, refund);
+            }
             self.uninit_with_context(
                 sid,
                 super::UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
@@ -3068,3 +3083,7 @@ fn undeploy_unit_cell(origin_rx: u16, origin_ry: u16, foundation: &str) -> (u16,
 #[cfg(test)]
 #[path = "world_spawn/tests.rs"]
 mod techno_constructor_tests;
+
+#[cfg(test)]
+#[path = "failed_yard_repack_tests.rs"]
+mod failed_yard_repack_tests;
