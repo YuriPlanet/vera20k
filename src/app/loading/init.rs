@@ -493,130 +493,6 @@ mod map_wall_owner_candidate_tests {
     }
 
     #[test]
-    fn gsi_04_10_all_terrain_clears_same_cell_tiberium_before_entity_admission() {
-        let ini = IniFile::from_str(
-            "[General]\nTreeStrength=200\n\
-             [TerrainTypes]\n0=TREE01\n1=TIBTRE01\n\
-             [TREE01]\nSpawnsTiberium=no\n\
-             [TIBTRE01]\nSpawnsTiberium=yes\n\
-             [OverlayTypes]\n0=ORE\n1=ROCK\n\
-             [ORE]\nTiberium=yes\n\
-             [ROCK]\nIsARock=yes\n",
-        );
-        let rules = RuleSet::from_ini(&ini).expect("rules");
-        let registry = OverlayTypeRegistry::from_ini(&ini, None);
-        assert!(
-            !rules
-                .terrain_object_type_case_insensitive("TREE01")
-                .expect("ordinary tree type")
-                .spawns_tiberium
-        );
-        let mut sim = Simulation::with_seed(0x0410);
-        let rng_before = sim.scenario_rng().state();
-
-        let mut terrain = flat_terrain(6, 3);
-        let mut overlays = OverlayGrid::new(6, 3);
-        overlays.place_overlay(1, 1, 0, 7);
-        overlays.place_overlay(2, 1, 0, 8);
-        overlays.place_overlay(3, 1, 1, 9);
-        overlays.place_overlay(4, 1, 0, 10);
-        for rx in 1..=4 {
-            crate::sim::overlay_grid::recalc_overlay_passability(
-                &mut overlays,
-                &mut terrain,
-                &registry,
-                rx,
-                1,
-            );
-        }
-        assert_eq!(
-            terrain.cell(1, 1).unwrap().land_type,
-            LandType::Tiberium.as_index()
-        );
-        assert_eq!(
-            terrain.cell(2, 1).unwrap().land_type,
-            LandType::Tiberium.as_index()
-        );
-        assert_eq!(
-            terrain.cell(4, 1).unwrap().land_type,
-            LandType::Tiberium.as_index(),
-            "the unknown Terrain fixture starts with the same projected ore state"
-        );
-        overlays.take_dirty_cells();
-        let terrain_objects = [
-            TerrainObject {
-                rx: 1,
-                ry: 1,
-                name: "TREE01".to_string(),
-            },
-            TerrainObject {
-                rx: 2,
-                ry: 1,
-                name: "TIBTRE01".to_string(),
-            },
-            TerrainObject {
-                rx: 3,
-                ry: 1,
-                name: "TREE01".to_string(),
-            },
-            TerrainObject {
-                rx: 4,
-                ry: 1,
-                name: "UNKNOWN".to_string(),
-            },
-        ];
-
-        let cleared = crate::sim::terrain_spawn::clear_tiberium_source_cells_for_terrain(
-            &mut overlays,
-            &mut terrain,
-            &terrain_objects,
-            &rules,
-            &registry,
-        );
-
-        assert_eq!(cleared, BTreeSet::from([(1, 1), (2, 1)]));
-        assert_eq!(overlays.cell(1, 1).overlay_id, None);
-        assert_eq!(overlays.cell(1, 1).overlay_data, 0);
-        assert_eq!(overlays.cell(2, 1).overlay_id, None);
-        assert_eq!(overlays.cell(2, 1).overlay_data, 0);
-        assert_eq!(overlays.cell(3, 1).overlay_id, Some(1));
-        assert_eq!(overlays.cell(3, 1).overlay_data, 9);
-        assert_eq!(overlays.cell(4, 1).overlay_id, Some(0));
-        assert_eq!(overlays.cell(4, 1).overlay_data, 10);
-        assert_eq!(
-            terrain.cell(1, 1).unwrap().land_type,
-            LandType::Clear.as_index()
-        );
-        assert_eq!(
-            terrain.cell(2, 1).unwrap().land_type,
-            LandType::Clear.as_index()
-        );
-        assert_eq!(
-            terrain.cell(4, 1).unwrap().land_type,
-            LandType::Tiberium.as_index(),
-            "an unknown TerrainType leaves the resolved ore projection intact"
-        );
-        assert!(
-            overlays.take_dirty_cells().is_empty(),
-            "map-load TerrainClass::Unlimbo clearing must not emit runtime dirtiness"
-        );
-
-        let constructed = crate::sim::terrain_spawn::construct_terrain_objects(
-            &mut sim,
-            &terrain_objects,
-            &rules,
-            false,
-        );
-        assert_eq!(constructed, 3);
-        assert_eq!(
-            *sim.terrain_objects().cell_index(),
-            BTreeMap::from([((1, 1), 1), ((2, 1), 2), ((3, 1), 3)]),
-            "recognized Terrain entries construct in source order while UNKNOWN is skipped"
-        );
-        assert_eq!(sim.scenario_rng().state(), rng_before);
-    }
-
-    #[test]
     fn stock_lamp_removal_publishes_before_next_draw_with_many_other_lamps() {
         use crate::app::presentation::lighting::MatchLighting;
         use crate::map::lighting::point_light_area_cells;
@@ -2286,7 +2162,7 @@ impl MapLoadInitial {
         let scenario_after_trace = simulation.rng_state().scenario;
 
         let mut overlay_grid =
-            generated_overlay_grid(&map_data, &mut resolved_terrain, &rules, &overlay_registry)
+            generated_overlay_grid(&map_data, &mut resolved_terrain, &overlay_registry)
                 .expect("random-map snapshot precedes authored pack consumption");
         let house_roster =
             houses::parse_house_roster(&map_data.ini, &rules.color_schemes, Some(&rules));
@@ -2649,48 +2525,63 @@ pub(crate) fn load_map_initial_with_assets(
     })
 }
 
-/// The overlay grid of a generated launch, shared by its match and snapshot
-/// routes: the generator's own cell writes
-/// ([`OverlayGrid::from_generated_overlays`]; native runs no
-/// `OverlayClass::Mark` for them), then the same-cell tiberium a recognized
-/// tree clears.
-///
-/// [`OverlayGrid::from_generated_overlays`]: crate::sim::overlay_grid::OverlayGrid::from_generated_overlays
+/// The generator's final CellClass overlay state, shared by generated match
+/// and snapshot routes. RMG PlaceField5A28C0 constructs Terrain at5A2C05
+/// before painting its source5A2C4C; materialization must retain that later
+/// write. Generate598960 then Recalc's59937D, builds queues59939B/5993A0,
+/// and germinates59944C. Original instructions; no second Unlimbo here.
 fn generated_overlay_grid(
     map_data: &MapFile,
     resolved_terrain: &mut ResolvedTerrainGrid,
-    rules: &RuleSet,
     overlay_registry: &OverlayTypeRegistry,
 ) -> anyhow::Result<crate::sim::overlay_grid::OverlayGrid> {
     let data = map_data
         .overlay_data_pack()
         .map_err(|_| anyhow::anyhow!("generated overlay packs were already consumed"))?;
-    let mut overlay_grid = crate::sim::overlay_grid::OverlayGrid::from_generated_overlays(
-        &map_data.overlays,
-        data,
-        resolved_terrain,
-        overlay_registry,
-    );
-    let cleared = crate::sim::terrain_spawn::clear_tiberium_source_cells_for_terrain(
-        &mut overlay_grid,
-        resolved_terrain,
-        &map_data.terrain_objects,
-        rules,
-        overlay_registry,
-    );
-    if !cleared.is_empty() {
-        log::info!(
-            "Cleared {} same-cell tiberium overlay cell(s) for recognized terrain",
-            cleared.len(),
-        );
-    }
-    Ok(overlay_grid)
+    Ok(
+        crate::sim::overlay_grid::OverlayGrid::from_generated_overlays(
+            &map_data.overlays,
+            data,
+            resolved_terrain,
+            overlay_registry,
+        ),
+    )
 }
 
 #[cfg(test)]
 mod generated_overlay_grid_tests {
     use super::*;
     use crate::map::rmg::{RmgGrid, RmgOptions, emit};
+
+    #[test]
+    fn retail_generated_drill_keeps_the_ore_painted_after_its_constructor() {
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let registry = OverlayTypeRegistry::from_ini(&battle.processed_rules, None);
+        // Original RMG PlaceField5A2C05 constructs Terrain, then paints the
+        // source overlay5A2C4C. The later generated loader must retain it.
+        let ore = registry.id_for_name("TIB01").unwrap();
+        assert_eq!(ore, 102, "native RMG's literal ore base");
+        let mut generated = RmgGrid::new(45, 20, 68);
+        let source = generated.get_mut(24, 24).unwrap();
+        source.tile = 0;
+        source.overlay = i32::from(ore);
+        source.density = 7;
+        source.occupied = true;
+        let mut map = emit::empty_map_file(&RmgOptions::default(), 16, 12);
+        emit::populate(
+            &mut map,
+            &generated,
+            &[("TIBTRE01".to_string(), 24, 24)],
+            &[],
+            &[],
+        );
+        let mut terrain = ResolvedTerrainGrid::build_generated_materialized_for_test(&map);
+        let grid = generated_overlay_grid(&map, &mut terrain, &registry).unwrap();
+        assert_eq!(grid.cell(24, 24).overlay_id, Some(ore));
+        assert_eq!(grid.cell(24, 24).overlay_data, 7);
+    }
 
     /// The random-map path from the generator's grid: its `MapFile`
     /// projection, the generated terrain build and the overlay grid both
@@ -2706,10 +2597,6 @@ mod generated_overlay_grid_tests {
             ),
             None,
         );
-        let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n",
-        ))
-        .expect("rules");
         let (map_w, map_h) = (20, 24);
         let mut generated = RmgGrid::new((map_w + map_h + 1) as usize, map_w, map_w + 2 * map_h);
         for ((x, y), overlay, density) in [((22, 22), 0, 3), ((22, 24), 1, 7), ((24, 24), 1, 7)] {
@@ -2730,7 +2617,7 @@ mod generated_overlay_grid_tests {
             .expect("sloped ore cell")
             .slope_type = 1;
 
-        let grid = generated_overlay_grid(&map, &mut terrain, &rules, &registry)
+        let grid = generated_overlay_grid(&map, &mut terrain, &registry)
             .expect("a generated map retains its overlay data");
 
         let cell = |rx, ry| {
@@ -3275,7 +3162,7 @@ pub(crate) fn load_map_from_initial(
                 .as_mut()
                 .expect("generated materialization retained its eager terrain");
             let mut overlay_grid =
-                generated_overlay_grid(&map_data, resolved_terrain, &rules, &overlay_registry)?;
+                generated_overlay_grid(&map_data, resolved_terrain, &overlay_registry)?;
             crate::app::loading::init_helpers::populate_staged_app_scenario(
                 &mut staged_simulation,
                 &map_data,

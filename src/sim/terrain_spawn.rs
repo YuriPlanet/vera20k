@@ -420,54 +420,6 @@ fn live_object_context<'a>(
     ))
 }
 
-/// Apply `TerrainClass::Unlimbo @ 0x0071D000` source-cell tiberium clearing
-/// before map-derived navigation and simulation state are published.
-///
-/// This is a map-load projection, not a runtime overlay mutation, so cleared
-/// cells do not enter the dirty-cell output queue. Both graphical and headless
-/// loading must run the same projection before deriving height/path state.
-pub fn clear_tiberium_source_cells_for_terrain(
-    overlay_grid: &mut OverlayGrid,
-    resolved_terrain: &mut ResolvedTerrainGrid,
-    terrain_objects: &[crate::map::overlay::TerrainObject],
-    rules: &RuleSet,
-    overlay_registry: &OverlayTypeRegistry,
-) -> BTreeSet<(u16, u16)> {
-    let mut cleared_cells = BTreeSet::new();
-    for terrain_object in terrain_objects {
-        if rules
-            .terrain_object_type_case_insensitive(&terrain_object.name)
-            .is_none()
-        {
-            continue;
-        }
-        let Some(overlay_id) = overlay_grid
-            .cell(terrain_object.rx, terrain_object.ry)
-            .overlay_id
-        else {
-            continue;
-        };
-        if !overlay_registry
-            .flags(overlay_id)
-            .is_some_and(|flags| flags.tiberium)
-        {
-            continue;
-        }
-
-        overlay_grid.clear_cell_silently(terrain_object.rx, terrain_object.ry);
-        crate::sim::overlay_grid::recalc_overlay_passability(
-            overlay_grid,
-            resolved_terrain,
-            overlay_registry,
-            terrain_object.rx,
-            terrain_object.ry,
-        );
-        cleared_cells.insert((terrain_object.rx, terrain_object.ry));
-    }
-
-    cleared_cells
-}
-
 /// `TerrainClass::Read_Map_Section` — construct one live terrain object per
 /// map `[Terrain]` entry.
 ///
@@ -569,17 +521,21 @@ fn construct_terrain_objects_inner(
                 &terrain_snapshot,
                 sim.resolved_terrain.as_mut(),
             );
-            let clears_resource = sim
-                .overlay_grid
-                .as_ref()
-                .and_then(|grid| grid.cell(obj.rx, obj.ry).overlay_id)
-                .and_then(|overlay_id| overlay_registry.flags(overlay_id))
-                .is_some_and(|flags| flags.tiberium);
-            if clears_resource {
-                sim.overlay_grid
-                    .as_mut()
-                    .expect("authored overlay grid was checked above")
-                    .clear_cell_silently(obj.rx, obj.ry);
+            if let Some(grid) = sim.overlay_grid.as_mut() {
+                let source = grid.cell(obj.rx, obj.ry);
+                let before = (source.overlay_id.map_or(-1, i32::from), source.overlay_data);
+                let after = crate::map::tiberium_cell::terrain_unlimbo_overlay_fields(
+                    before.0,
+                    before.1,
+                    |id| {
+                        overlay_registry
+                            .flags(id as u8)
+                            .is_some_and(|flags| flags.tiberium)
+                    },
+                );
+                if after != before {
+                    grid.clear_cell_silently(obj.rx, obj.ry);
+                }
             }
         }
         constructed += 1;
