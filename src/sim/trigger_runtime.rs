@@ -4760,6 +4760,14 @@ impl Simulation {
 }
 
 impl TriggerRuntime {
+    /// Retail CellClass::Constructor @ 0x0047BBF0, reached by
+    /// MapClass::Resize @ 0x00565C10, directly clears Dummy+3C at 0x0047BC18.
+    /// This is not ReplaceTag485250: retain Tag refs, timers and live state.
+    /// Source: original gamemd.exe instructions.
+    pub(super) fn reconstruct_dummy_for_map_resize(&mut self) {
+        self.cell_tags.remove(&NativeCellIdentity::Dummy);
+    }
+
     fn replace_cell_trigger_tag(&mut self, cell: NativeCellIdentity, tag: Option<usize>) {
         if let Some(previous) = self.cell_tags.remove(&cell)
             && let Some(old) = self.tags[previous].as_mut()

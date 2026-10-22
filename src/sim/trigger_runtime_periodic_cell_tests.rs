@@ -7,6 +7,88 @@ use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::world::UninitContext;
 use serde_json::Value;
 
+#[test]
+fn successful_load_discards_only_the_dummy_cell_tag_attachment() {
+    use super::{TagEventInput, tests::spawn_event_ingress_unit};
+    use crate::map::{cell_index::NativeCellIdentity, resolved_terrain::SharedCellDummy};
+    use crate::sim::{snapshot::GameSnapshot, world::Simulation};
+    use crate::util::save_codec;
+
+    let (mut sim, rules, overlays, houses) = event_ingress_fixture();
+    let actor = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
+    install_event_ingress_map(
+        &mut sim,
+        &rules,
+        "[Triggers]\nD=Country0,<none>,Dummy,0,1,1,1,0\nR=Country0,<none>,Real,0,1,1,1,0\n\
+         [Events]\nD=2,4,0,0,13,0,1\nR=2,4,0,0,13,0,1\n\
+         [Actions]\nD=1,28,0,7,0,0,0,0,A\nR=1,28,0,8,0,0,0,0,A\n\
+         [Tags]\nDT=2,Dummy,D\nRT=2,Real,R\n[CellTags]\n99099=DT\n15015=RT\n",
+    );
+    let dummy = Simulation::trigger_cell_identity(&sim.resolved_terrain, (99, 99));
+    let real = Simulation::trigger_cell_identity(&sim.resolved_terrain, (15, 15));
+    assert_eq!(dummy, NativeCellIdentity::Dummy);
+    assert_ne!(real, dummy);
+    assert_eq!(sim.trigger_runtime.cell_tags.len(), 2);
+    // Retain a partially completed live Trigger with its constructor-started
+    // Event13 timer, so a detach/refcount repair or timer reset is detectable.
+    let triggers: Vec<_> = sim.trigger_runtime.trigger_order.clone();
+    for trigger in triggers {
+        assert!(!sim.register_live_trigger_event(
+            trigger,
+            TagEventInput {
+                kind: 4,
+                ..Default::default()
+            },
+            true,
+            &rules,
+        ));
+        assert_ne!(sim.trigger_runtime.trigger(trigger).unwrap().completed, 0);
+    }
+    let terrain = sim.resolved_terrain.as_ref().unwrap().clone();
+    let saved = GameSnapshot::save(&sim, 0, 0, "Dummy Cell Tag", 0);
+    let mut loaded = GameSnapshot::load(&saved).unwrap().sim;
+    let mut expected = loaded.trigger_runtime.clone();
+    assert!(expected.cell_tags.remove(&dummy).is_some());
+    let rng = loaded.rng_state();
+    let pending = save_codec::serialize(&loaded.substrate.pending_delete).unwrap();
+
+    // MouseLoad5BE150 -> Resize565C10 -> CellCtor47BC18 clears Dummy+3C
+    // directly; TagLoad6E5730 retains refs and live Trigger state.
+    loaded.bind_shared_cell_dummy(SharedCellDummy::fresh());
+    loaded.reconstruct_cellclass_dummy_for_map_resize();
+    assert!(!loaded.trigger_runtime.cell_tags.contains_key(&dummy));
+    assert_eq!(
+        save_codec::serialize(&loaded.trigger_runtime).unwrap(),
+        save_codec::serialize(&expected).unwrap(),
+        "real attachments, Tag refs, definitions, timers and registry state survive",
+    );
+    assert_eq!(loaded.rng_state(), rng);
+    assert_eq!(
+        save_codec::serialize(&loaded.substrate.pending_delete).unwrap(),
+        pending
+    );
+    loaded.restore_after_snapshot_load().unwrap();
+    loaded.rebuild_caches_after_load(
+        terrain,
+        crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
+        &rules,
+    );
+    loaded
+        .restore_map_authority_after_snapshot_load(&rules, &overlays, None)
+        .unwrap();
+    assert_eq!(
+        loaded.trigger_runtime.cell_tags[&real],
+        expected.cell_tags[&real]
+    );
+    loaded.session.set_binary_frame_for_test(15);
+    loaded.dispatch_foot_cell_tag_events(actor, UninitContext::new(&rules, Some(&overlays)));
+    assert!(
+        loaded.global_variables()[8],
+        "the real Cell still dispatches after load"
+    );
+    assert!(!loaded.global_variables()[7]);
+}
+
 fn corpus() -> &'static Value {
     crate::test_fixture::json("tools/spatial_oracle/trigger_periodic_cell_events.json")
 }

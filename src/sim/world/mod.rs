@@ -3186,6 +3186,7 @@ impl Simulation {
     pub fn reconstruct_cellclass_dummy_for_map_resize(&mut self) {
         self.effective_shared_cell_dummy()
             .reconstruct_for_map_resize();
+        self.trigger_runtime.reconstruct_dummy_for_map_resize();
         self.substrate
             .base_reservations
             .reconstruct_dummy_for_map_resize();
