@@ -174,6 +174,15 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
         let silo = sim
             .spawn_object("NAMISL", "YuriCountry", 48, 89, 0, &rules)
             .unwrap();
+        // The original sequence enters Grant6CB560 with onHold=false. Supply
+        // real assessed generation for the House grant wrapper's power prior;
+        // this small fixture does not load ALL03's complete power puzzle.
+        sim.spawn_object("NANRCT", "YuriCountry", 52, 89, 0, &rules)
+            .unwrap();
+        sim.assess_power_for_test(&rules);
+        let power = &sim.power_states[&owner];
+        assert!(power.total_drain() > 0 && power.total_output() >= power.total_drain());
+        assert!(!power.low_power());
         let tag_type = sim.trigger_runtime.definitions.tag_type(tag_name).unwrap();
         let tag = sim.shared_trigger_tag(tag_type);
         let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
