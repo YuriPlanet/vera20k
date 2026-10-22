@@ -299,6 +299,70 @@ fn super_grant_repeat_after_once_saves_both_flags_and_still_fires_once() {
     ));
 }
 
+/// Execute34 at6DE98E grants an ordinary Super and clears its can-lose gate.
+/// Unlike Execute33's one-time payload, a permanent NukeSpecial still enters
+/// Launch's silo arm. With no silo it reaches cleanup6CDE06 and ClickFire
+/// restarts its charge. This is an authored trigger route, not a destruction race.
+#[test]
+fn permanent_nuke_grant_without_silo_reaches_cleanup_and_recharges() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let index = rules.super_weapon_index("NukeSpecial").unwrap();
+    let (mut sim, rules, _, owner, id) = scene_with_rules(34, rules, index);
+    spring(&mut sim, &rules);
+    let granted = &sim.super_weapons[&owner][&id];
+    assert!(granted.is_active());
+    assert!(!granted.is_ready());
+    let flags = serde_json::to_value(granted).unwrap();
+    assert_eq!(flags["one_time"], json!(false));
+    assert_eq!(flags["can_lose"], json!(false));
+    let recharge = rules
+        .super_weapon("NukeSpecial")
+        .unwrap()
+        .recharge_time_frames;
+    let ready_frame = granted.charge_start_tick() + granted.charge_duration();
+    sim.session.set_binary_frame_for_test(ready_frame as u32);
+    // The real House owner must retain the permanent grant without a provider.
+    superweapon::update_owned_supers(&mut sim, &rules, owner);
+    superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner);
+    assert!(sim.super_weapons[&owner][&id].is_ready());
+    sim.sound_events.take_for_test();
+    sim.houses.get_mut(&owner).unwrap().take_tech_recheck();
+    assert!(sim.apply_command(
+        "Americans",
+        &crate::sim::command::Command::LaunchSuperWeapon {
+            sw_type_id: id,
+            target_rx: 10,
+            target_ry: 10,
+        },
+        Some(&rules),
+    ));
+    assert!(sim.projectiles.is_empty());
+    assert!(
+        !sim.sound_events
+            .iter()
+            .any(|event| matches!(event, SimSoundEvent::SuperWeaponLaunched { .. }))
+    );
+    assert_eq!(
+        sim.sound_events
+            .iter()
+            .filter(|event| matches!(event,
+                SimSoundEvent::SuperWeaponLaunchTail { owner: by, sw_type }
+                    if *by == owner && *sw_type == id
+            ))
+            .count(),
+        1
+    );
+    assert!(sim.houses.get_mut(&owner).unwrap().take_tech_recheck());
+    let after = &sim.super_weapons[&owner][&id];
+    assert!(after.is_active());
+    assert!(!after.is_ready());
+    assert_eq!(after.charge_start_tick(), ready_frame);
+    assert_eq!(after.charge_duration(), recharge);
+}
+
 #[test]
 fn super_grant_one_time_nuke_uses_payload_speed_and_ground_warning_without_silo() {
     use crate::map::resolved_terrain::{ResolvedTerrainCell, test_flat_cell, test_grid};

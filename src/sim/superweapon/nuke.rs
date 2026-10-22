@@ -28,11 +28,6 @@
 //! the recharge restart is ClickFire's.
 //!
 //! RESIDUALS:
-//! - A charged launch that finds no silo type (`0x006CDCFA`, `0x006CDD30`)
-//!   or no silo (`0x006CDD44`) still runs the player's common tail at
-//!   `0x006CDE06`; the sim retains its `+0x1FC` request (`0x006CDE2F`),
-//!   but emits no launch event then, so the app's selection-clear tail is
-//!   absent. Trigger: a custom no-silo type or loss before the House tail.
 //! - The House dirty tail also refreshes local building construction options
 //!   (vt+0x4E0) and sidebar strips (`0x006A7D20`); those presentation
 //!   consumers are outside the simulation's revoke/grant migration.
@@ -192,14 +187,17 @@ pub(super) fn launch(
                 })
     };
     let ids = rules.type_array_ids(ObjectCategory::Building);
-    let Some(silo_type) = (0..ids.len())
+    let silo = (0..ids.len())
         .find(|&slot| rules.building_type_at(slot as i32).is_some_and(fires))
         .and_then(|slot| sim.interner.get(&ids[slot]))
-    else {
-        sim.houses.request_house_tech_tree_recheck(owner);
-        return false;
-    };
-    let Some(silo) = find_building_of_type(sim, owner, silo_type) else {
+        .and_then(|silo_type| find_building_of_type(sim, owner, silo_type));
+    let Some(silo) = silo else {
+        //6CDCFA/6CDD30/6CDD44 join6CDE06 even without a missile. Keep
+        // the player's cleanup separate from the actual launch cues.
+        sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunchTail {
+            owner,
+            sw_type: sw_type_id,
+        });
         sim.houses.request_house_tech_tree_recheck(owner);
         return false;
     };

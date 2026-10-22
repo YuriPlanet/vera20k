@@ -353,6 +353,23 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
+            SimSoundEvent::SuperWeaponLaunchTail { owner, sw_type } => {
+                // Launch6CDE06's player tail is reached without a silo too.
+                // It removes Ready regardless of activation-mute state and
+                // produces no launch sound or announcement.
+                if !owner_is_local(sim.interner(), owner, local_owner_name) {
+                    continue;
+                }
+                let Some(ready) = rules
+                    .super_weapon(sim.interner().resolve(sw_type))
+                    .and_then(|sw| launch_drops_ready_line(sw.kind))
+                else {
+                    continue;
+                };
+                GameSoundEvent::EvaRemove {
+                    event: ready.to_string(),
+                }
+            }
             SimSoundEvent::SuperWeaponLaunched {
                 owner,
                 sw_type,
@@ -1964,8 +1981,8 @@ mod tests {
     /// launch event carries a case's sound and line, so case 0's order, its
     /// sound first, is not compared. The mute rows (`0x00A8B538` set) defeat
     /// the current house, VERA's reading of that byte. The player's charged
-    /// case 0 rows that find no silo pin the `nuke.rs` RESIDUAL: native drops
-    /// the Ready line, VERA runs no tail.
+    /// case 0 rows that find no silo still drop the Ready line without
+    /// playing the activation sound or announcement.
     #[test]
     fn launch_lines_match_native() {
         let rules =
@@ -2007,9 +2024,6 @@ mod tests {
                 let launches = row["charged"] == true
                     && (section != "nuke_launch"
                         || events.iter().any(|event| event[0] == "queue_mission"));
-                // nuke.rs RESIDUAL: a charged player's launch without one
-                // still drops the Ready line natively; VERA reports nothing.
-                let residual = row["charged"] == true && !launches && row["player"] == true;
                 let mut sim = Simulation::new();
                 if row["mute"] == true {
                     let local = sim.intern("Local");
@@ -2026,12 +2040,17 @@ mod tests {
                     "Remote"
                 });
                 let sw_type = sim.intern(name);
-                let launched = launches.then_some(SimSoundEvent::SuperWeaponLaunched {
-                    owner,
-                    sw_type,
-                    rx: 40,
-                    ry: 40,
-                });
+                let launched = if launches {
+                    Some(SimSoundEvent::SuperWeaponLaunched {
+                        owner,
+                        sw_type,
+                        rx: 40,
+                        ry: 40,
+                    })
+                } else {
+                    (row["charged"] == true)
+                        .then_some(SimSoundEvent::SuperWeaponLaunchTail { owner, sw_type })
+                };
                 let mut output = SoundEventQueue::new();
                 dispatch_sim_sound_events(
                     launched,
@@ -2073,12 +2092,7 @@ mod tests {
                     lines.sort();
                     native.sort();
                 }
-                if residual {
-                    assert!(lines.is_empty(), "{row}");
-                    assert_eq!(native, ["remove EVA_NuclearMissileReady"], "{row}");
-                } else {
-                    assert_eq!(lines, native, "{row}");
-                }
+                assert_eq!(lines, native, "{row}");
                 compared += 1;
             }
             assert_eq!(compared, expected, "{section}");

@@ -50,8 +50,7 @@ pub(crate) fn chrono_warp_selected(targeting: Option<&TargetingMode>, rules: &Ru
 /// `0x006CDA53`, `0x006CD2CB`, `0x006CD7D3`), and the revoke/suspend pass
 /// clears it when the selected Super's hold changes or it is lost
 /// (`HouseClass @ 0x0050AF10`, `0x0050B181..0x0050B190`). Other houses'
-/// Supers leave it alone. Case 0's tail also follows a launch that finds no
-/// silo, which VERA does not report (`superweapon/nuke.rs` RESIDUAL).
+/// Supers leave it alone. Case 0 also reports its tail when no silo is found.
 pub(super) fn follow_selection_writes(
     targeting: &mut Option<TargetingMode>,
     events: &[SimSoundEvent],
@@ -61,6 +60,7 @@ pub(super) fn follow_selection_writes(
 ) {
     for event in events {
         let (SimSoundEvent::SuperWeaponLaunched { owner, sw_type, .. }
+        | SimSoundEvent::SuperWeaponLaunchTail { owner, sw_type }
         | SimSoundEvent::SuperWeaponStatusChanged { owner, sw_type }) = event
         else {
             continue;
@@ -182,6 +182,92 @@ mod tests {
 
     fn warp_selected() -> Option<TargetingMode> {
         Some(TargetingMode::SuperWeapon("ChronoWarpSpecial".to_string()))
+    }
+
+    /// Launch6CDE06's supplied no-silo state. Exercise SPECIAL_PLACE
+    /// admission, recharge and both presentation consumers; the permanent
+    /// trigger-grant producer is covered by the core grant tests.
+    #[test]
+    fn missing_silo_click_finishes_the_local_tail_without_launch_cues() {
+        use crate::sim::command::Command;
+        for local_launch in [false, true] {
+            for charged in [false, true] {
+                let Some((rules, mut sim, local)) = retail_world() else {
+                    return;
+                };
+                let remote = sim.intern("Russians");
+                let owner = if local_launch { local } else { remote };
+                let sw_type = sim.intern("NukeSpecial");
+                let instance = sim
+                    .super_weapons_mut_for_test()
+                    .get_mut(&owner)
+                    .unwrap()
+                    .get_mut(&sw_type)
+                    .unwrap();
+                instance.set_is_active_for_test(true);
+                instance.set_is_ready_for_test(charged);
+                instance.set_charge_start_tick_for_test(0);
+                instance.set_charge_duration_for_test(0);
+                assert_eq!(
+                    sim.apply_command(
+                        sim.interner().resolve(owner).to_owned().as_str(),
+                        &Command::LaunchSuperWeapon {
+                            sw_type_id: sw_type,
+                            target_rx: 40,
+                            target_ry: 40
+                        },
+                        Some(&rules),
+                    ),
+                    charged
+                );
+                let events = sim.take_sound_events_for_test();
+                assert!(
+                    !events
+                        .iter()
+                        .any(|event| matches!(event, SimSoundEvent::SuperWeaponLaunched { .. }))
+                );
+                assert!(!sim.super_weapons()[&owner][&sw_type].is_ready());
+                if charged {
+                    assert_eq!(
+                        sim.super_weapons()[&owner][&sw_type].charge_duration(),
+                        rules
+                            .super_weapon("NukeSpecial")
+                            .unwrap()
+                            .recharge_time_frames
+                    );
+                }
+                let selected = Some(TargetingMode::SuperWeapon("IronCurtainSpecial".to_owned()));
+                let mut targeting = selected.clone();
+                follow_selection_writes(&mut targeting, &events, &sim, &rules, Some("Americans"));
+                assert_eq!(
+                    targeting,
+                    if local_launch && charged {
+                        None
+                    } else {
+                        selected
+                    }
+                );
+                let mut output = SoundEventQueue::new();
+                crate::app::match_runtime::sound_dispatch::dispatch_sim_sound_events(
+                    events,
+                    &sim,
+                    &rules,
+                    Some("Americans"),
+                    &mut |_| true,
+                    &mut output,
+                );
+                let emitted = output.drain();
+                if local_launch && charged {
+                    assert!(
+                        matches!(emitted.as_slice(),
+                        [GameSoundEvent::EvaRemove { event }] if event == "EVA_NuclearMissileReady"),
+                        "{emitted:?}"
+                    );
+                } else {
+                    assert!(emitted.is_empty(), "{emitted:?}");
+                }
+            }
+        }
     }
 
     #[cfg(feature = "ares")]
@@ -448,8 +534,7 @@ mod tests {
     /// report every charged row once (`iron_curtain_tests`,
     /// `genetic_converter_tests`); so for case 11 (`0x006CD7D3`,
     /// `psychic_launch`, `psychic_reveal_tests`) and for case 0's launches
-    /// with a silo (`0x006CDE16`, `nuke_launch`, `nuke_tests`). The player's
-    /// charged case 0 rows without one pin the `nuke.rs` RESIDUAL.
+    /// with or without a silo (`0x006CDE16`, `nuke_launch`, `nuke_tests`).
     #[test]
     fn the_local_launch_tails_of_cases_0_1_9_and_11_clear_the_selection() {
         let Some((rules, mut sim, local)) = retail_world() else {
@@ -477,14 +562,18 @@ mod tests {
                         .unwrap()
                         .iter()
                         .any(|event| event[0] == "queue_mission");
-                // ClickFire admits only a charged Super, and case 0 launches
-                // only with a silo: no launch, no report.
-                let events = if row["charged"] == true && silo {
-                    vec![SimSoundEvent::SuperWeaponLaunched {
-                        owner,
-                        sw_type,
-                        rx: 40,
-                        ry: 40,
+                // ClickFire admits only a charged Super. Case 0 reaches
+                // its cleanup tail even when there is no silo to launch.
+                let events = if row["charged"] == true {
+                    vec![if silo {
+                        SimSoundEvent::SuperWeaponLaunched {
+                            owner,
+                            sw_type,
+                            rx: 40,
+                            ry: 40,
+                        }
+                    } else {
+                        SimSoundEvent::SuperWeaponLaunchTail { owner, sw_type }
                     }]
                 } else {
                     Vec::new()
@@ -497,13 +586,7 @@ mod tests {
                     assert_eq!(row["selected_super"], 9, "{row}");
                     selected()
                 };
-                if row["charged"] == true && !silo && row["player"] == true {
-                    // nuke.rs RESIDUAL: native's tail clears the selection
-                    // without a silo; VERA reports no launch and keeps it.
-                    assert_eq!((targeting, native), (selected(), None), "{row}");
-                } else {
-                    assert_eq!(targeting, native, "{section} {row}");
-                }
+                assert_eq!(targeting, native, "{section} {row}");
             }
         }
     }

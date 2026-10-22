@@ -890,6 +890,14 @@ pub enum SimSoundEvent {
         rx: u16,
         ry: u16,
     },
+    /// A launch reached its player cleanup without an activation. Ordinary
+    /// MultiMissile with no silo still runs Launch6CDE06..6CDE27: clear the
+    /// local player's selected Super and remove its queued Ready line.
+    /// Successful `SuperWeaponLaunched` events already carry that tail.
+    SuperWeaponLaunchTail {
+        owner: InternedId,
+        sw_type: InternedId,
+    },
     /// A `CreateRadarEvent` with no local-player test and no sound, on every
     /// client: each admits it on its own radar. Type 13 from
     /// `SuperClass::Launch` case 1 (`0x006CCF2F`), case 4 (`0x006CC4BE` at

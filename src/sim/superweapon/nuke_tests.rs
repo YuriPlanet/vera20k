@@ -655,6 +655,21 @@ fn the_launch_matches_native() {
             })
             .collect();
         assert_eq!(pushed, native, "{row}");
+        let tails = sim
+            .sound_events
+            .iter()
+            .filter(|event| {
+                matches!(event,
+                    SimSoundEvent::SuperWeaponLaunchTail { owner: by, sw_type: kind }
+                        if *by == owner && *kind == sw_type
+                )
+            })
+            .count();
+        assert_eq!(
+            tails,
+            usize::from(int(&row["recheck"]) != 0 && !has_event(row, "queue_mission")),
+            "{row}: a reached tail without activation"
+        );
     }
 }
 
