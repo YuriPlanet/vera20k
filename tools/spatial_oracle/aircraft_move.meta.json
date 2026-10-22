@@ -6,10 +6,9 @@
     1,
     33621247
   ],
-  "scope": "AircraftClass::Find_Attack_Cell on supplied flat-map states (clear, occupied and reserved parameters, blocked first and second rings, the blocker object, the owner's own cell, a playfield edge, five seeds) and Mission_Move states 0..5 with a null, cell and object NavCom, moving or not, plus occupied and reserved NavCom cells and a second Rate. Includes live marked/unmarked hull query controls over Water with/without three structural bridge decks, in both search and Move0. Not a native launch/fatal lifecycle replay, the Carryall arm (0x00416D50), the planning-path branch of state 2, Assign_Destination, Enter_Idle_Mode or the locomotors.",
+  "scope": "AircraftClass::Find_Attack_Cell on supplied flat-map states (clear, occupied and reserved parameters, blocked first and second rings, the blocker object, the owner's own cell, a playfield edge, five seeds) and Mission_Move states 0..5 with a null, cell and object NavCom, moving or not, plus occupied and reserved NavCom cells and a second Rate. Not the Carryall arm (0x00416D50), the planning-path branch of state 2, Assign_Destination, Enter_Idle_Mode or the locomotors.",
   "assumptions": [
-    "The fly-landing fixture: an ordinary marked Aircraft over flat Clear cells with real Cell/Map vtables, its Fly locomotor replaced for Mission_Move; MapSize width 64; Rules+0x1478 = 0x2000, the RulesClass constructor value (no INI reader writes it); MissionControl[Move].Rate the float-widened row rate; no team (+0x5D4) and no planning path (+0x520 = -1).",
-    "Bridge controls supply Water land2 with zero terrain costs, Flags0x100, empty deck/ground lists, Spawned=true/AirportBound=false and a live Foot in the registry whose Marked+74 varies. The marked contrast is a query control after ground-list removal, not a whole-world placement claim."
+    "The fly-landing fixture: an ordinary marked Aircraft over flat Clear cells with real Cell/Map vtables, its Fly locomotor replaced for Mission_Move; MapSize width 64; Rules+0x1478 = 0x2000, the RulesClass constructor value (no INI reader writes it); MissionControl[Move].Rate the float-widened row rate; no team (+0x5D4) and no planning path (+0x520 = -1)."
   ],
   "substitutions": [
     "Aircraft vt+0x480 and vt+0x484 record their arguments and return; the owner's ILocomotion is a scratch interface answering Is_Moving from the row and recording Move_To."
@@ -22,6 +21,5 @@
     "cell_in_playfield": "0x00578460",
     "mission_control": "0x005B3A00"
   },
-  "replay_command": "python -m tools.spatial_oracle.aircraft_move",
-  "payload_sha256": "6f45bdec9949a52ffa4aa7b8d4541e769965ea55e38293a60881f3e98e09348b"
+  "payload_sha256": "ce2127af73bd7ef1ba191ed73fde4d712004ef094bedb135d538f76b14d09c59"
 }

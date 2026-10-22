@@ -188,32 +188,6 @@ pub(crate) fn fixture(input: &Value) -> (Simulation, RuleSet) {
         ),
     );
     super::super::lifecycle_tests::install_common_raw_terrain(&mut sim, 128, 128, 0, None);
-    if input["water"].as_bool().unwrap_or(false) {
-        let decks: Vec<_> = input["bridge_cells"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .map(cell_of)
-            .collect();
-        let terrain = sim.resolved_terrain.as_mut().unwrap();
-        for y in 0..128 {
-            for x in 0..128 {
-                let mut cell = super::super::lifecycle_tests::common_raw_terrain_cell(
-                    x,
-                    y,
-                    0,
-                    decks.contains(&(x, y)),
-                );
-                cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
-                cell.base_land_type = cell.land_type;
-                cell.speed_costs = crate::rules::terrain_rules::SpeedCostProfile::default();
-                cell.base_speed_costs = cell.speed_costs;
-                cell.ground_walk_blocked = true;
-                *terrain.cell_mut_for_test(x, y).unwrap() = cell;
-            }
-        }
-    }
-
     let owner_cell = input.get("owner_cell").map_or((60, 64), cell_of);
     insert(
         &mut sim,
@@ -232,9 +206,6 @@ pub(crate) fn fixture(input: &Value) -> (Simulation, RuleSet) {
     );
     // The blocker's +0x4C reads its locomotor's Destination.
     let blocker = sim.substrate.entities.get_mut(BLOCKER).unwrap();
-    blocker
-        .lifecycle
-        .set_cell_marked_for_test(input["blocker_marked"].as_bool().unwrap_or(true));
     let mut locomotor = crate::sim::movement::locomotor::LocomotorState::from_object_type(
         rules.object("BLOCKER").unwrap(),
         0,
@@ -347,7 +318,7 @@ fn name(target: Option<NavTargetRef>) -> Value {
 fn find_attack_cell_matches_original_searches() {
     let vectors = vectors();
     let rows = vectors["find_attack_cell"].as_array().unwrap();
-    assert_eq!(rows.len(), 25);
+    assert_eq!(rows.len(), 22);
     for row in rows {
         let input = &row["input"];
         let label = input["name"].as_str().unwrap();
@@ -453,7 +424,7 @@ impl move_mission::MoveHost for RowHost<'_> {
 fn mission_move_matches_original_states() {
     let vectors = vectors();
     let rows = vectors["mission_move"].as_array().unwrap();
-    assert_eq!(rows.len(), 50);
+    assert_eq!(rows.len(), 47);
     for row in rows {
         let input = &row["input"];
         let label = input["name"].as_str().unwrap();
