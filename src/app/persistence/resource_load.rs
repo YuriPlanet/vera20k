@@ -49,6 +49,7 @@ struct PreparedSavedResources {
     local_view: PreparedSavedLocalView,
     power_bar_anim: PowerBarAnimState,
     radar_events: crate::render::radar::ClientRadarEvents,
+    credits_counter: Option<i32>,
     tile_cache: TileVariantSelectorCache,
     theater: theater::TheaterData,
     elapsed_clock: crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
@@ -61,6 +62,7 @@ pub(crate) struct CommittedSavedGame {
     pub(crate) local_view: PreparedSavedLocalView,
     pub(crate) power_bar_anim: PowerBarAnimState,
     pub(crate) radar_events: crate::render::radar::ClientRadarEvents,
+    pub(crate) credits_counter: Option<i32>,
     pub(crate) details: CommittedLoadPresentation,
     pub(crate) elapsed_clock: crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
 }
@@ -103,6 +105,7 @@ impl PreparedSavedGame {
         let power_bar_anim = PowerBarAnimState::from_saved(saved_view.take_power_bar().ok_or(
             crate::sim::snapshot::saved_local_view::SavedLocalViewError::MissingPowerBar,
         )?)?;
+        let credits_counter = saved_view.take_credits_counter();
         let radar_events = crate::render::radar::ClientRadarEvents::from_saved(
             saved_view
                 .take_radar_events()
@@ -239,6 +242,7 @@ impl PreparedSavedGame {
             local_view,
             power_bar_anim,
             radar_events,
+            credits_counter,
             tile_cache,
             theater,
             elapsed_clock,
@@ -357,6 +361,7 @@ impl PreparedSavedGame {
             local_view,
             power_bar_anim,
             radar_events,
+            credits_counter,
             tile_cache,
             elapsed_clock,
             ..
@@ -389,6 +394,7 @@ impl PreparedSavedGame {
             local_view,
             power_bar_anim,
             radar_events,
+            credits_counter,
             details,
             elapsed_clock,
         }

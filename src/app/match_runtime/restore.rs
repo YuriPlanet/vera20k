@@ -174,7 +174,13 @@ pub(crate) fn commit_prepared_load(
         .sidebar_projection
         .restore_order(committed.details.sidebar_order);
 
-    if let Some(owner) = state.match_state.local_player_owner().map(str::to_owned) {
+    let owner = state.match_state.local_player_owner().map(str::to_owned);
+    state
+        .match_state
+        .match_presentation
+        .sidebar_projection
+        .restore_credits_counter(owner.as_deref(), committed.credits_counter);
+    if let Some(owner) = owner {
         state
             .match_state
             .sim_runtime

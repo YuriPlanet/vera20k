@@ -248,6 +248,8 @@ fn snapshot_bytes(
     )
     .unwrap();
     view.set_power_bar(native_saved_power());
+    // Authored signed display input: raw save/load must not clamp or seed it.
+    view.set_credits_counter(Some(-7));
     view.set_radar_events(saved_radar_for_fixture());
     GameSnapshot::save_validated_with_presentation(
         &runtime.simulation,
@@ -278,6 +280,7 @@ fn assert_incoming_resources(
     incoming: &SimRuntime,
     map: &SavedMapMetadata,
 ) {
+    assert_eq!(prepared.credits_counter, Some(-7));
     assert_eq!(
         prepared.power_bar_anim.saved(),
         native_saved_power(),

@@ -71,6 +71,11 @@ pub struct SavedLocalView {
     /// input owner supplies its own facts. App loads require this payload.
     power_bar: Option<SavedPowerBar>,
     radar_events: Option<SavedRadarEvents>,
+    /// MouseClass::Save5BE6D0 (5BE715) / Load5BDF70 (5BE092) retain
+    /// CreditsClass+4 (Mouse+5520).
+    /// None preserves the client's not-yet-observed counter, rather than
+    /// replacing an initialized display with the simulation's wallet balance.
+    credits_counter: Option<i32>,
 }
 
 /// The Display's armed cursor modes. MouseLoad5BDF70 reads the whole Display
@@ -135,6 +140,7 @@ impl SavedLocalView {
             modes,
             power_bar: None,
             radar_events: None,
+            credits_counter: None,
         };
         saved.validate_structure()?;
         Ok(saved)
@@ -197,6 +203,14 @@ impl SavedLocalView {
 
     pub fn take_radar_events(&mut self) -> Option<SavedRadarEvents> {
         self.radar_events.take()
+    }
+
+    pub fn set_credits_counter(&mut self, displayed: Option<i32>) {
+        self.credits_counter = displayed;
+    }
+
+    pub fn take_credits_counter(&mut self) -> Option<i32> {
+        self.credits_counter.take()
     }
 
     pub fn into_local_input(

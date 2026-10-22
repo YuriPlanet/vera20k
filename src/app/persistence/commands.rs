@@ -209,6 +209,12 @@ fn prepare_save<'a>(
         &presentation.sidebar_gadget_state,
     )?;
     local_view.set_power_bar(presentation.power_bar_anim.saved());
+    local_view.set_credits_counter(
+        state
+            .match_state
+            .local_player_owner()
+            .and_then(|owner| presentation.sidebar_projection.saved_credits_counter(owner)),
+    );
     local_view.set_radar_events(presentation.minimap.as_ref().map_or_else(
         Default::default,
         crate::render::radar::minimap::MinimapRenderer::saved_radar_events,

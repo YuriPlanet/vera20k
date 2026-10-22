@@ -21,7 +21,7 @@ use crate::ui::sidebar::cameo_order::{
 };
 
 /// One changed `CreditsClass::AI` step: the `animating(+0xA)` latch plus the
-/// `counting_up(+0x9)` direction that `CreditsClass::Draw @ 0x004A250D` reads
+/// `counting_up(+0x9)` direction that `CreditsClass::Draw @ 0x004A2370` reads
 /// to pick `CreditTicks[0]` (up) or `[1]` (down).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CreditTick {
@@ -904,6 +904,20 @@ impl SidebarProjectionState {
                 break;
             }
             strips.step_pending_scroll(visible_rows);
+        }
+    }
+
+    pub(crate) fn saved_credits_counter(&self, owner: &str) -> Option<i32> {
+        self.displayed_credits.get(owner).copied()
+    }
+
+    /// MouseClass::Save5BE6D0 (5BE715) / Load5BDF70 (5BE092) copy CreditsClass+4, and
+    /// TabClass::NoInit5BE9B0 leaves it intact. Replace outgoing caches before
+    /// the first refreshed view; a load neither seeds from cash nor visits AI.
+    pub(crate) fn restore_credits_counter(&mut self, owner: Option<&str>, displayed: Option<i32>) {
+        self.displayed_credits.clear();
+        if let Some((owner, displayed)) = owner.zip(displayed) {
+            self.displayed_credits.insert(owner.to_owned(), displayed);
         }
     }
 
@@ -1807,6 +1821,45 @@ mod tests {
             credit_tick_sound(&[], CreditTick { counting_up: false }),
             None
         );
+    }
+
+    #[test]
+    fn saved_credits_replace_warm_and_cold_counters_without_an_ai_step() {
+        let mut saved = SidebarProjectionState::default();
+        saved.displayed_credits_or_seed("Americans", 1000);
+        saved.advance_credits("Americans", 0);
+        let display = saved.saved_credits_counter("Americans");
+        assert_ne!(display, Some(1000), "save during the counter's animation");
+
+        let mut warm = SidebarProjectionState::default();
+        warm.displayed_credits_or_seed("Americans", 50_000);
+        warm.displayed_credits_or_seed("Russians", 2000);
+        warm.restore_credits_counter(Some("Americans"), display);
+        assert_eq!(warm.saved_credits_counter("Americans"), display);
+        assert_eq!(warm.saved_credits_counter("Russians"), None);
+
+        let mut cold = SidebarProjectionState::default();
+        cold.restore_credits_counter(Some("Americans"), display);
+        assert_eq!(
+            cold.displayed_credits_or_seed("Americans", 1000),
+            display.unwrap()
+        );
+        let next_tick = saved.advance_credits("Americans", 1000);
+        assert_eq!(warm.advance_credits("Americans", 1000), next_tick);
+        assert_eq!(cold.advance_credits("Americans", 1000), next_tick);
+        assert_eq!(
+            warm.saved_credits_counter("Americans"),
+            saved.saved_credits_counter("Americans")
+        );
+        assert_eq!(
+            cold.saved_credits_counter("Americans"),
+            saved.saved_credits_counter("Americans")
+        );
+
+        // A save before the first observation must discard an outgoing cache.
+        warm.restore_credits_counter(Some("Americans"), None);
+        assert_eq!(warm.saved_credits_counter("Americans"), None);
+        assert_eq!(warm.displayed_credits_or_seed("Americans", 1000), 1000);
     }
 
     /// Compose the production seam: credits step only when the runtime
