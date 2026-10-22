@@ -5765,7 +5765,6 @@ impl Simulation {
     }
 
     pub fn uninit_with_context(&mut self, stable_id: u64, context: UninitContext<'_>) {
-        self.planning_detach_actor(stable_id);
         let kind = match self.classify_object(stable_id) {
             Some(kind @ (ObjectKind::Entity | ObjectKind::Spotlight | ObjectKind::Smudge)) => kind,
             Some(ObjectKind::Particle)
@@ -6253,6 +6252,7 @@ impl Simulation {
         // before its attached/deploy Anims6F468B. Keep the disposal marker in
         // the same stream as AI visits and those Anim sound callbacks.
         if kind == Some(ObjectKind::Entity) {
+            self.destroy_planning_token(stable_id);
             self.sound_events
                 .emit(super::SimSoundEvent::UnitVoiceDestroyed { owner: stable_id });
         }
