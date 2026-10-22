@@ -1865,16 +1865,23 @@ fn finish_concrete_death(
         // arm's OVER_OUT to every contact (`techno_death_stun`) already
         // released its dock slots.
         effects.despawned_ids.push(dead_id);
-    } else if category == EntityCategory::Aircraft
-        && callbacks_enabled(world)
-        && world.foot_crash(
+    } else if category == EntityCategory::Aircraft && callbacks_enabled(world) {
+        if !world.foot_crash(
             dead_id,
             killing_attacker(world, damage_events, dead_id),
             rules,
             overlay_registry,
             frame_effects,
-        )
-    {
+        ) {
+            // AircraftClass::ReceiveDamage4166A3 UnInits a refused Crash
+            // before returning. A later area receiver's passenger placement
+            // must see its cell cleared, rather than wait for batch delivery.
+            world.uninit_with_context(
+                dead_id,
+                crate::sim::world::UninitContext::new(rules, overlay_registry)
+                    .with_effects(frame_effects),
+            );
+        }
         // `AircraftClass::ReceiveDamage` (`0x00416694..0x004166A3`): an
         // airborne aircraft crashes instead of its UnInit. It stays alive and
         // represented, with Health 0, until its fall's impact.

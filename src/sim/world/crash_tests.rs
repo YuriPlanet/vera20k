@@ -11,6 +11,113 @@ use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::rng::SimRng;
 use crate::util::fixed_math::SimFixed;
 
+/// Supplied post-Chronosphere arrival: native Chrono7199D2..7199DF puts an
+/// ORCA at height zero and Mark(DOWN). Rules/ART stay stock; the seven Water
+/// neighbours leave the NW cell as the dying transport's only adjacent exit.
+fn retail_aircraft_receiver_scene() -> Option<(Simulation, RuleSet, u64)> {
+    let rules = crate::rules::retail_ini_fixture::retail_battle_rules()?.rules;
+    let aircraft_type = rules.object("ORCA").unwrap();
+    assert!(aircraft_type.landable && !aircraft_type.crashable);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 1);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    crate::sim::arena_fixture::flood(
+        &mut sim,
+        &rules,
+        32,
+        (14..=16).flat_map(|y| {
+            (14..=16)
+                .filter_map(move |x| (!matches!((x, y), (14, 14) | (15, 15))).then_some((x, y)))
+        }),
+    );
+    let aircraft = sim
+        .spawn_object("ORCA", "Americans", 14, 14, 0, &rules)
+        .unwrap();
+    assert!(sim.substrate.entities.get(aircraft).unwrap().is_voxel());
+    assert_eq!(
+        crate::sim::movement::air_movement::current_fly_height(
+            sim.substrate.entities.get(aircraft).unwrap(),
+            sim.resolved_terrain.as_ref(),
+        ),
+        0
+    );
+    assert_eq!(
+        sim.substrate.raw_cell_occupation.ground_bits(14, 14) & 0x40,
+        0x40
+    );
+    Some((sim, rules, aircraft))
+}
+
+/// Aircraft4166A3 UnInits before AreaDamage489AC1 advances to the next
+/// receiver. Its Cell raw CLEAR must precede Unit737F80's passenger Scatter.
+#[test]
+fn retail_landed_aircraft_clears_occupancy_before_the_next_victims_passenger_scatter() {
+    use crate::sim::combat::{RAD_NO_ATTACKER, world_receiver};
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::passenger::{BoardingArm, board_passenger};
+    use crate::sim::projectile::ProjectileCoord;
+    use crate::sim::world::FrameEffects;
+
+    let Some((mut sim, rules, aircraft)) = retail_aircraft_receiver_scene() else {
+        return;
+    };
+    let transport = sim
+        .spawn_object("HTK", "Americans", 15, 15, 0, &rules)
+        .unwrap();
+    let passenger = sim
+        .spawn_object("E1", "Americans", 17, 15, 0, &rules)
+        .unwrap();
+    assert!(board_passenger(
+        &mut sim,
+        &rules,
+        passenger,
+        transport,
+        BoardingArm::InfantryTransport,
+        None,
+        FrameEffects::default()
+    ));
+    let attacker_house = sim.interner.intern("Russians");
+    let warhead_id = sim.interner.intern("NUKE");
+    world_receiver::apply_area_damage(
+        &mut sim,
+        &rules,
+        None,
+        ProjectileCoord {
+            x: 3712,
+            y: 3712,
+            z: 0,
+        },
+        600,
+        rules.warhead("NUKE").unwrap(),
+        (RAD_NO_ATTACKER, Some(attacker_house), warhead_id),
+        FrameEffects::default(),
+    );
+    assert!(
+        !sim.substrate
+            .entities
+            .get(aircraft)
+            .unwrap()
+            .lifecycle
+            .object_alive()
+    );
+    let survivor = sim.substrate.entities.get(passenger).unwrap();
+    assert!(survivor.lifecycle.object_alive() && !survivor.lifecycle.in_limbo());
+    assert_eq!(
+        survivor.navigation.nav_com(),
+        Some(NavTargetRef::cell(14, 14))
+    );
+    let walk = survivor.locomotor.as_ref().unwrap();
+    assert_eq!(walk.walk_is_moving(), Some(true));
+    assert_eq!(
+        walk.walk_destination(),
+        Some(DriveCoord {
+            x: 3712,
+            y: 3712,
+            z: 0
+        })
+    );
+}
+
 /// A supplied impact boundary. C4 hurts the adjacent unarmored observer;
 /// Crush hurts none, and both leave the lightly armored falling owner alive
 /// until its notice explicitly UnInits it. This makes the first blast visible
