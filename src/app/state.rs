@@ -156,7 +156,9 @@ impl AppState {
     /// Asset-independent status cards and diagnostic modals use the OS cursor,
     /// and so does the pointer once it leaves the client area: mouse.shp has no
     /// art for the title bar or resize border, and the OS arrow is drawn there
-    /// whether VERA asks for it or not.
+    /// whether VERA asks for it or not. Main-menu dialogs (Options, Keyboard,
+    /// the exit confirm) are shell pages that draw mouse.shp themselves, so
+    /// they keep it; excluding them showed the OS arrow beside it.
     pub(crate) fn use_software_cursor(&self) -> bool {
         self.platform.pointer_in_client
             && !(self.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
@@ -173,7 +175,6 @@ impl AppState {
                     .match_presentation
                     .in_game_menu
                     .draws_over_battlefield())
-            && !self.main_menu_dialog_open()
     }
 
     /// Whether any main-menu modal dialog (exit confirm, options, keyboard)
