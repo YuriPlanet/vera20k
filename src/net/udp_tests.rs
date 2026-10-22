@@ -477,8 +477,8 @@ fn manager_response_reset_keeps_sockets_raw_queues_and_pending_channel_traffic()
 
 #[test]
 fn response_time_matches_native_private_maximum_excluding_primary_global() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/storage_oracle/lan_manager_timing.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/storage_oracle/lan_manager_timing.json",
     ))
     .unwrap();
     for case in corpus["response_maximum"].as_array().unwrap() {

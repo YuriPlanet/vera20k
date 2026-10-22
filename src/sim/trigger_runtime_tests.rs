@@ -1898,7 +1898,7 @@ fn mind_control_event6_owner_change_updates_source_house_before_event44_and_capt
 
 #[test]
 fn mind_control_attack_order_fires_attacked_tags_without_hp_damage() {
-    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::command::Command;
     let (mut sim, rules, overlay, houses) =
         event_ingress_fixture_with_rules(MIND_CONTROL_TAG_RULES);
     let source = sim
@@ -1908,13 +1908,18 @@ fn mind_control_attack_order_fires_attacked_tags_without_hp_damage() {
     install_event_ingress_map(&mut sim, &rules, MIND_CONTROL_TAG_MAP);
     sim.attach_object_trigger_tag(victim, Some("TAG"));
     assert!(sim.trigger_runtime.globals_set.is_empty());
-    sim.queue_command(CommandEnvelope::new(
-        houses[0],
-        sim.session.tick() + 1,
-        Command::Attack {
+    // Every House here is a computer, whose events the DoList never runs
+    // (0x0064C4FB..0x0064C50D). Order the Yuri through the class receiver, as
+    // the computer's own AI does.
+    assert!(sim.apply_command_with_overlays(
+        "House0",
+        &Command::Attack {
             attacker_id: source,
             target_id: victim,
         },
+        &rules,
+        Some(&overlay),
+        FrameEffects::default(),
     ));
     for _ in 0..90 {
         let commands = sim.take_due_commands();

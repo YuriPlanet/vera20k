@@ -288,8 +288,8 @@ fn wait_bar_reference_and_frame_sync_elapsed_follow_their_separate_writers() {
 
 #[test]
 fn wait_bar_timing_matches_executed_native_wrap_and_age_controls() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/storage_oracle/lan_wait_bars.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/storage_oracle/lan_wait_bars.json",
     ))
     .unwrap();
     for case in corpus["cases"].as_array().unwrap() {

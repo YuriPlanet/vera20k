@@ -386,7 +386,12 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // drives (pinned in the loop), so its MissionCom differs. All three RNG
 // streams and the per-frame replay are unchanged. Previous:
 // 0xF35B_3382_2DEF_1F00.
-const SLICE6_BASELINE_HASH: u64 = 0x51BE_2569_5006_2383;
+// #2543 removed the entity hash's determines_waypoint_edge input with the
+// frozen type fact it read; every object here hashed it as false. Hash
+// composition only: a temporary control restoring that false gave the
+// previous value, with every tripwire above green. Control removed.
+// Previous: 0x51BE_2569_5006_2383.
+const SLICE6_BASELINE_HASH: u64 = 0x619E_E645_0B3E_881C;
 
 #[test]
 fn replay_hash_stable_through_slice6() {

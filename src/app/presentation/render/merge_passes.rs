@@ -1,16 +1,21 @@
 //! Replay each retained Display layer without sorting by texture or depth.
-//! Adjacent native destination edits share the existing overlap scheduler;
-//! ordinary GPU draw policies fence those spans in the same parent order.
+//! Draws keep retained parent order wherever their pixels overlap; disjoint
+//! draws of one transaction family share a stage ([`super::object_stages`]),
+//! so Anim bodies and shadows do not split the ordinary pass per parent.
 
 use crate::render::batch::BatchRenderer;
 use crate::render::overlay_atlas::OverlayAtlas;
 use crate::render::palette_textures::PaletteSet;
 use crate::render::sprite_atlas::SpriteAtlas;
-use crate::render::terrain_draw::{PackedComposite, PackedCompositePiece, PackedSpriteKind};
+use crate::render::terrain_draw::{
+    DestinationEditCommand, PackedComposite, PackedCompositePiece, PackedSpriteKind,
+    TerrainBatchStats, TerrainDrawRenderer, packed_wave_key,
+};
 use crate::render::unit_atlas::UnitAtlas;
 use crate::render::unit_pose_cache::VxlPoseFrameCache;
 
 use super::draw_plan_lowering::{ObjectDrawRun, ObjectLayerPass, ObjectTexture};
+use super::object_stages::{ObjectStages, StageKind};
 use crate::render::tactical_draw_plan::RenderZPolicy;
 
 /// Native background bases6D9920 and subsequent Display sweep6D8DB0 use
@@ -21,17 +26,27 @@ pub(super) enum ObjectDrawPhase {
     Display,
 }
 
+/// One planned draw. An ordinary item is one instance of `runs[run]`;
+/// adjacent instances of one run re-coalesce into a single range at replay.
+enum StageItem<'a> {
+    Ordinary { run: usize, index: u32 },
+    Packed(PackedComposite<'a>),
+    Edit(DestinationEditCommand),
+}
+
 /// Dispatch the already-lowered native Display sequence without re-sorting it.
 ///
 /// Every run is a contiguous slice of one flat instance buffer. Texture page,
 /// atlas family, and `SpriteInstance.depth` select only GPU state; none can
-/// change the retained Display parent order carried by `TacticalDrawPlan`.
+/// change the retained Display parent order carried by `TacticalDrawPlan`
+/// for any pixel. Surface lines, combat lights and status runs are barriers:
+/// everything planned before them replays first.
 pub(super) fn draw_native_object_pass<'a>(
     encoder: &mut wgpu::CommandEncoder,
     phase: ObjectDrawPhase,
     color: &wgpu::TextureView,
     depth: &wgpu::TextureView,
-    terrain: &mut crate::render::terrain_draw::TerrainDrawRenderer,
+    terrain: &mut TerrainDrawRenderer,
     tactical: [u32; 4],
     batch: &'a BatchRenderer,
     buffer: Option<(&'a wgpu::Buffer, u32)>,
@@ -48,8 +63,8 @@ pub(super) fn draw_native_object_pass<'a>(
         Option<&'a crate::render::batch::BatchTexture>,
     )>,
     lights: Option<&crate::render::combat_light::CombatLightRenderer>,
-) -> crate::render::terrain_draw::TerrainBatchStats {
-    let mut terrain_stats = crate::render::terrain_draw::TerrainBatchStats::default();
+) -> TerrainBatchStats {
+    let mut stats = TerrainBatchStats::default();
     assert_eq!(
         buffer.map_or(0, |(_, count)| count as usize),
         ground.instances.len()
@@ -99,298 +114,386 @@ pub(super) fn draw_native_object_pass<'a>(
         ObjectDrawPhase::Display => &ground.runs,
     };
     let camera = batch.camera_uniform();
-    let mut run_offset = 0;
+    let replay = StageReplay {
+        color,
+        depth,
+        tactical,
+        batch,
+        buffer: buffer.map(|(buffer, _)| buffer),
+        ground,
+        runs,
+        overlay_atlas,
+        unit_atlas,
+        pose_cache,
+        sprite_atlas,
+        palette_set,
+        zshape,
+    };
+    let mut stages =
+        ObjectStages::new([camera.screen_size[0] as u32, camera.screen_size[1] as u32]);
     let mut cursor = 0;
     while cursor < runs.len() {
         let run = &runs[cursor];
-        if let ObjectTexture::SurfaceLines(index) = run.target {
-            terrain.draw_surface_lines(encoder, color, ground.line_batches[index]);
-            cursor += 1;
-            continue;
-        }
-        if let ObjectTexture::CombatLight(index) = run.target {
-            let lights = lights.expect("a System light has this frame's prepared renderer");
-            if lights.draw_record(encoder, tactical, ground.light_record_base + index) {
-                terrain.note_external_passes(encoder, 1);
+        match run.target {
+            ObjectTexture::SurfaceLines(index) => {
+                stats.accumulate(replay.draw(encoder, terrain, stages.take()));
+                terrain.draw_surface_lines(encoder, color, ground.line_batches[index]);
+                cursor += 1;
+                continue;
             }
-            cursor += 1;
-            continue;
-        }
-        if let ObjectTexture::Status(index) = run.target {
-            super::object_extras::draw_status_runs(
-                encoder,
-                color,
-                depth,
-                terrain,
-                tactical,
-                batch,
-                extras.map(|(overlay, _, _)| overlay),
-                extras.map(|(_, buffer, _)| buffer),
-                &ground.extras_instances,
-                extras.and_then(|(_, _, font)| font),
-                &ground.extras_runs[index..index + 1],
-            );
-            cursor += 1;
-            continue;
-        }
-        let (buffer, _) = buffer.expect("a sprite run has an uploaded instance buffer");
-        // Only an opaque body's unsafe signed candidates need manual replay.
-        // Retain one composite per instance: an ordinary run can coalesce
-        // many Display parents, unlike native parent-grouped blend sources.
-        if is_opaque_voxel_run(run)
-            && voxel_needs_manual_depth(
-                &ground.instances[(run.start + run_offset) as usize],
-                camera,
-            )
-        {
-            let index = run.start + run_offset;
-            if let Some((source, material, kind)) = packed_binding(run.target) {
-                let composite = PackedComposite {
-                    pieces: vec![PackedCompositePiece {
-                        index,
-                        instance: &ground.instances[index as usize],
-                        source,
-                        material,
-                        kind,
-                    }],
-                    render_z: run.render_z,
-                };
-                terrain_stats.accumulate(terrain.draw_packed_span(
+            ObjectTexture::CombatLight(index) => {
+                stats.accumulate(replay.draw(encoder, terrain, stages.take()));
+                let lights = lights.expect("a System light has this frame's prepared renderer");
+                if lights.draw_record(encoder, tactical, ground.light_record_base + index) {
+                    terrain.note_external_passes(encoder, 1);
+                }
+                cursor += 1;
+                continue;
+            }
+            ObjectTexture::Status(index) => {
+                stats.accumulate(replay.draw(encoder, terrain, stages.take()));
+                super::object_extras::draw_status_runs(
                     encoder,
                     color,
                     depth,
-                    batch,
-                    buffer,
-                    &[composite],
+                    terrain,
                     tactical,
-                ));
-            }
-            run_offset += 1;
-            if run_offset == run.count {
+                    batch,
+                    extras.map(|(overlay, _, _)| overlay),
+                    extras.map(|(_, buffer, _)| buffer),
+                    &ground.extras_instances,
+                    extras.and_then(|(_, _, font)| font),
+                    &ground.extras_runs[index..index + 1],
+                );
                 cursor += 1;
-                run_offset = 0;
+                continue;
             }
-            continue;
+            _ => {}
         }
         if run.packed_parent.is_some() {
             // Unit73B140 shades the opaque source cache and composites once.
             // Native hull/turret/barrel source ownership survives atlas pages;
             // an ancillary SHP draw remains its own Convert490E50 operation.
             // See procedural_drawing_oracle/translucent_blitter_a.md.
-            let mut composites = Vec::new();
-            while cursor < runs.len() && runs[cursor].packed_parent.is_some() {
-                let start = cursor;
-                let run = &runs[cursor];
-                cursor = packed_span_end(runs, cursor);
-                let pieces: Vec<_> = runs[start..cursor]
-                    .iter()
-                    .flat_map(|run| {
-                        let binding = packed_binding(run.target);
-                        (run.start..run.start + run.count).filter_map(move |index| {
-                            let (source, material, kind) = binding?;
-                            Some(PackedCompositePiece {
-                                index,
-                                instance: &ground.instances[index as usize],
-                                source,
-                                material,
-                                kind,
-                            })
+            let start = cursor;
+            cursor = packed_span_end(runs, cursor);
+            let pieces: Vec<_> = runs[start..cursor]
+                .iter()
+                .flat_map(|run| {
+                    let binding = packed_binding(run.target);
+                    (run.start..run.start + run.count).filter_map(move |index| {
+                        let (source, material, kind) = binding?;
+                        Some(PackedCompositePiece {
+                            index,
+                            instance: &ground.instances[index as usize],
+                            source,
+                            material,
+                            kind,
                         })
                     })
-                    .collect();
-                if is_voxel_target(run.target) {
-                    composites.push(PackedComposite {
+                })
+                .collect();
+            if is_voxel_target(run.target) {
+                plan_packed(
+                    &mut stages,
+                    terrain,
+                    tactical,
+                    PackedComposite {
                         pieces,
                         render_z: run.render_z,
-                    });
-                } else {
-                    // Every SHP instance remains its own original source blit.
-                    composites.extend(pieces.into_iter().map(|piece| PackedComposite {
-                        pieces: vec![piece],
-                        render_z: run.render_z,
-                    }));
+                    },
+                );
+            } else {
+                // Every SHP instance remains its own original source blit.
+                for piece in pieces {
+                    plan_packed(
+                        &mut stages,
+                        terrain,
+                        tactical,
+                        PackedComposite {
+                            pieces: vec![piece],
+                            render_z: run.render_z,
+                        },
+                    );
                 }
             }
-            terrain_stats.accumulate(terrain.draw_packed_span(
-                encoder,
-                color,
-                depth,
-                batch,
-                buffer,
-                &composites,
-                tactical,
-            ));
             continue;
         }
-        if destination_edit(run.target).is_some() {
-            let start = cursor;
-            cursor = destination_span_end(runs, start);
-            // Atlas changes preserve parent order. All destination edits in
-            // this span share overlap dependencies; ordinary draws are fences.
-            let commands = runs[start..cursor].iter().flat_map(|run| {
-                let (piece, atlas_slot) =
-                    destination_edit(run.target).expect("destination edit span");
-                (run.start..run.start + run.count).map(move |index| {
-                    crate::render::terrain_draw::DestinationEditCommand {
+        if let Some((piece, atlas_slot)) = destination_edit(run.target) {
+            // ReadOnly edits reduce in sequence inside one interval; ReadWrite
+            // edits keep strict overlap waves (`TerrainDrawRenderer::draw_span`).
+            let kind = if run.render_z == RenderZPolicy::ReadOnly {
+                StageKind::EditReadOnly
+            } else {
+                StageKind::EditReadWrite
+            };
+            for index in run.start..run.start + run.count {
+                if let Some(rect) =
+                    terrain.piece_footprint(&ground.instances[index as usize], tactical)
+                {
+                    let command = DestinationEditCommand {
                         index,
                         piece,
                         render_z: run.render_z,
                         atlas_slot,
-                    }
-                })
-            });
-            terrain_stats.accumulate(terrain.draw_span(
-                encoder,
-                color,
-                depth,
-                batch,
-                |slot| {
-                    if slot == 0 {
-                        overlay_atlas.map(|atlas| &atlas.texture)
-                    } else {
-                        sprite_atlas
-                            .and_then(|atlas| atlas.page(slot - 1))
-                            .map(|page| &page.texture)
-                    }
-                },
-                buffer,
-                &ground.instances,
-                commands,
-                tactical,
-            ));
+                    };
+                    stages.push(kind, rect, StageItem::Edit(command));
+                }
+            }
+            cursor += 1;
             continue;
         }
-        let mut pass =
-            crate::app::presentation::sidebar_render::begin_main_load_pass(encoder, color, depth);
-        pass.set_scissor_rect(tactical[0], tactical[1], tactical[2], tactical[3]);
-        while cursor < runs.len()
-            && runs[cursor].packed_parent.is_none()
-            && destination_edit(runs[cursor].target).is_none()
-            && !matches!(
-                runs[cursor].target,
-                ObjectTexture::SurfaceLines(_)
-                    | ObjectTexture::CombatLight(_)
-                    | ObjectTexture::Status(_)
-            )
-        {
-            let run = &runs[cursor];
-            let start = run.start + run_offset;
-            let remaining = run.count - run_offset;
-            let count = if is_opaque_voxel_run(run) {
-                voxel_fast_prefix(
-                    &ground.instances[start as usize..(start + remaining) as usize],
-                    camera,
-                )
-            } else {
-                remaining
-            };
-            if count == 0 {
-                break;
-            }
-            match run.target {
-                ObjectTexture::SurfaceLines(_)
-                | ObjectTexture::CombatLight(_)
-                | ObjectTexture::Status(_) => {
-                    unreachable!("surface commands replay before sprite dispatch")
+        for index in run.start..run.start + run.count {
+            let instance = &ground.instances[index as usize];
+            // Only an opaque body's unsafe signed candidates need manual
+            // replay, one composite per instance: an ordinary run can coalesce
+            // many Display parents, unlike native parent-grouped blend sources.
+            if is_opaque_voxel_run(run) && voxel_needs_manual_depth(instance, camera) {
+                if let Some((source, material, kind)) = packed_binding(run.target) {
+                    let piece = PackedCompositePiece {
+                        index,
+                        instance,
+                        source,
+                        material,
+                        kind,
+                    };
+                    let composite = PackedComposite {
+                        pieces: vec![piece],
+                        render_z: run.render_z,
+                    };
+                    plan_packed(&mut stages, terrain, tactical, composite);
                 }
-                ObjectTexture::TerrainShp(_) | ObjectTexture::SpriteAtlasEdit(_, _) => {
-                    unreachable!("native destination edits split normal runs")
-                }
-                ObjectTexture::OverlayAtlas => {
-                    if let Some(atlas) = overlay_atlas {
-                        batch.draw_passthrough_range(
-                            &mut pass,
-                            &atlas.texture,
-                            buffer,
-                            start,
-                            count,
-                        );
-                    }
-                }
-                ObjectTexture::UnitAtlasPage(page) => {
-                    if let (Some(palette), Some(texture)) = (
-                        palette_set,
-                        unit_atlas.and_then(|atlas| atlas.page_texture(page)),
-                    ) {
-                        batch.draw_voxel_sprites_range(
-                            &mut pass,
-                            texture,
-                            &palette.bind_group,
-                            buffer,
-                            start,
-                            count,
-                            run.render_z,
-                        );
-                    }
-                }
-                ObjectTexture::UnitPosePage(page) => {
-                    if let (Some(texture), Some(palette)) = (
-                        pose_cache.and_then(|cache| cache.page_texture(page)),
-                        palette_set,
-                    ) {
-                        batch.draw_voxel_sprites_range(
-                            &mut pass,
-                            texture,
-                            &palette.bind_group,
-                            buffer,
-                            start,
-                            count,
-                            run.render_z,
-                        );
-                    }
-                }
-
-                ObjectTexture::ShpPage(page) => {
-                    if let Some(texture) = sprite_atlas.and_then(|atlas| atlas.page(page)) {
-                        // The plan's Z policy selects the native leaf family:
-                        // buildings write (`0x6E00` -> `0x004990e0`), everything
-                        // else tests only (`0x2E00` -> `0x00494b60`).
-                        match run.render_z {
-                            RenderZPolicy::None => batch.draw_passthrough_range(
-                                &mut pass,
-                                &texture.texture,
-                                buffer,
-                                start,
-                                count,
-                            ),
-                            RenderZPolicy::ReadOnly => batch.draw_zsprite_range(
-                                &mut pass,
-                                &texture.texture,
-                                zshape,
-                                buffer,
-                                start,
-                                count,
-                                false,
-                            ),
-                            RenderZPolicy::ReadWrite | RenderZPolicy::AlphaReadWrite => batch
-                                .draw_zsprite_range(
-                                    &mut pass,
-                                    &texture.texture,
-                                    zshape,
-                                    buffer,
-                                    start,
-                                    count,
-                                    true,
-                                ),
-                        }
-                    }
-                }
-            }
-            run_offset += count;
-            if run_offset == run.count {
-                cursor += 1;
-                run_offset = 0;
-            } else {
-                break;
+            } else if let Some(rect) = terrain.piece_footprint(instance, tactical) {
+                stages.push(
+                    StageKind::Ordinary,
+                    rect,
+                    StageItem::Ordinary { run: cursor, index },
+                );
             }
         }
-        // Ordinary draws are submission boundaries as well as ordering
-        // fences. Many alternating Bullet/Anim parents must not fill Metal's
-        // native command-buffer pool before the frame reaches submission.
-        drop(pass);
-        terrain.note_external_passes(encoder, 1);
+        cursor += 1;
     }
-    terrain_stats
+    stats.accumulate(replay.draw(encoder, terrain, stages.take()));
+    stats
+}
+
+/// A composite with no visible pixels draws nothing and is not planned.
+fn plan_packed<'a>(
+    stages: &mut ObjectStages<StageItem<'a>>,
+    terrain: &TerrainDrawRenderer,
+    tactical: [u32; 4],
+    composite: PackedComposite<'a>,
+) {
+    let Some(rect) = terrain.packed_footprint(&composite, tactical) else {
+        return;
+    };
+    let kind = packed_wave_key(&composite).map_or(StageKind::PackedAlone, |(selector, z)| {
+        StageKind::Packed(selector, z)
+    });
+    stages.push(kind, rect, StageItem::Packed(composite));
+}
+
+/// The frame state every stage replays against.
+struct StageReplay<'a> {
+    color: &'a wgpu::TextureView,
+    depth: &'a wgpu::TextureView,
+    tactical: [u32; 4],
+    batch: &'a BatchRenderer,
+    buffer: Option<&'a wgpu::Buffer>,
+    ground: &'a ObjectLayerPass,
+    runs: &'a [ObjectDrawRun],
+    overlay_atlas: Option<&'a OverlayAtlas>,
+    unit_atlas: Option<&'a UnitAtlas>,
+    pose_cache: Option<&'a VxlPoseFrameCache>,
+    sprite_atlas: Option<&'a SpriteAtlas>,
+    palette_set: Option<&'a PaletteSet>,
+    zshape: &'a wgpu::BindGroup,
+}
+
+impl StageReplay<'_> {
+    fn draw(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        terrain: &mut TerrainDrawRenderer,
+        stages: Vec<(StageKind, Vec<StageItem<'_>>)>,
+    ) -> TerrainBatchStats {
+        let mut stats = TerrainBatchStats::default();
+        for (kind, items) in stages {
+            let buffer = self
+                .buffer
+                .expect("a sprite run has an uploaded instance buffer");
+            match kind {
+                StageKind::Ordinary => {
+                    let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
+                        encoder, self.color, self.depth,
+                    );
+                    let [x, y, width, height] = self.tactical;
+                    pass.set_scissor_rect(x, y, width, height);
+                    let mut items = items
+                        .iter()
+                        .map(|item| match item {
+                            StageItem::Ordinary { run, index } => (*run, *index),
+                            _ => unreachable!("an ordinary stage holds ordinary draws"),
+                        })
+                        .peekable();
+                    while let Some((run, start)) = items.next() {
+                        let mut count = 1;
+                        while items
+                            .next_if(|&(next_run, index)| next_run == run && index == start + count)
+                            .is_some()
+                        {
+                            count += 1;
+                        }
+                        self.draw_ordinary(&mut pass, &self.runs[run], buffer, start, count);
+                    }
+                    // Ordinary draws are submission boundaries as well as
+                    // ordering fences. Many alternating Bullet/Anim parents must
+                    // not fill Metal's native command-buffer pool before the
+                    // frame reaches submission.
+                    drop(pass);
+                    terrain.note_external_passes(encoder, 1);
+                }
+                StageKind::Packed(..) | StageKind::PackedAlone => {
+                    let composites: Vec<_> = items
+                        .into_iter()
+                        .map(|item| match item {
+                            StageItem::Packed(composite) => composite,
+                            _ => unreachable!("a packed stage holds packed composites"),
+                        })
+                        .collect();
+                    stats.accumulate(terrain.draw_packed_span(
+                        encoder,
+                        self.color,
+                        self.depth,
+                        self.batch,
+                        buffer,
+                        &composites,
+                        self.tactical,
+                    ));
+                }
+                StageKind::EditReadOnly | StageKind::EditReadWrite => {
+                    let commands = items.into_iter().map(|item| match item {
+                        StageItem::Edit(command) => command,
+                        _ => unreachable!("an edit stage holds destination edits"),
+                    });
+                    let (overlay_atlas, sprite_atlas) = (self.overlay_atlas, self.sprite_atlas);
+                    stats.accumulate(terrain.draw_span(
+                        encoder,
+                        self.color,
+                        self.depth,
+                        self.batch,
+                        |slot| {
+                            if slot == 0 {
+                                overlay_atlas.map(|atlas| &atlas.texture)
+                            } else {
+                                sprite_atlas
+                                    .and_then(|atlas| atlas.page(slot - 1))
+                                    .map(|page| &page.texture)
+                            }
+                        },
+                        buffer,
+                        &self.ground.instances,
+                        commands,
+                        self.tactical,
+                    ));
+                }
+            }
+        }
+        stats
+    }
+
+    fn draw_ordinary<'pass>(
+        &'pass self,
+        pass: &mut wgpu::RenderPass<'pass>,
+        run: &ObjectDrawRun,
+        buffer: &'pass wgpu::Buffer,
+        start: u32,
+        count: u32,
+    ) {
+        let batch = self.batch;
+        match run.target {
+            ObjectTexture::SurfaceLines(_)
+            | ObjectTexture::CombatLight(_)
+            | ObjectTexture::Status(_) => {
+                unreachable!("surface commands replay before sprite dispatch")
+            }
+            ObjectTexture::TerrainShp(_) | ObjectTexture::SpriteAtlasEdit(_, _) => {
+                unreachable!("native destination edits split normal runs")
+            }
+            ObjectTexture::OverlayAtlas => {
+                if let Some(atlas) = self.overlay_atlas {
+                    batch.draw_passthrough_range(pass, &atlas.texture, buffer, start, count);
+                }
+            }
+            ObjectTexture::UnitAtlasPage(page) => {
+                if let (Some(palette), Some(texture)) = (
+                    self.palette_set,
+                    self.unit_atlas.and_then(|atlas| atlas.page_texture(page)),
+                ) {
+                    batch.draw_voxel_sprites_range(
+                        pass,
+                        texture,
+                        &palette.bind_group,
+                        buffer,
+                        start,
+                        count,
+                        run.render_z,
+                    );
+                }
+            }
+            ObjectTexture::UnitPosePage(page) => {
+                if let (Some(texture), Some(palette)) = (
+                    self.pose_cache.and_then(|cache| cache.page_texture(page)),
+                    self.palette_set,
+                ) {
+                    batch.draw_voxel_sprites_range(
+                        pass,
+                        texture,
+                        &palette.bind_group,
+                        buffer,
+                        start,
+                        count,
+                        run.render_z,
+                    );
+                }
+            }
+            ObjectTexture::ShpPage(page) => {
+                if let Some(texture) = self.sprite_atlas.and_then(|atlas| atlas.page(page)) {
+                    // The plan's Z policy selects the native leaf family:
+                    // buildings write (`0x6E00` -> `0x004990e0`), everything
+                    // else tests only (`0x2E00` -> `0x00494b60`).
+                    match run.render_z {
+                        RenderZPolicy::None => batch.draw_passthrough_range(
+                            pass,
+                            &texture.texture,
+                            buffer,
+                            start,
+                            count,
+                        ),
+                        RenderZPolicy::ReadOnly => batch.draw_zsprite_range(
+                            pass,
+                            &texture.texture,
+                            self.zshape,
+                            buffer,
+                            start,
+                            count,
+                            false,
+                        ),
+                        RenderZPolicy::ReadWrite | RenderZPolicy::AlphaReadWrite => batch
+                            .draw_zsprite_range(
+                                pass,
+                                &texture.texture,
+                                self.zshape,
+                                buffer,
+                                start,
+                                count,
+                                true,
+                            ),
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Only fully opaque, native-paletted body stores have selector0 copy
@@ -400,16 +503,6 @@ fn is_opaque_voxel_run(run: &ObjectDrawRun) -> bool {
     run.packed_parent.is_none()
         && is_voxel_target(run.target)
         && run.render_z == RenderZPolicy::ReadOnly
-}
-
-fn voxel_fast_prefix(
-    instances: &[crate::render::batch::SpriteInstance],
-    camera: crate::render::batch::CameraUniform,
-) -> u32 {
-    instances
-        .iter()
-        .take_while(|instance| !voxel_needs_manual_depth(instance, camera))
-        .count() as u32
 }
 
 fn voxel_needs_manual_depth(
@@ -508,7 +601,7 @@ mod tests {
     use crate::render::tactical_draw_plan::SpriteEncoding;
 
     #[test]
-    fn opaque_voxel_fast_prefix_preserves_coalesced_order_and_effect_owners() {
+    fn opaque_voxel_manual_depth_preserves_effect_owners() {
         let camera = crate::render::terrain_draw_gpu_tests::camera([64, 96]);
         let mut safe = SpriteInstance {
             position: [27.0, 43.0],
@@ -527,10 +620,6 @@ mod tests {
         unsafe_body.position[1] = 32768.0;
         assert!(!voxel_needs_manual_depth(&safe, camera));
         assert!(voxel_needs_manual_depth(&unsafe_body, camera));
-        let slices = [safe, safe, unsafe_body, safe, unsafe_body];
-        assert_eq!(voxel_fast_prefix(&slices, camera), 2);
-        assert_eq!(voxel_fast_prefix(&slices[2..], camera), 0);
-        assert_eq!(voxel_fast_prefix(&slices[3..], camera), 1);
         for target in [
             ObjectTexture::UnitAtlasPage(0),
             ObjectTexture::UnitAtlasPage(1),
