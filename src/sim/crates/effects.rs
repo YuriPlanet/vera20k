@@ -211,34 +211,36 @@ pub(super) fn apply_veteran_crate(
     }
 }
 
-/// The HealBase arm's building loop `0x00482C18..0x00482C9C`: every building
-/// of the actor's house receives `Health - Type.Strength` (zero or negative)
-/// through `ReceiveDamage(&amount, 0, C4Warhead=, NULL, 1, 1, NULL)`, in
-/// `BuildingClass::Array` order (construction order here).
+/// The HealBase arm's live Logic loop `0x00482C18..0x00482C9C`: each
+/// same-house Techno receives `Health - Type.Strength` through
+/// `ReceiveDamage(&amount, 0, C4Warhead=, NULL, 1, 1, NULL)`. Each receiver
+/// finishes before the next live slot, collector owner, type and health read.
 pub(super) fn apply_heal_base_crate(
     sim: &mut Simulation,
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    owner: InternedId,
+    collector: u64,
     frame_effects: FrameEffects<'_>,
 ) {
-    let buildings: Vec<(u64, i32)> = sim
-        .substrate
-        .entities
-        .iter_sorted()
-        .filter(|(_, entity)| {
-            entity.category() == EntityCategory::Structure && entity.owner() == owner
-        })
-        .filter_map(|(id, entity)| {
-            let strength = sim.object_type(entity.type_ref(), rules)?.strength;
-            Some((id, entity.health.current().wrapping_sub(strength)))
-        })
-        .collect();
     let warhead = sim.interner.intern(&rules.bridge_warheads.c4_name);
-    for (id, amount) in buildings {
-        if !sim.substrate.entities.contains(id) {
+    let mut index = 0;
+    while let Some(&id) = sim.logic_order().get(index) {
+        index += 1;
+        // Non-Techno Logic members have their own stores. The native loop
+        // tests the collector's Techno bit, not the recipient's category.
+        let Some(entity) = sim.substrate.entities.get(id) else {
+            continue;
+        };
+        let Some(collector) = sim.substrate.entities.get(collector) else {
+            break;
+        };
+        if entity.owner() != collector.owner() {
             continue;
         }
+        let Some(object_type) = sim.object_type(entity.type_ref(), rules) else {
+            continue;
+        };
+        let amount = entity.health.current().wrapping_sub(object_type.strength);
         sim.commit_direct_damage_receiver(
             rules,
             registry,

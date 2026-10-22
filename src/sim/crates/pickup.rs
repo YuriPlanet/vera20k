@@ -531,7 +531,7 @@ pub(crate) fn pickup_crate(
                     cell,
                     center,
                 );
-                effects::apply_heal_base_crate(sim, rules, Some(registry), owner, frame_effects);
+                effects::apply_heal_base_crate(sim, rules, Some(registry), actor_id, frame_effects);
             }
             POWERUP_DARKNESS => {
                 sim.reset_shroud_for_owner(owner, rules);
