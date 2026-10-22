@@ -5645,7 +5645,7 @@ mod tests {
             overlay_registry: &overlays,
             house_roster: &house_roster,
             skirmish_session: Some(&launch),
-            campaign_new_game_map: None,
+            campaign_map: None,
         });
         assert_eq!(
             output.crates,

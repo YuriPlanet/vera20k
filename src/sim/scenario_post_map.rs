@@ -24,9 +24,8 @@ pub(crate) struct ScenarioPostMapInput<'a> {
     pub(crate) overlay_registry: &'a OverlayTypeRegistry,
     pub(crate) house_roster: &'a HouseRoster,
     pub(crate) skirmish_session: Option<&'a crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
-    /// Ordinary NewCampaign only: HomeCell selects the opening waypoint after
-    /// Evade's entry reset. Continuation/save AltHome belongs to its later route.
-    pub(crate) campaign_new_game_map: Option<&'a crate::map::map_file::MapFile>,
+    /// Every fresh campaign installation, including continuation and retry.
+    pub(crate) campaign_map: Option<&'a crate::map::map_file::MapFile>,
 }
 
 /// Presentation/logging facts returned after authoritative initialization.
@@ -196,22 +195,32 @@ impl Simulation {
             input.map_height,
         );
 
-        // Original684C30's opening-view choice consumes the already-parsed
-        // Scenario HomeCell/waypoint table. NewCampaign52DF05→4C6140 clears
-        // Evade, so this route uses HomeCell rather than AltHomeCell. Both
-        // indexes reset to699 in SetDefaults683610 before the Basic read.
-        let opening_view_cell = input.campaign_new_game_map.and_then(|map| {
+        // gamemd Fill_In_Data684C9A..684D43 reads Evade+0 (8A38E0), the
+        // incoming global0 captured by CampaignCarryOver::Save4C6180.
+        // NewCampaign52DF05->Clear4C6140 clears it. A continuation/retry
+        // uses that retained record before Restore4C6210 writes the new
+        // Scenario's globals; its current live global0 is not the selector.
+        // Basic Read68A601..68A656 reads both indexes with current defaults;
+        // fresh SetDefaults683622/683628 initializes both to699.
+        let opening_view_cell = input.campaign_map.and_then(|map| {
             assert!(
                 input.skirmish_session.is_none() && !self.session.game_mode_nonzero(),
                 "campaign opening view requires the campaign family"
             );
-            u32::try_from(map.basic.home_cell.unwrap_or(699))
-                .ok()
-                .map(|index| {
-                    map.waypoints
-                        .get(&index)
-                        .map_or((0, 0), |waypoint| (waypoint.rx, waypoint.ry))
-                })
+            let incoming = self
+                .session
+                .campaign_restart_carry_over()
+                .expect("campaign record");
+            let waypoint = if incoming.globals()[0] {
+                map.basic.alt_home_cell
+            } else {
+                map.basic.home_cell
+            };
+            u32::try_from(waypoint.unwrap_or(699)).ok().map(|index| {
+                map.waypoints
+                    .get(&index)
+                    .map_or((0, 0), |waypoint| (waypoint.rx, waypoint.ry))
+            })
         });
 
         // ReadScenario684B45..684B53, after 684C30 and before the initial
@@ -370,7 +379,7 @@ mod tests {
             overlay_registry: overlays,
             house_roster,
             skirmish_session: None,
-            campaign_new_game_map: None,
+            campaign_map: None,
         }
     }
 
@@ -464,6 +473,62 @@ mod tests {
     }
 
     #[test]
+    fn campaign_opening_view_uses_the_saved_incoming_global_zero() {
+        let Some(bytes) = crate::rules::retail_ini_fixture::retail_archive_bytes("SOV07TMD.MAP")
+        else {
+            return;
+        };
+        let map = crate::map::map_file::MapFile::from_bytes(&bytes).unwrap();
+        assert_eq!(
+            (map.basic.home_cell, map.basic.alt_home_cell),
+            (Some(17), Some(699))
+        );
+        let (rules, overlays) = post_map_rules_and_overlays();
+        let roster = HouseRoster::default();
+        // FillInData684C9A reads Evade+0, captured from the previous mission
+        // by4C6180. It does not read the new Scenario's live global0.
+        for (incoming, current, expected) in [(true, false, (107, 109)), (false, true, (149, 148))]
+        {
+            let mut previous = Simulation::new();
+            Simulation::set_trigger_variable(
+                &previous.session,
+                &mut previous.scenario_rng,
+                &mut previous.trigger_runtime,
+                true,
+                0,
+                incoming,
+            );
+            let record = previous.save_campaign_carry_over();
+            let mut sim = Simulation::from_descriptor(&Default::default());
+            sim.session
+                .initialize_campaign_startup(1, 7, None, 1, record)
+                .unwrap();
+            Simulation::set_trigger_variable(
+                &sim.session,
+                &mut sim.scenario_rng,
+                &mut sim.trigger_runtime,
+                true,
+                0,
+                current,
+            );
+            let saved = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
+            let mut loaded = crate::sim::snapshot::GameSnapshot::load(&saved)
+                .unwrap()
+                .sim;
+            let before = loaded.rng_state();
+            let mut input = generic_post_map_input(&rules, &overlays, &roster);
+            input.campaign_map = Some(&map);
+            let output = loaded.finalize_scenario_post_map(input);
+            assert_eq!(
+                output.opening_view_cell,
+                Some(expected),
+                "incoming={incoming}, current={current}"
+            );
+            assert_eq!(loaded.rng_state(), before);
+        }
+    }
+
+    #[test]
     fn campaign_opening_view_matches_original_new_game_basic_start_rows() {
         let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/input_oracle/campaign_start.json",
@@ -506,7 +571,7 @@ mod tests {
                 .unwrap();
             let before = sim.rng_state();
             let mut input = generic_post_map_input(&rules, &overlays, &roster);
-            input.campaign_new_game_map = Some(&map);
+            input.campaign_map = Some(&map);
             let output = sim.finalize_scenario_post_map(input);
             assert_eq!(
                 output.opening_view_cell,

@@ -212,7 +212,7 @@ mod tests {
                             overlay_registry: &overlays,
                             house_roster: &roster,
                             skirmish_session: None,
-                            campaign_new_game_map: None,
+                            campaign_map: None,
                         },
                     );
                 } else {

@@ -2758,6 +2758,21 @@ impl Simulation {
         std::array::from_fn(|index| self.trigger_runtime.globals_set.contains(&(index as u32)))
     }
 
+    /// Controlled campaign capture input through SetGlobal689670, including
+    /// its ordinary Tag timer resets. This does not replace the incoming
+    /// carry-over record; Victory4C6180 must capture it normally.
+    #[cfg(feature = "dev-overlays")]
+    pub fn dev_set_scenario_global(&mut self, index: i32, set: bool) {
+        Self::set_trigger_variable(
+            &self.session,
+            &mut self.scenario_rng,
+            &mut self.trigger_runtime,
+            true,
+            index,
+            set,
+        );
+    }
+
     /// Shared Scenario SetGlobal689670/SetLocal689910 mutation, including
     /// Tag timer resets. Trigger and Team scripts use this same owner.
     pub(crate) fn set_trigger_variable(

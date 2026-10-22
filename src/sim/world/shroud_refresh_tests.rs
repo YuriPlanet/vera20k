@@ -1793,7 +1793,7 @@ fn initial_house_sight_matches_original_update_tail() {
                         overlay_registry: &overlays,
                         house_roster: &roster,
                         skirmish_session: None,
-                        campaign_new_game_map: None,
+                        campaign_map: None,
                     },
                 );
             });

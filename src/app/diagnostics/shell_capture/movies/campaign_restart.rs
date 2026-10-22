@@ -30,6 +30,9 @@ pub enum RestartTarget {
     MenuDefeatReplayed,
     /// Save/load, win through TAction67, continue the score into ALL02.
     SavedVictory,
+    /// SetGlobal0 in SOV06, save/load, win, then observe SOV07 AltHomeCell.
+    /// The diagnostic supplies the flag/outcome, not preceding objective play.
+    AlternateHomeVictory,
     /// SOV02's authored objective, held behind B5 past its wall deadline.
     ObjectiveExpiry,
 }
@@ -145,6 +148,7 @@ pub(super) struct RestartCapture {
     theme_observations: Vec<Value>,
     objective_pause: Option<ObjectivePause>,
     objective_observations: Vec<Value>,
+    opening_view: Option<Value>,
 }
 
 impl RestartCapture {
@@ -159,11 +163,35 @@ impl RestartCapture {
         route.push(
             json!({"frame": frame, "action": "first live observed", "mission": before.receipt()}),
         );
+        #[cfg(feature = "dev-overlays")]
+        if target == RestartTarget::AlternateHomeVictory {
+            let runtime = state
+                .match_state
+                .sim_runtime
+                .as_mut()
+                .context("SOV06 runtime")?;
+            ensure!(
+                before.map_name.eq_ignore_ascii_case("SOV06LMD.MAP"),
+                "alternate home capture needs SOV06"
+            );
+            runtime.simulation.dev_set_scenario_global(0, true);
+            ensure!(
+                runtime.simulation.global_variables()[0],
+                "SetGlobal0 was not retained"
+            );
+            route.push(json!({"frame":frame,"action":"controlled SetGlobal0(true); preceding objectives not played"}));
+        }
+        #[cfg(not(feature = "dev-overlays"))]
+        ensure!(
+            target != RestartTarget::AlternateHomeVictory,
+            "alternate home capture needs dev-overlays"
+        );
         let restored = if matches!(
             target,
             RestartTarget::SavedAbortRestarted
                 | RestartTarget::MenuDefeatReplayed
                 | RestartTarget::SavedVictory
+                | RestartTarget::AlternateHomeVictory
         ) {
             state.persistence.isolate_capture_saves(save_directory)?;
             let path =
@@ -206,6 +234,7 @@ impl RestartCapture {
             theme_observations: Vec::new(),
             objective_pause: None,
             objective_observations: Vec::new(),
+            opening_view: None,
         };
         match target {
             RestartTarget::AbortShown
@@ -227,7 +256,7 @@ impl RestartCapture {
             | RestartTarget::MenuDefeatReplayed => {
                 capture.step = Step::AwaitBattleTheme;
             }
-            RestartTarget::SavedVictory => {
+            RestartTarget::SavedVictory | RestartTarget::AlternateHomeVictory => {
                 Self::complete_current_house(
                     state,
                     route,
@@ -660,7 +689,10 @@ impl RestartCapture {
                 {
                     ensure!(
                         startup.plays_action_movie()
-                            == (self.target == RestartTarget::SavedVictory),
+                            == matches!(
+                                self.target,
+                                RestartTarget::SavedVictory | RestartTarget::AlternateHomeVictory
+                            ),
                         "the continuation passed the wrong Start_Scenario movie flag"
                     );
                     self.observed_restart_loading = Some(json!({"frame": frame,
@@ -677,15 +709,42 @@ impl RestartCapture {
                     let after = Mission::observe(state)?;
                     ensure!(
                         after.campaign_index == self.before.campaign_index
-                            && if self.target == RestartTarget::SavedVictory {
-                                after.map_name == "ALL02UMD.MAP"
-                                    && after.mission_counter == self.before.mission_counter + 1
+                            && if matches!(
+                                self.target,
+                                RestartTarget::SavedVictory | RestartTarget::AlternateHomeVictory
+                            ) {
+                                after.map_name.eq_ignore_ascii_case(
+                                    if self.target == RestartTarget::SavedVictory {
+                                        "ALL02UMD.MAP"
+                                    } else {
+                                        "SOV07TMD.MAP"
+                                    },
+                                ) && after.mission_counter == self.before.mission_counter + 1
                             } else {
                                 after.map_name.eq_ignore_ascii_case(&self.before.map_name)
                                     && after.mission_counter == self.before.mission_counter
                             },
                         "the restart did not reinstall the same mission"
                     );
+                    if self.target == RestartTarget::AlternateHomeVictory {
+                        let sim = &state.match_state.sim_runtime.as_ref().unwrap().simulation;
+                        ensure!(
+                            sim.session()
+                                .campaign_restart_carry_over()
+                                .is_some_and(|record| record.globals()[0]),
+                            "victory lost incoming global0"
+                        );
+                        let views = &state.match_state.input.view_bookmarks;
+                        for slot in 0..4 {
+                            ensure!(
+                                views.get(slot) == Some((107, 109)),
+                                "SOV07 did not seed AltHomeCell into view {slot}"
+                            );
+                        }
+                        self.opening_view = Some(
+                            json!({"incoming_global0":true,"bookmarks":views.saved_cells(),"tactical_view":crate::app::input::camera::saved_tactical_view(state)}),
+                        );
+                    }
                     ensure!(
                         state
                             .match_state
@@ -785,6 +844,9 @@ impl RestartCapture {
             | RestartTarget::SavedVictory => {
                 self.step == Step::Done && state.frontend.screen == GameScreen::InGame
             }
+            RestartTarget::AlternateHomeVictory => {
+                self.step == Step::Done && state.frontend.screen == GameScreen::InGame
+            }
             RestartTarget::ObjectiveExpiry => {
                 self.step == Step::Done && state.frontend.screen == GameScreen::InGame
             }
@@ -795,6 +857,6 @@ impl RestartCapture {
         json!({"target": format!("{:?}", self.target), "before": self.before.receipt(),
             "restart_loading": self.observed_restart_loading, "restored": self.restored,
             "after": self.after.as_ref().map(Mission::receipt), "theme_observations": self.theme_observations,
-            "objective_observations": self.objective_observations})
+            "objective_observations": self.objective_observations, "opening_view":self.opening_view})
     }
 }

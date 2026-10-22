@@ -606,6 +606,9 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_ALL1_SAVED_VICTORY => {
                 Ok(Self::CampaignRestart(movies::RestartTarget::SavedVictory))
             }
+            "campaign-sov6-alternate-home-victory" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::AlternateHomeVictory,
+            )),
             CHECKPOINT_CAMPAIGN_ALL1_SAVED_RESTART => Ok(Self::CampaignRestart(
                 movies::RestartTarget::SavedAbortRestarted,
             )),
@@ -766,6 +769,9 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignRestart(movies::RestartTarget::SavedVictory) => {
                 CHECKPOINT_CAMPAIGN_ALL1_SAVED_VICTORY
+            }
+            Self::CampaignRestart(movies::RestartTarget::AlternateHomeVictory) => {
+                "campaign-sov6-alternate-home-victory"
             }
             Self::CampaignRestart(movies::RestartTarget::SavedAbortRestarted) => {
                 CHECKPOINT_CAMPAIGN_ALL1_SAVED_RESTART
@@ -949,14 +955,13 @@ impl ShellCaptureCheckpoint {
                 side,
                 target: movies::CampaignStartTarget::AbortReturn,
             },
-            Self::CampaignRestart(movies::RestartTarget::ObjectiveExpiry) => {
-                movies::MoviesTarget::CampaignStart {
-                    side: crate::ui::campaign_shell::CampaignSide::Soviet,
-                    target: movies::CampaignStartTarget::Restart(
-                        movies::RestartTarget::ObjectiveExpiry,
-                    ),
-                }
-            }
+            Self::CampaignRestart(
+                target @ (movies::RestartTarget::ObjectiveExpiry
+                | movies::RestartTarget::AlternateHomeVictory),
+            ) => movies::MoviesTarget::CampaignStart {
+                side: crate::ui::campaign_shell::CampaignSide::Soviet,
+                target: movies::CampaignStartTarget::Restart(target),
+            },
             Self::CampaignRestart(target) => movies::MoviesTarget::CampaignStart {
                 side: crate::ui::campaign_shell::CampaignSide::Allied,
                 target: movies::CampaignStartTarget::Restart(target),
@@ -2654,6 +2659,15 @@ mod tests {
                     side: Soviet,
                     target: movies::CampaignStartTarget::Restart(
                         movies::RestartTarget::ObjectiveExpiry,
+                    ),
+                },
+            ),
+            (
+                "campaign-sov6-alternate-home-victory",
+                movies::MoviesTarget::CampaignStart {
+                    side: Soviet,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::AlternateHomeVictory,
                     ),
                 },
             ),

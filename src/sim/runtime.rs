@@ -1265,7 +1265,7 @@ pub fn finalize_constructed_scenario(
     }
     // The caller submits one immutable initialization command; Simulation owns
     // every match-affecting write and Scenario RNG draw in the post-map tail.
-    let campaign_new_game_map = sim
+    let campaign_map = sim
         .session
         .campaign_mission_counter()
         .filter(|_| !sim.session.game_mode_nonzero())
@@ -1279,7 +1279,7 @@ pub fn finalize_constructed_scenario(
             overlay_registry,
             house_roster,
             skirmish_session,
-            campaign_new_game_map,
+            campaign_map,
         });
     sim.lighting_sources.discard_pending();
     output
