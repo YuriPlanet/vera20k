@@ -7,6 +7,8 @@ use crate::app::diagnostics::shell_capture::LiveLanConfig;
 use crate::net::udp::UdpBindConfig;
 use crate::ui::multiplayer_setup::{SetupAction, SetupColumn};
 
+mod battle;
+
 const HOST_NAME: &str = "LiveHost";
 const GUEST_NAME: &str = "LiveGuest";
 const REQUIRED_FRAMES: u32 = 300;
@@ -42,6 +44,8 @@ pub(super) struct LiveLanCapture {
     last_wait: Option<String>,
     kick_observed: bool,
     entered_setup: bool,
+    country_selected: bool,
+    battle: Option<battle::BattleOpening>,
 }
 
 impl LiveLanCapture {
@@ -62,11 +66,49 @@ impl LiveLanCapture {
             last_wait: None,
             kick_observed: false,
             entered_setup: false,
+            country_selected: false,
+            battle: matches!(target, LanTarget::BattleHost | LanTarget::BattleGuest)
+                .then(battle::BattleOpening::default),
         }
     }
 
     fn host(&self) -> bool {
-        self.target == LanTarget::LiveHost
+        matches!(self.target, LanTarget::LiveHost | LanTarget::BattleHost)
+    }
+
+    fn required_frames(&self) -> u32 {
+        if self.battle.is_some() {
+            1800
+        } else {
+            REQUIRED_FRAMES
+        }
+    }
+
+    fn select_country(&mut self, state: &mut AppState) -> Result<()> {
+        if self.battle.is_none() || self.country_selected {
+            return Ok(());
+        }
+        let country = state
+            .process_assets
+            .multiplayer_countries()
+            .position(|(id, _)| id.eq_ignore_ascii_case("Americans"))
+            .context("retail Americans country")?;
+        let row = state
+            .match_state
+            .session
+            .network_setup()
+            .map(|launch| launch.local_player())
+            .and_then(|human| human.raw_slot_index)
+            .context("local setup row")?;
+        setup::apply_action(
+            state,
+            SetupAction::Select {
+                control: SetupColumn::Country.control(usize::from(row)),
+                value: i32::try_from(country)?,
+            },
+        );
+        self.country_selected = true;
+        Ok(())
     }
 
     fn event(&mut self, frame: u32, action: &str) {
@@ -124,6 +166,7 @@ impl LiveLanCapture {
                 "kicked guest retained admitted setup"
             );
             self.kick_observed = true;
+            self.country_selected = false;
             self.phase = Phase::Discover;
             self.event(
                 frame,
@@ -270,6 +313,7 @@ impl LiveLanCapture {
                     })
                     .context("retail Battle map with two starts")?;
                 setup::commit_map_selection(state, mode_id, map_index, None)?;
+                self.select_country(state)?;
                 // Use the existing action admission, including current control
                 // availability. The isolated profile must allow one open peer.
                 for row in 1..8usize {
@@ -373,6 +417,7 @@ impl LiveLanCapture {
             Phase::GuestSetup
                 if rendered == PresentedShell::NetworkSetup && setup_settled(state, false) =>
             {
+                self.select_country(state)?;
                 let session = &state.match_state.session;
                 if session.network_setup().is_some_and(|launch| {
                     launch.humans.len() == 2
@@ -424,7 +469,9 @@ impl LiveLanCapture {
             .context("live simulation")?
             .simulation;
         let committed = simulation.session().binary_frame();
-        if let Some(actor) = self.actor {
+        if self.battle.is_none()
+            && let Some(actor) = self.actor
+        {
             let entity = simulation
                 .entities()
                 .get(actor)
@@ -444,7 +491,8 @@ impl LiveLanCapture {
             committed - self.checksums.len() as u32 <= 256,
             "capture missed overwritten checksum history"
         );
-        while (self.checksums.len() as u32) < committed.min(REQUIRED_FRAMES) {
+        let required_frames = self.required_frames();
+        while (self.checksums.len() as u32) < committed.min(required_frames) {
             self.checksums.push(
                 state
                     .match_state
@@ -464,6 +512,32 @@ impl LiveLanCapture {
             self.route
                 .push(json!({"render_frame":frame,"native_frame":committed,"wait":wait}));
             self.last_wait = Some(wait);
+        }
+        if self.battle.is_some() {
+            let host = self.host();
+            let battle = self.battle.as_mut().expect("battle target");
+            battle.step(state, committed, host, &mut self.actions)?;
+            if committed >= required_frames {
+                ensure!(
+                    battle.finished(state)?,
+                    "Battle opening incomplete: {}",
+                    battle.phase()
+                );
+                let live = state
+                    .match_state
+                    .live_network
+                    .as_ref()
+                    .context("live transport")?;
+                if live
+                    .peers()
+                    .iter()
+                    .all(|peer| peer.frame() >= required_frames as i32)
+                {
+                    MoviesCapture::restore_neutral_pointer(state);
+                    self.phase = Phase::Finished;
+                }
+            }
+            return Ok(());
         }
         if committed >= 10 && self.actor.is_none() {
             self.issue_move(state, committed)?;
@@ -625,7 +699,8 @@ impl LiveLanCapture {
             .context("live transport")?;
         Ok(
             json!({"target":format!("{:?}",self.target),"service_boundary":"two independent App processes; real UDP/global/private queues; ordinary frame boundary",
-            "scope":"kick/rejoin, 300 native frames and local Move/Stop; bounded runtime validation, not whole-match/native parity",
+            "scope":if self.battle.is_some() { "kick/rejoin, Battle MCV deploy, production hold/resume/cancel/place; bounded same-machine validation, not whole-match/native parity" } else { "kick/rejoin, 300 native frames and local Move/Stop; bounded runtime validation, not whole-match/native parity" },
+            "required_frames":self.required_frames(),"battle":self.battle.as_ref().map(|battle| battle.receipt(state)).transpose()?,
             "kick_observed":self.kick_observed,
             "bind":self.config.bind.to_string(),"peer":self.config.peer.to_string(),"startup":self.startup,
             "native_checksums":self.checksums,"actions":self.actions,"observed_movement":self.observed_movement,"stopped_position":self.stopped_position,"route":self.route,

@@ -12,6 +12,53 @@ use crate::sim::movement::{DriveLocomotionRuntime, ShipLocomotionRuntime};
 use crate::sim::world::Simulation;
 use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
 
+#[test]
+fn retained_cell_virtuals_read_dummy_without_relooking_up_its_live_coordinate() {
+    let mut sim = Simulation::new();
+    let mut terrain = terrain();
+    let allocated: Vec<_> = (0..8)
+        .flat_map(|y| (0..8).map(move |x| (x, y)))
+        .filter(|&cell| cell != (0, 0))
+        .collect();
+    terrain.test_set_native_allocated_cells(&allocated);
+    terrain.cell_mut_for_test(3, 3).unwrap().level = 5;
+    terrain.test_set_dummy_cell_level_slope(2, 0);
+    // The retained target is Dummy, later stamped onto a REAL cell's XY.
+    // A lookup at either the command (0,0) or the live (3,3) is incorrect.
+    terrain.shared_cell_dummy().stamp_coord(3, 3);
+    sim.install_resolved_terrain_for_new_map(terrain);
+    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+    let expected = DriveCoord {
+        x: 896,
+        y: 896,
+        z: 208,
+    };
+    assert_eq!(
+        super::navcom::nav_target_coordinate(
+            crate::sim::components::NavTargetRef::cell(0, 0),
+            None,
+            &sim,
+            Some(terrain),
+            None,
+        )
+        .unwrap(),
+        expected,
+    );
+    assert_eq!(
+        super::ground_pose::target_get_coords(
+            crate::sim::combat::TargetKind::Cell(0, 0),
+            &sim,
+            Some(&cells)
+        ),
+        Some(expected),
+    );
+    assert_eq!(terrain.shared_cell_dummy().snapshot().coord, (3, 3));
+    // A fresh Map lookup retains its distinct, stamping behavior.
+    assert_eq!(super::navcom::target_cell_coord(0, 0, Some(&cells)).x, 128);
+    assert_eq!(terrain.shared_cell_dummy().snapshot().coord, (0, 0));
+}
+
 fn terrain() -> ResolvedTerrainGrid {
     ResolvedTerrainGrid::from_cells(
         8,

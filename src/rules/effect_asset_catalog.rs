@@ -231,6 +231,27 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
         for name in &warhead.anim_list {
             insert(name);
         }
+        // Installed Ares EMP10062610/10062FD0 constructs the retained
+        // Warhead sparkle as AnimClass421EA0. Existing-pointer lookup alone
+        // does not bind its physical bounds for that constructor.
+        #[cfg(feature = "ares")]
+        if let Some(name) = warhead.emp_rules().and_then(|emp| emp.sparkles()) {
+            insert(name);
+        }
+    }
+    // First activation10062625 may fall back through Type/General, while
+    // refresh uses only the explicit Warhead pointer. Bind every configured
+    // producer through this same closure, for graphical and headless loads.
+    #[cfg(feature = "ares")]
+    {
+        for object in rules.all_objects() {
+            if let Some(Some(name)) = object.emp_rules().and_then(|emp| emp.sparkles()) {
+                insert(name);
+            }
+        }
+        if let Some(name) = rules.emp_sparkles() {
+            insert(name);
+        }
     }
     // Muzzle animations `TechnoClass::Fire_At` constructs
     // (`sim::world::damage_consequences`, `combat::fire_coord`).
@@ -588,6 +609,126 @@ mod tests {
         assert!(bound.contains("BETA"), "Next= chain is bound with its root");
         assert!(!bound.contains("ABSENT"));
         assert_eq!(rules.art().anim_runtime_config("BETA").unwrap().end, 4);
+    }
+
+    #[test]
+    fn ares_emp_sparkle_roots_bind_physical_bounds_before_anim_construction() {
+        use crate::sim::{
+            anim_class::AnimWorldCoord, components::AnimClassSpawnDescriptor, world::Simulation,
+        };
+        let native = crate::test_fixture::json("tools/rules_oracle/ares_emp.json");
+        for row in native["registered_animation_readers"].as_array().unwrap() {
+            let mut source = String::from("[Warheads]\n0=EMP\n[Animations]\n");
+            for (index, name) in row["fixture"]["registered"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+            {
+                source.push_str(&format!("{index}={}\n", name.as_str().unwrap()));
+            }
+            source.push_str(&format!(
+                "[EMP]\nEMP.Sparkles={}\n",
+                row["fixture"]["raw"].as_str().unwrap()
+            ));
+            let rules = RuleSet::from_ini(&IniFile::from_str(&source)).unwrap();
+            let expected = if crate::rules::ARES_ENABLED {
+                row["result"]["reference"].as_str()
+            } else {
+                None
+            };
+            assert_eq!(
+                rules
+                    .warhead("EMP")
+                    .unwrap()
+                    .emp_rules()
+                    .and_then(|emp| emp.sparkles()),
+                expected,
+                "{row}"
+            );
+        }
+        let root = TestRoot::new();
+        let names = ["WH_SPARK", "TYPE_SPARK", "GLOBAL_SPARK"];
+        for name in names {
+            std::fs::write(
+                root.path().join(format!("{name}.SHP")),
+                shp_with_undecodable_pixels(6),
+            )
+            .expect("write header-valid synthetic sparkle SHP");
+        }
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        // GeneralRules retains the original InfDeath5 animation at registry
+        // index1 even without Ares. Reserve that slot so this fixture isolates
+        // EMP roots rather than also binding TYPE_SPARK through electrocution.
+        let ini = IniFile::from_str(
+            "[VehicleTypes]\n0=CONTROL\n[Warheads]\n0=EMP\n[Animations]\n0=WH_SPARK\n1=ELECTRO\n2=TYPE_SPARK\n3=GLOBAL_SPARK\n[General]\nEMPulseSparkles=GLOBAL_SPARK\n[CONTROL]\nStrength=100\nEMP.Sparkles=TYPE_SPARK\n[EMP]\nEMP.Duration=2\nEMP.Sparkles=WH_SPARK\n",
+        );
+        let art = IniFile::from_str(
+            "[WH_SPARK]\nLoopCount=-1\n[TYPE_SPARK]\nLoopCount=-1\n[GLOBAL_SPARK]\nLoopCount=-1\n",
+        );
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art)
+            .expect("production retained Rules/ART reads");
+        rules.install_art_data(ArtRegistry::from_ini(&art));
+        // The diagnostic's ART-name check alone cannot admit construction:
+        // all configs exist here but still lack physical SHP frame bounds.
+        for name in names {
+            assert_eq!(
+                rules
+                    .art()
+                    .anim_runtime_config(name)
+                    .unwrap()
+                    .raw_shp_frame_count,
+                None
+            );
+        }
+        let roots = anim_class_roots(&rules);
+        for name in names {
+            assert_eq!(
+                roots.iter().any(|root| root == name),
+                crate::rules::ARES_ENABLED,
+                "{name}"
+            );
+        }
+        // Same tolerant binder used by the app loader; no test-only frame
+        // setter. Missing unrelated default roots remain tolerant.
+        rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
+        let mut sim = Simulation::with_seed(17);
+        for name in names {
+            let expected = crate::rules::ARES_ENABLED.then_some(6);
+            assert_eq!(
+                rules
+                    .art()
+                    .anim_runtime_config(name)
+                    .unwrap()
+                    .raw_shp_frame_count,
+                expected,
+                "{name}"
+            );
+            assert_eq!(
+                rules.art().scheduler_anim_types().contains(name),
+                crate::rules::ARES_ENABLED
+            );
+            let type_name = sim.intern(name);
+            let world = AnimWorldCoord {
+                x: 128,
+                y: 128,
+                z: 0,
+            };
+            let (rx, ry, sub_x, sub_y, z) = world.to_cell_sub_z();
+            let spawned = sim.spawn_anim_at_world(
+                &rules,
+                AnimClassSpawnDescriptor {
+                    draw_flags: 0x600,
+                    ..AnimClassSpawnDescriptor::new(type_name, rx, ry, sub_x, sub_y, z)
+                },
+                world,
+            );
+            assert_eq!(
+                spawned.is_ok(),
+                crate::rules::ARES_ENABLED,
+                "{name}: {spawned:?}"
+            );
+        }
     }
 
     fn catalog_hash(catalog: &EffectAssetCatalog) -> u64 {

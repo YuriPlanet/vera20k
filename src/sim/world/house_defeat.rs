@@ -259,6 +259,10 @@ impl Simulation {
             if let Some(house) = self.houses.get_mut(&owner) {
                 house.release_repair_latch(self.session.binary_frame());
             }
+            self.update_initial_house_sight(
+                owner,
+                UninitContext::new(rules, registry).with_effects(frame_effects),
+            );
             index += 1;
         }
         generated

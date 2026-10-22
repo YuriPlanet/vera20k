@@ -288,6 +288,68 @@ fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
 }
 
 #[test]
+fn sentinel_place_success_keeps_the_indexed_empty_factory() {
+    let Some((mut sim, rules, owner)) = busy_factory_exit_world() else {
+        return;
+    };
+    let product = busy_factory_exit_product(&mut sim, &rules, owner, false);
+    let mut selection =
+        super::ProductionSelection::for_type(&rules, rules.object("MTNK").unwrap()).unwrap();
+    selection.rtti = 1;
+    let record = sim.encode_place_record(owner, selection, (0, 0)).unwrap();
+    assert!(sim.apply_command(
+        "Americans",
+        &crate::sim::command::Command::SynchronizedRecord { record },
+        Some(&rules)
+    ));
+    assert!(!sim.substrate.entities.get(product).unwrap().in_limbo());
+    // HousePlace4FB5B5 passes the original index after Complete clears the
+    // product. Indexed/null-held Abandon4FAB3D..47 retains this Factory.
+    let factory = sim
+        .production
+        .factories()
+        .view(owner, ProductionCategory::Vehicle)
+        .expect("indexed completion keeps the empty Factory");
+    assert!(factory.object.is_none());
+}
+
+#[test]
+fn sentinel_place_failed_exit_keeps_a_mismatched_paid_head() {
+    let Some((mut sim, rules, owner)) = busy_factory_exit_world() else {
+        return;
+    };
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .base_projection_mut()
+        .replace_buildings_for_test(vec![1]);
+    let product = busy_factory_exit_product(&mut sim, &rules, owner, false);
+    let credits = sim.houses[&owner].economy().credits();
+    let selection =
+        super::ProductionSelection::for_type(&rules, rules.object("HTNK").unwrap()).unwrap();
+    let record = sim.encode_place_record(owner, selection, (0, 0)).unwrap();
+    assert!(!sim.apply_command(
+        "Americans",
+        &crate::sim::command::Command::SynchronizedRecord { record },
+        Some(&rules)
+    ));
+    //4FB663 also forwards the original index. An HTNK cancellation cannot
+    // refund or destroy this MTNK when the producer's exit refuses it.
+    assert_eq!(sim.houses[&owner].economy().credits(), credits);
+    assert!(sim.substrate.entities.contains(product));
+    assert_eq!(
+        sim.production
+            .factories()
+            .view(owner, ProductionCategory::Vehicle)
+            .unwrap()
+            .complete_object()
+            .unwrap()
+            .entity_id,
+        Some(product)
+    );
+}
+
+#[test]
 fn busy_factory_exit_restores_building_attachment_after_success() {
     let Some((mut sim, rules, owner)) = busy_factory_exit_world() else {
         return;

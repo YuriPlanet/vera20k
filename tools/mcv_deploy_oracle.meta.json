@@ -6,7 +6,7 @@
     1,
     33621247
   ],
-  "scope": "13 continuation interior branch cases, 322 complete native turn/current samples, four turn-completion latch cases and the 36-entry TryToDeploy site table",
+  "scope": "13 continuation interior branch cases, 322 complete native turn/current samples, four turn-completion latch cases, the 36-entry TryToDeploy site table and seven MCV EMP admission/caller controls",
   "assumptions": [
     "Unit and FacingClass layouts from live Ghidra disassembly; fresh emulator per case",
     "mission fixtures start after substituted Deploy return, or after state0 radio call",
@@ -14,7 +14,11 @@
     "FacingClass timer padding ignored; global frame is explicitly initialized",
     "same-target duplicate Do_Turn at frame101 must preserve entire FacingClass state",
     "turn completion executes original rotation predicate/latch branch, stopping before PerCellProcess call",
-    "site table runs the one-time initializer with the guard bit clear, stopping before its atexit call"
+    "site table runs the one-time initializer with the guard bit clear, stopping before its atexit call",
+    "MCV admission executes whole700D50 using actual Unit vtable7F5C70, actual cell tunnel check484AE0 and Unit EMP query746C90 to70EFD0; alive DeathFrame=-1 and a separate dying-unit control",
+    "Prepared ordinary cell, no tube, no parasite/mind controller, DeploysInto construction yard, no passengers; no final conversion/placement claim",
+    "Deploy7393C0 caller runs refused path to return; allowed path stops7393DA before locomotion/placement",
+    "Admission/caller controls preserve original executable bytes, the global frame and EMP counter; monitored RNG/Detach entries fail, but valid whole RNG stream initialization and all other timers are not claimed"
   ],
   "substitutions": [
     "mission blocks supply Deploy return and resulting unit alive/flag/NavCom inputs; stop before further calls"
@@ -26,7 +30,12 @@
     "Drive_Do_Turn": "0x004B0EF0",
     "Facing_Current": "0x004C93D0",
     "Drive_turn_completion": "0x004B0775",
-    "TryToDeploy_site_init": "0x00738F9C"
+    "TryToDeploy_site_init": "0x00738F9C",
+    "CanDeploySlashUnload": "0x00700D50",
+    "Unit_EMP_query": "0x00746C90",
+    "Techno_EMP_query": "0x0070EFD0",
+    "Unit_Deploy_admission_caller": "0x007393C0"
   },
-  "payload_sha256": "f5fe0cdb70011949b5f150dbb6dceb22baec537b0f546d731cf6146416c6687c"
+  "replay_command": "python -m tools.mcv_deploy_oracle",
+  "payload_sha256": "3469da4e4c4f4f7b9812122b1284732aa7b67b3e78943334cb7a1c4f25018ebd"
 }

@@ -5201,9 +5201,9 @@ fn deposits_and_kills_feed_the_one_score() {
     // (Cost=900) plus one veteran GI (Cost=200, doubled).
     use crate::rules::ini_parser::IniFile;
     use crate::rules::object_type::{ObjectCategory, ObjectType};
-    use crate::rules::ruleset::INCOME_PPM_SCALE;
     use crate::sim::combat::veterancy::{VeterancyRank, kill_award_points};
     use crate::sim::economy::Economy;
+    use crate::util::native_x87::NativeF32Bits;
 
     let of = |body: &str, category| {
         let ini = IniFile::from_str(&format!(
@@ -5229,7 +5229,11 @@ fn deposits_and_kills_feed_the_one_score() {
 
     let mut economy = Economy::new(0);
     // 240 bales of ore deposited at the x5.0 score rate.
-    economy.add_tiberium_credits(240 * 25, 240, INCOME_PPM_SCALE, INCOME_PPM_SCALE);
+    economy.add_tiberium_credits(
+        25,
+        NativeF32Bits::from_bits(240_f32.to_bits()),
+        NativeF32Bits::ONE,
+    );
     economy.add_score(kill_points);
     assert_eq!(economy.score(), 2_500);
 }

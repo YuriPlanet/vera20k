@@ -1575,17 +1575,10 @@ impl Simulation {
     /// not operational (vt+0x350, `0x004555D0`) takes none; any other keeps a
     /// target its slot-0 weapon cannot aim (none, or an `AA=` projectile,
     /// BulletType `+0x2A4`) or one in range of SelectWeapon's weapon
-    /// (vt+0x3AC). Other objects admit every target here.
+    /// (vt+0x3AC), including its overlay line-of-fire checks. Other objects
+    /// admit every target here.
     ///
     /// RESIDUALS:
-    /// - InRange's line of fire reads no OverlayTypeClass table here, because
-    ///   `Simulation` holds none, so a wall between them is not seen. Trigger:
-    ///   retaliation against, or an order onto, a target behind a wall.
-    ///   Effect: the building takes a target native refuses; its next
-    ///   Mission_Attack asks GetFireError with the table and drops it, and
-    ///   the Guard visit that took it queued Attack without its
-    ///   `RandomRanged(0, 2)`. Frequency: rare. Later owner: the overlay table
-    ///   moving into `Simulation`.
     /// - The restore after a cell target expires
     ///   (`combat::combat_aoe::expire_cell_target_references`) holds only the
     ///   entity store and puts the suspended target back without this
@@ -1599,6 +1592,7 @@ impl Simulation {
         id: u64,
         requested: Option<TargetKind>,
         rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return true;
@@ -1618,7 +1612,7 @@ impl Simulation {
             return true;
         }
         let weapon = select_weapon(self, rules, id, Some(target));
-        can_fire_at(self, rules, id, target, weapon, None)
+        can_fire_at(self, rules, id, target, weapon, overlay_registry)
     }
 
     /// The phase-level combat fixture's stand-in for a building's object-pass

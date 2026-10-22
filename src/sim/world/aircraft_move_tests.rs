@@ -156,7 +156,7 @@ fn insert(sim: &mut Simulation, id: u64, name: &str, category: EntityCategory, p
 /// LocalSize, the owner aircraft (no team, no planning path), a Unit
 /// blocker in the Foot vector, and reserving aircraft parked off the
 /// playfield.
-fn fixture(input: &Value) -> (Simulation, RuleSet) {
+pub(crate) fn fixture(input: &Value) -> (Simulation, RuleSet) {
     let ini = format!(
         "[AircraftTypes]\n0=TEST\n[VehicleTypes]\n0=BLOCKER\n\
          [TEST]\nStrength=100\nSpeed=8\nLandable=yes\nSpawned={}\n\

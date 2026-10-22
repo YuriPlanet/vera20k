@@ -1407,6 +1407,49 @@ impl ProcessedRulesLayers {
             })
     }
 
+    pub(crate) fn emp_type_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            Option<&crate::rules::ares_emp::EmpTypeRules>,
+        ),
+    > {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.emp_type.as_ref(),
+                    )
+                })
+            })
+    }
+    pub(crate) fn emp_warhead_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, Option<&crate::rules::ares_emp::EmpWarheadRules>)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Warhead)
+            .into_iter()
+            .flatten()
+            .map(|member| {
+                (
+                    member.native_stored_id.as_str(),
+                    member.emp_warhead.as_ref(),
+                )
+            })
+    }
+
     pub(crate) fn object_armor_states(
         &self,
     ) -> impl Iterator<Item = (Option<ObjectCategory>, &str, ArmorId)> {
@@ -2917,6 +2960,8 @@ struct ProcessedType {
     warhead_verses: [NativeF64Bits; 11],
     /// Independent Ares10051D80 constructor/10006460 read vector.
     ares_verses: Option<AresWarheadVerses>,
+    emp_warhead: Option<crate::rules::ares_emp::EmpWarheadRules>,
+    emp_type: Option<crate::rules::ares_emp::EmpTypeRules>,
     /// ObjectType4753F0 -> Ares10006E10 binds at each reached body read.
     armor_id: ArmorId,
     /// ParticleSystemType+294, the bound ParticleType's index: constructor -1
@@ -3311,6 +3356,8 @@ impl ProcessedType {
             warhead_anim: WarheadAnimReadState::default(),
             warhead_verses: [NativeF64Bits::ONE; 11],
             ares_verses: None,
+            emp_warhead: None,
+            emp_type: None,
             armor_id: ArmorId::NONE,
             holds_what: None,
             super_weapon_weapon: None,
@@ -3710,8 +3757,13 @@ impl RulesPassProcessor {
         }
         if crate::rules::ARES_ENABLED && family == RulesTypeFamily::Warhead {
             members[index].ares_verses = Some(AresWarheadVerses::default());
+            members[index].emp_warhead = Some(Default::default());
         }
         if family.object_category().is_some() {
+            #[cfg(feature = "ares")]
+            {
+                members[index].emp_type = Some(Default::default());
+            }
             #[cfg(feature = "ares")]
             {
                 members[index].factory_owners = Some(AresFactoryOwners::default());
@@ -3796,6 +3848,28 @@ impl RulesPassProcessor {
                     .map(|index| self.families[&family][index].native_stored_id.clone())
                     .collect()
             })
+    }
+
+    /// Installed Ares Anim pointer Parser1000C9C0/Find1000D3E0: look up
+    /// only registered AnimTypes. A successful none clears; unknown retains.
+    #[cfg(feature = "ares")]
+    fn resolve_existing_anim_from(
+        &self,
+        section: &IniSection,
+        key: &str,
+    ) -> Option<Option<String>> {
+        let name = section.read_name(key, 2048)?;
+        if is_native_none_type_name(name) {
+            return Some(None);
+        }
+        let members = self.families.get(&RulesTypeFamily::Animation)?;
+        let index = ares_type_index_of_name(
+            name,
+            members
+                .iter()
+                .map(|member| member.native_stored_id.as_str()),
+        )?;
+        Some(Some(members[index].native_stored_id.clone()))
     }
 
     /// Shared Ares pointer-vector reader: Building specialization10010850 uses
@@ -4797,6 +4871,16 @@ impl RulesPassProcessor {
                 // reach the common TechnoType extension before subclass reads.
                 #[cfg(feature = "ares")]
                 self.process_factory_owners(family, index, &raw);
+                #[cfg(feature = "ares")]
+                {
+                    // Find only: this nullable Anim reader never allocates.
+                    let sparkle = self.resolve_existing_anim_from(&raw, "EMP.Sparkles");
+                    self.family_mut(family)[index]
+                        .emp_type
+                        .as_mut()
+                        .expect("TechnoType EMP extension")
+                        .read_pass(&raw, sparkle);
+                }
                 match family {
                     RulesTypeFamily::Building => {
                         let member = &mut self.families.get_mut(&family).unwrap()[index];
@@ -5398,11 +5482,21 @@ impl RulesPassProcessor {
             }
             #[cfg(feature = "ares")]
             {
+                let sparkle = pass
+                    .section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
+                    .and_then(|raw| self.resolve_existing_anim_from(raw, "EMP.Sparkles"));
                 let member = &mut self
                     .families
                     .get_mut(&RulesTypeFamily::Warhead)
                     .expect("Warhead family exists during its reader")[index];
                 let section = pass.section(&member.native_stored_id);
+                if let Some(section) = section {
+                    member
+                        .emp_warhead
+                        .as_mut()
+                        .expect("WH EMP extension")
+                        .read_pass(section, sparkle);
+                }
                 member
                     .ares_verses
                     .as_mut()

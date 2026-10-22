@@ -717,7 +717,19 @@ fn handle_return(
     // The narrow pass takes only a bay with a free contact slot
     // (`FUN_0065ADF0` at `0x004DEF09`), so a driving Teleporter keeps its
     // NavCom while every bay is busy.
-    let narrow = find_docking_bay(sim, rules, snap.entity_id, false, false, frame_effects);
+    let Some(requester_type) = sim.interner.object_type(snap.type_id, rules) else {
+        return;
+    };
+    let dock_types = &requester_type.dock;
+    let narrow = find_docking_bay(
+        sim,
+        rules,
+        snap.entity_id,
+        dock_types,
+        false,
+        false,
+        frame_effects,
+    );
     if driving {
         if narrow.is_none() {
             return;
@@ -746,7 +758,15 @@ fn handle_return(
         snap.state = MinerState::Dock;
         return;
     }
-    let Some(bay) = find_docking_bay(sim, rules, snap.entity_id, true, true, frame_effects) else {
+    let Some(bay) = find_docking_bay(
+        sim,
+        rules,
+        snap.entity_id,
+        dock_types,
+        true,
+        true,
+        frame_effects,
+    ) else {
         return;
     };
     if !teleporter
@@ -998,8 +1018,9 @@ pub(crate) fn extract_bale(
 }
 
 /// One `FootClass::Find_Docking_Bay @ 0x004DF040` pass for a miner or an
-/// aircraft (`AircraftClass::Find_Docking_Bay @ 0x0041BBD0` calls it): each
-/// `Dock=` type in list order goes to the scanner ([`scan_docking_type`]),
+/// aircraft (`AircraftClass::Find_Docking_Bay @ 0x0041BBD0` calls it), and
+/// Unit Mission_Repair740EF0: each caller supplies its actual list (`Dock=`
+/// or Rules' `RepairBay=`). Each type goes to the scanner ([`scan_docking_type`]),
 /// and the pass keeps a type's answer when it has none yet, when that
 /// answer is strictly nearer than the best so far, when the best is -1 or
 /// when the answer is a primary factory (0x004DF08E..0x004DF0A7).
@@ -1012,15 +1033,14 @@ pub(crate) fn find_docking_bay(
     sim: &mut Simulation,
     rules: &RuleSet,
     requester: u64,
+    dock_types: &[String],
     wide: bool,
     ignore_dock_capacity: bool,
     frame_effects: FrameEffects<'_>,
 ) -> Option<u64> {
-    let type_id = sim.substrate.entities.get(requester)?.type_ref();
-    let requester_type = sim.interner.object_type(type_id, rules)?;
     let mut result: Option<u64> = None;
     let mut best = -1_i32;
-    for dock_type in &requester_type.dock {
+    for dock_type in dock_types {
         if let Some((found, nearest)) = scan_docking_type(
             sim,
             rules,
@@ -1326,5 +1346,5 @@ pub(crate) fn effective_purifier_count(
     }
     let table = rules.general.ai_virtual_purifiers;
     let virtual_count = table[house.difficulty().table_index()];
-    real + virtual_count
+    real.wrapping_add(virtual_count)
 }

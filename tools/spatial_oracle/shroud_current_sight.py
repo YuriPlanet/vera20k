@@ -78,8 +78,10 @@ def timer_cases():
 # Full original no-edge MakeEnemy and its Human virtual reveal methods.
 # Inputs supply a camera cache/type identity; map walks and anger are recorded
 # transport boundaries. See provenance, not a whole FogOfWar comparison.
-def alliance_human_control(discovered=True,limbo=False,in_playfield=True,passive=False):
- from tools.ai_base_building_oracle import Emu,FAKE,STUBS
+def alliance_human_control(discovered=True,limbo=False,in_playfield=True,passive=False,
+                          *,initial_update=False,current=True,pending=True,sight=0,latched=True,
+                          startup=False,building=False):
+ from tools.ai_base_building_oracle import Emu,FAKE,STUBS,RULES
  SOURCE=FAKE+0x500000
  VTABLE=FAKE+0x502000
  TYPE=FAKE+0x504000
@@ -103,13 +105,16 @@ def alliance_human_control(discovered=True,limbo=False,in_playfield=True,passive
  e.uc.mem_write(SOURCE+0x81,bytes([int(limbo)]))
  e.uc.mem_write(SOURCE+0x41B,bytes([int(discovered)]))
  e.uc.mem_write(SOURCE+0x3D5,bytes([int(in_playfield)]))
- e.uc.mem_write(SOURCE+0x250,b'\x01')
+ e.uc.mem_write(SOURCE+0x250,bytes([int(latched)]))
  e.uc.mem_write(SOURCE+0x254,struct.pack('<iii',10240,10240,0))
  e.uc.mem_write(SOURCE+0x9C,struct.pack('<iii',10496,10240,0))
  e.write32(SOURCE+0x260,6)
- e.write32(TYPE+0x5E8,0)
+ e.write32(TYPE+0x5E8,sight)
+ if initial_update:e.write32(RULES+0x16BC,2000)
  for slot,func in [(0x2C,STUBS+0x200),(0x84,STUBS+0x210),(0x48C,0x70B1D0),(0x488,0x70AF50)]:e.write32(VTABLE+slot,func)
- e.hook(STUBS+0x200,lambda _:1,0)
+ # Aircraft41C180 returns2; Unit746E20 returns1. Preserve the older
+ # no-edge controls' Unit identity; the initial caller uses Aircraft/Building.
+ e.hook(STUBS+0x200,lambda _:6 if building else (2 if initial_update else 1),0)
  e.hook(STUBS+0x210,lambda _:TYPE,0)
  def area(x):
   e.events.append(['area',list(struct.unpack('<iii',e.uc.mem_read(x.arg(0),12))),*[x.arg(i) for i in range(1,8)]])
@@ -124,6 +129,45 @@ def alliance_human_control(discovered=True,limbo=False,in_playfield=True,passive
  e.hook(0x567DA0,border,16)
  e.hook(0x504790,anger,8)
  for a in [0x4ADEE0,0x4ADCD0,0x70B1D0,0x70AF50]:e.mark(a,['entry',hex(a)])
+ if initial_update:
+  from tools.native_oracle import image_bytes,_sections,IMAGE_BASE
+  image=image_bytes()
+  code=[(IMAGE_BASE+rva,image[offset:offset+size])
+        for rva,offset,size,_,flags in _sections(image) if flags & 0x20000000 and size]
+  def check_code():
+   for address,raw in code:
+    if bytes(e.uc.mem_read(address,len(raw)))!=raw:raise RuntimeError('original executable code changed')
+  check_code()
+  rng_addresses=[0x886B88,e.read32(0xA8B230)+0x218]
+  rng_before=[bytes(e.uc.mem_read(address,0x3F4)) for address in rng_addresses]
+  # Execute the constructor's actual +24B=1 store, then the late Update
+  # block. Stop before its epilogue: the preceding House body is supplied.
+  from unicorn.x86_const import UC_X86_REG_EBP
+  e.uc.reg_write(UC_X86_REG_EBP,HUMAN)
+  run_checked(e.uc,0x4F57A7,0x4F57AE,count=10)
+  constructed_pending=e.uc.mem_read(HUMAN+0x24B,1)[0]
+  if not pending:e.uc.mem_write(HUMAN+0x24B,b'\x00')
+  e.uc.reg_write(UC_X86_REG_ESI,HUMAN)
+  if not current:e.write32(0xA83D4C,COMPUTER)
+  startup_visit=None
+  if startup:
+   e.events=[]
+   e.invoke(0x4ADCD0,args=[1,0],required=[0x4ADCD0])
+   startup_visit=dict(events=e.events,pending=e.uc.mem_read(HUMAN+0x24B,1)[0])
+  visits=[]
+  for _ in range(2):
+   e.events=[]
+   run_checked(e.uc,0x4F9338,0x4F935F,count=100000)
+   visits.append(dict(events=e.events,pending=e.uc.mem_read(HUMAN+0x24B,1)[0],
+                      latch=e.uc.mem_read(SOURCE+0x250,1)[0],cached_radius=e.read_i32(SOURCE+0x260),
+                      cached_coord=list(struct.unpack('<iii',e.uc.mem_read(SOURCE+0x254,12)))))
+  check_code()
+  if rng_before!=[bytes(e.uc.mem_read(address,0x3F4)) for address in rng_addresses]:
+   raise RuntimeError('unexpected RNG write in bounded initial-sight path')
+  return dict(inputs=dict(discovered=discovered,limbo=limbo,in_playfield=in_playfield,
+                          passive=passive,current=current,pending=pending,sight=sight,latched=latched,
+                          startup=startup,building=building),
+              constructed_pending=constructed_pending,startup=startup_visit,visits=visits)
  e.invoke(0x4F9F90,ecx=COMPUTER,args=[HUMAN,0],required=[0x4F9F90])
  return dict(inputs=dict(discovered=discovered,limbo=limbo,in_playfield=in_playfield,passive=passive),events=e.events,latch=e.uc.mem_read(SOURCE+0x250,1)[0],cached_radius=e.read_i32(SOURCE+0x260),ally_bits=e.read32(COMPUTER+0x5788))
 

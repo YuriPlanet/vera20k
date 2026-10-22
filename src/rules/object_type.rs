@@ -1294,6 +1294,7 @@ pub struct ObjectType {
     pub immune: bool,
     /// Nullifies damage from an exact same-type, same-owner source object.
     pub type_immune: bool,
+    emp: Option<crate::rules::ares_emp::EmpTypeRules>,
     /// Psychedelic/mind-control immunity. Buildings default true natively.
     pub immune_to_psionics: bool,
     /// `Warpable=` (`TechnoTypeClass+0xD3A`, ReadINI `0x00714F65..0x00714F79`;
@@ -2116,6 +2117,13 @@ fn native_minutes_to_ticks(value: f64) -> u32 {
 }
 
 impl ObjectType {
+    pub(crate) fn emp_rules(&self) -> Option<&crate::rules::ares_emp::EmpTypeRules> {
+        self.emp.as_ref()
+    }
+    pub(crate) fn bind_emp_rules(&mut self, rules: Option<&crate::rules::ares_emp::EmpTypeRules>) {
+        self.emp = rules.cloned();
+    }
+
     /// Retained TechnoType+C9E; building crew admission reads this input
     /// separately from the constructed Infantry's survivor marker.
     pub const fn nominal(&self) -> bool {
@@ -3266,6 +3274,7 @@ impl ObjectType {
             damage_self: section.read_bool("DamageSelf", false),
             immune: section.read_bool("Immune", false),
             type_immune: section.read_bool("TypeImmune", false),
+            emp: None,
             immune_to_psionics: section
                 .read_bool("ImmuneToPsionics", category == ObjectCategory::Building),
             warpable: section.read_bool("Warpable", true),

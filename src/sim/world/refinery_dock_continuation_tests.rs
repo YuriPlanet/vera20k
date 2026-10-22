@@ -460,10 +460,13 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
             "{context}: delay"
         ),
         "find_bay" => {
+            let type_ref = s.sim.substrate.entities.get(s.miner).unwrap().type_ref();
+            let dock_types = &s.sim.interner.object_type(type_ref, &s.rules).unwrap().dock;
             let found = crate::sim::miner::miner_system::find_docking_bay(
                 &mut s.sim,
                 &s.rules,
                 s.miner,
+                dock_types,
                 op["wide"] == 1,
                 op["bypass"] == 1,
                 crate::sim::world::FrameEffects::default(),

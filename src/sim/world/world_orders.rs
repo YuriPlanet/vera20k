@@ -632,8 +632,8 @@ impl Simulation {
     /// Ordinary Infantry +504 EMP starts zero in the native constructor.
     /// EMPulseApply4C575E admits RTTI1/2, not Infantry15. The deactivated
     /// latch +1C8 (700CBC) has its owner in `sim::powered_unit`.
-    /// Unit+6D8 death-frame and EMP lifecycle producers remain separate
-    /// residuals; ordinary live Unit controls use their constructor -1/0.
+    /// Unit+6D8 death-frame remains separate. The shared+504 predicate uses
+    /// the entity EMP owner; only Ares currently supplies ordinary hits.
     /// Arbitrary authored native raw-save bytes are outside this producer.
     /// See engineer_bridge_cursor_caller.md for executed gate controls/bounds.
     pub fn techno_player_controllable(&self, id: u64, rules: &RuleSet) -> bool {
@@ -646,7 +646,8 @@ impl Simulation {
         if actor.category() == EntityCategory::Structure {
             // Steam gamemd: Building44F5C0, complete original control
             // vectors in procedural_drawing_oracle/factory_destination.py --control.
-            // EMP+504 still has no runtime producer; this is its ctor-zero subset.
+            // Buildings are outside the current Ares ground-victim producer;
+            // their EMP-specific control arm remains the constructor-zero subset.
             // HasRallyPoint455DA0 bypasses the ConYard and House50B730 tests.
             if object.has_rally_line() {
                 return true;
@@ -672,6 +673,7 @@ impl Simulation {
             || actor.is_warping_in()
             || actor.slave.owner().is_some()
             || actor.deactivated.is_offline()
+            || actor.emp_remaining() > 0
         {
             return false;
         }
@@ -689,13 +691,14 @@ impl Simulation {
     /// `TechnoClass::IsActive @ 0x007010D0` (vt+0x9C, no override): not
     /// deactivated (`+0x1C8`), owned by the player's house (`0x0050B6F0`),
     /// its current weapon (vt+0x3F4) typed and not vt+0x37C. `is_armed`
-    /// stands in for the weapon test; vt+0x37C (a Unit's death frames or
-    /// EMP) has no VERA producer, as in [`Self::techno_player_controllable`].
+    /// stands in for the weapon test; shared EMP+504 comes from its private
+    /// entity owner. Unit death frames retain their existing ctor subset.
     pub fn techno_is_active(&self, id: u64, rules: &RuleSet) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
         !actor.deactivated.is_offline()
+            && actor.emp_remaining() <= 0
             && self.house_is_human_player(actor.owner())
             && self
                 .object_type(actor.type_ref(), rules)

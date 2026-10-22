@@ -2405,6 +2405,10 @@ mod tests {
         );
         values[1] = "lan-live-guest".into();
         assert!(parse_launch_args(values.clone()).is_ok());
+        values[1] = "lan-battle-host".into();
+        assert!(parse_launch_args(values.clone()).is_ok());
+        values[1] = "lan-battle-guest".into();
+        assert!(parse_launch_args(values.clone()).is_ok());
         values[1] = "lan-0xbb-steady".into();
         assert!(parse_launch_args(values).is_err());
     }

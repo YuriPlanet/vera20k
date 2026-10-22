@@ -107,6 +107,7 @@ pub mod airstrike;
 pub const ARES_ENABLED: bool = cfg!(feature = "ares");
 pub(crate) mod ares_prerequisites;
 pub(crate) mod ares_armor;
+pub(crate) mod ares_emp;
 pub mod armor;
 pub mod country_loading;
 #[cfg(test)]

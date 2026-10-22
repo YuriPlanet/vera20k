@@ -78,6 +78,8 @@ impl Drop for OwnedTransferFile {
 pub enum LanTarget {
     LiveHost,
     LiveGuest,
+    BattleHost,
+    BattleGuest,
     Lobby,
     Chat,
     Discovery,
@@ -200,6 +202,8 @@ pub enum LanTarget {
 pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("lan-live-host", LanTarget::LiveHost),
     ("lan-live-guest", LanTarget::LiveGuest),
+    ("lan-battle-host", LanTarget::BattleHost),
+    ("lan-battle-guest", LanTarget::BattleGuest),
     ("lan-0xbb-steady", LanTarget::Lobby),
     ("lan-0xbb-chat", LanTarget::Chat),
     ("lan-0xbb-discovery", LanTarget::Discovery),
@@ -288,7 +292,10 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
 ];
 impl LanTarget {
     pub(crate) fn live(self) -> bool {
-        matches!(self, Self::LiveHost | Self::LiveGuest)
+        matches!(
+            self,
+            Self::LiveHost | Self::LiveGuest | Self::BattleHost | Self::BattleGuest
+        )
     }
     fn host_observer(self) -> bool {
         matches!(

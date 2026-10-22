@@ -1,0 +1,4099 @@
+{
+  "activation": [
+    {
+      "after": {
+        "animation_iterations": [],
+        "counter": 1,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          0
+        ],
+        "saved_mission": 0,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "before": {
+        "animation_iterations": [],
+        "counter": 1,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          0
+        ],
+        "saved_mission": 0,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "fixture": {
+        "center_counter": null,
+        "counter": 1,
+        "deactivated": true,
+        "death_frame": -1,
+        "powered_unit": false
+      },
+      "name": "EMPactive_plain",
+      "order": [
+        "1004CCB0",
+        "1004CDA3"
+      ],
+      "return_address": "0070FC85",
+      "services": []
+    },
+    {
+      "after": {
+        "animation_iterations": [],
+        "counter": 0,
+        "deactivated": false,
+        "immune_cache": [
+          0,
+          0
+        ],
+        "saved_mission": 0,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "before": {
+        "animation_iterations": [],
+        "counter": 0,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          0
+        ],
+        "saved_mission": 0,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "fixture": {
+        "center_counter": null,
+        "counter": 0,
+        "deactivated": true,
+        "death_frame": -1,
+        "powered_unit": false
+      },
+      "name": "EMPexpired_plain",
+      "order": [
+        "1004CCB0",
+        "100454F0",
+        "10045440",
+        "1004CCFA",
+        "1004CD1E",
+        "1004CDA3"
+      ],
+      "return_address": "0070FC85",
+      "services": [
+        {
+          "service": "Virtual3D0"
+        },
+        {
+          "service": "LocomotorActivate"
+        }
+      ]
+    },
+    {
+      "after": {
+        "animation_iterations": [],
+        "counter": 1,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          0
+        ],
+        "saved_mission": 0,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "before": {
+        "animation_iterations": [],
+        "counter": 1,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          0
+        ],
+        "saved_mission": 0,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "fixture": {
+        "center_counter": 0,
+        "counter": 1,
+        "deactivated": true,
+        "death_frame": -1,
+        "powered_unit": true
+      },
+      "name": "EMPactive_center_live",
+      "order": [
+        "1004CCB0",
+        "1004CDA3"
+      ],
+      "return_address": "0070FC85",
+      "services": []
+    },
+    {
+      "after": {
+        "animation_iterations": [],
+        "counter": 0,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          0
+        ],
+        "saved_mission": 0,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "before": {
+        "animation_iterations": [],
+        "counter": 0,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          0
+        ],
+        "saved_mission": 0,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "fixture": {
+        "center_counter": null,
+        "counter": 0,
+        "deactivated": true,
+        "death_frame": -1,
+        "powered_unit": true
+      },
+      "name": "EMPexpired_center_missing",
+      "order": [
+        "1004CCB0",
+        "100454F0",
+        "1004CDA3"
+      ],
+      "return_address": "0070FC85",
+      "services": []
+    },
+    {
+      "after": {
+        "animation_iterations": [],
+        "counter": 0,
+        "deactivated": false,
+        "immune_cache": [
+          0,
+          0
+        ],
+        "saved_mission": 0,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "before": {
+        "animation_iterations": [],
+        "counter": 0,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          0
+        ],
+        "saved_mission": 0,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "fixture": {
+        "center_counter": 0,
+        "counter": 0,
+        "deactivated": true,
+        "death_frame": -1,
+        "powered_unit": true
+      },
+      "name": "EMPexpired_center_live",
+      "order": [
+        "1004CCB0",
+        "100454F0",
+        "10045440",
+        "1004CCFA",
+        "1004CD1E",
+        "1004CDA3"
+      ],
+      "return_address": "0070FC85",
+      "services": [
+        {
+          "service": "Virtual3D0"
+        },
+        {
+          "service": "LocomotorActivate"
+        }
+      ]
+    },
+    {
+      "after": {
+        "animation_iterations": [],
+        "counter": 0,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          0
+        ],
+        "saved_mission": 0,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "before": {
+        "animation_iterations": [],
+        "counter": 0,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          0
+        ],
+        "saved_mission": 0,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "fixture": {
+        "center_counter": 1,
+        "counter": 0,
+        "deactivated": true,
+        "death_frame": -1,
+        "powered_unit": true
+      },
+      "name": "EMPexpired_center_EMP",
+      "order": [
+        "1004CCB0",
+        "100454F0",
+        "1004CDA3"
+      ],
+      "return_address": "0070FC85",
+      "services": []
+    }
+  ],
+  "animation_readers": [
+    {
+      "fixture": {
+        "prior": "prior",
+        "prior_set": false,
+        "raw": null
+      },
+      "nullable": false,
+      "result": {
+        "reference": "prior",
+        "set": null,
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": "prior",
+        "prior_set": false,
+        "raw": ""
+      },
+      "nullable": false,
+      "result": {
+        "reference": "prior",
+        "set": null,
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": "prior",
+        "prior_set": false,
+        "raw": "none"
+      },
+      "nullable": false,
+      "result": {
+        "reference": "none",
+        "set": null,
+        "success": true
+      }
+    },
+    {
+      "fixture": {
+        "prior": "prior",
+        "prior_set": false,
+        "raw": "<none>"
+      },
+      "nullable": false,
+      "result": {
+        "reference": "none",
+        "set": null,
+        "success": true
+      }
+    },
+    {
+      "fixture": {
+        "prior": "prior",
+        "prior_set": false,
+        "raw": "unknown"
+      },
+      "nullable": false,
+      "result": {
+        "reference": "prior",
+        "set": null,
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": "prior",
+        "prior_set": false,
+        "raw": "spark_a"
+      },
+      "nullable": false,
+      "result": {
+        "reference": "known",
+        "set": null,
+        "success": true
+      }
+    },
+    {
+      "fixture": {
+        "prior": "prior",
+        "prior_set": false,
+        "raw": null
+      },
+      "nullable": true,
+      "result": {
+        "reference": "prior",
+        "set": false,
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": "prior",
+        "prior_set": false,
+        "raw": ""
+      },
+      "nullable": true,
+      "result": {
+        "reference": "prior",
+        "set": false,
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": "prior",
+        "prior_set": false,
+        "raw": "none"
+      },
+      "nullable": true,
+      "result": {
+        "reference": "none",
+        "set": true,
+        "success": true
+      }
+    },
+    {
+      "fixture": {
+        "prior": "prior",
+        "prior_set": false,
+        "raw": "<none>"
+      },
+      "nullable": true,
+      "result": {
+        "reference": "none",
+        "set": true,
+        "success": true
+      }
+    },
+    {
+      "fixture": {
+        "prior": "prior",
+        "prior_set": false,
+        "raw": "unknown"
+      },
+      "nullable": true,
+      "result": {
+        "reference": "prior",
+        "set": false,
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": "prior",
+        "prior_set": false,
+        "raw": "spark_a"
+      },
+      "nullable": true,
+      "result": {
+        "reference": "known",
+        "set": true,
+        "success": true
+      }
+    }
+  ],
+  "ares_sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83",
+  "caps": [
+    {
+      "fixture": {
+        "cap": 120,
+        "delta": 120,
+        "old": 0
+      },
+      "result": 120
+    },
+    {
+      "fixture": {
+        "cap": 120,
+        "delta": 120,
+        "old": 90
+      },
+      "result": 120
+    },
+    {
+      "fixture": {
+        "cap": 120,
+        "delta": 120,
+        "old": 200
+      },
+      "result": 200
+    },
+    {
+      "fixture": {
+        "cap": -1,
+        "delta": 120,
+        "old": 90
+      },
+      "result": 120
+    },
+    {
+      "fixture": {
+        "cap": 0,
+        "delta": 120,
+        "old": 90
+      },
+      "result": 210
+    },
+    {
+      "fixture": {
+        "cap": -1,
+        "delta": -30,
+        "old": 90
+      },
+      "result": 60
+    },
+    {
+      "fixture": {
+        "cap": 10,
+        "delta": -30,
+        "old": 90
+      },
+      "result": 10
+    },
+    {
+      "fixture": {
+        "cap": -1,
+        "delta": -30,
+        "old": 20
+      },
+      "result": 0
+    },
+    {
+      "fixture": {
+        "cap": 0,
+        "delta": 1,
+        "old": 2147483647
+      },
+      "result": 0
+    },
+    {
+      "fixture": {
+        "cap": 120,
+        "delta": 1,
+        "old": 2147483647
+      },
+      "result": 2147483647
+    },
+    {
+      "fixture": {
+        "cap": 0,
+        "delta": -30,
+        "old": 90
+      },
+      "result": 0
+    },
+    {
+      "fixture": {
+        "cap": 0,
+        "delta": 0,
+        "old": 90
+      },
+      "result": 0
+    },
+    {
+      "fixture": {
+        "cap": 120,
+        "delta": 0,
+        "old": 200
+      },
+      "result": 120
+    }
+  ],
+  "collectors": [
+    {
+      "fixture": {
+        "bridge": false,
+        "duplicate_neighbor": false,
+        "impact": [
+          2688,
+          2688,
+          0
+        ],
+        "objects": [
+          {
+            "coords": [
+              2689,
+              2688,
+              0
+            ],
+            "uid": 30
+          },
+          {
+            "coords": [
+              2688,
+              2688,
+              0
+            ],
+            "uid": 10
+          }
+        ],
+        "spread": 0.0
+      },
+      "name": "zero_spread_requires_exact_coord",
+      "result": {
+        "ordered_uids": [
+          10
+        ],
+        "visited_cells": [
+          [
+            10,
+            10
+          ]
+        ]
+      }
+    },
+    {
+      "fixture": {
+        "bridge": false,
+        "duplicate_neighbor": false,
+        "impact": [
+          2688,
+          2688,
+          0
+        ],
+        "objects": [
+          {
+            "coords": [
+              2817,
+              2688,
+              0
+            ],
+            "uid": 30
+          },
+          {
+            "coords": [
+              2816,
+              2688,
+              0
+            ],
+            "uid": 10
+          },
+          {
+            "coords": [
+              2688,
+              2688,
+              1
+            ],
+            "uid": 20
+          },
+          {
+            "coords": [
+              2816,
+              2688,
+              1
+            ],
+            "uid": 40
+          }
+        ],
+        "spread": 0.5
+      },
+      "name": "half_spread_boundary",
+      "result": {
+        "ordered_uids": [
+          10,
+          20
+        ],
+        "visited_cells": [
+          [
+            10,
+            10
+          ],
+          [
+            9,
+            9
+          ],
+          [
+            10,
+            9
+          ],
+          [
+            11,
+            9
+          ],
+          [
+            9,
+            10
+          ],
+          [
+            11,
+            10
+          ],
+          [
+            9,
+            11
+          ],
+          [
+            10,
+            11
+          ],
+          [
+            11,
+            11
+          ]
+        ]
+      }
+    },
+    {
+      "fixture": {
+        "bridge": false,
+        "duplicate_neighbor": true,
+        "impact": [
+          2688,
+          2688,
+          0
+        ],
+        "objects": [
+          {
+            "coords": [
+              2688,
+              2688,
+              0
+            ],
+            "uid": 30
+          },
+          {
+            "coords": [
+              2688,
+              2688,
+              0
+            ],
+            "uid": 10
+          },
+          {
+            "coords": [
+              2688,
+              2688,
+              0
+            ],
+            "uid": 20
+          }
+        ],
+        "spread": 1.0
+      },
+      "name": "uid_order_and_duplicate_cell_membership",
+      "result": {
+        "ordered_uids": [
+          10,
+          20,
+          30
+        ],
+        "visited_cells": [
+          [
+            10,
+            10
+          ],
+          [
+            9,
+            9
+          ],
+          [
+            10,
+            9
+          ],
+          [
+            11,
+            9
+          ],
+          [
+            9,
+            10
+          ],
+          [
+            11,
+            10
+          ],
+          [
+            9,
+            11
+          ],
+          [
+            10,
+            11
+          ],
+          [
+            11,
+            11
+          ]
+        ]
+      }
+    },
+    {
+      "fixture": {
+        "bridge": false,
+        "duplicate_neighbor": false,
+        "impact": [
+          2688,
+          2688,
+          0
+        ],
+        "objects": [
+          {
+            "coords": [
+              2688,
+              2688,
+              0
+            ],
+            "uid": -1
+          },
+          {
+            "coords": [
+              2688,
+              2688,
+              0
+            ],
+            "uid": 1
+          },
+          {
+            "coords": [
+              2688,
+              2688,
+              0
+            ],
+            "uid": -2147483648
+          }
+        ],
+        "spread": 0.0
+      },
+      "name": "signed_uid_order_structural_control",
+      "result": {
+        "ordered_uids": [
+          -2147483648,
+          -1,
+          1
+        ],
+        "visited_cells": [
+          [
+            10,
+            10
+          ]
+        ]
+      }
+    },
+    {
+      "fixture": {
+        "bridge": false,
+        "duplicate_neighbor": false,
+        "impact": [
+          2688,
+          2688,
+          0
+        ],
+        "objects": [],
+        "spread": 2.0
+      },
+      "name": "radius_two_visitation",
+      "result": {
+        "ordered_uids": [],
+        "visited_cells": [
+          [
+            10,
+            10
+          ],
+          [
+            9,
+            9
+          ],
+          [
+            10,
+            9
+          ],
+          [
+            11,
+            9
+          ],
+          [
+            9,
+            10
+          ],
+          [
+            11,
+            10
+          ],
+          [
+            9,
+            11
+          ],
+          [
+            10,
+            11
+          ],
+          [
+            11,
+            11
+          ],
+          [
+            9,
+            8
+          ],
+          [
+            10,
+            8
+          ],
+          [
+            11,
+            8
+          ],
+          [
+            8,
+            9
+          ],
+          [
+            12,
+            9
+          ],
+          [
+            8,
+            10
+          ],
+          [
+            12,
+            10
+          ],
+          [
+            8,
+            11
+          ],
+          [
+            12,
+            11
+          ],
+          [
+            9,
+            12
+          ],
+          [
+            10,
+            12
+          ],
+          [
+            11,
+            12
+          ]
+        ]
+      }
+    },
+    {
+      "fixture": {
+        "bridge": true,
+        "duplicate_neighbor": false,
+        "impact": [
+          2688,
+          2688,
+          0
+        ],
+        "objects": [
+          {
+            "coords": [
+              2688,
+              2688,
+              0
+            ],
+            "uid": 10
+          }
+        ],
+        "spread": 0.0
+      },
+      "name": "bridge_selects_upper_list",
+      "result": {
+        "ordered_uids": [
+          10
+        ],
+        "visited_cells": [
+          [
+            10,
+            10
+          ]
+        ]
+      }
+    }
+  ],
+  "connected": [
+    {
+      "converted_deltas": [
+        2
+      ],
+      "fixture": {
+        "cap": 2,
+        "duration": 2,
+        "sparkle": true
+      },
+      "name": "ordinary_single_ground",
+      "result": [
+        {
+          "animation_iterations": [
+            255
+          ],
+          "counter": 2,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": true
+        },
+        {
+          "animation_iterations": [
+            255
+          ],
+          "counter": 1,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": true
+        },
+        {
+          "animation_iterations": [
+            0
+          ],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "selected": false,
+          "service": "Select"
+        },
+        {
+          "firer_present": true,
+          "service": "SpawnManagerBoundary"
+        },
+        {
+          "animation_type_present": true,
+          "service": "AnimConstructor"
+        },
+        {
+          "owner_is_victim": true,
+          "service": "AnimOwner"
+        },
+        {
+          "service": "Reactivate"
+        },
+        {
+          "firer_present": false,
+          "service": "SpawnManagerBoundary"
+        }
+      ],
+      "visits": [
+        "10052870",
+        "10062240",
+        "10076660",
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae",
+        "10062b40",
+        "10053df0",
+        "10053df0",
+        "100627f0"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "cap": 2,
+        "duration": 0,
+        "sparkle": true
+      },
+      "name": "zero_duration_no_producer",
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        },
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        },
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10052870",
+        "10053df0",
+        "10053df0"
+      ]
+    }
+  ],
+  "constructor_defaults": [
+    {
+      "name": "type",
+      "result": {
+        "immune": [
+          0,
+          0
+        ],
+        "modifier_le_bits": "000000000000f03f",
+        "sparkle_present": false,
+        "sparkle_set": false,
+        "threshold": -1
+      }
+    },
+    {
+      "name": "runtime",
+      "result": {
+        "last_mission": -1,
+        "sparkle_present": false
+      }
+    }
+  ],
+  "deliver": [
+    {
+      "converted_deltas": [
+        120
+      ],
+      "fixture": {},
+      "name": "enemy_ground",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 120,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "selected": false,
+          "service": "Select"
+        },
+        {
+          "firer_present": true,
+          "service": "SpawnManagerBoundary"
+        }
+      ],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae",
+        "10062b40"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "allied": true
+      },
+      "name": "allied_refused",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320"
+      ]
+    },
+    {
+      "converted_deltas": [
+        120
+      ],
+      "fixture": {
+        "affects_allies": true,
+        "allied": true
+      },
+      "name": "allied_admitted",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 120,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "selected": false,
+          "service": "Select"
+        },
+        {
+          "firer_present": true,
+          "service": "SpawnManagerBoundary"
+        }
+      ],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae",
+        "10062b40"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "immune": true
+      },
+      "name": "explicit_immune",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            1,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "organic": true
+      },
+      "name": "organic_default_immune",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            1,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90"
+      ]
+    },
+    {
+      "converted_deltas": [
+        120
+      ],
+      "fixture": {
+        "actor_kind": 15,
+        "immune": false,
+        "type_kind": 16
+      },
+      "name": "ordinary_infantry_explicit_no",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 120,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "selected": false,
+          "service": "Select"
+        },
+        {
+          "firer_present": true,
+          "service": "SpawnManagerBoundary"
+        }
+      ],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae",
+        "10062b40"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "actor_kind": 15,
+        "type_kind": 16
+      },
+      "name": "ordinary_infantry_default_immune",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            1,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "verses": 0.0
+      },
+      "name": "zero_verses_refused",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90"
+      ]
+    },
+    {
+      "converted_deltas": [
+        120
+      ],
+      "fixture": {
+        "verses": 0.001
+      },
+      "name": "threshold_verses_admitted",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 120,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "selected": false,
+          "service": "Select"
+        },
+        {
+          "firer_present": true,
+          "service": "SpawnManagerBoundary"
+        }
+      ],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae",
+        "10062b40"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "verses": 0.000999
+      },
+      "name": "below_threshold_verses_refused",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90"
+      ]
+    },
+    {
+      "converted_deltas": [
+        60
+      ],
+      "fixture": {
+        "duration": 121,
+        "modifier": 0.5
+      },
+      "name": "half_fraction_truncates",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 60,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "selected": false,
+          "service": "Select"
+        },
+        {
+          "firer_present": true,
+          "service": "SpawnManagerBoundary"
+        }
+      ],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae",
+        "10062b40"
+      ]
+    },
+    {
+      "converted_deltas": [
+        21
+      ],
+      "fixture": {
+        "cap": 0,
+        "duration": 17,
+        "modifier": 1.25
+      },
+      "name": "noninteger_modifier",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 21,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "selected": false,
+          "service": "Select"
+        },
+        {
+          "firer_present": true,
+          "service": "SpawnManagerBoundary"
+        }
+      ],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae",
+        "10062b40"
+      ]
+    },
+    {
+      "converted_deltas": [
+        -31
+      ],
+      "fixture": {
+        "cap": -1,
+        "deactivated": true,
+        "duration": -31,
+        "modifier": 0.5,
+        "old": 90
+      },
+      "name": "negative_ignores_modifier",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 59,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae"
+      ]
+    },
+    {
+      "converted_deltas": [
+        -30
+      ],
+      "fixture": {
+        "cap": -1,
+        "deactivated": true,
+        "duration": -30,
+        "modifier": 0.5,
+        "old": 20
+      },
+      "name": "negative_unlocks",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "service": "Reactivate"
+        },
+        {
+          "firer_present": false,
+          "service": "SpawnManagerBoundary"
+        }
+      ],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae",
+        "100627f0"
+      ]
+    },
+    {
+      "converted_deltas": [
+        -2147483648
+      ],
+      "fixture": {
+        "cap": 0,
+        "duration": 2147483647,
+        "modifier": 2.0
+      },
+      "name": "positive_low_dword_overflow",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae"
+      ]
+    },
+    {
+      "converted_deltas": [
+        -2147483648
+      ],
+      "fixture": {
+        "cap": 0,
+        "duration": 120,
+        "modifier": 1e+30
+      },
+      "name": "positive_qword_overflow",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "iron_curtain": true
+      },
+      "name": "iron_curtain_refused",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "warping": true
+      },
+      "name": "warping_refused",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "rank": 1.0,
+        "veteran_immune": true
+      },
+      "name": "veteran_immunity",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "rank": 2.0,
+        "veteran_immune": true
+      },
+      "name": "elite_inherits_veteran_immunity",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90"
+      ]
+    },
+    {
+      "converted_deltas": [
+        120,
+        120
+      ],
+      "fixture": {},
+      "name": "repeat120_cap120",
+      "repeat": 2,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 120,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        },
+        {
+          "animation_iterations": [],
+          "counter": 120,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "selected": false,
+          "service": "Select"
+        },
+        {
+          "firer_present": true,
+          "service": "SpawnManagerBoundary"
+        }
+      ],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae",
+        "10062b40",
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "same_owner": true
+      },
+      "name": "same_owner_fallback_refused",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320"
+      ]
+    },
+    {
+      "converted_deltas": [
+        120
+      ],
+      "fixture": {
+        "affects_owner": true,
+        "same_owner": true
+      },
+      "name": "same_owner_override_true",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 120,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "selected": false,
+          "service": "Select"
+        },
+        {
+          "firer_present": true,
+          "service": "SpawnManagerBoundary"
+        }
+      ],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae",
+        "10062b40"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "affects_allies": true,
+        "affects_owner": false,
+        "same_owner": true
+      },
+      "name": "same_owner_override_false",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "affects_enemies": false
+      },
+      "name": "enemy_filter_refused",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320"
+      ]
+    },
+    {
+      "converted_deltas": [
+        120
+      ],
+      "fixture": {
+        "affects_enemies": false,
+        "no_firer": true
+      },
+      "name": "missing_firer_bypasses_house_filter",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 120,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "selected": false,
+          "service": "Select"
+        },
+        {
+          "firer_present": false,
+          "service": "SpawnManagerBoundary"
+        }
+      ],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae",
+        "10062b40"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "affects_owner": true,
+        "normal_emp_slot": 1,
+        "same_owner": true,
+        "type_immune": true
+      },
+      "name": "same_owner_typeimmune_secondary",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "affects_owner": true,
+        "normal_emp_slot": 19,
+        "same_owner": true,
+        "type_immune": true
+      },
+      "name": "same_owner_typeimmune_extended_slot19",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90"
+      ]
+    },
+    {
+      "converted_deltas": [
+        120
+      ],
+      "fixture": {
+        "affects_owner": true,
+        "normal_emp_slot": 1,
+        "rank": 2.0,
+        "same_owner": true,
+        "type_immune": true
+      },
+      "name": "elite_ignores_ordinary_emp_weapon",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 120,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "selected": false,
+          "service": "Select"
+        },
+        {
+          "firer_present": true,
+          "service": "SpawnManagerBoundary"
+        }
+      ],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae",
+        "10062b40"
+      ]
+    },
+    {
+      "converted_deltas": [],
+      "fixture": {
+        "affects_owner": true,
+        "elite_emp_slot": 19,
+        "rank": 2.0,
+        "same_owner": true,
+        "type_immune": true
+      },
+      "name": "elite_typeimmune_extended_slot19",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90"
+      ]
+    },
+    {
+      "converted_deltas": [
+        120
+      ],
+      "fixture": {
+        "normal_emp_slot": 1,
+        "type_immune": true
+      },
+      "name": "different_owner_ignores_typeimmune",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 120,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "selected": false,
+          "service": "Select"
+        },
+        {
+          "firer_present": true,
+          "service": "SpawnManagerBoundary"
+        }
+      ],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae",
+        "10062b40"
+      ]
+    },
+    {
+      "converted_deltas": [
+        60
+      ],
+      "fixture": {
+        "cpu_isa_level": 2,
+        "duration": 121,
+        "modifier": 0.5
+      },
+      "name": "sse3_half_fraction",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 60,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "selected": false,
+          "service": "Select"
+        },
+        {
+          "firer_present": true,
+          "service": "SpawnManagerBoundary"
+        }
+      ],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae",
+        "10062b40"
+      ]
+    },
+    {
+      "converted_deltas": [
+        1
+      ],
+      "fixture": {
+        "cap": 120,
+        "deactivated": true,
+        "duration": 1,
+        "old": 2147483647
+      },
+      "name": "positive_sum_overflow",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 2147483647,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae"
+      ]
+    },
+    {
+      "converted_deltas": [
+        -30
+      ],
+      "fixture": {
+        "cap": 0,
+        "deactivated": true,
+        "duration": -30,
+        "old": 90
+      },
+      "name": "capzero_negative",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "service": "Reactivate"
+        },
+        {
+          "firer_present": false,
+          "service": "SpawnManagerBoundary"
+        }
+      ],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae",
+        "100627f0"
+      ]
+    },
+    {
+      "converted_deltas": [
+        0
+      ],
+      "fixture": {
+        "cap": 0,
+        "deactivated": true,
+        "duration": 1,
+        "modifier": 0.0,
+        "old": 90
+      },
+      "name": "capzero_zero_converted",
+      "repeat": 1,
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "service": "Reactivate"
+        },
+        {
+          "firer_present": false,
+          "service": "SpawnManagerBoundary"
+        }
+      ],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae",
+        "100627f0"
+      ]
+    }
+  ],
+  "flag_readers": [
+    {
+      "fixture": {
+        "prior": [
+          1
+        ],
+        "raw": null
+      },
+      "kind": "enemies",
+      "result": {
+        "bytes": [
+          1
+        ],
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1
+        ],
+        "raw": ""
+      },
+      "kind": "enemies",
+      "result": {
+        "bytes": [
+          1
+        ],
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1
+        ],
+        "raw": "junk"
+      },
+      "kind": "enemies",
+      "result": {
+        "bytes": [
+          1
+        ],
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1
+        ],
+        "raw": "yes"
+      },
+      "kind": "enemies",
+      "result": {
+        "bytes": [
+          1
+        ],
+        "success": true
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1
+        ],
+        "raw": "no"
+      },
+      "kind": "enemies",
+      "result": {
+        "bytes": [
+          0
+        ],
+        "success": true
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1
+        ],
+        "raw": "EMPIMMUNE"
+      },
+      "kind": "enemies",
+      "result": {
+        "bytes": [
+          1
+        ],
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1
+        ],
+        "raw": "empimmune,radimmune"
+      },
+      "kind": "enemies",
+      "result": {
+        "bytes": [
+          1
+        ],
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1
+        ],
+        "raw": "EMPIMMUNE RADIMMUNE"
+      },
+      "kind": "enemies",
+      "result": {
+        "bytes": [
+          1
+        ],
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1,
+          0
+        ],
+        "raw": null
+      },
+      "kind": "owner",
+      "result": {
+        "bytes": [
+          1,
+          0
+        ],
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1,
+          0
+        ],
+        "raw": ""
+      },
+      "kind": "owner",
+      "result": {
+        "bytes": [
+          1,
+          0
+        ],
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1,
+          0
+        ],
+        "raw": "junk"
+      },
+      "kind": "owner",
+      "result": {
+        "bytes": [
+          1,
+          0
+        ],
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1,
+          0
+        ],
+        "raw": "yes"
+      },
+      "kind": "owner",
+      "result": {
+        "bytes": [
+          1,
+          1
+        ],
+        "success": true
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1,
+          0
+        ],
+        "raw": "no"
+      },
+      "kind": "owner",
+      "result": {
+        "bytes": [
+          0,
+          1
+        ],
+        "success": true
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1,
+          0
+        ],
+        "raw": "EMPIMMUNE"
+      },
+      "kind": "owner",
+      "result": {
+        "bytes": [
+          1,
+          0
+        ],
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1,
+          0
+        ],
+        "raw": "empimmune,radimmune"
+      },
+      "kind": "owner",
+      "result": {
+        "bytes": [
+          1,
+          0
+        ],
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1,
+          0
+        ],
+        "raw": "EMPIMMUNE RADIMMUNE"
+      },
+      "kind": "owner",
+      "result": {
+        "bytes": [
+          1,
+          0
+        ],
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "raw": null
+      },
+      "kind": "abilities",
+      "result": {
+        "bytes": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "raw": ""
+      },
+      "kind": "abilities",
+      "result": {
+        "bytes": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "success": false
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "raw": "junk"
+      },
+      "kind": "abilities",
+      "result": {
+        "bytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "success": true
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "raw": "yes"
+      },
+      "kind": "abilities",
+      "result": {
+        "bytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "success": true
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "raw": "no"
+      },
+      "kind": "abilities",
+      "result": {
+        "bytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "success": true
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "raw": "EMPIMMUNE"
+      },
+      "kind": "abilities",
+      "result": {
+        "bytes": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "success": true
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "raw": "empimmune,radimmune"
+      },
+      "kind": "abilities",
+      "result": {
+        "bytes": [
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "success": true
+      }
+    },
+    {
+      "fixture": {
+        "prior": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "raw": "EMPIMMUNE RADIMMUNE"
+      },
+      "kind": "abilities",
+      "result": {
+        "bytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "success": true
+      }
+    }
+  ],
+  "fpcw": "0e7f",
+  "pointer_expiry": [
+    {
+      "fixture": {
+        "matching": false
+      },
+      "result": {
+        "animation_iterations": [
+          255
+        ],
+        "counter": 2,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          1
+        ],
+        "saved_mission": 5,
+        "selected": true,
+        "sparkle_present": true
+      }
+    },
+    {
+      "fixture": {
+        "matching": true
+      },
+      "result": {
+        "animation_iterations": [
+          255
+        ],
+        "counter": 2,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          1
+        ],
+        "saved_mission": 5,
+        "selected": true,
+        "sparkle_present": false
+      }
+    }
+  ],
+  "readers": [
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": null
+      },
+      "kind": "int",
+      "result": {
+        "success": false,
+        "value": 71
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": ""
+      },
+      "kind": "int",
+      "result": {
+        "success": false,
+        "value": 71
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": "junk"
+      },
+      "kind": "int",
+      "result": {
+        "success": false,
+        "value": 71
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": "120"
+      },
+      "kind": "int",
+      "result": {
+        "success": true,
+        "value": 120
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": "-30"
+      },
+      "kind": "int",
+      "result": {
+        "success": true,
+        "value": -30
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": "$10"
+      },
+      "kind": "int",
+      "result": {
+        "success": true,
+        "value": 10
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": "10h"
+      },
+      "kind": "int",
+      "result": {
+        "success": true,
+        "value": 16
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": "2147483648"
+      },
+      "kind": "int",
+      "result": {
+        "success": true,
+        "value": -2147483648
+      }
+    },
+    {
+      "fixture": {
+        "prior": 1.25,
+        "raw": null
+      },
+      "kind": "double",
+      "result": {
+        "success": false,
+        "value_le_bits": "000000000000f43f"
+      }
+    },
+    {
+      "fixture": {
+        "prior": 1.25,
+        "raw": ""
+      },
+      "kind": "double",
+      "result": {
+        "success": false,
+        "value_le_bits": "000000000000f43f"
+      }
+    },
+    {
+      "fixture": {
+        "prior": 1.25,
+        "raw": "junk"
+      },
+      "kind": "double",
+      "result": {
+        "success": false,
+        "value_le_bits": "000000000000f43f"
+      }
+    },
+    {
+      "fixture": {
+        "prior": 1.25,
+        "raw": "0.5"
+      },
+      "kind": "double",
+      "result": {
+        "success": true,
+        "value_le_bits": "000000000000e03f"
+      }
+    },
+    {
+      "fixture": {
+        "prior": 1.25,
+        "raw": "50%"
+      },
+      "kind": "double",
+      "result": {
+        "success": true,
+        "value_le_bits": "000000000000e03f"
+      }
+    },
+    {
+      "fixture": {
+        "prior": 1.25,
+        "raw": "0.1"
+      },
+      "kind": "double",
+      "result": {
+        "success": true,
+        "value_le_bits": "999999999999b93f"
+      }
+    },
+    {
+      "fixture": {
+        "prior": 1.25,
+        "raw": "-0.1"
+      },
+      "kind": "double",
+      "result": {
+        "success": true,
+        "value_le_bits": "999999999999b9bf"
+      }
+    },
+    {
+      "fixture": {
+        "prior": 1.25,
+        "raw": "0.3"
+      },
+      "kind": "double",
+      "result": {
+        "success": true,
+        "value_le_bits": "333333333333d33f"
+      }
+    },
+    {
+      "fixture": {
+        "prior": 1.25,
+        "raw": "1.25"
+      },
+      "kind": "double",
+      "result": {
+        "success": true,
+        "value_le_bits": "000000000000f43f"
+      }
+    },
+    {
+      "fixture": {
+        "prior": 1.25,
+        "raw": "12.5%"
+      },
+      "kind": "double",
+      "result": {
+        "success": true,
+        "value_le_bits": "000000000000c03f"
+      }
+    },
+    {
+      "fixture": {
+        "prior": 1.25,
+        "raw": "7e1%"
+      },
+      "kind": "double",
+      "result": {
+        "success": true,
+        "value_le_bits": "666666666666e63f"
+      }
+    },
+    {
+      "fixture": {
+        "prior": 1.25,
+        "raw": "70%junk"
+      },
+      "kind": "double",
+      "result": {
+        "success": true,
+        "value_le_bits": "666666666666e63f"
+      }
+    },
+    {
+      "fixture": {
+        "prior": 1.25,
+        "raw": "1e309"
+      },
+      "kind": "double",
+      "result": {
+        "success": true,
+        "value_le_bits": "000000000000f07f"
+      }
+    },
+    {
+      "fixture": {
+        "prior": 1.25,
+        "raw": "-0%"
+      },
+      "kind": "double",
+      "result": {
+        "success": true,
+        "value_le_bits": "0000000000000080"
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": null
+      },
+      "kind": "threshold",
+      "result": {
+        "value": 71
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": ""
+      },
+      "kind": "threshold",
+      "result": {
+        "value": 71
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": "inair"
+      },
+      "kind": "threshold",
+      "result": {
+        "value": -1
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": "InAiR"
+      },
+      "kind": "threshold",
+      "result": {
+        "value": -1
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": "true"
+      },
+      "kind": "threshold",
+      "result": {
+        "value": 1
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": "false"
+      },
+      "kind": "threshold",
+      "result": {
+        "value": 0
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": "junk"
+      },
+      "kind": "threshold",
+      "result": {
+        "value": 0
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": "2"
+      },
+      "kind": "threshold",
+      "result": {
+        "value": 2
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": "$10"
+      },
+      "kind": "threshold",
+      "result": {
+        "value": 10
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": "10h"
+      },
+      "kind": "threshold",
+      "result": {
+        "value": 16
+      }
+    },
+    {
+      "fixture": {
+        "prior": 71,
+        "raw": "1junk"
+      },
+      "kind": "threshold",
+      "result": {
+        "value": 1
+      }
+    }
+  ],
+  "registered_animation_readers": [
+    {
+      "fixture": {
+        "prior": null,
+        "raw": "SPARKLE_A",
+        "registered": [
+          "SPARKLE_A",
+          "SPARKLE_B"
+        ]
+      },
+      "result": {
+        "reference": "SPARKLE_A",
+        "registrations": [
+          {
+            "name": "SPARKLE_A",
+            "native_index": 0,
+            "registry_count": 1
+          },
+          {
+            "name": "SPARKLE_B",
+            "native_index": 1,
+            "registry_count": 2
+          }
+        ],
+        "registry_count_after": 2,
+        "registry_count_before": 2,
+        "success": true
+      }
+    },
+    {
+      "fixture": {
+        "prior": null,
+        "raw": "SPARKLE_B",
+        "registered": [
+          "SPARKLE_A",
+          "SPARKLE_B"
+        ]
+      },
+      "result": {
+        "reference": "SPARKLE_B",
+        "registrations": [
+          {
+            "name": "SPARKLE_A",
+            "native_index": 0,
+            "registry_count": 1
+          },
+          {
+            "name": "SPARKLE_B",
+            "native_index": 1,
+            "registry_count": 2
+          }
+        ],
+        "registry_count_after": 2,
+        "registry_count_before": 2,
+        "success": true
+      }
+    },
+    {
+      "fixture": {
+        "prior": null,
+        "raw": "UNREGISTERED",
+        "registered": [
+          "SPARKLE_A",
+          "SPARKLE_B"
+        ]
+      },
+      "result": {
+        "reference": null,
+        "registrations": [
+          {
+            "name": "SPARKLE_A",
+            "native_index": 0,
+            "registry_count": 1
+          },
+          {
+            "name": "SPARKLE_B",
+            "native_index": 1,
+            "registry_count": 2
+          }
+        ],
+        "registry_count_after": 2,
+        "registry_count_before": 2,
+        "success": false
+      }
+    }
+  ],
+  "schema_version": 1,
+  "sparkle_refresh": [
+    {
+      "after": {
+        "animation_iterations": [
+          255
+        ],
+        "counter": 120,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          1
+        ],
+        "saved_mission": 5,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "expired": {
+        "animation_iterations": [
+          255
+        ],
+        "counter": 120,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          1
+        ],
+        "saved_mission": 5,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "first": {
+        "animation_iterations": [
+          255
+        ],
+        "counter": 120,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          1
+        ],
+        "saved_mission": 5,
+        "selected": true,
+        "sparkle_present": true
+      },
+      "fixture": {
+        "cap": 120,
+        "duration": 120,
+        "sparkle": true
+      },
+      "name": "unchanged_explicit",
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae"
+      ]
+    },
+    {
+      "after": {
+        "animation_iterations": [
+          255,
+          255
+        ],
+        "counter": 240,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          1
+        ],
+        "saved_mission": 5,
+        "selected": true,
+        "sparkle_present": true
+      },
+      "expired": {
+        "animation_iterations": [
+          255
+        ],
+        "counter": 120,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          1
+        ],
+        "saved_mission": 5,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "first": {
+        "animation_iterations": [
+          255
+        ],
+        "counter": 120,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          1
+        ],
+        "saved_mission": 5,
+        "selected": true,
+        "sparkle_present": true
+      },
+      "fixture": {
+        "cap": 0,
+        "duration": 120,
+        "sparkle": true
+      },
+      "name": "changed_explicit",
+      "services": [
+        {
+          "animation_type_present": true,
+          "service": "AnimConstructor"
+        },
+        {
+          "owner_is_victim": true,
+          "service": "AnimOwner"
+        }
+      ],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae"
+      ]
+    },
+    {
+      "after": {
+        "animation_iterations": [
+          255
+        ],
+        "counter": 240,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          1
+        ],
+        "saved_mission": 5,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "expired": {
+        "animation_iterations": [
+          255
+        ],
+        "counter": 120,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          1
+        ],
+        "saved_mission": 5,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "first": {
+        "animation_iterations": [
+          255
+        ],
+        "counter": 120,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          1
+        ],
+        "saved_mission": 5,
+        "selected": true,
+        "sparkle_present": true
+      },
+      "fixture": {
+        "cap": 0,
+        "default_sparkle": true,
+        "duration": 120
+      },
+      "name": "changed_general_fallback",
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae"
+      ]
+    },
+    {
+      "after": {
+        "animation_iterations": [
+          255
+        ],
+        "counter": 240,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          1
+        ],
+        "saved_mission": 5,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "expired": {
+        "animation_iterations": [
+          255
+        ],
+        "counter": 120,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          1
+        ],
+        "saved_mission": 5,
+        "selected": true,
+        "sparkle_present": false
+      },
+      "first": {
+        "animation_iterations": [
+          255
+        ],
+        "counter": 120,
+        "deactivated": true,
+        "immune_cache": [
+          0,
+          1
+        ],
+        "saved_mission": 5,
+        "selected": true,
+        "sparkle_present": true
+      },
+      "fixture": {
+        "cap": 0,
+        "duration": 120,
+        "type_sparkle": true
+      },
+      "name": "changed_type_fallback",
+      "services": [],
+      "visits": [
+        "10062320",
+        "10062d90",
+        "10062471",
+        "10062476",
+        "100624ae"
+      ]
+    }
+  ],
+  "sparkles": [
+    {
+      "fixture": {
+        "sparkle": true
+      },
+      "name": "explicit_warhead",
+      "result": [
+        {
+          "animation_iterations": [
+            255
+          ],
+          "counter": 2,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": true
+        },
+        {
+          "animation_iterations": [
+            255
+          ],
+          "counter": 2,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": true
+        },
+        {
+          "animation_iterations": [
+            255
+          ],
+          "counter": 1,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": true
+        },
+        {
+          "animation_iterations": [
+            0
+          ],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "selected": false,
+          "service": "Select"
+        },
+        {
+          "firer_present": true,
+          "service": "SpawnManagerBoundary"
+        },
+        {
+          "animation_type_present": true,
+          "service": "AnimConstructor"
+        },
+        {
+          "owner_is_victim": true,
+          "service": "AnimOwner"
+        },
+        {
+          "service": "Reactivate"
+        },
+        {
+          "firer_present": false,
+          "service": "SpawnManagerBoundary"
+        }
+      ]
+    },
+    {
+      "fixture": {
+        "default_sparkle": true
+      },
+      "name": "general_fallback",
+      "result": [
+        {
+          "animation_iterations": [
+            255
+          ],
+          "counter": 2,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": true
+        },
+        {
+          "animation_iterations": [
+            255
+          ],
+          "counter": 2,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": true
+        },
+        {
+          "animation_iterations": [
+            255
+          ],
+          "counter": 1,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": true
+        },
+        {
+          "animation_iterations": [
+            0
+          ],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "selected": false,
+          "service": "Select"
+        },
+        {
+          "firer_present": true,
+          "service": "SpawnManagerBoundary"
+        },
+        {
+          "animation_type_present": true,
+          "service": "AnimConstructor"
+        },
+        {
+          "owner_is_victim": true,
+          "service": "AnimOwner"
+        },
+        {
+          "service": "Reactivate"
+        },
+        {
+          "firer_present": false,
+          "service": "SpawnManagerBoundary"
+        }
+      ]
+    },
+    {
+      "fixture": {
+        "default_sparkle": true,
+        "type_sparkle": false
+      },
+      "name": "type_explicit_none_blocks_general",
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 2,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        },
+        {
+          "animation_iterations": [],
+          "counter": 2,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        },
+        {
+          "animation_iterations": [],
+          "counter": 1,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        },
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            1
+          ],
+          "saved_mission": 5,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "selected": false,
+          "service": "Select"
+        },
+        {
+          "firer_present": true,
+          "service": "SpawnManagerBoundary"
+        },
+        {
+          "service": "Reactivate"
+        },
+        {
+          "firer_present": false,
+          "service": "SpawnManagerBoundary"
+        }
+      ]
+    }
+  ],
+  "ticks": [
+    {
+      "fixture": {
+        "deactivated": true,
+        "old": 0
+      },
+      "missions": [
+        5
+      ],
+      "name": "zero_noop",
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": []
+    },
+    {
+      "fixture": {
+        "deactivated": true,
+        "old": 1
+      },
+      "missions": [
+        5
+      ],
+      "name": "one_expires",
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "service": "Reactivate"
+        },
+        {
+          "firer_present": false,
+          "service": "SpawnManagerBoundary"
+        }
+      ]
+    },
+    {
+      "fixture": {
+        "deactivated": true,
+        "old": 2
+      },
+      "missions": [
+        5
+      ],
+      "name": "two_decrements",
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 1,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": []
+    },
+    {
+      "fixture": {
+        "deactivated": true,
+        "old": -1
+      },
+      "missions": [
+        5
+      ],
+      "name": "raw_negative_diagnostic",
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": -2,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": []
+    },
+    {
+      "fixture": {
+        "old": 3
+      },
+      "missions": [
+        18,
+        5,
+        5
+      ],
+      "name": "unload_deferred_then_guard",
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 2,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        },
+        {
+          "animation_iterations": [],
+          "counter": 1,
+          "deactivated": true,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 5,
+          "selected": false,
+          "sparkle_present": false
+        },
+        {
+          "animation_iterations": [],
+          "counter": 0,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 5,
+          "selected": false,
+          "sparkle_present": false
+        }
+      ],
+      "services": [
+        {
+          "mission": 5,
+          "service": "Deactivate"
+        },
+        {
+          "service": "Reactivate"
+        },
+        {
+          "firer_present": false,
+          "service": "SpawnManagerBoundary"
+        }
+      ]
+    },
+    {
+      "fixture": {
+        "old": 2
+      },
+      "missions": [
+        19
+      ],
+      "name": "construction_deferred",
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 1,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": []
+    },
+    {
+      "fixture": {
+        "old": 2
+      },
+      "missions": [
+        16
+      ],
+      "name": "selling_deferred",
+      "result": [
+        {
+          "animation_iterations": [],
+          "counter": 1,
+          "deactivated": false,
+          "immune_cache": [
+            0,
+            0
+          ],
+          "saved_mission": 0,
+          "selected": true,
+          "sparkle_present": false
+        }
+      ],
+      "services": []
+    }
+  ]
+}

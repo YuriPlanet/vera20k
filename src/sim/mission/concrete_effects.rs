@@ -309,8 +309,14 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
         // `0x00443B90`), which hands a target it refuses to this base setter
         // as NULL (`0x00443BA9`, `0x00443BFE`): the same-target test then
         // compares NULL, so a refused current target is cleared.
-        let requested = requested
-            .filter(|_| sim.building_admits_target(prepared.receiver, requested, self.rules));
+        let requested = requested.filter(|_| {
+            sim.building_admits_target(
+                prepared.receiver,
+                requested,
+                self.rules,
+                self.overlay_registry,
+            )
+        });
         let entity = sim
             .substrate
             .entities

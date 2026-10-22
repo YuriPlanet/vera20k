@@ -1,4 +1,142 @@
 {
+  "deploy_admission": [
+    {
+      "death_frame": -1,
+      "emp_counter": 0,
+      "entry": "can_deploy",
+      "result": {
+        "allowed": true,
+        "changed_unit_offsets": [],
+        "counter_unchanged": true,
+        "deploy_retry": 1,
+        "native_visits": [
+          "00700D50",
+          "00484AE0",
+          "00700E47",
+          "00746C90",
+          "0070EFD0"
+        ],
+        "stop_address": "30000000"
+      }
+    },
+    {
+      "death_frame": -1,
+      "emp_counter": 1,
+      "entry": "can_deploy",
+      "result": {
+        "allowed": false,
+        "changed_unit_offsets": [],
+        "counter_unchanged": true,
+        "deploy_retry": 1,
+        "native_visits": [
+          "00700D50",
+          "00484AE0",
+          "00700E47",
+          "00746C90",
+          "0070EFD0"
+        ],
+        "stop_address": "30000000"
+      }
+    },
+    {
+      "death_frame": -1,
+      "emp_counter": -1,
+      "entry": "can_deploy",
+      "result": {
+        "allowed": true,
+        "changed_unit_offsets": [],
+        "counter_unchanged": true,
+        "deploy_retry": 1,
+        "native_visits": [
+          "00700D50",
+          "00484AE0",
+          "00700E47",
+          "00746C90",
+          "0070EFD0"
+        ],
+        "stop_address": "30000000"
+      }
+    },
+    {
+      "death_frame": -1,
+      "emp_counter": 2147483647,
+      "entry": "can_deploy",
+      "result": {
+        "allowed": false,
+        "changed_unit_offsets": [],
+        "counter_unchanged": true,
+        "deploy_retry": 1,
+        "native_visits": [
+          "00700D50",
+          "00484AE0",
+          "00700E47",
+          "00746C90",
+          "0070EFD0"
+        ],
+        "stop_address": "30000000"
+      }
+    },
+    {
+      "death_frame": 0,
+      "emp_counter": 0,
+      "entry": "can_deploy",
+      "result": {
+        "allowed": false,
+        "changed_unit_offsets": [],
+        "counter_unchanged": true,
+        "deploy_retry": 1,
+        "native_visits": [
+          "00700D50",
+          "00484AE0",
+          "00700E47",
+          "00746C90"
+        ],
+        "stop_address": "30000000"
+      }
+    },
+    {
+      "death_frame": -1,
+      "emp_counter": 0,
+      "entry": "unit_deploy",
+      "result": {
+        "allowed": true,
+        "changed_unit_offsets": [],
+        "counter_unchanged": true,
+        "deploy_retry": 1,
+        "native_visits": [
+          "007393C0",
+          "00700D50",
+          "00484AE0",
+          "00700E47",
+          "00746C90",
+          "0070EFD0"
+        ],
+        "stop_address": "007393DA"
+      }
+    },
+    {
+      "death_frame": -1,
+      "emp_counter": 1,
+      "entry": "unit_deploy",
+      "result": {
+        "allowed": false,
+        "changed_unit_offsets": [
+          1676
+        ],
+        "counter_unchanged": true,
+        "deploy_retry": 0,
+        "native_visits": [
+          "007393C0",
+          "00700D50",
+          "00484AE0",
+          "00700E47",
+          "00746C90",
+          "0070EFD0"
+        ],
+        "stop_address": "30000000"
+      }
+    }
+  ],
   "mission_branches": [
     {
       "alive": 0,

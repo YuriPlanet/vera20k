@@ -1144,7 +1144,7 @@ fn sidebar_cameo_press(
             );
             queue_build_by_type(state, type_id, repeat);
         }
-        Some(sidebar_eva::CameoOrder::Suspend) => suspend_build(state, category),
+        Some(sidebar_eva::CameoOrder::Suspend) => suspend_build(state, type_id),
         Some(sidebar_eva::CameoOrder::Abandon { all }) => {
             cancel_build_by_type(state, type_id, all);
         }
@@ -1161,7 +1161,6 @@ fn sidebar_cameo_press(
                 // an older cameo can still refer to a rearmed Factory.
                 let (held_type, held) = linked_factory?.1?;
                 Some((
-                    owner,
                     owner_id,
                     held,
                     sim.interner().resolve(held_type).to_string(),
@@ -1169,8 +1168,7 @@ fn sidebar_cameo_press(
                     crate::sim::production::object_find_factory(sim, rules, held, false, false),
                 ))
             });
-            let Some((owner, owner_id, held, held_type, is_building, builder)) = ready_target
-            else {
+            let Some((owner_id, held, held_type, is_building, builder)) = ready_target else {
                 return;
             };
             let Some(_builder) = builder else {
@@ -1183,7 +1181,23 @@ fn sidebar_cameo_press(
                 // cameo's kind/Naval slot and index -1, without HasChanged.
                 // The existing receiver resolves the current complete head.
                 // Source: tools/sidebar_oracle/factory_sale_sidebar.md.
-                schedule_command(state, &owner, Command::PlaceProducedMobile { category });
+                let issued = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+                    let sim = &runtime.simulation;
+                    let rules = &runtime.resources.rules;
+                    let mut selection = crate::sim::production::ProductionSelection::for_type(
+                        rules,
+                        rules.object(type_id)?,
+                    )?;
+                    selection.type_index = -1;
+                    //6AB3D9 reads the clicked type's Naval; EBP retains its
+                    //type RTTI.6AB3F4 instead takes the House from the product.
+                    let product_owner = sim.entities().get(held)?.owner();
+                    let record = sim.encode_place_record(product_owner, selection, (0, 0))?;
+                    Some((sim.interner().resolve(product_owner).to_owned(), record))
+                });
+                if let Some((owner, record)) = issued {
+                    schedule_command(state, &owner, Command::SynchronizedRecord { record });
+                }
                 return;
             }
             // ManualPlace4FB852 refuses while any building placement is pending.
@@ -3412,6 +3426,21 @@ fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
         return;
     }
     for cmd in commands {
+        //730D15 calls ClickedEvent6FFE00 with Event9. Self-click uses the
+        //separate MegaMission Unload producer, even for the same AMCV.
+        let cmd = if let Command::DeployMcv { entity_id }
+        | Command::ToggleInfantryDeploy { entity_id } = cmd
+        {
+            let Some(record) = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+                let sim = &runtime.simulation;
+                sim.encode_deploy_record(sim.interner().get(&owner)?, entity_id)
+            }) else {
+                continue;
+            };
+            Command::SynchronizedRecord { record }
+        } else {
+            cmd
+        };
         schedule_command(state, &owner, cmd);
     }
 }

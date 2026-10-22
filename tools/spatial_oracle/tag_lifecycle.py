@@ -469,6 +469,8 @@ def execute(case):
     u.mem_map(0,0x1000)
     u.mem_write(0,dwords(0xFFFFFFFF))
     u.mem_write(0xA8ED84, dwords(case.get('frame',123)))
+    if 'new_ini_format' in case:
+        u.mem_write(0xA8ED7C,dwords(case['new_ini_format']))
     u.mem_write(0xA8ED6B, b'\0')
     for base,value in zip((0xA8E9A0,0xA8ED5C),case.get('live_flags',[0,0])):
         u.mem_write(base,bytes([value]))
@@ -507,6 +509,12 @@ def execute(case):
         u.mem_write(spy_type,bytes(0xED0));u.mem_write(spy_type,dwords(0x7EB610))
         u.mem_write(spy_type+0xDF8,dwords(5));u.mem_write(spy_type+0xEC4,b'\1')
         u.mem_write(0xA83D4C,dwords(HOUSE));u.mem_write(HOUSE+0x30,dwords(20))
+        if 'periodic_height' in case:
+            from tools.spatial_oracle.object_flight_height import initialize_object_scalars
+            initialize_object_scalars(u,lambda address,ecx,args:f.call(address,ecx,list(args)))
+            u.mem_write(spy+0x74,b'\1')
+            u.mem_write(spy+0x8C,b'\0')
+            u.mem_write(spy+0xA4,dwords(case['periodic_height']))
     house_funds = case.get('house_funds')
     observe_object_cleanup = case.get('observe_object_cleanup',False)
     if house_funds is not None:
@@ -637,6 +645,10 @@ def execute(case):
         ranges.extend(((0x522640,0x5226BB),(0x5226C0,0x522705),
                        (0x4F9A50,0x4F9AB0),(0x524D60,0x524D67),
                        (0x502D30,0x502D61)))
+    if 'periodic_height' in case:
+        ranges.extend(((0x4DA7B0,0x4DA806),(0x5F6960,0x5F69B7),
+                       (0x41BEA0,0x41BEDD),(0x5F6B90,0x5F6BB2),
+                       (0x5F5F40,0x5F5F92)))
     if case.get('mixed_deferred_queue',False):
         ranges.extend(((0x5F3B80,0x5F3E00),(0x5F6690,0x5F66A0),(0x5F6DC0,0x5F6DF0)))
     if house_funds is not None:
@@ -790,6 +802,14 @@ def execute(case):
             if kind=='dispatch_spy':
                 spy_dispatch_states.append(dict(kind=event,tag=tags[tag_index],
                     cell_tag=u32(u,cell(*xy)+0x3C),tag_pending=u.mem_read(tags[tag_index]+0x34,1)[0]))
+        elif kind=='periodic_cell':
+            assert spy is not None and 'periodic_height' in case
+            u.reg_write(UC_X86_REG_ESI,spy)
+            u.reg_write(UC_X86_REG_EBX,0)
+            u.reg_write(UC_X86_REG_ESP,f.sp)
+            run_checked(u,0x4DA7B0,0x4DA806,count=20000)
+            spy_dispatch_states.append(dict(kind=59,tag=tags[0],
+                cell_tag=u32(u,cell(50,60)+0x3C),tag_pending=u.mem_read(tags[0]+0x34,1)[0]))
         elif kind=='global' or kind=='local':
             returned = f.call(0x689670 if kind=='global' else 0x689910,SCENARIO,args)&255
         elif kind=='action':
@@ -1607,6 +1627,119 @@ def spy_entry_event_source_paths():
     return dict(power_event_source_paths(),
         lifecycle_fixture=Path(__file__).with_name('aircraft_fire_location.py'),
         infantry_layout=Path(__file__).with_name('engineer_repair_admission.py'))
+
+
+def generate_periodic_cell_events():
+    """Original periodic caller/getters and composed live Tag histories.
+
+    Shared platform/memory/CRT and Tag lifecycle remain the existing owners.
+    Flight, physical location and type/Rules identities are supplied priors;
+    no actor construction, AI prefix or retail rendering is executed here.
+    """
+    from tools.spatial_oracle.aircraft_fire_location import OWNER, TYPE
+    from tools.spatial_oracle.object_flight_height import initialize_object_scalars
+    f=Fixture(dict(game_mode=5));u=f.u
+    initialize_object_scalars(u,lambda address,ecx,args:f.call(address,ecx,list(args)))
+    u.mem_write(0xA8ED7C,dwords(4))
+    rules,rocket,tag=SCRATCH+0x40000,SCRATCH+0x44000,SCRATCH+0x50000
+    u.mem_write(rules,bytes(0x2000));u.mem_write(0x8871E0,dwords(rules))
+    f.call(0x661EC0,rocket,[])
+    cases=[]
+    for cls,vt in (('unit',0x7F5C70),('infantry',0x7EB058),('aircraft',0x7E22A4)):
+        for frame,z,marked,tagged in ((15,500,1,1),(16,207,1,1),(16,208,1,1),
+                                       (16,500,0,1),(16,500,1,0),(32,500,1,1)):
+            cases.append(dict(name=f'{cls}_f{frame}_z{z}_mark{marked}_tag{tagged}',
+                              cls=cls,vt=vt,frame=frame,z=z,marked=marked,tagged=tagged))
+    def unit(name,**kw):
+        return dict(dict(name=name,cls='unit',vt=0x7F5C70,frame=16,z=208,marked=1,tagged=1),**kw)
+    cases += [unit(f'signed_frame{frame}',frame=frame,z=500) for frame in (0,-16,-1,-2147483648)]
+    cases += [unit('bridge_flags500_no_onbridge_high',cellflags=0x500),
+              unit('onbridge_relative207',z=623,on_bridge=1),
+              unit('onbridge_relative208',z=624,on_bridge=1),
+              unit('physical_world_alias',xy=[526*256+128,11*256+128],cell_xy=[14,12]),
+              unit('health0_alive0_limbo1_slice_only',z=500,health=0,alive=0,limbo=1)]
+    for slot in (0x4E0,0x514):
+        for phase in (2,3,5,6):
+            cases.append(dict(name=f'rocket_rule{slot:x}_phase{phase}',cls='aircraft',
+                vt=0x7E22A4,frame=16,z=0,marked=0,tagged=1,rocket_rule=slot,rocket_phase=phase))
+    spans=((0x4DA7B0,0x4DA806),(0x4DE620,0x4DE625),(0x5F6B90,0x5F6BB2),
+           (0x41B920,0x41B973),(0x5F6960,0x5F69B7),(0x41BEA0,0x41BEDD),
+           (0x5F5F40,0x5F5F92),(0x661F90,0x661FA0))
+    original=[bytes(u.mem_read(a,b-a)) for a,b in spans]
+    watch={0x4DE620,0x5F6B90,0x41B920,0x5F5F40,0x578080,
+           0x5F6960,0x565730,0x41BEA0,0x661F90,0x6E53A0}
+    calls=[]
+    def observe(uc,pc,size,data):
+        if pc in watch:calls.append(hex(pc))
+        assert pc not in (0x65C780,0x65C7E0,0x65C837),('unexpected RNG',hex(pc))
+    hook=u.hook_add(UC_HOOK_CODE,observe)
+    caller=[]
+    for case in cases:
+        x,y=case.get('xy',[15*256+128,15*256+128]);cx,cy=case.get('cell_xy',[15,15])
+        for ptr in (cell(15,15),cell(14,12)):
+            u.mem_write(ptr+0x3C,dwords(0));u.mem_write(ptr+0x140,dwords(0))
+        u.mem_write(cell(cx,cy)+0x3C,dwords(tag if case['tagged'] else 0))
+        u.mem_write(cell(cx,cy)+0x140,dwords(case.get('cellflags',0)))
+        u.mem_write(OWNER,dwords(case['vt']));u.mem_write(OWNER+0x9C,dwords(x,y,case['z']))
+        for off,value in ((0x74,case['marked']),(0x8C,case.get('on_bridge',0)),
+                          (0x90,case.get('alive',1)),(0x81,case.get('limbo',0))):
+            u.mem_write(OWNER+off,bytes([value]))
+        u.mem_write(OWNER+0x6C,dwords(case.get('health',100)))
+        u.mem_write(rules+0x4E0,dwords(0));u.mem_write(rules+0x514,dwords(0))
+        if 'rocket_rule' in case:
+            u.mem_write(rules+case['rocket_rule'],dwords(TYPE))
+            u.mem_write(OWNER+0x674,dwords(rocket+4));u.mem_write(rocket+0x40,dwords(case['rocket_phase']))
+        u.mem_write(0xA8ED84,dwords(case['frame']))
+        u.reg_write(UC_X86_REG_ESI,OWNER);u.reg_write(UC_X86_REG_EBX,0);u.reg_write(UC_X86_REG_ESP,f.sp)
+        calls.clear()
+        stop=run_checked(u,0x4DA7B0,(0x4DA806,0x6E53A0),count=2000)
+        row=dict(input=case,raised=stop==0x6E53A0,calls=list(calls))
+        if row['raised']:
+            sp=u.reg_read(UC_X86_REG_ESP)
+            kind,actor,xy,force,source=struct.unpack('<5I',u.mem_read(sp+4,20))
+            row['dispatch']=dict(kind=kind,cell=list(struct.unpack('<2h',dwords(xy))),force=force,source=source)
+        caller.append(row)
+    u.hook_del(hook)
+    assert original==[bytes(u.mem_read(a,b-a)) for a,b in spans]
+    histories=[]
+    for name,frame,height,repeat,events,operations in (
+        ('periodic_f15_z208_repeat0',15,208,0,[[59,-1]],[['periodic_cell'],['drain']]),
+        ('periodic_f16_z207_repeat0',16,207,0,[[59,-1]],[['periodic_cell'],['drain']]),
+        ('periodic_f16_z208_repeat0',16,208,0,[[59,-1]],[['periodic_cell'],['drain']]),
+        ('periodic_f16_z208_repeat2',16,208,2,[[59,-1]],[['periodic_cell'],['drain']]),
+        ('repeat2_same_binary_frame',16,208,2,[[59,-1]],
+         [['periodic_cell'],['periodic_cell'],['frame',17],['periodic_cell'],['frame',32],['periodic_cell']]),
+        ('repeat0_detach_before_second_query',16,208,0,[[59,-1]],
+         [['periodic_cell'],['periodic_cell'],['drain']]),
+        ('tag_without59_can_match_level47',16,208,2,[[47,0]],[['periodic_cell']]),
+        ('entered1_is_not_raised',16,208,2,[[1,-1]],[['periodic_cell']]),
+    ):
+        result=execute(dict(name=name,frame=frame,repeat=repeat,periodic_height=height,
+            game_mode=5,new_ini_format=4,lifecycle=True,polling=True,spy_actor=True,
+            observe_object_cleanup=True,triggers=[dict(events=events,actions=[[28,7]])],
+            operations=[['shared'],['attach_cell',0,50,60],*operations]))
+        histories.append(result)
+    return dict(schema_version=1,session_mode=5,new_ini_format=4,
+                caller_controls=caller,tag_histories=histories,code_unchanged=True)
+
+
+def periodic_cell_event_metadata():
+    return provenance(
+        scope='35 original Foot4DA7B0..4DA806/getter controls and eight complete periodic-to-Tag/action/cleanup histories. Not full AI, natural flight or rendered retail parity.',
+        assumptions=[
+            'Actual Unit/Infantry/Aircraft vtables, Object scalar initializers, GetHeight, GetOccupiedCell double lookup, GetMapCoords and designated Rocket IsMovingNow execute. Actor/type/Rules/terrain and marked/height/phase are explicit supplied priors. The 35 caller controls stop at Tag entry.',
+            'Eight histories reuse the existing execute lifecycle owner with its original-layout Infantry prior and resolved definitions. Original periodic caller, Tag/Trigger constructors, Register/HasOccurred59,47,1/Spring, Action28 global7, immediate detach and deferred deletion execute. Full three-stream state is compared before/after each saved history; next_random is a terminal probe outside history.',
+            'SessionMode A8B238 is explicitly5 (Skirmish); NewINIFormat A8ED7C is independently4. No existing control default is changed.',
+            'Frame15 and relative207 reject; marked relative208 admits. Repeated same-frame visits dispatch again for repeat2; repeat0 immediately clears Cell+3C and queues the actual Trigger/Tag before drain. A Tag containing47 but no59 still runs;1 alone does not match. No selected action writes a countdown timer; ResetTimers is still called for a successful59 persistence flag.'],
+        substitutions=['Existing Fixture/execute allocation and CRT transport; supplied actor/world/flight priors. No selected caller/getter, Tag lifecycle, event predicate, action or RNG return is replaced.'],
+        entry_points=dict(foot_periodic=0x4DA7B0,high_flying=0x5F6B90,aircraft_high=0x41B920,
+            occupied_cell=0x5F6960,map_coords=0x41BEA0,tag=0x6E53A0,
+            register=0x7264C0,reset_timers=0x726400,action=0x6DD8B0,deferred_drain=0x725C70))
+
+
+def periodic_cell_event_source_paths():
+    return dict(spy_entry_event_source_paths(),
+        object_scalars=Path(__file__).with_name('object_flight_height.py'))
 
 
 def generate_line_events():
@@ -3056,7 +3189,11 @@ def damage_event_source_paths():
 if __name__=='__main__':
     import sys
     args=sys.argv[1:]
-    if '--spy-entry-events' in args:
+    if '--periodic-cell-events' in args:
+        args.remove('--periodic-cell-events')
+        finish_vectors(generate_periodic_cell_events,Path(__file__).with_name('trigger_periodic_cell_events.json'),
+                       provenance=periodic_cell_event_metadata,source_paths=periodic_cell_event_source_paths(),argv=args)
+    elif '--spy-entry-events' in args:
         args.remove('--spy-entry-events')
         finish_vectors(generate_spy_entry_events,Path(__file__).with_name('trigger_spy_entry_events.json'),
                        provenance=spy_entry_event_metadata,source_paths=spy_entry_event_source_paths(),argv=args)

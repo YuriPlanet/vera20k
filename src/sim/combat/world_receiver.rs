@@ -1046,6 +1046,7 @@ pub(crate) fn commit_entities(
                     target_id,
                     attacker_id,
                     rules,
+                    overlay_registry,
                     run.effects(),
                 );
             }
@@ -2352,6 +2353,17 @@ fn emit_detonation_receivers<'r>(
                 spread: super::cell_spread::whole_cells(rad_warhead.cell_spread_f64),
             });
     }
+
+    // Installed Ares46920B ->100536E0/10052870 runs after radiation,
+    // before the exclusive special/ordinary damage arms (including Damage=0).
+    #[cfg(feature = "ares")]
+    world.apply_ares_emp_detonation(
+        detonation.impact,
+        Some(detonation.source_id),
+        warhead,
+        rules,
+        effects,
+    );
 
     // `BulletClass::DetonateAtCoord @ 0x0046978e` is the chain's only
     // conditional arm and the only one that consults the target: it reads the
