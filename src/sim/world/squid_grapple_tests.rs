@@ -960,8 +960,12 @@ fn stock_squid_paralysis_refuses_an_ordinary_ship_move_command() {
     scene.wait_for_roll();
     let ship = scene.sim.substrate.entities.get(scene.ship).unwrap();
     let initial = position_world_coord(&ship.position);
+    // The human Americans send the computer ship's Move: the DoList skips computer Houses' events
+    // (0x0064C4FB..0x0064C50D), and MegaMission never compares sender and actor
+    // (0x004C71F6..0x004C721F).
+    let sender = scene.sim.interner.get("Americans").unwrap();
     scene.sim.queue_command(CommandEnvelope::new(
-        ship.owner(),
+        sender,
         scene.sim.session.tick() + 1,
         Command::Move {
             entity_id: scene.ship,

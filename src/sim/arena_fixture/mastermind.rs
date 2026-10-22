@@ -99,8 +99,11 @@ impl MindScene {
             let actor = sim.entities().get(id).unwrap();
             sim.fog
                 .mark_visible_for_owner(owner, actor.position.rx(), actor.position.ry());
+            // The human owner sends the computer tanks' Guard too: the DoList skips computer
+            // Houses' events (0x0064C4FB..0x0064C50D), and MegaMission never compares sender and
+            // actor (0x004C71F6..0x004C721F).
             sim.queue_command(CommandEnvelope::new(
-                enemy,
+                owner,
                 1,
                 Command::Guard {
                     entity_id: id,

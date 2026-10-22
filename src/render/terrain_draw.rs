@@ -28,7 +28,7 @@ mod surface_lines;
 pub(crate) use batching::TerrainBatchStats;
 use batching::{TerrainBatches, TerrainCommand};
 pub(crate) use ion_blasts::IonBlastDraw;
-pub(crate) use packed::{PackedComposite, PackedCompositePiece, PackedSpriteKind};
+pub(crate) use packed::{PackedComposite, PackedCompositePiece, PackedSpriteKind, packed_wave_key};
 use submission::PassSubmission;
 pub(crate) use surface_lines::SurfaceLineBatch;
 
@@ -380,6 +380,17 @@ impl TerrainDrawRenderer {
         }
     }
 
+    /// Every pixel one ordinary sprite or destination edit reads or writes:
+    /// its quad as the sprite vertex shaders place it, clipped to `tactical`.
+    /// `None` when it draws nothing.
+    pub(crate) fn piece_footprint(
+        &self,
+        instance: &SpriteInstance,
+        tactical: [u32; 4],
+    ) -> Option<[u32; 4]> {
+        piece_scissor(instance, self.camera, tactical)
+    }
+
     /// App-owned ordinary passes share the same bounded submission budget.
     /// The caller must have ended its render pass; attachments resume with Load.
     pub(crate) fn note_external_passes(
@@ -393,6 +404,12 @@ impl TerrainDrawRenderer {
     #[cfg(test)]
     pub(crate) fn submissions(&self) -> usize {
         self.submission.submissions()
+    }
+
+    /// Every pass closed since the last `prepare`, ordinary passes included.
+    #[cfg(test)]
+    pub(crate) fn closed_passes(&self) -> usize {
+        self.submission.closed_passes()
     }
 
     /// Called after composition resize and after the optional upscale depth

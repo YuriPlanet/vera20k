@@ -8867,15 +8867,16 @@ fn runtime_frame_call_order_matches_the_app_seam() {
 /// both the store and its logic membership.
 #[test]
 fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
-    let voxel_type = crate::rules::voxel_anim_type::VoxelAnimType::from_ini_section(
-        "TIRE",
-        IniFile::from_str(
-            "[TIRE]\nElasticity=0.8\nMinAngularVelocity=12.0\nMaxAngularVelocity=24.0\n\
-             MinZVel=28.0\nMaxZVel=32.0\nMaxXYVel=10.0\nDuration=150\n",
-        )
-        .section("TIRE")
-        .unwrap(),
-    );
+    // The visits read the piece's type (its IsMeteor at expiry) from the rules
+    // they are given, so the spawn and the visits share one RuleSet.
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VoxelAnims]\n0=TIRE\n\
+         [TIRE]\nElasticity=0.8\nMinAngularVelocity=12.0\nMaxAngularVelocity=24.0\n\
+         MinZVel=28.0\nMaxZVel=32.0\nMaxXYVel=10.0\nDuration=150\n",
+    ))
+    .expect("TIRE rules parse");
+    let tire = rules.voxel_anim_type_id_by_name("TIRE").unwrap();
+    let voxel_type = rules.voxel_anim_type(tire);
 
     let mut sim = Simulation::new();
     let empty_hash = sim.state_hash();
@@ -8884,8 +8885,8 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
     let mut deferred = Vec::new();
     for _ in 0..3 {
         sim.emit_debris_voxel(
-            crate::rules::voxel_anim_type::VoxelAnimTypeId(0),
-            &voxel_type,
+            tire,
+            voxel_type,
             None,
             glam::IVec3::new(1280, 2560, 0),
             true,
@@ -8960,14 +8961,14 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
     // order once its AI reaches Delete.
     let first = first_id;
     let before = sim.substrate.voxel_anims.get(first).unwrap().world_coord();
-    sim.visit_voxel_anim(first, crate::rules::ruleset::RuleSet::empty_for_test());
+    sim.visit_voxel_anim(first, &rules);
     let after = sim.substrate.voxel_anims.get(first).unwrap().world_coord();
     assert_ne!(before, after, "one AI visit moves the body");
     for _ in 0..200 {
         if !sim.substrate.voxel_anims.contains_key(first) {
             break;
         }
-        sim.visit_voxel_anim(first, crate::rules::ruleset::RuleSet::empty_for_test());
+        sim.visit_voxel_anim(first, &rules);
     }
     assert!(
         !sim.substrate.voxel_anims.contains_key(first),

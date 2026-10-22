@@ -222,6 +222,13 @@ fn retail_force_shield_shields_allied_buildings_and_fades() {
         let (world_rules, mut sim, _) = world_with(rules, 64, &[]);
         rules = world_rules;
         let russians = sim.interner.intern("Russians");
+        // The Russians click as a human player: the DoList runs only human or
+        // PlayerControl Houses' events (0x0064C4FB..0x0064C50D), and SPECIAL_PLACE
+        // fires the sender House's own Super (0x004C78D6).
+        sim.houses
+            .get_mut(&russians)
+            .unwrap()
+            .set_is_human_for_test(true);
         if americans_list_russians {
             sim.house_alliances_mut_for_test()
                 .entry("AMERICANS".to_string())
@@ -304,6 +311,13 @@ fn a_bridge_cell_walks_from_the_ground_centre() {
     terrain.cells_mut_for_test()[index].bridge_facts.raw_flags =
         crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
     let russians = sim.interner.intern("Russians");
+    // The Russians click as a human player: the DoList runs only human or
+    // PlayerControl Houses' events (0x0064C4FB..0x0064C50D), and SPECIAL_PLACE
+    // fires the sender House's own Super (0x004C78D6).
+    sim.houses
+        .get_mut(&russians)
+        .unwrap()
+        .set_is_human_for_test(true);
     sim.spawn_object_at_height("NATECH", "Russians", 10, 10, 0, 0, &rules)
         .unwrap();
     // The 2x2 foundation's centre (11264, 10752).

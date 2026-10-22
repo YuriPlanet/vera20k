@@ -1,7 +1,10 @@
 use super::*;
 
 fn corpus() -> serde_json::Value {
-    serde_json::from_str(include_str!("../../tools/storage_oracle/lan_messages.json")).unwrap()
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/storage_oracle/lan_messages.json",
+    ))
+    .unwrap()
 }
 
 fn unhex(text: &str) -> Vec<u8> {

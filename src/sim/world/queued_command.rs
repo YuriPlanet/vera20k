@@ -60,13 +60,6 @@ impl QueuedCommand {
         }
     }
 
-    pub(super) fn semantic_mut(&mut self) -> Option<&mut CommandEnvelope> {
-        match self {
-            Self::Semantic { envelope, .. } => Some(envelope),
-            Self::Native { .. } => None,
-        }
-    }
-
     /// Lossless replay transport, including unknown opcodes, future frames,
     /// invalid actors and opaque flags. No native record is decoded here.
     pub(super) fn replay_envelope(&self) -> CommandEnvelope {

@@ -22,6 +22,9 @@ pub(super) struct PassSubmission {
     queue: wgpu::Queue,
     pending_passes: usize,
     submissions: usize,
+    /// Every pass closed this frame, for replay pass-count tests.
+    #[cfg(test)]
+    closed_passes: usize,
 }
 
 impl PassSubmission {
@@ -31,6 +34,8 @@ impl PassSubmission {
             queue: queue.clone(),
             pending_passes: 0,
             submissions: 0,
+            #[cfg(test)]
+            closed_passes: 0,
         }
     }
 
@@ -40,6 +45,10 @@ impl PassSubmission {
     pub(super) fn reset_frame(&mut self) {
         self.pending_passes = 0;
         self.submissions = 0;
+        #[cfg(test)]
+        {
+            self.closed_passes = 0;
+        }
     }
 
     #[cfg(test)]
@@ -47,10 +56,19 @@ impl PassSubmission {
         self.submissions
     }
 
+    #[cfg(test)]
+    pub(super) fn closed_passes(&self) -> usize {
+        self.closed_passes
+    }
+
     /// The caller has ended every pass counted here. Account for each small
     /// replay group immediately, rather than after an unbounded list of waves.
     pub(super) fn note_closed_passes(&mut self, encoder: &mut wgpu::CommandEncoder, passes: usize) {
         self.pending_passes += passes;
+        #[cfg(test)]
+        {
+            self.closed_passes += passes;
+        }
         if self.pending_passes < CLOSED_PASSES_PER_SUBMISSION {
             return;
         }

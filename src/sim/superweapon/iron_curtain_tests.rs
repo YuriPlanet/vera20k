@@ -780,6 +780,13 @@ fn retail_iron_curtain_through_production_frames() {
     assert_eq!(rules.bridge_warheads.c4_name, "Super");
     let (rules, mut sim, _) = world_with(rules, 64, &[]);
     let russians = sim.interner.intern("Russians");
+    // The Russians click as a human player: the DoList runs only human or
+    // PlayerControl Houses' events (0x0064C4FB..0x0064C50D), and SPECIAL_PLACE
+    // fires the sender House's own Super (0x004C78D6).
+    sim.houses
+        .get_mut(&russians)
+        .unwrap()
+        .set_is_human_for_test(true);
     let rhino = sim
         .spawn_object_at_height("HTNK", "Russians", 40, 40, 0, 0, &rules)
         .unwrap();
