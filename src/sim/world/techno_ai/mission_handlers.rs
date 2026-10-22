@@ -2201,7 +2201,15 @@ pub(super) fn evaluate_foot_area_guard(
     //4D6F38..4D701F re-reads TarCom after idle and queues before the cadence
     //draw. An acquired enemy already returned above.
     sim.acquire_adjacent_tesla_coil(id, rules, ctx.overlay_registry, ctx.effects);
-    let base = mission_cadence(rules, MissionType::AreaGuard);
+    // FootClass::Mission_AreaGuard4D7025 calls MissionControl5B3A00 on
+    // the live current mission: Aircraft Idle may already have entered Enter.
+    let current = sim
+        .substrate
+        .entities
+        .get(id)
+        .and_then(|entity| entity.mission.current().known())
+        .unwrap_or(MissionType::AreaGuard);
+    let base = mission_cadence(rules, current);
     // `0x004D7040..0x004D7048`: an aircraft (What_Am_I 2) doubles the Rate
     // before the draw.
     let base = if sim
