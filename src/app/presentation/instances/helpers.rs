@@ -77,10 +77,7 @@ pub(crate) fn observer_draw_context(
             || crate::rules::ruleset::GeneralRules::default().cloaking_stages,
             |r| r.general.cloaking_stages,
         ),
-        invisible: object.is_some_and(|obj| {
-            obj.invisible
-                || (entity.category() == EntityCategory::Structure && obj.invisible_in_game)
-        }),
+        invisible: object.is_some_and(|obj| obj.invisible),
         is_campaign: !sim.session().game_mode_nonzero(),
         owner_is_current_player: sim.house_is_human_player(entity.owner()),
         disguise_cell_present: disguise_cell.is_some(),

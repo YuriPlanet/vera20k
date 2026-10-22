@@ -846,6 +846,33 @@ impl ProcessedRulesLayers {
             .map(|member| (member.native_stored_id.as_str(), member.building_light))
     }
 
+    pub(crate) fn techno_visibility_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            crate::rules::techno_visibility::TechnoVisibility,
+        ),
+    > {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.techno_visibility,
+                    )
+                })
+            })
+    }
+
     /// BuildingType's retained upgrade inputs after the last reached Rules body.
     pub(crate) fn building_upgrade_states(
         &self,
@@ -2890,6 +2917,8 @@ impl AresExplicitFactory {
 struct ProcessedType {
     native_stored_id: String,
     body: IniSection,
+    /// TechnoType+C9A/C9B and BuildingType+1701, including460E09's writes.
+    techno_visibility: crate::rules::techno_visibility::TechnoVisibility,
     /// Constructor711351=0; fixed ART ReadInt71592A..715948 keeps the
     /// current value as default across Image changes and later Rules passes.
     #[serde(default)]
@@ -3334,6 +3363,7 @@ impl ProcessedType {
     fn new(native_stored_id: String) -> Self {
         Self {
             body: IniSection::new(native_stored_id.clone()),
+            techno_visibility: Default::default(),
             voxel_shadow_index: 0,
             tech_level: crate::rules::object_type::DEFAULT_TECH_LEVEL,
             projectile_art: ProjectileArtState::new(&native_stored_id),
@@ -4906,6 +4936,7 @@ impl RulesPassProcessor {
                 match family {
                     RulesTypeFamily::Building => {
                         let member = &mut self.families.get_mut(&family).unwrap()[index];
+                        member.techno_visibility.read_building_pass(&raw);
                         // ReadINI460F50..460F9C: exact Rules key, ReadCoord529CA0,
                         // current value as default, no clamp or conversion.
                         member.building_has_spotlight =
@@ -5093,6 +5124,9 @@ impl RulesPassProcessor {
     }
 
     fn process_techno_base(&mut self, family: RulesTypeFamily, index: usize, raw: &IniSection) {
+        self.family_mut(family)[index]
+            .techno_visibility
+            .read_techno_pass(raw);
         if let Some(weapon) =
             self.resolve_scalar_from(raw, "DeathWeapon", RulesTypeFamily::Weapon, 0x80)
         {

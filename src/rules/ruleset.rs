@@ -4534,6 +4534,15 @@ impl RuleSet {
                 object.set_voxel_shadow_index(shadow_index);
             }
         }
+        for (category, name, visibility) in processed.techno_visibility_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == category && object.id == name)
+            {
+                object.project_techno_visibility(visibility);
+            }
+        }
         for (name, pips) in processed.infantry_pip_states() {
             if let Some(object) = rules
                 .object_list
@@ -6190,6 +6199,23 @@ impl RuleSet {
                         object.perma_disguise,
                         object.detect_disguise,
                         object.disguise_when_still,
+                    ),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
+        // Building460DEB's visibility postpass can retain different bytes
+        // after equal current source text; targeting reads Invisible too.
+        b"retained-techno-visibility-v1".hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.as_str()),
+                    (
+                        object.invisible,
+                        object.radar_visible,
+                        object.invisible_in_game,
                     ),
                 )
             })

@@ -245,14 +245,22 @@ fn tactical_world_tip_text_sampled(
     // The shared crew marker also reaches Infantry51F2C0's earlier
     // TXT_TECHNICIAN return; Type.Nominal alone must not select that name.
     let own = entity.owner() == viewer;
-    if !own && entity.category() != EntityCategory::Unit {
+    // Display4AE672 also calls Building459ED0 for a foreign building: its
+    // Type+60 name has no ownership gate. Foreign infantry/aircraft naming
+    // remains outside this dispatcher's current coverage.
+    if !own
+        && !matches!(
+            entity.category(),
+            EntityCategory::Unit | EntityCategory::Structure
+        )
+    {
         return String::new();
     }
     let Some(object) = rules.object(view.interner().resolve(entity.type_ref())) else {
         return String::new();
     };
-    //4AE616..4AE666 repeats admission on the chosen object. On this Unit
-    // anchor path the shared picker already checked cloak/sensors. TypeInvisible
+    //4AE616..4AE666 repeats admission on the chosen object. On these Unit and
+    // Building paths the shared picker already checked cloak/sensors. TypeInvisible
     // refuses that winner; never pick another object behind it.
     // The bypass reads retained Techno+41A, not a human/control/alliance flag.
     if !entity.discovery.owned_by_current_house() && object.invisible {
@@ -823,6 +831,60 @@ mod tests {
             "Russians",
             "Building459ED0",
         );
+    }
+
+    #[test]
+    fn enemy_power_plant_tip_obeys_the_shroud_and_invisible_type_gates() {
+        assert_mapped_tip_uses_retail_ui_name_and_clears_after_limbo(
+            "GAPOWR",
+            "British",
+            "Russians",
+            "Display4AE672 -> Building459ED0",
+        );
+        let Some(mut fixture) = mapped_tip_fixture("GAPOWR", "British", "Russians", None) else {
+            return;
+        };
+        *fixture.runtime.simulation.fog_mut_for_test() = crate::sim::vision::FogState::new(32, 32);
+        assert_eq!(
+            tactical_world_tip_text(
+                fixture.runtime.view(),
+                &fixture.runtime.resources.rules,
+                Some(&fixture.csf),
+                fixture.world,
+                false,
+            ),
+            fixture.csf.text(TIP_LABEL_SHADOW),
+            "Display4AE5D0's plane-cell shroud gate precedes the building name"
+        );
+
+        {
+            let patch =
+                crate::rules::ini_parser::IniFile::from_str("[GAPOWR]\nInvisibleInGame=yes\n");
+            let Some(fixture) = mapped_tip_fixture("GAPOWR", "British", "Russians", Some(&patch))
+            else {
+                return;
+            };
+            assert!(
+                fixture
+                    .runtime
+                    .resources
+                    .rules
+                    .object("GAPOWR")
+                    .unwrap()
+                    .invisible
+            );
+            assert!(
+                tactical_world_tip_text(
+                    fixture.runtime.view(),
+                    &fixture.runtime.resources.rules,
+                    Some(&fixture.csf),
+                    fixture.world,
+                    false,
+                )
+                .is_empty(),
+                "Display4AE65E refuses the retained Invisible byte from InvisibleInGame"
+            );
+        }
     }
 
     #[test]

@@ -1801,8 +1801,8 @@ pub struct ObjectType {
     /// false; only eligible buildings can convert a fatal result to PostMortem.
     pub eligible_for_delay_kill: bool,
 
-    /// `Invisible=yes` on BuildingType. Live building rejection checks this
-    /// plain invisible byte separately from `InvisibleInGame`.
+    /// Retained TechnoType+C9A. Reads `Invisible`; BuildingType's
+    /// InvisibleInGame postpass can also set it and clear RadarVisible.
     pub invisible: bool,
 
     /// `InvisibleInGame=yes` on BuildingType. Logical-only buildings (e.g., bridge
@@ -2293,6 +2293,15 @@ impl ObjectType {
         self.building_light = light;
     }
 
+    pub(crate) fn project_techno_visibility(
+        &mut self,
+        visibility: crate::rules::techno_visibility::TechnoVisibility,
+    ) {
+        self.invisible = visibility.invisible;
+        self.radar_visible = visibility.radar_visible;
+        self.invisible_in_game = visibility.invisible_in_game;
+    }
+
     pub fn building_upgrade(&self) -> &crate::rules::building_upgrade::BuildingUpgradeRules {
         &self.building_upgrade
     }
@@ -2746,6 +2755,11 @@ impl ObjectType {
     /// owner (`native_processing`) reads keep their constructor values here;
     /// `RuleSet::from_processed_rules` publishes that owner's retained result.
     pub fn from_ini_section(id: &str, section: &IniSection, category: ObjectCategory) -> Self {
+        let mut visibility = crate::rules::techno_visibility::TechnoVisibility::default();
+        visibility.read_techno_pass(section);
+        if category == ObjectCategory::Building {
+            visibility.read_building_pass(section);
+        }
         let armor = section.read_string("Armor", "none", 0x80);
         // BuildingType45FE50: Hospital, Armory460B03, then the three
         // barracks readers460B1D/37/51. Each starts at constructor0 and folds
@@ -3106,7 +3120,7 @@ impl ObjectType {
             gap_generator: section.read_bool("GapGenerator", false),
             radar: section.read_bool("Radar", false),
             radar_invisible: section.read_bool("RadarInvisible", false),
-            radar_visible: section.read_bool("RadarVisible", false),
+            radar_visible: visibility.radar_visible,
             insignificant: section.read_bool("Insignificant", false),
             to_protect: section.read_bool("ToProtect", false),
             harvester: section.read_bool("Harvester", false),
@@ -3456,8 +3470,8 @@ impl ObjectType {
             c4: category != ObjectCategory::Infantry && section.read_bool("C4", false),
             can_c4: section.read_bool("CanC4", category == ObjectCategory::Building),
             eligible_for_delay_kill: section.read_bool("EligibleForDelayKill", false),
-            invisible: section.read_bool("Invisible", false),
-            invisible_in_game: section.read_bool("InvisibleInGame", false),
+            invisible: visibility.invisible,
+            invisible_in_game: visibility.invisible_in_game,
             place_anywhere: section.read_bool("PlaceAnywhere", false),
             to_tile: section.read_name("ToTile", 0x3c).map(str::to_owned),
             // BuildingType45FE50: ReadBool calls460915/46092F/460949,

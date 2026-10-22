@@ -175,6 +175,7 @@ pub mod sound_ini;
 pub mod superweapon_targeting;
 pub mod superweapon_type;
 pub mod team_ai_ini;
+pub(crate) mod techno_visibility;
 pub mod terrain_asset_catalog;
 pub mod terrain_object_type;
 pub mod terrain_rules;

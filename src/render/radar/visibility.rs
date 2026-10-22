@@ -393,8 +393,7 @@ pub(super) fn build_radar_object_update(
                     )
                 })
         });
-    let effective_type_invisible =
-        object.is_some_and(|object| object.invisible || object.invisible_in_game);
+    let effective_type_invisible = object.is_some_and(|object| object.invisible);
     let fresh_in_playfield =
         radar_fresh_mode_one_membership(entity, playfield_bounds, resolved_terrain);
     let cloak_state = entity.cloak.as_ref().map_or(0, |cloak| cloak.state());
@@ -1023,37 +1022,53 @@ mod tests {
     }
 
     #[test]
-    fn radar_visibility_invisible_in_game_is_effective_type_invisibility() {
+    fn radar_visibility_uses_the_building_only_invisible_in_game_postpass() {
         let local = crate::sim::intern::test_intern("Local");
         let enemy = crate::sim::intern::test_intern("Enemy");
         crate::sim::intern::test_intern("DOT");
         let interner = crate::sim::intern::test_interner();
-        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-            "[VehicleTypes]\n0=DOT\n[DOT]\nStrength=100\nInvisibleInGame=yes\n",
-        ))
-        .expect("visibility fixture rules");
         let mut houses = crate::sim::houses::Houses::default();
         houses.register(crate::sim::house_state::HouseState::new(
             enemy, 0, None, false, 0, 10,
         ));
         let mut fog = FogState::default();
         fog.mark_visible_for_owner(local, 5, 5);
-        let mut entity = crate::sim::game_entity::GameEntity::test_default(1, "DOT", "Enemy", 5, 5);
-        entity.lifecycle.set_in_limbo_for_test(false);
-        let update = build_radar_object_update(
-            &entity,
-            &houses,
-            Some(local),
-            &fog,
-            &Default::default(),
-            false,
-            true,
-            Some(&rules),
-            Some(&interner),
-            visibility_projection(),
-            None,
-            None,
-        );
-        assert!(!update.visibility.evaluate(false).visible);
+        for (registry, category, invisible) in [
+            ("BuildingTypes", EntityCategory::Structure, true),
+            ("VehicleTypes", EntityCategory::Unit, false),
+        ] {
+            let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(&format!(
+                "[{registry}]\n0=DOT\n[DOT]\nStrength=100\nInvisibleInGame=yes\n",
+            )))
+            .expect("visibility fixture rules");
+            let mut entity = crate::sim::game_entity::GameEntity::test_default_of_category(
+                1, "DOT", "Enemy", 5, 5, category,
+            );
+            entity.lifecycle.set_in_limbo_for_test(false);
+            let update = build_radar_object_update(
+                &entity,
+                &houses,
+                Some(local),
+                &fog,
+                &Default::default(),
+                false,
+                true,
+                Some(&rules),
+                Some(&interner),
+                visibility_projection(),
+                None,
+                None,
+            );
+            let type_invisible = match update.visibility {
+                RadarRegistrationVisibilityFacts::Mobile(facts) => facts.type_invisible,
+                RadarRegistrationVisibilityFacts::Building(facts) => facts.type_invisible,
+            };
+            assert_eq!(type_invisible, invisible, "{registry}");
+            assert_eq!(
+                update.visibility.evaluate(false).visible,
+                !invisible,
+                "{registry}"
+            );
+        }
     }
 }
