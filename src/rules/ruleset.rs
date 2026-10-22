@@ -4656,13 +4656,14 @@ impl RuleSet {
                 art.apply_to(projectile);
             }
         }
-        for (name, weapon) in processed.shrapnel_weapon_states() {
+        for (name, (airburst, shrapnel)) in processed.projectile_weapon_states() {
             if let Some(projectile) = rules
                 .projectiles
                 .values_mut()
                 .find(|projectile| projectile.id.eq_ignore_ascii_case(name))
             {
-                projectile.shrapnel_weapon = weapon.map(str::to_owned);
+                projectile.airburst_weapon = airburst.map(str::to_owned);
+                projectile.shrapnel_weapon = shrapnel.map(str::to_owned);
             }
         }
         for (name, (weapon, aux_building)) in processed.super_weapon_reference_states() {
@@ -6250,6 +6251,20 @@ impl RuleSet {
             .map(|(id, projectile)| (id.to_ascii_uppercase(), &projectile.shrapnel_weapon))
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
+        let airburst_weapons = self
+            .projectiles
+            .iter()
+            .filter_map(|(id, projectile)| {
+                projectile
+                    .airburst_weapon
+                    .as_ref()
+                    .map(|weapon| (id.to_ascii_uppercase(), weapon))
+            })
+            .collect::<BTreeMap<_, _>>();
+        if !airburst_weapons.is_empty() {
+            b"airburst-weapons-v1".hash(&mut hasher);
+            airburst_weapons.hash(&mut hasher);
+        }
         self.super_weapons
             .iter()
             .map(|(id, super_weapon)| {

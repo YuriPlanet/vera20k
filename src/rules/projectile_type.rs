@@ -131,6 +131,8 @@ pub struct ProjectileType {
     /// `ShrapnelWeapon=` (+2B4), the WeaponType fired for each shrapnel
     /// fragment, as the ordered Rules processor resolved it.
     pub shrapnel_weapon: Option<String>,
+    /// Airburst child weapon (+2B0), retained by the ordered Rules reader.
+    pub airburst_weapon: Option<String>,
     /// Current native Image25 text; SHP admission is separately retained below.
     pub image: Option<String>,
     /// Last admitted native5F9070 load, independently of the later Image text.
@@ -426,6 +428,7 @@ impl ProjectileType {
             color_scheme: 0,
             // Constructor null; only the ordered Process owner reads it.
             shrapnel_weapon: None,
+            airburst_weapon: None,
             image: None,
             image_load: None,
             voxel_image_load: None,

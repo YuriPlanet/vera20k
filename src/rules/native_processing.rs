@@ -1328,10 +1328,15 @@ impl ProcessedRulesLayers {
         self.member_states(RulesTypeFamily::Animation, |member| &member.anim_references)
     }
 
-    /// Each BulletType's `ShrapnelWeapon=` (+2B4) after every reached pass.
-    pub(crate) fn shrapnel_weapon_states(&self) -> impl Iterator<Item = (&str, Option<&str>)> {
+    /// Each BulletType's retained child weapons (+2B0/+2B4), in native read order.
+    pub(crate) fn projectile_weapon_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, (Option<&str>, Option<&str>))> {
         self.member_states(RulesTypeFamily::Projectile, |member| {
-            member.shrapnel_weapon.as_deref()
+            (
+                member.airburst_weapon.as_deref(),
+                member.shrapnel_weapon.as_deref(),
+            )
         })
     }
 
@@ -3007,10 +3012,12 @@ struct ProcessedType {
     anim_references: AnimTypeReferences,
     /// BulletType+2B4 `ShrapnelWeapon=`, read the same way by BulletType
     /// ReadINI (`0x0046C2E1..0x0046C31F`) over the constructor's null
-    /// (`0x0046BC82`). Its `AirburstWeapon=` (+2B0, `0x0046C2B9`) is
-    /// allocated but not retained: VERA has no consumer of the airburst
-    /// weapon native loads at `0x00469ECE`.
+    /// (`0x0046BC82`).
     shrapnel_weapon: Option<String>,
+    /// Constructor46BC7C clears+2B0. ReadString128 at46C2B9 retains the
+    /// existing pointer on empty input, else stores the Weapon factory result.
+    #[serde(default)]
+    airburst_weapon: Option<String>,
 }
 
 /// The ObjectType `Image` and TechnoType pointer fields each reached ReadINI
@@ -3389,6 +3396,7 @@ impl ProcessedType {
             voxel_anim_references: VoxelAnimTypeReferences::default(),
             anim_references: AnimTypeReferences::default(),
             shrapnel_weapon: None,
+            airburst_weapon: None,
         }
     }
 }
@@ -5441,8 +5449,11 @@ impl RulesPassProcessor {
                     .get_mut(&RulesTypeFamily::Projectile)
                     .expect("the live BulletType member exists")[index]
                     .projectile_art = art;
-                let _ =
-                    self.resolve_scalar_from(&raw, "AirburstWeapon", RulesTypeFamily::Weapon, 0x80);
+                if let Some(weapon) =
+                    self.resolve_scalar_from(&raw, "AirburstWeapon", RulesTypeFamily::Weapon, 0x80)
+                {
+                    self.family_mut(RulesTypeFamily::Projectile)[index].airburst_weapon = weapon;
+                }
                 if let Some(weapon) =
                     self.resolve_scalar_from(&raw, "ShrapnelWeapon", RulesTypeFamily::Weapon, 0x80)
                 {

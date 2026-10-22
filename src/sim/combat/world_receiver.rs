@@ -2826,6 +2826,7 @@ pub(crate) fn commit_projectile_detonations_inline(
             // The ordinary outer cluster successor still follows that return.
             if area_continuation.is_none() || area_result != AreaDamageResult::IronCurtain {
                 emit_warhead_debris(world, rules, &live_tail, warhead, emit);
+                super::airburst::emit(world, rules, &live_tail);
             }
             if cluster_draws {
                 coordinate =

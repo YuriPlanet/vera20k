@@ -742,8 +742,9 @@ pub fn projectile_shrapnel_count(
 /// receiver now skips bridge continuation, executes SelectAnim including its
 /// RNG, then substitutes WeaponNullifyAnim (+350) for normal animation/light
 /// at469BEA..46A301. Entry4690C1 initializes the ordinary result to1, so none
-/// of these special arms applies the result0 water-unit gate. Future ordinary
-/// debris/Airburst tail implementations must preserve the same early return.
+/// of these special arms applies the result0 water-unit gate. The shared
+/// debris/Airburst tail preserves this early return; the original Airburst
+/// consumer is separately gated from Ares's installed replacement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpecialDetonationAction {
     /// `MindControl=` (`WarheadTypeClass+0x155`), test `0x00469211` ->

@@ -299,6 +299,17 @@ impl<'a> NativeCellQuery<'a> {
         }
     }
 
+    /// CellClass::GetAdjacentCell481810: re-read the retained cell's current
+    /// packed coordinate before lookup. A Dummy center can be stamped by each
+    /// neighbor lookup; retaining only its initial coordinate loses that order.
+    pub fn neighbor(&self, cell: NativeCellIdentity, direction: usize) -> NativeCellIdentity {
+        let Some(&(dx, dy)) = crate::util::direction::DIRECTION_DELTAS.get(direction) else {
+            return cell;
+        };
+        let (x, y) = self.coord(cell);
+        self.lookup((x.wrapping_add(dx as i16), y.wrapping_add(dy as i16)))
+    }
+
     pub(crate) fn ground_fields(&self, cell: NativeCellIdentity) -> (u8, u8) {
         match cell {
             NativeCellIdentity::Real(_) => self.terrain.native_cell_ground_fields(cell),

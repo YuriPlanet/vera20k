@@ -2186,6 +2186,37 @@ fn fixed_art_and_member_major_type_data_follow_live_native_order() {
     assert!(actual.iter().all(|(_, id)| *id != "TOO_LATE"));
 }
 
+/// Native46C2B9 stores the factory answer but never revisits the earlier
+/// Weapon sweep. Empty retains the pointer, none clears it, and a map-only
+/// factory allocation must not retroactively read that map's orphan body.
+#[test]
+fn airburst_reference_retains_rebinds_and_keeps_native_factory_timing() {
+    use crate::rules::ruleset::RuleSet;
+    let root = IniFile::from_str(
+        "[VehicleTypes]\n0=CARRIER\n[CARRIER]\nPrimary=ROOT\nSecondary=CHILD\n\
+         [ROOT]\nProjectile=SHOT\nWarhead=WH\n\
+         [CHILD]\nProjectile=FRAGMENT\nWarhead=WH\nDamage=37\n\
+         [SHOT]\nAirburst=yes\nAirburstWeapon=CHILD\n[FRAGMENT]\n\
+         [Warheads]\n0=WH\n[WH]\n",
+    );
+    for (value, expected) in [("", Some("CHILD")), ("none", None), ("LATE", Some("LATE"))] {
+        let mut layers = RulesLayerStack::new(root.clone());
+        layers.push(RulesLayerKind::Scenario, IniFile::from_str(&format!(
+            "[SHOT]\nAirburstWeapon={value}\n[LATE]\nDamage=99\nProjectile=FRAGMENT\nWarhead=WH\n",
+        )));
+        let processed = layers.process().unwrap();
+        let rules = RuleSet::from_processed_rules(&processed).unwrap();
+        assert_eq!(
+            rules.projectile("SHOT").unwrap().airburst_weapon.as_deref(),
+            expected
+        );
+        if value == "LATE" {
+            assert_eq!(rules.weapon("LATE").unwrap().damage, 0);
+            assert!(rules.weapon("LATE").unwrap().projectile.is_none());
+        }
+    }
+}
+
 #[test]
 fn techno_weapon_bank_uses_effective_native_gates_and_elite_slot_order() {
     let mut layers = RulesLayerStack::new(IniFile::from_str(
