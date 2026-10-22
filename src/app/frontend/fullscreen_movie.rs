@@ -35,6 +35,9 @@ pub(crate) enum MovieReturn {
     /// TAction10's5BF260 call returns to the same tactical world. The shared
     /// fullscreen owner holds media/audio; the screen gate stops new frames.
     RunningScenario,
+    /// Victory685928 plays Basic.Win before its score/SkipScore destination.
+    /// EOF, Escape, missing media and decode failure all resume that outcome.
+    CampaignResult(Box<crate::app::match_runtime::scenario_exit::ScenarioExitDestination>),
     /// A won campaign mission's PostScore/PreMapSelect/FinalMovie
     /// (`0x00685928..0x006859E9`) continues its victory tail.
     CampaignVictory(Box<crate::app::campaign_victory::CampaignVictory>),

@@ -28,6 +28,9 @@ pub struct BasicSection {
     pub briefing: Option<String>,
     /// Post-read movie catalog name (Scenario+1444, Basic.Action).
     pub action: Option<String>,
+    /// Scenario+0x143C: ReadMovie4757D0 at68A048, reset to -1 at6837F4.
+    /// GameExit::Victory685928 plays it before testing SkipScore.
+    pub win: Option<String>,
     /// Scenario+0x1440 movie (`ReadMovie` at `0x0068A066`), which campaign
     /// defeat plays before its retry prompt (`0x0068606B`).
     pub lose: Option<String>,
@@ -173,6 +176,9 @@ pub fn parse_basic_section(ini: &IniFile) -> BasicSection {
         action: section
             .is_present("Action")
             .then(|| section.read_string("Action", "", 128)),
+        win: section
+            .is_present("Win")
+            .then(|| section.read_string("Win", "", 128)),
         lose: section
             .is_present("Lose")
             .then(|| section.read_string("Lose", "", 128)),

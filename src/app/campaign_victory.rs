@@ -16,8 +16,7 @@
 //! Start_Scenario has read the next map; see `sim::campaign_carry_over`.
 //!
 //! Residuals, all inert on the retail campaign maps:
-//! - the Win movie (`+0x143C`, before StandaloneScore) is not played; retail
-//!   campaign maps use `Win=<none>`. `[Basic] SkipScore` (`+0x34AE`) is read by
+//! - `[Basic] SkipScore` (`+0x34AE`) is read by
 //!   the outcome router: yes skips only `0x103`, then follows this continuation;
 //!   retail campaign maps use `SkipScore=no`.
 //! - the record's money (`CarryOverMoney` x the House's money, capped by
@@ -46,6 +45,26 @@ use crate::rules::ini_parser::IniFile;
 /// `CCINIClass::ReadString` into a CString (`0x00528C00`) reads through a
 /// 0x400-byte buffer.
 const MAP_SELECT_VALUE_CAPACITY: usize = 0x400;
+
+/// gamemd GameExit::Victory @0x00685670,685915..685960: Play_Movie_ByIndex
+/// 5BF260 reads Scenario+143C before SkipScore is tested. ReadMovie4757D0
+/// resolves against the fixed ART registry; SetDefaults6837F4 supplies -1.
+/// The existing movie owner returns to the retained outcome on every exit.
+pub(crate) fn win_movie<'a>(
+    destination: &super::match_runtime::scenario_exit::ScenarioExitDestination,
+    basic: &crate::map::basic::BasicSection,
+    movies: &'a crate::rules::movies::MovieRegistry,
+) -> Option<&'a str> {
+    use super::match_runtime::scenario_exit::ScenarioExitDestination;
+    if !matches!(
+        destination,
+        ScenarioExitDestination::CampaignScore { .. }
+            | ScenarioExitDestination::CampaignVictoryContinue
+    ) {
+        return None;
+    }
+    movies.name(movies.find_index(basic.win.as_deref()?))
+}
 
 /// What a won campaign mission does once its score dialog returns.
 #[derive(Debug)]
@@ -432,6 +451,56 @@ Scenario=ALL03umd.MAP
     }
 
     #[test]
+    fn win_movie_uses_the_fixed_catalog_and_saved_basic_reader() {
+        let Some(art) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
+            return;
+        };
+        let rules = crate::rules::process_owner::NativeRulesProcessOwner::from_cold_start_sources(
+            IniFile::empty(),
+            None,
+            art,
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        let movie = rules.movies().name(0).expect("retail movie catalog");
+        let basic = basic(&format!(
+            "Win={}\nSkipScore=yes",
+            movie.to_ascii_lowercase()
+        ));
+        // SavedMapMetadata serializes this same BasicSection with save_codec;
+        // its layout digest automatically changes when the field is added.
+        let bytes = crate::util::save_codec::serialize(&basic).unwrap();
+        let restored = crate::util::save_codec::deserialize(&bytes).unwrap();
+        use crate::app::match_runtime::scenario_exit::ScenarioExitDestination;
+        assert_eq!(
+            win_movie(
+                &ScenarioExitDestination::CampaignVictoryContinue,
+                &restored,
+                rules.movies()
+            ),
+            Some(movie),
+            "SkipScore bypasses the dialog, not Win"
+        );
+        assert_eq!(
+            win_movie(
+                &ScenarioExitDestination::CampaignDefeat,
+                &restored,
+                rules.movies()
+            ),
+            None
+        );
+        assert_eq!(
+            win_movie(
+                &ScenarioExitDestination::CampaignVictoryContinue,
+                &crate::map::basic::BasicSection::default(),
+                rules.movies()
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn the_basic_flags_pick_the_victory_branch_after_the_movies() {
         let plan = |text: &str| victory_plan(&basic(text), catalog, Some("FINALE".into()));
         let (movies, branch) =
@@ -471,6 +540,7 @@ Scenario=ALL03umd.MAP
                     &assets,
                 )
                 .expect("retail campaign map");
+                assert_eq!(loaded.map.basic.win.as_deref(), Some("<none>"), "{name}");
                 let (movies, branch) = victory_plan(&loaded.map.basic, catalog, None);
                 if index + 1 < maps.len() {
                     assert!(movies.is_empty(), "{name}: {movies:?}");

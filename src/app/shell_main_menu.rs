@@ -448,6 +448,12 @@ impl App {
             crate::ui::campaign_score_shell::CAMPAIGN_SCORE_DIALOG,
             false,
         );
+        // gamemd StandaloneScore dialog proc6C8FF0, WM_INIT6C9357..6C936C:
+        // SCORE starts here, after Victory685928's Win movie has returned.
+        if let Some(assets) = state.process_assets.manager() {
+            let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+            let _ = state.audio.play_theme("SCORE", assets, wall_ms);
+        }
     }
 
     fn score_layout(state: &AppState) -> crate::ui::score_shell::ScoreLayout {

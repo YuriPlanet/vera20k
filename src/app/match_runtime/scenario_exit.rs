@@ -348,10 +348,7 @@ impl ScenarioExitCascade {
                 clear_sounds: true,
                 after_cleanup: matches!(
                     self.destination.as_ref(),
-                    Some(
-                        ScenarioExitDestination::Score { .. }
-                            | ScenarioExitDestination::CampaignScore { .. }
-                    )
+                    Some(ScenarioExitDestination::Score { .. })
                 )
                 .then_some(ScenarioExitAudioAction::PlayTheme("SCORE")),
                 finished: true,
@@ -414,6 +411,14 @@ mod tests {
             "detail".into(),
             || campaign_model.clone(),
             || panic!("campaign victory must not build multiplayer score"),
+        );
+        let mut exit = ScenarioExitCascade::start(0, victory.clone());
+        exit.tick(0, true, false);
+        let finished = exit.tick(1_000, false, false);
+        assert!(finished.finished);
+        assert_eq!(
+            finished.after_cleanup, None,
+            "the campaign's Win movie precedes the score dialog's SCORE request"
         );
         assert!(matches!(
             victory,

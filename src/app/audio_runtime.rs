@@ -208,6 +208,11 @@ impl AppAudioRuntime {
         }
         self.set_movie_audio_held(false, wall_ms);
     }
+
+    /// Whether the shared movie lifecycle has released both of its credits.
+    pub(crate) fn movie_audio_released(&self) -> bool {
+        !self.master_groups.held && !self.master_groups.sounds_suspended
+    }
     /// `StateMachine__EnterPause @ 0x00683EB0`: an in-game modal saves the
     /// effects master's target (`0x00683EBC` -> `0x004072B0`) and snaps it
     /// to full (`0x00683ED1` -> `0x00407150`), so its sounds play at full
@@ -488,7 +493,8 @@ impl AppAudioRuntime {
             self.restore_sound_master();
         }
         // Score dialogs explicitly select SCORE after the master is restored:
-        // 5C9B10 (multiplayer) / 6C9357 (campaign), original gamemd.exe.
+        // 5C9B10 (multiplayer), original gamemd.exe. Campaign WM_INIT
+        // selects its theme after the Win movie in open_campaign_score_page.
         if let Some(crate::app::match_runtime::scenario_exit::ScenarioExitAudioAction::PlayTheme(
             theme,
         )) = tick.after_cleanup

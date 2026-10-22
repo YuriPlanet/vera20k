@@ -387,6 +387,9 @@ impl App {
                 state.frontend.screen = crate::ui::game_screen::GameScreen::InGame;
                 state.platform.window.request_redraw();
             }
+            MovieReturn::CampaignResult(destination) => {
+                Self::complete_scenario_exit(state, *destination);
+            }
             MovieReturn::CampaignVictory(victory) => {
                 Self::advance_campaign_victory(state, *victory);
             }
