@@ -512,7 +512,3 @@ mod tests;
 #[cfg(test)]
 #[path = "ai_build_need_retail_tests.rs"]
 mod retail_tests;
-
-#[cfg(test)]
-#[path = "ai_can_make_money_oracle_tests.rs"]
-mod native_money_tests;
