@@ -65,6 +65,13 @@ pub(crate) fn stage_megamission<T: Clone>(stage: &mut Vec<T>, command: &T) -> bo
 pub const SCATTER_OPCODE: u8 = 0x07;
 /// IDLE6, issued by StopCommand730EA0 through ClickedEvent6FFE00.
 pub const IDLE_OPCODE: u8 = 0x06;
+/// Selected-object DEPLOY, issued by the D key through ClickedEvent6FFE00.
+pub const DEPLOY_OPCODE: u8 = 0x09;
+pub const PLACE_OPCODE: u8 = 0x0b;
+pub const PRODUCE_OPCODE: u8 = 0x0e;
+pub const SUSPEND_OPCODE: u8 = 0x0f;
+pub const ABANDON_OPCODE: u8 = 0x10;
+pub const ABANDON_ALL_OPCODE: u8 = 0x2e;
 /// Native `EventClass` opcode 0x0D, the GAMESPEED event. `EventClass::Execute`
 /// type 13 (`0x004C794B`) writes the payload dword at Event+7 into the
 /// GameSpeed setting `0x00A8EB60`, then posts `TXT_PLAYER_CHANGED_SPEED` when
@@ -397,7 +404,7 @@ impl CommandRecord {
         self.bytes[COMMAND_RECORD_FLAGS_OFFSET] &= !COMMAND_RECORD_PROCESSED_FLAG;
     }
 
-    /// EventClass constructor4C65E0, shared by IDLE6 and SCATTER7 through
+    /// EventClass constructor4C65E0, shared by IDLE6, SCATTER7 and DEPLOY9 through
     /// ClickedEvent6FFE34. Target6E6AB0 supplies the identifier and kind0x34;
     /// the constructor writes only the header and this five-byte token.
     /// Source: original gamemd.exe instructions4C6608..4C663D.
@@ -537,6 +544,150 @@ impl StopRecord {
             entity_id: record.object_target_id()?,
         })
     }
+}
+
+/// Event09's object token. The D key730D15 calls ClickedEvent6FFE00;
+/// self-click action4 instead sends a MegaMission Unload through4D75ED.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeployRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub entity_id: i32,
+}
+
+impl DeployRecord {
+    pub fn write_into(self, record: &mut CommandRecord) {
+        record.write_object_target(DEPLOY_OPCODE, self.house_id, self.frame, self.entity_id);
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        (record.opcode() == DEPLOY_OPCODE).then_some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: record.object_target_id()?,
+        })
+    }
+}
+
+/// The four events sharing EventClass constructor4C6970 and three DWORDs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProductionEvent {
+    Produce,
+    Suspend,
+    Abandon,
+    AbandonAll,
+}
+
+impl ProductionEvent {
+    pub const fn opcode(self) -> u8 {
+        match self {
+            Self::Produce => PRODUCE_OPCODE,
+            Self::Suspend => SUSPEND_OPCODE,
+            Self::Abandon => ABANDON_OPCODE,
+            Self::AbandonAll => ABANDON_ALL_OPCODE,
+        }
+    }
+
+    fn from_opcode(opcode: u8) -> Option<Self> {
+        match opcode {
+            PRODUCE_OPCODE => Some(Self::Produce),
+            SUSPEND_OPCODE => Some(Self::Suspend),
+            ABANDON_OPCODE => Some(Self::Abandon),
+            ABANDON_ALL_OPCODE => Some(Self::AbandonAll),
+            _ => None,
+        }
+    }
+}
+
+/// Byte-preserving view of EventClass4C6970: RTTI+7, type-array index+B,
+/// Naval DWORD+F. Execute4C711B..4C718A alone normalizes Naval to a bool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductionRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub event: ProductionEvent,
+    pub rtti: i32,
+    pub type_index: i32,
+    pub naval: u32,
+}
+
+impl ProductionRecord {
+    pub fn write_into(self, record: &mut CommandRecord) {
+        record.set_issue_header(self.event.opcode(), i32::from(self.house_id), self.frame);
+        if self.house_id >= 0 {
+            write_production_fields(record, self.rtti, self.type_index, self.naval);
+        }
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        let event = ProductionEvent::from_opcode(record.opcode())?;
+        let (rtti, type_index, naval) = read_production_fields(record);
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            event,
+            rtti,
+            type_index,
+            naval,
+        })
+    }
+}
+
+/// Active PLACE constructor4C6AE0 appends signed Cell words+13/+15 to
+/// the same production selector. Manual building placement4ABB55 supplies
+/// object RTTI6; automatic mobile placement6A8EE8 supplies RTTI1/2/15 and -1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlaceRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub rtti: i32,
+    pub type_index: i32,
+    pub naval: u32,
+    pub x: i16,
+    pub y: i16,
+}
+
+impl PlaceRecord {
+    pub fn write_into(self, record: &mut CommandRecord) {
+        record.set_issue_header(PLACE_OPCODE, i32::from(self.house_id), self.frame);
+        if self.house_id >= 0 {
+            write_production_fields(record, self.rtti, self.type_index, self.naval);
+            record.payload_mut()[12..14].copy_from_slice(&self.x.to_le_bytes());
+            record.payload_mut()[14..16].copy_from_slice(&self.y.to_le_bytes());
+        }
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != PLACE_OPCODE {
+            return None;
+        }
+        let (rtti, type_index, naval) = read_production_fields(record);
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            rtti,
+            type_index,
+            naval,
+            x: i16::from_le_bytes(record.payload()[12..14].try_into().ok()?),
+            y: i16::from_le_bytes(record.payload()[14..16].try_into().ok()?),
+        })
+    }
+}
+
+fn write_production_fields(record: &mut CommandRecord, rtti: i32, index: i32, naval: u32) {
+    let payload = record.payload_mut();
+    payload[..4].copy_from_slice(&rtti.to_le_bytes());
+    payload[4..8].copy_from_slice(&index.to_le_bytes());
+    payload[8..12].copy_from_slice(&naval.to_le_bytes());
+}
+
+fn read_production_fields(record: &CommandRecord) -> (i32, i32, u32) {
+    let payload = record.payload();
+    (
+        i32::from_le_bytes(payload[..4].try_into().expect("RTTI DWORD")),
+        i32::from_le_bytes(payload[4..8].try_into().expect("type index DWORD")),
+        u32::from_le_bytes(payload[8..12].try_into().expect("Naval DWORD")),
+    )
 }
 
 /// The represented ordinary orders of native MegaMission opcode `0x04`.
@@ -1152,6 +1303,10 @@ impl CommandEnvelope {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "command_battle_opening_tests.rs"]
+mod battle_opening_tests;
 
 #[cfg(test)]
 mod tests {

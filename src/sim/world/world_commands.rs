@@ -19,8 +19,9 @@ use crate::sim::combat;
 use crate::sim::combat::combat_aoe::CellTargetDetach;
 use crate::sim::command::{
     BUILDING_OFF_LINE_OPCODE, BUILDING_ON_LINE_OPCODE, BuildingOnLineRecord, COMMAND_RECORD_LEN,
-    Command, CommandEnvelope, CommandRecord, ExitRecord, GameSpeedRecord, MegaMissionOrder,
-    MegaMissionRecord, MegaMissionTarget, ScatterRecord, SellWallAtCellRecord, StopRecord,
+    Command, CommandEnvelope, CommandRecord, DeployRecord, ExitRecord, GameSpeedRecord,
+    MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, PlaceRecord, ProductionEvent,
+    ProductionRecord, ScatterRecord, SellWallAtCellRecord, StopRecord,
 };
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::{InternedId, StringInterner};
@@ -227,6 +228,124 @@ impl Simulation {
             house_id: record.house_id(),
             frame: record.frame_stamp(),
             entity_id,
+        }
+        .write_into(&mut record);
+        Some(record)
+    }
+
+    /// D-key ClickedEvent6FFE00 -> EventCtor4C65E0. Preserve a stale UID
+    /// until the event executes; the native receiver has no actor-owner gate.
+    pub fn encode_deploy_record(
+        &self,
+        command_owner: InternedId,
+        entity_id: u64,
+    ) -> Option<CommandRecord> {
+        let mut record =
+            self.encode_header_event(command_owner, crate::sim::command::DEPLOY_OPCODE)?;
+        DeployRecord {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: i32::try_from(entity_id).ok()?,
+        }
+        .write_into(&mut record);
+        Some(record)
+    }
+
+    /// Select6AAD00's production events use the clicked type's native array
+    /// index, RTTI and Naval flag, captured now rather than when dispatched.
+    pub fn encode_production_record(
+        &self,
+        command_owner: InternedId,
+        event: ProductionEvent,
+        type_id: InternedId,
+        rules: &RuleSet,
+    ) -> Option<CommandRecord> {
+        let selection =
+            production::ProductionSelection::for_type(rules, self.object_type(type_id, rules)?)?;
+        let mut record = self.encode_header_event(command_owner, event.opcode())?;
+        ProductionRecord {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            event,
+            rtti: selection.rtti,
+            type_index: selection.type_index,
+            naval: u32::from(selection.naval),
+        }
+        .write_into(&mut record);
+        Some(record)
+    }
+
+    /// Display4ABB39..4ABB55 uses the selected type's index and the held
+    /// building's object RTTI6. Cell words retain their native signed bits.
+    pub fn encode_place_building_record(
+        &self,
+        command_owner: InternedId,
+        type_id: InternedId,
+        cell: (u16, u16),
+        rules: &RuleSet,
+    ) -> Option<CommandRecord> {
+        let object = self.object_type(type_id, rules)?;
+        if object.category != crate::rules::object_type::ObjectCategory::Building {
+            return None;
+        }
+        let selection = production::ProductionSelection::for_type(rules, object)?;
+        self.encode_place_record(
+            command_owner,
+            production::ProductionSelection {
+                rtti: selection.object_rtti(),
+                ..selection
+            },
+            cell,
+        )
+    }
+
+    /// StripAI6A8EE8 snapshots the complete object's RTTI/Naval, but writes
+    /// index-1 and B07DD8's Cell(0,0), initialized by6A4BC0. The receiver
+    /// looks up the later held head; (-1,-1) is accepted but not issued here.
+    pub fn encode_place_mobile_record(
+        &self,
+        command_owner: InternedId,
+        category: production::ProductionCategory,
+        rules: &RuleSet,
+    ) -> Option<CommandRecord> {
+        let held = self
+            .production
+            .factories()
+            .view(command_owner, category)?
+            .complete_object()?;
+        let selection = production::ProductionSelection::for_type(
+            rules,
+            self.object_type(held.type_id, rules)?,
+        )?;
+        self.encode_place_record(
+            command_owner,
+            production::ProductionSelection {
+                rtti: selection.object_rtti(),
+                type_index: -1,
+                ..selection
+            },
+            (0, 0),
+        )
+    }
+
+    /// Shared EventCtor4C6AE0. Callers supply their native selector: manual
+    /// building placement, completed cameo, or automatic Strip completion.
+    pub fn encode_place_record(
+        &self,
+        command_owner: InternedId,
+        selection: production::ProductionSelection,
+        cell: (u16, u16),
+    ) -> Option<CommandRecord> {
+        let mut record =
+            self.encode_header_event(command_owner, crate::sim::command::PLACE_OPCODE)?;
+        PlaceRecord {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            rtti: selection.rtti,
+            type_index: selection.type_index,
+            naval: u32::from(selection.naval),
+            x: cell.0 as i16,
+            y: cell.1 as i16,
         }
         .write_into(&mut record);
         Some(record)
@@ -551,6 +670,34 @@ impl Simulation {
         record: &CommandRecord,
         execute_tick: u64,
     ) -> Option<CommandEnvelope> {
+        if ProductionRecord::decode(record).is_some() || PlaceRecord::decode(record).is_some() {
+            let owner = *self
+                .houses
+                .order()
+                .get(usize::try_from(record.house_id()).ok()?)?;
+            // Keep selectors raw: a category-only semantic view loses Naval,
+            // RTTI aliases and the -1 wildcard before the House receiver runs.
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(
+                    owner,
+                    execute_tick,
+                    Command::SynchronizedRecord {
+                        record: record.clone(),
+                    },
+                )
+            });
+        }
+        if let Some(typed) = DeployRecord::decode(record) {
+            let owner = *self
+                .houses
+                .order()
+                .get(usize::try_from(typed.house_id).ok()?)?;
+            let entity_id = u64::try_from(typed.entity_id).ok()?;
+            self.substrate.entities.get(entity_id)?;
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(owner, execute_tick, Command::DeployMcv { entity_id })
+            });
+        }
         if matches!(
             record.opcode(),
             crate::sim::command::OPTIONS_OPCODE | crate::sim::command::LATENCY_FUDGE_OPCODE
@@ -1058,6 +1205,79 @@ impl Simulation {
         true
     }
 
+    /// Execute4C70E1..4C718A hands the packet selector to the existing House
+    /// production owners. Keep it intact until this call; neither the issuing
+    /// client's type interner nor its then-current Factory head is authority.
+    fn apply_production_record(
+        &mut self,
+        record: &CommandRecord,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let Some(owner) = usize::try_from(record.house_id())
+            .ok()
+            .and_then(|index| self.houses.order().get(index))
+            .copied()
+            .filter(|owner| self.houses.contains_key(owner))
+        else {
+            return false;
+        };
+        let owner = self.interner.resolve(owner).to_owned();
+        if let Some(event) = ProductionRecord::decode(record) {
+            let selection = production::ProductionSelection {
+                rtti: event.rtti,
+                type_index: event.type_index,
+                naval: event.naval != 0,
+            };
+            return match event.event {
+                ProductionEvent::Produce => {
+                    production::enqueue_selected(self, rules, &owner, selection, effects, false)
+                }
+                ProductionEvent::Suspend => {
+                    let Some(category) = selection.category(rules) else {
+                        return false;
+                    };
+                    production::suspend_production(
+                        &self.interner,
+                        &mut self.production,
+                        &self.session,
+                        &owner,
+                        category,
+                    )
+                }
+                ProductionEvent::Abandon | ProductionEvent::AbandonAll => {
+                    production::cancel_production_for_owner(
+                        self,
+                        rules,
+                        &owner,
+                        production::ProductionCancellation::Selected(selection),
+                        event.event == ProductionEvent::AbandonAll,
+                        effects,
+                    )
+                }
+            };
+        }
+        if let Some(event) = PlaceRecord::decode(record) {
+            return production::place_production_with_overlays(
+                self,
+                rules,
+                &owner,
+                production::ProductionPlacement::Selected {
+                    selection: production::ProductionSelection {
+                        rtti: event.rtti,
+                        type_index: event.type_index,
+                        naval: event.naval != 0,
+                    },
+                    cell: (event.x as u16, event.y as u16),
+                },
+                overlay_registry,
+                effects,
+            );
+        }
+        false
+    }
+
     /// Dispatch a single command, returning true if it was successfully applied.
     #[cfg(any(test, feature = "test-support"))]
     pub fn apply_command(
@@ -1167,8 +1387,8 @@ impl Simulation {
             Command::PlanningRecord { record } => {
                 self.apply_planning_record(command_owner, record, rules)
             }
-            Command::SynchronizedRecord { .. } => {
-                unreachable!("native record carrier must be unwrapped by queue admission")
+            Command::SynchronizedRecord { record } => {
+                self.apply_production_record(record, rules, overlay_registry, frame_effects)
             }
             Command::Select { entity_ids, .. } => self.apply_selection_snapshot(
                 entity_ids,
@@ -1435,9 +1655,8 @@ impl Simulation {
                 )
                 .accepted(),
             Command::DeployMcv { entity_id } => {
-                if !self.entity_owned_by_id(command_owner, *entity_id) {
-                    return false;
-                }
+                // Event09's4C76BC receiver has no actor-owner comparison.
+                // D/self-click selection checks belong to their producers.
                 crate::sim::deploy::issue_order(self, *entity_id, rules, frame_effects)
             }
             // Legacy targetless order: no client sends it since the deploy key
@@ -2814,6 +3033,10 @@ impl Simulation {
 }
 
 #[cfg(test)]
+#[path = "battle_opening_tests.rs"]
+mod battle_opening_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
@@ -2824,7 +3047,7 @@ mod tests {
     use crate::sim::mission::MissionId;
     use crate::sim::movement::locomotor::LocomotorState;
 
-    fn amcv_move_rules() -> RuleSet {
+    pub(super) fn amcv_move_rules() -> RuleSet {
         let ini = IniFile::from_str(
             "[InfantryTypes]\n\
              [VehicleTypes]\n\
@@ -2842,7 +3065,12 @@ mod tests {
         RuleSet::from_ini(&ini).expect("amcv rules")
     }
 
-    fn spawn_rule_backed_unit(sim: &mut Simulation, sid: u64, type_id: &str, rules: &RuleSet) {
+    pub(super) fn spawn_rule_backed_unit(
+        sim: &mut Simulation,
+        sid: u64,
+        type_id: &str,
+        rules: &RuleSet,
+    ) {
         let owner = sim.interner.intern("Americans");
         let type_ref = sim.interner.intern(type_id);
         let obj = rules.object(type_id).expect("object type");

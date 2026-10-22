@@ -124,3 +124,12 @@ directory, and the bind/peer endpoints exchanged. The output manifest's
 `lan.native_checksums` records per-frame checksums. This diagnostic covers a
 bounded Move/Stop scenario; it does not establish a full match or separate-machine
 networking. Validation results belong in the PR and checkpoint, not the tree.
+
+The `lan-battle-host` and `lan-battle-guest` targets use the same isolated setup
+and endpoints. Both select Americans through setup, deploy their AMCV (host D
+key, guest self-click), and produce a GAPOWR. The input driver holds, resumes,
+cancels with a refund check, then builds and places a fresh product while
+retaining its paid identity. Both clients must observe both completed power
+plants. The manifest retains 1,800 frame checksums and the observed production
+actions. This is a bounded opening check with the same 180-second diagnostic
+budget; simulation timing and network timeouts still belong to production.

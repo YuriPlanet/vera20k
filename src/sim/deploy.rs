@@ -1,4 +1,4 @@
-//! Infantry deployment actions and the shared Unit DEPLOY event receiver.
+//! Infantry deployment actions and the shared DEPLOY event receiver.
 //!
 //! Infantry's Doing and shared Techno Stage own its sequence. The completion
 //! receiver applies the independent crush byte and passive-scan timer effects,
@@ -53,7 +53,8 @@ impl CrushImmunity {
 
 /// Event9 DEPLOY4C76BC..4C7812. MCV conversion, simple deployment, the
 /// deploy-fire arm, Unit transports and a tank bunker's occupant share this
-/// event; each concrete Mission_Unload branch owns its effects. A transport's
+/// event; Infantry uses its existing Mission_Unload deployment branch too.
+/// Each concrete Mission_Unload branch owns its effects. A transport's
 /// empty hold does not suppress this event: it still stops and queues Unload.
 /// Native controls: tools/spatial_oracle/transport_unload.py --deploy-event.
 ///
@@ -62,9 +63,9 @@ impl CrushImmunity {
 /// sends OVER_OUT to its radio contact 0 (vt+0x274(3), `0x004C77E4`).
 ///
 /// RESIDUAL: native refuses only an aircraft (`0x004C777E`) and the
-/// Construction/Selling missions below; VERA admits only the Unit kinds whose
-/// Unload arms it ports: an MCV, a simple deployer, a deploy-fire unit, a Unit
-/// transport and a unit in a tank bunker. Other Units fail the deploy key's
+/// Construction/Selling missions below; VERA admits Infantry and the Unit kinds
+/// whose Unload arms it ports: an MCV, a simple deployer, a deploy-fire unit, a
+/// Unit transport and a unit in a tank bunker. Other Units fail the deploy key's
 /// CanDeploySlashUnload query; their externally supplied DEPLOY events remain
 /// outside these represented Unload arms. Self-click still uses its separate
 /// clicked-Mission owner and requires cargo for a transport.
@@ -78,7 +79,8 @@ pub(crate) fn issue_order(
         e.lifecycle.object_alive()
             && !e.lifecycle.in_limbo()
             && e.tether.partner().is_none()
-            && (crate::sim::mcv_deploy::is_mcv(sim, e, rules)
+            && (e.category() == EntityCategory::Infantry
+                || crate::sim::mcv_deploy::is_mcv(sim, e, rules)
                 || crate::sim::unit_simple_deploy::is_simple_deployer(sim, e, rules)
                 || unit_fires_on_deploy(sim, e, rules)
                 || (e.category() == EntityCategory::Unit

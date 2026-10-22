@@ -439,6 +439,10 @@ impl Simulation {
                 .map(|entity| (entity_id, entity.on_bridge())),
             _ => None,
         };
+        // PLACE resolves the completed Factory head before dispatch and may
+        // release it during settlement. Capture only this derived refresh
+        // fact now; the production owner remains the placement authority.
+        let placed_building_owner = self.successful_non_wall_placement_owner(cmd, true, rules);
         let cmd_owner_str = self.interner.resolve(cmd.owner).to_string();
         let applied = self.apply_command_with_overlays(
             &cmd_owner_str,
@@ -447,13 +451,16 @@ impl Simulation {
             overlay_registry,
             frame_effects,
         );
-        let placed_building_owner = self.successful_non_wall_placement_owner(cmd, applied, rules);
+        let placed_building_owner = placed_building_owner.filter(|_| applied);
         let synchronous_deploy = applied
             && matches!(cmd.payload, Command::DeployMcv { entity_id }
             if self.substrate.entities.get(entity_id).is_none_or(|e| e.death.is_dying()));
         let spawned_entity = synchronous_deploy
             || placed_building_owner.is_some()
             || applied && matches!(cmd.payload, Command::PlaceProducedMobile { .. })
+            || applied
+                && matches!(&cmd.payload, Command::SynchronizedRecord { record }
+                if crate::sim::command::PlaceRecord::decode(record).is_some())
             || applied
                 && matches!(
                     cmd.payload,
@@ -476,6 +483,30 @@ impl Simulation {
         applied: bool,
         rules: &RuleSet,
     ) -> Option<InternedId> {
+        if let Command::SynchronizedRecord { record } = &command.payload {
+            let event = crate::sim::command::PlaceRecord::decode(record)?;
+            let owner = *self
+                .houses
+                .order()
+                .get(usize::try_from(event.house_id).ok()?)?;
+            let category = crate::sim::production::ProductionSelection {
+                rtti: event.rtti,
+                type_index: event.type_index,
+                naval: event.naval != 0,
+            }
+            .category(rules)?;
+            let held = self
+                .production
+                .factories()
+                .view(owner, category)?
+                .complete_object()?;
+            return (applied
+                && self.object_type(held.type_id, rules).is_some_and(|object| {
+                    object.category == crate::rules::object_type::ObjectCategory::Building
+                        && !object.wall
+                }))
+            .then_some(owner);
+        }
         let Command::PlaceReadyBuilding { type_id, .. } = command.payload else {
             return None;
         };

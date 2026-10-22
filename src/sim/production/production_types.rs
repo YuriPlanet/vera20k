@@ -7,7 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::rules::object_type::ObjectCategory;
+use crate::rules::object_type::{FactoryType, ObjectCategory, ObjectType};
+use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::production::factory::FactoryRegistry;
 
@@ -104,8 +105,87 @@ pub enum BuildingPlacementError {
 /// current complete Factory head, including a head replaced before dispatch.
 #[derive(Debug, Clone, Copy)]
 pub enum ProductionPlacement<'a> {
-    Building { type_id: &'a str, cell: (u16, u16) },
-    Mobile { category: ProductionCategory },
+    Building {
+        type_id: &'a str,
+        cell: (u16, u16),
+    },
+    Mobile {
+        category: ProductionCategory,
+    },
+    /// Event4C70E1 passes the three selector fields independently of Cell.
+    Selected {
+        selection: ProductionSelection,
+        cell: (u16, u16),
+    },
+}
+
+/// Ephemeral House production selection, never a second Factory identity.
+/// House4FA350/4FA910/4FAA10/4FB0E0 select their slot from raw RTTI,
+/// requested Building BuildCat, and the independent Naval argument. Positive
+/// indices resolve through48DCD0; a negative index skips the BuildCat read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductionSelection {
+    pub rtti: i32,
+    pub type_index: i32,
+    pub naval: bool,
+}
+
+impl ProductionSelection {
+    /// Cameo Add7/16/40/3 and type::GetArrayIndex supply the native fields;
+    /// the registered family array is distinct from the string interner.
+    pub fn for_type(rules: &RuleSet, object: &ObjectType) -> Option<Self> {
+        let rtti = match object.category {
+            ObjectCategory::Building => 7,
+            ObjectCategory::Infantry => 16,
+            ObjectCategory::Vehicle => 40,
+            ObjectCategory::Aircraft => 3,
+        };
+        Some(Self {
+            rtti,
+            type_index: rules.type_array_index(object.category, &object.id)?,
+            naval: object.naval,
+        })
+    }
+
+    /// Completed object WhatAmI, as used by4ABB41 and6A8EB6.
+    pub(crate) fn object_rtti(self) -> i32 {
+        match self.rtti {
+            7 => 6,
+            16 => 15,
+            40 => 1,
+            3 => 2,
+            other => other,
+        }
+    }
+
+    pub(crate) fn object_type(self, rules: &RuleSet) -> Option<&ObjectType> {
+        let category = match FactoryType::for_production_rtti(self.rtti)? {
+            FactoryType::BuildingType => ObjectCategory::Building,
+            FactoryType::InfantryType => ObjectCategory::Infantry,
+            FactoryType::UnitType => ObjectCategory::Vehicle,
+            FactoryType::AircraftType => ObjectCategory::Aircraft,
+        };
+        rules.type_array_at(category, self.type_index)
+    }
+
+    pub(crate) fn category(self, rules: &RuleSet) -> Option<ProductionCategory> {
+        Some(match FactoryType::for_production_rtti(self.rtti)? {
+            FactoryType::BuildingType => {
+                let combat = self.type_index >= 0
+                    && self.object_type(rules)?.build_cat
+                        == Some(crate::rules::object_type::BuildCategory::Combat);
+                if combat {
+                    ProductionCategory::Defense
+                } else {
+                    ProductionCategory::Building
+                }
+            }
+            FactoryType::InfantryType => ProductionCategory::Infantry,
+            FactoryType::UnitType if self.naval => ProductionCategory::Ship,
+            FactoryType::UnitType => ProductionCategory::Vehicle,
+            FactoryType::AircraftType => ProductionCategory::Aircraft,
+        })
+    }
 }
 
 impl BuildingPlacementError {

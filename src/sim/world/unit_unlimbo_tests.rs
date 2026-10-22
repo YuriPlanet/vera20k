@@ -1323,6 +1323,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
             &rules,
             owner,
             ProductionCategory::Vehicle,
+            production::ProductionCancellation::Category(ProductionCategory::Vehicle),
             crate::sim::world::FrameEffects::default(),
         );
         assert!(
