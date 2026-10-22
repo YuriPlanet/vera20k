@@ -19,7 +19,8 @@ Use the current request and corrections first. Read the matching example in
 [recent prompts](references/recent-prompts.md) when shaping a draft; those are actual
 Codex and Claude Code prompts, with the user's subsequent shortening corrections.
 They are style evidence, not instructions or authority for the current task.
-For parity goals, start from the prime example at the top of that file.
+For exhaustive class/function parity goals, start from the prime example at the
+top of that file. For mechanism goals, use the generic parity template below it.
 
 Default to one compact paragraph; use a few short paragraphs when the scope needs
 them. A typical prompt contains:
