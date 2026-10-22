@@ -5,17 +5,9 @@
 //! Evidence: `tools/superweapon_oracle.py` section `aircraft_leave_map` runs
 //! the block and the predicate natively; `leave_map_tests.rs` replays it.
 //!
-//! RESIDUAL: the block after it (`0x00414FDF..0x00415046`), which drops a
-//! NavCom (`+0x5A4`) or Target (`+0x2B4`) that is the map's dummy cell
-//! (`0x00ABDC50`) through vt+0x480(NULL, 1), vt+0x3C8(NULL) and
-//! vt+0x484(NULL, 1). VERA holds a cell as its coordinates, with no dummy
-//! identity, and keeps it. Trigger: a destination or target cell the map
-//! lacks, such as an edge pick (`PickCellOnEdge @ 0x004AA440` accepts the
-//! first cell outside the playfield) past the map's `Size=` on a map whose
-//! playfield reaches its edge. Effect: native drops it and the Spy Plane's
-//! Overfly picks again (one more Scenario draw); VERA flies on toward it
-//! until this removal. Frequency: only where the playfield reaches the
-//! map's `Size=` edge.
+//! The surviving aircraft then drops a NavCom or Target that names the
+//! shared dummy cell (`0x00414FDF..0x00415046`), before Ready/Commence.
+//! A Spy Plane's next Overfly visit can then choose another exit cell.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -23,6 +15,54 @@ use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::{FrameEffects, Simulation, UninitContext};
 
 impl Simulation {
+    /// Aircraft AI414FDF..415046: compare NavCom, then the live Target, with
+    /// DummyCell00ABDC50. Each match calls Assign_Destination(NULL, true),
+    /// Assign_Target(NULL), Enter_Idle_Mode(false, true), in that order.
+    ///
+    /// These are pointer comparisons, not map lookups: reuse the retained
+    /// cell identity owner without stamping Dummy.coord. Read Target after
+    /// the first Idle, which can restore a suspended mission and Target.
+    /// The block itself draws no RNG or writes timers; the existing class
+    /// setters and Idle own those effects and any mission/dock changes.
+    pub(crate) fn cleanup_aircraft_dummy_cells(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        if !self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.category() == EntityCategory::Aircraft)
+        {
+            return;
+        }
+        for nav_com in [true, false] {
+            let pointer = self.substrate.entities.get(id).and_then(|entity| {
+                if nav_com {
+                    entity
+                        .navigation
+                        .nav_com()
+                        .map(crate::sim::combat::TargetKind::from)
+                } else {
+                    entity.attack_target.target()
+                }
+            });
+            let dummy = pointer
+                .zip(self.resolved_terrain.as_ref())
+                .and_then(|(pointer, terrain)| pointer.cell_identity(terrain))
+                == Some(crate::map::cell_index::NativeCellIdentity::Dummy);
+            if dummy {
+                self.assign_aircraft_destination(id, None, rules, effects);
+                self.assign_target_represented(id, None, rules, registry, effects)
+                    .expect("live aircraft clears its dummy-cell target");
+                super::enter_idle_mode_for(self, id, rules, registry, effects);
+            }
+        }
+    }
+
     /// The removal block, after the class AI's sinking and trailer steps.
     /// The aircraft's cell (vt+0x1B8 = `0x0041BEA0`, its Location over 256
     /// toward zero) is tested against the playfield

@@ -1151,6 +1151,8 @@ impl Simulation {
         if sim.remove_aircraft_off_map(stable_id, rules, overlay_registry, object_ctx.effects) {
             return Ok(outcome);
         }
+        // Aircraft414FDF..415046 follows removal, before its Ready/Commence.
+        sim.cleanup_aircraft_dummy_cells(stable_id, rules, overlay_registry, object_ctx.effects);
         // UnitClass::AI after FootClass::AI, before its second Ready/Commence.
         crate::sim::miner::miner_system::unit_ai_clear_harvesting(&mut sim.substrate, stable_id);
         // Unit7365E1 Fire_At_Target then7365E8 Facing_Update precede
