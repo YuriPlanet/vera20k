@@ -50,15 +50,16 @@ mod tests {
         world::{FrameEffects, ObjectAiCtx, Simulation},
     };
 
-    fn scene(discard: bool) -> (Simulation, RuleSet, u64, u64) {
+    fn scene(discard: bool, reset: bool) -> (Simulation, RuleSet, u64, u64) {
         let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
             "[VehicleTypes]\n0=EMITTER\n[BuildingTypes]\n0=TOWER\n[Warheads]\n0=AE_TEST\n[Animations]\n0=VISUAL\n\
              [EMITTER]\nStrength=400\nArmor=heavy\nSpeed=6\nPrimary=PULSE\nLocomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\nMovementZone=Normal\n\
              [TOWER]\nStrength=1000\nArmor=steel\nCanPassiveAquire=no\n\
              [PULSE]\nDamage=0\nROF=1\nRange=9.5\nSpeed=100\nProjectile=INVIS\nWarhead=AE_TEST\n\
              [INVIS]\nAirburst=yes\nInviso=yes\nAG=yes\nAA=no\n\
-             [AE_TEST]\nCellSpread=.7\nVerses=3%,3%,3%,3%,3%,3%,3%,3%,3%,3%,3%\nAffectsAllies=yes\nAttachEffect.Duration=5\nAttachEffect.Animation=VISUAL\nAttachEffect.DiscardOnEntry={}\n",
-            if discard { "yes" } else { "no" }
+             [AE_TEST]\nCellSpread=.7\nVerses=3%,3%,3%,3%,3%,3%,3%,3%,3%,3%,3%\nAffectsAllies=yes\nAttachEffect.Duration=5\nAttachEffect.Animation=VISUAL\nAttachEffect.DiscardOnEntry={}\nAttachEffect.AnimResetOnReapply={}\n",
+            if discard { "yes" } else { "no" },
+            if reset { "yes" } else { "no" }
         ));
         let art = IniFile::from_str("[TOWER]\nFoundation=1x1\n[VISUAL]\nRate=1\nEnd=4\n");
         let layers = crate::rules::native_processing::RulesLayerStack::new(ini);
@@ -102,8 +103,10 @@ mod tests {
         ))
         .unwrap();
         for row in corpus["controls"].as_array().unwrap() {
-            let (mut sim, rules, target, source) =
-                scene(row["discard_on_entry"].as_bool().unwrap());
+            let (mut sim, rules, target, source) = scene(
+                row["discard_on_entry"].as_bool().unwrap(),
+                row["anim_reset_on_reapply"].as_bool().unwrap_or(false),
+            );
             let source_house = sim.entities().get(source).unwrap().owner();
             sim.substrate
                 .entities
@@ -127,6 +130,15 @@ mod tests {
                         .unwrap()
                         .lifecycle
                         .set_in_limbo_for_test(step["action"] == "limbo_on"),
+                    "cloak_on" | "cloak_off" => {
+                        sim.substrate
+                            .entities
+                            .get_mut(target)
+                            .unwrap()
+                            .cloak
+                            .get_or_insert_with(|| crate::sim::cloak_disguise::CloakRuntime::new(0))
+                            .set_state_for_test(if step["action"] == "cloak_on" { 1 } else { 0 });
+                    }
                     "pointer_expiry" => {
                         let held = sim.entities().get(target).unwrap().attach_effects.entries[0]
                             .animation
@@ -215,7 +227,7 @@ mod tests {
     #[test]
     fn attach_effect_parent_bullet_actual_ai_snapshot_and_limbo_use_one_owner() {
         use crate::sim::combat::{TargetKind, world_fire::FireVisit};
-        let (mut sim, rules, target, source) = scene(false);
+        let (mut sim, rules, target, source) = scene(false, false);
         sim.commit_fire_visit(
             FireVisit::Direct {
                 id: source,
@@ -392,7 +404,6 @@ mod receiver {
                     victim.attach_effects.entries[index].remaining = settings.duration();
                     //100585BB preserves the first source House on reapplication.
                     if settings.animation().is_some() && settings.anim_reset_on_reapply() {
-                        self.retire_attached_effect_anim(target, index, rules);
                         self.create_attached_effect_anim(target, index, rules);
                     }
                 } else {
@@ -422,9 +433,6 @@ mod receiver {
             let Some(entry) = victim.attach_effects.entries.get(index) else {
                 return;
             };
-            if entry.animation.is_some() {
-                return;
-            }
             let source = entry.source_house;
             let Some(name) = rules
                 .warhead(self.interner.resolve(entry.warhead))
@@ -446,18 +454,23 @@ mod receiver {
                 ..AnimClassSpawnDescriptor::new(name, rx, ry, sub_x, sub_y, z)
             };
             if let Ok(anim) = self.spawn_anim_at_world(rules, descriptor, world) {
-                self.set_anim_owner_object(anim, Some(target), rules);
-                self.substrate.anims.get_mut(anim).unwrap().hold_loops();
-                if let Some(source) = source {
-                    self.substrate.set_anim_owner_house(anim, source);
-                }
-                if let Some(entry) = self
+                //10058737..10058745 publishes the replacement before calling
+                //old Anim.UnInit. Its pointer-expiry callback must compare
+                //against the new reference, not erase it. Early gates above
+                //leave the previous animation intact.
+                let old = self
                     .substrate
                     .entities
                     .get_mut(target)
                     .and_then(|victim| victim.attach_effects.entries.get_mut(index))
-                {
-                    entry.animation = Some(anim);
+                    .and_then(|entry| entry.animation.replace(anim));
+                if let Some(old) = old {
+                    self.destroy_anim_with_context(old, rules);
+                }
+                self.set_anim_owner_object(anim, Some(target), rules);
+                self.substrate.anims.get_mut(anim).unwrap().hold_loops();
+                if let Some(source) = source {
+                    self.substrate.set_anim_owner_house(anim, source);
                 }
             }
         }

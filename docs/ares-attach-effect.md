@@ -36,6 +36,9 @@ Animation creation `100586E0` uses the existing Anim constructor, flags `600`,
 SetOwnerObject, loop byte255 and the retained source House. The Anim pointer
 expiry receiver `10046F20 -> 10058770` clears only the held reference. A missing
 pointer does not independently respawn; a hidden-to-visible transition does.
+When replacing an animation, Create publishes the new reference before old
+UnInit, then sets owner/iterations/House. Its early visibility gates retain the
+old animation. Reapply does not clear it before calling Create.
 The existing expiry index derives its references from the attachment owner.
 
 Remove `6F6AC9 -> 1004B140 -> 100588E0` destroys held animations and sets the
@@ -47,9 +50,11 @@ existing Anim UnInit/expiry/sound/deferred-deletion owner.
 ## Evidence and limits
 
 [Native controls](../tools/rules_oracle/ares_attach_effect.json) and their
-[reproducible harness](../tools/rules_oracle/ares_attach_effect.py) execute four
+[reproducible harness](../tools/rules_oracle/ares_attach_effect.py) execute six
 histories: repeated hits with another source, external animation pointer expiry,
-Remove/unlimbo/destructor, and DiscardOnEntry. The
+Remove/unlimbo/destructor, DiscardOnEntry, a new hit before unhide, and animation
+reset across a cloak transition. The last two were executed as one incremental
+batch without replaying the original four. The
 [metadata](../tools/rules_oracle/ares_attach_effect.meta.json) pins Ares identity,
 executed entry points and explicit world-service boundaries. Animation internal
 RNG, rendering, constructor and Detach cascades are not native-emulated here;

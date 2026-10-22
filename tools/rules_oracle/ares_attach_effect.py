@@ -1,4 +1,4 @@
-"""Four bounded Ares 3.0 warhead AttachEffect lifecycle histories.
+"""Six bounded Ares 3.0 warhead AttachEffect lifecycle histories.
 
 Synthetic registered names only. Reuses the existing EMP/Probe VM, native
 readers and collector; animation/world services remain declared boundaries.
@@ -53,7 +53,7 @@ class AttachEffectProbe(EmpProbe):
                 return
         return super().hook(u, pc, size, data)
 
-    def prepare(self, discard):
+    def prepare(self, discard, anim_reset_on_reapply=False):
         self.subject(dict(actor_kind=6, type_kind=7, selected=False,
                           deactivated=True, affects_allies=True))
         self.write(self.actor + 0x14, 1)
@@ -86,6 +86,8 @@ class AttachEffectProbe(EmpProbe):
                       ('AE_TEST', 'AttachEffect.Animation'): 'VISUAL'}
         if discard:
             self.reads[('AE_TEST', 'AttachEffect.DiscardOnEntry')] = 'yes'
+        if anim_reset_on_reapply:
+            self.reads[('AE_TEST', 'AttachEffect.AnimResetOnReapply')] = 'yes'
         self.call(0x10058A50, ini, ecx=self.whext + 0x88)
         assert self.read(self.whext + 0x94) == self.anim_type
         self.call(0x100523E0, self.text('3%'), ecx=self.read(self.whext + 0x24))
@@ -123,6 +125,10 @@ class AttachEffectProbe(EmpProbe):
             self.call(0x10058E00, self.runtime, ecx=self.runtime + 0x20)
         elif action in ('limbo_on', 'limbo_off'):
             self.u.mem_write(self.actor + 0x81, b'\1' if action == 'limbo_on' else b'\0')
+        elif action in ('cloak_on', 'cloak_off'):
+            # Explicit Techno+220 state input: 1 cloaking, 0 uncloaked. The
+            # native Create/update gates execute; the cloak producer does not.
+            self.write(self.actor + 0x220, int(action == 'cloak_on'))
         elif action == 'pointer_expiry':
             frame = self.alloc(0x40)
             self.write(frame + 0x20, self.actor)
@@ -138,30 +144,46 @@ class AttachEffectProbe(EmpProbe):
         return dict(action=action, **self.observation())
 
 
-def generate(ares):
+def run_cases(ares, cases):
     images = (ares, native.image_bytes())
     histories = []
+    for name, discard, reset, actions in cases:
+        probe = AttachEffectProbe(images).prepare(discard, reset)
+        histories.append(dict(name=name, discard_on_entry=discard,
+                              anim_reset_on_reapply=reset,
+                              steps=[probe.step(action) for action in actions]))
+    return histories
+
+
+def extra_controls(ares):
+    """The two replacement regressions can be executed independently."""
+    return run_cases(ares, [
+        ('discard_then_hit_before_unhide', True, False,
+         ['prepared', 'hit', 'remove', 'limbo_off', 'hit', 'tick', 'dtor']),
+        ('reset_reapply_and_cloak_transition', False, True,
+         ['prepared', 'hit', 'hit', 'cloak_on', 'hit', 'tick',
+          'cloak_off', 'tick', 'dtor']),
+    ])
+
+
+def generate(ares):
     cases = [
-        ('repeat_limbo_pause', False,
+        ('repeat_limbo_pause', False, False,
          ['prepared', 'hit', 'tick', 'reapply_other_source', 'limbo_on', 'tick',
           'limbo_off', 'tick', 'tick', 'tick', 'tick', 'tick']),
-        ('external_animation_expiry', False,
+        ('external_animation_expiry', False, False,
          ['prepared', 'hit', 'pointer_expiry', 'tick', 'tick', 'tick', 'tick', 'tick']),
-        ('remove_unlimbo_destruct', False,
+        ('remove_unlimbo_destruct', False, False,
          ['prepared', 'hit', 'remove', 'limbo_on', 'tick', 'limbo_off', 'tick', 'dtor']),
-        ('discard_on_entry', True,
+        ('discard_on_entry', True, False,
          ['prepared', 'hit', 'remove', 'limbo_on', 'tick', 'limbo_off', 'tick', 'dtor']),
     ]
-    for name, discard, actions in cases:
-        probe = AttachEffectProbe(images).prepare(discard)
-        histories.append(dict(name=name, discard_on_entry=discard,
-                              steps=[probe.step(action) for action in actions]))
-    return dict(schema_version=1, controls=histories)
+    return dict(schema_version=1, controls=run_cases(ares, cases) + extra_controls(ares))
 
 
 def metadata():
     result = provenance(
-        scope='Four native-executed Ares 3.0 ordinary ground-warhead AttachEffect histories; not whole-game parity.',
+        scope='Six native-executed Ares 3.0 ordinary ground-warhead AttachEffect histories; not whole-game parity.',
         assumptions=[
             'Synthetic AE_TEST warhead and VISUAL AnimType use actual constructors, native registration/Find and AttachEffect reader. Duration5, verse3%, CellSpread0.7 and DiscardOnEntry are explicit inputs; no mod names, assets, extraction or physical INI loader.',
             'Original collector10076660, house gate10051B70, warhead attach10052700/10058520, update10058E00, pointer expiry10046F20/10058770, Remove-vector100588E0 and vector destructor10042C30/10059130 execute unchanged. Static active hook callers are Techno Remove6F6AC9 and DTOR6F4500; full hook/container lookup is excluded.',
@@ -169,6 +191,7 @@ def metadata():
             'AnimClass constructor, SetOwnerObject and virtual UnInit are supplied world services. Constructor retains allocated this/type/coordinate/vtable; it does not supply iteration255, attached source, counter or admission. Their internal RNG, rendering, lifetime and detach/callback cascades are excluded.',
             'ctor_count/uninit_count count calls at the supplied AnimConstructor/virtual UnInit service boundaries, not complete animation construction/destruction or memory retirement.',
             'Limbo byte changes and an externally expiring animation notification are explicit inputs. Only the Remove histories execute the actual Remove-vector callee. No whole boarding, unloading, death scheduler, parent Bullet/EMP or full campaign/mod parity is claimed.',
+            'The two replacement controls add actual native AnimResetOnReapply reading and explicit Techno+220 cloak-state inputs1/0. Create100586E0 publishes a new pointer before old UnInit, then initializes its owner/iterations/source. Full StartCloaking/Uncloaking, cloak capability admission and their lifecycle/RNG producers are excluded.',
             'Actual Anim allocation wrapper executes; pure heap new/delete use existing Probe arena/services. FPCW0E7F and three exact native-seeded RNG states are inherited from EmpProbe; unchanged code/RNG states checked after every call, guarded RNG/Detach entry calls fail. No-draw claims exclude supplied animation services.',
         ],
         substitutions=['Existing EmpProbe/Probe PE mapping, arena, call runner, CRT thread, lexical INI transport and declared world services; no new VM, parser or gameplay implementation.'],
@@ -177,9 +200,10 @@ def metadata():
                           attach=0x10058520, update=0x10058E00,
                           pointer_expiry=0x10046F20, remove_vector=0x100588E0,
                           destructor_vector=0x10042C30, animation_uninit=0x10059130))
-    result.update(ares_sha256=ARES_SHA256, control_count=4,
+    result.update(ares_sha256=ARES_SHA256, control_count=6,
                   executable='Yuri Revenge gamemd.exe preferred image base0x00400000',
                   actual_execution=True,
+                  execution_batches='Four baseline histories originally executed; two replacement histories executed separately and appended without rerunning retained baselines. The full generator replays all six for subsequent --check.',
                   command='python -m tools.rules_oracle.ares_attach_effect --ares-dll <Ares.dll> --gamemd-exe <gamemd.exe> --check')
     return result
 
