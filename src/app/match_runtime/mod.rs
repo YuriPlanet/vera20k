@@ -3,6 +3,8 @@
 
 pub(crate) mod eva_producers;
 mod frame_effects;
+#[cfg(test)]
+pub(crate) use frame_effects::FrameClientBoundary;
 pub(crate) mod frame_pacer;
 pub(crate) mod network_match;
 pub(crate) mod network_failure;

@@ -65,6 +65,8 @@ mod gattling_loop_tests;
 #[cfg(test)]
 mod house_cue_tests;
 #[cfg(test)]
+mod mcv_voice_continuity_tests;
+#[cfg(test)]
 mod ring_resample_tests;
 #[cfg(test)]
 mod unit_voice_lifecycle_tests;
@@ -1858,6 +1860,22 @@ impl SfxPlayer {
                 (live_event, admitted),
                 self.now_ms,
             );
+        }
+    }
+
+    /// Unit739971..7399CC / Building44A0D4..44A11B hand the current voice
+    /// to the conversion replacement before the source's destructor. Moving
+    /// the handle/latches neither submits playback nor releases its output.
+    pub(crate) fn transfer_unit_voice(&mut self, source_id: u64, replacement_id: u64) {
+        if source_id == replacement_id {
+            return;
+        }
+        let token = self
+            .arbiter
+            .transfer_unit_voice_handle(source_id, replacement_id);
+        self.voice_queue.transfer(source_id, replacement_id);
+        if let (Some(observer), Some(token)) = (&mut self.pcm_observer, token) {
+            observer.bind_owner(token, HandleOwner::UnitVoice(replacement_id));
         }
     }
 

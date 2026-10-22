@@ -734,6 +734,44 @@ impl SoundArbiter {
         self.handles.remove(&owner);
     }
 
+    /// Unit739971..7399CC / Building44A0D4..44A11B copy the voice handle,
+    /// then SetEvent4060F0 clears the source without Release or Stop. Keep
+    /// the same allocation/channel; a stale or foreign event is never adopted.
+    pub(crate) fn transfer_unit_voice_handle(
+        &mut self,
+        source_id: u64,
+        replacement_id: u64,
+    ) -> Option<EventToken> {
+        if source_id == replacement_id {
+            return None;
+        }
+        let source = HandleOwner::UnitVoice(source_id);
+        let replacement = HandleOwner::UnitVoice(replacement_id);
+        let Some(mut handle) = self.handles.remove(&source) else {
+            self.handles.remove(&replacement);
+            return None;
+        };
+        let token = handle.event.and_then(|id| {
+            let event = self.event_mut(id)?;
+            if event.entry != handle.entry
+                || event.serial != handle.serial
+                || event.handle_owner != Some(source)
+            {
+                return None;
+            }
+            event.handle_owner = Some(replacement);
+            Some(EventToken {
+                event: id,
+                serial: event.serial,
+            })
+        });
+        if token.is_none() {
+            handle.event = None;
+        }
+        self.handles.insert(replacement, handle);
+        token
+    }
+
     /// Owners to re-drive: those whose handle names a live event, and those
     /// whose handle keeps a loopable sound after its event ended (inaudible,
     /// or killed by `Limit=`), which native's owner update allocates again.

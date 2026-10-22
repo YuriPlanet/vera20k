@@ -525,6 +525,9 @@ pub enum SimSoundEvent {
     /// cue. The sole audio owner latches it; only a reached Techno head drains.
     /// Keep the canonical name outside the gameplay identity interner.
     UnitVoiceRequested { owner: u64, sound_id: String },
+    /// Unit739971..7399CC / Building44A0D4..44A11B copy the voice handle
+    /// and pending/playing indices, then clear the source without stopping.
+    UnitVoiceTransferred { source_id: u64, replacement_id: u64 },
     /// Techno destructor6F4607 destroys its voice handle before its owned
     /// Anims. The app discards both pending and playing voice identities.
     UnitVoiceDestroyed { owner: u64 },
@@ -7803,6 +7806,19 @@ impl Simulation {
     /// immediately before an admitted frame. No voice names/state live here.
     pub fn prepare_unit_voice_visits(&mut self, owners: std::collections::BTreeSet<u64>) {
         self.unit_voice_visit_interest = owners;
+    }
+
+    /// Conversion copies Techno+4DC/+4F0/+4F4 before the old destructor
+    /// (Unit739971..7399CC, Building44A0D4..44A11B). Move only the derived
+    /// interest here; the ordered sound consumer retains the sole voice state.
+    fn transfer_unit_voice(&mut self, source_id: u64, replacement_id: u64) {
+        if self.unit_voice_visit_interest.remove(&source_id) {
+            self.unit_voice_visit_interest.insert(replacement_id);
+        }
+        self.sound_events.emit(SimSoundEvent::UnitVoiceTransferred {
+            source_id,
+            replacement_id,
+        });
     }
 
     /// Emit only interested reached heads, in the existing ordered channel.

@@ -2303,9 +2303,8 @@ impl Simulation {
     ///
     /// Not carried over to the building: the unit's Group (`+0x214`,
     /// `0x007397C6`; VERA's control groups live in the app), its AttachedTag
-    /// (`+0x34`, `0x007399EE`), its looping sound handles (`+0x4DC..+0x4F4`,
-    /// `0x00739971`), `DiscoveredBy(owner)` (vt+0x198, `0x00739848`) and the
-    /// turret facing a `+0x16CA`/`+0x16C4` type starts at (`0x007397FB`).
+    /// (`+0x34`, `0x007399EE`), `DiscoveredBy(owner)` (vt+0x198, `0x00739848`)
+    /// and the turret facing a `+0x16CA`/`+0x16C4` type starts at (`0x007397FB`).
     pub(crate) fn deploy_mcv(
         &mut self,
         stable_id: u64,
@@ -2718,6 +2717,9 @@ impl Simulation {
         #[cfg(feature = "ares")]
         self.transfer_factory_country(stable_id, new_sid);
         self.transfer_slave_manager(stable_id, new_sid, true, rules, registry, frame_effects);
+        // Unit739971..7399CC copies the voice state; SetEvent4060F0 at7399A4
+        // clears the old handle without stopping its inherited event.
+        self.transfer_unit_voice(stable_id, new_sid);
         self.uninit_with_context(
             stable_id,
             super::UninitContext::new(rules, registry).with_effects(frame_effects),
@@ -2781,9 +2783,8 @@ impl Simulation {
     /// (`0x0044A091..0x0044A0AE`), and the listed attackers target the unit
     /// (`0x0044A146..0x0044A167`). The building's UnInit comes last. Not
     /// carried over: its Group (`+0x214`, `0x0044A04C`; VERA's control groups
-    /// live in the app), AttachedTag (`+0x34`, `0x0044A0B4`) and looping sound
-    /// handles (`+0x4DC..+0x4F4`); a refused Unlimbo does not refund the
-    /// building's value (`0x0044A16B`).
+    /// live in the app) and AttachedTag (`+0x34`, `0x0044A0B4`); a refused
+    /// Unlimbo does not refund the building's value (`0x0044A16B`).
     pub(crate) fn finish_undeploy(
         &mut self,
         sid: u64,
@@ -2935,6 +2936,9 @@ impl Simulation {
                 );
             }
         }
+        // Building44A0D4..44A11B copies the voice state after the archive;
+        // SetEvent4060F0 at44A107 clears the source without stopping the event.
+        self.transfer_unit_voice(sid, new_sid);
         let target = Some(TargetKind::Entity(new_sid));
         for targeter in targeters {
             let _ = self.assign_target_represented(

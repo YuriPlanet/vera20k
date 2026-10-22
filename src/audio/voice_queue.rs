@@ -122,6 +122,21 @@ impl VoiceQueue {
         self.playing.remove(&owner);
     }
 
+    /// Unit739971..7399CC / Building44A0D4..44A11B move both indices to
+    /// the fresh conversion replacement and reset the source to -1.
+    pub(crate) fn transfer(&mut self, source_id: u64, replacement_id: u64) {
+        if source_id == replacement_id {
+            return;
+        }
+        self.forget(replacement_id);
+        if let Some(pending) = self.pending.remove(&source_id) {
+            self.pending.insert(replacement_id, pending);
+        }
+        if let Some(playing) = self.playing.remove(&source_id) {
+            self.playing.insert(replacement_id, playing);
+        }
+    }
+
     /// The id latched for `owner`, if any — `TechnoClass+0x4F0`.
     pub fn pending_for(&self, owner: u64) -> Option<&str> {
         self.pending.get(&owner).map(String::as_str)

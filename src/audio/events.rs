@@ -137,6 +137,10 @@ pub enum GameSoundEvent {
     /// This visit drains only that owner's pending acknowledgement.
     UnitVoiceVisit { owner: u64 },
 
+    /// Successful Unit739971 / Building44A0D4 conversion transfers the same
+    /// voice handle and latches before old-owner destruction, without replay.
+    UnitVoiceTransferred { source_id: u64, replacement_id: u64 },
+
     /// Techno destructor6F4607 destroys its distinct voice handle. Keep this
     /// ordered with visits; final-world membership cannot recover the order.
     UnitVoiceDestroyed { owner: u64 },
@@ -381,6 +385,7 @@ impl GameSoundEvent {
             | Self::AnimationDetached { .. }
             | Self::VocStopAtCoord { .. }
             | Self::UnitVoiceVisit { .. }
+            | Self::UnitVoiceTransferred { .. }
             | Self::UnitVoiceDestroyed { .. }
             | Self::TriggerEva { .. } => "",
             // The event name, not a sample: the sample is a per-side column
