@@ -439,6 +439,159 @@ fn retail_chrono_warp_moves_the_source_block() {
     assert!(!dead(&sim, tank) && !dead(&sim, legionnaire));
 }
 
+/// Stock Battle rules in an explicit headless skirmish scene. This joins the
+/// provider, two launch commands, warp, sinking and terminal object cleanup;
+/// AircraftClass::AI414DB6..414ED0 supplies the sinking suffix.
+#[test]
+fn retail_skirmish_chrono_warp_sinks_a_landed_harrier_to_terminal_cleanup() {
+    use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
+    use crate::sim::movement::{air_movement, ground_pose::position_world_coord};
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::sim::world::{FrameEffects, TickLane};
+
+    fn frame(sim: &mut Simulation, rules: &RuleSet) {
+        let due = sim.take_due_commands();
+        sim.advance_app_frame(
+            &due,
+            rules,
+            None,
+            67,
+            TickLane::Ordinary,
+            FrameEffects::default(),
+        )
+        .expect("ordinary skirmish frame");
+    }
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let mut rules = retail.rules;
+    // Headless art counts and a supplied land/water scene; physical Battle
+    // rules, provider/power/charge, both commands and object AI are production.
+    for name in ["CHRONOAR", "CHRONOTG", "CHRONOFD", "WARPOUT", "WAKE1"] {
+        rules.bind_anim_frame_count_for_test(name, 20);
+    }
+    let (rules, mut sim, owner) =
+        world_with_cells(rules, 64, ("aircraft sink", Vec::new()), |x, y| {
+            let mut cell = test_terrain_cell(x, y);
+            if (35..=45).contains(&x) && (35..=45).contains(&y) {
+                cell.land_type = LandType::Water.as_index();
+                cell.base_land_type = cell.land_type;
+                cell.speed_costs = SpeedCostProfile {
+                    float: Some(100),
+                    ..Default::default()
+                };
+                cell.base_speed_costs = cell.speed_costs;
+                cell.zone_type = 4;
+                cell.ground_walk_blocked = true;
+                cell.base_ground_walk_blocked = true;
+                cell.base_build_blocked = true;
+            }
+            cell
+        });
+    sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+    sim.session.set_current_house_for_test(Some(owner));
+    sim.set_input_delay_ticks(0);
+    sim.fog = crate::sim::vision::FogState::new(64, 64);
+    sim.fog.reveal_all_for_owner(owner);
+    spawn(&mut sim, &rules, "GACNST", "Americans", (5, 5));
+    spawn(&mut sim, &rules, "NACNST", "Russians", (10, 30));
+    for at in [(5, 10), (8, 10), (11, 10)] {
+        spawn(&mut sim, &rules, "GAPOWR", "Americans", at);
+    }
+    spawn(&mut sim, &rules, "GACSPH", "Americans", (15, 10));
+    for _ in 0..8 {
+        frame(&mut sim, &rules);
+    }
+    let sphere = sim.interner.intern("ChronoSphereSpecial");
+    let instance = &sim.super_weapons[&owner][&sphere];
+    assert!(instance.is_active() && !instance.is_suspended());
+    // Skip idle countdown frames; actual Super AI performs the ready edge.
+    let deadline = instance
+        .charge_start_tick()
+        .wrapping_add(instance.charge_duration())
+        .wrapping_add(1);
+    sim.session.set_binary_frame_for_test(deadline as u32);
+    frame(&mut sim, &rules);
+    assert!(sim.super_weapons[&owner][&sphere].is_ready());
+    let aircraft = spawn(&mut sim, &rules, "ORCA", "Americans", SOURCE);
+    let actor = sim.substrate.entities.get(aircraft).unwrap();
+    assert_eq!(
+        air_movement::current_fly_height(actor, sim.resolved_terrain.as_ref()),
+        0
+    );
+    assert_eq!(locomotors(&sim, aircraft), (LocomotorKind::Fly, None));
+    let losses_before = sim.houses[&owner].stats().units_lost();
+    for (name, target) in [
+        ("ChronoSphereSpecial", SOURCE),
+        ("ChronoWarpSpecial", TARGET),
+    ] {
+        let sw_type_id = sim.interner.intern(name);
+        sim.queue_command(CommandEnvelope::new(
+            owner,
+            sim.session.tick() + 1,
+            Command::LaunchSuperWeapon {
+                sw_type_id,
+                target_rx: target.0,
+                target_ry: target.1,
+            },
+        ));
+        frame(&mut sim, &rules);
+    }
+    assert!(
+        sim.substrate
+            .entities
+            .get(aircraft)
+            .unwrap()
+            .chrono_warp_latch()
+    );
+    let mut observed_sink = false;
+    let mut observed_wake = false;
+    let mut removed = false;
+    for _ in 0..240 {
+        let previous = sim.substrate.entities.get(aircraft).map(|actor| {
+            (
+                actor.sinking.is_active(),
+                position_world_coord(&actor.position).z,
+            )
+        });
+        frame(&mut sim, &rules);
+        observed_wake |= sim
+            .substrate
+            .anims
+            .iter()
+            .any(|(_, anim)| sim.interner.resolve(anim.type_id()) == "WAKE1");
+        let Some(actor) = sim.substrate.entities.get(aircraft) else {
+            removed = true;
+            break;
+        };
+        if actor.sinking.is_active() {
+            if !observed_sink {
+                // PostWarpValidation books the manipulating House's kill;
+                // the later terminal callback remains a separate owner.
+                assert_eq!(sim.houses[&owner].stats().units_lost(), losses_before + 1);
+            }
+            observed_sink = true;
+            assert_eq!(cell(&sim, aircraft), TARGET);
+            if let Some((true, z)) = previous {
+                assert_eq!(position_world_coord(&actor.position).z, z.wrapping_sub(5));
+            }
+        }
+    }
+    assert!(
+        observed_sink && observed_wake && removed,
+        "sink={observed_sink} wake={observed_wake} removed={removed}"
+    );
+    assert!(!sim.logic_order().contains(&aircraft));
+    assert_eq!(sim.houses[&owner].stats().units_lost(), losses_before + 2);
+    assert!(
+        !sim.substrate
+            .occupancy
+            .contains_entity(TARGET.0, TARGET.1, aircraft)
+    );
+}
+
 /// The locomotor chain from the active object down.
 fn chain(sim: &Simulation, id: u64) -> Vec<LocomotorKind> {
     let mut kinds = Vec::new();

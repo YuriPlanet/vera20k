@@ -1110,6 +1110,14 @@ impl Simulation {
             stable_id,
             rules,
         );
+        // Aircraft414DA8..414DB0 rereads Object+90 after the complete Foot
+        // tail. A dead aircraft returns before descent, wake draws and the
+        // remaining class suffix, regardless of which callback cleared Alive.
+        if sim.substrate.entities.get(stable_id).is_some_and(|entity| {
+            entity.category() == EntityCategory::Aircraft && !entity.lifecycle.object_alive()
+        }) {
+            return Ok(outcome);
+        }
         if sim.tick_ship_sinking(stable_id, rules, overlay_registry, object_ctx.effects) {
             return Ok(outcome);
         }

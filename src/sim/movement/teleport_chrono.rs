@@ -54,6 +54,10 @@
 //!
 //! Evidence: instruction reading of the addresses cited here.
 //!
+//! Landed Aircraft sent onto water join the shared retained sinking owner:
+//! AircraftAI414DB6 follows FootAI, lowers raw Z, emits jittered wakes and
+//! records the terminal kill/UnInit below height -400, like UnitAI7364A1.
+//!
 //! RESIDUALS:
 //! - A destination given while warping in (states 2 to 7, the latch down)
 //!   runs the Unit setter's Teleporter arm, whose Drive suspends the warp's
@@ -61,17 +65,11 @@
 //!   destination while its owner warps (`0x004AFD40`) and ends at the Foot
 //!   AI tail. The NavCom it published stays, so state 5's NULL destination,
 //!   which the prologue runs, installs another Drive: FootClass::AI's
-//!   Process runs that Drive, and state 6's TimerCheck with its scan draw
-//!   waits for the next prologue. That frame and draw order is read, not
-//!   executed. Natively the prologue also runs a Drive active at its call
-//!   (`0x007362A7..0x007362F5`); VERA runs none. Trigger: a destination for
-//!   a Chrono Miner in the warp's last frames. Effect: TimerCheck's draw
-//!   moves a frame and the warp's END up to one; the Drive goes nowhere.
-//! - A landed Aircraft that sinks keeps `+0x3CD` with nothing to end it:
-//!   VERA ports only the Unit's sinking (Unit AI `0x007364A1`); the Aircraft
-//!   AI's handling is not established. Triggers: an airfield's Harriers
-//!   chronoshifted onto water, or a Magnetron dropping a lifted Aircraft over
-//!   water it is refused (`jumpjet_flight::state5_crash`'s sink).
+//!   Process runs that Drive. Natively the prologue also runs a Drive active
+//!   at its call (`0x007362A7..0x007362F5`); VERA skips that visit. Bounded
+//!   native A/B histories observe earlier NavCom, timer, speed and turn writes,
+//!   but no TimerCheck draw or warp-END frame shift. A player-visible effect
+//!   through intervening Techno/mission work remains unestablished.
 
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::NativeCellQuery;

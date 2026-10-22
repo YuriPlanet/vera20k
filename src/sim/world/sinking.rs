@@ -1,12 +1,13 @@
-//! Retained surface-ship death: Unit ReceiveDamage737E43 and AI7364A1.
+//! Retained sinking: Unit ReceiveDamage737E43, UnitAI7364A1 and AircraftAI414DB6.
 //!
 //! This owner alone mutates Techno+3CD/+3CE. The fatal receiver still runs
 //! Mark(UP), passenger/crew work and its ordinary tail; +3CD then suppresses
 //! immediate UnInit. PostWarpValidation and Squid culling also sink a living,
 //! still-marked hull through [`Simulation::begin_living_ship_sinking`]. Foot AI
-//! skips Process, observes the sound edge, and Unit AI lowers the raw
+//! skips Process, observes the sound edge, and Unit/Aircraft AI lowers the raw
 //! coordinate until its terminal RecordKill/UnInit.
 //! Native execution: tools/spatial_oracle/naval_occupants and naval_sink_tick.
+//! Aircraft suffix control flow: AircraftClass::AI414DB6..414ED0.
 
 use super::{SimSoundEvent, Simulation, UninitContext};
 use crate::map::entities::EntityCategory;
@@ -75,7 +76,7 @@ impl Simulation {
 
     /// PostWarpValidation (`0x00718968..0x00718977`, `0x00718ABF..0x00718ACE`)
     /// and Squid culling (`0x00629C69..0x00629C80`) set +3CD and Stun
-    /// (vt+0x3A0) on a living object, which no receiver unmarked. Unit AI lowers it through
+    /// (vt+0x3A0) on a living object, which no receiver unmarked. Unit/Aircraft AI lowers it through
     /// SetLocation's marked arm until its terminal RecordKill/UnInit.
     pub(crate) fn begin_living_ship_sinking(
         &mut self,
@@ -165,7 +166,7 @@ impl Simulation {
         }
     }
 
-    /// Unit7364A1..7365BB, after Foot AI and before the class Alive/fire
+    /// Unit7364A1..7365BB and Aircraft414DB6..414ED0, after Foot AI and before the class
     /// suffix. Returns true only when the terminal arm UnInit'd the hull.
     /// Every reached visit lowers raw Z by five; GetHeight subtracts the live
     /// floor (and OnBridge height). Strictly below -400 records another kill
@@ -180,7 +181,11 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
-        if entity.category() != EntityCategory::Unit || !entity.sinking.active {
+        if !matches!(
+            entity.category(),
+            EntityCategory::Unit | EntityCategory::Aircraft
+        ) || !entity.sinking.active
+        {
             return false;
         }
         let mut coord = position_world_coord(&entity.position);
@@ -192,16 +197,16 @@ impl Simulation {
         )
         .unwrap_or(0);
         coord.z = coord.z.wrapping_sub(5);
-        // Unit7364E3 calls vt+1B4, Foot SetLocation4DB810. The fatal
+        // Unit7364E3/Aircraft414DF8 call vt+1B4, Foot SetLocation4DB810. The fatal
         // receiver's Mark(UP) makes its unmarked arm4DB868 applicable; a
         // Chrono Warp's sink leaves the hull marked, so it takes the marked
         // arm. Both rejoin the changed-coordinate/OpenTopped tail, not a
         // separate raw-Z setter. Native execution: naval_sink_tick.json.
         self.foot_set_location_marked(id, coord, rules, registry, frame_effects);
         if coord.z.wrapping_sub(floor) < -400 {
-            // UnitAI736500's terminal RecordKill(NULL) is a second callback,
-            // not a second accounting implementation. Native naval_sink_tick
-            // retains Health1 and records two total losses across both calls.
+            // Unit736500/Aircraft414E15 call their actual RecordKill(NULL)
+            // callback before UnInit. A fatal-receiver ship already recorded
+            // a loss; living warp sinks retain their producer's accounting.
             self.record_the_kill(
                 id,
                 crate::sim::combat::KillSource::Techno(None),
@@ -246,3 +251,7 @@ impl Simulation {
 #[cfg(test)]
 #[path = "sinking_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "aircraft_sinking_tests.rs"]
+mod aircraft_tests;
